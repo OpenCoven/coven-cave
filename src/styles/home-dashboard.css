@@ -1,0 +1,634 @@
+/* Home dashboard — launcher direction 3a ("work-led dashboard").
+ *
+ * The cold-start Home surface as a full-bleed app view: a top identity chrome,
+ * a left context rail (project · quick start · pick up), a scrolling work board
+ * (greeting + filter tabs · open work · recent threads), and the real composer
+ * docked full-width along the bottom. Everything is token-driven so the 16
+ * themes × dark/light and the Appearance corner-radius setting all apply.
+ *
+ * The root keeps the .home-composer-root class (the shell's :has() overflow
+ * rule and the composer's slash-popover anchoring both key off it); .home-dash
+ * overrides that class's centered-cluster layout for the full-bleed shell. */
+
+.home-composer-root.home-dash {
+  display: flex;
+  flex-direction: column;
+  /* Override the base .home-composer-root's centered-cluster layout: column
+     children must STRETCH full-width (the base uses align-items: safe center,
+     which would shrink-wrap the chrome/board/dock to their content width). */
+  align-items: stretch;
+  justify-content: flex-start;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  background: var(--bg-base);
+  transform: none;
+}
+
+/* ── Top chrome ─────────────────────────────────────────────────────────── */
+.home-dash__chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 13px 22px;
+  border-bottom: 1px solid var(--border-hairline);
+  flex-shrink: 0;
+}
+.home-dash__ident {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.home-dash__avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(140deg, var(--accent-presence), color-mix(in oklch, var(--accent-presence) 55%, black));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--accent-presence-foreground);
+  flex-shrink: 0;
+}
+.home-dash__name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1;
+  white-space: nowrap;
+}
+.home-dash__name-model {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: var(--text-xs);
+}
+.home-dash__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-left: 2px;
+  white-space: nowrap;
+}
+.home-dash__status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-success) 20%, transparent);
+  flex-shrink: 0;
+}
+.home-dash__chrome-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.home-dash__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-jetbrains-mono), monospace;
+  max-width: 240px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.home-dash__chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-dash__icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--duration-fast, 120ms) var(--ease-standard, ease),
+    border-color var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+.home-dash__icon-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* ── Body: rail + board ─────────────────────────────────────────────────── */
+.home-dash__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+/* ── Context rail ───────────────────────────────────────────────────────── */
+.home-dash__rail {
+  width: 320px;
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-hairline);
+  padding: var(--space-5) 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+.home-dash__rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.home-dash__rail-label {
+  font: 600 10px var(--font-jetbrains-mono), monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.home-dash__divider {
+  height: 1px;
+  background: var(--border-hairline);
+}
+
+/* Project card */
+.home-dash__project {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background var(--duration-fast, 120ms), border-color var(--duration-fast, 120ms);
+}
+.home-dash__project:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-presence);
+}
+.home-dash__project-glyph {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-success) 22%, transparent);
+  color: var(--color-success);
+  font: 600 9px var(--font-jetbrains-mono), monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  text-transform: lowercase;
+}
+.home-dash__project-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-dash__project-chev {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.home-dash__project-path {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  line-height: 1.5;
+  word-break: break-all;
+}
+.home-dash__project-ready {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-1) 9px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--color-success) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-success) 32%, var(--border-hairline));
+  font-size: var(--text-2xs);
+  color: var(--color-success);
+}
+.home-dash__project-ready::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+/* Quick start rows */
+.home-dash__quick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.home-dash__quick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--space-2) 10px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  transition: background var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+.home-dash__quick-row:hover {
+  background: var(--bg-hover);
+}
+.home-dash__quick-icon {
+  display: inline-flex;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.home-dash__quick-icon--accent {
+  color: var(--accent-presence);
+}
+.home-dash__quick-label {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+.home-dash__quick-go {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* Pick-up cards */
+.home-dash__pick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.home-dash__pick-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: border-color var(--duration-fast, 120ms), transform var(--duration-fast, 120ms);
+}
+.home-dash__pick-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.home-dash__pick-glyph {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  color: var(--accent-presence);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.home-dash__pick-body {
+  min-width: 0;
+  flex: 1;
+}
+.home-dash__pick-title {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-dash__pick-time {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ── Work board ─────────────────────────────────────────────────────────── */
+.home-dash__board {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 26px var(--space-8) var(--space-6);
+}
+.home-dash__board-inner {
+  max-width: 1040px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+.home-dash__board-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.home-dash__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.home-dash__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: 600 10.5px var(--font-jetbrains-mono), monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-presence);
+}
+.home-dash__eyebrow-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  box-shadow: 0 0 12px 1px color-mix(in oklch, var(--accent-presence) 65%, transparent);
+  animation: home-dash-glow 3s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-dash__eyebrow-dot {
+    animation: none;
+  }
+}
+@keyframes home-dash-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.home-dash__headline {
+  margin: 0;
+  font-family: var(--font-eb-garamond), "EB Garamond", serif;
+  font-weight: 500;
+  font-size: var(--text-display);
+  line-height: 1.05;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+/* Filter tabs */
+.home-dash__filters {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+}
+.home-dash__filter {
+  padding: 5px 13px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  white-space: nowrap;
+  transition: color var(--duration-fast, 120ms), background var(--duration-fast, 120ms);
+}
+.home-dash__filter:hover {
+  color: var(--text-secondary);
+}
+.home-dash__filter.is-active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.home-dash__filter-count {
+  color: var(--text-muted);
+  margin-left: 5px;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: var(--text-2xs);
+}
+.home-dash__filter.is-active .home-dash__filter-count {
+  color: var(--text-secondary);
+}
+
+/* Section scaffold (Open work / Recent threads) */
+.home-dash__section {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.home-dash__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.home-dash__section-link {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.home-dash__section-link:hover {
+  color: var(--accent-presence);
+}
+
+/* Open-work rows */
+.home-dash__work {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.home-dash__work-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 15px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: border-color var(--duration-fast, 120ms), transform var(--duration-fast, 120ms);
+}
+.home-dash__work-row:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.home-dash__work-chip {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font: 600 10px var(--font-jetbrains-mono), monospace;
+  flex-shrink: 0;
+}
+.home-dash__work-chip[data-kind="blocked"] {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+}
+.home-dash__work-chip[data-kind="inbox"],
+.home-dash__work-chip[data-kind="backlog"],
+.home-dash__work-chip[data-kind="review"] {
+  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, var(--border-hairline));
+  color: var(--accent-presence);
+}
+.home-dash__work-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-dash__work-meta {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.home-dash__work-priority {
+  font-size: var(--text-xs);
+  flex-shrink: 0;
+}
+.home-dash__work-priority[data-priority="high"] {
+  color: var(--color-warning);
+}
+.home-dash__work-priority[data-priority="urgent"] {
+  color: var(--color-danger);
+}
+/* Visual "Resume" CTA — reads as a secondary button but is a non-interactive
+   span so it never nests a real <button> inside the clickable row. The row's
+   hover deepens its border to signal the whole card is actionable. */
+.home-dash__work-resume {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-elevated);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  transition: border-color var(--duration-fast, 120ms), color var(--duration-fast, 120ms);
+}
+.home-dash__work-row:hover .home-dash__work-resume {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.home-dash__work-empty {
+  padding: 22px 15px;
+  border: 1px dashed var(--border-hairline);
+  border-radius: var(--radius-card);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Recent threads */
+.home-dash__recent {
+  display: flex;
+  flex-direction: column;
+}
+.home-dash__recent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 9px var(--space-2);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  transition: background var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+.home-dash__recent-row:hover {
+  background: var(--bg-hover);
+}
+.home-dash__recent-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-dash__recent-time {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Docked composer ────────────────────────────────────────────────────── */
+.home-dash__dock {
+  padding: 14px 22px;
+  border-top: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+  /* Let the composer's slash popover escape upward over the board. */
+  overflow: visible;
+  position: relative;
+  z-index: 2;
+}
+.home-dash__dock-inner {
+  max-width: 1360px;
+  margin: 0 auto;
+}
+/* The docked composer keeps its own card styling; neutralize the centered
+   hearth wrapper's vertical auto-margins so it sits flush in the dock band. */
+.home-dash__dock .home-composer-card-wrap {
+  max-width: 100%;
+}
+
+/* ── Responsive: fold the rail under a narrow surface ───────────────────── */
+@media (max-width: 900px) {
+  .home-dash__body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .home-dash__rail {
+    width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-hairline);
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  .home-dash__rail-group {
+    flex: 1;
+    min-width: 220px;
+  }
+  .home-dash__board {
+    overflow-y: visible;
+  }
+}

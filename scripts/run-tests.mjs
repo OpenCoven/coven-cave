@@ -327,6 +327,7 @@ export const SUITES = {
     "src/components/home-digest-carousel.test.ts",
     "src/components/home-needs-you.test.ts",
     "src/components/home-hearth.test.ts",
+    "src/components/home/dashboard-open-work.test.ts",
     "src/components/home-feed.test.ts",
     "src/components/home-composer-centering.test.ts",
     "src/components/home-composer-hide-archived.test.ts",
