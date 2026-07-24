@@ -42,7 +42,7 @@ function queueProjectFilePath(): string {
 
 async function readSelectedProjectId(): Promise<string | null> {
   try {
-    const raw = await readFile(queueProjectFilePath(), "utf8");
+    const raw = await readFile(/* turbopackIgnore: true */ queueProjectFilePath(), "utf8");
     const value = JSON.parse(raw) as Partial<QueueProjectFile>;
     return typeof value.projectId === "string" && value.projectId.trim() ? value.projectId.trim() : null;
   } catch {
@@ -54,14 +54,18 @@ export async function selectQueueProject(projectId: string): Promise<CaveProject
   const project = projectById(projectId, await loadProjects());
   if (!project) return null;
   const file = queueProjectFilePath();
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, JSON.stringify({ version: 1, projectId: project.id } satisfies QueueProjectFile, null, 2), "utf8");
+  await mkdir(/* turbopackIgnore: true */ path.dirname(file), { recursive: true });
+  await writeFile(
+    /* turbopackIgnore: true */ file,
+    JSON.stringify({ version: 1, projectId: project.id } satisfies QueueProjectFile, null, 2),
+    "utf8",
+  );
   return project;
 }
 
 async function isDirectory(value: string): Promise<boolean> {
   try {
-    return (await stat(value)).isDirectory();
+    return (await stat(/* turbopackIgnore: true */ value)).isDirectory();
   } catch {
     return false;
   }
@@ -70,7 +74,7 @@ async function isDirectory(value: string): Promise<boolean> {
 async function gitTopLevel(root: string): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
-      cwd: root,
+      cwd: /* turbopackIgnore: true */ root,
       timeout: GIT_TIMEOUT_MS,
     });
     const top = stdout.trim();
