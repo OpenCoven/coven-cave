@@ -1442,21 +1442,41 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   to { transform: rotate(360deg); }
 }
 .fa-header {
-  display: flex;
+  position: relative;
+  /* Clip the decorative glow — but `overflow:hidden` zeroes this flex item's
+     automatic min-height, so it must not shrink under the column-flex page or
+     the hero collapses to a sliver and its grid content is clipped away. */
+  overflow: hidden;
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(260px, 1.3fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-5);
-  padding: 18px;
+  gap: 28px;
+  padding: 22px var(--space-6);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-panel);
   background: var(--bg-surface);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+/* Soft state halo behind the hero — a quiet presence glow, decorative only. */
+.fa-header__glow {
+  position: absolute;
+  top: -45%;
+  right: 4%;
+  width: 260px;
+  height: 260px;
+  border-radius: var(--radius-pill);
+  background: radial-gradient(circle, color-mix(in oklch, var(--accent-presence) 15%, transparent), transparent 70%);
+  pointer-events: none;
 }
 .fa-header__identity {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 14px;
   min-width: 0;
 }
+.fa-header__meta { min-width: 0; }
 /* Hero pulse — 14 days of session activity between identity and the ring.
    Grows to soak up the header's slack width; the cap keeps each day
    bar-shaped rather than slab-shaped on very wide panes. */
@@ -1598,18 +1618,17 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-insight__action:hover { color: var(--text-primary); background: var(--bg-hover); }
 .fa-insight__action svg { width: 12px; height: 12px; color: currentColor; }
 
-/* Progression band — tier chip + renown meter + streak, one quiet row
-   between the insight banner and the KPI tiles. Tint recipe on the tier
-   (accent = presence: earned standing, not a CTA). */
+/* Progression band — tier chip + renown meter + streak, a quiet inline row
+   folded into the hero header under the familiar's name. Tint recipe on the
+   tier (accent = presence: earned standing, not a CTA). */
 .fa-progression {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
-  background: var(--bg-raised);
+  gap: 10px;
+  margin-top: 10px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 .fa-progression__tier {
   padding: 0 var(--space-2);
@@ -2090,10 +2109,46 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   font-size: var(--text-md);
   letter-spacing: 0;
 }
-.fa-heal-list {
+/* Self-heal requests — a dense masonry grid; the first card is featured
+   (spans two columns / two rows) so the most pressing request reads first. */
+.fa-heal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: dense;
+  grid-auto-rows: minmax(120px, auto);
+  gap: var(--space-3);
+}
+.fa-heal-more {
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--duration-fast, 120ms) ease, border-color var(--duration-fast, 120ms) ease;
+}
+.fa-heal-more:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
+}
+/* The full-list modal reuses the card, stacked one per row. */
+.fa-modal-heal-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.fa-modal-lede {
+  margin: 0 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 /* Confidence from thread analysis — metric average bars + context-pressure mix. */
 .fa-thread-analysis {
@@ -2203,44 +2258,113 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   font-size: 0.85em;
 }
 .fa-heal-card {
+  --sev: var(--border-strong);
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 14px;
   border: 1px solid var(--border-hairline);
-  border-left-width: 3px;
+  border-left: 3px solid var(--sev);
   border-radius: var(--radius-control);
   background: var(--bg-base);
+  transition: transform var(--duration-base, 180ms) var(--ease-decelerate, ease),
+    border-color var(--duration-base, 180ms) ease, box-shadow var(--duration-base, 180ms) ease;
 }
-.fa-heal-card--crit { border-left-color: var(--color-danger); }
-.fa-heal-card--warn { border-left-color: var(--color-warning); }
-.fa-heal-card--info { border-left-color: var(--color-info); }
-.fa-heal-card span {
-  color: var(--text-muted);
-  font-size: var(--text-2xs);
-  font-weight: 700;
-  text-transform: uppercase;
+.fa-heal-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklch, var(--sev) 45%, var(--border-hairline));
+  box-shadow: 0 10px 26px -16px color-mix(in oklch, var(--color-mix-dark) 65%, transparent);
 }
-.fa-heal-card h3 {
-  margin: 3px 0;
-  font-size: var(--text-base);
+.fa-heal-card--crit { --sev: var(--color-danger); }
+.fa-heal-card--warn { --sev: var(--color-warning); }
+.fa-heal-card--info { --sev: var(--accent-presence); }
+/* The first, most-pressing request is featured — it claims two grid columns. */
+.fa-heal-card--featured { grid-column: span 2; grid-row: span 2; }
+.fa-heal-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
 }
-.fa-heal-card p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.45;
-}
-.fa-heal-card > b {
+.fa-heal-card__dot {
   flex: 0 0 auto;
-  padding: 3px 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--sev);
+}
+.fa-heal-card__source {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fa-heal-card__kind {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px var(--space-2);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
   font-size: var(--text-2xs);
+  letter-spacing: 0.03em;
   text-transform: uppercase;
 }
+.fa-heal-card__title {
+  color: var(--text-primary);
+  font-size: var(--text-md);
+  line-height: 1.3;
+}
+.fa-heal-card__detail {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.fa-heal-card__foot {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: 2px;
+}
+.fa-heal-card__btn {
+  flex: 1;
+  padding: 7px var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--duration-fast, 120ms) ease;
+}
+.fa-heal-card__btn:hover { background: color-mix(in oklch, var(--accent-presence) 28%, transparent); }
+.fa-heal-card__trace {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 11px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--duration-fast, 120ms) ease, color var(--duration-fast, 120ms) ease;
+}
+.fa-heal-card__trace:hover { border-color: var(--border-strong); color: var(--text-primary); }
 .fa-thread-signals {
   display: flex;
   flex-direction: column;
@@ -2703,6 +2827,8 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   gap: 10px;
   align-items: stretch;
 }
+/* Each property is a button — clicking it opens the detail panel with the real
+   reason it passes or the exact violations behind a failure. */
 .fa-contract-item {
   display: flex;
   /* Top-align the badge with the label's first line — with centered
@@ -2717,14 +2843,20 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
      (.fa-thread-score) instead of a hollow outline. */
   background: var(--bg-base);
   color: var(--text-secondary);
+  font: inherit;
   font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast, 120ms) ease, background var(--duration-fast, 120ms) ease;
 }
+.fa-contract-item:hover { border-color: var(--border-strong); }
 .fa-contract-item svg {
   flex: 0 0 auto;
   /* Optically center the 1em glyph against the first text line (1.35lh). */
   margin-top: 1.5px;
 }
-.fa-contract-item span {
+.fa-contract-item > span {
+  flex: 1;
   min-width: 0;
   /* Wrap at word boundaries; only break a single over-long word as a last resort
      (avoids the "Name / d / Identit / y" character shredding in tight columns). */
@@ -2739,6 +2871,345 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border-color: color-mix(in oklch, var(--color-danger) 38%, var(--border-hairline));
   color: var(--text-primary);
 }
+/* Expand caret — muted, flips when the property's detail panel is open. */
+.fa-contract-item__caret {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast, 120ms) ease;
+}
+.fa-contract-item.is-active { border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border-hairline)); }
+.fa-contract-item.is-active .fa-contract-item__caret { transform: rotate(180deg); }
+/* Detail panel — the "why it passes" legend or the real failing violations. */
+.fa-contract-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 14px var(--space-4);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-base);
+}
+.fa-contract-detail.is-pass {
+  border-color: color-mix(in oklch, var(--color-success) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-success) 6%, var(--bg-base));
+}
+.fa-contract-detail.is-fail {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+.fa-contract-detail__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fa-contract-detail__badge {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+}
+.fa-contract-detail.is-pass .fa-contract-detail__badge { color: var(--color-success); }
+.fa-contract-detail.is-fail .fa-contract-detail__badge { color: var(--color-danger); }
+.fa-contract-detail__head b {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--text-md);
+}
+.fa-contract-detail__status {
+  flex: 0 0 auto;
+  padding: 2px 9px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.fa-contract-detail.is-pass .fa-contract-detail__status { color: var(--color-success); }
+.fa-contract-detail.is-fail .fa-contract-detail__status { color: var(--color-danger); }
+.fa-contract-detail__body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.fa-contract-detail__label {
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.fa-contract-detail__body p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+/* ── Needs-attention banner — the synthesized read + state chips + an
+   expandable prioritized action list. Tone rides --fa-insight-accent (set by
+   the shared .fa-insight--{good,warn,bad} modifiers). */
+.fa-attention {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 14px var(--space-4);
+  border: 1px solid color-mix(in oklch, var(--fa-insight-accent, var(--text-muted)) 26%, var(--border-hairline));
+  border-radius: var(--radius-panel);
+  background: color-mix(in oklch, var(--fa-insight-accent, var(--text-muted)) 7%, var(--bg-surface));
+}
+.fa-attention__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.fa-attention__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--fa-insight-accent, var(--text-muted)) 42%, var(--border-hairline));
+  background: color-mix(in oklch, var(--fa-insight-accent, var(--text-muted)) 16%, transparent);
+  color: var(--fa-insight-accent, var(--text-muted));
+}
+.fa-attention__lede {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.fa-attention__title {
+  color: var(--fa-insight-accent, var(--text-primary));
+  font-size: var(--text-md);
+  letter-spacing: -0.01em;
+}
+.fa-attention__sub {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.35;
+}
+.fa-attention__toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--fa-insight-accent, var(--text-muted)) 42%, var(--border-hairline));
+  background: color-mix(in oklch, var(--fa-insight-accent, var(--text-muted)) 12%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.fa-attention__caret { transition: transform var(--duration-base, 160ms) ease; }
+.fa-attention__caret.is-open { transform: rotate(180deg); }
+/* State chips — trust / contract / self-heal / blockers / streak at a glance. */
+.fa-attention__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.fa-attention__stat {
+  --chip: var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid color-mix(in oklch, var(--chip) 38%, var(--border-hairline));
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--chip) 10%, transparent);
+  color: var(--chip);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.fa-attention__stat span { color: var(--text-secondary); }
+.fa-attention__stat--ok { --chip: var(--color-success); }
+.fa-attention__stat--warn { --chip: var(--color-warning); }
+.fa-attention__stat--crit { --chip: var(--color-danger); }
+.fa-attention__stat--info { --chip: var(--accent-presence); }
+/* Prioritized action list — one numbered row per recommended next step. */
+.fa-attention__actions {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  overflow: hidden;
+}
+.fa-attention__actions-label {
+  margin: 0;
+  padding: 11px 14px var(--space-1);
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.fa-attention__action-row {
+  --sev: var(--accent-presence);
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 11px 14px;
+  border-top: 1px solid var(--border-hairline);
+}
+.fa-attention__action-row--crit { --sev: var(--color-danger); }
+.fa-attention__action-row--warn { --sev: var(--color-warning); }
+.fa-attention__action-row--info { --sev: var(--accent-presence); }
+.fa-attention__n {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in oklch, var(--sev) 42%, transparent);
+  background: color-mix(in oklch, var(--sev) 16%, transparent);
+  color: var(--sev);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.fa-attention__action-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.fa-attention__action-main b { color: var(--text-primary); font-size: var(--text-md); }
+.fa-attention__action-main small { color: var(--text-muted); font-size: var(--text-xs); }
+.fa-attention__action-btn {
+  flex: 0 0 auto;
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fa-attention__action-btn:hover { background: color-mix(in oklch, var(--accent-presence) 28%, transparent); }
+
+/* ── Collapsible section header — folds a full-width panel behind a button. */
+.fa-collapse { padding: 0; overflow: hidden; }
+.fa-collapse__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 13px var(--space-4);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fa-collapse__hint {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.fa-collapse__caret {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  transition: transform var(--duration-base, 160ms) ease;
+}
+.fa-collapse__hint + .fa-collapse__caret { margin-left: var(--space-2); }
+.fa-collapse__caret.is-open { transform: rotate(180deg); }
+/* When collapsed the head has no hint pushing the caret — keep it right-aligned. */
+.fa-collapse__head > .fa-collapse__caret:last-child { margin-left: auto; }
+.fa-collapse__body { padding: 0 var(--space-4) var(--space-4); }
+
+/* ── Session pager — prev / N of M / next under the recent-sessions list. */
+.fa-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--border-hairline);
+}
+.fa-pager__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast, 120ms) ease, color var(--duration-fast, 120ms) ease;
+}
+.fa-pager__btn:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text-primary); }
+.fa-pager__btn:disabled { opacity: 0.4; cursor: default; }
+.fa-pager__label {
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Action confirmation modal body — icon + blurb + a checklist of effects. */
+.fa-modal-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: 14px;
+}
+.fa-modal-action__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-card);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  color: var(--accent-presence);
+}
+.fa-modal-action__blurb {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-md);
+  line-height: 1.55;
+}
+.fa-action-bullets {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fa-action-bullets li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+.fa-action-bullets li svg { flex: 0 0 auto; margin-top: 1px; color: var(--color-success); }
 
 /* Pane-width responsiveness — the analytics view also renders in the narrow
    inspector tab, where viewport media queries never fire. */
@@ -2747,11 +3218,14 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
      min width, so one rigid child (a chart, a long token) props the whole
      column open and the pane scrolls sideways at every narrow width. */
   .fa-grid { grid-template-columns: minmax(0, 1fr); }
+  /* The three-column hero stacks; the featured heal card gives up its span. */
+  .fa-header { grid-template-columns: minmax(0, 1fr); }
+  .fa-heal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fa-heal-card--featured { grid-column: span 2; grid-row: auto; }
 }
 @container fa (max-width: 620px) {
   .fa-header {
     align-items: flex-start;
-    flex-direction: column;
   }
   .fa-header__pulse {
     flex-basis: auto;
@@ -2778,11 +3252,11 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .fa-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tsc-head { align-items: flex-start; flex-direction: column; }
   .tsc-scores { grid-template-columns: 1fr; }
-  /* Heal cards stack their action chip under the copy instead of squeezing it. */
-  .fa-heal-card { flex-wrap: wrap; }
-  .fa-heal-card > b { align-self: flex-start; }
-  /* Actionable insight keeps its Review link on its own line when tight. */
-  .fa-insight { flex-wrap: wrap; }
+  /* Heal cards drop to a single column; the featured card stops spanning. */
+  .fa-heal-grid { grid-template-columns: 1fr; }
+  .fa-heal-card--featured { grid-column: auto; grid-row: auto; }
+  /* The attention banner head wraps its toggle onto its own line when tight. */
+  .fa-attention__head { flex-wrap: wrap; }
 }
 /* Phone-width pane — the narrowest tier (inspector tab / small handsets). */
 @container fa (max-width: 420px) {
