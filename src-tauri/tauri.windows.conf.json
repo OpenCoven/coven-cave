@@ -3,7 +3,8 @@
   "bundle": {
     "resources": [
       "resources/server-archive/**/*",
-      "resources/node/**/*"
+      "resources/node/**/*",
+      "resources/whisper/**/*"
     ],
     "windows": {
       "wix": {

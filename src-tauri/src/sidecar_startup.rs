@@ -140,6 +140,13 @@ pub(super) fn start_sidecar_runtime(
         )
     })?;
     log::info!("[cave] using node at {}", node.display());
+    let whisper_cli = find_bundled_whisper_cli(&resource_dir).ok_or_else(|| {
+        SidecarStartError::Failed(
+            "Could not find the bundled local Whisper runtime. Reinstall CovenCave or contact support."
+                .to_string(),
+        )
+    })?;
+    log::info!("[cave] using bundled Whisper at {}", whisper_cli.display());
 
     // Capture sidecar logs so startup failures can be surfaced in the local
     // preparation window instead of leaving a blank webview.
@@ -240,6 +247,7 @@ pub(super) fn start_sidecar_runtime(
         .env("HOSTNAME", "127.0.0.1")
         .env("NODE_ENV", "production")
         .env("COVEN_CAVE_BUNDLE", "1")
+        .env("COVEN_WHISPER_CPP_BIN", &whisper_cli)
         .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
         .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token);
 

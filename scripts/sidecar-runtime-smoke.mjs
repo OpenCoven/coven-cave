@@ -18,6 +18,13 @@ const bundledNode = path.join(
   "bin",
   process.platform === "win32" ? "node.exe" : "node",
 );
+const bundledWhisper = path.join(
+  root,
+  "src-tauri",
+  "resources",
+  "whisper",
+  process.platform === "win32" ? "whisper-cli.exe" : "whisper-cli",
+);
 const token = "sidecar-runtime-smoke-token";
 
 function reservePort() {
@@ -104,6 +111,7 @@ function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port }) {
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
       COVEN_CAVE_BUNDLE: "1",
+      COVEN_WHISPER_CPP_BIN: bundledWhisper,
       COVEN_CAVE_AUTH_TOKEN: token,
       COVEN_HOME: covenHome,
       NEXT_TELEMETRY_DISABLED: "1",
@@ -190,6 +198,14 @@ async function main() {
   }
   await access(sidecarServer);
   await access(bundledNode);
+  await access(bundledWhisper);
+
+  const whisperVersion = spawnSync(bundledWhisper, ["--version"], { encoding: "utf8" });
+  assert.equal(
+    whisperVersion.status,
+    0,
+    `packaged Whisper CLI must launch from resources: ${whisperVersion.stderr || whisperVersion.error}`,
+  );
 
   const nativeModules = spawnSync(
     bundledNode,
