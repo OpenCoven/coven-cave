@@ -299,4 +299,29 @@ assert.match(view, /aria-label=\{`Close \$\{tabTitle\(tab\)\}\$\{dirtyTabs\[key\
 assert.match(view, /if \(dirtyTabs\[key\]\) \{\s*\n\s*const ok = await confirm\(/, "closing a dirty tab confirms first");
 assert.match(view, /onClick=\{\(\) => void requestCloseTab\(key, tabTitle\(tab\)\)\}/, "the tab strip close goes through the confirm path");
 
+// ── Legibility floor (cave-zhk6) ─────────────────────────────────────────────
+// 10px (--text-2xs) is reserved for uppercase eyebrow labels and count chips.
+// Prose hints, alerts, and rail-row meta were bumped and must not creep back
+// down: sentences read at 12px (--text-sm), secondary UI text at 11px.
+assert.match(
+  view,
+  /text-\[length:var\(--text-sm\)\] text-\[var\(--text-muted\)\]">\s*\n\s*Tip: type/,
+  "the links-strip tip sentence reads at --text-sm, not 10px",
+);
+assert.match(
+  view,
+  /text-\[length:var\(--text-sm\)\] text-\[var\(--text-muted\)\]">\s*\n\s*“\{unresolvedHint\}”/,
+  "the unresolved-link hint sentence reads at --text-sm",
+);
+assert.match(
+  view,
+  /role="alert" className="min-w-0 truncate text-\[length:var\(--text-sm\)\]/,
+  "the footer delete-error alert reads at --text-sm",
+);
+assert.match(
+  view,
+  /mt-0\.5 flex items-center gap-1\.5 text-\[length:var\(--text-xs\)\]/,
+  "rail-row meta (subtitle · date) reads at --text-xs, not 10px",
+);
+
 console.log("grimoire-view.test: ok");
