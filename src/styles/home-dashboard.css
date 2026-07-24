@@ -49,14 +49,19 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  padding: var(--space-6) var(--space-8);
   /* Height container for the no-scroll tiers below: the board never scrolls,
-     so on short panes it sheds sections instead of clipping them. */
+     so on short panes it sheds sections instead of clipping them. Vertical
+     padding lives on __board-inner, NOT here — the tiers restyle it, and a
+     @container rule can only match descendants of the queried container,
+     never the container itself. Keep this element padding-free vertically so
+     the queried height equals the pane height. */
+  padding: 0 var(--space-8);
   container-type: size;
 }
 .home-dash__board-inner {
   max-width: 860px;
   margin: 0 auto;
+  padding: var(--space-6) 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
@@ -330,20 +335,22 @@
 
 /* ── No-scroll fit tiers ────────────────────────────────────────────────── */
 /* The board never scrolls (overflow: hidden), so short panes shed the
-   quietest content instead of clipping it. Queries measure the board's
-   content box (~455px inside a 900px-tall window): the full board needs
-   ≈590px, ≈420px without Recent threads. Kept last in the file so these
-   equal-specificity overrides win the cascade. */
-@container (max-height: 600px) {
+   quietest content instead of clipping it. The board carries no vertical
+   padding, so the queried height equals the pane height. Measured budgets:
+   full board ≈635px, ≈503px without Recent threads (of which 24px is bottom
+   padding — panes down to 480 clip padding only, never content), ≈294px at
+   the tight tier, ≈198px at the floor. Rules target only descendants of
+   .home-dash__board (an element can never match its own @container query),
+   and stay last in the file so these equal-specificity overrides win the
+   cascade. */
+@container (max-height: 650px) {
   .home-dash__section--recent {
     display: none;
   }
 }
-@container (max-height: 430px) {
-  .home-dash__board {
-    padding: var(--space-4) var(--space-8);
-  }
+@container (max-height: 480px) {
   .home-dash__board-inner {
+    padding: var(--space-4) 0;
     gap: var(--space-3);
   }
   .home-dash__eyebrow,
@@ -351,6 +358,14 @@
     display: none;
   }
   .home-dash__work-row:nth-child(n + 4) {
+    display: none;
+  }
+}
+@container (max-height: 300px) {
+  .home-dash__section-head {
+    display: none;
+  }
+  .home-dash__work-row:nth-child(n + 3) {
     display: none;
   }
 }
