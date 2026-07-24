@@ -12,58 +12,116 @@
    same rules fire there too. */
 .board-shell { display:flex; flex-direction:column; height:100%; overflow:hidden; background:var(--bg-base); color:var(--text-primary); container:board / inline-size; }
 
-/* Compact chrome (matches .surface-compact-header / .gh-compact-header): one
-   slim 40px band; --board-control-h shrinks header controls to the shared 26px
-   without touching the same classes reused outside the band (inspector, gantt).
-   The mobile container query below re-inflates everything to touch targets. */
-.board-header { display:flex; align-items:center; gap:8px; padding:5px 12px; min-height:40px; --board-control-h:26px; border-bottom:1px solid var(--border-hairline); flex-shrink:0; flex-wrap:nowrap; }
-.board-header-title { flex:0 0 auto; font-size:12px; font-weight:600; color:var(--text-primary); }
-.board-header-controls { display:flex; align-items:center; gap:6px; margin-left:auto; flex:0 0 auto; flex-wrap:nowrap; }
-.board-search-wrap { position:relative; display:flex; align-items:center; flex:1 1 auto; min-width:0; max-width:620px; margin-left:8px; }
-.board-search-icon { position:absolute; left:9px; color:var(--text-muted); pointer-events:none; }
-.board-search-input { width:100%; height:var(--board-control-h,30px); padding:0 30px 0 30px; border-radius:var(--radius-control); border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-primary); outline:none; transition:background .12s,border-color .12s; }
-.board-search-input::placeholder { color:var(--text-muted); }
-.board-search-input:focus { border-color:color-mix(in oklch,var(--accent-presence) 52%,transparent); background:var(--bg-hover); }
-.board-search-kbd { position:absolute; right:7px; display:flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 4px; border:1px solid var(--border-hairline); border-radius:4px; background:var(--bg-base); color:var(--text-muted); font-family:var(--font-mono); font-size:10px; line-height:1; pointer-events:none; }
-.board-search-clear { position:absolute; right:5px; display:flex; align-items:center; justify-content:center; width:20px; height:20px; border:0; border-radius:var(--radius-control); background:transparent; color:var(--text-muted); cursor:pointer; transition:background .1s,color .1s; }
-.board-search-clear:hover { background:var(--bg-hover); color:var(--text-primary); }
-.board-search-clear:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
+/* Tasks toolbar (redesign refresh): a roomier command bar — 16px title, a
+   tokenized search that grows to fill, bordered segment groups for grouping and
+   view, and first-class Select/Delete/Filter verbs. --board-control-h drives the
+   segment/icon control height so the reused classes (gantt, inspector) stay in
+   step. The mobile container query below re-inflates to touch targets. */
+.board-header { display:flex; align-items:center; gap:14px; padding:13px 22px; min-height:63px; --board-control-h:34px; border-bottom:1px solid var(--border-hairline); flex-shrink:0; flex-wrap:nowrap; }
+.board-header-title { flex:0 0 auto; font-size:16px; font-weight:600; letter-spacing:-0.01em; color:var(--text-primary); }
+.board-header-controls { display:flex; align-items:center; gap:10px; flex:0 0 auto; flex-wrap:nowrap; }
 
-.board-toolbar-btn { display:inline-flex; align-items:center; gap:5px; height:var(--board-control-h,30px); padding:0 10px; border-radius:var(--radius-control); border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-secondary); font-size:12px; font-weight:450; cursor:pointer; transition:background .12s,color .12s,border-color .12s; white-space:nowrap; }
+/* ── Tokenized search ────────────────────────────────────────────────────────
+   The field grows to fill the bar; committed key:value filters render as mono
+   chips inline, and a typeahead popover suggests keys/values. */
+.board-token-search { position:relative; flex:1 1 auto; min-width:0; }
+.board-token-search-scrim { position:fixed; inset:0; z-index:30; }
+.board-token-field { position:relative; z-index:31; display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-height:36px; padding:4px 10px; background:var(--bg-sunken); border:1px solid var(--border-hairline); border-radius:6px; transition:border-color .12s; }
+.board-token-field:focus-within { border-color:var(--accent-presence); }
+.board-token-search-icon { flex-shrink:0; color:var(--text-muted); }
+.board-token-chip { display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 3px 0 8px; background:color-mix(in oklch,var(--accent-presence) 14%,transparent); border:1px solid color-mix(in oklch,var(--accent-presence) 30%,transparent); border-radius:4px; font-size:12px; color:var(--accent-presence); white-space:nowrap; }
+.board-token-chip-key { font-family:var(--font-mono); font-weight:600; opacity:.8; }
+.board-token-chip-remove { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; background:transparent; border:0; border-radius:3px; color:inherit; cursor:pointer; opacity:.7; transition:opacity .12s,background .12s; }
+.board-token-chip-remove:hover { opacity:1; background:color-mix(in oklch,var(--accent-presence) 22%,transparent); }
+/* Base font-size stays at the iOS anti-zoom floor (16px); the design's tighter
+   13.5px is applied desktop-only via @media (pointer: fine) below, so touch
+   devices never trigger Safari's focus-zoom. */
+.board-token-input { flex:1; min-width:140px; height:26px; background:transparent; border:0; outline:none; color:var(--text-primary); font-family:inherit; font-size:16px; }
+.board-token-input::placeholder { color:var(--text-muted); }
+@media (pointer: fine) { .board-token-input { font-size:13.5px; } }
+.board-token-kbd { flex-shrink:0; font-family:var(--font-mono); font-size:12px; color:var(--text-muted); border:1px solid var(--border-hairline); border-radius:4px; padding:0 6px; line-height:18px; }
+.board-token-suggest { position:absolute; top:45px; left:0; min-width:290px; max-width:380px; background:var(--popover); border:1px solid var(--border-hairline); border-radius:8px; box-shadow:0 14px 36px -10px rgba(0,0,0,.62); padding:5px; z-index:40; }
+.board-token-suggest-label { font-size:10px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--text-muted); padding:6px 9px 5px; }
+.board-token-suggest-item { display:flex; align-items:center; gap:11px; width:100%; height:33px; padding:0 9px; background:transparent; border:0; border-radius:4px; cursor:pointer; font-family:inherit; font-size:12.5px; color:var(--text-secondary); transition:background .12s,color .12s; }
+.board-token-suggest-item:hover { background:var(--bg-hover); color:var(--text-primary); }
+.board-token-suggest-tag { font-family:var(--font-mono); font-size:11.5px; font-weight:600; color:var(--accent-presence); min-width:96px; text-align:left; }
+.board-token-suggest-desc { flex:1; text-align:left; color:var(--text-muted); }
+
+/* ── Small square/labelled toolbar buttons ───────────────────────────────────
+   Shared shell for Select-multiple and Delete-selected verbs. */
+.board-icon-wrap { position:relative; }
+.board-icon-btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; height:36px; min-width:36px; padding:0 9px; background:transparent; border:1px solid var(--border-hairline); border-radius:6px; color:var(--text-secondary); cursor:pointer; font-family:inherit; font-size:12.5px; transition:background .12s,color .12s,border-color .12s; }
+.board-icon-btn:hover:not(:disabled) { background:var(--bg-hover); color:var(--text-primary); }
+.board-icon-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
+.board-icon-btn:disabled { color:var(--text-muted); cursor:default; }
+.board-icon-btn--active { background:color-mix(in oklch,var(--accent-presence) 16%,transparent); border-color:color-mix(in oklch,var(--accent-presence) 42%,transparent); color:var(--accent-presence); }
+.board-icon-btn--danger { color:var(--color-danger); border-color:color-mix(in oklch,var(--color-danger) 42%,transparent); }
+.board-icon-btn-count { font-family:var(--font-mono); font-size:11px; font-weight:600; }
+
+/* Delete-selected inline confirm popover. */
+.board-confirm-scrim { position:fixed; inset:0; z-index:35; }
+.board-confirm-pop { position:absolute; top:42px; right:0; width:242px; background:var(--popover); border:1px solid var(--border-hairline); border-radius:8px; box-shadow:0 14px 36px -10px rgba(0,0,0,.62); padding:14px; z-index:45; text-align:left; }
+.board-confirm-title { font-size:13px; font-weight:600; color:var(--text-primary); }
+.board-confirm-desc { font-size:12px; color:var(--text-secondary); margin-top:5px; line-height:1.5; }
+.board-confirm-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+.board-confirm-delete { height:30px; padding:0 13px; background:var(--color-danger); border:0; border-radius:5px; color:#fff; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer; transition:filter .12s; }
+.board-confirm-delete:hover { filter:brightness(1.08); }
+
+/* ── Filter dropdown ─────────────────────────────────────────────────────────*/
+.board-filter { position:relative; }
+.board-filter-scrim { position:fixed; inset:0; z-index:44; }
+.board-filter-btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; height:36px; padding:0 13px; background:transparent; border:1px solid var(--border-hairline); border-radius:6px; cursor:pointer; font-family:inherit; font-size:12.5px; color:var(--text-secondary); transition:background .12s,color .12s,border-color .12s; }
+.board-filter-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
+.board-filter-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
+.board-filter-btn--active { color:var(--accent-presence); border-color:color-mix(in oklch,var(--accent-presence) 42%,transparent); }
+.board-filter-count { font-family:var(--font-mono); font-size:11px; font-weight:600; color:var(--accent-presence); background:color-mix(in oklch,var(--accent-presence) 18%,transparent); border-radius:999px; padding:1px 7px; }
+.board-filter-caret { flex-shrink:0; color:var(--text-muted); transition:transform .15s; }
+.board-filter-caret--open { transform:rotate(180deg); }
+.board-filter-menu { position:absolute; top:42px; right:0; width:262px; background:var(--popover); border:1px solid var(--border-hairline); border-radius:8px; box-shadow:0 14px 36px -10px rgba(0,0,0,.62); padding:6px; z-index:46; max-height:420px; overflow-y:auto; }
+.board-filter-menu-head { display:flex; align-items:center; justify-content:space-between; padding:6px 8px 5px; }
+.board-filter-menu-title { font-size:10px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--text-muted); }
+.board-filter-selectall { background:transparent; border:0; color:var(--accent-presence); font-family:inherit; font-size:11.5px; cursor:pointer; padding:0; }
+.board-filter-item { display:flex; align-items:center; gap:10px; width:100%; height:33px; padding:0 8px; background:transparent; border:0; border-radius:5px; cursor:pointer; font-family:inherit; font-size:12.5px; color:var(--text-secondary); transition:background .12s,color .12s; }
+.board-filter-item--mono { font-family:var(--font-mono); font-size:12px; }
+.board-filter-item:hover { background:var(--bg-hover); color:var(--text-primary); }
+.board-filter-check { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:4px; flex-shrink:0; border:1px solid var(--border-strong); color:transparent; transition:background .12s,border-color .12s; }
+.board-filter-check--on { background:var(--accent-presence); border-color:var(--accent-presence); color:var(--primary-foreground); }
+.board-filter-dot { width:8px; height:8px; border-radius:3px; flex-shrink:0; }
+.board-filter-item-label { flex:1; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+.board-toolbar-btn { display:inline-flex; align-items:center; gap:5px; height:36px; padding:0 12px; border-radius:6px; border:1px solid var(--border-hairline); background:transparent; color:var(--text-secondary); font-size:12.5px; font-weight:450; cursor:pointer; transition:background .12s,color .12s,border-color .12s; white-space:nowrap; }
 .board-toolbar-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-toolbar-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
-.board-toolbar-btn--active { background:color-mix(in oklch,var(--accent-presence) 14%,var(--bg-raised)); border-color:color-mix(in oklch,var(--accent-presence) 40%,transparent); color:var(--text-primary); }
-.board-toolbar-btn--danger { color:var(--color-danger); border-color:color-mix(in oklch,var(--color-danger) 30%,var(--border-strong)); }
-.board-toolbar-btn--danger:hover { background:color-mix(in oklch,var(--color-danger) 12%,var(--bg-raised)); color:var(--text-primary); border-color:color-mix(in oklch,var(--color-danger) 55%,transparent); }
+.board-toolbar-btn--active { background:color-mix(in oklch,var(--accent-presence) 14%,transparent); border-color:color-mix(in oklch,var(--accent-presence) 40%,transparent); color:var(--text-primary); }
+.board-toolbar-btn--danger { color:var(--color-danger); border-color:color-mix(in oklch,var(--color-danger) 36%,transparent); }
+.board-toolbar-btn--danger:hover { background:color-mix(in oklch,var(--color-danger) 12%,transparent); color:var(--text-primary); border-color:color-mix(in oklch,var(--color-danger) 55%,transparent); }
 
 .board-clear-confirm { display:flex; gap:6px; }
 
-/* Tasks|Queue segment tabs (shared Tabs, variant=segment) — standardized to the
-   group-toggle footprint: same total height (control + 1px borders) and the
-   same 10px/12px button metrics as .board-group-toggle-btn, while keeping the
-   segment aesthetic (hairline container, rounded active pill). Same recipe as
-   .gh-compact-tabs below. */
-.board-header-tabs { flex:0 0 auto; height:calc(var(--board-control-h,28px) + 2px); padding:2px; }
-.board-header-tabs [role="tab"] { height:100%; padding:0 10px; font-size:12px; }
+/* Tasks|Queue segment tabs (shared Tabs, variant=segment) — matched to the
+   bordered segment groups: hairline container, rounded active pill. */
+.board-header-tabs { flex:0 0 auto; height:calc(var(--board-control-h,34px) + 2px); padding:2px; border-radius:6px; }
+.board-header-tabs [role="tab"] { height:100%; padding:0 14px; font-size:13px; }
 
-.board-group-toggle { display:flex; border:1px solid var(--border-strong); border-radius:var(--radius-control); overflow:hidden; }
-/* Leading zoom glyph so the compact D/W/M reads as a timeline zoom, not a range filter. */
-.board-group-toggle .cg-zoom-cell { display:flex; align-items:center; padding:0 4px 0 8px; background:var(--bg-raised); color:var(--text-muted); border-right:1px solid var(--border-strong); }
-.board-group-toggle-btn { display:flex; align-items:center; justify-content:center; padding:0 10px; height:var(--board-control-h,28px); background:var(--bg-raised); color:var(--text-muted); border:none; cursor:pointer; font-size:12px; font-weight:500; transition:background .12s,color .12s; white-space:nowrap; }
-.board-group-toggle-btn+.board-group-toggle-btn { border-left:1px solid var(--border-strong); }
-.board-group-toggle-btn:hover { background:var(--bg-hover); color:var(--text-secondary); }
+/* Bordered segment groups (grouping + view). Buttons share a hairline frame with
+   a filled active cell — matching the design's segmented control aesthetic. */
+.board-group-toggle { display:inline-flex; border:1px solid var(--border-hairline); border-radius:6px; overflow:hidden; }
+.board-group-toggle .cg-zoom-cell { display:flex; align-items:center; padding:0 4px 0 8px; background:transparent; color:var(--text-muted); border-right:1px solid var(--border-hairline); }
+.board-group-toggle-btn { display:flex; align-items:center; justify-content:center; padding:0 14px; height:var(--board-control-h,34px); background:transparent; color:var(--text-secondary); border:none; cursor:pointer; font-size:12.5px; font-weight:500; transition:background .12s,color .12s; white-space:nowrap; }
+.board-group-toggle-btn+.board-group-toggle-btn { border-left:1px solid var(--border-hairline); }
+.board-group-toggle-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-group-toggle-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:-1px; z-index:1; position:relative; }
-.board-group-toggle-btn--active { background:color-mix(in oklch,var(--accent-presence) 16%,var(--bg-raised)); color:var(--text-primary); }
-.board-group-toggle-btn--solo { border:1px solid var(--border-strong); border-radius:var(--radius-control); }
-.board-view-toggle { display:flex; border:1px solid var(--border-strong); border-radius:var(--radius-control); overflow:hidden; }
-.board-view-toggle-btn { display:flex; align-items:center; justify-content:center; width:var(--board-control-h,28px); height:var(--board-control-h,28px); background:var(--bg-raised); color:var(--text-muted); border:none; cursor:pointer; transition:background .12s,color .12s; }
-.board-view-toggle-btn+.board-view-toggle-btn { border-left:1px solid var(--border-strong); }
-.board-view-toggle-btn:hover { background:var(--bg-hover); color:var(--text-secondary); }
+.board-group-toggle-btn--active { background:var(--bg-elevated); color:var(--text-primary); }
+.board-group-toggle-btn--solo { border:1px solid var(--border-hairline); border-radius:6px; }
+.board-view-toggle { display:inline-flex; border:1px solid var(--border-hairline); border-radius:6px; overflow:hidden; }
+.board-view-toggle-btn { display:flex; align-items:center; justify-content:center; width:36px; height:var(--board-control-h,34px); background:transparent; color:var(--text-secondary); border:none; cursor:pointer; transition:background .12s,color .12s; }
+.board-view-toggle-btn+.board-view-toggle-btn { border-left:1px solid var(--border-hairline); }
+.board-view-toggle-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-view-toggle-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:-1px; z-index:1; position:relative; }
-.board-view-toggle-btn--active { background:color-mix(in oklch,var(--accent-presence) 16%,var(--bg-raised)); color:var(--text-primary); }
+.board-view-toggle-btn--active { background:var(--bg-elevated); color:var(--accent-presence); }
 
-.board-new-card-btn { height:var(--board-control-h,30px); padding:0 12px; border-radius:var(--radius-control); border:1px solid var(--border-strong); background:var(--accent-presence); color:var(--accent-presence-foreground); font-size:12px; font-weight:500; cursor:pointer; transition:background .12s,transform .1s; white-space:nowrap; }
-.board-new-card-btn:hover { background:color-mix(in oklch, var(--accent-presence) 85%, #000); transform:scale(1.02); }
+.board-new-card-btn { display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 15px; border-radius:6px; border:0; background:var(--primary); color:var(--primary-foreground); font-size:13px; font-weight:600; cursor:pointer; transition:filter .12s,transform .1s; white-space:nowrap; }
+.board-new-card-btn:hover { filter:brightness(1.08); }
 .board-new-card-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:2px; }
 
 @container board (max-width: 767px) {
@@ -80,33 +138,17 @@
     line-height: 1.15;
   }
 
-  .board-search-wrap {
+  .board-token-search {
     flex: 1 0 100%;
     min-width: 0;
-    max-width: none;
-    margin-left: 0;
   }
 
-  .board-search-icon {
-    left: 14px;
-  }
-
-  .board-search-input {
-    height: 44px;
-    padding-inline: 44px 36px;
-    border-radius: var(--radius-control);
-    font-size: 16px;
-  }
-
-  .board-search-clear {
-    right: 8px;
-    width: 32px;
-    height: 32px;
+  .board-token-field {
+    min-height: 44px;
   }
 
   .board-header-controls {
     width: 100%;
-    margin-left: 0;
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: var(--space-2);
