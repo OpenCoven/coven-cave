@@ -48,6 +48,7 @@ export const SUITES = {
     "src/lib/research-mission-client.test.ts",
     "src/lib/roving-list.test.ts",
     "src/lib/research-artifact-contract.test.ts",
+    "src/lib/research-findings-doc.test.ts",
     "src/lib/role-surface-state.test.ts",
     "src/components/role-surface-shell.test.ts",
     "src/components/role-surfaces/researcher-surface.test.ts",
