@@ -4,6 +4,46 @@ import fs from "node:fs";
 const read = (path) => fs.readFileSync(path, "utf8");
 const packageJson = JSON.parse(read("package.json"));
 
+function directBooleanValues(plistDictionary) {
+  const values = {};
+  const tokenPattern = /<dict>|<\/dict>|<key>([^<]+)<\/key>|<(true|false)\/>/g;
+  let depth = 0;
+  let pendingKey;
+
+  for (const token of plistDictionary.matchAll(tokenPattern)) {
+    if (token[0] === "<dict>") {
+      depth += 1;
+    } else if (token[0] === "</dict>") {
+      depth -= 1;
+    } else if (token[1] && depth === 1) {
+      pendingKey = token[1];
+    } else if (token[2] && depth === 1 && pendingKey) {
+      values[pendingKey] = token[2] === "true";
+      pendingKey = undefined;
+    }
+  }
+
+  return values;
+}
+
+function dictionaryForKey(plist, key) {
+  const keyPattern = new RegExp(`<key>${key}<\\/key>\\s*<dict>`);
+  const match = keyPattern.exec(plist);
+  assert.ok(match, `expected ${key} dictionary in plist`);
+
+  const dictionaryStart = plist.indexOf("<dict>", match.index);
+  const tokenPattern = /<dict>|<\/dict>/g;
+  tokenPattern.lastIndex = dictionaryStart;
+  let depth = 0;
+  let token;
+  while ((token = tokenPattern.exec(plist))) {
+    depth += token[0] === "<dict>" ? 1 : -1;
+    if (depth === 0) return plist.slice(dictionaryStart, tokenPattern.lastIndex);
+  }
+
+  throw new Error(`unterminated ${key} dictionary in plist`);
+}
+
 const infoPlist = read("src-tauri/gen/apple/app_iOS/Info.plist");
 assert.match(infoPlist, /<key>NSLocalNetworkUsageDescription<\/key>/);
 assert.match(infoPlist, /CovenCave connects to your private Tailscale network/);
@@ -22,15 +62,24 @@ const sourceInfoPlist = read("src-tauri/Info.ios.plist");
 assert.equal(sourceInfoPlist.trimEnd(), infoPlist.trimEnd());
 
 const shippingInfoPlist = read("apps/ios/CovenCave/CovenCave/Info.plist");
-assert.match(
-  shippingInfoPlist,
-  /<key>NSAppTransportSecurity<\/key>[\s\S]*?<key>NSAllowsLocalNetworking<\/key>\s*<true\/>/,
-  "the native iOS app must retain ATS's narrow local-network allowance for localhost and Tailscale IP connections",
+const shippingAts = dictionaryForKey(shippingInfoPlist, "NSAppTransportSecurity");
+assert.deepEqual(
+  directBooleanValues(shippingAts),
+  {
+    NSAllowsLocalNetworking: true,
+    NSAllowsArbitraryLoads: false,
+  },
+  "the native iOS app must retain only ATS's narrow local-network allowance and keep global arbitrary loads disabled",
 );
-assert.match(
-  shippingInfoPlist,
-  /<key>NSAllowsArbitraryLoads<\/key>\s*<false\/>/,
-  "the native iOS app must not disable ATS globally",
+assert.doesNotMatch(
+  shippingAts,
+  /<key>NSAllowsArbitraryLoads(?:ForMedia|InWebContent)?<\/key>\s*<true\/>/,
+  "the native iOS app must not enable any global ATS arbitrary-load exception",
+);
+assert.doesNotMatch(
+  shippingAts,
+  /<key>NSExceptionDomains<\/key>/,
+  "the native iOS app must not add ATS exception domains to the shipping configuration",
 );
 
 const entitlements = read("src-tauri/gen/apple/app_iOS/app_iOS.entitlements");
