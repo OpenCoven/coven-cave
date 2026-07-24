@@ -1,0 +1,121 @@
+/* Session trace overlay — the daemon-event timeline modal (.trace-*).
+ * Component-imported by session-trace-overlay.tsx (rendered from familiar
+ * analytics AND the familiars roster), so it code-splits with each consumer
+ * instead of riding the global bundle (#3264, cave-5rqi). */
+
+/* ── Session trace overlay — the daemon event timeline behind one session.
+   A marker rail keeps chronology readable; kind chips tint by tone. */
+.trace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.trace__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.trace__lede {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.trace-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: min(56vh, 520px);
+  overflow-y: auto;
+}
+.trace-item {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 10px;
+  padding: var(--space-2) 2px;
+}
+.trace-item__marker {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  justify-self: center;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--foreground) 30%, transparent);
+}
+/* The rail — each marker draws its own segment so the line never overshoots. */
+.trace-item:not(:last-child) .trace-item__marker::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1px;
+  height: 26px;
+  background: var(--border-hairline);
+}
+.trace-item--start .trace-item__marker { background: var(--accent-presence); }
+.trace-item--end .trace-item__marker { background: var(--color-success); }
+.trace-item--error .trace-item__marker { background: var(--color-danger); }
+.trace-item__body { min-width: 0; }
+.trace-item__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.trace-kind {
+  overflow: hidden;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trace-kind--start {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
+  color: var(--accent-presence);
+}
+.trace-kind--end {
+  border-color: color-mix(in oklch, var(--color-success) 40%, var(--border-hairline));
+  color: var(--color-success);
+}
+.trace-kind--error {
+  border-color: color-mix(in oklch, var(--color-danger) 40%, var(--border-hairline));
+  color: var(--color-danger);
+}
+.trace-item__time {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.trace-item__summary {
+  margin: var(--space-1) 0 0;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.trace-item__raw summary {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.trace-item__raw pre {
+  margin: 6px 0 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  max-height: 220px;
+  overflow: auto;
+}

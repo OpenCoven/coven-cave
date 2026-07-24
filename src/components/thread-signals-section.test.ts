@@ -6,7 +6,9 @@ import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
 const source = readFileSync(new URL("./thread-signals-section.tsx", import.meta.url), "utf8");
 const analyticsSource = readFileSync(new URL("./familiar-analytics-content.tsx", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// The .fa-* analytics surface CSS is component-imported (cave-5rqi / #3264),
+// so these rules live in src/styles/familiar-analytics.css, not the global facade.
+const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
 
 assert.match(source, /import \{ Button \}/, "ThreadSignalsSection review actions use the shared Button primitive");
 assert.doesNotMatch(source, /<button\b/, "ThreadSignalsSection should not hand-roll button controls");
@@ -207,12 +209,12 @@ describe("aggregateThreadSignals", () => {
       "the Thread signals section spans both fa-grid columns when it has data",
     );
     assert.match(
-      globals,
+      faCss,
       /\.fa-thread-table-wrap \{[^}]*max-height: 420px;[^}]*overflow: auto;/,
       "the signal table caps its height and scrolls",
     );
     assert.match(
-      globals,
+      faCss,
       /\.fa-thread-review-list \{[^}]*max-height: 240px;[^}]*overflow-y: auto;/,
       "the review queue caps its height and scrolls",
     );
@@ -304,7 +306,7 @@ describe("review queue UX — filters, dismiss with undo, keyboard parity", () =
 describe("signal table UX — sticky header, coarse-pointer overflow, empty discipline", () => {
   it("pins the header row while the wrap scrolls", () => {
     assert.match(
-      globals,
+      faCss,
       /\.fa-thread-table thead th \{[^}]*position: sticky;[^}]*top: 0;[^}]*background: var\(--bg-raised\);/,
       "thead cells stick to the top of the scrolling wrap on a solid token background",
     );

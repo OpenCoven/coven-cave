@@ -4,7 +4,9 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 const source = readFileSync(new URL("./session-trace-overlay.tsx", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// Trace-overlay CSS is component-imported (cave-5rqi / #3264), so its rules
+// live in src/styles/session-trace-overlay.css, not the global facade.
+const traceCss = readFileSync(new URL("../styles/session-trace-overlay.css", import.meta.url), "utf8");
 
 describe("SessionTraceOverlay", () => {
   it("is the UI consumer of the session events route", () => {
@@ -26,8 +28,8 @@ describe("SessionTraceOverlay", () => {
     assert.match(source, /trace-kind trace-kind--\$\{tone\}/, "kind chip carries the tone class");
     assert.match(source, /summarizeTracePayload\(event\.payload_json\)/, "payloads are distilled to one line");
     assert.match(source, /<details className="trace-item__raw">/, "full payloads stay reachable via disclosure");
-    assert.match(globals, /\.trace-kind--error\s*\{/, "error tone style exists");
-    assert.match(globals, /\.trace-item__marker\s*\{/, "timeline markers are styled");
+    assert.match(traceCss, /\.trace-kind--error\s*\{/, "error tone style exists");
+    assert.match(traceCss, /\.trace-item__marker\s*\{/, "timeline markers are styled");
   });
 
   it("pages with afterSeq instead of refetching from zero", () => {
