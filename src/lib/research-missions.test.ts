@@ -684,7 +684,15 @@ test("ensureStandardArtifactRefs appends missing standard refs after existing on
   for (const artifact of result.artifacts.slice(1)) {
     assert.equal(artifact.state, "working");
     assert.equal(artifact.iteration, 2, "backfilled refs adopt the latest iteration number");
-    assert.equal(artifact.updatedAt, "2026-07-24T01:00:00.000Z");
+    assert.equal(artifact.updatedAt, "2026-07-24T00:30:00.000Z", "backfilled refs stamped no fresher than the primary");
+  }
+});
+
+test("ensureStandardArtifactRefs stamps refs from createdAt when no primary exists", () => {
+  const result = ensureStandardArtifactRefs(missionWithArtifacts([]));
+  assert.equal(result.artifacts.length, 3);
+  for (const artifact of result.artifacts) {
+    assert.equal(artifact.updatedAt, "2026-07-24T00:00:00.000Z");
   }
 });
 

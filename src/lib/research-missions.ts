@@ -113,13 +113,15 @@ export const STANDARD_RESEARCH_ARTIFACTS: ReadonlyArray<
 /** Additive backfill for missions created before the standard refs existed:
  *  appends any standard ref whose key is absent. Never overwrites, never
  *  reorders (the primary working copy must stay first), identity when
- *  nothing is missing. */
+ *  nothing is missing; stamped no fresher than the primary so draft-picking
+ *  sorts stay stable. */
 export function ensureStandardArtifactRefs(mission: ResearchMission): ResearchMission {
   const missing = STANDARD_RESEARCH_ARTIFACTS.filter(
     (standard) => !mission.artifacts.some((artifact) => artifact.key === standard.key),
   );
   if (missing.length === 0) return mission;
   const iteration = mission.iterations.at(-1)?.number ?? 1;
+  const stampedAt = mission.artifacts[0]?.updatedAt ?? mission.createdAt;
   return {
     ...mission,
     artifacts: [
@@ -128,7 +130,7 @@ export function ensureStandardArtifactRefs(mission: ResearchMission): ResearchMi
         ...standard,
         iteration,
         state: "working" as const,
-        updatedAt: mission.updatedAt,
+        updatedAt: stampedAt,
       })),
     ],
   };
