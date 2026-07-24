@@ -298,7 +298,7 @@ async function publishFinalArtifacts(
         : artifact.kind === "source-ledger"
           ? renderSourceLedgerMarkdown(args.sources)
           : await args.deps.readMissionFile(args.mission.id, artifact.relativePath);
-      if (markdown === null) throw new Error("file missing");
+      if (!markdown) throw new Error("file missing");
       const content = validateResearchArtifactContent(artifact.kind, markdown);
       if (!content.ok) throw new Error(content.reason);
       const entry = await args.deps.publishKnowledge(researchKnowledgeEntry({

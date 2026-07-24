@@ -631,3 +631,54 @@ test("a missing standard file fails only that artifact", async () => {
   assert.equal(researchLog?.knowledgeId, undefined);
   assert.equal(published.length, 3);
 });
+
+test("complete skips rejected and already-published refs", async () => {
+  const missionId = "mission-actions"; // checkpointMission default id
+  const stored: { mission: ResearchMission } = {
+    mission: checkpointMission({
+      status: "running",
+      artifacts: [
+        { ...FOUR_REFS[0], state: "published", knowledgeId: `research-${missionId}-primary` },
+        { ...FOUR_REFS[1], state: "rejected", rejectionReason: "sparse" },
+        FOUR_REFS[2],
+        FOUR_REFS[3],
+      ],
+      iterations: [{
+        number: 2,
+        status: "running",
+        flowRunId: "run-1",
+        sessionId: "session-1",
+        startedAt: NOW.toISOString(),
+      }],
+    }),
+  };
+  const published: KnowledgeEntry[] = [];
+  const runner = makeResearchMissionRunner(completingRunDeps(stored, {
+    publishKnowledge: async (entry) => { published.push(entry); return entry; },
+  }));
+  const result = await runner.reconcile(stored.mission);
+  assert.equal(result.status, "completed");
+  assert.equal(result.lastError, undefined);
+  assert.deepEqual(
+    published.map((entry) => entry.id).sort(),
+    [
+      `research-${result.id}-research-log`,
+      `research-${result.id}-source-ledger`,
+    ],
+  );
+  const primary = result.artifacts.find((artifact) => artifact.key === "primary");
+  assert.equal(primary?.state, "published");
+  assert.equal(primary?.knowledgeId, `research-${missionId}-primary`);
+  const findings = result.artifacts.find((artifact) => artifact.key === "findings");
+  assert.equal(findings?.state, "rejected");
+  assert.equal(findings?.knowledgeId, undefined);
+  assert.equal(findings?.iteration, 1, "rejected refs are excluded from the bump");
+  const sourceLedger = result.artifacts.find((artifact) => artifact.key === "source-ledger");
+  assert.equal(sourceLedger?.state, "published");
+  assert.ok(sourceLedger?.knowledgeId);
+  assert.equal(sourceLedger?.iteration, 2);
+  const researchLog = result.artifacts.find((artifact) => artifact.key === "research-log");
+  assert.equal(researchLog?.state, "published");
+  assert.ok(researchLog?.knowledgeId);
+  assert.equal(researchLog?.iteration, 2);
+});
