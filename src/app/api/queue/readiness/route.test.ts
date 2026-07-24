@@ -38,6 +38,7 @@ try {
   let secondReadinessEntered = new Promise<void>((resolve) => { enteredSecondReadiness = resolve; });
   let secondReadinessReleased = new Promise<void>((resolve) => { releaseSecondReadiness = resolve; });
   let holdInit = false;
+  let leaveWorkspacePartial = false;
   let initStarted!: () => void;
   let releaseInit!: () => void;
   let initHasStarted = new Promise<void>((resolve) => { initStarted = resolve; });
@@ -77,7 +78,7 @@ try {
         initStarted();
         await initReleased;
       }
-      initialized = true;
+      if (!leaveWorkspacePartial) initialized = true;
       return { ok: true, stdout: "initialized", stderr: "" };
     },
     invalidateQueueProjectReadinessCache: () => { invalidations += 1; },
@@ -102,6 +103,20 @@ try {
   const changedSelectionResponse = await changedSelection;
   assert.equal(changedSelectionResponse.status, 409);
   assert.deepEqual(initRoots, [], "a delayed A Generate never runs bd init in B or the unrelated cwd");
+
+  // An init process can return successfully while leaving an unusable partial
+  // workspace. The route must return its failed readiness, not a false success.
+  selected = projectA;
+  initialized = false;
+  leaveWorkspacePartial = true;
+  holdSecondReadiness = false;
+  readinessCalls = 0;
+  const partialRepair = await POST(request({ action: "generate", projectId: projectA.id }));
+  assert.equal(partialRepair.status, 422, "Generate does not report success until the repaired workspace is ready");
+  assert.equal((await partialRepair.json()).readiness.code, "needs-beads");
+  leaveWorkspacePartial = false;
+  initRoots.length = 0;
+  invalidations = 0;
 
   // Two same-project Generate calls share one serialized init; the second
   // returns the first caller's ready result rather than a misleading conflict.

@@ -98,7 +98,14 @@ export function createQueueReadinessPostHandler(dependencies: QueueReadinessRout
           return NextResponse.json({ ok: false, error: result.error, readiness: current }, { status: result.status });
         }
         dependencies.invalidateQueueProjectReadinessCache();
-        return NextResponse.json({ ok: true, readiness: await dependencies.queueProjectReadiness() });
+        // `bd init` may create a partial .beads directory before exiting or
+        // leave one that still cannot answer `bd ready`. Never claim recovery
+        // succeeded until the same readiness contract proves it usable.
+        const repaired = await dependencies.queueProjectReadiness();
+        if (!repaired.ok) {
+          return NextResponse.json({ ok: false, error: repaired.message, readiness: repaired }, { status: 422 });
+        }
+        return NextResponse.json({ ok: true, readiness: repaired });
       });
     }
 
