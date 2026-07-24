@@ -41,7 +41,7 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-async function gotoWorkQueue(page: Page) {
+async function gotoWorkQueue(page: Page, onQueueRequest?: (request: import("@playwright/test").Request) => void) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "kitty");
@@ -61,10 +61,16 @@ async function gotoWorkQueue(page: Page) {
   // Regex matchers (not globs): glob `?` matches any char, so `/api/beads?…`
   // would also catch `/api/beads/prs`. These are unambiguous — /prs vs the
   // ?-queried ready list.
-  await page.route(/\/api\/beads\/prs/, (route) =>
-    route.fulfill({ json: { ok: true, open: OPEN_PRS, merged: MERGED_PRS } }),
-  );
-  await page.route(/\/api\/beads\?/, (route) => route.fulfill({ json: { ok: true, data: READY_BEADS } }));
+  await page.route(/\/api\/beads\/prs/, (route) => {
+    onQueueRequest?.(route.request());
+    return route.fulfill({ json: { ok: true, open: OPEN_PRS, merged: MERGED_PRS } });
+  });
+  await page.route(/\/api\/beads\?/, (route) => {
+    const request = route.request();
+    onQueueRequest?.(request);
+    if (new URL(request.url()).searchParams.get("mode") !== "ready") return route.fallback();
+    return route.fulfill({ json: { ok: true, data: READY_BEADS } });
+  });
 
   await page.goto("/");
   // The shell must be mounted before the mode-switch listener exists; dispatch
@@ -142,6 +148,21 @@ test.describe("familiar work queue (PR control tower)", () => {
     const noPr = page.locator(".fwq").getByRole("region", { name: "No open PR" });
     await noPr.getByRole("button", { name: "Claim", exact: true }).click();
     await expect.poll(() => claimBody).toEqual({ action: "claim", id: "cave-bb2", projectRoot: QUEUE_PROJECT.root });
+  });
+
+  test("selected Queue root scopes both list reads and detail", async ({ page }) => {
+    const readUrls: string[] = [];
+    await gotoWorkQueue(page, (request) => readUrls.push(request.url()));
+
+    await expect.poll(() => readUrls.filter((url) => url.includes("/api/beads") || url.includes("/api/beads/prs")).length).toBeGreaterThanOrEqual(2);
+    for (const url of readUrls.filter((url) => url.includes("/api/beads") || url.includes("/api/beads/prs"))) {
+      expect(new URL(url).searchParams.get("projectRoot")).toBe(QUEUE_PROJECT.root);
+    }
+
+    const fwq = page.locator(".fwq");
+    await fwq.getByRole("region", { name: "No open PR" }).getByRole("button", { name: "iOS profile avatar" }).click();
+    await expect(page.getByRole("dialog", { name: "Queue cave-bb2" })).toBeVisible();
+    await expect.poll(() => readUrls.some((url) => new URL(url).searchParams.get("mode") === "show")).toBe(true);
   });
 
   test("claiming for a familiar posts the selected assignee", async ({ page }) => {
