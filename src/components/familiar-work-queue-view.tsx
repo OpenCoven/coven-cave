@@ -12,6 +12,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { relativeTime } from "@/lib/relative-time";
+import { subscribeToQueueProjectSelection, type QueueProjectSelection } from "@/lib/queue-project-selection";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   buildWorkQueue,
@@ -211,11 +212,36 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const [evidenceAdded, setEvidenceAdded] = useState<Set<string>>(() => new Set());
   const loadSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const queueSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const restoreQueueFocusRef = useRef(false);
+  const announcedRef = useRef(false);
   // True once a load has landed WITH PR-bridge data. A later bridge failure is
   // then a refresh failure (keep the richer on-screen picture + inline retry
   // banner) rather than a degradation (which would silently drop PR lanes).
   const hadPrDataRef = useRef(false);
   const activeProjectRootRef = useRef<string | null>(null);
+
+  const resetForProject = useCallback((project: QueueProjectSelection | null) => {
+    const surface = queueSurfaceRef.current;
+    const focusedQueueControl = surface?.contains(document.activeElement) ?? false;
+    activeProjectRootRef.current = project?.root ?? null;
+    hadPrDataRef.current = false;
+    announcedRef.current = false;
+    setQueue(null);
+    setReadiness(null);
+    setReadinessFailure(null);
+    setError(null);
+    setBeadsDegraded(false);
+    setPrsDegraded(null);
+    setLastUpdated(null);
+    setBusyId(null);
+    setDetailId(null);
+    setEvidenceAdded(new Set());
+    if (focusedQueueControl) {
+      restoreQueueFocusRef.current = true;
+      surface?.focus({ preventScroll: true });
+    }
+  }, []);
   // Re-render ~once a minute so the header freshness and per-card ages stay
   // truthful between polls (the equality guard below keeps queue state stable,
   // so nothing else would tick them).
@@ -257,14 +283,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       if (activeProjectRootRef.current !== nextRoot) {
         // A selected repository is an isolation boundary. Do not retain cards,
         // failure state, detail selection, or evidence from the prior project.
-        activeProjectRootRef.current = nextRoot;
-        hadPrDataRef.current = false;
-        setQueue(null);
-        setBeadsDegraded(false);
-        setPrsDegraded(null);
-        setLastUpdated(null);
-        setDetailId(null);
-        setEvidenceAdded(new Set());
+        resetForProject(nextReadiness.project);
       }
       setReadiness(nextReadiness);
       if (!nextReadiness.ok || !nextReadiness.project) {
@@ -296,7 +315,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     } finally {
       if (seq === loadSeq.current) setHasLoaded(true);
     }
-  }, []);
+  }, [resetForProject]);
 
   const generateQueue = useCallback(async () => {
     if (generating) return;
@@ -307,15 +326,28 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "generate", projectId: readiness?.project?.id }),
       });
-      const json = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-      if (!response.ok || !json?.ok) throw new Error(json?.error || "Couldn't generate the Queue workspace");
+      const json = (await response.json().catch(() => null)) as { ok?: boolean; error?: string; readiness?: QueueReadiness } | null;
+      if (!response.ok || !json?.ok) {
+        // Another Cave window can change the persisted selection while this
+        // Generate request is in flight. The route returns that newer
+        // readiness on 409: adopt it immediately so a retry targets B, not
+        // the stale A button the user originally pressed.
+        if (response.status === 409 && json?.readiness) {
+          resetForProject(json.readiness.project);
+          setReadiness(json.readiness);
+          setError(json.error || json.readiness.message);
+          void load(true);
+          return;
+        }
+        throw new Error(json?.error || "Couldn't generate the Queue workspace");
+      }
       await load(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't generate the Queue workspace");
     } finally {
       setGenerating(false);
     }
-  }, [generating, load, readiness?.project?.id]);
+  }, [generating, load, readiness?.project?.id, resetForProject]);
 
   useEffect(() => {
     void load();
@@ -323,31 +355,16 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   }, [load]);
 
   useEffect(() => {
-    const onProjectSelected = (event: Event) => {
-      const selected = event as CustomEvent<{ project?: { root?: string } | null }>;
+    return subscribeToQueueProjectSelection((project) => {
       // Selection is an isolation boundary even if its readiness request is
       // unavailable. Clear all prior-project controls synchronously so a
       // transient B failure cannot leave actionable cards from A on screen.
-      activeProjectRootRef.current = selected.detail?.project?.root ?? null;
-      hadPrDataRef.current = false;
-      setQueue(null);
-      setReadiness(null);
-      setReadinessFailure(null);
-      setError(null);
-      setBeadsDegraded(false);
-      setPrsDegraded(null);
-      setLastUpdated(null);
-      setBusyId(null);
-      setDetailId(null);
-      setEvidenceAdded(new Set());
+      resetForProject(project);
       void load(true);
-    };
-    window.addEventListener("cave:queue-project-selected", onProjectSelected);
-    return () => window.removeEventListener("cave:queue-project-selected", onProjectSelected);
-  }, [load]);
+    });
+  }, [load, resetForProject]);
 
   // Announce the actionable count once the first load settles.
-  const announcedRef = useRef(false);
   useEffect(() => {
     if (!hasLoaded || announcedRef.current || !queue) return;
     announcedRef.current = true;
@@ -357,6 +374,15 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         : `Queue loaded: ${queue.actionable} actionable of ${queue.total}.`,
     );
   }, [hasLoaded, queue, announce]);
+
+  // The selected project can replace the focused row action with a loading
+  // state. Keep keyboard focus on the Queue surface, then restore it there
+  // after the new project settles instead of dropping users onto document body.
+  useEffect(() => {
+    if (!restoreQueueFocusRef.current || !hasLoaded || (!queue && !error)) return;
+    restoreQueueFocusRef.current = false;
+    queueSurfaceRef.current?.focus({ preventScroll: true });
+  }, [hasLoaded, queue, error]);
 
   usePausablePoll(() => void load(true), 30_000, { pauseWhileInputActive: true });
 
@@ -560,11 +586,12 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   // gap rather than dereferencing the removed Queue or retaining its controls.
   if (!hasLoaded || (!queue && !error)) {
     return (
-      <div className="fwq" aria-busy>
+      <div ref={queueSurfaceRef} className="fwq" tabIndex={-1} aria-busy>
         <header className="surface-compact-header">
           {embedded ? null : <h1 className="surface-compact-title">Queue</h1>}
         </header>
         <div className="fwq-body">
+          <p role="status" aria-live="polite" className="sr-only">Loading the selected Queue project…</p>
           <SkeletonRows count={6} />
         </div>
       </div>
@@ -583,7 +610,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       || readiness?.code === "project-storage-error";
     const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && !canGenerate && !selectionRemediable && readiness?.project !== null;
     return (
-      <div className="fwq">
+      <div ref={queueSurfaceRef} className="fwq" tabIndex={-1}>
         <div className="fwq-body">
           <EmptyState
             icon="ph:warning-circle"
@@ -614,7 +641,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const q = queue!;
 
   return (
-    <div className="fwq">
+    <div ref={queueSurfaceRef} className="fwq" tabIndex={-1}>
       {/* Meta row (queue redesign) — the live summary with a truthful
           "updated Xm ago" readout, Refresh on the right. The surface title +
           Tasks/Queue tabs live in the hosting board header (embedded). */}

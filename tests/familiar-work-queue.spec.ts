@@ -195,6 +195,108 @@ test.describe("familiar work queue (PR control tower)", () => {
     expect(aRootMutation).toBe(false);
   });
 
+  test("announces a project-switch reload and keeps Queue focus stable", async ({ page }) => {
+    let selectedProject = QUEUE_PROJECT;
+    let releaseBReadiness!: () => void;
+    const bReadiness = new Promise<void>((resolve) => { releaseBReadiness = resolve; });
+    await page.route("**/api/queue/readiness", async (route) => {
+      if (selectedProject.id === QUEUE_PROJECT_B.id) await bReadiness;
+      return route.fulfill({ json: { ok: true, readiness: { ...QUEUE_READINESS, project: selectedProject } } });
+    });
+    await gotoWorkQueue(page);
+
+    const fwq = page.locator(".fwq");
+    const claim = fwq.getByRole("region", { name: "No open PR" }).getByRole("button", { name: "Claim", exact: true });
+    await claim.focus();
+    selectedProject = QUEUE_PROJECT_B;
+    await page.evaluate((project) => window.dispatchEvent(new CustomEvent("cave:queue-project-selected", { detail: { project } })), QUEUE_PROJECT_B);
+
+    await expect(fwq.getByRole("status")).toHaveText("Loading the selected Queue project…");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
+    releaseBReadiness();
+    await expect(fwq.getByRole("region", { name: "No open PR" })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.activeElement?.className)).toContain("fwq");
+  });
+
+  test("a Generate conflict adopts the other window's selected project before retrying", async ({ page }) => {
+    let selectedProject = QUEUE_PROJECT;
+    const generateBodies: Array<{ projectId?: string }> = [];
+    const needsBeads = (project: typeof QUEUE_PROJECT) => ({
+      ok: false,
+      code: "needs-beads",
+      message: `Generate Queue for ${project.name}.`,
+      canGenerate: true,
+      project,
+    });
+    await page.route("**/api/queue/readiness", async (route) => {
+      if (route.request().method() === "GET") {
+        return route.fulfill({ json: { ok: true, readiness: needsBeads(selectedProject) } });
+      }
+      const body = route.request().postDataJSON();
+      if (body.action !== "generate") return route.fallback();
+      generateBodies.push(body);
+      if (generateBodies.length === 1) {
+        selectedProject = QUEUE_PROJECT_B;
+        return route.fulfill({
+          status: 409,
+          json: { ok: false, error: "Queue project changed in another Cave window.", readiness: needsBeads(QUEUE_PROJECT_B) },
+        });
+      }
+      return route.fulfill({ json: { ok: true, readiness: { ...needsBeads(QUEUE_PROJECT_B), ok: true, code: "ready", canGenerate: false } } });
+    });
+    await gotoWorkQueue(page);
+
+    const fwq = page.locator(".fwq");
+    await fwq.getByRole("button", { name: "Generate" }).click();
+    await expect.poll(() => generateBodies).toHaveLength(1);
+    await expect(fwq).toContainText(QUEUE_PROJECT_B.name);
+    await fwq.getByRole("button", { name: "Generate" }).click();
+    await expect.poll(() => generateBodies).toHaveLength(2);
+    expect(generateBodies.map((body) => body.projectId)).toEqual([QUEUE_PROJECT.id, QUEUE_PROJECT_B.id]);
+  });
+
+  test("a Queue project selection broadcasts to another mounted Cave window", async ({ browser }) => {
+    const context = await browser.newContext();
+    const pageA = await context.newPage();
+    const pageB = await context.newPage();
+    let selectedProject = QUEUE_PROJECT;
+    let releaseBReadiness!: () => void;
+    const bReadiness = new Promise<void>((resolve) => { releaseBReadiness = resolve; });
+    try {
+      await gotoWorkQueue(pageA);
+      await gotoWorkQueue(pageB);
+      for (const page of [pageA, pageB]) {
+        await page.route("**/api/queue/readiness", async (route) => {
+          if (selectedProject.id === QUEUE_PROJECT_B.id) await bReadiness;
+          return route.fulfill({ json: { ok: true, readiness: { ...QUEUE_READINESS, project: selectedProject } } });
+        });
+      }
+      await pageB.route(/\/api\/beads\?/, (route) => {
+        if (new URL(route.request().url()).searchParams.get("projectRoot") !== QUEUE_PROJECT_B.root) return route.fallback();
+        return route.fulfill({
+          json: {
+            ok: true,
+            data: [{ id: "cave-project-b", title: "Only project B", priority: 1, status: "open", issue_type: "task", labels: [], updated_at: null, comment_count: 0 }],
+          },
+        });
+      });
+
+      const queueB = pageB.locator(".fwq");
+      await expect(queueB.getByText("iOS profile avatar")).toBeVisible();
+      selectedProject = QUEUE_PROJECT_B;
+      await pageA.evaluate((project) => {
+        new BroadcastChannel("cave:queue-project-selection").postMessage({ type: "queue-project-selected", project });
+      }, QUEUE_PROJECT_B);
+
+      await expect(queueB.getByRole("status")).toHaveText("Loading the selected Queue project…");
+      await expect(queueB.getByText("iOS profile avatar")).toHaveCount(0);
+      releaseBReadiness();
+      await expect(queueB.getByText("Only project B")).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
   test("claiming for a familiar posts the selected assignee", async ({ page }) => {
     let claimBody: unknown = null;
     await page.route("**/api/beads", async (route) => {
