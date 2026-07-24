@@ -15,7 +15,7 @@
 **Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
-- Required status checks (all must pass): `Frontend build`, `Rust check`, `CodeQL`, `E2E (Playwright)`. (Require the **aggregate** `CodeQL` check, not the individual `Analyze (<lang>)` jobs — those are matched ambiguously by branch protection and get stuck as "expected", which blocks every PR.) The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
+- Required status checks (all must pass): `Frontend build`, `Rust check`, `E2E (Playwright)`, `Cross-environment required`, `Sidecar runtime required`, `CodeQL`. (Require the **aggregate** `CodeQL` check, not the individual `Analyze (<lang>)` jobs — those are matched ambiguously by branch protection and get stuck as "expected", which blocks every PR. The aggregate `CodeQL` context resolves fast on every PR — `pass` in ~2s even when the per-language analyses skip — so it never hangs a PR.) `CodeQL` is enforced in **both** layers: ruleset `19123333` ("main protection (checks + CodeQL)") and classic branch protection (re-added 2026-07-24, cave-1vyi). The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via `page.route(...)` API mocks rather than a live daemon.
 - `enforce_admins = true` — admins are **not** exempt.
 - Force-pushes and deletion of `main` are blocked.
 
