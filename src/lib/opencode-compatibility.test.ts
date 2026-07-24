@@ -85,6 +85,22 @@ const changedSecretShape = redactedOpenCodeEventFingerprint({
   part: { input: { token: "another-secret", path: "/other" } },
 });
 assert.equal(secretShape, changedSecretShape, "diagnostic fingerprints are value-free");
+assert.equal(
+  redactedOpenCodeEventFingerprint({ type: "future.event", part: { input: { "C:/private/token": "secret" } } }),
+  redactedOpenCodeEventFingerprint({ type: "future.event", part: { input: { "/other/credential": "other-secret" } } }),
+  "diagnostic fingerprints do not retain untrusted payload keys",
+);
 assert.match(secretShape, /^[a-f0-9]{16}$/);
+
+const oversized = await loadOpenCodeSchemaBundle({
+  cacheFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now + 21 * 60 * 60 * 1000,
+  fetch: async () => new Response("x".repeat(300 * 1024), { status: 200 }),
+});
+assert.equal(oversized.source, "cache");
+assert.equal(oversized.diagnostic, "schema-registry-refresh-rejected", "oversized refreshes preserve the verified cache");
+assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 2);
 
 console.log("opencode-compatibility.test.ts: ok");
