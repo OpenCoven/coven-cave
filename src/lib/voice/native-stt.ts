@@ -17,6 +17,7 @@
 import type { SpeechEars, SpeechEarsFactory, SpeechEarsHandlers } from "./speech-loop.ts";
 import type { VoiceEarsEngine } from "./types.ts";
 import { VoiceConnectError } from "./types.ts";
+import { createSidecarWhisperEars, sidecarWhisperAvailable } from "./sidecar-whisper-ears.ts";
 
 /** Event channel mirrored from src-tauri/src/speech.rs. */
 export const STT_EVENT = "speech-stt:event";
@@ -234,7 +235,7 @@ export function createNativeSttEars(
 /** Preferred ears plus which engine mode they run on (for honest call UI). */
 export type PreferredEars = {
   factory: SpeechEarsFactory;
-  engine: Extract<VoiceEarsEngine, "native-on-device" | "native-dictation">;
+  engine: Extract<VoiceEarsEngine, "sidecar-whisper" | "native-on-device" | "native-dictation">;
 };
 
 /** The hybrid on-device policy (cave-vpe1) as a pure, pinnable decision:
@@ -262,10 +263,25 @@ export function selectNativeEarsEngine(
  * dictation service.
  */
 export async function resolvePreferredEars(
-  opts: { requireOnDevice?: boolean } = {},
+  opts: { requireOnDevice?: boolean; allowSidecar?: boolean } = {},
 ): Promise<PreferredEars | undefined> {
+  // A verified sidecar model is fully local on every supported platform, and
+  // deliberately outranks the Apple-specific recognizer for consistent voice
+  // behavior. Do not probe this during SSR: the browser's authenticated fetch
+  // is what reaches a packaged sidecar.
+  if (opts.allowSidecar !== false && typeof window !== "undefined" && await sidecarWhisperAvailable()) {
+    return { factory: createSidecarWhisperEars(), engine: "sidecar-whisper" };
+  }
   const bridge = await loadNativeSttBridge();
-  if (!bridge) return undefined;
+  if (!bridge) {
+    if (opts.requireOnDevice) {
+      throw new VoiceConnectError(
+        "stt_on_device_unavailable",
+        "Download a local Whisper model in Settings to use Local voice on this device.",
+      );
+    }
+    return undefined;
+  }
   const lang = typeof navigator !== "undefined" ? navigator.language || undefined : undefined;
   const availability = await nativeSttAvailability(bridge, lang);
   if (availability?.supported !== true) return undefined;

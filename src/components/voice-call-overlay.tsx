@@ -300,6 +300,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
 // promise kept; the other modes tell the user their audio rides a service.
 function earsEngineLabel(engine: VoiceEarsEngine): string {
   switch (engine) {
+    case "sidecar-whisper": return "Hearing via local Whisper";
     case "native-on-device": return "Hearing on-device";
     case "native-dictation": return "Hearing via Apple dictation";
     case "web-speech": return "Hearing via browser speech";
