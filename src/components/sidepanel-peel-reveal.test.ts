@@ -129,4 +129,19 @@ assert.match(
 assert.match(vendored, /peel-react\.json/, "provenance cites the registry item");
 assert.match(vendored, /export default Peel;/, "vendored Peel default-exports");
 
+const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
+
+// The peel arms exactly when the interactive hover-peek is armed, and the
+// under layer is the same nav node the sidebar aside renders.
+assert.match(
+  shell,
+  /<ShellPeelReveal active=\{navPeekEnabled\} under=\{nav\}>/,
+  "shell arms the peel with navPeekEnabled and feeds it the nav",
+);
+assert.match(
+  shell,
+  /import \{ ShellPeelReveal \} from "@\/components\/shell-peel-reveal";/,
+  "shell imports the wrapper",
+);
+
 console.log("sidepanel-peel-reveal.test.ts: ok");

@@ -20,6 +20,7 @@ import { useIsMobile } from "@/lib/use-viewport";
 import { isMacDesktopShell } from "@/lib/tauri-platform";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
+import { ShellPeelReveal } from "@/components/shell-peel-reveal";
 import {
   getPanelShortcutBindings,
   labelPanelShortcut,
@@ -878,20 +879,25 @@ function ShellInner({
       )}
       <Panel id="detail" className="shell-detail-panel">
         <main className="shell-detail" id="shell-main-content" tabIndex={-1} ref={detailElRef}>
-          <UpdateBannerTrigger />
-          <OpenCovenToolsBannerTrigger />
-          <CaveHomeMigrationBannerTrigger />
-          <ShellBannerStrip />
-          <DetailSplitHost
-            primary={detail}
-            secondaryTiles={splitTiles}
-            secondarySide={splitSide}
-            onClose={() => onCloseSplit?.()}
-            onCloseTile={(id) => onCloseSplitTile?.(id)}
-            onPromoteTile={(id) => onPromoteSplitTile?.(id)}
-            onDropPage={(mode, side) => onDropSplitPage?.(mode, side)}
-            enableDrop={!isMobile}
-          />
+          {/* Peel-reveal (cave-3vgd): decorative page-curl toward the collapsed
+              rail on HTML-in-canvas browsers; display:contents pass-through
+              everywhere else. The interactive reveal remains the hover-peek. */}
+          <ShellPeelReveal active={navPeekEnabled} under={nav}>
+            <UpdateBannerTrigger />
+            <OpenCovenToolsBannerTrigger />
+            <CaveHomeMigrationBannerTrigger />
+            <ShellBannerStrip />
+            <DetailSplitHost
+              primary={detail}
+              secondaryTiles={splitTiles}
+              secondarySide={splitSide}
+              onClose={() => onCloseSplit?.()}
+              onCloseTile={(id) => onCloseSplitTile?.(id)}
+              onPromoteTile={(id) => onPromoteSplitTile?.(id)}
+              onDropPage={(mode, side) => onDropSplitPage?.(mode, side)}
+              enableDrop={!isMobile}
+            />
+          </ShellPeelReveal>
         </main>
       </Panel>
     </Group>
