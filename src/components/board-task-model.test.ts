@@ -43,6 +43,21 @@ assert.match(
 assert.match(taskRoute, /card\.modelOverride && card\.modelOverrideHarness === binding\.harness/, "new task sessions only use an override from the familiar's current runtime");
 assert.match(taskRoute, /updateCard\(card\.id, \{ modelOverride: null, modelOverrideHarness: null \}\)/, "a stale task model is cleared before launch");
 assert.match(taskRoute, /model: taskModelOverride \?\? binding\.model/, "new task sessions otherwise use the familiar default model");
+// cave-aikv: board task sessions must never spawn an immortal, never-attached
+// interactive harness TUI. A local copilot task takes the native Chat bridge
+// (its daemon PTY is the worst offender + nonInteractive mangles its prompt);
+// every other daemon task launches non-interactively so the event stream is the
+// prompt's output, not a fullscreen TUI.
+assert.match(
+  taskRoute,
+  /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]{0,80}return reserveNativeChatTask\(\)/,
+  "a local copilot task takes the native bridge instead of an orphaned daemon TUI",
+);
+assert.match(
+  taskRoute,
+  /binding\.harness === "copilot" \? \{\} : \{ launchMode: "nonInteractive" \}/,
+  "non-copilot daemon task sessions launch non-interactively (no immortal TUI)",
+);
 assert.match(inspector, /const pendingModelSaveRef = useRef<Promise<boolean> \| null>\(null\)/, "the inspector tracks a pending model save");
 assert.match(inspector, /const previous = pendingModelSaveRef\.current \?\? Promise\.resolve\(true\)/, "model saves serialize back-to-back blur and familiar changes");
 assert.match(inspector, /await \(pendingModelSaveRef\.current \?\? Promise\.resolve\(true\)\)/, "starting work waits for the pending model save");
