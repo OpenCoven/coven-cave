@@ -263,16 +263,25 @@ export function ResearchMissionDetail({
   // Copies the mission workspace's on-disk path so an operator can open the
   // working files directly. copyText falls back to execCommand outside
   // secure contexts (the packaged Tauri webview), so the confirmation only
-  // shows on a real, verified copy.
+  // shows on a real, verified copy. A mission switch mid-fetch/copy discards
+  // the settle instead of planting the confirmation on the wrong mission.
   const copyWorkspacePath = async () => {
+    const startedFor = mission.id;
+    const stillCurrent = () => missionIdRef.current === startedFor;
     const workspacePath = await fetchResearchWorkspacePath(mission.id);
+    if (!stillCurrent()) return;
     if (!workspacePath) {
-      announce("Workspace path could not be resolved.");
+      const message = "Workspace path could not be resolved.";
+      setActionError(message);
+      announce(message);
       return;
     }
     const copied = await copyText(workspacePath);
+    if (!stillCurrent()) return;
     if (!copied) {
-      announce("Workspace path could not be copied.");
+      const message = "Workspace path could not be copied.";
+      setActionError(message);
+      announce(message);
       return;
     }
     setWorkspaceCopied(true);
@@ -526,7 +535,7 @@ export function ResearchMissionDetail({
               <span className="research-desk-block__kicker">Saved</span>
               <p className="research-desk-block__note">
                 {mission.status === "completed"
-                  ? `${mission.artifacts.filter((artifact) => artifact.knowledgeId).length} of ${mission.artifacts.filter((artifact) => artifact.state !== "rejected").length} artifacts published to the Grimoire.`
+                  ? `${mission.artifacts.filter((artifact) => artifact.state !== "rejected" && artifact.knowledgeId).length} of ${mission.artifacts.filter((artifact) => artifact.state !== "rejected").length} artifacts published to the Grimoire.`
                   : `${mission.artifacts.filter((artifact) => artifact.state === "working").length} working files saved in the mission workspace.`}
               </p>
               <button

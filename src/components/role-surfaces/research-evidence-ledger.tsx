@@ -59,6 +59,9 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
   const visibleSources = sourceFilter === "all"
     ? mission.sources
     : mission.sources.filter((source) => source.status === sourceFilter);
+  // Publishing is offered on settled missions only — a cancelled/archived run
+  // should not gain a fresh Grimoire entry after the fact.
+  const settled = ["checkpoint", "completed", "failed"].includes(mission.status);
 
   /** Failures arrive as { ok: false } from the hook; the catch is transport
    *  defense only — a throw skips the ok branch, so a failure is never
@@ -87,6 +90,11 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
     } finally {
       if (stillCurrent()) setBusy(false);
     }
+  };
+
+  const publishArtifact = async (artifactKey: string) => {
+    const ok = await act({ action: "publish-artifact", artifactKey });
+    if (ok) announce("Artifact published to the Grimoire.");
   };
 
   const attach = async (event: React.FormEvent) => {
@@ -154,10 +162,7 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
                   mission={mission}
                   artifact={artifact}
                   busy={busy}
-                  onPublish={async (artifactKey) => {
-                    const ok = await act({ action: "publish-artifact", artifactKey });
-                    if (ok) announce("Artifact published to the Grimoire.");
-                  }}
+                  onPublish={settled ? publishArtifact : undefined}
                 />
                 {artifact.state !== "rejected" ? (
                   <details className="research-artifact-reject">
