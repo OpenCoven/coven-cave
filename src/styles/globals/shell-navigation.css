@@ -145,6 +145,41 @@
   to { opacity: 1; transform: translateX(0); }
 }
 
+/* Peel-reveal (cave-3vgd): progressive-enhancement page-curl around the
+   detail pane, revealing the sidebar when the collapsed rail is armed.
+   Plain mode (every browser without experimental HTML-in-canvas, and any
+   reduced-motion user) is layout-invisible via display: contents. Live mode
+   becomes the box the vendored Peel canvases fill; .shell-peel-scroll
+   reproduces .shell-detail's scroll contract because the vendor's content
+   wrapper is overflow: hidden. The under sheet is opaque (--bg-raised) and
+   232px wide to hand off seamlessly into the .shell-nav--peek overlay. */
+.shell-peel-reveal--plain,
+.shell-peel-reveal--plain > .shell-peel-scroll {
+  display: contents;
+}
+.shell-peel-reveal--live {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.shell-peel-reveal--live .shell-peel-fill {
+  height: 100%;
+}
+.shell-peel-reveal--live .shell-peel-scroll {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.shell-peel-under {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 232px;
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border-hairline);
+}
+
 /* Code sidebar collapsed rail — when the nav panel collapses to the 56px rail,
    show a vertical "Sessions" label instead of a bare clipped icon (mirrors the
    comux Details/Preview rails). The full sidebar is hidden; the rail reopens the
