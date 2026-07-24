@@ -95,7 +95,14 @@ export const surfacePreferenceSpecs = {
     section: enumSpec("marketplace.section", "browse", ["browse", "crafts", "skills", "build"] as const),
     category: stringSpec("marketplace.category", "All"),
     kind: enumSpec("marketplace.kind", "all", ["all", "mcp", "api", "skill", "prompt", "craft", "knowledge-pack"] as const),
+    // Explore's install/setup lifecycle filter (rail "Status" segment).
+    status: enumSpec("marketplace.status", "all", ["all", "installed", "needs-setup"] as const),
+    // Explore's skill "Topics" collection filter — a separate durable scope
+    // from `category` because the rail swaps Categories↔Topics by active type.
+    topic: stringSpec("marketplace.topic", "all"),
     sort: enumSpec("marketplace.sort", "recommended", ["recommended", "name", "installed"] as const),
+    // Card layout toggle for the Explore grid.
+    view: enumSpec("marketplace.view", "grid", ["grid", "rows"] as const),
     collection: nullableStringSpec("marketplace.collection"),
   },
   grimoire: {

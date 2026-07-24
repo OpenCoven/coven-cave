@@ -15,7 +15,7 @@ assert.match(model, /\{ id: "crafts", label: "Crafts"/, "Crafts is a first-class
 assert.match(model, /\{ id: "craft", label: "Crafts" \}/, "Browse can filter catalog entries by Craft kind");
 assert.match(model, /\{ id: "knowledge-pack", label: "Knowledge packs" \}/, "Browse can filter catalog entries by Knowledge pack kind");
 assert.match(view, /id="marketplace-panel-crafts"/, "Crafts section has a labelled tabpanel");
-assert.match(view, /selectSection\("crafts"\)/, "Browse setup rail links to Crafts");
+assert.match(view, /onChange=\{selectSection\}/, "the section tabs route between Explore, Crafts, and Build");
 assert.match(view, /Familiar[\s\S]*Role[\s\S]*Craft[\s\S]*Capabilities/, "Crafts section explains the loadout hierarchy");
 assert.match(view, /Create Craft/, "Crafts section exposes local Craft creation");
 assert.match(view, /setCreatingCraft\(true\)/, "Create Craft opens the authoring drawer");

@@ -308,6 +308,7 @@ export const SUITES = {
     "src/lib/skill-caveman.test.ts",
     "src/lib/skill-dryrun.test.ts",
     "src/lib/skill-agent-prompt.test.ts",
+    "src/lib/skill-directory.test.ts",
     "src/components/terminal-scope.test.ts",
     "src/components/skill-browser.test.ts",
     "src/components/top-bar.test.ts",
