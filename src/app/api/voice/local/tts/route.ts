@@ -34,7 +34,7 @@ const readinessCache = new Map<string, CachedReadiness>();
 
 class LocalTtsBodyTooLargeError extends Error {}
 
-async function parseLocalTtsRequestBody(req: Request): Promise<unknown> {
+async function parseLocalTtsJsonBody(req: Request): Promise<unknown> {
   const contentLength = req.headers.get("content-length");
   if (contentLength) {
     const declaredBytes = Number(contentLength);
@@ -109,7 +109,7 @@ export async function handleLocalTtsPost(
 ): Promise<Response> {
   let body: unknown;
   try {
-    body = await parseLocalTtsRequestBody(req);
+    body = await parseLocalTtsJsonBody(req);
   } catch (error) {
     if (error instanceof LocalTtsBodyTooLargeError) {
       return NextResponse.json(

@@ -309,7 +309,7 @@ for (const contract of contracts) {
 
   const readsJson = contract.optionalJsonBody
     ? /await req\.text\(\)/.test(effectiveSource) && /JSON\.parse\(/.test(effectiveSource)
-    : /req\.json\(\)|readJsonBody[<(]/.test(effectiveSource);
+    : /req\.json\(\)|readJsonBody[<(]|parse[A-Za-z]*JsonBody[<(]/.test(effectiveSource);
   assert.equal(readsJson, contract.readsJson === true, `${contract.route} JSON body contract changed`);
 
   if (contract.invalidJson === "guarded") {

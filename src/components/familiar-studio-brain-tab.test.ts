@@ -217,8 +217,18 @@ assert.match(
 );
 assert.match(
   source,
-  /fetch\("\/api\/voice\/engines"\)/,
+  /fetch\("\/api\/voice\/engines"/,
   "local voice choices load from the sidecar engine-readiness endpoint",
+);
+assert.match(
+  source,
+  /const controller = new AbortController\(\);[\s\S]{0,300}LOCAL_VOICE_CATALOG_TIMEOUT_MS[\s\S]{0,300}fetch\("\/api\/voice\/engines", \{ signal: controller\.signal \}\)/,
+  "local voice catalog loading has a bounded abortable request",
+);
+assert.match(
+  source,
+  /window\.clearTimeout\(timeout\);[\s\S]{0,100}controller\.abort\(\);/,
+  "leaving the local voice picker aborts its readiness request",
 );
 assert.match(
   source,

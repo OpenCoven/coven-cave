@@ -207,6 +207,16 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   assert.match(launcher, /LD_LIBRARY_PATH/, "Linux sidecars must load Whisper's bundled shared libraries");
   assert.match(
     launcher,
+    /if !cfg!\(debug_assertions\) && !piper\.exists\(\)/,
+    "only packaged builds may fail startup when the managed Piper runtime is missing",
+  );
+  assert.match(
+    launcher,
+    /command\.env_remove\("COVEN_CAVE_BUNDLE"\)/,
+    "development must leave the Node runner free to use its explicit/PATH Piper fallback",
+  );
+  assert.match(
+    launcher,
     /sidecar_archive::prepare_sidecar_runtime\(app, &resource_dir\)/,
     "Windows launcher must prepare the verified runtime cache before starting Node",
   );

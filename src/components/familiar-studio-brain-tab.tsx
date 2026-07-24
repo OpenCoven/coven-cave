@@ -41,6 +41,7 @@ import { loadNativeSttBridge, nativeSttAvailability } from "@/lib/voice/native-s
 import { isLocalTtsVoiceName } from "@/lib/voice/local-tts";
 
 type Props = { familiar: ResolvedFamiliar };
+const LOCAL_VOICE_CATALOG_TIMEOUT_MS = 15_000;
 
 /**
  * Recognition-engine readiness for the Local (on-device) provider, probed at
@@ -472,10 +473,15 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(
+      () => controller.abort(),
+      LOCAL_VOICE_CATALOG_TIMEOUT_MS,
+    );
     setLocalVoiceCatalog((catalog) => ({ ...catalog, status: "loading" }));
     (async () => {
       try {
-        const res = await fetch("/api/voice/engines");
+        const res = await fetch("/api/voice/engines", { signal: controller.signal });
         const json = await res.json().catch(() => null);
         if (cancelled) return;
         if (!res.ok || !json?.ok || !Array.isArray(json.tts)) {
@@ -512,10 +518,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               "Couldn't reach the local voice engine — open Settings, then try again.",
           });
         }
+      } finally {
+        window.clearTimeout(timeout);
       }
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
   }, [draftVoiceProvider, localVoiceCatalogAttempt]);
 
