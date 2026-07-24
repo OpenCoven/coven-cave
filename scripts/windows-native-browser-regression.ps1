@@ -18,7 +18,7 @@ direct WRY_WEBVIEW children of the main HWND.
 .EXAMPLE
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-browser-regression.ps1 `
   -Executable C:\candidate\app.exe -Cycles 12 -ExpectPackagedSidecar `
-  -MinimumDevicePixelRatio 1.25
+  -ExpectedDevicePixelRatio 1.25
 
 .EXAMPLE
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-browser-regression.ps1 `
@@ -30,7 +30,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-brows
 
 .EXAMPLE
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-browser-regression.ps1 `
-  -Executable C:\candidate\app.exe -MinimumDevicePixelRatio 1.25
+  -Executable C:\candidate\app.exe -ExpectedDevicePixelRatio 1.25
 #>
 
 [CmdletBinding()]
@@ -73,8 +73,11 @@ param(
     [ValidateRange(0, 1)]
     [int]$ClientContainmentTolerancePx = 1,
 
-    [ValidateRange(1.0, 4.0)]
-    [double]$MinimumDevicePixelRatio = 1.25,
+    [ValidateSet(1.25, 1.5)]
+    [double]$ExpectedDevicePixelRatio = 1.25,
+
+    [ValidateRange(0.001, 0.1)]
+    [double]$DevicePixelRatioTolerance = 0.01,
 
     [switch]$ExpectPackagedSidecar,
     [switch]$ExpectPtyDescendant,
@@ -226,7 +229,7 @@ $report = [ordered]@{
         pollErrors = @()
     }
     startupGeometry = $null
-    geometryTolerances = [ordered]@{ viewportPixels = $BoundsTolerancePx; clientContainmentPixels = $ClientContainmentTolerancePx; minimumDevicePixelRatio = $MinimumDevicePixelRatio }
+    geometryTolerances = [ordered]@{ viewportPixels = $BoundsTolerancePx; clientContainmentPixels = $ClientContainmentTolerancePx; expectedDevicePixelRatio = $ExpectedDevicePixelRatio; devicePixelRatioTolerance = $DevicePixelRatioTolerance }
     lastPhysicalInput = $null
     processSnapshot = @()
     ptySetup = [ordered]@{
@@ -1806,8 +1809,8 @@ function Assert-RectNear {
 function Assert-MainRendererPhysicalScale {
     param($Dom, $MainWebView)
     $dpr = [double]$Dom.devicePixelRatio
-    Assert-Condition ($dpr -ge $MinimumDevicePixelRatio) (
-        "Main renderer DPR $dpr is below the required $MinimumDevicePixelRatio. Run on a target HiDPI display."
+    Assert-Condition ([Math]::Abs($dpr - $ExpectedDevicePixelRatio) -le $DevicePixelRatioTolerance) (
+        "Main renderer DPR $dpr does not match the required fractional DPR $ExpectedDevicePixelRatio (±$DevicePixelRatioTolerance). Run on a target HiDPI display."
     )
     $expectedWidth = [int][Math]::Round([double]$Dom.innerWidth * $dpr)
     $expectedHeight = [int][Math]::Round([double]$Dom.innerHeight * $dpr)

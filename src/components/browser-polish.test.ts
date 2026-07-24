@@ -315,7 +315,11 @@ const hideWebviewFn = rustBrowser.match(
 )?.[0];
 assert.ok(hideWebviewFn, "hide_webview() exists in src-tauri/src/browser.rs");
 assert.match(hideWebviewFn, /#\[cfg\(target_os = "windows"\)\][\s\S]*webview\.hide\(\)/, "Windows hides WebView2 so it cannot capture clicks");
-assert.match(hideWebviewFn, /#\[cfg\(not\(target_os = "windows"\)\)\][\s\S]*set_position\(PhysicalPosition::new\(OFFSCREEN_X, OFFSCREEN_Y\)\)/, "non-Windows retains offscreen parking");
+assert.match(
+  hideWebviewFn,
+  /#\[cfg\(not\(target_os = "windows"\)\)\][\s\S]*offscreen_browser_position\([\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*set_position\(offscreen_position\)/,
+  "non-Windows parks the retained child fully outside its physical client area",
+);
 assert.match(
   rustBrowser,
   /fn show_webview_at[\s\S]*inner_size\(\)[\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*PhysicalSize::new\(w, h\)[\s\S]*#\[cfg\(target_os = "windows"\)\][\s\S]*webview\.show\(\)/,
