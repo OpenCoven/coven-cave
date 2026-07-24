@@ -19,10 +19,12 @@ import type { PullRequestSummary } from "@/lib/beads-pr-management";
  */
 export function BeadDetailModal({
   id,
+  projectRoot,
   onClose,
   onClaim,
 }: {
   id: string;
+  projectRoot: string;
   onClose: () => void;
   onClaim: () => void;
 }) {
@@ -48,7 +50,10 @@ export function BeadDetailModal({
     let alive = true;
     setDetail(null);
     setDetailError(null);
-    fetch(`/api/beads?mode=show&id=${encodeURIComponent(id)}`, { cache: "no-store" })
+    fetch(
+      `/api/beads?mode=show&id=${encodeURIComponent(id)}&projectRoot=${encodeURIComponent(projectRoot)}`,
+      { cache: "no-store" },
+    )
       .then((res) => res.json())
       .then((json) => {
         if (!alive) return;
@@ -63,7 +68,7 @@ export function BeadDetailModal({
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, projectRoot]);
 
   return (
     <Modal open onClose={onClose} breadcrumb={["Queue", id]} ariaLabel={`Bead ${id}`}>

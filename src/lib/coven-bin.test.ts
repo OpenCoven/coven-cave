@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { covenAdapterDirsEnvValue, covenLaunchCommandForBinary, pickWindowsLauncher, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery } from "./coven-bin.ts";
+import { caveToolSpawnEnv, covenAdapterDirsEnvValue, covenLaunchCommandForBinary, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery } from "./coven-bin.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
 
@@ -16,6 +16,20 @@ assert.match(
   /process\.platform === "win32"[\s\S]*APPDATA[\s\S]*"npm"/,
   "Windows discovery includes the npm global shim directory under %APPDATA%\\npm",
 );
+
+{
+  const previousPath = process.env.PATH;
+  process.env.PATH = "/queue-launch-path:/usr/bin";
+  refreshCovenSpawnEnv();
+  assert.equal(
+    caveToolSpawnEnv().PATH?.split(path.delimiter)[0],
+    "/queue-launch-path",
+    "Queue tools preserve the desktop launch PATH before Cave fallback directories",
+  );
+  if (previousPath === undefined) delete process.env.PATH;
+  else process.env.PATH = previousPath;
+  refreshCovenSpawnEnv();
+}
 
 assert.match(
   source,
@@ -89,8 +103,6 @@ assert.match(
 // gh/bd/npx/tailscale/vault children run user-visible (or arbitrary,
 // via npx postinstall) code and must not see sidecar secrets either.
 for (const rel of [
-  "../app/api/beads/prs/route.ts",
-  "./server/beads-cli.ts",
   "../app/api/skills/directory/install/route.ts",
   "../app/api/skills/directory/use/route.ts",
   "./branch-pr-context.ts",
@@ -108,6 +120,19 @@ for (const rel of [
     /env: \{ \.\.\.process\.env/,
     `${rel} has no unscrubbed process.env spread left`,
   );
+}
+
+// Queue subprocesses must use the same login-shell PATH as onboarding. A
+// packaged Finder/Spotlight launch otherwise finds Git during setup but loses
+// git/bd/gh when Queue performs its own repository work.
+for (const rel of [
+  "../app/api/beads/prs/route.ts",
+  "./server/beads-cli.ts",
+  "./server/issue-worktree-provision.ts",
+  "./queue-project-readiness.ts",
+]) {
+  const spawnSite = await readFile(new URL(rel, import.meta.url), "utf8");
+  assert.match(spawnSite, /caveToolSpawnEnv\(\)/, `${rel} uses Cave's augmented, scrubbed launch PATH`);
 }
 
 assert.match(

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { scrubSidecarInternalEnv } from "@/lib/coven-bin";
+import { caveToolSpawnEnv } from "@/lib/coven-bin";
 
 const execFileAsync = promisify(execFile);
 const BD_TIMEOUT_MS = 30_000;
@@ -81,11 +81,11 @@ export async function runBdCommand(
 ): Promise<BdResult> {
   const platform = options?.platform ?? process.platform;
   const exec = options?.exec ?? (execFileAsync as unknown as Exec);
-  const env = scrubSidecarInternalEnv({
-    ...process.env,
+  const env = {
+    ...caveToolSpawnEnv(),
     BEADS_DIR: beadsDir,
     BD_NON_INTERACTIVE: "1",
-  });
+  };
 
   try {
     const { stdout, stderr } = await exec("bd", args, {

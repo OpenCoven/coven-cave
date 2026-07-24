@@ -71,6 +71,15 @@ async function seed(page: Page) {
 }
 
 test.describe("chat boot landing", () => {
+  test("dismissed E2E baseline keeps onboarding closed with the seeded Queue project", async ({ page }) => {
+    await seed(page);
+    await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+
+    await page.goto("/?mode=chat");
+    await expect(page.locator(".cave-chat-empty")).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
   test("compose view paints before the sessions list resolves", async ({ page }) => {
     await seed(page);
     // Hold the sessions fetch hostage until the landing has painted — this

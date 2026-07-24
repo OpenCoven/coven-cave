@@ -91,7 +91,7 @@ assert.match(
 // ── Bead inspector (cave-u2p1) ───────────────────────────────────────────────
 // Bead titles open a focus-trapped dialog over the existing show contract.
 assert.match(view, /className="fwq-row-name fwq-row-name--link focus-ring-inset"/);
-assert.match(view, /\/api\/beads\?mode=show&id=\$\{encodeURIComponent\(id\)\}/, "drawer reads bd show --json");
+assert.match(view, /\/api\/beads\?mode=show&id=\$\{encodeURIComponent\(id\)\}&projectRoot=\$\{encodeURIComponent\(projectRoot\)\}/, "drawer reads the selected project's bead");
 assert.match(view, /import \{ Modal \} from "@\/components\/ui\/modal"/, "reuses the focus-trapped house dialog");
 assert.match(view, /breadcrumb=\{\["Queue", id\]\}/);
 assert.match(view, /import\("@\/lib\/clipboard"\)/, "copy-id uses the shared clipboard helper");
@@ -142,7 +142,27 @@ assert.match(view, /description: `Filed from unlinked PR #\$\{pr\.number\} — \
 assert.match(view, /externalRef: `gh-\$\{pr\.number\}`/, "externalRef uses the gh-<n> form");
 assert.match(view, /labels: \["from-pr"\]/);
 assert.match(view, /`Filed \$\{beadId\} for PR #\$\{pr\.number\}\.`/, "success announces the new bead id");
-assert.match(view, /invalidateSurfaceResources\("tasks:queue"\);\s*await load\(true\)/, "queue mutations invalidate an in-flight warm before reloading");
+assert.match(view, /await load\(true\)/, "queue mutations reload the explicitly selected project");
+
+// Queue readiness is explicit: load its selected root first, include it in
+// both bridge calls, and offer the requested Generate recovery if Beads is
+// absent. It must not warm anonymous Queue requests in the background.
+assert.match(view, /fetch\("\/api\/queue\/readiness"/, "Queue checks readiness before reading work");
+assert.match(view, /projectRoot=\$\{encodeURIComponent\(projectRoot\)\}/, "both Queue sources receive the selected root");
+assert.match(view, /action, id, projectRoot/, "claim and close mutations receive the selected root");
+assert.match(view, /action: "comment", id, comment, projectRoot/, "handoff comments receive the selected root");
+assert.match(view, /action: "claim", id, assignee: familiar\.id, projectRoot/, "claim-for receives the selected root");
+assert.match(view, /projectRoot=\{readiness\?\.project\?\.root\}/, "Asana filing receives the selected root");
+assert.match(view, /const sourcesUnavailable = !readinessUnavailable && readiness\?\.ok === true && readiness\.project !== null/, "a ready project with failing adapters is not treated as unselected");
+assert.match(view, /code\?: string/, "Queue preserves readiness remediation codes from the server");
+assert.match(view, /const selectionRemediable = readiness\?\.code === "no-project"/, "stale and invalid selections retain a Choose-project recovery");
+assert.match(view, /readiness\?\.code === "not-git-repository"/, "ordinary non-Git projects retain Choose-project recovery");
+assert.match(view, /const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && !canGenerate && !selectionRemediable && readiness\?\.project !== null/, "only non-repairable selected projects suppress Generate");
+assert.match(view, /Clear all prior-project controls synchronously/, "selection clears Queue state before the next readiness response");
+assert.match(view, /headline=\{readinessUnavailable \? "Queue check unavailable" : sourcesUnavailable \? "Queue sources unavailable" : canGenerate \? "Generate your Queue" : projectUnavailable \? "Queue project needs attention" : "Queue needs a project"\}/);
+assert.match(view, /readinessUnavailable \|\| sourcesUnavailable \|\| projectUnavailable \? null : canGenerate \? \(/, "Generate wins before a selected-project warning and stale roots offer Choose project");
+assert.match(view, />\s*Generate\s*<\/Button>/, "empty Queue state offers Generate");
+assert.doesNotMatch(view, /readSurfaceResource\("tasks:queue"/, "Queue no longer consumes an unscoped warm cache");
 
 // ── cave-p63a: forward-to-familiar menu (redesign) ───────────────────────────
 // The split control's picker is now a custom dropdown (design's "Forward to
@@ -158,6 +178,7 @@ assert.match(css, /\.fwq-forward-menu \{/, "the picker menu has real styles");
 // Claim stays the default (connected user); the menu claims for a familiar.
 assert.match(view, /className="fwq-act fwq-act--claim"/, "Claim is the redesigned row action");
 assert.match(view, /\{familiars\.length > 0 \? \(\s*<ForwardMenu/, "the menu renders only with familiars present");
+assert.match(view, /action: "claim", id, assignee: familiar\.id, projectRoot/, "forward-to-familiar keeps the selected project root");
 
 // The /api/beads claim action honors the optional assignee: bare claim keeps
 // `--claim`; an assignee becomes explicit --assignee/--status flags (both

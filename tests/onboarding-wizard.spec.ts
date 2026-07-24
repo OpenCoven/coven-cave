@@ -19,6 +19,7 @@ const FRESH_STATUS = {
     git: { ok: true, optional: true, detail: "/usr/bin/git" },
     adapters: { ok: false, detail: "no adapters detected" },
     daemon: { ok: false, detail: "daemon socket not reachable" },
+    project: { ok: false, detail: "Choose a Queue project" },
     // Advisory since familiar creation moved to the in-app summoning circle.
     familiars: { ok: false, optional: true, detail: "no familiars" },
     binding: { ok: false, optional: true, detail: "no binding configured" },
@@ -37,8 +38,25 @@ const DAEMON_DOWN_VETERAN_STATUS = {
     git: { ok: true, optional: true, detail: "/usr/bin/git" },
     adapters: { ok: true, detail: "Codex" },
     daemon: { ok: false, detail: "daemon socket not reachable" },
+    project: { ok: true, detail: "Queue project is ready." },
     familiars: { ok: false, optional: true, detail: "daemon offline" },
     binding: { ok: false, optional: true, detail: "Waiting for the daemon" },
+  },
+  tools: [],
+};
+
+const GIT_REQUIRED_STATUS = {
+  ok: true,
+  complete: false,
+  steps: {
+    covenCli: { ok: true, detail: "0.0.60" },
+    covenHome: { ok: true, detail: "~/.coven" },
+    adapters: { ok: true, detail: "Codex" },
+    daemon: { ok: true, detail: "running" },
+    git: { ok: false, detail: "Git is required to select and use a Queue project.", hint: "Install Git from https://git-scm.com, then re-check." },
+    project: { ok: false, detail: "Git is required before selecting a Queue project." },
+    familiars: { ok: false, optional: true, detail: "no familiars" },
+    binding: { ok: false, optional: true, detail: "no binding configured" },
   },
   tools: [],
 };
@@ -56,6 +74,7 @@ const COMPLETE_NO_FAMILIARS_STATUS = {
     git: { ok: true, optional: true, detail: "/usr/bin/git" },
     adapters: { ok: true, detail: "Codex" },
     daemon: { ok: true, detail: "running" },
+    project: { ok: true, detail: "Queue project is ready." },
     familiars: { ok: false, optional: true, detail: "no familiars" },
     binding: { ok: false, optional: true, detail: "no binding configured" },
   },
@@ -132,6 +151,15 @@ test.describe("onboarding wizard", () => {
     await expect(current.first()).toContainText("Install the Coven CLI");
   });
 
+  test("puts Git remediation before an unavailable Queue project selector", async ({ page }) => {
+    await gotoApp(page, GIT_REQUIRED_STATUS);
+    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
+    const current = wizard(page).locator('li[aria-current="step"]');
+    await expect(current).toContainText("Find Git");
+    await expect(current).toContainText("Git is required before selecting a Queue project.");
+    await expect(current).toContainText("Install Git from https://git-scm.com");
+  });
+
   test("Escape closes for the session without permanently skipping", async ({ page }) => {
     await gotoApp(page, FRESH_STATUS);
     await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
@@ -143,7 +171,10 @@ test.describe("onboarding wizard", () => {
   });
 
   test("stays hidden once dismissed", async ({ page }) => {
-    await gotoApp(page, FRESH_STATUS, { dismissed: true });
+    // A persisted dismissal is not permitted to bypass a missing required
+    // Queue project. Use a genuinely complete setup to exercise the stored
+    // dismissal behavior without masking a prerequisite regression.
+    await gotoApp(page, COMPLETE_NO_FAMILIARS_STATUS, { dismissed: true });
     await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
     await page.waitForTimeout(1_000);
     await expect(wizard(page)).toHaveCount(0);
