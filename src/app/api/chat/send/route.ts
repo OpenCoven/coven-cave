@@ -1765,7 +1765,19 @@ export async function POST(req: Request) {
               return;
           }
         } catch {
-          recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+          // Structured-mode stdout can contain a malformed future event with
+          // arbitrary tool payloads. Do not feed that raw line into the
+          // persisted error tail or any user-visible diagnostic.
+          recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
+          if (!openCodeCompatibilityNoticeSent) {
+            openCodeCompatibilityNoticeSent = true;
+            pushProgress(
+              "opencode-compatibility",
+              "OpenCode sent a malformed event; continuing with assistant text",
+              "error",
+              "malformed-json-event",
+            );
+          }
         }
       };
 

@@ -1,6 +1,6 @@
 import { createPublicKey, verify } from "node:crypto";
 import { createHash } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, open, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
@@ -54,15 +54,25 @@ export type OpenCodeCompatibilityDiagnostic =
  * field names and primitive kinds, but never prompt text, paths, tool input,
  * output, credentials, or an unknown payload's values. */
 export function redactedOpenCodeEventFingerprint(value: unknown): string {
+  // Event payloads are open-ended maps: a provider can put a path, prompt, or
+  // credential in either a value *or a key*. Only retain a small, fixed set of
+  // transport-envelope fields, and represent input/output maps as opaque.
+  // This keeps the fingerprint useful for envelope evolution without turning
+  // diagnostics into a side channel for user data.
+  const safeEnvelopeKeys = new Set([
+    "type", "sessionID", "sessionId", "session_id", "part", "data", "state",
+    "id", "callID", "callId", "toolCallId", "tool_call_id", "tool", "name", "status",
+  ]);
+  const payloadKeys = new Set(["input", "output", "error", "prompt", "text", "content"]);
   const shape = (input: unknown, depth = 0): unknown => {
-    if (depth >= 2) return Array.isArray(input) ? "array" : typeof input;
-    if (Array.isArray(input)) return [input.length ? shape(input[0], depth + 1) : "empty"];
+    if (depth >= 3) return Array.isArray(input) ? "array" : typeof input;
+    if (Array.isArray(input)) return input.length ? [shape(input[0], depth + 1)] : ["empty"];
     if (!isRecord(input)) return typeof input;
-    return Object.fromEntries(
-      Object.entries(input)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, child]) => [key, shape(child, depth + 1)]),
-    );
+    const entries = Object.entries(input)
+      .filter(([key]) => safeEnvelopeKeys.has(key) || payloadKeys.has(key))
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, payloadKeys.has(key) ? "redacted" : shape(child, depth + 1)]);
+    return entries.length ? Object.fromEntries(entries) : "object";
   };
   return createHash("sha256").update(JSON.stringify(shape(value))).digest("hex").slice(0, 16);
 }
@@ -70,6 +80,7 @@ export function redactedOpenCodeEventFingerprint(value: unknown): string {
 const MAX_SCHEMA_BUNDLE_BYTES = 256 * 1024;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const CACHE_FILE = "opencode-schema-bundle-v1.json";
+const REFRESH_TIMEOUT_MS = 5_000;
 
 /**
  * Shipped schemas remain usable offline. Selection is capability-based: a
@@ -177,6 +188,62 @@ async function readVerifiedCache(file: string, publicKey: string, now: number): 
   }
 }
 
+async function readResponseTextLimited(response: Response): Promise<string> {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_SCHEMA_BUNDLE_BYTES) throw new Error("schema bundle too large");
+  if (!response.body) {
+    const raw = await response.text();
+    if (Buffer.byteLength(raw, "utf8") > MAX_SCHEMA_BUNDLE_BYTES) throw new Error("schema bundle too large");
+    return raw;
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      bytes += next.value.byteLength;
+      if (bytes > MAX_SCHEMA_BUNDLE_BYTES) throw new Error("schema bundle too large");
+      chunks.push(next.value);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function fetchSchemaBundle(url: string, fetcher: typeof fetch): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS);
+  try {
+    return await fetcher(url, { headers: { accept: "application/json" }, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Keep a failed lock acquisition fail-closed for the cache: the caller can
+ * still use its verified remote bundle for this turn, but it never races a
+ * peer into replacing a newer last-known-good cache with an older sequence.
+ */
+async function withCacheWriteLock<T>(file: string, callback: () => Promise<T>): Promise<T | null> {
+  const lock = `${file}.lock`;
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(lock, "wx", 0o600);
+  } catch {
+    return null;
+  }
+  try {
+    return await callback();
+  } finally {
+    await handle.close().catch(() => undefined);
+    await rm(lock, { force: true }).catch(() => undefined);
+  }
+}
+
 export type OpenCodeSchemaBundleSource = {
   url?: string;
   publicKey?: string;
@@ -207,23 +274,32 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   if (cacheFresh) return { bundle: cached.bundle, source: "cache" };
 
   try {
-    const response = await (source.fetch ?? fetch)(url, { headers: { accept: "application/json" } });
-    const raw = await response.text();
-    if (!response.ok || Buffer.byteLength(raw, "utf8") > MAX_SCHEMA_BUNDLE_BYTES) throw new Error("untrusted schema bundle");
+    const response = await fetchSchemaBundle(url, source.fetch ?? fetch);
+    const raw = await readResponseTextLimited(response);
+    if (!response.ok) throw new Error("untrusted schema bundle");
     const remote = JSON.parse(raw) as unknown;
     if (!verifyOpenCodeSchemaBundle(remote, publicKey, now)) throw new Error("invalid schema signature");
     if (cached && remote.sequence < cached.bundle.sequence) throw new Error("schema rollback");
     // A sequence identifies immutable parser semantics. A changed payload at
     // the same sequence is indistinguishable from a rollback to callers, so
     // retain the last-known-good cache even if it is freshly signed.
-    if (cached && remote.sequence === cached.bundle.sequence) {
-      if (openCodeSchemaBundleSigningPayload(remote) !== openCodeSchemaBundleSigningPayload(cached.bundle)) throw new Error("schema sequence rewritten");
-      await mkdir(path.dirname(file), { recursive: true });
-      await writeJsonAtomic(file, { checkedAt: now, bundle: cached.bundle });
-      return { bundle: cached.bundle, source: "cache" };
-    }
     await mkdir(path.dirname(file), { recursive: true });
-    await writeJsonAtomic(file, { checkedAt: now, bundle: remote });
+    const writeResult = await withCacheWriteLock(file, async () => {
+      // Re-read after acquiring the lock. Another process may have refreshed
+      // while this request was in flight, and the cache must never move back.
+      const current = await readVerifiedCache(file, publicKey, now);
+      if (current && remote.sequence < current.bundle.sequence) throw new Error("schema rollback");
+      if (current && remote.sequence === current.bundle.sequence) {
+        if (openCodeSchemaBundleSigningPayload(remote) !== openCodeSchemaBundleSigningPayload(current.bundle)) throw new Error("schema sequence rewritten");
+        await writeJsonAtomic(file, { checkedAt: now, bundle: current.bundle });
+        return { bundle: current.bundle, source: "cache" as const };
+      }
+      await writeJsonAtomic(file, { checkedAt: now, bundle: remote });
+      return { bundle: remote, source: "remote" as const };
+    });
+    if (writeResult) return writeResult;
+    // Do not overwrite a cache another process is refreshing. The remote was
+    // independently verified and remains safe for this request.
     return { bundle: remote, source: "remote" };
   } catch {
     if (cached) return { bundle: cached.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" };
