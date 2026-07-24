@@ -64,6 +64,12 @@ import {
 import { grokLaunchCommand } from "@/lib/grok-bin";
 import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
+import {
+  HermesSseDecoder,
+  hermesApiConfig,
+  hermesResponsesUrl,
+  parseHermesResponsesEvent,
+} from "@/lib/hermes-responses-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
@@ -930,9 +936,19 @@ export async function POST(req: Request) {
   // harness uses coven run's capability probe.
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
+  // Tool activity from Hermes is only reliable over its documented structured
+  // API. The quiet CLI mode intentionally hides terminal tool previews, so it
+  // remains an explicit plain-text fallback when no API server is configured.
+  // Read credentials from the familiar-scoped env boundary, never a request.
+  const hermesApi = hermesDirect
+    ? hermesApiConfig(harnessSpawnEnv(body.familiarId) as {
+        HERMES_API_URL?: string;
+        HERMES_API_KEY?: string;
+      })
+    : null;
   const modelForwardingEnabled =
     hermesDirect
-      ? await hermesChatSupportsModel()
+      ? hermesApi !== null || await hermesChatSupportsModel()
       : openCodeDirect
         ? await openCodeRunSupportsModel()
         : binding.harness === "grok" ||
@@ -1468,6 +1484,17 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
+      if (hermesDirect && !hermesApi) {
+        // Do not fabricate tool bubbles from the CLI's presentation layer.
+        // This gives the operator an actionable, privacy-safe degradation
+        // notice while preserving normal CLI chat output.
+        pushProgress(
+          "hermes-tool-activity",
+          "Hermes tool activity unavailable",
+          "error",
+          "Configure HERMES_API_URL for the versioned structured event transport.",
+        );
+      }
       if (grokFreshSessionForSandbox) {
         pushProgress(
           "grok-sandbox-restart",
@@ -1959,9 +1986,11 @@ export async function POST(req: Request) {
       // run as user-cancelled. A bare transport abort no longer kills — the
       // turn finishes and persists, bounded by the detach cap.
       let currentChild: ReturnType<typeof spawn> | null = null;
+      let currentHermesAbort: AbortController | null = null;
       const killCurrentChild = () => {
         try {
           currentChild?.kill("SIGTERM");
+          currentHermesAbort?.abort();
         } catch {
           /* ignore */
         }
@@ -1990,8 +2019,103 @@ export async function POST(req: Request) {
         },
       });
 
-      const runAttempt = (spawnArgs: string[]): Promise<void> =>
-        new Promise((resolve) => {
+      const runHermesApiAttempt = async (apiPrompt: string): Promise<void> => {
+        // This is an opt-in local/API-server transport. Hermes quiet CLI output
+        // is intentionally not treated as a versioned tool-event protocol.
+        if (!hermesApi) return;
+        const attemptStartedAt = Date.now();
+        const abort = new AbortController();
+        currentHermesAbort = abort;
+        pushProgress("harness-start", "Starting Hermes API", "running", hermesApi.baseUrl);
+        try {
+          const response = await fetch(hermesResponsesUrl(hermesApi), {
+            method: "POST",
+            signal: abort.signal,
+            headers: {
+              "content-type": "application/json",
+              accept: "text/event-stream",
+              ...(hermesApi.apiKey ? { authorization: `Bearer ${hermesApi.apiKey}` } : {}),
+            },
+            body: JSON.stringify({ model: forwardModel ?? desiredModel, input: apiPrompt, stream: true }),
+          });
+          if (!response.ok || !response.body) {
+            result = { ...result, is_error: true };
+            recordStdoutErrorTail(`Hermes API request failed (${response.status})`, true);
+            return;
+          }
+          const reader = response.body.getReader();
+          const utf8 = new TextDecoder();
+          const decoder = new HermesSseDecoder();
+          const consume = (frame: { event: string; data: string }) => {
+            if (frame.data === "[DONE]") return;
+            let payload: unknown;
+            try {
+              payload = JSON.parse(frame.data);
+            } catch {
+              // Future/non-JSON frames cannot safely become a tool bubble.
+              recordStdoutErrorTail(frame.data);
+              return;
+            }
+            const event = parseHermesResponsesEvent(frame.event, payload);
+            switch (event.kind) {
+              case "session":
+                if (!sessionId) announceSession(event.id);
+                return;
+              case "text":
+                assistantText += event.text;
+                push({ kind: "assistant_chunk", text: event.text });
+                return;
+              case "tool_start": {
+                const input = formatToolInputValue(event.input);
+                boundarySentinel?.observe(event.name, input ?? "");
+                const toolEv = toolTracker.envelopeToolUse(event.id, event.name, input, assistantText.length);
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                return;
+              }
+              case "tool_end": {
+                const output = typeof event.output === "string"
+                  ? event.output
+                  : formatToolInputValue(event.output);
+                const toolEv = toolTracker.envelopeToolResult(event.id, output, event.isError);
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                return;
+              }
+              case "done":
+                result = { ...result, is_error: event.isError };
+                return;
+              case "error":
+                result = { ...result, is_error: true };
+                recordStdoutErrorTail(event.message, true);
+                return;
+              case "ignore":
+                return;
+            }
+          };
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            for (const frame of decoder.push(utf8.decode(value, { stream: true }))) consume(frame);
+          }
+          for (const frame of decoder.push(utf8.decode())) consume(frame);
+          for (const frame of decoder.finish()) consume(frame);
+        } catch (error) {
+          if (!abort.signal.aborted) {
+            result = { ...result, is_error: true };
+            recordStdoutErrorTail(
+              error instanceof Error ? `Hermes API request failed: ${error.message}` : "Hermes API request failed",
+              true,
+            );
+          }
+        } finally {
+          if (currentHermesAbort === abort) currentHermesAbort = null;
+          result.duration_ms = Date.now() - attemptStartedAt;
+          pushProgress("harness-start", "Hermes API stream finished", "done", undefined, result.duration_ms);
+        }
+      };
+
+      const runAttempt = (spawnArgs: string[], apiPrompt = harnessPrompt): Promise<void> => {
+        if (hermesApi) return runHermesApiAttempt(apiPrompt);
+        return new Promise((resolve) => {
           const attemptStartedAt = Date.now();
           pushProgress(
             "harness-start",
@@ -2142,6 +2266,7 @@ export async function POST(req: Request) {
         });
 
       // First attempt — uses --continue if body.sessionId was set.
+      };
       const turnSpawnStartMs = Date.now();
       await runAttempt(args);
 

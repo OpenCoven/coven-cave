@@ -96,6 +96,30 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /hermesApiConfig\(harnessSpawnEnv\(body\.familiarId\) as \{/,
+  "Hermes API credentials must come through the familiar-scoped environment boundary",
+);
+
+assert.match(
+  chatRoute,
+  /if \(hermesApi\) return runHermesApiAttempt\(apiPrompt\);/,
+  "a configured Hermes API must use the structured Responses SSE transport rather than terminal scraping",
+);
+
+assert.match(
+  chatRoute,
+  /hermesDirect && !hermesApi[\s\S]*?Hermes tool activity unavailable[\s\S]*?HERMES_API_URL/,
+  "the CLI fallback must disclose that structured tool activity is unavailable and how to enable it",
+);
+
+assert.match(
+  chatRoute,
+  /parseHermesResponsesEvent\(frame\.event, payload\)[\s\S]*?toolTracker\.envelopeToolUse\([\s\S]*?toolTracker\.envelopeToolResult\(/,
+  "Hermes structured tool starts and completions must flow through the shared persistent tracker",
+);
+
+assert.match(
+  chatRoute,
   /\.\.\.\(persistedTools \? \{ tools: persistedTools \} : \{\}\)/,
   "tools persist on the assistant turn alongside usage and cost",
 );
