@@ -61,4 +61,24 @@ assert.match(
   "generatedAt uses the body's value (generation) else preserves the on-disk stamp else null",
 );
 
+// ── The stats block reports the day's sources ("Memories Prototype") ─────────
+// The entry pane's Sources chips need the memory files touched on that local
+// day; the inventory is already in hand for the stats, so the same response
+// carries the attributed file list (familiar-scoped like the stats).
+assert.match(
+  source,
+  /journalDaySources,?\s*\n?\} from "@\/lib\/journal-memory-stats";/,
+  "the route imports the day-source attribution helper",
+);
+assert.match(
+  source,
+  /const sources = journalDaySources\(memoryEntries, date, familiarId\);/,
+  "sources are computed from the same inventory + familiar scope as the stats",
+);
+assert.match(
+  source,
+  /\{ ok: true, date, stats, context, sources \}/,
+  "the ?stats=1 response carries the day's sources",
+);
+
 console.log("journal route.test.ts: ok");

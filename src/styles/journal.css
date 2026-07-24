@@ -498,3 +498,161 @@
   letter-spacing: inherit;
   text-transform: inherit;
 }
+
+/* ── Entry sources ────────────────────────────────────────────────────────────
+   Memory files touched on the entry's local day (mtime-attributed, familiar-
+   scoped like the stats). Each chip deep-links into the Grimoire reader. */
+.journal-sources { margin-top: var(--space-5); }
+.journal-sources__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.journal-sources__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 240px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-panel, var(--bg-base));
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  transition: border-color 0.13s ease, color 0.13s ease;
+}
+.journal-sources__chip:hover {
+  border-color: color-mix(in srgb, var(--accent-presence) 45%, transparent);
+  color: var(--text-primary);
+}
+.journal-sources__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Entry visual (memory constellation) ─────────────────────────────────── */
+.journal-visual { margin-top: var(--space-5); }
+.journal-visual__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.journal-visual__regen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+.journal-visual__regen:hover { color: var(--text-primary); }
+.journal-visual__gen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color 0.13s ease, color 0.13s ease;
+}
+.journal-visual__gen:hover {
+  border-color: color-mix(in srgb, var(--accent-presence) 45%, transparent);
+  color: var(--text-primary);
+}
+.journal-visual__busy {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.journal-visual__frame {
+  margin-top: var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--accent-presence) 4%, var(--bg-panel, var(--bg-base)));
+  overflow: hidden;
+}
+.journal-visual__svg { display: block; width: 100%; height: auto; }
+.journal-visual__caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Generation prompt ────────────────────────────────────────────────────────
+   The editable template behind "Generate/Regenerate entry". A transparent
+   textarea rides over a highlight layer that marks {placeholder} runs; both
+   share metrics so the overlay tracks the caret line-for-line. */
+.journal-prompt { margin-top: var(--space-5); }
+.journal-prompt__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.journal-prompt__reset {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+.journal-prompt__reset:hover { color: var(--text-primary); }
+.journal-prompt__editor { position: relative; margin-top: var(--space-2); }
+.journal-prompt__hl,
+.journal-prompt__ta {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.journal-prompt__hl {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+.journal-prompt__ph {
+  background: color-mix(in srgb, var(--accent-presence) 14%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--accent-presence);
+}
+.journal-prompt__ta {
+  position: relative;
+  display: block;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: transparent;
+  caret-color: var(--accent-presence);
+}
+.journal-prompt__ta:focus { border-color: var(--border-strong); }
+.journal-prompt__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.journal-prompt__hint {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
