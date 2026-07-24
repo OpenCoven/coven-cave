@@ -224,6 +224,7 @@ export const SUITES = {
     "src/lib/server/flow-executor.test.ts",
     "src/lib/server/flow-copilot-session.test.ts",
     "src/lib/server/research-mission-store.test.ts",
+    "src/lib/server/research-mission-lifecycle.test.ts",
     "src/lib/server/research-links.test.ts",
     "src/lib/server/research-generations.test.ts",
     "src/lib/server/research-mission-runner-lifecycle-actions.test.ts",
