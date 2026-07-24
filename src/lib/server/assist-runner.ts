@@ -150,7 +150,33 @@ export async function runBoundedAssist(opts: {
     try {
       lastMessage = await readFile(/* turbopackIgnore: true */ lastMessagePath, "utf8");
     } catch {
-      return { ok: false, error: "assist produced no output" };
+      // codex can exit 0 yet write no last-message file when it is not signed
+      // in or refuses trust for the workspace. The real reason lands on stderr,
+      // so surface that (and an explicit sign-in hint for the auth case)
+      // instead of an opaque "produced no output".
+      const tail = stderrTail
+        .trim()
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .slice(-3)
+        .join(" · ")
+        .slice(-300);
+      const looksLikeAuth =
+        /not logged in|log ?in|sign ?in|unauthorized|authenticate|auth|credential|token|401/i.test(
+          stderrTail,
+        );
+      if (looksLikeAuth) {
+        return {
+          ok: false,
+          error: `${inv.command} isn't signed in, so this assist produced no output. Run \`${inv.command} login\` in a terminal, then try again${
+            tail ? ` (${tail})` : ""
+          }.`,
+        };
+      }
+      return {
+        ok: false,
+        error: `assist produced no output${tail ? ` — ${tail}` : ""}`,
+      };
     }
     return { ok: true, lastMessage };
   } catch (err) {
