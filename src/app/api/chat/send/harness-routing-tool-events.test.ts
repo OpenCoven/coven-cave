@@ -60,14 +60,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /block\.type === "tool_use" && block\.id && block\.name[\s\S]*?toolTracker\.envelopeToolUse\(/,
-  "Assistant envelope tool_use blocks should surface as running tool events (CHAT-D4-04)",
+  /parseClaudeMessageEnvelope\(ev, claudeCompatibility\.profile\)[\s\S]*?toolTracker\.envelopeToolUse\(/,
+  "Profile-selected Claude envelopes should surface running tool events (CHAT-D4-04)",
 );
 
 assert.match(
   chatRoute,
-  /ev\.type === "user" && Array\.isArray\(ev\.message\?\.content\)[\s\S]*?block\.type === "tool_result" && block\.tool_use_id[\s\S]*?toolTracker\.envelopeToolResult\(/,
-  "User envelope tool_result blocks should settle the matching tool event (CHAT-D4-04)",
+  /parseClaudeMessageEnvelope\(ev, claudeCompatibility\.profile\)[\s\S]*?toolTracker\.envelopeToolResult\(/,
+  "Profile-selected Claude envelopes should settle matching tool events (CHAT-D4-04)",
 );
 
 assert.match(
@@ -84,8 +84,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /formatToolInputValue\(block\.input\),\s*assistantText\.length,/,
-  "envelope tool starts are stamped with the current assistant-text offset",
+  /formatToolInputValue\(claudeEvent\.input\),\s*assistantText\.length,/,
+  "profile-decoded envelope tool starts are stamped with the current assistant-text offset",
 );
 
 assert.match(
