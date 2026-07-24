@@ -1,12 +1,14 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
 
 import { loadProjects, projectById } from "@/lib/cave-projects";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { caveHome } from "@/lib/coven-paths";
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
+import { runBdCommand } from "@/lib/server/beads-cli";
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
@@ -22,7 +24,10 @@ export type QueueProjectReadinessCode =
   | "no-project"
   | "project-missing"
   | "project-not-allowed"
-  | "not-git-repository";
+  | "not-git-repository"
+  | "git-unavailable"
+  | "git-error"
+  | "project-not-git-root";
 
 export type QueueProjectReadiness = {
   ok: boolean;
@@ -40,11 +45,36 @@ function queueProjectFilePath(): string {
   return process.env.CAVE_QUEUE_PROJECT_PATH_OVERRIDE ?? path.join(/* turbopackIgnore: true */ caveHome(), "queue-project.json");
 }
 
+let selectionWriteTail: Promise<void> = Promise.resolve();
+
+async function writeSelectedProjectId(file: string, projectId: string): Promise<void> {
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => { release = resolve; });
+  const previous = selectionWriteTail;
+  selectionWriteTail = next;
+  await previous;
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(
+      /* turbopackIgnore: true */ temporary,
+      JSON.stringify({ version: 1, projectId } satisfies QueueProjectFile, null, 2),
+      "utf8",
+    );
+    // Rename is atomic within the Cave home directory: concurrent readers see
+    // either the old valid selection or the complete new selection.
+    await rename(/* turbopackIgnore: true */ temporary, file);
+  } finally {
+    release();
+  }
+}
+
 async function readSelectedProjectId(): Promise<string | null> {
   try {
     const raw = await readFile(/* turbopackIgnore: true */ queueProjectFilePath(), "utf8");
     const value = JSON.parse(raw) as Partial<QueueProjectFile>;
-    return typeof value.projectId === "string" && value.projectId.trim() ? value.projectId.trim() : null;
+    return value.version === 1 && typeof value.projectId === "string" && value.projectId.trim()
+      ? value.projectId.trim()
+      : null;
   } catch {
     return null;
   }
@@ -55,11 +85,7 @@ export async function selectQueueProject(projectId: string): Promise<CaveProject
   if (!project) return null;
   const file = queueProjectFilePath();
   await mkdir(/* turbopackIgnore: true */ path.dirname(file), { recursive: true });
-  await writeFile(
-    /* turbopackIgnore: true */ file,
-    JSON.stringify({ version: 1, projectId: project.id } satisfies QueueProjectFile, null, 2),
-    "utf8",
-  );
+  await writeSelectedProjectId(file, project.id);
   return project;
 }
 
@@ -71,17 +97,45 @@ async function isDirectory(value: string): Promise<boolean> {
   }
 }
 
-async function gitTopLevel(root: string): Promise<string | null> {
+type GitTopLevel =
+  | { ok: true; root: string }
+  | { ok: false; code: "not-git-repository" | "git-unavailable" | "git-error"; message: string };
+
+async function gitTopLevel(root: string): Promise<GitTopLevel> {
   try {
     const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
       cwd: /* turbopackIgnore: true */ root,
       timeout: GIT_TIMEOUT_MS,
     });
     const top = stdout.trim();
-    return top || null;
-  } catch {
-    return null;
+    if (!top) return { ok: false, code: "not-git-repository", message: "The selected Queue project is not a Git repository." };
+    return { ok: true, root: await realpath(/* turbopackIgnore: true */ top) };
+  } catch (cause) {
+    const error = cause as NodeJS.ErrnoException;
+    if (error.code === "ENOENT") {
+      return { ok: false, code: "git-unavailable", message: "Git is required to use the Queue project. Install Git and try again." };
+    }
+    return {
+      ok: false,
+      code: "git-error",
+      message: "Git could not validate the Queue project. Check Git permissions and repository trust, then try again.",
+    };
   }
+}
+
+async function hasUsableBeadsWorkspace(repoRoot: string): Promise<boolean> {
+  const beadsDir = path.join(/* turbopackIgnore: true */ repoRoot, ".beads");
+  try {
+    const entry = await lstat(/* turbopackIgnore: true */ beadsDir);
+    if (!entry.isDirectory() || entry.isSymbolicLink()) return false;
+    const canonicalBeads = await realpath(/* turbopackIgnore: true */ beadsDir);
+    if (canonicalBeads !== beadsDir && !canonicalBeads.startsWith(repoRoot + path.sep)) return false;
+  } catch {
+    return false;
+  }
+  // Directory presence alone is not a workspace: a failed bd init can leave an
+  // empty .beads behind. A read-only probe keeps Generate available to repair it.
+  return (await runBdCommand(repoRoot, beadsDir, ["ready", "--json"])).ok;
 }
 
 function projectShape(project: CaveProject): Pick<CaveProject, "id" | "name" | "root"> {
@@ -148,23 +202,37 @@ export async function queueProjectReadiness(): Promise<QueueProjectReadiness> {
       canGenerate: false,
     };
   }
-  const repoRoot = await gitTopLevel(validated.root);
-  if (!repoRoot) {
+  const gitRoot = await gitTopLevel(validated.root);
+  if (!gitRoot.ok) {
     return {
       ok: false,
-      code: "not-git-repository",
-      message: `The selected Queue project is not a Git repository: ${validated.root}. Choose a Git project.`,
+      code: gitRoot.code,
+      message: gitRoot.code === "not-git-repository"
+        ? `The selected Queue project is not a Git repository: ${validated.root}. Choose a Git project.`
+        : gitRoot.message,
+      project: selected,
+      canGenerate: false,
+    };
+  }
+  // Project selection is intentionally a repository boundary, not a loose
+  // subdirectory hint. Never replace a selected/authorized path with a Git
+  // parent that the project registry has not approved.
+  if (gitRoot.root !== validated.root) {
+    return {
+      ok: false,
+      code: "project-not-git-root",
+      message: `Choose the Git repository root for Queue work, not a subdirectory: ${gitRoot.root}.`,
       project: selected,
       canGenerate: false,
     };
   }
 
-  if (!(await isDirectory(path.join(/* turbopackIgnore: true */ repoRoot, ".beads")))) {
+  if (!(await hasUsableBeadsWorkspace(gitRoot.root))) {
     return {
       ok: false,
       code: "needs-beads",
-      message: `Queue is ready to generate in ${repoRoot}. Generate will initialize its local Beads workspace.`,
-      project: { ...selected, root: repoRoot },
+      message: `Queue is ready to generate in ${gitRoot.root}. Generate will initialize or repair its local Beads workspace.`,
+      project: { ...selected, root: gitRoot.root },
       canGenerate: true,
     };
   }
@@ -172,7 +240,7 @@ export async function queueProjectReadiness(): Promise<QueueProjectReadiness> {
     ok: true,
     code: "ready",
     message: "Queue project is ready.",
-    project: { ...selected, root: repoRoot },
+    project: { ...selected, root: gitRoot.root },
     canGenerate: false,
   };
 }

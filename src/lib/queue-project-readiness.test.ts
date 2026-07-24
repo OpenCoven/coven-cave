@@ -43,9 +43,36 @@ try {
   assert.equal(needsBeads.project?.root, projectRoot, "the selected repository remains the command root");
 
   await mkdir(path.join(projectRoot, ".beads"));
+  const partial = await queueProjectReadiness();
+  assert.equal(partial.code, "needs-beads", "an empty .beads directory remains repairable");
+  assert.equal(partial.canGenerate, true);
+  await rm(path.join(projectRoot, ".beads"), { recursive: true, force: true });
+  execFileSync("bd", ["init"], { cwd: projectRoot, stdio: "pipe" });
   const ready = await queueProjectReadiness();
   assert.equal(ready.code, "ready");
   assert.equal(ready.ok, true);
+
+  const nestedRoot = path.join(projectRoot, "nested");
+  await mkdir(nestedRoot);
+  await writeFile(
+    projectsPath,
+    JSON.stringify({
+      version: 1,
+      projects: [{
+        id: "nested-project",
+        name: "Nested project",
+        root: nestedRoot,
+        createdAt: "2026-07-23T00:00:00.000Z",
+        updatedAt: "2026-07-23T00:00:00.000Z",
+      }],
+    }),
+  );
+  await selectQueueProject("nested-project");
+  assert.equal(
+    (await queueProjectReadiness()).code,
+    "project-not-git-root",
+    "a selected subdirectory never authorizes its Git parent",
+  );
 
   await writeFile(
     projectsPath,
@@ -60,6 +87,7 @@ try {
       }],
     }),
   );
+  await selectQueueProject("queue-project");
   const stale = await queueProjectReadiness();
   assert.equal(stale.code, "project-missing", "a path from another host is remediated before invoking Git");
   assert.match(stale.message, /Choose a project again/);
@@ -69,7 +97,8 @@ try {
     "utf8",
   );
   assert.match(route, /rejectNonLocalRequest/, "selection and generation are loopback-only");
-  assert.match(route, /runBdCommand\(\s*readiness\.project\.root,\s*path\.join\([^)]*readiness\.project\.root, "\.beads"\),\s*\["init"\],\s*\)/, "Generate runs only in the selected repository");
+  assert.match(route, /projectId is required/, "Generate is bound to an explicit project identity");
+  assert.match(route, /withGenerationLock/, "Generate serializes initialization per repository");
 } finally {
   if (previousProjectsPath === undefined) delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
   else process.env.CAVE_PROJECTS_PATH_OVERRIDE = previousProjectsPath;
