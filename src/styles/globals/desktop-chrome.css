@@ -860,8 +860,15 @@ button:active > .edge-rail-chip {
   height: 16px;
   padding: 0 var(--space-1);
   border-radius: var(--radius-pill);
-  color: var(--color-danger-foreground);
-  background: var(--color-danger);
+  /* The count chip shares the bell's warning hue (unread is attention, not
+     danger) via the one-token tint recipe: solid text, 14% fill, ~40%
+     border. Fill vs outline keeps icon and count distinct — the glyph is
+     the solid element, the chip the bordered one. Both mixes end on
+     --bg-raised (opaque) because the chip overlaps the glyph; transparent
+     fills would let the bell bleed through the count. */
+  color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 14%, var(--bg-raised));
+  border: 1px solid color-mix(in oklch, var(--color-warning) 40%, var(--bg-raised));
   font-size: var(--text-2xs);
   font-weight: 700;
   line-height: 1;
