@@ -1,11 +1,12 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { FamiliarAnalyticsModel } from "@/components/familiar-analytics-data";
 import type { FeedbackSliceStat, MessageFeedbackRollup } from "@/lib/message-feedback-rollup";
 import { Button } from "@/components/ui/button";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Modal } from "@/components/ui/modal";
 import { PulseBars } from "@/components/ui/pulse-bars";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
@@ -18,13 +19,14 @@ import {
   type ThreadMetricKey,
 } from "@/lib/thread-confidence";
 import type { MetricTrend, SignalTrends, TrendDirection } from "@/lib/signal-trends";
-import type { ContractReport } from "@/lib/familiar-contract";
+import type { ContractReport, FamiliarProperty } from "@/lib/familiar-contract";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import { deriveAnalyticsInsight } from "@/lib/familiar-analytics-insight";
 import { formatTimeToFirstReply, timeToFirstReplyMs } from "@/lib/first-run-stamps";
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
 import { pulseTotal, sessionDayKey, type PulseDay } from "@/lib/session-pulse";
+import { requestAgentsNewChat } from "@/lib/agents-new-chat";
 import {
   aggregateThreadSignals,
   type ContextPressure,
@@ -52,6 +54,53 @@ function FaSection({
         <span>{count}</span>
       </div>
       {children}
+    </section>
+  );
+}
+
+/**
+ * Collapsible section shell — a full-width panel whose body folds behind a
+ * button header (caret + count + a one-line hint when collapsed). Used for the
+ * denser drill-down panels (model performance) so the page stays scannable and
+ * the heavy content is opt-in. Its `id` still anchors KPI/hash drill-throughs.
+ */
+function FaCollapsibleSection({
+  id,
+  title,
+  count,
+  hint,
+  open,
+  onToggle,
+  children,
+}: {
+  id: string;
+  title: string;
+  count: ReactNode;
+  /** Shown after the count when collapsed — a preview of what's inside. */
+  hint: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section id={id} className="fa-section fa-section--wide fa-collapse" aria-labelledby={`${id}-title`}>
+      <button
+        type="button"
+        className="fa-collapse__head focus-ring"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <h2 id={`${id}-title`} className="fa-section__title">{title}</h2>
+        <span>{count}</span>
+        {!open ? <span className="fa-collapse__hint">{hint}</span> : null}
+        <Icon
+          name="ph:caret-down"
+          className={`fa-collapse__caret${open ? " is-open" : ""}`}
+          width={14}
+          aria-hidden
+        />
+      </button>
+      {open ? <div className="fa-collapse__body">{children}</div> : null}
     </section>
   );
 }
@@ -240,7 +289,6 @@ const ThreadAnalysisSection = memo(function ThreadAnalysisSection({
     <FaSection
       id="fa-confidence"
       title="Confidence from thread analysis"
-      wide
       count={
         confidence.hasData
           ? `${confidence.reportCount} ${confidence.reportCount === 1 ? "report" : "reports"}`
@@ -377,13 +425,14 @@ function sessionStatusTone(status: string): "run" | "bad" | "done" {
   return "done";
 }
 
-/** How many session rows the drill-through list shows at once. */
-const RECENT_SESSIONS_SHOWN = 12;
+/** Session rows per page in the drill-through list — a pager walks the rest. */
+const SESSIONS_PAGE_SIZE = 6;
 
 /**
  * Recent sessions — the tracing spine of the page. Every row is one click
  * from the conversation (`/#chat-<id>`) and one click from the daemon event
- * timeline (trace overlay). A clicked pulse day narrows the list to that day.
+ * timeline (trace overlay). A clicked pulse day narrows the list to that day;
+ * a pager walks history a page at a time instead of truncating it silently.
  */
 const RecentSessionsSection = memo(function RecentSessionsSection({
   sessions,
@@ -396,10 +445,17 @@ const RecentSessionsSection = memo(function RecentSessionsSection({
   onClearDay: () => void;
   onTrace: (target: TraceTarget) => void;
 }) {
+  const [page, setPage] = useState(0);
   const filtered = selectedDay
     ? sessions.filter((session) => sessionDayKey(session.updated_at) === selectedDay.key)
     : sessions;
-  const shown = filtered.slice(0, RECENT_SESSIONS_SHOWN);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / SESSIONS_PAGE_SIZE));
+  // A day filter or a shrinking list can strand the page past the end.
+  const safePage = Math.min(page, pageCount - 1);
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
+  const shown = filtered.slice(safePage * SESSIONS_PAGE_SIZE, safePage * SESSIONS_PAGE_SIZE + SESSIONS_PAGE_SIZE);
 
   if (sessions.length === 0) {
     return (
@@ -418,7 +474,10 @@ const RecentSessionsSection = memo(function RecentSessionsSection({
         <button
           type="button"
           className="fa-day-chip focus-ring"
-          onClick={onClearDay}
+          onClick={() => {
+            setPage(0);
+            onClearDay();
+          }}
           title="Clear the day filter"
         >
           {selectedDay.label} · {filtered.length} session{filtered.length === 1 ? "" : "s"}
@@ -475,16 +534,70 @@ const RecentSessionsSection = memo(function RecentSessionsSection({
           })}
         </ul>
       )}
-      {filtered.length > shown.length ? (
-        <p className="fa-sessions__truncation">
-          Showing {shown.length} of {filtered.length} sessions.
-        </p>
+      {filtered.length > SESSIONS_PAGE_SIZE ? (
+        <div className="fa-pager">
+          <button
+            type="button"
+            className="fa-pager__btn focus-ring"
+            disabled={safePage === 0}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            aria-label="Previous page of sessions"
+          >
+            <Icon name="ph:caret-left" width={11} aria-hidden />
+            Prev
+          </button>
+          <span className="fa-pager__label">
+            {safePage + 1} / {pageCount}
+          </span>
+          <button
+            type="button"
+            className="fa-pager__btn focus-ring"
+            disabled={safePage >= pageCount - 1}
+            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            aria-label="Next page of sessions"
+          >
+            Next
+            <Icon name="ph:caret-right" width={11} aria-hidden />
+          </button>
+        </div>
       ) : null}
     </div>
   );
 });
 
-const SelfHealList = memo(function SelfHealList({ requests }: { requests: SelfHealRequest[] }) {
+/** Severity → left-rail tone class for the heal cards + attention chips. */
+const HEAL_SEV_CLASS: Record<SelfHealRequest["severity"], string> = {
+  crit: "crit",
+  warn: "warn",
+  info: "info",
+};
+
+/** A short verb chip for the heal card, mirrored from the request's actionKind. */
+const HEAL_ACTION_LABEL: Record<SelfHealRequest["actionKind"], string> = {
+  "fix-contract": "Fix contract",
+  "write-memory": "Capture memory",
+  "request-skill": "Request skill",
+  manual: "Review",
+};
+
+/**
+ * Self-heal requests — the actionable "needs a human" queue. The first card is
+ * featured (spans two columns) so the most pressing request reads first; each
+ * card offers its suggested action (opens the action modal, which launches a
+ * primed working thread) and a trace shortcut. A "view all" tile opens the
+ * full list in a modal once the grid overflows.
+ */
+const SelfHealGrid = memo(function SelfHealGrid({
+  requests,
+  onAction,
+  onTrace,
+  onViewAll,
+}: {
+  requests: SelfHealRequest[];
+  onAction: (request: SelfHealRequest) => void;
+  onTrace: (request: SelfHealRequest) => void;
+  onViewAll: () => void;
+}) {
   if (requests.length === 0) {
     return (
       <EmptyState
@@ -495,24 +608,288 @@ const SelfHealList = memo(function SelfHealList({ requests }: { requests: SelfHe
       />
     );
   }
+  const shown = requests.slice(0, 6);
+  const hasMore = requests.length > shown.length;
   return (
-    <div className="fa-heal-list">
-      {requests.map((request) => (
-        <article key={request.id} className={`fa-heal-card fa-heal-card--${request.severity}`}>
-          <div>
-            <span>{request.source}</span>
-            <h3>{request.title}</h3>
-            <p>{request.detail}</p>
+    <div className="fa-heal-grid">
+      {shown.map((request, index) => (
+        <article
+          key={request.id}
+          className={`fa-heal-card fa-heal-card--${HEAL_SEV_CLASS[request.severity]}${index === 0 ? " fa-heal-card--featured" : ""}`}
+        >
+          <div className="fa-heal-card__head">
+            <span className="fa-heal-card__dot" aria-hidden />
+            <span className="fa-heal-card__source">{request.source}</span>
+            <span className="fa-heal-card__kind">{HEAL_ACTION_LABEL[request.actionKind]}</span>
           </div>
-          <b>{request.actionKind}</b>
+          <b className="fa-heal-card__title">{request.title}</b>
+          <p className="fa-heal-card__detail">{request.detail}</p>
+          <div className="fa-heal-card__foot">
+            <button
+              type="button"
+              className="fa-heal-card__btn focus-ring"
+              onClick={() => onAction(request)}
+            >
+              {request.suggestedAction || HEAL_ACTION_LABEL[request.actionKind]}
+            </button>
+            <button
+              type="button"
+              className="fa-heal-card__trace focus-ring"
+              title="Trace the thread behind this request"
+              aria-label={`Trace ${request.title}`}
+              onClick={() => onTrace(request)}
+            >
+              <Icon name="ph:tree-structure" width={13} aria-hidden />
+            </button>
+          </div>
         </article>
       ))}
+      {hasMore ? (
+        <button type="button" className="fa-heal-more focus-ring" onClick={onViewAll}>
+          <Icon name="ph:caret-right" width={20} aria-hidden />
+          <span>View all {requests.length}</span>
+        </button>
+      ) : null}
     </div>
   );
 });
 
+/** The full self-heal list, shown in a modal — every open request, no cap. */
+function HealAllModal({
+  requests,
+  onAction,
+  onTrace,
+  onClose,
+}: {
+  requests: SelfHealRequest[];
+  onAction: (request: SelfHealRequest) => void;
+  onTrace: (request: SelfHealRequest) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal open onClose={onClose} breadcrumb={["Self-heal", "All requests"]}>
+      <p className="fa-modal-lede">{requests.length} open · needs a human</p>
+      <div className="fa-modal-heal-list">
+        {requests.map((request) => (
+          <article
+            key={request.id}
+            className={`fa-heal-card fa-heal-card--${HEAL_SEV_CLASS[request.severity]}`}
+          >
+            <div className="fa-heal-card__head">
+              <span className="fa-heal-card__dot" aria-hidden />
+              <span className="fa-heal-card__source">{request.source}</span>
+              <span className="fa-heal-card__kind">{HEAL_ACTION_LABEL[request.actionKind]}</span>
+            </div>
+            <b className="fa-heal-card__title">{request.title}</b>
+            <p className="fa-heal-card__detail">{request.detail}</p>
+            <div className="fa-heal-card__foot">
+              <button
+                type="button"
+                className="fa-heal-card__btn focus-ring"
+                onClick={() => onAction(request)}
+              >
+                {request.suggestedAction || HEAL_ACTION_LABEL[request.actionKind]}
+              </button>
+              <button
+                type="button"
+                className="fa-heal-card__trace focus-ring"
+                title="Trace the thread behind this request"
+                aria-label={`Trace ${request.title}`}
+                onClick={() => onTrace(request)}
+              >
+                <Icon name="ph:tree-structure" width={13} aria-hidden />
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Action confirmation modal ───────────────────────────────────────────────
+
+type ActionKind = SelfHealRequest["actionKind"];
+
+type ActionModalData = {
+  kind: ActionKind;
+  icon: Parameters<typeof Icon>[0]["name"];
+  title: string;
+  blurb: string;
+  bullets: string[];
+  primary: string;
+  /** The prompt a confirmed action sends into a fresh working thread. */
+  prompt: string;
+};
+
+const ACTION_ICON: Record<ActionKind, Parameters<typeof Icon>[0]["name"]> = {
+  "fix-contract": "ph:file-text",
+  "write-memory": "ph:brain",
+  "request-skill": "ph:sparkle",
+  manual: "ph:wrench",
+};
+
+function buildActionModal(request: SelfHealRequest): ActionModalData {
+  const kind = request.actionKind;
+  const base = {
+    kind,
+    icon: ACTION_ICON[kind],
+    title: request.suggestedAction || HEAL_ACTION_LABEL[kind],
+    prompt: `${request.suggestedAction || HEAL_ACTION_LABEL[kind]}: ${request.title}\n\n${request.detail}`,
+  };
+  switch (kind) {
+    case "fix-contract":
+      return {
+        ...base,
+        blurb: "Open a working thread primed to repair this familiar's identity contract so it passes review.",
+        bullets: [
+          "Scaffold the missing ward.toml / SOUL.md sections",
+          "Re-run the compliance check on save",
+        ],
+        primary: "Open a fix thread",
+      };
+    case "write-memory":
+      return {
+        ...base,
+        blurb: "Give this familiar durable context so it stops losing ground between threads.",
+        bullets: [
+          "Snapshot the active thread's decisions into the grimoire",
+          "Recall it in every new thread's context window",
+        ],
+        primary: "Capture memory",
+      };
+    case "request-skill":
+      return {
+        ...base,
+        blurb: "Locate or install the skill this familiar reported it was missing.",
+        bullets: [
+          "Search the marketplace for an equivalent skill",
+          "Wire it into this familiar's toolset",
+        ],
+        primary: "Find the skill",
+      };
+    default:
+      return {
+        ...base,
+        blurb: "Open a working thread with this familiar, primed to resolve the request.",
+        bullets: [
+          "The thread opens pre-filled with the request details",
+          "Resolve it inline and report back",
+        ],
+        primary: "Open a thread",
+      };
+  }
+}
+
+/**
+ * Action confirmation — a lightweight sheet that explains what a heal action
+ * does before it launches a primed working thread with the familiar (the
+ * cave's real self-heal path, shared with the thread-signals review queue).
+ */
+function ActionModal({
+  data,
+  onConfirm,
+  onClose,
+}: {
+  data: ActionModalData;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      breadcrumb={["Self-heal", data.title]}
+      footerActions={
+        <>
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" size="sm" leadingIcon="ph:check-bold" onClick={onConfirm}>
+            {data.primary}
+          </Button>
+        </>
+      }
+    >
+      <div className="fa-modal-action">
+        <span className={`fa-modal-action__icon fa-modal-action__icon--${data.kind}`} aria-hidden>
+          <Icon name={data.icon} width={22} />
+        </span>
+        <p className="fa-modal-action__blurb">{data.blurb}</p>
+      </div>
+      <ul className="fa-action-bullets">
+        {data.bullets.map((bullet) => (
+          <li key={bullet}>
+            <Icon name="ph:check-circle-bold" width={16} aria-hidden />
+            <span>{bullet}</span>
+          </li>
+        ))}
+      </ul>
+    </Modal>
+  );
+}
+
+/** Which violation `field`s each contract property depends on — mirrors the
+ *  per-property coverage logic in familiar-contract.ts so a failing property's
+ *  detail panel can quote the exact violations behind it. */
+const PROPERTY_FIELDS: Record<FamiliarProperty, string[]> = {
+  "Named Identity": ["file", "content", "name", "creature"],
+  "Defined Purpose": ["file", "content", "purpose", "core_work", "what_i_am_not"],
+  "Bounded Authority": [
+    "file",
+    "content",
+    "boundaries",
+    "[protected]",
+    "protected.files",
+    "[editable]",
+    "editable.paths",
+    "[approval_tiers]",
+    "approval_tiers.auto",
+    "approval_tiers.human_review",
+  ],
+  "Persistent Memory": ["file"],
+  "Human Belonging": ["file", "content", "[meta]", "meta.person", "protected.invariants"],
+};
+
+/** Plain-language "why it passes" copy per property (there are no positive
+ *  reasons in the report — coverage is binary — so the satisfied case reads
+ *  from a curated legend, and the failing case quotes real violations). */
+const PROPERTY_MET: Record<FamiliarProperty, string> = {
+  "Named Identity": "A named familiar is declared with a stable identity across threads.",
+  "Defined Purpose": "Purpose and scope are declared, so work stays inside its lane.",
+  "Bounded Authority": "Boundaries and approval tiers are declared — authority is scoped.",
+  "Persistent Memory": "A durable memory store is attached, so context carries between sessions.",
+  "Human Belonging": "An accountable person owns this familiar's work.",
+};
+
+type ContractPropertyDetail = { property: FamiliarProperty; pass: boolean; body: string[] };
+
+/** Build the detail-panel copy for a contract property: the curated "why it
+ *  passes" legend when satisfied, else the real violation messages behind it. */
+function contractPropertyDetail(
+  property: FamiliarProperty,
+  pass: boolean,
+  report: ContractReport,
+): ContractPropertyDetail {
+  if (pass) return { property, pass, body: [PROPERTY_MET[property]] };
+  const fields = PROPERTY_FIELDS[property];
+  const messages = [...report.violations, ...report.warnings]
+    .filter((entry) => fields.includes(entry.field))
+    .map((entry) => entry.message);
+  return {
+    property,
+    pass,
+    body: messages.length > 0 ? messages : ["This property is failing its contract check."],
+  };
+}
+
 const ContractCompliance = memo(function ContractCompliance({ report }: { report: ContractReport | null }) {
+  const [activeProperty, setActiveProperty] = useState<FamiliarProperty | null>(null);
   const passCount = report ? report.properties.filter((property) => property.pass).length : 0;
+  const active = report && activeProperty
+    ? report.properties.find((property) => property.property === activeProperty) ?? null
+    : null;
+  const detail = report && active ? contractPropertyDetail(active.property, active.pass, report) : null;
   return (
     <FaSection
       id="fa-contract"
@@ -521,14 +898,45 @@ const ContractCompliance = memo(function ContractCompliance({ report }: { report
       count={report ? `${passCount}/${report.properties.length} · ${report.pass ? "passing" : "needs review"}` : "no report"}
     >
       {report ? (
-        <div className="fa-contract-grid">
-          {report.properties.map((property) => (
-            <div key={property.property} className={`fa-contract-item${property.pass ? " is-pass" : " is-fail"}`}>
-              <Icon name={property.pass ? "ph:check-circle-bold" : "ph:warning-circle"} aria-hidden />
-              <span>{property.property}</span>
+        <>
+          <div className="fa-contract-grid">
+            {report.properties.map((property) => {
+              const isActive = activeProperty === property.property;
+              return (
+                <button
+                  type="button"
+                  key={property.property}
+                  className={`fa-contract-item${property.pass ? " is-pass" : " is-fail"}${isActive ? " is-active" : ""} focus-ring`}
+                  aria-expanded={isActive}
+                  onClick={() =>
+                    setActiveProperty((prev) => (prev === property.property ? null : property.property))
+                  }
+                >
+                  <Icon name={property.pass ? "ph:check-circle-bold" : "ph:warning-circle"} aria-hidden />
+                  <span>{property.property}</span>
+                  <Icon name="ph:caret-down" className="fa-contract-item__caret" width={12} aria-hidden />
+                </button>
+              );
+            })}
+          </div>
+          {detail ? (
+            <div className={`fa-contract-detail${detail.pass ? " is-pass" : " is-fail"}`}>
+              <div className="fa-contract-detail__head">
+                <span className="fa-contract-detail__badge" aria-hidden>
+                  <Icon name={detail.pass ? "ph:check-circle-bold" : "ph:warning-circle"} width={16} />
+                </span>
+                <b>{detail.property}</b>
+                <span className="fa-contract-detail__status">{detail.pass ? "Satisfied" : "Failing"}</span>
+              </div>
+              <div className="fa-contract-detail__body">
+                <span className="fa-contract-detail__label">{detail.pass ? "Why it passes" : "What's missing"}</span>
+                {detail.body.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
+          ) : null}
+        </>
       ) : (
         <EmptyState
           compact
@@ -663,29 +1071,176 @@ const INSIGHT_ICON: Record<"good" | "warn" | "bad", Parameters<typeof Icon>[0]["
   bad: "ph:warning-circle",
 };
 
-/** One-line plain-language read of the familiar's state — turns numbers into meaning.
- *  When the read is actionable (attention tones with open heal requests), the
- *  banner carries its own drill-through so the next step is one click. */
+// ─── Needs-attention banner (recommended next actions) ───────────────────────
+
+type NextAction = {
+  key: string;
+  label: string;
+  why: string;
+  sev: "crit" | "warn" | "info";
+  /** The heal request this action stands in for (opens the same action modal). */
+  request: SelfHealRequest;
+};
+
+/** Small state chips beside the banner — the at-a-glance "what's off" read. */
+type AttentionStat = { key: string; value: string; label: string; tone: "ok" | "warn" | "crit" | "info" };
+
+const SEV_RANK: Record<SelfHealRequest["severity"], number> = { crit: 0, warn: 1, info: 2 };
+
+/**
+ * Prioritized "do this next" list, derived from the same real heal requests
+ * the self-heal grid shows (severity-first). Each action re-opens the request's
+ * action modal, so the banner and the grid stay one behavior.
+ */
+function deriveNextActions(healRequests: SelfHealRequest[]): NextAction[] {
+  return [...healRequests]
+    .sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity])
+    .slice(0, 4)
+    .map((request) => ({
+      key: request.id,
+      label: request.suggestedAction || HEAL_ACTION_LABEL[request.actionKind],
+      why: request.detail,
+      sev: request.severity,
+      request,
+    }));
+}
+
+/** Count of blocking thread signals — read from the aggregate persistent blockers. */
+function blockingSignalCount(model: FamiliarAnalyticsModel): number {
+  if (model.threadReports.length === 0) return 0;
+  const aggregate = aggregateThreadSignals(model.threadReports);
+  return aggregate.persistentBlockers.filter((blocker) => blocker.crit || blocker.impact === "blocking").length;
+}
+
+/** Derive the state chips: trust, contract, self-heal, blockers, streak. */
+function deriveAttentionStats(model: FamiliarAnalyticsModel, healRequestCount: number): AttentionStat[] {
+  const stats: AttentionStat[] = [];
+  const c = model.confidence;
+  if (c.hasData) {
+    stats.push({
+      key: "trust",
+      value: String(c.score),
+      label: "trust",
+      tone: c.score >= 75 ? "ok" : c.score >= 40 ? "warn" : "crit",
+    });
+  }
+  const contract = model.contractReport;
+  if (contract && contract.properties.length > 0) {
+    const pass = contract.properties.filter((p) => p.pass).length;
+    stats.push({
+      key: "contract",
+      value: `${pass}/${contract.properties.length}`,
+      label: "contract",
+      tone: contract.pass ? "ok" : "warn",
+    });
+  }
+  stats.push({
+    key: "heal",
+    value: String(healRequestCount),
+    label: "self-heal",
+    tone: healRequestCount === 0 ? "ok" : "warn",
+  });
+  const blockers = blockingSignalCount(model);
+  if (blockers > 0) {
+    stats.push({ key: "blockers", value: String(blockers), label: "blockers", tone: "crit" });
+  }
+  if (model.progression && model.progression.streakDays > 0) {
+    stats.push({
+      key: "streak",
+      value: `${model.progression.streakDays}d`,
+      label: "streak",
+      tone: "info",
+    });
+  }
+  return stats;
+}
+
+/**
+ * The synthesized "needs attention" read of the familiar — one plain-language
+ * line (deriveAnalyticsInsight) fronting a row of state chips and, when there's
+ * anything to do, an expandable prioritized action list. All actions re-use the
+ * self-heal action modal so the banner and the grid stay one behavior. When the
+ * read is clean, it collapses to a calm all-clear line.
+ */
 const AnalyticsInsightBanner = memo(function AnalyticsInsightBanner({
   model,
   healRequestCount,
+  nextActions,
+  stats,
+  expanded,
+  onToggleExpanded,
+  onAction,
 }: {
   model: FamiliarAnalyticsModel;
   healRequestCount: number;
+  nextActions: NextAction[];
+  stats: AttentionStat[];
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  onAction: (request: SelfHealRequest) => void;
 }) {
   const insight = deriveAnalyticsInsight(model, healRequestCount);
   const actionable = insight.tone !== "good" && healRequestCount > 0;
+  const heading = actionable ? "Needs attention" : "All clear";
   return (
-    <p className={`fa-insight fa-insight--${insight.tone}`} role="note">
-      <Icon name={INSIGHT_ICON[insight.tone]} aria-hidden />
-      <span>{insight.text}</span>
-      {actionable ? (
-        <a className="fa-insight__action focus-ring" href="#fa-heal">
-          Review
-          <Icon name="ph:caret-right" aria-hidden />
-        </a>
+    <section className={`fa-attention fa-insight--${insight.tone}`} aria-label="Needs attention">
+      <div className="fa-attention__head">
+        <span className="fa-attention__icon" aria-hidden>
+          <Icon name={INSIGHT_ICON[insight.tone]} width={18} />
+        </span>
+        <span className="fa-attention__lede">
+          <b className="fa-attention__title">{heading}</b>
+          <span className="fa-attention__sub">{insight.text}</span>
+        </span>
+        {nextActions.length > 0 ? (
+          <button
+            type="button"
+            className="fa-attention__toggle focus-ring"
+            aria-expanded={expanded}
+            onClick={onToggleExpanded}
+          >
+            {expanded ? "Hide actions" : `${nextActions.length} recommended action${nextActions.length === 1 ? "" : "s"}`}
+            <Icon name="ph:caret-down" className={`fa-attention__caret${expanded ? " is-open" : ""}`} width={12} aria-hidden />
+          </button>
+        ) : actionable ? (
+          <a className="fa-insight__action focus-ring" href="#fa-heal">
+            Review
+            <Icon name="ph:caret-right" aria-hidden />
+          </a>
+        ) : null}
+      </div>
+      {stats.length > 0 ? (
+        <div className="fa-attention__stats">
+          {stats.map((stat) => (
+            <span key={stat.key} className={`fa-attention__stat fa-attention__stat--${stat.tone}`}>
+              <b>{stat.value}</b>
+              <span>{stat.label}</span>
+            </span>
+          ))}
+        </div>
       ) : null}
-    </p>
+      {expanded && nextActions.length > 0 ? (
+        <div className="fa-attention__actions">
+          <p className="fa-attention__actions-label">Prioritized — do this next</p>
+          {nextActions.map((action, index) => (
+            <div key={action.key} className={`fa-attention__action-row fa-attention__action-row--${action.sev}`}>
+              <span className="fa-attention__n" aria-hidden>{index + 1}</span>
+              <span className="fa-attention__action-main">
+                <b>{action.label}</b>
+                <small>{action.why}</small>
+              </span>
+              <button
+                type="button"
+                className="fa-attention__action-btn focus-ring"
+                onClick={() => onAction(action.request)}
+              >
+                {action.label}
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 });
 
@@ -693,7 +1248,8 @@ const AnalyticsInsightBanner = memo(function AnalyticsInsightBanner({
  * Progression band — the renown system's read of this familiar (same
  * derivation as the roster card, so the two surfaces always agree): tier,
  * score, progress toward the next rung, and the ritual streak. A broken
- * streak reads as an invitation, never a reprimand.
+ * streak reads as an invitation, never a reprimand. Rendered inline in the
+ * hero header, under the familiar's name.
  */
 const ProgressionBand = memo(function ProgressionBand({
   progression,
@@ -784,6 +1340,11 @@ export function FamiliarAnalyticsContent({
     const escalated = escalateBlockers(model.familiarId, threadSignalsAggregate, model.healRequests);
     return [...escalated, ...model.healRequests];
   }, [model.familiarId, model.healRequests, threadSignalsAggregate]);
+  const nextActions = useMemo(() => deriveNextActions(healRequests), [healRequests]);
+  const attentionStats = useMemo(
+    () => deriveAttentionStats(model, healRequests.length),
+    [model, healRequests.length],
+  );
   const pulseSessions = pulseTotal(model.sessionPulse);
   // cave-fy1q phase 3: surface the first-run funnel while this install has
   // both stamps. Sampled after mount — localStorage isn't SSR-safe.
@@ -796,6 +1357,35 @@ export function FamiliarAnalyticsContent({
   const [selectedDay, setSelectedDay] = useState<PulseDay | null>(null);
   // Session trace overlay target — any surface on the page can open it.
   const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null);
+  // Needs-attention banner: expandable prioritized action list.
+  const [actionsExpanded, setActionsExpanded] = useState(false);
+  // Model-performance panel folds behind a header (design: opt-in detail).
+  const [modelOpen, setModelOpen] = useState(false);
+  // Modals: the full self-heal list, and a per-action confirmation sheet.
+  const [healAllOpen, setHealAllOpen] = useState(false);
+  const [actionModal, setActionModal] = useState<ActionModalData | null>(null);
+  const { announce } = useAnnouncer();
+
+  const openAction = useCallback((request: SelfHealRequest) => {
+    setActionModal(buildActionModal(request));
+  }, []);
+  const traceRequest = useCallback((request: SelfHealRequest) => {
+    setTraceTarget({ id: request.id, title: request.title });
+  }, []);
+  // Confirming an action launches a primed working thread with the familiar —
+  // the cave's real self-heal path (shared with the thread-signals queue).
+  const confirmAction = useCallback(() => {
+    if (!actionModal) return;
+    requestAgentsNewChat({
+      familiarId: model.familiarId,
+      initialPrompt: `${actionModal.prompt}\n\nAnalytics source: /dashboard/familiars/${encodeURIComponent(model.familiarId)}/analytics`,
+      origin: "chat" as const,
+    });
+    announce(`Opening a thread to ${actionModal.title.toLowerCase()}.`);
+    setActionModal(null);
+    setHealAllOpen(false);
+  }, [actionModal, announce, model.familiarId]);
+
   const handleSelectDay = useCallback((day: PulseDay) => {
     setSelectedDay((prev) => {
       const next = prev?.key === day.key ? null : day;
@@ -844,6 +1434,7 @@ export function FamiliarAnalyticsContent({
       ) : null}
 
       <header className="fa-header">
+        <span className="fa-header__glow" aria-hidden />
         <div className="fa-header__identity">
           <AuthedImage
             className="fa-avatar"
@@ -851,13 +1442,14 @@ export function FamiliarAnalyticsContent({
             alt={familiarName}
             fallback={<span className="fa-avatar" aria-hidden>{familiarName.slice(0, 1).toUpperCase()}</span>}
           />
-          <div>
+          <div className="fa-header__meta">
             <p className="retro-eyebrow">
               <Icon name="ph:chart-bar-bold" aria-hidden />
               Familiar analytics
             </p>
             <h1>{familiarName}</h1>
             <p>{familiarRole}</p>
+            <ProgressionBand progression={model.progression} />
           </div>
         </div>
         <div className="fa-header__pulse">
@@ -882,15 +1474,45 @@ export function FamiliarAnalyticsContent({
         <ConfidenceRing confidence={model.confidence} />
       </header>
 
-      <AnalyticsInsightBanner model={model} healRequestCount={healRequests.length} />
-
-      <ProgressionBand progression={model.progression} />
+      <AnalyticsInsightBanner
+        model={model}
+        healRequestCount={healRequests.length}
+        nextActions={nextActions}
+        stats={attentionStats}
+        expanded={actionsExpanded}
+        onToggleExpanded={() => setActionsExpanded((prev) => !prev)}
+        onAction={openAction}
+      />
 
       <FamiliarKpis model={model} healRequestCount={healRequests.length} />
 
       <div className="fa-grid">
-        {/* Recent sessions — the tracing spine. The hero pulse filters this
-            list by day; every row opens its thread or its daemon trace. */}
+        {/* Self-heal requests lead the grid full-width — the actionable "needs
+            a human" queue is the first thing worth doing. Its #fa-heal anchor
+            keeps the KPI drill-through and the banner's Review link working. */}
+        <FaSection
+          id="fa-heal"
+          title="Self-heal requests"
+          wide
+          count={`${healRequests.length} ${healRequests.length === 1 ? "request" : "requests"}`}
+        >
+          <SelfHealGrid
+            requests={healRequests}
+            onAction={openAction}
+            onTrace={traceRequest}
+            onViewAll={() => setHealAllOpen(true)}
+          />
+        </FaSection>
+
+        {/* Confidence + recent sessions pair on the second row — the read and
+            the tracing spine side by side. The hero pulse filters the list. */}
+        <ThreadAnalysisSection
+          confidence={model.confidence}
+          trends={model.signalTrends}
+          familiar={model.familiar}
+          onSelfReportEnabled={onRefresh}
+        />
+
         <FaSection
           id="fa-sessions"
           title="Recent sessions"
@@ -903,28 +1525,6 @@ export function FamiliarAnalyticsContent({
             onTrace={setTraceTarget}
           />
         </FaSection>
-
-        {/* Self-heal requests pair with recent sessions on the first row —
-            contract compliance is full width now, so it would otherwise leave
-            an empty cell beside the sessions list. The #fa-heal and
-            #fa-contract KPI drill-throughs keep working wherever the sections
-            live. */}
-        <FaSection
-          id="fa-heal"
-          title="Self-heal requests"
-          count={`${healRequests.length} ${healRequests.length === 1 ? "request" : "requests"}`}
-        >
-          <SelfHealList requests={healRequests} />
-        </FaSection>
-
-        <ContractCompliance report={model.contractReport} />
-
-        <ThreadAnalysisSection
-          confidence={model.confidence}
-          trends={model.signalTrends}
-          familiar={model.familiar}
-          onSelfReportEnabled={onRefresh}
-        />
 
         <FaSection
           id="fa-thread-signals"
@@ -939,20 +1539,37 @@ export function FamiliarAnalyticsContent({
 
         {/* Model performance — thumbs votes on chat replies, netted per message
             (last vote wins, toggles withdraw) and bucketed by the model and
-            runtime that produced them. Fed by /api/feedback/message GET via
-            message-feedback-rollup.ts. */}
-        <FaSection
+            runtime that produced them. Folds behind a header (design: opt-in
+            detail). Fed by /api/feedback/message GET via message-feedback-rollup.ts. */}
+        <FaCollapsibleSection
           id="fa-model-performance"
           title="Model performance"
-          wide
           count={`${model.modelFeedback.total} ${model.modelFeedback.total === 1 ? "vote" : "votes"}`}
+          hint="Thumbs votes on chat replies, by model & runtime"
+          open={modelOpen}
+          onToggle={() => setModelOpen((prev) => !prev)}
         >
           <ModelFeedbackSection rollup={model.modelFeedback} />
-        </FaSection>
+        </FaCollapsibleSection>
+
+        <ContractCompliance report={model.contractReport} />
       </div>
 
       {traceTarget ? (
         <SessionTraceOverlay target={traceTarget} onClose={() => setTraceTarget(null)} />
+      ) : null}
+
+      {healAllOpen ? (
+        <HealAllModal
+          requests={healRequests}
+          onAction={openAction}
+          onTrace={traceRequest}
+          onClose={() => setHealAllOpen(false)}
+        />
+      ) : null}
+
+      {actionModal ? (
+        <ActionModal data={actionModal} onConfirm={confirmAction} onClose={() => setActionModal(null)} />
       ) : null}
     </>
   );

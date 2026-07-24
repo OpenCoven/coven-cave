@@ -415,18 +415,21 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /className=\{`fa-kpi\$\{kpi\.tone/, "KPI tiles tint by tone");
   });
 
-  it("synthesizes a plain-language insight banner above the KPIs", () => {
+  it("synthesizes a plain-language needs-attention banner above the KPIs", () => {
     assert.match(source, /import \{ deriveAnalyticsInsight \} from "@\/lib\/familiar-analytics-insight"/, "view uses the insight helper");
-    assert.match(source, /<AnalyticsInsightBanner model=\{model\} healRequestCount=\{healRequests\.length\}/, "banner is rendered with the model");
+    assert.match(source, /<AnalyticsInsightBanner[\s\S]*model=\{model\}[\s\S]*healRequestCount=\{healRequests\.length\}/, "banner is rendered with the model");
     assert.match(source, /deriveAnalyticsInsight\(model, healRequestCount\)/, "banner derives the insight from the model");
     assert.match(source, /fa-insight--\$\{insight\.tone\}/, "banner is tinted by tone");
+    // The modernized banner carries state chips + a prioritized action list.
+    assert.match(source, /function deriveNextActions/, "the banner derives its prioritized actions from the heal requests");
+    assert.match(source, /className="fa-attention__stats"/, "the banner renders the at-a-glance state chips");
   });
 
-  it("renders progression between the insight banner and KPI row with intentional copy", () => {
+  it("folds progression into the hero header, above the attention banner, with intentional copy", () => {
     assert.match(
       source,
-      /<AnalyticsInsightBanner[\s\S]*<ProgressionBand progression=\{model\.progression\} \/>[\s\S]*<FamiliarKpis/,
-      "progression is placed between the insight and KPI summary",
+      /<ProgressionBand progression=\{model\.progression\} \/>[\s\S]*<\/header>[\s\S]*<AnalyticsInsightBanner/,
+      "progression is folded into the header, ahead of the attention banner and KPI summary",
     );
     assert.match(source, /"Top of the ladder"/, "top-tier accessible copy remains explicit");
     assert.match(source, /"a session today starts a streak"/, "zero streaks use invitational copy");
@@ -481,7 +484,7 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(globals, /@container fa \(max-width: 880px\)/, "grid collapses by pane width, not viewport");
   });
 
-  it("gives contract compliance both columns after the sessions and self-heal row", () => {
+  it("leads the grid with the full-width self-heal queue and closes with wide contract compliance", () => {
     assert.match(
       source,
       /id="fa-contract"\s+title="Contract compliance"\s+wide/,
@@ -489,11 +492,11 @@ describe("FamiliarAnalyticsView", () => {
     );
 
     const grid = source.slice(source.indexOf('<div className="fa-grid">'), source.indexOf("{traceTarget ?"));
-    const sessionsIndex = grid.indexOf('id="fa-sessions"');
     const healIndex = grid.indexOf('id="fa-heal"');
+    const sessionsIndex = grid.indexOf('id="fa-sessions"');
     const contractIndex = grid.indexOf("<ContractCompliance");
-    assert.ok(sessionsIndex >= 0 && sessionsIndex < healIndex, "recent sessions starts the paired row");
-    assert.ok(healIndex < contractIndex, "self-heal completes the row before the wide contract panel");
+    assert.ok(healIndex >= 0 && healIndex < sessionsIndex, "the actionable self-heal queue leads the grid full-width");
+    assert.ok(sessionsIndex >= 0 && sessionsIndex < contractIndex, "contract compliance closes the grid after the sessions pair");
   });
 
   it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {
@@ -560,7 +563,8 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
     );
     assert.match(source, /onTrace\(\{ id: session\.id, title: session\.title \}\)/, "each row can open the trace overlay");
     assert.match(source, /<SessionTraceOverlay target=\{traceTarget\}/, "the overlay is rendered from page state");
-    assert.match(source, /Showing \{shown\.length\} of \{filtered\.length\} sessions\./, "truncation is stated, never silent");
+    assert.match(source, /className="fa-pager"/, "history is walked with a pager rather than silently truncated");
+    assert.match(source, /aria-label="Next page of sessions"/, "the pager exposes an accessible next-page control");
   });
 
   it("makes the hero pulse interactive — a clicked day filters the sessions list", () => {
