@@ -101,7 +101,8 @@ export function describeEmptyAssistOutput(command: string, stderrTail: string): 
  * Run one bounded assist end-to-end: spawn `codex exec`, wait (bounded), and
  * return the final message for the caller to parse against its own output
  * contract. Never throws. Spawn behavior is exercised manually — CI covers
- * `buildAssistInvocation` only.
+ * the pure pieces only (`buildAssistInvocation`, `stderrReason`,
+ * `describeEmptyAssistOutput`).
  */
 export async function runBoundedAssist(opts: {
   prompt: string;
