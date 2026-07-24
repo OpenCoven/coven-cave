@@ -1,4 +1,63 @@
-/* ── Marketplace browse toolbar: result context · kind filter · sort ── */
+/* ── Explore rail: Type · Status · Categories/Topics ── */
+.mk-rail {
+  width: 236px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+  padding: var(--space-4) var(--space-3) var(--space-10);
+}
+.mk-rail__label {
+  margin: 0 0 var(--space-2);
+  padding: 0 10px;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.mk-rail__label:not(:first-child) {
+  margin-top: var(--space-5);
+}
+.mk-rail__group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* ── Explore toolbar: grid/list view toggle ── */
+.mk-viewtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  padding: 2px;
+}
+.mk-viewtoggle__btn {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+.mk-viewtoggle__btn:hover {
+  color: var(--text-secondary);
+}
+.mk-viewtoggle__btn.is-active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+/* ── Marketplace browse toolbar: result context · view toggle · sort ── */
 .marketplace-browse-summary {
   display: flex;
   min-width: 0;
@@ -49,6 +108,10 @@
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: 9px;
+}
+/* List view — a single column of the same cards, regardless of pane width. */
+.marketplace-category-grid--rows {
+  grid-template-columns: minmax(0, 1fr);
 }
 .marketplace-card {
   min-height: 178px;
@@ -106,12 +169,12 @@
   white-space: nowrap;
 }
 @container marketplace (min-width: 560px) {
-  .marketplace-category-grid {
+  .marketplace-category-grid:not(.marketplace-category-grid--rows) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @container marketplace (min-width: 1200px) {
-  .marketplace-category-grid {
+  .marketplace-category-grid:not(.marketplace-category-grid--rows) {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

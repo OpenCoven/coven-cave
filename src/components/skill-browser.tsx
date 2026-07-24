@@ -18,6 +18,7 @@ import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { copyText } from "@/lib/clipboard";
+import { stripFrontmatter } from "@/lib/skill-directory";
 
 export type SkillBrowserEntry = {
   id: string;
@@ -174,12 +175,6 @@ function useCommand(skill: SkillBrowserEntry): string {
   const specific = specificSkillName(skill);
   if (specific) return `npx skills use ${quoteCliArg(target)} --skill ${quoteCliArg(specific)}`;
   return `npx skills use ${quoteCliArg(target)}`;
-}
-
-// SKILL.md opens with a YAML frontmatter block (name/description/tags) already
-// surfaced as the title/badges — strip it so the body reads as prose.
-function stripFrontmatter(text: string): string {
-  return text.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n?/, "").trimStart();
 }
 
 function matchesQuery(skill: SkillBrowserEntry, query: string): boolean {
