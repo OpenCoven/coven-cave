@@ -88,8 +88,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /setTimeout\(\(\) => void saveRef\.current\(\), AUTOSAVE_DEBOUNCE_MS\)/,
-  "autosave is debounced and routes through the shared save path",
+  /setTimeout\(\(\) => void saveRef\.current\("auto"\), AUTOSAVE_DEBOUNCE_MS\)/,
+  "autosave is debounced, routes through the shared save path, and declares itself auto (cave-q06w: only manual saves flare)",
 );
 assert.match(shell, /clearTimeout\(timer\)/, "a pending autosave is cancelled on change/unmount");
 // Idempotent surfaces opt in; the mtime-guarded memory editor must NOT.

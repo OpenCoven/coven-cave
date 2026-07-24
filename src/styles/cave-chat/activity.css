@@ -661,6 +661,29 @@ details[open] > .cave-tool-summary::before {
   animation: cave-chat-meta-blip 1.2s ease-in-out infinite;
 }
 
+/* One-shot session-settle flare (cave-q06w) — the summoning bloom (700ms,
+   decelerate, radiate + fade) in success green as a LONG run settles.
+   Shadow-only: the meta line is borderless and nothing may shift layout.
+   Gated in MetaLine by a 60s significance floor + a global per-kind
+   cooldown (src/lib/flare-cooldown.ts) + the celebrations pref; the row's
+   role=status announcement carries the information either way. */
+.cave-chat-meta-line--reward {
+  border-radius: var(--radius-md);
+  animation: cave-chat-settle-flare 700ms var(--ease-decelerate) forwards;
+}
+@keyframes cave-chat-settle-flare {
+  0% {
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-success) 45%, transparent),
+      0 0 18px color-mix(in oklch, var(--color-success) 40%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 10px transparent, 0 0 34px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-chat-meta-line--reward { animation: none; }
+}
+
 .cave-chat-meta-line--failed,
 .cave-chat-meta-line--offline {
   color: var(--color-danger);

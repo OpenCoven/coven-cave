@@ -17,6 +17,8 @@ import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
+import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
+import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { segmentTurn } from "@/lib/turn-segments";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
@@ -1409,6 +1411,24 @@ function MetaLine({
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
+  // Session-settle flare (cave-q06w): the summoning bloom fires when a LONG
+  // run settles — the case where the user context-switched away and the
+  // completion is an event. Short replies are their own feedback, so a
+  // significance floor (SETTLE_MIN_RUN_MS) plus a global per-kind cooldown
+  // keep parallel familiars from strobing. Visual-only: this row is already
+  // role=status/aria-live, so AT hears the settle regardless; celebrations
+  // off stills the bloom without touching the announcement.
+  const [settleFlare, setSettleFlare] = useState(false);
+  const prevStateRef = useRef(state);
+  useEffect(() => {
+    const prev = prevStateRef.current;
+    prevStateRef.current = state;
+    if (prev !== "streaming" || state !== "complete") return;
+    if ((durationMs ?? 0) < SETTLE_MIN_RUN_MS) return;
+    if (!readCelebrationsEnabled() || !shouldFlare("session-settle")) return;
+    setSettleFlare(true);
+    window.setTimeout(() => setSettleFlare(false), 900);
+  }, [state, durationMs]);
   // Resolve once: the effective model id drives both the meta segments and the
   // context meter (the meter needs the model to size the window).
   const metaModel =
@@ -1450,7 +1470,7 @@ function MetaLine({
       ? `Task: ${task.title}`
       : null;
   return (
-    <div className={`cave-chat-meta-line cave-chat-meta-line--${state}`} role="status" aria-live="polite" data-lifecycle={state}>
+    <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} role="status" aria-live="polite" data-lifecycle={state}>
       {state !== "complete" ? <span className="cave-chat-meta-line__dot" aria-hidden /> : null}
       {/* Chat-revamp 1b: the session's familiar leads the header as a small
           circular avatar, so the title row reads avatar · title · meta. */}

@@ -29,6 +29,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 /** Trailing debounce before an autosave fires once typing pauses. */
 const AUTOSAVE_DEBOUNCE_MS = 1200;
 import { Icon } from "@/lib/icon";
+import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
+import { shouldFlare } from "@/lib/flare-cooldown";
 import { CodeEditor } from "@/components/code-editor";
 import {
   normalizeMdTags,
@@ -125,6 +127,7 @@ export function MdEditor({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [saveFlare, setSaveFlare] = useState(false);
   // A 409-style concurrent-write conflict: the transport reported the document
   // changed underneath us. While set, the body shows the resolution panel.
   const [conflict, setConflict] = useState<MdEditorConflict | null>(null);
@@ -181,7 +184,7 @@ export function MdEditor({
     });
   }, []);
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (source: "manual" | "auto" = "manual") => {
     if (readOnly || saving) return;
     const snapshot = rawRef.current;
     setSaving(true);
@@ -193,6 +196,14 @@ export function MdEditor({
         setConflict(null);
         setSavedFlash(true);
         window.setTimeout(() => setSavedFlash(false), 1500);
+        // Memory-save flare (cave-q06w): manual saves only — autosave is
+        // ambient bookkeeping, not an accomplishment — and a global cooldown
+        // keeps save-happy editing from strobing. Visual-only garnish: the
+        // role=status "Saved" flash above is the actual confirmation.
+        if (source === "manual" && readCelebrationsEnabled() && shouldFlare("memory-save")) {
+          setSaveFlare(true);
+          window.setTimeout(() => setSaveFlare(false), 900);
+        }
       } else if (result.conflict) {
         setConflict(result.conflict);
       } else {
@@ -252,7 +263,7 @@ export function MdEditor({
   saveRef.current = save;
   useEffect(() => {
     if (!autoSave || readOnly || saving || conflict !== null || !dirty || !raw.trim()) return;
-    const timer = window.setTimeout(() => void saveRef.current(), AUTOSAVE_DEBOUNCE_MS);
+    const timer = window.setTimeout(() => void saveRef.current("auto"), AUTOSAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [autoSave, readOnly, saving, conflict, dirty, raw]);
 
@@ -275,7 +286,7 @@ export function MdEditor({
 
   return (
     <div
-      className="md-editor flex h-full min-h-0 flex-col"
+      className={`md-editor flex h-full min-h-0 flex-col${saveFlare ? " md-editor--reward" : ""}`}
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
           e.preventDefault();
