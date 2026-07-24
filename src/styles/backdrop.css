@@ -90,7 +90,6 @@ html[data-backdrop-on] .cave-chat-linear .cave-chat-thread,
 html[data-backdrop-on] .cave-group-chat-shell {
   background: color-mix(in oklch, var(--bg-base) 62%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 html[data-backdrop-on] .cave-chat-linear .cave-chat-thread {
@@ -104,7 +103,6 @@ html[data-backdrop-on] .cave-chat-linear .cave-chat-thread {
    behind it so the title and session actions stay steady. */
 html[data-backdrop-on] .cave-chat-linear-header {
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 /* One-step contrast lift for the quiet text while the image is on — meta
@@ -131,7 +129,6 @@ html[data-backdrop-on] .cave-group-chat-shell {
 html[data-backdrop-on] .home-composer-root.home-dash {
   background: color-mix(in oklch, var(--bg-base) 62%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 /* Chat landing (no thread yet): the greeting/identity/suggestions cluster
@@ -139,7 +136,6 @@ html[data-backdrop-on] .home-composer-root.home-dash {
 html[data-backdrop-on] .cave-chat-empty-shell {
   background: color-mix(in oklch, var(--bg-base) 55%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-radius: var(--radius-xl);
   padding: clamp(16px, 3vh, 28px) clamp(14px, 2.5vw, 24px);
 }
@@ -152,7 +148,6 @@ html[data-backdrop-on] .cave-chat-empty-shell {
 html[data-backdrop-on] .familiar-tab {
   background: color-mix(in oklch, var(--bg-base) 62%, transparent);
   backdrop-filter: blur(50px) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(50px) saturate(var(--glass-saturate));
   border-radius: var(--radius-xl);
   --text-muted: var(--text-secondary);
 }
@@ -193,7 +188,6 @@ html[data-backdrop-on] .home-composer-root {
   html[data-backdrop-on] .cave-group-chat-shell {
     background: transparent;
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 
   html[data-backdrop-on] .cave-chat-linear .cave-chat-thread {
@@ -205,13 +199,11 @@ html[data-backdrop-on] .home-composer-root {
   html[data-backdrop-on] .home-composer-root.home-dash {
     background: var(--bg-base);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 
   html[data-backdrop-on] .cave-chat-empty-shell {
     background: transparent;
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
     padding: 0;
   }
 
@@ -219,7 +211,6 @@ html[data-backdrop-on] .home-composer-root {
   html[data-backdrop-on] .familiar-tab {
     background: transparent;
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 

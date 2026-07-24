@@ -13,7 +13,6 @@
   background: var(--backdrop-scrim);
   /* Soft depth cue: the app recedes behind the scrim instead of just dimming. */
   backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -43,7 +42,6 @@
   /* Glassmorphic sheet — the dimmed app blurs through the dialog body. */
   background: var(--glass-raised);
   backdrop-filter: blur(calc(var(--glass-blur) + 2px)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 2px)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-card);
   display: flex;
@@ -483,7 +481,6 @@ textarea.required-inputs-control {
   max-width: calc(100vw - 2 * var(--space-4));
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-panel);
   box-shadow: 0 16px 48px oklch(0 0 0 / 50%);
@@ -1338,7 +1335,6 @@ textarea.required-inputs-control {
      Opaque fallbacks live in the @supports / reduced-transparency blocks. */
   background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
   box-shadow: 0 16px 40px oklch(0 0 0 / 45%);
@@ -1361,7 +1357,6 @@ textarea.required-inputs-control {
 .glass-overlay {
   background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 /* Contrast floor while a scene backdrop is frontmost: 74% glass over a busy
@@ -1405,7 +1400,6 @@ html[data-backdrop-on] .glass-overlay {
   .familiar-switcher__popover {
     background: var(--bg-elevated);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
   .ui-modal,
   .ui-dock-chat,
@@ -1414,17 +1408,14 @@ html[data-backdrop-on] .glass-overlay {
   .familiar-studio__drawer {
     background: var(--bg-raised);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
   .quick-chat-overlay,
   .quick-chat-overlay__caret {
     background: var(--bg-panel);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
   .ui-modal-backdrop {
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 
@@ -1542,7 +1533,6 @@ html[data-backdrop-on] .glass-overlay {
   z-index: 70;
   background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   color: var(--text-primary);
   font-size: var(--text-2xs);
   padding: var(--space-1) var(--space-2);

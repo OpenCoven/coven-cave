@@ -30,7 +30,6 @@
      the sticky band shows through as a saturated blur, macOS-chrome style. */
   background: color-mix(in oklch, var(--bg-base) 86%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-bottom: 1px solid var(--border-hairline);
 }
 .dr-back {
@@ -1414,7 +1413,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   font-size: var(--text-sm);
   background: color-mix(in oklch, var(--bg-base) 84%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 .fa-topbar a {
   color: var(--text-secondary);
@@ -3181,7 +3179,6 @@ details[open] > .cave-edit-card__summary::before {
   border: 1px solid var(--border-hairline);
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   color: var(--fg-primary);
   /* Layered elevation: an inner top highlight + two soft drop shadows read as a
      crisp floating panel rather than one flat blur. */
@@ -3201,7 +3198,6 @@ details[open] > .cave-edit-card__summary::before {
   /* Matches the overlay's frosted fill so the caret doesn't read solid. */
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-left: 1px solid var(--border-hairline);
   border-top: 1px solid var(--border-hairline);
   border-top-left-radius: 3px;

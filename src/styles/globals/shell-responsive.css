@@ -396,7 +396,6 @@
   flex-direction: column;
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-left: 1px solid var(--border-hairline);
   box-shadow: -8px 0 24px color-mix(in oklch, var(--text-primary) 10%, transparent);
   z-index: 10;
@@ -452,7 +451,6 @@
   grid-template-columns: max-content 1fr;
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-left: 1px solid var(--border-hairline);
   box-shadow: -12px 0 40px color-mix(in oklch, var(--text-primary) 16%, transparent);
   z-index: 45;
@@ -630,7 +628,6 @@
   max-width: calc(100vw - 16px);
   background: var(--bg-elevated);
   backdrop-filter: none;
-  -webkit-backdrop-filter: none;
   overflow-x: hidden;
   padding: 0;
 }
@@ -1386,7 +1383,6 @@
     linear-gradient(to top, color-mix(in oklch, var(--bg-base) 92%, transparent), color-mix(in oklch, var(--bg-raised) 88%, transparent)),
     color-mix(in oklch, var(--bg-raised) 92%, transparent);
   backdrop-filter: blur(18px) saturate(145%);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
   border-top: 1px solid color-mix(in oklch, var(--border-hairline) 88%, transparent);
   box-shadow: 0 -14px 32px color-mix(in oklch, black 18%, transparent);
 }
