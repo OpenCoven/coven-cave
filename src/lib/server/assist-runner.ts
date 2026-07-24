@@ -165,13 +165,15 @@ export async function runBoundedAssist(opts: {
         /not logged in|log ?in|sign ?in|unauthorized|authenticate|auth|credential|token|401/i.test(
           stderrTail,
         );
-      if (looksLikeAuth) {
-        return {
-          ok: false,
-          error: `${inv.command} isn't signed in, so this assist produced no output. Run \`${inv.command} login\` in a terminal, then try again${
-            tail ? ` (${tail})` : ""
-          }.`,
-        };
+          const loginCommand = /\s/.test(inv.command)
+            ? `"${inv.command}" login`
+            : `${inv.command} login`;
+          return {
+            ok: false,
+            error: `${inv.command} isn't signed in, so this assist produced no output. Run \`${loginCommand}\` in a terminal, then try again${
+              tail ? ` (${tail})` : ""
+            }.`,
+          };
       }
       return {
         ok: false,
