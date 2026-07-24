@@ -56,8 +56,16 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // backdrop.css (fill + reduced-motion hide) are home-startup surface CSS,
 // +<1 KiB; the measured home set already sat exactly at the 915 boundary
 // after the 3a dashboard redesign (#3758/#3763).
-const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 690) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 920) * 1024;
+// Raised root 690→696 / home 920→936 (2026-07-24, cave-q8uc): the Familiar
+// Analytics modernization (Familiar Analytics.dc.html handoff) grows the
+// .fa-* analytics rules in surface-reporting.css — the new 3-column hero,
+// needs-attention banner, featured self-heal grid, collapsible panels,
+// contract detail panel, pager, and action-modal styling (+~13 KiB home /
+// +~3 KiB root). This surface's CSS has always lived in the global bundle;
+// follow-up cave-5rqi tracks extracting it to a component-imported sheet
+// per #3264 so it code-splits out of the every-route/home first load.
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 696) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 936) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(
