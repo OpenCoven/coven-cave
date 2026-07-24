@@ -922,8 +922,8 @@ export function OnboardingOverlay({
       {
         key: "project",
         title: "Choose your Queue project",
-        ok: !!s?.project.ok,
-        detail: s?.project.detail ?? s?.project.hint ?? "checking…",
+        ok: !!s?.project?.ok,
+        detail: s?.project?.detail ?? s?.project?.hint ?? "checking…",
         icon: "ph:folder-simple-dashed",
       },
       {
@@ -1552,8 +1552,10 @@ function QueueProjectSetup({ onSelected }: { onSelected: () => void }) {
   const [readiness, setReadiness] = useState<QueueReadinessView | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestGeneration = useRef(0);
 
   const refreshReadiness = useCallback(async () => {
+    const generation = ++requestGeneration.current;
     try {
       const response = await fetch("/api/queue/readiness", { cache: "no-store" });
       const body = (await response.json()) as {
@@ -1564,10 +1566,14 @@ function QueueProjectSetup({ onSelected }: { onSelected: () => void }) {
       if (!response.ok || !body.ok || !body.readiness) {
         throw new Error(body.error ?? "Couldn’t check the Queue project.");
       }
-      setReadiness(body.readiness);
-      setError(null);
+      if (generation === requestGeneration.current) {
+        setReadiness(body.readiness);
+        setError(null);
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Couldn’t check the Queue project.");
+      if (generation === requestGeneration.current) {
+        setError(cause instanceof Error ? cause.message : "Couldn’t check the Queue project.");
+      }
     }
   }, []);
 
@@ -1576,6 +1582,7 @@ function QueueProjectSetup({ onSelected }: { onSelected: () => void }) {
   }, [refreshReadiness]);
 
   const selectProject = async (projectId: string) => {
+    ++requestGeneration.current;
     setSelecting(true);
     setError(null);
     try {
@@ -1593,6 +1600,7 @@ function QueueProjectSetup({ onSelected }: { onSelected: () => void }) {
         throw new Error(body.error ?? "Couldn’t save the Queue project.");
       }
       setReadiness(body.readiness);
+      window.dispatchEvent(new CustomEvent("cave:queue-project-selected", { detail: { project: body.readiness.project } }));
       onSelected();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn’t save the Queue project.");
@@ -1616,7 +1624,7 @@ function QueueProjectSetup({ onSelected }: { onSelected: () => void }) {
         ariaLabel="Choose Queue project"
       />
       {readiness ? (
-        <p className={`text-[length:var(--text-xs)] ${readiness.ok || readiness.canGenerate ? "text-[var(--color-success)]" : "text-[var(--text-muted)]"}`}>
+        <p role="status" className={`text-[length:var(--text-xs)] ${readiness.ok || readiness.canGenerate ? "text-[var(--color-success)]" : "text-[var(--text-muted)]"}`}>
           {readiness.message}
         </p>
       ) : null}

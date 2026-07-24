@@ -29,6 +29,17 @@ const OPEN_PRS = [
 const MERGED_PRS = [
   { number: 90, title: "Landed change", url: "https://gh/pull/90", beadIds: ["cave-open"], mergedAt: iso(1) },
 ];
+const QUEUE_PROJECT = { id: "queue-test-project", name: "Queue test project", root: "/tmp/coven-cave-queue-test-project" };
+const QUEUE_READINESS = { ok: true, message: "Queue project is ready.", canGenerate: false, project: QUEUE_PROJECT };
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/queue/readiness", (route) =>
+    route.fulfill({ json: { ok: true, readiness: QUEUE_READINESS } }),
+  );
+  await page.route("**/api/onboarding/status**", (route) =>
+    route.fulfill({ json: { ok: true, complete: true, steps: { project: { ok: true } }, tools: [] } }),
+  );
+});
 
 async function gotoWorkQueue(page: Page) {
   await page.addInitScript(() => {
@@ -130,7 +141,7 @@ test.describe("familiar work queue (PR control tower)", () => {
 
     const noPr = page.locator(".fwq").getByRole("region", { name: "No open PR" });
     await noPr.getByRole("button", { name: "Claim", exact: true }).click();
-    await expect.poll(() => claimBody).toEqual({ action: "claim", id: "cave-bb2" });
+    await expect.poll(() => claimBody).toEqual({ action: "claim", id: "cave-bb2", projectRoot: QUEUE_PROJECT.root });
   });
 
   test("claiming for a familiar posts the selected assignee", async ({ page }) => {
@@ -148,7 +159,7 @@ test.describe("familiar work queue (PR control tower)", () => {
     const noPr = page.locator(".fwq").getByRole("region", { name: "No open PR" });
     await noPr.getByRole("button", { name: "Claim for familiar…" }).click();
     await page.getByRole("menuitemradio", { name: "Kitty" }).click();
-    await expect.poll(() => claimBody).toEqual({ action: "claim", id: "cave-bb2", assignee: "kitty" });
+    await expect.poll(() => claimBody).toEqual({ action: "claim", id: "cave-bb2", assignee: "kitty", projectRoot: QUEUE_PROJECT.root });
   });
 
   test("cleanup Close is gated on a handoff note; adding one posts a comment and unlocks it", async ({ page }) => {
@@ -188,6 +199,7 @@ test.describe("familiar work queue (PR control tower)", () => {
       action: "comment",
       id: "cave-open",
       comment: "Verified: lanes render, close gated.",
+      projectRoot: QUEUE_PROJECT.root,
     });
     // …and Close unlocks (optimistic, without waiting for a re-read).
     await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeEnabled();
