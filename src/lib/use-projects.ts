@@ -6,9 +6,11 @@ import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-project
 import { emitProjectRegistryMutation, subscribeProjectRegistryMutation } from "./project-registry-events.ts";
 import { applyProjectRegistryMutation } from "./project-registry-mutation.ts";
 import { clearProjectsCache, fetchProjectsFromCache, type ProjectsPayload } from "./use-projects-cache.ts";
+import type { CreateProjectOptions } from "./chat-add-project.ts";
+
+export type { CreateProjectOptions } from "./chat-add-project.ts";
 
 type ProjectMutationPayload = { ok?: boolean; project?: CaveProject; error?: string };
-type CreateProjectOptions = { emitMutation?: boolean };
 type CreateProjectResult =
   | { ok: true; project: CaveProject }
   | { ok: false; error: string };
