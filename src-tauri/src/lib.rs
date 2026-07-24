@@ -46,6 +46,8 @@ mod app_lifecycle_tests;
 #[cfg(desktop)]
 pub mod browser;
 #[cfg(desktop)]
+mod desktop_reachability;
+#[cfg(desktop)]
 mod platform_lifecycle;
 #[cfg(desktop)]
 mod pty;
@@ -71,6 +73,8 @@ mod window_geometry;
 #[cfg(all(desktop, target_os = "windows"))]
 mod windows_process_job;
 
+#[cfg(desktop)]
+use desktop_reachability::*;
 #[cfg(desktop)]
 use platform_lifecycle::*;
 #[cfg(desktop)]

@@ -57,6 +57,31 @@ The app stores the invite in an HTTP-only cookie after the first successful requ
 
 In the packaged desktop app, click **Open on phone** in the top bar to create the same kind of invite as a QR code. Scan it from a phone signed into the same tailnet.
 
+## Keep the Mac reachable
+
+The packaged macOS app has two explicit, default-off controls under **Settings
+→ Phone → Keep this Mac reachable**:
+
+- **Keep Mac awake for phone** holds a macOS power assertion after a phone has
+  paired. **Only keep awake on power** is on by default, so battery power keeps
+  the Mac's normal sleep policy. Turning either setting off releases the
+  assertion.
+- **Background availability** installs a per-user LaunchAgent. The GUI owns the
+  loopback server while its main window is open; after that window closes, the
+  LaunchAgent starts the bundled `server.mjs` without opening the app. Disabling
+  the option unloads and removes the LaunchAgent.
+
+Both the GUI server and the LaunchAgent server remain bound to
+`127.0.0.1`. Whenever either server chooses a different port, it repoints
+Tailscale Serve at that exact loopback backend. Existing signed phone tokens
+continue to use the same persisted mobile access secret.
+
+Tailscale cannot wake a sleeping Mac. Its userspace WireGuard daemon sleeps
+with the computer, so the phone has no path to deliver a wake packet. Bonjour
+sleep proxy is limited to local-network mDNS and does not make wake-on-LAN work
+across a tailnet. Use the keep-awake option or an always-on Server Hub when the
+phone must remain reachable.
+
 ## Connect Cave to a remote Server Hub
 
 Open **Settings → Daemon → Connection**, choose **Server hub**, and use the **Tailnet devices** list to select the machine running the remote Coven daemon. Cave discovers this device and online peers from `tailscale status --json`; it uses the device's `100.x` address when available and fills the standard daemon port, `8787`. The current machine is labelled **This device**. You can still enter a MagicDNS name or another private HTTP URL manually.

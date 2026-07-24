@@ -10,6 +10,7 @@ import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
@@ -82,6 +83,12 @@ import {
   reapplyIndependentAppearance,
 } from "@/lib/appearance-restore";
 import type { CustomThemeData } from "@/lib/preferences-schema";
+import {
+  readDesktopReachability,
+  writeDesktopReachability,
+  type DesktopReachabilityConfig,
+  type DesktopReachabilityStatus,
+} from "@/lib/desktop-reachability";
 import { publishFleetTokenStatus } from "@/lib/omnigent/use-fleet-gate";
 import {
   formatHostWorkspaceText,
@@ -2997,6 +3004,155 @@ function MobileModeToggle({ onUseAsHub }: { onUseAsHub: (url: string) => void })
   );
 }
 
+type ReachabilitySettingKey = keyof DesktopReachabilityConfig;
+
+function DesktopReachabilityCard() {
+  const [status, setStatus] = useState<DesktopReachabilityStatus | null>(null);
+  const [busyKey, setBusyKey] = useState<ReachabilitySettingKey | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const { announce } = useAnnouncer();
+
+  useEffect(() => {
+    let cancelled = false;
+    setError(null);
+    void readDesktopReachability()
+      .then((next) => {
+        if (!cancelled) setStatus(next);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Couldn't load Mac reachability settings.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  const update = async (key: ReachabilitySettingKey, enabled: boolean) => {
+    if (!status?.supported || busyKey) return;
+    const config = { ...status.config, [key]: enabled };
+    setBusyKey(key);
+    setError(null);
+    try {
+      const next = await writeDesktopReachability(config);
+      setStatus(next);
+      const labels: Record<ReachabilitySettingKey, string> = {
+        preventSleep: "Keep Mac awake for phone",
+        preventSleepOnAcOnly: "Only keep awake on power",
+        daemonMode: "Background availability",
+      };
+      announce(`${labels[key]} ${enabled ? "enabled" : "disabled"}.`, "polite");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn't update Mac reachability.");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const switchButton = (key: ReachabilitySettingKey, disabled = false) => {
+    const on = status?.config[key] === true;
+    return (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={
+          {
+            preventSleep: "Keep Mac awake for phone",
+            preventSleepOnAcOnly: "Only keep awake on power",
+            daemonMode: "Background availability",
+          }[key]
+        }
+        onClick={() => void update(key, !on)}
+        disabled={!status?.supported || busyKey !== null || disabled}
+        className={`settings-mobile-switch focus-ring shrink-0 rounded-[var(--radius-control)] border px-3 py-1.5 text-[length:var(--text-sm)] transition-colors ${
+          on
+            ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
+            : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
+        }`}
+      >
+        {busyKey === key ? "Updating…" : on ? "On" : "Off"}
+      </button>
+    );
+  };
+
+  if (!status && error) {
+    return (
+      <ErrorState
+        compact
+        headline="Couldn't load Mac reachability settings"
+        subtitle={error}
+        actions={
+          <Button size="sm" onClick={() => setReloadKey((key) => key + 1)}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
+
+  if (!status) {
+    return (
+      <p role="status" className="px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+        Loading Mac reachability…
+      </p>
+    );
+  }
+
+  if (!status.supported) {
+    return (
+      <p role="status" className="px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+        {status.detail ?? "These controls are available in the macOS desktop app."}
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <SettingsRow
+        label="Keep Mac awake for phone"
+        description={
+          status.pairedPhoneSeen
+            ? status.preventSleepActive
+              ? "A paired phone is present, so macOS idle sleep is currently prevented."
+              : "Prevent idle sleep whenever this Mac has a paired phone."
+            : "Starts after a phone pairs. Off leaves the Mac's normal sleep settings unchanged."
+        }
+      >
+        {switchButton("preventSleep")}
+      </SettingsRow>
+      <SettingsRow
+        label="Only keep awake on power"
+        description="Recommended. On battery, the Mac follows its normal sleep settings."
+      >
+        {switchButton("preventSleepOnAcOnly", !status.config.preventSleep)}
+      </SettingsRow>
+      <SettingsRow
+        label="Background availability"
+        description="Keep the Cave server available after the main window closes. A macOS LaunchAgent starts it without opening the app."
+      >
+        {switchButton("daemonMode")}
+      </SettingsRow>
+      <div className="px-4 pb-3 text-[length:var(--text-xs)] leading-relaxed text-[var(--text-muted)]">
+        <p>
+          Tailscale can't wake a sleeping Mac: its network daemon sleeps with the computer, and Bonjour sleep proxy only
+          works on the local network. Use the keep-awake option or an always-on hub when the phone must stay connected.
+        </p>
+        {status.config.daemonMode && status.launchAgentInstalled ? (
+          <p className="mt-2 text-[var(--text-secondary)]">
+            Background availability is installed and takes over when this window closes.
+          </p>
+        ) : null}
+      </div>
+      {error ? (
+        <p role="alert" className="px-4 pb-3 text-[length:var(--text-xs)] text-[var(--color-warning)]">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 /** Desktop opt-ins for what the paired phone may change (GET/PATCH
  *  /api/mobile-permissions). Both default off; the route only accepts the
  *  PATCH from this desktop (loopback), so the phone can never widen its own
@@ -3194,6 +3350,10 @@ function MobileSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
             Setup guide
           </Button>
         </div>
+      </SettingsGroup>
+
+      <SettingsGroup label="Keep this Mac reachable">
+        <DesktopReachabilityCard />
       </SettingsGroup>
 
       <SettingsGroup label="Phone write access">
