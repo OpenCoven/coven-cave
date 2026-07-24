@@ -278,6 +278,19 @@ type PublishFinalArtifactsArgs = {
   deps: Pick<ResearchMissionRunnerDeps, "readMissionFile" | "publishKnowledge">;
 };
 
+/** Provenance stamped from the mission's most recent iteration. */
+function latestIterationProvenance(mission: ResearchMission, generatedAt: string): ResearchProvenance {
+  const lastIteration = mission.iterations.at(-1);
+  return {
+    missionId: mission.id,
+    iteration: lastIteration?.number ?? mission.iterations.length,
+    flowRunId: lastIteration?.flowRunId,
+    sessionId: lastIteration?.sessionId,
+    automationRunId: lastIteration?.automationRunId,
+    generatedAt,
+  };
+}
+
 /** Publish every unpublished, non-rejected ref. Per-artifact isolation: one
  *  failed vault write or missing file never blocks the others or the
  *  mission's terminal state — the failed ref stays `working` (retryable
@@ -641,7 +654,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       }
       if (input.action === "publish-artifact") {
         if (!["checkpoint", "completed", "failed"].includes(mission.status)) {
-          throw new Error("research mission is still running");
+          throw new Error("research mission is not settled yet");
         }
         const artifact = mission.artifacts.find((item) => item.key === input.artifactKey);
         if (!artifact) throw new Error("research artifact not found");
@@ -657,18 +670,10 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         if (!markdown) throw new Error("research artifact file missing");
         const content = validateResearchArtifactContent(artifact.kind, markdown);
         if (!content.ok) throw new Error(content.reason);
-        const lastIteration = mission.iterations.at(-1);
         const entry = await deps.publishKnowledge(researchKnowledgeEntry({
           mission,
           artifact,
-          provenance: {
-            missionId: mission.id,
-            iteration: lastIteration?.number ?? mission.iterations.length,
-            flowRunId: lastIteration?.flowRunId,
-            sessionId: lastIteration?.sessionId,
-            automationRunId: lastIteration?.automationRunId,
-            generatedAt: timestamp,
-          },
+          provenance: latestIterationProvenance(mission, timestamp),
           markdown: content.value,
         }));
         const artifacts = mission.artifacts.map((item) => (
@@ -738,7 +743,6 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         mission = await pauseAutomation(mission, "Mission finished");
         // Finishing by hand saves the same final artifacts a `complete`
         // decision would — the checkpointed files are the deliverables.
-        const lastIteration = mission.iterations.at(-1);
         const outcome = await publishFinalArtifacts({
           mission,
           artifacts: mission.artifacts.map((artifact) => (
@@ -746,14 +750,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
           )),
           sources: mission.sources,
           primaryMarkdown: await deps.readMissionFile(mission.id, "artifacts/primary.md"),
-          provenance: {
-            missionId: mission.id,
-            iteration: lastIteration?.number ?? mission.iterations.length,
-            flowRunId: lastIteration?.flowRunId,
-            sessionId: lastIteration?.sessionId,
-            automationRunId: lastIteration?.automationRunId,
-            generatedAt: timestamp,
-          },
+          provenance: latestIterationProvenance(mission, timestamp),
           deps,
         });
         return saveUpdated({

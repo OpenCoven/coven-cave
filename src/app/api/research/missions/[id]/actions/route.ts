@@ -39,7 +39,7 @@ const VALIDATION_ERRORS = new Set([
   "research source not found",
   "refined direction required",
   "invalid project root override",
-  "research mission is still running",
+  "research mission is not settled yet",
   "rejected artifacts need a new working version before publishing",
   "research artifact file missing",
   "Research artifact is too large",

@@ -628,7 +628,7 @@ test("publish-artifact rejects running missions, published refs, rejected refs, 
     ],
   });
   const cases: Array<[object, string, string]> = [
-    [{ status: "running" }, "primary", "research mission is still running"],
+    [{ status: "running" }, "primary", "research mission is not settled yet"],
     [{}, "findings", "research artifact already published"],
     [{}, "research-log", "rejected artifacts need a new working version before publishing"],
     [{}, "nope", "research artifact not found"],
@@ -686,4 +686,30 @@ test("finish publishes the mission's working refs like a complete decision", asy
   ]);
   assert.equal(result.lastError, undefined);
   for (const artifact of result.artifacts) assert.equal(artifact.state, "published");
+});
+
+test("finish surfaces publish failures without blocking completion", async () => {
+  let stored = checkpointMission({
+    artifacts: [
+      { key: "primary", kind: "findings", title: "Iterative research", relativePath: "artifacts/primary.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+      { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+    ],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    readMissionFile: async (_id, relativePath) => `# Content of ${relativePath}\n`,
+    publishKnowledge: async (entry) => {
+      if (entry.id.endsWith("-findings")) throw new Error("vault write failed");
+      return entry;
+    },
+  }));
+  const result = await runner.act(stored.id, { action: "finish" });
+  assert.equal(result.status, "completed", "publish failure never blocks finishing");
+  assert.match(result.lastError ?? "", /findings: vault write failed/);
+  const findings = result.artifacts.find((artifact) => artifact.key === "findings");
+  assert.equal(findings?.state, "working");
+  assert.equal(findings?.knowledgeId, undefined);
+  const primary = result.artifacts.find((artifact) => artifact.key === "primary");
+  assert.equal(primary?.state, "published");
 });
