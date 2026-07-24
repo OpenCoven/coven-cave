@@ -23,4 +23,6 @@ permissions = [
   "allow-speech-stt-start",
   "allow-speech-stt-finish",
   "allow-speech-stt-stop",
+  "allow-desktop-reachability-status",
+  "allow-desktop-reachability-configure",
 ]

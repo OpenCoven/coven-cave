@@ -25,6 +25,9 @@ const POWER_MONITOR_INTERVAL: Duration = Duration::from_secs(5);
 const SERVE_REPAIR_INTERVAL: Duration = Duration::from_secs(30);
 
 #[cfg(desktop)]
+const DAEMON_STOP_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[cfg(desktop)]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(super) struct DesktopReachabilityConfig {
@@ -63,6 +66,21 @@ struct PowerAssertion {
 }
 
 #[cfg(desktop)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ProcessLease {
+    pid: u32,
+    identity: String,
+}
+
+#[cfg(desktop)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct DaemonSidecarState {
+    #[serde(flatten)]
+    lease: ProcessLease,
+    port: u16,
+}
+
+#[cfg(desktop)]
 #[derive(Default)]
 pub(super) struct DesktopReachabilityRuntime {
     target_pid: AtomicU32,
@@ -87,7 +105,12 @@ impl DesktopReachabilityRuntime {
         }
     }
 
-    fn start_monitor(self: &Arc<Self>, config_path: PathBuf, paired_path: PathBuf) {
+    fn start_monitor(
+        self: &Arc<Self>,
+        app: tauri::AppHandle,
+        config_path: PathBuf,
+        paired_path: PathBuf,
+    ) {
         if self.monitor_started.swap(true, Ordering::AcqRel) {
             return;
         }
@@ -96,18 +119,23 @@ impl DesktopReachabilityRuntime {
             let Some(runtime) = runtime.upgrade() else {
                 break;
             };
-            runtime.reconcile_power(&config_path, &paired_path);
+            runtime.reconcile_power(&app, &config_path, &paired_path);
             drop(runtime);
             thread::sleep(POWER_MONITOR_INTERVAL);
         });
     }
 
-    fn reconcile_power(&self, config_path: &Path, paired_path: &Path) {
+    fn reconcile_power(&self, app: &tauri::AppHandle, config_path: &Path, paired_path: &Path) {
         #[cfg(target_os = "macos")]
         {
             let config = read_reachability_config(config_path);
             let paired = paired_phone_seen(paired_path);
-            let target_pid = self.target_pid();
+            let target_pid = self
+                .target_pid()
+                .filter(|pid| owned_sidecar_is_live(app, *pid));
+            if target_pid.is_none() {
+                self.clear_target_pid();
+            }
             let desired =
                 config.prevent_sleep && paired && mobile_mode_enabled() && target_pid.is_some();
             let mut assertion = match self.power_assertion.lock() {
@@ -153,7 +181,7 @@ impl DesktopReachabilityRuntime {
 
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = (config_path, paired_path);
+            let _ = (app, config_path, paired_path);
         }
     }
 
@@ -384,13 +412,13 @@ fn launch_agent_plist(executable: &Path, stdout_path: &Path, stderr_path: &Path)
   </array>
   <key>RunAtLoad</key>
   <true/>
-  <key>StartInterval</key>
-  <integer>30</integer>
   <key>KeepAlive</key>
   <dict>
     <key>SuccessfulExit</key>
     <false/>
   </dict>
+  <key>AbandonProcessGroup</key>
+  <false/>
   <key>ProcessType</key>
   <string>Background</string>
   <key>StandardOutPath</key>
@@ -476,14 +504,26 @@ fn run_launchctl(args: &[&str]) -> Result<(), String> {
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
-fn bootout_launch_agent() {
-    if let Ok(service) = launch_agent_service() {
-        let _ = run_launchctl(&["bootout", &service]);
+fn bootout_launch_agent() -> Result<(), String> {
+    let service = launch_agent_service()?;
+    match run_launchctl(&["bootout", &service]) {
+        Ok(()) => Ok(()),
+        // A missing service is normal on first install and after a clean
+        // handoff. All other launchd failures are ownership failures: do not
+        // start another sidecar until the caller can report/retry them.
+        Err(error)
+            if error.contains("Could not find service")
+                || error.contains("No such process")
+                || error.contains("not found") =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(format!("could not unload background availability: {error}")),
     }
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
-fn install_launch_agent(app: &tauri::AppHandle) -> Result<(), String> {
+fn install_launch_agent(app: &tauri::AppHandle, app_data_dir: &Path) -> Result<(), String> {
     let resource_dir = app
         .path()
         .resource_dir()
@@ -501,6 +541,9 @@ fn install_launch_agent(app: &tauri::AppHandle) -> Result<(), String> {
     }
     let executable = std::env::current_exe()
         .map_err(|error| format!("could not resolve CovenCave executable: {error}"))?;
+    // Development binaries can have staged resources but cannot execute as a
+    // LaunchAgent. Validate the exact bundle layout before creating a plist.
+    daemon_resource_dir(&executable)?;
     let log_dir = std::env::var("HOME")
         .map(PathBuf::from)
         .map_err(|_| "HOME is unavailable".to_string())?
@@ -515,18 +558,22 @@ fn install_launch_agent(app: &tauri::AppHandle) -> Result<(), String> {
         &log_dir.join("sidecar-daemon.out.log"),
         &log_dir.join("sidecar-daemon.err.log"),
     );
+    stop_recorded_daemon_sidecar(app_data_dir)?;
+    bootout_launch_agent()?;
     write_launch_agent_file(&plist_path, &plist)?;
-
-    bootout_launch_agent();
     let domain = launch_agent_domain()?;
     let plist_arg = plist_path.to_string_lossy().into_owned();
-    run_launchctl(&["bootstrap", &domain, &plist_arg])
-        .map_err(|error| format!("could not load background availability: {error}"))
+    if let Err(error) = run_launchctl(&["bootstrap", &domain, &plist_arg]) {
+        let _ = remove_launch_agent_file(&plist_path);
+        return Err(format!("could not load background availability: {error}"));
+    }
+    Ok(())
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
-fn uninstall_launch_agent() -> Result<(), String> {
-    bootout_launch_agent();
+fn uninstall_launch_agent(app_data_dir: &Path) -> Result<(), String> {
+    stop_recorded_daemon_sidecar(app_data_dir)?;
+    bootout_launch_agent()?;
     remove_launch_agent_file(&launch_agent_path()?)
 }
 
@@ -550,25 +597,13 @@ fn app_data_path_without_handle() -> Result<PathBuf, String> {
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
-fn process_is_running(pid: u32) -> bool {
-    Command::new("/bin/kill")
-        .args(["-0", &pid.to_string()])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
-}
-
-#[cfg(all(desktop, target_os = "macos"))]
 fn gui_is_active(app_data_dir: &Path) -> bool {
     let marker = app_data_dir.join(GUI_ACTIVE_FILE);
-    let pid = std::fs::read_to_string(&marker)
+    let lease = std::fs::read_to_string(&marker)
         .ok()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .and_then(|value| value.get("pid").and_then(serde_json::Value::as_u64))
-        .and_then(|pid| u32::try_from(pid).ok());
-    match pid {
-        Some(pid) if process_is_running(pid) => true,
+        .and_then(|raw| serde_json::from_str::<ProcessLease>(&raw).ok());
+    match lease {
+        Some(lease) if lease_matches(&lease, process_identity(lease.pid).as_deref()) => true,
         _ => {
             let _ = std::fs::remove_file(marker);
             false
@@ -577,55 +612,50 @@ fn gui_is_active(app_data_dir: &Path) -> bool {
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
-pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) {
-    let Ok(app_data_dir) = app.path().app_data_dir() else {
-        return;
-    };
+pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<(), String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("could not resolve app data: {error}"))?;
     let marker = app_data_dir.join(GUI_ACTIVE_FILE);
-    if let Err(error) =
-        write_private_json(&marker, &serde_json::json!({ "pid": std::process::id() }))
-    {
-        log::warn!("[cave] could not mark desktop GUI active: {error}");
-    }
+    write_private_json(&marker, &current_process_lease()?)?;
 
     let config_path = app_data_dir.join(REACHABILITY_CONFIG_FILE);
     let config = read_reachability_config(&config_path);
     if config.daemon_mode {
-        if let Err(error) = install_launch_agent(app) {
-            log::warn!("[cave] could not reconcile background availability: {error}");
-        }
-        if let Ok(service) = launch_agent_service() {
-            let _ = run_launchctl(&["kill", "SIGTERM", &service]);
-        }
+        install_launch_agent(app, &app_data_dir)?;
     } else if launch_agent_installed() {
-        if let Err(error) = uninstall_launch_agent() {
-            log::warn!("[cave] could not remove disabled background availability: {error}");
-        }
+        uninstall_launch_agent(&app_data_dir)?;
     }
+    Ok(())
 }
 
 #[cfg(all(desktop, not(target_os = "macos")))]
-pub(super) fn prepare_gui_reachability(_app: &tauri::AppHandle) {}
+pub(super) fn prepare_gui_reachability(_app: &tauri::AppHandle) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(all(desktop, target_os = "macos"))]
 pub(super) fn handoff_to_background_daemon(app: &tauri::AppHandle) {
     let Ok(app_data_dir) = app.path().app_data_dir() else {
         return;
     };
-    let _ = std::fs::remove_file(app_data_dir.join(GUI_ACTIVE_FILE));
     let config = read_reachability_config(&app_data_dir.join(REACHABILITY_CONFIG_FILE));
     if !config.daemon_mode {
+        let _ = std::fs::remove_file(app_data_dir.join(GUI_ACTIVE_FILE));
         return;
     }
-    if let Err(error) = install_launch_agent(app) {
-        log::warn!("[cave] could not load background availability: {error}");
-        return;
-    }
-    if let Ok(service) = launch_agent_service() {
-        if let Err(error) = run_launchctl(&["kickstart", "-k", &service]) {
-            log::warn!("[cave] could not start background availability: {error}");
+
+    if !launch_agent_installed() {
+        // Keep the marker in place until launchd has started its wrapper. That
+        // wrapper then waits rather than racing the GUI's teardown to spawn a
+        // second sidecar.
+        if let Err(error) = install_launch_agent(app, &app_data_dir) {
+            log::warn!("[cave] could not load background availability: {error}");
+            return;
         }
     }
+    let _ = std::fs::remove_file(app_data_dir.join(GUI_ACTIVE_FILE));
 }
 
 #[cfg(all(desktop, not(target_os = "macos")))]
@@ -642,9 +672,119 @@ pub(super) fn sidecar_reachability_ready(app: &tauri::AppHandle, port: u16, pid:
         return;
     };
     runtime.start_monitor(
+        app.clone(),
         app_data_dir.join(REACHABILITY_CONFIG_FILE),
         paired_phone_path(),
     );
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn process_identity(pid: u32) -> Option<String> {
+    let output = Command::new("/bin/ps")
+        .args(["-o", "lstart=", "-o", "comm=", "-p", &pid.to_string()])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let identity = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!identity.is_empty()).then_some(identity)
+}
+
+#[cfg(desktop)]
+fn lease_matches(lease: &ProcessLease, current_identity: Option<&str>) -> bool {
+    current_identity.is_some_and(|current| current == lease.identity)
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn current_process_lease() -> Result<ProcessLease, String> {
+    let pid = std::process::id();
+    let identity = process_identity(pid)
+        .ok_or_else(|| "could not establish the GUI process identity".to_string())?;
+    Ok(ProcessLease { pid, identity })
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn read_daemon_sidecar_state(app_data_dir: &Path) -> Option<DaemonSidecarState> {
+    std::fs::read_to_string(app_data_dir.join(DAEMON_STATE_FILE))
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn wait_for_process_exit(lease: &ProcessLease, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if !lease_matches(lease, process_identity(lease.pid).as_deref()) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    !lease_matches(lease, process_identity(lease.pid).as_deref())
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn run_process_signal(signal: &str, pid: &str) -> Result<(), String> {
+    let output = Command::new("/bin/kill")
+        .args(["-s", signal, pid])
+        .output()
+        .map_err(|error| format!("could not signal background sidecar: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "could not signal background sidecar: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn stop_recorded_daemon_sidecar(app_data_dir: &Path) -> Result<(), String> {
+    let state_path = app_data_dir.join(DAEMON_STATE_FILE);
+    let Some(state) = read_daemon_sidecar_state(app_data_dir) else {
+        return Ok(());
+    };
+    if !lease_matches(&state.lease, process_identity(state.lease.pid).as_deref()) {
+        let _ = std::fs::remove_file(state_path);
+        return Ok(());
+    }
+    let pid = state.lease.pid.to_string();
+    run_process_signal("TERM", &pid)?;
+    if !wait_for_process_exit(&state.lease, DAEMON_STOP_TIMEOUT) {
+        run_process_signal("KILL", &pid)?;
+        if !wait_for_process_exit(&state.lease, Duration::from_secs(1)) {
+            return Err(format!(
+                "background sidecar {} did not stop",
+                state.lease.pid
+            ));
+        }
+    }
+    let _ = std::fs::remove_file(state_path);
+    Ok(())
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn owned_sidecar_is_live(app: &tauri::AppHandle, pid: u32) -> bool {
+    let Some(state) = app.try_state::<SidecarState>() else {
+        return false;
+    };
+    let mut sidecar = match state.0.lock() {
+        Ok(sidecar) => sidecar,
+        Err(_) => return false,
+    };
+    match sidecar.as_mut() {
+        Some(process) => match process.is_live_with_pid(pid) {
+            Ok(live) => live,
+            Err(error) => {
+                log::warn!("[cave] could not verify reachability sidecar ownership: {error}");
+                false
+            }
+        },
+        None => false,
+    }
 }
 
 #[cfg(desktop)]
@@ -655,6 +795,7 @@ pub(super) fn sidecar_reachability_stopped(app: &tauri::AppHandle) {
     runtime.clear_target_pid();
     if let Ok(app_data_dir) = app.path().app_data_dir() {
         runtime.reconcile_power(
+            app,
             &app_data_dir.join(REACHABILITY_CONFIG_FILE),
             &paired_phone_path(),
         );
@@ -710,16 +851,16 @@ pub(super) fn desktop_reachability_configure(
         let previous = read_reachability_config(&config_path);
         write_private_json(&config_path, &config)?;
         let launch_agent_result = if config.daemon_mode {
-            install_launch_agent(&app)
+            install_launch_agent(&app, &app_data_dir)
         } else {
-            uninstall_launch_agent()
+            uninstall_launch_agent(&app_data_dir)
         };
         if let Err(error) = launch_agent_result {
             let _ = write_private_json(&config_path, &previous);
             return Err(error);
         }
         if let Some(runtime) = app.try_state::<Arc<DesktopReachabilityRuntime>>() {
-            runtime.reconcile_power(&config_path, &paired_phone_path());
+            runtime.reconcile_power(&app, &config_path, &paired_phone_path());
         }
         return status_for_app(&app);
     }
@@ -759,13 +900,14 @@ fn daemon_port() -> Result<u16, String> {
     find_free_port().ok_or_else(|| "no free loopback port is available".to_string())
 }
 
-#[cfg(all(desktop, target_os = "macos"))]
-fn append_log_file(path: &Path) -> Option<std::fs::File> {
+#[cfg(desktop)]
+fn create_fresh_log_file(path: &Path) -> Result<std::fs::File, String> {
     std::fs::OpenOptions::new()
         .create(true)
-        .append(true)
+        .write(true)
+        .truncate(true)
         .open(path)
-        .ok()
+        .map_err(|error| format!("could not create {}: {error}", path.display()))
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -801,10 +943,21 @@ fn daemon_augmented_path(node: &Path) -> String {
 fn run_sidecar_daemon() -> Result<i32, String> {
     let app_data_dir = app_data_path_without_handle()?;
     let config_path = app_data_dir.join(REACHABILITY_CONFIG_FILE);
-    let config = read_reachability_config(&config_path);
-    if !config.daemon_mode || gui_is_active(&app_data_dir) {
+    if !read_reachability_config(&config_path).daemon_mode {
         return Ok(0);
     }
+    // Keep one launchd wrapper alive while the GUI owns the server. This gives
+    // crash recovery without StartInterval repeatedly launching app processes.
+    while gui_is_active(&app_data_dir) {
+        if !read_reachability_config(&config_path).daemon_mode {
+            return Ok(0);
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+    // A previous wrapper can crash without reaping Node. Its signed state is
+    // identity-checked before we stop it, so a restart never creates a second
+    // loopback server on a fallback port.
+    stop_recorded_daemon_sidecar(&app_data_dir)?;
 
     let executable = std::env::current_exe()
         .map_err(|error| format!("could not resolve daemon executable: {error}"))?;
@@ -832,8 +985,10 @@ fn run_sidecar_daemon() -> Result<i32, String> {
     std::fs::create_dir_all(&log_dir)
         .map_err(|error| format!("could not create {}: {error}", log_dir.display()))?;
     let server_log = log_dir.join("sidecar-daemon-server.log");
-    let stdout = append_log_file(&server_log);
-    let stderr = stdout.as_ref().and_then(|file| file.try_clone().ok());
+    let stdout = create_fresh_log_file(&server_log)?;
+    let stderr = stdout
+        .try_clone()
+        .map_err(|error| format!("could not duplicate {}: {error}", server_log.display()))?;
 
     let mut command = Command::new(&node);
     command
@@ -847,16 +1002,8 @@ fn run_sidecar_daemon() -> Result<i32, String> {
         .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
         .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token)
         .stdin(Stdio::null());
-    if let Some(stdout) = stdout {
-        command.stdout(Stdio::from(stdout));
-    } else {
-        command.stdout(Stdio::null());
-    }
-    if let Some(stderr) = stderr {
-        command.stderr(Stdio::from(stderr));
-    } else {
-        command.stderr(Stdio::null());
-    }
+    command.stdout(Stdio::from(stdout));
+    command.stderr(Stdio::from(stderr));
     let mut child = command
         .spawn()
         .map_err(|error| format!("could not start background sidecar: {error}"))?;
@@ -879,10 +1026,17 @@ fn run_sidecar_daemon() -> Result<i32, String> {
         }
     }
 
-    write_private_json(
-        &app_data_dir.join(DAEMON_STATE_FILE),
-        &serde_json::json!({ "pid": child_pid, "port": port }),
-    )?;
+    let lease = ProcessLease {
+        pid: child_pid,
+        identity: process_identity(child_pid)
+            .ok_or_else(|| "could not establish background sidecar identity".to_string())?,
+    };
+    let state = DaemonSidecarState { lease, port };
+    if let Err(error) = write_private_json(&app_data_dir.join(DAEMON_STATE_FILE), &state) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
     repair_tailscale_serve_for_port(port);
 
     let mut assertion: Option<PowerAssertion> = None;
@@ -987,8 +1141,8 @@ mod tests {
         );
         assert!(plist.contains("<string>ai.opencoven.cave</string>"));
         assert!(plist.contains("<string>--cave-sidecar-daemon</string>"));
-        assert!(plist.contains("<key>StartInterval</key>"));
         assert!(plist.contains("<key>SuccessfulExit</key>"));
+        assert!(plist.contains("<key>AbandonProcessGroup</key>\n  <false/>"));
         assert!(plist.contains("Coven&amp;Cave.app"));
     }
 
@@ -1021,5 +1175,38 @@ mod tests {
                 "http://127.0.0.1:3007".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn process_leases_reject_pid_reuse_with_a_different_identity() {
+        let lease = ProcessLease {
+            pid: 42,
+            identity: "Thu Jul 24 12:00:00 2026 /Applications/CovenCave".to_string(),
+        };
+        assert!(lease_matches(&lease, Some(&lease.identity)));
+        assert!(!lease_matches(
+            &lease,
+            Some("Thu Jul 24 12:00:01 2026 /usr/bin/unrelated")
+        ));
+        assert!(!lease_matches(&lease, None));
+    }
+
+    #[test]
+    fn daemon_readiness_log_is_empty_for_each_launch() {
+        let path = std::env::temp_dir().join(format!(
+            "coven-daemon-ready-test-{}-{:?}.log",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::write(&path, "> Ready on http://127.0.0.1:3000\n").expect("seed stale log");
+        let mut fresh = create_fresh_log_file(&path).expect("truncate daemon log");
+        fresh
+            .write_all(b"> Ready on http://127.0.0.1:3007\n")
+            .expect("write new readiness");
+        fresh.sync_all().expect("flush readiness");
+        let log = std::fs::read_to_string(&path).expect("read fresh daemon log");
+        assert!(!log.contains("3000"));
+        assert!(log.contains("3007"));
+        let _ = std::fs::remove_file(path);
     }
 }

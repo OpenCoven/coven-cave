@@ -3056,6 +3056,13 @@ function DesktopReachabilityCard() {
         type="button"
         role="switch"
         aria-checked={on}
+        aria-label={
+          {
+            preventSleep: "Keep Mac awake for phone",
+            preventSleepOnAcOnly: "Only keep awake on power",
+            daemonMode: "Background availability",
+          }[key]
+        }
         onClick={() => void update(key, !on)}
         disabled={!status?.supported || busyKey !== null || disabled}
         className={`settings-mobile-switch focus-ring shrink-0 rounded-[var(--radius-control)] border px-3 py-1.5 text-[length:var(--text-sm)] transition-colors ${

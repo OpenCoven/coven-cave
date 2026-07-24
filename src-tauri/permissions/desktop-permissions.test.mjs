@@ -24,6 +24,7 @@ const loopbackSpeechCapability = JSON.parse(
 const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.url), "utf8");
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
 const speechPermissions = readFileSync(new URL("./speech.toml", import.meta.url), "utf8");
+const reachabilityPermissions = readFileSync(new URL("./desktop-reachability.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
 const browserCommandsRust = readFileSync(new URL("../src/browser_commands.rs", import.meta.url), "utf8");
 const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
@@ -58,6 +59,8 @@ const requiredPermissionIds = [
   "allow-speech-stt-start",
   "allow-speech-stt-finish",
   "allow-speech-stt-stop",
+  "allow-desktop-reachability-status",
+  "allow-desktop-reachability-configure",
 ];
 
 const requiredCommands = [
@@ -79,6 +82,8 @@ const requiredCommands = [
   "sidecar_startup_status",
   "retry_sidecar_startup",
   "cancel_sidecar_startup",
+  "desktop_reachability_status",
+  "desktop_reachability_configure",
 ];
 
 // Node 22 (CI's runtime) has no global URLPattern, so match capability
@@ -136,8 +141,11 @@ test("packaged desktop app can use native browser and terminal commands", () => 
 
   for (const command of requiredCommands) {
     const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const permissionSource = command.startsWith("desktop_reachability_")
+      ? reachabilityPermissions
+      : commandPermissions;
     assert.match(
-      commandPermissions,
+      permissionSource,
       new RegExp(String.raw`commands\.allow\s*=\s*\[[^\]]*"${escapedCommand}"[^\]]*\]`),
       `${command} must have a Tauri allow permission`,
     );
@@ -225,6 +233,8 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     "allow-browser-deactivate-all",
     "allow-browser-close-all",
     "allow-browser-reload",
+    "allow-desktop-reachability-status",
+    "allow-desktop-reachability-configure",
   ]) {
     assert.ok(
       loopbackBrowserCapability.permissions.includes(permission),
@@ -289,6 +299,8 @@ test("native browser children can report metadata but cannot control browser lay
     "allow-browser-deactivate-all",
     "allow-browser-close-all",
     "allow-browser-reload",
+    "allow-desktop-reachability-status",
+    "allow-desktop-reachability-configure",
   ]);
 
   for (const command of [

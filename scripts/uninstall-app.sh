@@ -184,6 +184,25 @@ forget_launch_agent() {
   remove_path "$plist"
 }
 
+stop_recorded_reachability_sidecar() {
+  local home="$1"
+  local state_path="${home}/Library/Application Support/${APP_ID}/desktop-daemon-state.json"
+  [[ -f "$state_path" ]] || return 0
+
+  # The state file is private app data. Still require a numeric PID and the
+  # packaged server entrypoint before signalling anything, so a stale PID can
+  # never target an unrelated user process during uninstall.
+  local sidecar_pid
+  sidecar_pid="$(sed -nE 's/.*"pid"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$state_path" | head -n 1)"
+  [[ "$sidecar_pid" =~ ^[0-9]+$ ]] || return 0
+  local command_line
+  command_line="$(ps -p "$sidecar_pid" -o command= 2>/dev/null || true)"
+  [[ "$command_line" == *"/resources/server/server.mjs"* ]] || return 0
+
+  log "Stopping recorded background CovenCave sidecar ${sidecar_pid} before unloading launchd..."
+  run kill -TERM "$sidecar_pid" || true
+}
+
 remove_macos_artifacts() {
   local home="$HOME"
   log "Uninstalling macOS CovenCave artifacts..."
@@ -191,6 +210,7 @@ remove_macos_artifacts() {
   # Stop background availability before removing its executable, runtime
   # state, or logs. Otherwise launchd can restart the sidecar while uninstall
   # is tearing those paths down.
+  stop_recorded_reachability_sidecar "$home"
   forget_launch_agent "$APP_ID" "${home}/Library/LaunchAgents/${APP_ID}.plist"
   forget_launch_agent "$LEGACY_APP_ID" "${home}/Library/LaunchAgents/${LEGACY_APP_ID}.plist"
   forget_launch_agent "com.opencoven.CovenCave" "${home}/Library/LaunchAgents/com.opencoven.CovenCave.plist"

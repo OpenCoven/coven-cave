@@ -26,6 +26,8 @@
     "allow-browser-close",
     "allow-browser-deactivate-all",
     "allow-browser-close-all",
-    "allow-browser-reload"
+    "allow-browser-reload",
+    "allow-desktop-reachability-status",
+    "allow-desktop-reachability-configure"
   ]
 }
