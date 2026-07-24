@@ -12,6 +12,10 @@ import {
   localConversationSessionRows,
   mergeSessionRows,
 } from "@/lib/session-list-merge";
+import {
+  applyStaleRunningPresentation,
+  sweepStaleRunningGhosts,
+} from "@/lib/server/stale-running-sweep";
 import { enrichSessionsWithGitContext } from "@/lib/session-git-enrich";
 import { collapseFamiliarWorkspaceSessions } from "@/lib/familiar-workspace-sessions";
 import { familiarWorkspacesRoot, readFamiliarWorkspaces } from "@/lib/coven-paths";
@@ -214,9 +218,17 @@ async function computeSessionsList(
     return isTrueProjectCwd(projectRoot);
   }
 
+  // Leaked `coven run` registrations (the CLI died without reporting) sit in
+  // "running" forever — the daemon only reconciles them at its own restart.
+  // Present confirmed ghosts as "orphaned" before the merge so the Running
+  // popover and status badges stop advertising dead processes. Read-only and
+  // best-effort; genuinely-live daemon PTY sessions always carry events and
+  // are never touched (see stale-running-sweep.ts).
+  const staleRunningGhosts = await sweepStaleRunningGhosts(res.data);
+
   const sessions = await applyAutoArchiveSweep(
     mergeSessionRows({
-      daemonSessions: res.data,
+      daemonSessions: applyStaleRunningPresentation(res.data, staleRunningGhosts),
       localConversations,
       state,
       includeArchived,
