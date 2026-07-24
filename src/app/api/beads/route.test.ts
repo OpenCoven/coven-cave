@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { refreshCovenSpawnEnv } from "@/lib/coven-bin";
 
 const temp = await mkdtemp(path.join(os.tmpdir(), "cave-beads-route-"));
 const projectA = path.join(temp, "project-a");
@@ -57,6 +58,7 @@ fi
   await Promise.all([writeFile(path.join(fakeBin, "bd"), fakeCommand), writeFile(path.join(fakeBin, "gh"), fakeCommand)]);
   await Promise.all([chmod(path.join(fakeBin, "bd"), 0o755), chmod(path.join(fakeBin, "gh"), 0o755)]);
   process.env.PATH = `${fakeBin}${path.delimiter}${previous.path ?? ""}`;
+  refreshCovenSpawnEnv();
   process.env.CAVE_PROJECTS_PATH_OVERRIDE = projectsPath;
   process.env.CAVE_ROUTE_COMMAND_LOG = commandLog;
   delete process.env.COVEN_CAVE_AUTH_TOKEN;
@@ -71,7 +73,7 @@ fi
     `http://127.0.0.1/api/beads?mode=show&id=cave-shared&projectRoot=${root}`,
   ]) {
     const response = await beads.GET(localRequest(url));
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 200, await response.clone().text());
     assert.equal((await response.json()).projectRoot, projectA);
   }
   const prResponse = await prs.GET(localRequest(`http://127.0.0.1/api/beads/prs?projectRoot=${root}`));
@@ -111,6 +113,7 @@ fi
   process.chdir(previous.cwd);
   if (previous.path === undefined) delete process.env.PATH;
   else process.env.PATH = previous.path;
+  refreshCovenSpawnEnv();
   if (previous.projects === undefined) delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
   else process.env.CAVE_PROJECTS_PATH_OVERRIDE = previous.projects;
   if (previous.commandLog === undefined) delete process.env.CAVE_ROUTE_COMMAND_LOG;
