@@ -32,7 +32,12 @@ try {
     }),
   );
 
-  const { queueProjectReadiness, selectQueueProject } = await import("./queue-project-readiness.ts");
+  const {
+    cachedQueueProjectReadiness,
+    invalidateQueueProjectReadinessCache,
+    queueProjectReadiness,
+    selectQueueProject,
+  } = await import("./queue-project-readiness.ts");
 
   assert.equal((await queueProjectReadiness()).code, "no-project", "Queue never falls back to the app cwd");
   assert.equal((await selectQueueProject("queue-project"))?.root, projectRoot, "selection persists a registered project");
@@ -43,9 +48,12 @@ try {
   assert.equal(needsBeads.project?.root, projectRoot, "the selected repository remains the command root");
 
   await mkdir(path.join(projectRoot, ".beads"));
-  const partial = await queueProjectReadiness();
-  assert.equal(partial.code, "needs-beads", "an empty .beads directory remains repairable");
-  assert.equal(partial.canGenerate, true);
+  const unavailable = await queueProjectReadiness({
+    beadsProbe: async () => ({ ok: false, status: 503, error: "bd unavailable", stdout: "", stderr: "" }),
+  });
+  assert.equal(unavailable.code, "beads-unavailable", "an unavailable bd CLI is not presented as a generatable workspace");
+  assert.equal(unavailable.canGenerate, false);
+  assert.match(unavailable.message, /Install or repair the bd CLI/);
   await rm(path.join(projectRoot, ".beads"), { recursive: true, force: true });
   await mkdir(path.join(projectRoot, ".beads"));
   const ready = await queueProjectReadiness({
@@ -53,6 +61,22 @@ try {
   });
   assert.equal(ready.code, "ready");
   assert.equal(ready.ok, true);
+
+  let probeCalls = 0;
+  const cachedProbe = async () => {
+    probeCalls += 1;
+    return { ok: true, stdout: "[]", stderr: "" };
+  };
+  invalidateQueueProjectReadinessCache();
+  await Promise.all([
+    cachedQueueProjectReadiness({ beadsProbe: cachedProbe }),
+    cachedQueueProjectReadiness({ beadsProbe: cachedProbe }),
+  ]);
+  await cachedQueueProjectReadiness({ beadsProbe: cachedProbe });
+  assert.equal(probeCalls, 1, "concurrent onboarding heartbeats share one readiness probe inside the cache window");
+  invalidateQueueProjectReadinessCache();
+  await cachedQueueProjectReadiness({ beadsProbe: cachedProbe });
+  assert.equal(probeCalls, 2, "selection or Generate invalidation refreshes readiness immediately");
 
   const nestedRoot = path.join(projectRoot, "nested");
   await mkdir(nestedRoot);

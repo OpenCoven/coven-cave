@@ -549,16 +549,17 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     const canGenerate = readiness?.canGenerate === true;
     const readinessUnavailable = readinessFailure !== null;
     const sourcesUnavailable = !readinessUnavailable && readiness?.ok === true && readiness.project !== null;
+    const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && readiness?.project !== null;
     return (
       <div className="fwq">
         <div className="fwq-body">
           <EmptyState
             icon="ph:warning-circle"
-            headline={readinessUnavailable ? "Queue check unavailable" : sourcesUnavailable ? "Queue sources unavailable" : canGenerate ? "Generate your Queue" : "Queue needs a project"}
+            headline={readinessUnavailable ? "Queue check unavailable" : sourcesUnavailable ? "Queue sources unavailable" : projectUnavailable ? "Queue project needs attention" : canGenerate ? "Generate your Queue" : "Queue needs a project"}
             subtitle={readinessUnavailable ? readinessFailure : error}
             actions={
               <div className="flex flex-wrap justify-center gap-2">
-                {readinessUnavailable || sourcesUnavailable ? null : canGenerate ? (
+                {readinessUnavailable || sourcesUnavailable || projectUnavailable ? null : canGenerate ? (
                   <Button variant="primary" leadingIcon="ph:magic-wand-fill" loading={generating} onClick={() => void generateQueue()}>
                     Generate
                   </Button>

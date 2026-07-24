@@ -78,6 +78,12 @@ assert.doesNotMatch(
 
 assert.match(
   source,
+  /cachedQueueProjectReadiness\(\)/,
+  "the onboarding heartbeat reuses the short Queue readiness cache instead of spawning Git and bd every poll",
+);
+
+assert.match(
+  source,
   /openCovenTools\.find\(\(tool\) => tool\.id === "coven-cli"\)/,
   "startup identifies the Coven CLI by the shared tool id",
 );

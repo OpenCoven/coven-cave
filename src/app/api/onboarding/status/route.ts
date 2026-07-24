@@ -19,7 +19,7 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
-import { queueProjectReadiness } from "@/lib/queue-project-readiness";
+import { cachedQueueProjectReadiness } from "@/lib/queue-project-readiness";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -296,7 +296,7 @@ export async function GET() {
     checkGit(),
     checkDaemon(),
     checkFamiliars(),
-    queueProjectReadiness(),
+    cachedQueueProjectReadiness(),
   ]);
   const covenCli = checkCovenCli(
     openCovenTools.find((tool) => tool.id === "coven-cli"),

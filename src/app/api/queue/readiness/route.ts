@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { runBdCommand } from "@/lib/server/beads-cli";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
-import { QueueProjectStorageError, queueProjectReadiness, selectQueueProject } from "@/lib/queue-project-readiness";
+import { invalidateQueueProjectReadinessCache, QueueProjectStorageError, queueProjectReadiness, selectQueueProject } from "@/lib/queue-project-readiness";
 import { MAX_SESSION_JSON_BYTES } from "@/lib/server/session-security";
 
 export const dynamic = "force-dynamic";
@@ -88,6 +88,7 @@ export async function POST(req: Request) {
       if (!result.ok) {
         return NextResponse.json({ ok: false, error: result.error, readiness: current }, { status: result.status });
       }
+      invalidateQueueProjectReadinessCache();
       return NextResponse.json({ ok: true, readiness: await queueProjectReadiness() });
     });
   }

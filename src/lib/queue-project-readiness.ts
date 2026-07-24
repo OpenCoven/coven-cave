@@ -28,7 +28,9 @@ export type QueueProjectReadinessCode =
   | "git-unavailable"
   | "git-error"
   | "project-not-git-root"
-  | "project-storage-error";
+  | "project-storage-error"
+  | "beads-unavailable"
+  | "beads-error";
 
 export type QueueProjectReadiness = {
   ok: boolean;
@@ -43,6 +45,9 @@ type BeadsProbe = (repoRoot: string, beadsDir: string, args: string[]) => Promis
 type QueueProjectReadinessOptions = { beadsProbe?: BeadsProbe };
 const READY_PROBE_TTL_MS = 2_000;
 const readyProbeCache = new Map<string, { expiresAt: number; result: BdResult }>();
+const ONBOARDING_READINESS_TTL_MS = 5_000;
+let cachedOnboardingReadiness: { expiresAt: number; readiness: QueueProjectReadiness; probe?: BeadsProbe } | null = null;
+let onboardingReadinessInFlight: { probe?: BeadsProbe; pending: Promise<QueueProjectReadiness> } | null = null;
 
 export class QueueProjectStorageError extends Error {
   constructor(message = "Cave could not read or save the Queue project selection.") {
@@ -103,6 +108,7 @@ export async function selectQueueProject(projectId: string): Promise<CaveProject
   const file = queueProjectFilePath();
   await mkdir(/* turbopackIgnore: true */ path.dirname(file), { recursive: true });
   await writeSelectedProjectId(file, project.id);
+  invalidateQueueProjectReadinessCache();
   return project;
 }
 
@@ -140,21 +146,39 @@ async function gitTopLevel(root: string): Promise<GitTopLevel> {
   }
 }
 
-async function hasUsableBeadsWorkspace(repoRoot: string, probe: BeadsProbe): Promise<boolean> {
+type BeadsWorkspaceStatus =
+  | { kind: "missing" }
+  | { kind: "ready" }
+  | { kind: "unavailable"; message: string }
+  | { kind: "error"; message: string };
+
+async function beadsWorkspaceStatus(repoRoot: string, probe: BeadsProbe): Promise<BeadsWorkspaceStatus> {
   const beadsDir = path.join(/* turbopackIgnore: true */ repoRoot, ".beads");
   try {
     const entry = await lstat(/* turbopackIgnore: true */ beadsDir);
-    if (!entry.isDirectory() || entry.isSymbolicLink()) return false;
+    if (!entry.isDirectory() || entry.isSymbolicLink()) {
+      return { kind: "error", message: "The Queue Beads workspace is invalid. Repair it before loading Queue work." };
+    }
     const canonicalBeads = await realpath(/* turbopackIgnore: true */ beadsDir);
-    if (canonicalBeads !== beadsDir && !canonicalBeads.startsWith(repoRoot + path.sep)) return false;
-  } catch {
-    return false;
+    if (canonicalBeads !== beadsDir && !canonicalBeads.startsWith(repoRoot + path.sep)) {
+      return { kind: "error", message: "The Queue Beads workspace points outside the selected project. Repair it before loading Queue work." };
+    }
+  } catch (cause) {
+    const error = cause as NodeJS.ErrnoException;
+    if (error.code === "ENOENT") return { kind: "missing" };
+    return { kind: "error", message: "Cave could not inspect the Queue Beads workspace. Check project permissions and try again." };
   }
   // Directory presence alone is not a workspace: a failed bd init can leave an
   // empty .beads behind. A read-only probe keeps Generate available to repair it.
   const result = await probe(repoRoot, beadsDir, ["ready", "--json"]);
-  if (result.ok) readyProbeCache.set(repoRoot, { expiresAt: Date.now() + READY_PROBE_TTL_MS, result });
-  return result.ok;
+  if (result.ok) {
+    readyProbeCache.set(repoRoot, { expiresAt: Date.now() + READY_PROBE_TTL_MS, result });
+    return { kind: "ready" };
+  }
+  if (result.status === 503 || /\bbd unavailable\b/i.test(result.error)) {
+    return { kind: "unavailable", message: "Beads is required to use the Queue project. Install or repair the bd CLI, then retry." };
+  }
+  return { kind: "error", message: `Cave could not verify the Queue Beads workspace: ${result.error || "bd ready failed"}. Repair Beads, then retry.` };
 }
 
 /** Let the immediately-following Queue list read reuse its verified bd ready output. */
@@ -166,6 +190,32 @@ export function takeQueueReadyProbe(repoRoot: string): BdResult | null {
   }
   readyProbeCache.delete(repoRoot);
   return cached.result;
+}
+
+/** Clear the short onboarding cache whenever selection or generation changes it. */
+export function invalidateQueueProjectReadinessCache(): void {
+  cachedOnboardingReadiness = null;
+  onboardingReadinessInFlight = null;
+}
+
+/**
+ * The onboarding heartbeat runs every two seconds. Cache its expensive Git and
+ * Beads probes briefly, while coalescing simultaneous status requests.
+ */
+export async function cachedQueueProjectReadiness(options: QueueProjectReadinessOptions = {}): Promise<QueueProjectReadiness> {
+  if (cachedOnboardingReadiness && cachedOnboardingReadiness.probe === options.beadsProbe && cachedOnboardingReadiness.expiresAt > Date.now()) {
+    return cachedOnboardingReadiness.readiness;
+  }
+  const inFlight = onboardingReadinessInFlight;
+  if (inFlight && inFlight.probe === options.beadsProbe) return inFlight.pending;
+  const pending = queueProjectReadiness(options).then((readiness) => {
+    cachedOnboardingReadiness = { expiresAt: Date.now() + ONBOARDING_READINESS_TTL_MS, readiness, probe: options.beadsProbe };
+    return readiness;
+  }).finally(() => {
+    if (onboardingReadinessInFlight?.pending === pending) onboardingReadinessInFlight = null;
+  });
+  onboardingReadinessInFlight = { probe: options.beadsProbe, pending };
+  return pending;
 }
 
 function projectShape(project: CaveProject): Pick<CaveProject, "id" | "name" | "root"> {
@@ -263,13 +313,23 @@ export async function queueProjectReadiness(options: QueueProjectReadinessOption
     };
   }
 
-  if (!(await hasUsableBeadsWorkspace(gitRoot.root, options.beadsProbe ?? runBdCommand))) {
+  const beads = await beadsWorkspaceStatus(gitRoot.root, options.beadsProbe ?? runBdCommand);
+  if (beads.kind === "missing") {
     return {
       ok: false,
       code: "needs-beads",
       message: `Queue is ready to generate in ${gitRoot.root}. Generate will initialize or repair its local Beads workspace.`,
       project: { ...selected, root: gitRoot.root },
       canGenerate: true,
+    };
+  }
+  if (beads.kind === "unavailable" || beads.kind === "error") {
+    return {
+      ok: false,
+      code: beads.kind === "unavailable" ? "beads-unavailable" : "beads-error",
+      message: beads.message,
+      project: { ...selected, root: gitRoot.root },
+      canGenerate: false,
     };
   }
   return {
