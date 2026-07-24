@@ -346,9 +346,16 @@ struct MessageBubble: View {
 
     @ViewBuilder private var bubble: some View {
         if message.text.isEmpty && message.streaming {
-            TypingIndicator()
-                .padding(.horizontal, 14).padding(.vertical, 11)
-                .background(bubbleBackground, in: bubbleShape)
+            VStack(alignment: .leading, spacing: 8) {
+                TypingIndicator()
+                    .padding(.horizontal, 14).padding(.vertical, 11)
+                    .background(bubbleBackground, in: bubbleShape)
+                // While the newest reply gathers itself, surface one rotating
+                // grimoire tip (design's thinking-hint card).
+                if isLast {
+                    GrimoireHintCard()
+                }
+            }
         } else if rendersMarkdown {
             MarkdownWebView(markdown: parsed.visible, height: $mdHeight,
                             streaming: message.streaming && !isUser,
@@ -490,6 +497,55 @@ struct TypingIndicator: View {
 
 /// The pulsing "still streaming" dot in a reply's corner. `PhaseAnimator`
 /// breathes it between dim and bright; Reduce Motion holds it steady.
+/// One quiet, rotating usage tip shown beside the typing indicator while a
+/// reply gathers itself (design's "grimoire hint" card). Every hint names a
+/// real affordance of this app. Italic serif per the design; rotation pauses
+/// under Reduce Motion (a single static hint instead).
+struct GrimoireHintCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var index = Int.random(in: 0..<GrimoireHintCard.hints.count)
+    @State private var visible = true
+
+    static let hints: [String] = [
+        "Type / for commands — /model swaps the mind mid-chat.",
+        "@-mention a familiar to pull them into the circle.",
+        "Swipe right on any reply to quote it back.",
+        "Long-press a bubble for copy, forward, and retry.",
+        "/image conjures pictures; /skill runs a ritual.",
+        "Pin a chat from the list to keep it on top.",
+        "The ☰ menu holds projects, tasks, and the terminal.",
+        "/clear tidies the transcript; /new starts fresh.",
+    ]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "book.closed")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 2)
+            Text(Self.hints[index])
+                .font(.system(size: 13.5, design: .serif))
+                .italic()
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .glassFill(.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .opacity(visible ? 1 : 0)
+        .task {
+            guard !reduceMotion else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                withAnimation(.easeOut(duration: 0.3)) { visible = false }
+                try? await Task.sleep(for: .seconds(0.32))
+                index = (index + 1) % Self.hints.count
+                withAnimation(.easeIn(duration: 0.3)) { visible = true }
+            }
+        }
+        .accessibilityLabel("Tip: \(Self.hints[index])")
+    }
+}
+
 struct StreamingDot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
