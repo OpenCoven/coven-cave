@@ -256,9 +256,14 @@ assert.match(source, /\$scaleX = \$MainWebView\.width \/ \[double\]\$Box\.innerW
 assert.match(source, /\$scaleY = \$MainWebView\.height \/ \[double\]\$Box\.innerHeight/);
 assert.match(source, /\[ValidateSet\(1\.25, 1\.5\)\]\s*\[double\]\$ExpectedDevicePixelRatio = 1\.25/);
 assert.match(source, /\[ValidateRange\(0\.001, 0\.1\)\]\s*\[double\]\$DevicePixelRatioTolerance = 0\.01/);
+assert.match(source, /\[Nullable\[int\]\]\$MonitorTransitionX/);
+assert.match(source, /\[Nullable\[int\]\]\$MonitorTransitionY/);
+assert.match(source, /\[double\]\$TransitionExpectedDevicePixelRatio = 0\.0/);
 assert.match(source, /devicePixelRatio: window\.devicePixelRatio/);
-assert.match(source, /function Assert-MainRendererPhysicalScale \{[\s\S]*\[Math\]::Abs\(\$dpr - \$ExpectedDevicePixelRatio\) -le \$DevicePixelRatioTolerance[\s\S]*\$Dom\.innerWidth \* \$dpr[\s\S]*Main renderer WRY dimensions do not match the observed DOM DPR/);
+assert.match(source, /function Assert-MainRendererPhysicalScale \{[\s\S]*\[Math\]::Abs\(\$dpr - \$RequiredDevicePixelRatio\) -le \$DevicePixelRatioTolerance[\s\S]*\$Dom\.innerWidth \* \$dpr[\s\S]*Main renderer WRY dimensions do not match the observed DOM DPR/);
 assert.match(source, /Assert-MainRendererPhysicalScale \(Get-MainDomState \$MainTarget\) \$mainWry/);
+assert.match(source, /function Invoke-MonitorDpiTransition \{[\s\S]*SetWindowPos\([\s\S]*Wait-DomState \$MainTarget[\s\S]*Wait-NativeBrowserActive \$MainWindow \$MainTarget 10000 \$TransitionExpectedDevicePixelRatio/);
+assert.match(source, /\$report\.monitorDpiTransition = Invoke-MonitorDpiTransition \$mainWindow \$mainTarget/);
 assert.match(source, /\[ValidateRange\(0, 1\)\]\s*\[int\]\$ClientContainmentTolerancePx = 1/);
 assert.match(source, /\$actual\.left -ge \(\$client\.left - \$ClientContainmentTolerancePx\).*\$actual\.right -le \(\$client\.right \+ \$ClientContainmentTolerancePx\)/s);
 assert.match(source, /Assert-RectNear \$actual \$expected \$BoundsTolerancePx/);

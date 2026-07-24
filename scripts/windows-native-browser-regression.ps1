@@ -22,6 +22,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-brows
 
 .EXAMPLE
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-browser-regression.ps1 `
+  -Executable C:\candidate\app.exe -ExpectedDevicePixelRatio 1.25 `
+  -MonitorTransitionX 2560 -MonitorTransitionY 80 `
+  -TransitionExpectedDevicePixelRatio 1.5
+
+.EXAMPLE
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-browser-regression.ps1 `
   -Executable C:\candidate\app.exe -AttachPid 1234 -CdpPort 9225 -SkipClose
 
 .EXAMPLE
@@ -79,6 +85,12 @@ param(
     [ValidateRange(0.001, 0.1)]
     [double]$DevicePixelRatioTolerance = 0.01,
 
+    [Nullable[int]]$MonitorTransitionX,
+    [Nullable[int]]$MonitorTransitionY,
+
+    [ValidateRange(0.0, 4.0)]
+    [double]$TransitionExpectedDevicePixelRatio = 0.0,
+
     [switch]$ExpectPackagedSidecar,
     [switch]$ExpectPtyDescendant,
     [switch]$StartTrustedPty,
@@ -108,6 +120,25 @@ if (-not $StartupProbeOnly -and -not $PartialCoverage -and $Cycles -lt 12) {
 }
 if ($StartupProbeOnly -and $StartTrustedPty) {
     throw "-StartupProbeOnly is observation-only and cannot be combined with -StartTrustedPty."
+}
+$hasMonitorTransitionX = $null -ne $MonitorTransitionX
+$hasMonitorTransitionY = $null -ne $MonitorTransitionY
+if ($hasMonitorTransitionX -xor $hasMonitorTransitionY) {
+    throw "-MonitorTransitionX and -MonitorTransitionY must be supplied together."
+}
+if ($hasMonitorTransitionX -and $TransitionExpectedDevicePixelRatio -eq 0.0) {
+    throw "-TransitionExpectedDevicePixelRatio is required when requesting a monitor-DPI transition."
+}
+if (-not $hasMonitorTransitionX -and $TransitionExpectedDevicePixelRatio -ne 0.0) {
+    throw "-TransitionExpectedDevicePixelRatio requires -MonitorTransitionX and -MonitorTransitionY."
+}
+if ($hasMonitorTransitionX) {
+    if ($TransitionExpectedDevicePixelRatio -ne 1.25 -and $TransitionExpectedDevicePixelRatio -ne 1.5) {
+        throw "-TransitionExpectedDevicePixelRatio must be 1.25 or 1.5."
+    }
+    if ([Math]::Abs($TransitionExpectedDevicePixelRatio - $ExpectedDevicePixelRatio) -le $DevicePixelRatioTolerance) {
+        throw "The monitor-DPI transition must target a different fractional DPR than -ExpectedDevicePixelRatio."
+    }
 }
 
 function Get-FullPath {
@@ -230,6 +261,7 @@ $report = [ordered]@{
     }
     startupGeometry = $null
     geometryTolerances = [ordered]@{ viewportPixels = $BoundsTolerancePx; clientContainmentPixels = $ClientContainmentTolerancePx; expectedDevicePixelRatio = $ExpectedDevicePixelRatio; devicePixelRatioTolerance = $DevicePixelRatioTolerance }
+    monitorDpiTransition = $null
     lastPhysicalInput = $null
     processSnapshot = @()
     ptySetup = [ordered]@{
@@ -1807,10 +1839,10 @@ function Assert-RectNear {
 }
 
 function Assert-MainRendererPhysicalScale {
-    param($Dom, $MainWebView)
+    param($Dom, $MainWebView, [double]$RequiredDevicePixelRatio = $ExpectedDevicePixelRatio)
     $dpr = [double]$Dom.devicePixelRatio
-    Assert-Condition ([Math]::Abs($dpr - $ExpectedDevicePixelRatio) -le $DevicePixelRatioTolerance) (
-        "Main renderer DPR $dpr does not match the required fractional DPR $ExpectedDevicePixelRatio (±$DevicePixelRatioTolerance). Run on a target HiDPI display."
+    Assert-Condition ([Math]::Abs($dpr - $RequiredDevicePixelRatio) -le $DevicePixelRatioTolerance) (
+        "Main renderer DPR $dpr does not match the required fractional DPR $RequiredDevicePixelRatio (±$DevicePixelRatioTolerance). Run on a target HiDPI display."
     )
     $expectedWidth = [int][Math]::Round([double]$Dom.innerWidth * $dpr)
     $expectedHeight = [int][Math]::Round([double]$Dom.innerHeight * $dpr)
@@ -1822,7 +1854,7 @@ function Assert-MainRendererPhysicalScale {
 }
 
 function Wait-NativeBrowserActive {
-    param([IntPtr]$MainWindow, $MainTarget, [int]$TimeoutMs = 6000)
+    param([IntPtr]$MainWindow, $MainTarget, [int]$TimeoutMs = 6000, [double]$RequiredDevicePixelRatio = $ExpectedDevicePixelRatio)
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $lastGeometryMismatch = $null
     do {
@@ -1833,7 +1865,7 @@ function Wait-NativeBrowserActive {
             if ($visible.Count -eq 1) {
                 try {
                     $viewport = Wait-DomBox $MainTarget "[data-native-browser-viewport]" "selector" 1000
-                    $rendererScale = Assert-MainRendererPhysicalScale (Get-MainDomState $MainTarget) $mainWry
+                    $rendererScale = Assert-MainRendererPhysicalScale (Get-MainDomState $MainTarget) $mainWry $RequiredDevicePixelRatio
                     $expected = Convert-DomBoxToScreenRect $viewport $mainWry
                     $actual = $visible[0]
                     $client = Get-ClientScreenRectRecord $MainWindow
@@ -1858,6 +1890,38 @@ function Wait-NativeBrowserActive {
     } while ($watch.ElapsedMilliseconds -lt $TimeoutMs)
     $detail = if ($lastGeometryMismatch) { " Last geometry mismatch: $lastGeometryMismatch" } else { "" }
     throw "Expected one settled visible native Browser WRY_WEBVIEW within ${TimeoutMs}ms.$detail"
+}
+
+function Invoke-MonitorDpiTransition {
+    param([IntPtr]$MainWindow, $MainTarget)
+    if ($null -eq $MonitorTransitionX) { return $null }
+
+    $before = Get-MainDomState $MainTarget
+    $beforeDpr = [double]$before.devicePixelRatio
+    $window = Get-WindowRectRecord $MainWindow
+    $moveFlags = $SWP_NOSIZE -bor $SWP_NOZORDER -bor $SWP_NOACTIVATE -bor $SWP_ASYNCWINDOWPOS
+    Assert-Condition ([CovenNativeRegression.Win32]::SetWindowPos(
+        $MainWindow, [IntPtr]::Zero, [int]$MonitorTransitionX, [int]$MonitorTransitionY, 0, 0, $moveFlags
+    )) "Asynchronous SetWindowPos could not move the exact candidate to the requested DPI-transition monitor."
+    Wait-MainWindowPlacement $MainWindow ([pscustomobject]@{
+        left = [int]$MonitorTransitionX; top = [int]$MonitorTransitionY; width = $window.width; height = $window.height
+    }) -PositionOnly
+    $after = Wait-DomState $MainTarget {
+        param($state)
+        [Math]::Abs([double]$state.devicePixelRatio - $TransitionExpectedDevicePixelRatio) -le $DevicePixelRatioTolerance
+    } "main renderer DPR to change after the monitor transition" 10000
+    Assert-Condition ([Math]::Abs($beforeDpr - [double]$after.devicePixelRatio) -gt $DevicePixelRatioTolerance) (
+        "Monitor transition did not change the renderer DPR; select a differently scaled target monitor."
+    )
+    $geometry = Wait-NativeBrowserActive $MainWindow $MainTarget 10000 $TransitionExpectedDevicePixelRatio
+    Add-PhaseEvidence -Name "monitor-dpi-transition-geometry-settled" -MainWindow $MainWindow -MainTarget $MainTarget
+    return [ordered]@{
+        fromDevicePixelRatio = $beforeDpr
+        toDevicePixelRatio = [double]$after.devicePixelRatio
+        targetX = [int]$MonitorTransitionX
+        targetY = [int]$MonitorTransitionY
+        geometry = $geometry
+    }
 }
 
 function Wait-NativeBrowserInactive {
@@ -2173,6 +2237,7 @@ try {
     [void](Wait-NativeBrowserActive $mainWindow $mainTarget)
     $finalChildUrl = Wait-ActiveChildUrl $CdpPort $mainTarget $settingsLinks[0] 10000
     $finalChildTarget = $finalChildUrl.target
+    $report.monitorDpiTransition = Invoke-MonitorDpiTransition $mainWindow $mainTarget
 
     foreach ($tuple in @(Get-AttributedProcessTuples $appProcessId $rootTuple $WebView2Profile)) { $captured[(Get-TupleKey $tuple)] = $tuple }
     $report.processSnapshot = @($captured.Values | Sort-Object processId, creationTimeUtcTicks)
