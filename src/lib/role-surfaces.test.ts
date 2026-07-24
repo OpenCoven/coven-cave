@@ -122,6 +122,14 @@ test("a General or absent familiar Type grants no extra tokens", () => {
   assert.ok(!surfaceMatchesRoles({ role: "coder" }, unknown));
 });
 
+test("a multi-value familiarType unions grants from all types (cave-gud8)", () => {
+  const ids = familiarRoleIds({ id: "f", role: "Orchestrator", familiarType: "coding,research" });
+  assert.ok(ids.has("coding"));
+  assert.ok(ids.has("coder"));
+  assert.ok(ids.has("research"));
+  assert.ok(ids.has("researcher"));
+});
+
 test("resolveVisibleRoleSurfaces shows alias-matched rooms", () => {
   clearRoleSurfacesForTest();
   const context = makeContext();
