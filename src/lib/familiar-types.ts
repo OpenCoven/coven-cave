@@ -14,6 +14,11 @@
  * The table is static on purpose: it is the single documented mapping from
  * "what the user picks in Familiar Studio → Identity" to "which room opens",
  * unit-testable without the component registry.
+ *
+ * The vocabulary is deliberately small (cave-lgcb): usage evidence trimmed
+ * it from nine types to this core set. Retired ids stay resolvable through
+ * RETIRED_FAMILIAR_TYPE_SUCCESSORS, and their rooms remain reachable via
+ * free-text Role labels and registry aliases.
  */
 
 import type { IconName } from "./icon.tsx";
@@ -23,11 +28,23 @@ export type FamiliarTypeId =
   | "coding"
   | "research"
   | "review"
-  | "writing"
-  | "comms"
-  | "watch"
-  | "planning"
-  | "indexing";
+  | "comms";
+
+/**
+ * Retired type ids → successor type (familiar-type vocabulary reduction,
+ * cave-lgcb, 2026-07-24). Usage evidence showed these four types carried
+ * ~2% of sessions combined, so they left the picker. Every retired id maps
+ * to a documented successor so stale stored configs resolve safely — the
+ * picker never hides and matching never crashes. Their rooms stay
+ * registered and reachable through free-text Role labels (the registry
+ * carries watch/planning/writing/indexing aliases for exactly this).
+ */
+export const RETIRED_FAMILIAR_TYPE_SUCCESSORS: Readonly<Record<string, FamiliarTypeId>> = {
+  watch: "general",
+  planning: "general",
+  writing: "general",
+  indexing: "general",
+};
 
 export type FamiliarTypeSpec = {
   id: FamiliarTypeId;
@@ -45,11 +62,7 @@ export const FAMILIAR_TYPES: readonly FamiliarTypeSpec[] = [
   { id: "coding", label: "Coding", roleToken: "coder", description: "Unlocks the Code room — multi-session coding with diffs, files, branches, worktrees, and GitHub.", iconName: "ph:code" },
   { id: "research", label: "Research", roleToken: "researcher", description: "Unlocks the Research Desk — bounded missions, evidence, and durable knowledge artifacts.", iconName: "ph:detective" },
   { id: "review", label: "Review", roleToken: "reviewer", description: "Unlocks the Review Deck — queued change reviews with verdicts and notes.", iconName: "ph:git-branch" },
-  { id: "writing", label: "Writing", roleToken: "scribe", description: "Unlocks the Writing Desk — drafts, revisions, and publishing flow.", iconName: "ph:pencil-simple" },
   { id: "comms", label: "Comms", roleToken: "messenger", description: "Unlocks Comms Operations — outbound and inbound communication across channels.", iconName: "ph:paper-plane-tilt" },
-  { id: "watch", label: "Watch", roleToken: "sentinel", description: "Unlocks the Watchtower — monitors, alerts, and incident timelines.", iconName: "ph:shield-warning" },
-  { id: "planning", label: "Planning", roleToken: "navigator", description: "Unlocks the Chart Room — plans, milestones, and course corrections.", iconName: "ph:compass" },
-  { id: "indexing", label: "Indexing", roleToken: "indexer", description: "Unlocks the Index — corpus health, coverage, and retrieval quality.", iconName: "ph:books" },
 ];
 
 /** The explicit default: a familiar with no stored type is General. */
@@ -61,12 +74,14 @@ export function isFamiliarTypeId(value: string): value is FamiliarTypeId {
 
 /**
  * Parse a comma-separated type string into an ordered, deduped list of valid
- * type ids. General is the empty state and is never included in the result.
+ * type ids. Retired ids resolve through RETIRED_FAMILIAR_TYPE_SUCCESSORS
+ * first; General is the empty state and is never included in the result.
  */
 export function parseFamiliarTypeIds(value: string | undefined | null): FamiliarTypeId[] {
   const seen = new Set<FamiliarTypeId>();
   for (const token of (value ?? "").split(",")) {
-    const id = token.trim().toLowerCase();
+    const raw = token.trim().toLowerCase();
+    const id = RETIRED_FAMILIAR_TYPE_SUCCESSORS[raw] ?? raw;
     if (id === "general" || !isFamiliarTypeId(id)) continue;
     seen.add(id);
   }
@@ -82,8 +97,9 @@ export function resolveFamiliarTypes(value: string | undefined | null): Familiar
 }
 
 /** Stored value → table entry: the first valid type found among the
- *  comma-separated tokens (skipping "general" and unknown/stale ids), or
- *  General when none are valid or the value is absent — so a stale config
+ *  comma-separated tokens (mapping retired ids to their successor, skipping
+ *  "general" and unknown/stale ids), or General when none are valid or the
+ *  value is absent — so a stale config
  *  never hides the picker or crashes matching. */
 export function resolveFamiliarType(value: string | undefined | null): FamiliarTypeSpec {
   return resolveFamiliarTypes(value)[0] ?? FAMILIAR_TYPES[0];

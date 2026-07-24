@@ -27,6 +27,10 @@ test("a mission with nothing to draft from maps to 409, not a fake queued record
   assert.doesNotMatch(route, /queued|drafting|progress/i, "no synthetic progress states");
 });
 
+test("an unreadable (symlinked/oversized/escaping) artifact maps to 422, never 500 (cave-v73d)", () => {
+  assert.match(route, /"artifact-unreadable" \? 422/);
+});
+
 test("delete is by id + familiar and reports misses as 404", () => {
   assert.match(route, /removeResearchGeneration/);
   assert.match(route, /generation not found/);

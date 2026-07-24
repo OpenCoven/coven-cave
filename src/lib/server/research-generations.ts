@@ -41,6 +41,7 @@ import { writeJsonAtomic } from "./atomic-write.ts";
 import { corruptAsidePath } from "./corrupt-aside.ts";
 import {
   loadResearchMission,
+  isResearchFileIntegrityError,
   readValidatedMissionFile,
 } from "./research-mission-store.ts";
 
@@ -542,12 +543,19 @@ export async function createResearchGenerationFromMission(
   let markdown: string;
   try {
     markdown = await readValidatedMissionFile(mission.id, artifact.relativePath);
-  } catch {
-    return {
-      ok: false,
-      code: "artifact-unreadable",
-      error: `could not read the mission artifact “${artifact.title}”`,
-    };
+  } catch (error) {
+    // A workspace-containment failure (symlinked/oversized/escaping artifact)
+    // is a client-visible 4xx via the route's artifact-unreadable mapping — the
+    // request was valid, the target file fails the sandbox (cave-v73d). A
+    // genuine fs fault (ENOENT race, EIO, …) is a real 500 — rethrow it.
+    if (isResearchFileIntegrityError(error)) {
+      return {
+        ok: false,
+        code: "artifact-unreadable",
+        error: `could not read the mission artifact “${artifact.title}”`,
+      };
+    }
+    throw error;
   }
   const content = draftGenerationContent(input.kind, {
     mission,

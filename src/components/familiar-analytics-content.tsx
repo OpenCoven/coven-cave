@@ -27,6 +27,7 @@ import { formatTimeToFirstReply, timeToFirstReplyMs } from "@/lib/first-run-stam
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
 import { pulseTotal, sessionDayKey, type PulseDay } from "@/lib/session-pulse";
 import { requestAgentsNewChat } from "@/lib/agents-new-chat";
+import { buildRehabilitationBrief } from "@/lib/familiar-rehabilitation";
 import {
   aggregateThreadSignals,
   type ContextPressure,
@@ -883,7 +884,14 @@ function contractPropertyDetail(
   };
 }
 
-const ContractCompliance = memo(function ContractCompliance({ report }: { report: ContractReport | null }) {
+const ContractCompliance = memo(function ContractCompliance({
+  report,
+  onReview,
+}: {
+  report: ContractReport | null;
+  /** Direct-launch a review thread for a failing report (parent owns the launch). */
+  onReview: () => void;
+}) {
   const [activeProperty, setActiveProperty] = useState<FamiliarProperty | null>(null);
   const passCount = report ? report.properties.filter((property) => property.pass).length : 0;
   const active = report && activeProperty
@@ -935,6 +943,20 @@ const ContractCompliance = memo(function ContractCompliance({ report }: { report
                 ))}
               </div>
             </div>
+          ) : null}
+          {/* Failing contract = operating as an agent. Mirror the Studio
+              Contract tab: direct-launch a chat seeded with the rehabilitation
+              brief so investigation and resolution start in one click. */}
+          {!report.pass ? (
+            <Button
+              variant="primary"
+              size="sm"
+              className="self-start"
+              leadingIcon="ph:sparkle"
+              onClick={onReview}
+            >
+              Review and resolve
+            </Button>
           ) : null}
         </>
       ) : (
@@ -1386,6 +1408,18 @@ export function FamiliarAnalyticsContent({
     setHealAllOpen(false);
   }, [actionModal, announce, model.familiarId]);
 
+  // Contract review: direct-launch a thread seeded with the rehabilitation
+  // brief — the same "Rite of Binding" flow as the Studio Contract tab.
+  const reviewContract = useCallback(() => {
+    if (!model.contractReport) return;
+    requestAgentsNewChat({
+      familiarId: model.familiarId,
+      initialPrompt: `${buildRehabilitationBrief(familiarName, model.contractReport)}\n\nAnalytics source: /dashboard/familiars/${encodeURIComponent(model.familiarId)}/analytics`,
+      origin: "chat" as const,
+    });
+    announce(`Opening a review thread to repair ${familiarName}'s contract.`);
+  }, [announce, familiarName, model.contractReport, model.familiarId]);
+
   const handleSelectDay = useCallback((day: PulseDay) => {
     setSelectedDay((prev) => {
       const next = prev?.key === day.key ? null : day;
@@ -1552,7 +1586,7 @@ export function FamiliarAnalyticsContent({
           <ModelFeedbackSection rollup={model.modelFeedback} />
         </FaCollapsibleSection>
 
-        <ContractCompliance report={model.contractReport} />
+        <ContractCompliance report={model.contractReport} onReview={reviewContract} />
       </div>
 
       {traceTarget ? (

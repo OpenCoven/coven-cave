@@ -90,13 +90,28 @@ assert.match(
 );
 assert.match(
   css,
-  /@container \(max-height: 600px\) \{[\s\S]{0,120}?\.home-dash__section--recent \{[\s\S]{0,40}?display: none/,
+  /@container \(max-height: 650px\) \{[\s\S]{0,120}?\.home-dash__section--recent \{[\s\S]{0,40}?display: none/,
   "short panes shed Recent threads instead of clipping",
 );
 assert.match(
   css,
-  /@container \(max-height: 430px\) \{[\s\S]{0,600}?\.home-dash__work-row:nth-child\(n \+ 4\) \{[\s\S]{0,40}?display: none/,
+  /@container \(max-height: 480px\) \{[\s\S]{0,600}?\.home-dash__work-row:nth-child\(n \+ 4\) \{[\s\S]{0,40}?display: none/,
   "very short panes trim open work to three rows",
+);
+// An element can never match its own @container query — a `.home-dash__board`
+// rule inside a tier is silently dead (shipped once: the 430px tier's padding
+// shrink never applied). Tiers may restyle descendants only.
+for (const [, tier] of css.matchAll(/@container[^{]*\{([\s\S]*?)\n\}/g)) {
+  assert.doesNotMatch(
+    tier,
+    /\.home-dash__board\s*[{,]/,
+    "fit tiers must not target .home-dash__board itself — it is the query container",
+  );
+}
+assert.match(
+  css,
+  /\.home-dash__board-inner \{[\s\S]{0,200}?padding: var\(--space-6\) 0/,
+  "vertical board padding lives on the inner wrapper so tiers can shrink it",
 );
 
 // ── (4) Open-work board — live data + trimmed filter tabs ────────────────

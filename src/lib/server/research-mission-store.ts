@@ -17,6 +17,27 @@ const ARTIFACT_FILE_RE = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
 
 export const MAX_RESEARCH_FILE_BYTES = 2 * 1024 * 1024;
 
+/**
+ * A mission-file read that fails the workspace sandbox: the path escapes the
+ * mission workspace, resolves through a symlink, isn't a regular file, or
+ * exceeds the read cap. The request was well-formed — these are client-visible
+ * *containment* outcomes, not server faults — so routes surface them as 4xx,
+ * never 500 (cave-v73d). Missing files (ENOENT) are NOT integrity failures:
+ * they carry Node's errno code and callers special-case them separately.
+ */
+export class ResearchFileIntegrityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ResearchFileIntegrityError";
+  }
+}
+
+export function isResearchFileIntegrityError(
+  error: unknown,
+): error is ResearchFileIntegrityError {
+  return error instanceof Error && error.name === "ResearchFileIntegrityError";
+}
+
 declare global {
   var __caveResearchMissionLocks: Map<string, Promise<void>> | undefined;
 }
@@ -189,15 +210,15 @@ export async function readValidatedMissionFile(
   const directory = await assertRealMissionDirectory(id);
   const candidate = path.resolve(/* turbopackIgnore: true */ directory, relativePath);
   if (!relativePath || path.isAbsolute(relativePath) || !isWithin(candidate, directory)) {
-    throw new Error("file is outside mission workspace");
+    throw new ResearchFileIntegrityError("file is outside mission workspace");
   }
   const stat = await lstat(/* turbopackIgnore: true */ candidate);
-  if (stat.isSymbolicLink()) throw new Error("research files cannot be symlinks");
-  if (!stat.isFile()) throw new Error("research path is not a file");
-  if (stat.size > MAX_RESEARCH_FILE_BYTES) throw new Error("research file is too large");
+  if (stat.isSymbolicLink()) throw new ResearchFileIntegrityError("research files cannot be symlinks");
+  if (!stat.isFile()) throw new ResearchFileIntegrityError("research path is not a file");
+  if (stat.size > MAX_RESEARCH_FILE_BYTES) throw new ResearchFileIntegrityError("research file is too large");
   const resolvedCandidate = await realpath(/* turbopackIgnore: true */ candidate);
   if (!isWithin(resolvedCandidate, directory)) {
-    throw new Error("file is outside mission workspace");
+    throw new ResearchFileIntegrityError("file is outside mission workspace");
   }
   return readFile(/* turbopackIgnore: true */ resolvedCandidate, "utf8");
 }

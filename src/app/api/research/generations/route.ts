@@ -58,9 +58,15 @@ export async function POST(req: Request) {
   }
   if (!result.ok) {
     // no-artifact is a state conflict, not a client mistake: the mission
-    // exists but has published nothing to draft from yet.
+    // exists but has published nothing to draft from yet. artifact-unreadable
+    // is a workspace-containment failure (symlinked/oversized/escaping
+    // artifact) — a 4xx, never a 500 (cave-v73d). A genuine fs fault throws
+    // and is caught above as a 500.
     const status =
-      result.code === "mission-not-found" ? 404 : result.code === "no-artifact" ? 409 : 500;
+      result.code === "mission-not-found" ? 404
+        : result.code === "no-artifact" ? 409
+        : result.code === "artifact-unreadable" ? 422
+        : 500;
     return NextResponse.json({ ok: false, error: result.error }, { status });
   }
   return NextResponse.json({ ok: true, generation: result.generation });

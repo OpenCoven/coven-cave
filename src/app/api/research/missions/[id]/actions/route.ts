@@ -6,7 +6,10 @@ import {
 } from "@/lib/research-missions";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { makeProductionResearchMissionRunner } from "@/lib/server/research-mission-runner";
-import { isValidResearchMissionId } from "@/lib/server/research-mission-store";
+import {
+  isResearchFileIntegrityError,
+  isValidResearchMissionId,
+} from "@/lib/server/research-mission-store";
 import { MAX_SESSION_JSON_BYTES } from "@/lib/server/session-security";
 
 export const dynamic = "force-dynamic";
@@ -87,6 +90,12 @@ export async function POST(
     const mission = await runner.act(id, parsed.body);
     return NextResponse.json({ ok: true, mission });
   } catch (error) {
+    // Workspace-containment failures (symlinked/oversized/escaping artifact
+    // reached during a manual publish/finish) are 4xx — the request was valid,
+    // the target file fails the sandbox — never a 500 (cave-v73d).
+    if (isResearchFileIntegrityError(error)) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 422 });
+    }
     const message = error instanceof Error ? error.message : "research action failed";
     return NextResponse.json(
       { ok: false, error: message },

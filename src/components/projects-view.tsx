@@ -100,7 +100,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   const confirm = useConfirm();
   // Unscoped: access is managed over EVERY registered project, not just the
   // ones the active familiar can already see.
-  const { projects, loading: projectsLoading, error: projectsError, reload, createProject, updateRepoUrl } = useProjects();
+  const { projects, loading: projectsLoading, error: projectsError, reload, createProject, updateRepoUrl, renameProject, deleteProject } = useProjects();
 
   const [grantsData, setGrantsData] = useState<GrantsSnapshot | null>(null);
   const [grantsLoading, setGrantsLoading] = useState(true);
@@ -173,6 +173,25 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       return ok;
     },
     [updateRepoUrl, announce],
+  );
+  const renameProjectAndAnnounce = useCallback(
+    async (id: string, name: string) => {
+      const ok = await renameProject(id, name);
+      if (ok) announce("Project renamed.");
+      return ok;
+    },
+    [renameProject, announce],
+  );
+  const removeProject = useCallback(
+    async (id: string) => {
+      const ok = await deleteProject(id);
+      if (ok) {
+        announce("Project removed from the registry.");
+        void loadGrants(); // the delete cascade revoked its grants server-side
+      }
+      return ok;
+    },
+    [deleteProject, announce, loadGrants],
   );
 
   // ── Mutation state ─────────────────────────────────────────────────────
@@ -664,6 +683,8 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         project={settingsProject}
         onClose={() => setSettingsProjectId(null)}
         onSaveRepoUrl={saveRepoUrl}
+        onRename={renameProjectAndAnnounce}
+        onDelete={removeProject}
       />
       {addFlow.addProjectModal}
     </div>

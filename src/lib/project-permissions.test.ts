@@ -23,6 +23,8 @@ try {
     filterFamiliarsForProject,
     filterProjectsForFamiliar,
     grantProjectToFamiliar,
+    revokeAllGrantsForProject,
+    listProjectGrants,
     listAccessibleProjects,
     loadHumanPermissionConfig,
     loadMobileWriteAccess,
@@ -395,6 +397,23 @@ try {
   const junk = await loadMobileWriteAccess();
   assert.equal(junk.allowMobileFileWrites, false, "non-boolean flag values fail closed");
   assert.equal(junk.allowMobileCanvasWrites, false, "non-boolean canvas flag fails closed");
+
+  // ── revokeAllGrantsForProject: removing a project leaves no orphaned access ──
+  await grantProjectToFamiliar({ familiarId: "cascade-a", projectId: "cave", source: "human" });
+  await grantProjectToFamiliar({ familiarId: "cascade-b", projectId: "cave", source: "human" });
+  await grantProjectToFamiliar({ familiarId: "cascade-a", projectId: "docs", source: "human" });
+  const cascadeCleaned = await revokeAllGrantsForProject("cave");
+  assert.ok(cascadeCleaned.grants >= 2, "the cascade revokes every direct grant on the removed project");
+  const afterCascade = await listProjectGrants();
+  assert.equal(
+    afterCascade.some((grant) => grant.projectId === "cave"),
+    false,
+    "no grant for the removed project survives (a reused id can't inherit stale access)",
+  );
+  assert.ok(
+    afterCascade.some((grant) => grant.projectId === "docs" && grant.familiarId === "cascade-a"),
+    "grants for other projects are untouched by the cascade",
+  );
 
   console.log("project-permissions.test.ts: ok");
 } finally {

@@ -95,7 +95,7 @@ change** — it already spreads this list into the grant set.
 
 - No changes to the daemon, cave-config schema, `/api/familiars`, or
   `familiar-resolve` — the string passes through untouched.
-- No cap on selections (all eight types may be active; grants are additive
+- No cap on selections (every typed entry may be active; grants are additive
   room unlocks).
 - No reordering UI — canonical order is the table order.
 

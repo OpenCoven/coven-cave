@@ -576,6 +576,38 @@ export async function revokeProjectFromFamiliar(input: {
   }));
 }
 
+/**
+ * Remove every trace of a project from the permission store — direct grants,
+ * access-group project grants, and pending proposals. Called when the project
+ * is removed from the registry so no grant is orphaned (and can't silently
+ * reactivate if the same project id is ever reused). Returns the counts cleaned.
+ */
+export async function revokeAllGrantsForProject(
+  projectId: string,
+): Promise<{ grants: number; groupGrants: number; proposals: number }> {
+  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
+
+    const nextGrants = file.projectGrants.filter((grant) => grant.projectId !== projectId);
+    const grants = file.projectGrants.length - nextGrants.length;
+    file.projectGrants = nextGrants;
+
+    let groupGrants = 0;
+    for (const group of file.accessGroups) {
+      const before = group.projectGrants.length;
+      group.projectGrants = group.projectGrants.filter((grant) => grant.projectId !== projectId);
+      groupGrants += before - group.projectGrants.length;
+    }
+
+    const nextProposals = file.grantProposals.filter((proposal) => proposal.projectId !== projectId);
+    const proposals = file.grantProposals.length - nextProposals.length;
+    file.grantProposals = nextProposals;
+
+    if (grants > 0 || groupGrants > 0 || proposals > 0) await saveProjectPermissions(file);
+    return { grants, groupGrants, proposals };
+  }));
+}
+
 export async function bootstrapSupremeProjectGrants(projects: CaveProject[]): Promise<void> {
   const { supremeFamiliarId } = await loadHumanPermissionConfig();
   for (const project of projects) {
