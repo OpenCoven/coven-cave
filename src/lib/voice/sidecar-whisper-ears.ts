@@ -170,6 +170,7 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
     let partialInFlight = false;
     let context: AudioContext | null = null;
     let source: MediaStreamAudioSourceNode | null = null;
+    let lowPass: BiquadFilterNode | null = null;
     let processor: ScriptProcessorNode | null = null;
     let silentOutput: GainNode | null = null;
     let chunks: Float32Array[] = [];
@@ -185,9 +186,11 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
     const releaseCapture = () => {
       processor?.disconnect();
       source?.disconnect();
+      lowPass?.disconnect();
       silentOutput?.disconnect();
       processor = null;
       source = null;
+      lowPass = null;
       silentOutput = null;
       const oldContext = context;
       context = null;
@@ -334,6 +337,12 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
       finalizing = false;
       context = new Context();
       source = context.createMediaStreamSource(mic);
+      // Filter before decimation so high-frequency microphone noise cannot
+      // alias into Whisper's 0–8 kHz speech band during PCM downsampling.
+      lowPass = context.createBiquadFilter();
+      lowPass.type = "lowpass";
+      lowPass.frequency.value = Math.min(7_200, context.sampleRate / 2 - 100);
+      lowPass.Q.value = 0.707;
       processor = context.createScriptProcessor(4_096, 1, 1);
       // A zero-gain output keeps ScriptProcessor active without feeding the mic
       // back to the speakers.
@@ -349,7 +358,8 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
         stabilityTimer = schedule(() => finish(session), stabilityMs);
         armPartial(session);
       };
-      source.connect(processor);
+      source.connect(lowPass);
+      lowPass.connect(processor);
       processor.connect(silentOutput);
       silentOutput.connect(context.destination);
       // Bound initial silence and a failed/quiet microphone. The empty path in

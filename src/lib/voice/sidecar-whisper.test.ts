@@ -127,12 +127,20 @@ test("initial silence is capped, discarded, and restarted without a Whisper requ
   const priorWindow = globalThis.window;
   const timers = fakeTimers();
   const processors = [];
+  const filters = [];
   let closes = 0;
   class AudioContext {
     sampleRate = 48_000;
     state = "running";
     destination = {};
     createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createBiquadFilter() {
+      const filter = {
+        connect() {}, disconnect() {}, type: "", frequency: { value: 0 }, Q: { value: 0 },
+      };
+      filters.push(filter);
+      return filter;
+    }
     createScriptProcessor() {
       const processor = { connect() {}, disconnect() {}, onaudioprocess: null };
       processors.push(processor);
@@ -152,6 +160,8 @@ test("initial silence is capped, discarded, and restarted without a Whisper requ
   })({ onPartial() {}, onFinal() {}, onError() {} }, {});
   try {
     ears.listen();
+    assert.equal(filters[0].type, "lowpass");
+    assert.equal(filters[0].frequency.value, 7_200, "filter is applied before 16 kHz downsampling");
     processors[0].onaudioprocess({ inputBuffer: { getChannelData: () => new Float32Array(4096) } });
     timers.fire(99);
     assert.equal(closes, 1, "silent capture releases its first audio context");
