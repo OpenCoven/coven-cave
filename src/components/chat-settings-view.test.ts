@@ -93,6 +93,36 @@ assert.match(
   "failed PATCHes revert the optimistic policy update",
 );
 
+// --- chat-settings-view: auto-rename policy round-trips through /api/config ----
+assert.match(
+  settingsView,
+  /normalizeChatAutoRenamePolicy\(json\.config\?\.chatAutoRename\)/,
+  "settings view normalizes the stored auto-rename policy too",
+);
+assert.match(
+  settingsView,
+  /JSON\.stringify\(\{ chatAutoRename: patch \}\)/,
+  "auto-rename edits persist through the same config PATCH merge",
+);
+for (const field of ["enabled", "everyTurns", "preserveManualTitles"]) {
+  assert.match(
+    settingsView,
+    new RegExp(`updateRename\\(\\{ ${field} \\}\\)`),
+    `settings view edits auto-rename ${field}`,
+  );
+}
+assert.match(
+  settingsView,
+  /\.catch\(\(\) => \{\s*setRenamePolicy\(previous\);/,
+  "failed auto-rename PATCHes revert the optimistic update",
+);
+assert.match(settingsView, /Auto-rename/, "the auto-rename card is labeled");
+assert.match(
+  settingsView,
+  /Keep titles I set/,
+  "the preserve-manual-titles toggle is labeled for what it does",
+);
+
 // --- chat-view: reflect flows react to a reflection-triggered archive ---------
 
 assert.match(

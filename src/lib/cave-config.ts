@@ -12,6 +12,10 @@ import {
   SUMMON_GRACE_DAYS,
 } from "./chat-auto-archive.ts";
 import {
+  type ChatAutoRenamePolicy,
+  normalizeChatAutoRenamePolicy,
+} from "./chat-auto-rename.ts";
+import {
   type FamiliarRuntime,
   normalizeFamiliarRuntime,
 } from "./familiar-runtime.ts";
@@ -68,6 +72,7 @@ const DEFAULT_CONFIG: CaveConfig = {
 const DEFAULT_STATE: CaveState = {
   sessionFamiliar: {},
   sessionTitles: {},
+  sessionTitleAuto: {},
   sessionArchived: {},
   sessionSacrificed: {},
   sessionKeep: {},
@@ -137,6 +142,7 @@ function defaultState(): CaveState {
   return {
     sessionFamiliar: {},
     sessionTitles: {},
+    sessionTitleAuto: {},
     sessionArchived: {},
     sessionSacrificed: {},
     sessionKeep: {},
@@ -190,13 +196,17 @@ type FamiliarBindingPatch = {
   [K in keyof FamiliarBinding]?: FamiliarBinding[K] | null;
 };
 
-type CaveConfigPatch = Omit<Partial<CaveConfig>, "defaults" | "familiars" | "chatAutoArchive"> & {
+type CaveConfigPatch = Omit<
+  Partial<CaveConfig>,
+  "defaults" | "familiars" | "chatAutoArchive" | "chatAutoRename"
+> & {
   defaults?: Partial<FamiliarBinding>;
   familiars?: Record<string, FamiliarBindingPatch | null>;
   multiHost?: Partial<CaveMultiHostConfig>;
   omnigent?: Partial<CaveOmnigentConfig>;
   remoteHosts?: CaveRemoteHost[];
   chatAutoArchive?: Partial<ChatAutoArchivePolicy>;
+  chatAutoRename?: Partial<ChatAutoRenamePolicy>;
 };
 
 export type RoleConfigEntry = {
@@ -310,6 +320,8 @@ export type CaveConfig = {
   profile?: UserProfile;
   /** Auto-archive policy for chats (see chat-auto-archive.ts). Absent = defaults. */
   chatAutoArchive?: ChatAutoArchivePolicy;
+  /** Periodic context-aware rename policy for chats (see chat-auto-rename.ts). Absent = defaults. */
+  chatAutoRename?: ChatAutoRenamePolicy;
 };
 
 export type CaveState = {
@@ -317,6 +329,10 @@ export type CaveState = {
   sessionFamiliar: Record<string, string>;
   /** Session to Cave-side title override. Wins over the daemon's title when present. */
   sessionTitles: Record<string, string>;
+  /** Session to the last title auto-rename set (provenance). Present only while the
+   *  current override still equals it — a manual rename clears the entry. Lets the
+   *  periodic rename tell its own titles from a person's (chat-auto-rename.ts). */
+  sessionTitleAuto: Record<string, string>;
   /** Session to ISO timestamp when archived in the Cave. Empty when unarchived. */
   sessionArchived: Record<string, string>;
   /** Session to ISO timestamp when sacrificed (soft-deleted) in the Cave. Hidden from lists. */
@@ -380,6 +396,9 @@ async function loadConfigUnlocked(): Promise<CaveConfig> {
       profile: parsed.profile,
       ...(parsed.chatAutoArchive !== undefined
         ? { chatAutoArchive: normalizeChatAutoArchivePolicy(parsed.chatAutoArchive) }
+        : {}),
+      ...(parsed.chatAutoRename !== undefined
+        ? { chatAutoRename: normalizeChatAutoRenamePolicy(parsed.chatAutoRename) }
         : {}),
     };
     // Self-healing migration (cave-1v95): a pre-existing config may still
@@ -509,6 +528,13 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
             ...patch.chatAutoArchive,
           })
         : current.chatAutoArchive,
+    chatAutoRename:
+      patch.chatAutoRename !== undefined
+        ? normalizeChatAutoRenamePolicy({
+            ...current.chatAutoRename,
+            ...patch.chatAutoRename,
+          })
+        : current.chatAutoRename,
   };
   // Split an embedded hub access token out before persisting (cave-1v95):
   // pasting the tokened invite URL stays the pairing UX, but the credential
@@ -603,6 +629,7 @@ async function loadStateUnlocked(): Promise<CaveState> {
     return {
       sessionFamiliar: parsed.sessionFamiliar ?? {},
       sessionTitles: parsed.sessionTitles ?? {},
+      sessionTitleAuto: parsed.sessionTitleAuto ?? {},
       sessionArchived: parsed.sessionArchived ?? {},
       sessionSacrificed: parsed.sessionSacrificed ?? {},
       sessionKeep: parsed.sessionKeep ?? {},
@@ -824,7 +851,28 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
     } else {
       state.sessionTitles[sessionId] = trimmed;
     }
+    // A plain (manual / first-exchange) set clears auto-rename provenance so the
+    // periodic rename treats the new title as a person's choice and backs off.
+    delete state.sessionTitleAuto[sessionId];
     return trimmed || null;
+  });
+  invalidateSessionsListCache();
+  return next;
+}
+
+/**
+ * Set a session title from the periodic auto-rename (chat-auto-rename.ts),
+ * recording provenance so a later rename knows it still owns the title while a
+ * person's manual rename (which clears the provenance via setSessionTitle) is
+ * left untouched. Pass an empty title to no-op.
+ */
+export async function setSessionTitleAuto(sessionId: string, title: string): Promise<string | null> {
+  const trimmed = title.trim();
+  if (!trimmed) return null;
+  const next = await updateState((state) => {
+    state.sessionTitles[sessionId] = trimmed;
+    state.sessionTitleAuto[sessionId] = trimmed;
+    return trimmed;
   });
   invalidateSessionsListCache();
   return next;

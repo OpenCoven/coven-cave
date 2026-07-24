@@ -15,6 +15,7 @@ try {
   assert.deepEqual(await config.loadState(), {
     sessionFamiliar: {},
     sessionTitles: {},
+    sessionTitleAuto: {},
     sessionArchived: {},
     sessionSacrificed: {},
     sessionKeep: {},
@@ -69,6 +70,25 @@ try {
   state = await config.loadState();
   assert.deepEqual(state.sessionTitles, {});
 
+  // Auto-rename provenance (chat-auto-rename): setSessionTitleAuto records that
+  // this feature owns the title; a later manual setSessionTitle clears it so the
+  // periodic rename backs off. Empty auto titles are a no-op.
+  assert.equal(await config.setSessionTitleAuto("session-3", "  Ship the widget "), "Ship the widget");
+  state = await config.loadState();
+  assert.deepEqual(state.sessionTitles["session-3"], "Ship the widget");
+  assert.deepEqual(state.sessionTitleAuto["session-3"], "Ship the widget");
+  assert.equal(await config.setSessionTitleAuto("session-3", "   "), null, "blank auto title is a no-op");
+  await config.setSessionTitle("session-3", "My hand-picked name");
+  state = await config.loadState();
+  assert.equal(state.sessionTitles["session-3"], "My hand-picked name");
+  assert.equal(
+    state.sessionTitleAuto["session-3"],
+    undefined,
+    "a manual rename clears auto-rename provenance",
+  );
+  // Clear session-3 so the whole-state assertion below still sees empty titles.
+  await config.setSessionTitle("session-3", "");
+
   const sacrificedAt = await config.sacrificeSessionLocal("session-1");
   assert.ok(Number.isFinite(Date.parse(sacrificedAt)));
 
@@ -105,6 +125,7 @@ try {
   assert.deepEqual(rawState, {
     sessionFamiliar: { "session-1": "cody" },
     sessionTitles: {},
+    sessionTitleAuto: {},
     sessionArchived: {},
     sessionSacrificed: { "session-1": sacrificedAt },
     sessionKeep: {},
