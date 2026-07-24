@@ -35,6 +35,9 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The daemon has no event log for this session — expected for Cave-local
+  // chats that never ran through the daemon and rows lost on daemon restart.
+  const [noEventLog, setNoEventLog] = useState(false);
   // True while the newest fetched page came back full — more events may exist.
   const [maybeMore, setMaybeMore] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -46,13 +49,25 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
     if (append) setLoadingMore(true);
     else setLoading(true);
     setError(null);
+    setNoEventLog(false);
     try {
       const res = await fetch(
         `/api/sessions/${encodeURIComponent(target.id)}/events?afterSeq=${afterSeq}&limit=${TRACE_PAGE_SIZE}`,
         { cache: "no-store", signal: controller.signal },
       );
       const json = (await res.json().catch(() => null)) as EventsResponse | null;
-      if (!res.ok || !json?.ok) throw new Error((json && "error" in json && json.error) || `HTTP ${res.status}`);
+      // The route answers 404 no_event_timeline when the daemon has no event
+      // log for the session (cave-pfu8) — an expected no-data state, not a
+      // failure. Older builds flattened it into a 502 whose message carried
+      // "daemon http 404", so keep that as a legacy fallback.
+      if (!res.ok || !json?.ok) {
+        const message = (json && "error" in json && json.error) || `HTTP ${res.status}`;
+        if (res.status === 404 || message === "no_event_timeline" || /\b404\b/.test(message)) {
+          if (!controller.signal.aborted) setNoEventLog(true);
+          return;
+        }
+        throw new Error(message);
+      }
       const incoming = json.events ?? [];
       setEvents((prev) => mergeTraceEvents(append ? prev : [], incoming));
       setMaybeMore(incoming.length >= TRACE_PAGE_SIZE);
@@ -73,10 +88,6 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
   }, [load]);
 
   const lastSeq = events.length > 0 ? events[events.length - 1].seq : 0;
-  // The daemon 404s sessions it has no event log for (chat-only sessions, or
-  // logs pruned by `coven sacrifice`). That's an expected no-data state, not a
-  // failure — render it as a calm empty state instead of a raw error callout.
-  const noEventLog = error !== null && /\b404\b/.test(error);
 
   return (
     <Modal
@@ -121,7 +132,7 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
             compact
             icon="ph:tree-structure"
             headline="No event log for this session."
-            subtitle="The daemon isn't tracking events for it — it may predate event logging or its log was pruned."
+            subtitle="Expected for Cave-local chats that never ran through the daemon — and for sessions the daemon lost on a restart or pruned."
           />
         ) : events.length === 0 ? (
           <EmptyState
