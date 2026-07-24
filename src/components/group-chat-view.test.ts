@@ -155,7 +155,7 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
   );
   assert.match(
     workspace,
-    /if \(next === "groupchat"\)[\s\S]*setModeRaw\("chat"\)[\s\S]*CHAT_OPEN_COVEN_EVENT/,
+    /if \(next === "groupchat"\)[\s\S]*commitMode\("chat"\)[\s\S]*CHAT_OPEN_COVEN_EVENT/,
     "workspace redirects the groupchat mode into chat + opens the coven tab",
   );
 

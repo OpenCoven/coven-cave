@@ -18,7 +18,7 @@ const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), 
 
 function branchTarget(alias) {
   const m = workspace.match(
-    new RegExp(`if \\(next === "${alias}"\\) \\{[\\s\\S]{0,700}?setModeRaw\\("([a-z-]+)"\\)`),
+    new RegExp(`if \\(next === "${alias}"\\) \\{[\\s\\S]{0,700}?commitMode\\("([a-z-]+)"\\)`),
   );
   assert.ok(m, `setMode should have a rewrite branch for the "${alias}" alias`);
   return m[1];
@@ -65,7 +65,7 @@ assert.match(
 assert.equal(MODE_ALIASES.code, "surface:code");
 assert.match(
   workspace,
-  /if \(next === "code"\) \{[\s\S]{0,700}?setModeRaw\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
+  /if \(next === "code"\) \{[\s\S]{0,700}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
   'setMode\'s "code" branch must land on the Coding familiar\'s room (MODE_ALIASES.code = "surface:code", cave-cc5r)',
 );
 assert.match(
