@@ -232,18 +232,23 @@ assert.match(
 );
 assert.match(
   source,
-  /voice\?\.ready === true[\s\S]{0,120}voice\?\.verified === true/,
-  "only downloaded and checksum-verified local voices become selectable",
+  /voice\?\.ready === true[\s\S]{0,120}voice\?\.verified === true[\s\S]{0,120}voice\.engine === "piper"[\s\S]{0,80}!piperUnavailable/,
+  "only verified Piper voices with an available runner become selectable",
 );
 assert.match(
   source,
   /options=\{localVoiceOptions\}/,
-  "Familiar Studio renders ready Piper/Kokoro voices in the Voice picker",
+  "Familiar Studio renders ready Piper voices in the Voice picker",
 );
 assert.match(
   source,
   /fetch\("\/api\/voice\/local\/tts"/,
   "local voice previews use the same authenticated sidecar TTS endpoint as calls",
+);
+assert.match(
+  source,
+  /audio\.onerror = \(\) => \{[\s\S]{0,160}stopVoicePreview\(\);[\s\S]{0,280}Couldn't play the local voice preview\./,
+  "failed local audio decoding cleans up playback and gives an actionable preview error",
 );
 assert.match(
   source,

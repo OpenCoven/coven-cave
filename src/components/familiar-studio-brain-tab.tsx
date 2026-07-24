@@ -499,8 +499,8 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           (voice: LocalTtsVoice) =>
             voice?.ready === true &&
             voice?.verified === true &&
-            (voice.engine === "piper" || voice.engine === "kokoro") &&
-            (voice.engine !== "piper" || !piperUnavailable),
+            voice.engine === "piper" &&
+            !piperUnavailable,
         );
         setLocalVoiceCatalog({
           status: "ready",
@@ -730,6 +730,15 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       const audio = new Audio(url);
       previewAudioRef.current = audio;
       audio.onended = () => stopVoicePreview();
+      audio.onerror = () => {
+        if (gen !== previewGenRef.current) return;
+        stopVoicePreview();
+        setPreviewNote(
+          localNeuralVoiceSelected
+            ? "Couldn't play the local voice preview. Try another voice or check your audio device."
+            : "Couldn't play the voice preview. Try again or check your audio device.",
+        );
+      };
       await audio.play();
       if (gen !== previewGenRef.current) return;
       setPreviewStatus("playing");
