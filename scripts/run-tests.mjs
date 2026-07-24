@@ -943,6 +943,7 @@ export const SUITES = {
     "scripts/git-hooks-pre-commit.test.mjs",
     "scripts/secret-preflight.test.mjs",
     "scripts/uninstall-app.test.mjs",
+    "scripts/desktop-reachability.test.mjs",
     "scripts/beads-familiar-workflow.test.mjs",
     "scripts/beads-pr-bridge.test.mjs",
     "scripts/beads-pr-patrol.test.mjs",

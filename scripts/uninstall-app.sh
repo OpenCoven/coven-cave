@@ -188,6 +188,13 @@ remove_macos_artifacts() {
   local home="$HOME"
   log "Uninstalling macOS CovenCave artifacts..."
 
+  # Stop background availability before removing its executable, runtime
+  # state, or logs. Otherwise launchd can restart the sidecar while uninstall
+  # is tearing those paths down.
+  forget_launch_agent "$APP_ID" "${home}/Library/LaunchAgents/${APP_ID}.plist"
+  forget_launch_agent "$LEGACY_APP_ID" "${home}/Library/LaunchAgents/${LEGACY_APP_ID}.plist"
+  forget_launch_agent "com.opencoven.CovenCave" "${home}/Library/LaunchAgents/com.opencoven.CovenCave.plist"
+
   local app_paths="${COVEN_CAVE_UNINSTALL_APP_PATHS:-/Applications/${APP_NAME}.app:${home}/Applications/${APP_NAME}.app}"
   local app_path
   while IFS= read -r app_path; do
@@ -205,9 +212,6 @@ remove_macos_artifacts() {
   remove_path "${home}/Library/Preferences/${LEGACY_APP_ID}.plist"
   remove_path "${home}/Library/Logs/${APP_NAME}"
 
-  forget_launch_agent "$APP_ID" "${home}/Library/LaunchAgents/${APP_ID}.plist"
-  forget_launch_agent "$LEGACY_APP_ID" "${home}/Library/LaunchAgents/${LEGACY_APP_ID}.plist"
-  forget_launch_agent "com.opencoven.CovenCave" "${home}/Library/LaunchAgents/com.opencoven.CovenCave.plist"
 }
 
 remove_linux_artifacts() {

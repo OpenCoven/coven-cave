@@ -18,6 +18,10 @@ impl SidecarProcess {
     pub(super) fn new(child: Child) -> Self {
         Self { child }
     }
+
+    pub(super) fn id(&self) -> u32 {
+        self.child.id()
+    }
 }
 
 #[cfg(desktop)]

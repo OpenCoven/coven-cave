@@ -189,10 +189,12 @@ appears only once the turn *ends*). Buffer stream events per run server-side
 the LIVE run. Re-attach cancels the detach kill (PTY `adoptSession` pattern).
 
 **Phase C3 — keep the desktop reachable.** Prevent-sleep power assertion
-while phones are paired (toggle; wake-on-LAN is NOT feasible over Tailscale —
-document it); optional LaunchAgent daemon mode so the server outlives the app
-(`uninstall-app.sh` already defensively removes the plist path); serve/port
-self-repair on port fallback.
+while phones are paired (opt-in, default off; AC-only by default); optional,
+default-off LaunchAgent daemon mode so the server outlives the app
+(`uninstall-app.sh` unloads the agent before removing its paths); serve/port
+self-repair on port fallback. Wake-on-LAN is NOT feasible over Tailscale:
+the userspace WireGuard daemon sleeps with the Mac, while Bonjour sleep proxy
+is limited to local-network mDNS.
 
 **Phase C4 — background reachability (product call first).** Real background
 push requires APNs — a vendor-cloud departure. Everything through C3 is
