@@ -8,6 +8,7 @@ export type DesktopReachabilityConfig = {
 
 export type DesktopReachabilityStatus = {
   supported: boolean;
+  backgroundAvailabilitySupported?: boolean;
   config: DesktopReachabilityConfig;
   pairedPhoneSeen: boolean;
   launchAgentInstalled: boolean;

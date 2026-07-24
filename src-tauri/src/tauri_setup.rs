@@ -613,15 +613,22 @@ pub fn run() {
 
             if let tauri::WindowEvent::Destroyed = event {
                 if window.label() == "main" {
-                    if let Some(state) = window.app_handle().try_state::<SidecarState>() {
-                        if let Err(error) = state.stop() {
-                            log::warn!(
-                                "[cave] could not stop sidecar during window teardown: {error}"
-                            );
-                        }
+                    let sidecar_stopped = match window.app_handle().try_state::<SidecarState>() {
+                        Some(state) => match state.stop() {
+                            Ok(()) => true,
+                            Err(error) => {
+                                log::warn!(
+                                    "[cave] could not stop sidecar during window teardown; retaining GUI ownership: {error}"
+                                );
+                                false
+                            }
+                        },
+                        None => true,
+                    };
+                    if sidecar_stopped {
+                        sidecar_reachability_stopped(window.app_handle());
+                        handoff_to_background_daemon(window.app_handle());
                     }
-                    sidecar_reachability_stopped(window.app_handle());
-                    handoff_to_background_daemon(window.app_handle());
                 }
             }
         })

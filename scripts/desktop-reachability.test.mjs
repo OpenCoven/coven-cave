@@ -63,6 +63,16 @@ assert.match(
 );
 assert.match(
   reachability,
+  /background_availability_supported[\s\S]*suspend_background_launch_agent[\s\S]*preserving its saved setting/,
+  "development builds must preserve daemon mode without trying to install a LaunchAgent",
+);
+assert.match(
+  reachability,
+  /let identity = match process_identity\(child_pid\)[\s\S]*child\.kill\(\)[\s\S]*child\.wait\(\)/,
+  "daemon startup must reap a child when its process lease cannot be captured",
+);
+assert.match(
+  reachability,
   /process_identity[\s\S]*lease_matches/,
   "GUI and daemon ownership markers must validate process identity as well as PID",
 );
@@ -88,8 +98,8 @@ assert.match(
 );
 assert.match(
   setup,
-  /state\.stop\(\)[\s\S]*sidecar_reachability_stopped[\s\S]*handoff_to_background_daemon/,
-  "window teardown must stop the owned sidecar and its assertion before handing off to launchd",
+  /sidecar_stopped[\s\S]*state\.stop\(\)[\s\S]*if sidecar_stopped \{[\s\S]*sidecar_reachability_stopped[\s\S]*handoff_to_background_daemon/,
+  "window teardown must hand off to launchd only after stopping the owned sidecar",
 );
 assert.match(
   lifecycle,

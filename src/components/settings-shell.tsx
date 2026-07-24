@@ -3107,6 +3107,8 @@ function DesktopReachabilityCard() {
     );
   }
 
+  const backgroundAvailabilityUnavailable = status.backgroundAvailabilitySupported === false;
+
   return (
     <>
       <SettingsRow
@@ -3129,9 +3131,13 @@ function DesktopReachabilityCard() {
       </SettingsRow>
       <SettingsRow
         label="Background availability"
-        description="Keep the Cave server available after the main window closes. A macOS LaunchAgent starts it without opening the app."
+        description={
+          backgroundAvailabilityUnavailable
+            ? "Available in packaged macOS builds. This development build preserves the saved choice without starting a LaunchAgent."
+            : "Keep the Cave server available after the main window closes. A macOS LaunchAgent starts it without opening the app."
+        }
       >
-        {switchButton("daemonMode")}
+        {switchButton("daemonMode", backgroundAvailabilityUnavailable)}
       </SettingsRow>
       <div className="px-4 pb-3 text-[length:var(--text-xs)] leading-relaxed text-[var(--text-muted)]">
         <p>
