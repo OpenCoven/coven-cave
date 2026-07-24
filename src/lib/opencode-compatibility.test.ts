@@ -8,6 +8,7 @@ import {
   BUILTIN_OPENCODE_SCHEMA_BUNDLE,
   loadOpenCodeSchemaBundle,
   openCodeSchemaBundleSigningPayload,
+  redactedOpenCodeEventFingerprint,
   resolveOpenCodeCompatibility,
 } from "./opencode-compatibility.ts";
 
@@ -72,5 +73,18 @@ assert.equal(structured.schema?.id, "opencode-run-json-v1", "new schemas are cho
 const missingSession = await resolveOpenCodeCompatibility({ version: "1.2.3", json: true, model: true, session: false });
 assert.equal(missingSession.mode, "structured");
 assert.equal(missingSession.schema?.id, "opencode-run-json-legacy", "older compatible schemas coexist without client version gates");
+
+const secretShape = redactedOpenCodeEventFingerprint({
+  type: "future.event",
+  prompt: "do not persist this prompt",
+  part: { input: { token: "secret", path: "C:/private" } },
+});
+const changedSecretShape = redactedOpenCodeEventFingerprint({
+  type: "future.event",
+  prompt: "a different prompt",
+  part: { input: { token: "another-secret", path: "/other" } },
+});
+assert.equal(secretShape, changedSecretShape, "diagnostic fingerprints are value-free");
+assert.match(secretShape, /^[a-f0-9]{16}$/);
 
 console.log("opencode-compatibility.test.ts: ok");

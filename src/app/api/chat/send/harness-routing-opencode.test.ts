@@ -17,7 +17,7 @@ assert.match(
 );
 assert.match(
   route,
-  /parseOpenCodeRunEvent\(JSON\.parse\(line\), openCodeCompatibility\?\.schema\);[\s\S]*?announceSession\(ev\.sessionId\);/,
+  /const rawEvent = JSON\.parse\(line\);[\s\S]*?parseOpenCodeRunEvent\(rawEvent, openCodeCompatibility\?\.schema\);[\s\S]*?announceSession\(ev\.sessionId\);/,
   "the first structured OpenCode event persists its minted session id",
 );
 assert.match(
@@ -82,7 +82,7 @@ assert.match(
 );
 assert.match(
   route,
-  /opencode-compatibility[\s\S]*?unrecognized tool event/,
+  /opencode-compatibility[\s\S]*?unrecognized tool event[\s\S]*?redactedOpenCodeEventFingerprint\(rawEvent\)/,
   "unknown future event shapes surface a safe visible diagnostic",
 );
 assert.match(

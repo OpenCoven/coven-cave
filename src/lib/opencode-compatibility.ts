@@ -1,4 +1,5 @@
 import { createPublicKey, verify } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
@@ -48,6 +49,23 @@ export type OpenCodeCompatibilityDiagnostic =
   | "no-compatible-schema"
   | "schema-registry-refresh-rejected"
   | "cached-schema-unavailable";
+
+/** A value-free event-shape identifier for diagnostics. It deliberately keeps
+ * field names and primitive kinds, but never prompt text, paths, tool input,
+ * output, credentials, or an unknown payload's values. */
+export function redactedOpenCodeEventFingerprint(value: unknown): string {
+  const shape = (input: unknown, depth = 0): unknown => {
+    if (depth >= 2) return Array.isArray(input) ? "array" : typeof input;
+    if (Array.isArray(input)) return [input.length ? shape(input[0], depth + 1) : "empty"];
+    if (!isRecord(input)) return typeof input;
+    return Object.fromEntries(
+      Object.entries(input)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, shape(child, depth + 1)]),
+    );
+  };
+  return createHash("sha256").update(JSON.stringify(shape(value))).digest("hex").slice(0, 16);
+}
 
 const MAX_SCHEMA_BUNDLE_BYTES = 256 * 1024;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;

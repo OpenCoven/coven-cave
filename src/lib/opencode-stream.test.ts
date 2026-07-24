@@ -62,4 +62,20 @@ assert.deepEqual(
   { kind: "other", sessionId: undefined, diagnostic: "malformed-event" },
   "missing tool ids never create random, non-resumable bubbles",
 );
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "assistant_text", session_id: "ses_legacy", data: { content: "Older client reply" } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[1],
+  ),
+  { kind: "text", sessionId: "ses_legacy", text: "Older client reply" },
+  "the legacy capability profile keeps a prior text envelope compatible",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool_call", sessionId: "ses_legacy", data: { toolCallId: "legacy_1", name: "Read", input: { path: "README.md" }, state: { status: "running" } } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[1],
+  ),
+  { kind: "tool_start", sessionId: "ses_legacy", id: "legacy_1", name: "Read", input: { path: "README.md" } },
+  "the legacy profile keeps stable ids for a split tool lifecycle",
+);
 console.log("opencode-stream.test.ts: ok");

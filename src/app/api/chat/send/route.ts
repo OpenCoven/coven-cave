@@ -63,7 +63,10 @@ import {
 } from "@/lib/grok-build";
 import { grokLaunchCommand } from "@/lib/grok-bin";
 import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
-import { resolveOpenCodeCompatibility } from "@/lib/opencode-compatibility";
+import {
+  redactedOpenCodeEventFingerprint,
+  resolveOpenCodeCompatibility,
+} from "@/lib/opencode-compatibility";
 import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
@@ -1774,7 +1777,8 @@ export async function POST(req: Request) {
           return;
         }
         try {
-          const ev = parseOpenCodeRunEvent(JSON.parse(line), openCodeCompatibility?.schema);
+          const rawEvent = JSON.parse(line);
+          const ev = parseOpenCodeRunEvent(rawEvent, openCodeCompatibility?.schema);
           if (!ev) return;
           if (ev.sessionId && !sessionId) announceSession(ev.sessionId);
           if (ev.kind === "text") {
@@ -1836,7 +1840,7 @@ export async function POST(req: Request) {
               "opencode-compatibility",
               "OpenCode sent an unrecognized tool event; continuing with assistant text",
               "error",
-              ev.diagnostic ?? "unknown-event",
+              `${ev.diagnostic ?? "unknown-event"}:${redactedOpenCodeEventFingerprint(rawEvent)}`,
             );
           }
         } catch {
