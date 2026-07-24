@@ -1,5 +1,6 @@
 "use client";
 
+import "@/styles/familiar-analytics.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildFamiliarAnalyticsModel,

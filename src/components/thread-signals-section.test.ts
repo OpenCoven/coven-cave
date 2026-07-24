@@ -6,7 +6,10 @@ import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
 const source = readFileSync(new URL("./thread-signals-section.tsx", import.meta.url), "utf8");
 const analyticsSource = readFileSync(new URL("./familiar-analytics-content.tsx", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// The `.fa-thread-*` rules moved to the component-imported familiar-analytics
+// sheet (#3264 css-source-contract, cave-5rqi) so they code-split out of the
+// global/root CSS bundle. Assert against that sheet, not globals.css.
+const globals = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
 
 assert.match(source, /import \{ Button \}/, "ThreadSignalsSection review actions use the shared Button primitive");
 assert.doesNotMatch(source, /<button\b/, "ThreadSignalsSection should not hand-roll button controls");

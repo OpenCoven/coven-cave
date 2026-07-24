@@ -64,8 +64,14 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // +~3 KiB root). This surface's CSS has always lived in the global bundle;
 // follow-up cave-5rqi tracks extracting it to a component-imported sheet
 // per #3264 so it code-splits out of the every-route/home first load.
-const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 696) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 936) * 1024;
+// Lowered root 696→668 / home 936→908 (2026-07-24, cave-5rqi): DONE — the
+// ~1.8k lines of .fa-* rules moved out of globals/surface-reporting.css into
+// src/styles/familiar-analytics.css, imported only by familiar-analytics-view.
+// Measured after the move: root 650 KB, home 889 KB. Banking the win back
+// below the pre-fa baseline (root ~690 / home ~920) with ~18 KB headroom so
+// the every-route/home bundle can't silently regrow into the freed space.
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 668) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 908) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(

@@ -477,7 +477,7 @@ describe("FamiliarAnalyticsView", () => {
   });
 
   it("lays sections out in a container-responsive grid (inspector-pane safe)", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    const globals = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     assert.match(source, /className="fa-grid"/, "sections are wrapped in the grid");
     assert.match(globals, /\.fa-grid\s*\{/, ".fa-grid rule exists");
     assert.match(globals, /container-name: fa/, ".fa-page is a size container");
@@ -500,7 +500,7 @@ describe("FamiliarAnalyticsView", () => {
   });
 
   it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    const globals = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     const block = globals.match(/\.fa-page\s*\{[^}]*\}/);
     assert.ok(block, ".fa-page rule should exist");
     assert.match(block![0], /overflow-y:\s*auto/, ".fa-page must scroll its own content on the full-page route");
@@ -508,7 +508,7 @@ describe("FamiliarAnalyticsView", () => {
   });
 
   it("modernized chrome: sticky freshness topbar, drill flashes, actionable insight (cave UX audit)", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    const globals = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
 
     // Truthful freshness stamp + visible refresh progress in a sticky topbar.
     assert.match(source, /setUpdatedAt\(new Date\(\)\.toISOString\(\)\)/, "updatedAt is stamped by the load that actually landed");
@@ -625,7 +625,7 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(source, /<Sparkline points=\{points\} color=\{trendTokenFor\(overall\.direction\)\}/, "the trend sparkline reuses ui/sparkline");
     assert.match(source, /value: bucket\.score/, "sparkline points come from bucket scores (nulls = honest gaps)");
     assert.match(source, /Trends appear once reports land on two different/, "sparse data explains itself");
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    const globals = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     assert.match(globals, /\.fa-trend-verdict--improving \{ color: var\(--accent-presence\); \}/, "verdict improving tint is tokenized");
     assert.match(globals, /\.fa-trend-verdict--regressing \{ color: var\(--color-warning\); \}/, "verdict regressing tint is tokenized");
     assert.match(globals, /\.fa-trend-chip--improving \{ color: var\(--accent-presence\); \}/, "chip improving tint is tokenized");
@@ -645,12 +645,12 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(source, /confidence\.hasData \? confidenceTier\(confidence\.label\) : "none"/, "no reports → neutral ring, never a fake Low");
     assert.match(source, /Thread confidence not measured yet/, "the unmeasured ring says so to AT");
     assert.match(source, /from \$\{reportPhrase\}/, "the measured ring cites its report count");
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    const globals = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     assert.match(globals, /\.fa-ring--none\s*\{[^}]*--fa-ring-color:\s*var\(--border-strong\)/, "the unmeasured tier stays neutral (tokens only)");
   });
 
   it("keeps shared metric-unit styling for 0–100 scores", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    const globals = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     assert.match(source, /className="fa-metric-unit"/, "0–100 scores carry a muted unit suffix");
     assert.match(globals, /\.fa-metric-unit\s*\{/, "the metric-unit style exists");
     assert.match(globals, /\.fa-factor-bar\s*\{[\s\S]*?min-width:\s*44px/, "the metric bar keeps a min-width floor in narrow cells");
