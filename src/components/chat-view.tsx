@@ -5624,25 +5624,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               // linked context) keep the quieter ChatEmptyState below.
               <ChatNewDashboard
                 familiar={familiar}
-                onPrompt={(text) => {
-                  setInput(text);
-                  inputRef.current?.focus();
-                }}
-                onOpenPromptSnippets={() => setPromptSnippetsOpen(true)}
-                projectId={resolvedProjectId}
-                onProjectChange={setProjectIdDraft}
-                projects={projects}
-                createProject={createProject}
-                fileMentions={Boolean(mentionRoot)}
                 sessions={sessions}
                 modelId={
                   modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
                     ? modelState.effectiveModel
                     : familiar.model ?? null
                 }
-                taskArmed={taskArmed}
-                onArmTask={armTask}
-                onDisarmTask={disarmTask}
               />
             ) : (
               <ChatEmptyState

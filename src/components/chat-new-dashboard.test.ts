@@ -5,11 +5,11 @@
 //   (1) chat-view splits its empty state: a null sessionId (brand-new chat)
 //       renders <ChatNewDashboard>; existing zero-turn sessions keep the
 //       task-aware <ChatEmptyState>;
-//   (2) body-only shell: rail + board (ChatView owns the chrome above and
-//       the composer below) — no chrome header, no docked composer;
-//   (3) the rail carries Project · Quick start · Task · Pick up; quick rows
-//       seed the chat composer through onPrompt, the picker is the shared
-//       ProjectPicker, Pick up shows the two most-recent resumable sessions;
+//   (2) board-only shell (ChatView owns the chrome above and the composer
+//       below) — no chrome header, no docked composer;
+//   (3) the context rail (Project · Quick start · Task · Pick up) was removed —
+//       project switching lives in the composer's context pill and quick starts
+//       in the composer; the board stands alone;
 //   (4) the board reads the live Tasks board + the inbox "needs you" tier
 //       and offers the All/Running/Blocked/Inbox filter tabs;
 //   (5) self-contained navigation: the component reaches other surfaces
@@ -36,11 +36,11 @@ assert.match(
   "existing zero-turn sessions keep the task-aware ChatEmptyState",
 );
 
-// ── (2) Body-only shell: rail + board ────────────────────────────────────
+// ── (2) Board-only shell (no rail, no chrome, no dock) ────────────────────
 assert.match(
   dash,
-  /home-dash__body home-dash--embed[\s\S]*?home-dash__rail[\s\S]*?home-dash__board/,
-  "the embed stacks the context rail beside the work board",
+  /home-dash__body home-dash--embed[\s\S]*?home-dash__board/,
+  "the embed renders the work board",
 );
 assert.doesNotMatch(dash, /home-dash__chrome/, "no identity chrome — ChatView's header covers it");
 assert.doesNotMatch(dash, /home-dash__dock/, "no docked composer — ChatView's composer is the intent surface");
@@ -57,16 +57,12 @@ assert.match(
 assert.doesNotMatch(css, /home-dash__chrome/, "the retired chrome styles are gone");
 assert.doesNotMatch(css, /home-dash__dock/, "the retired dock styles are gone");
 
-// ── (3) Context rail — Project · Quick start · Task · Pick up ────────────
-assert.match(dash, /home-dash__rail-label">Project</, "the rail leads with the Project group");
-assert.match(dash, /<ProjectPicker/, "the project control is the shared ProjectPicker");
-assert.match(dash, /home-dash__rail-label">Quick start</, "the rail carries a Quick start group");
-assert.match(dash, /home-dash__quick-row[\s\S]*?onPrompt\(/, "quick-start rows seed the chat composer draft");
-assert.match(dash, /onClick=\{onOpenPromptSnippets\}/, "a quick-start row opens the prompt-snippets modal");
-assert.match(dash, /home-dash__rail-label">Task</, "the rail keeps the task-arming group");
-assert.match(dash, /cave-chat-empty-task-armed/, "arming shows the linked-card banner");
-assert.match(dash, /home-dash__rail-label">Pick up</, "the rail surfaces a Pick up group");
-assert.match(dash, /resumableSessions\(sessions, 2\)/, "Pick up shows the two most-recent resumable sessions");
+// ── (3) The context rail was removed ─────────────────────────────────────
+assert.doesNotMatch(dash, /home-dash__rail-group/, "the context rail groups are gone");
+assert.doesNotMatch(dash, /<ProjectPicker/, "no project picker on the board — it lives in the composer's context pill");
+assert.doesNotMatch(dash, /home-dash__quick/, "no Quick start rail group");
+assert.doesNotMatch(dash, /home-dash__pick-card/, "no Pick up rail group");
+assert.doesNotMatch(dash, /home-dash__project-/, "no project meta rows from the rail");
 
 // ── (4) Open-work board — live data + filter tabs ────────────────────────
 assert.match(dash, /const boardCards = useDashboardBoard\(\)/, "the board reads the live Tasks board");

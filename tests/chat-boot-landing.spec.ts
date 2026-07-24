@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Verifies the chat surface landing: opening chat (home-first boot means via
 // ?mode=chat) paints the brand-new-chat dashboard (ChatNewDashboard — the
-// work-led rail + open-work board relocated off Home — over ChatView's real
+// work-led open-work board relocated off Home — over ChatView's real
 // composer) without waiting for /api/sessions/list — the fetch that used to
 // gate the boot-compose effect and left users on the ChatList skeleton wall
 // for its full duration. Also pins the landing affordances: the live board's
@@ -159,12 +159,6 @@ test.describe("chat boot landing", () => {
     await expect(workRow).toContainText("Resume");
     // …and the headline counts it.
     await expect(dash.locator(".home-dash__headline")).toContainText("1 thread open.");
-
-    // Quick start seeds the composer, never auto-sends.
-    await dash.locator(".home-dash__quick-row", { hasText: "Summarise today" }).click();
-    const composer = page.getByPlaceholder(/Message Nova/);
-    await expect(composer).toHaveValue(/Summarise everything that happened today\./);
-    await expect(dash).toBeVisible();
 
     // Voice no longer needs a session: the call action is a direct button from
     // turn zero, while the overflow has moved to the dedicated Chat options trigger.
