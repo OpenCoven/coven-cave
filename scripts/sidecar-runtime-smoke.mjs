@@ -18,6 +18,13 @@ const bundledNode = path.join(
   "bin",
   process.platform === "win32" ? "node.exe" : "node",
 );
+const bundledWhisper = path.join(
+  root,
+  "src-tauri",
+  "resources",
+  "whisper",
+  process.platform === "win32" ? "whisper-cli.exe" : "whisper-cli",
+);
 const token = "sidecar-runtime-smoke-token";
 
 function reservePort() {
@@ -104,6 +111,7 @@ function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port }) {
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
       COVEN_CAVE_BUNDLE: "1",
+      COVEN_WHISPER_CPP_BIN: bundledWhisper,
       COVEN_CAVE_AUTH_TOKEN: token,
       COVEN_HOME: covenHome,
       NEXT_TELEMETRY_DISABLED: "1",
@@ -148,7 +156,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_693);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_706);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
@@ -190,6 +198,24 @@ async function main() {
   }
   await access(sidecarServer);
   await access(bundledNode);
+  await access(bundledWhisper);
+  if (process.platform === "win32") {
+    for (const runtimeDll of ["MSVCP140.dll", "VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "VCOMP140.dll"]) {
+      await access(path.join(path.dirname(bundledWhisper), runtimeDll));
+    }
+  }
+
+  const whisperVersion = spawnSync(bundledWhisper, ["--version"], {
+    encoding: "utf8",
+    env: process.platform === "linux"
+      ? { ...process.env, LD_LIBRARY_PATH: path.dirname(bundledWhisper) }
+      : process.env,
+  });
+  assert.equal(
+    whisperVersion.status,
+    0,
+    `packaged Whisper CLI must launch from resources: ${whisperVersion.stderr || whisperVersion.error}`,
+  );
 
   const nativeModules = spawnSync(
     bundledNode,
