@@ -10,7 +10,7 @@ for (const rel of [
   "./vault-panel.tsx",
   "./automations-view.tsx",
   "./journal/journal-entries.tsx",
-  "./familiar-studio-lifecycle-tab.tsx",
+  "./familiar-lifecycle-section.tsx",
 ]) {
   const src = read(rel);
   assert.match(src, /import \{ useUndoDelete \} from "@\/lib\/use-undo-delete"/, `${rel} imports useUndoDelete`);
@@ -41,11 +41,11 @@ for (const rel of [
   assert.match(src, /day\?\.date !== deletePending\?\.item/, "journal treats the pending day as empty during the undo window");
 }
 
-// Familiar lifecycle: a familiar pending removal hides from BOTH the active and
-// archived lists during the undo window (the toast is its only handle).
+// Familiar lifecycle: a familiar pending removal loses its archive/remove
+// controls during the undo window (the toast is its only handle).
 {
-  const src = read("./familiar-studio-lifecycle-tab.tsx");
-  assert.match(src, /f\.id === pendingRemoveId/, "lifecycle tab hides the pending familiar row during the undo window");
+  const src = read("./familiar-lifecycle-section.tsx");
+  assert.match(src, /familiar\.id === pendingRemoveId/, "lifecycle section hides the pending familiar's controls during the undo window");
 }
 
 console.log("delete-undo-surfaces.test.ts OK");

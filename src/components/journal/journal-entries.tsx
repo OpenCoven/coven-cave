@@ -56,17 +56,11 @@ function NextPaths({
   familiarId,
   onNotice,
   onError,
-  standalone,
 }: {
   suggestions: string[];
   familiarId: string | null;
   onNotice: NoticeFn;
   onError: (text: string) => void;
-  /** When true (Settings host), filter out actions that require the workspace
-   *  event bus. "Run now" dispatches cave:agents-new-chat which has no listener
-   *  on /settings, so it is hidden; "Add task" and "Remind me" are plain fetches
-   *  and remain available. */
-  standalone?: boolean;
 }) {
   // The recommended (first) step is expanded by default so the automate
   // affordances are discoverable without a hunt.
@@ -145,7 +139,7 @@ function NextPaths({
     [familiarId, flashDone, onNotice, onError],
   );
 
-  const actions = standalone ? AUTOMATIONS.filter((a) => a.action !== "run") : AUTOMATIONS;
+  const actions = AUTOMATIONS;
   if (suggestions.length === 0) return null;
   return (
     <div className="journal-entry__next">
@@ -208,13 +202,11 @@ function JournalReflection({
   familiarId,
   onNotice,
   onError,
-  standalone,
 }: {
   text: string;
   familiarId: string | null;
   onNotice: NoticeFn;
   onError: (text: string) => void;
-  standalone?: boolean;
 }) {
   // Memoize so `suggestions` keeps a stable identity across parent re-renders
   // (e.g. the notice toast updating) — otherwise NextPaths' open-step effect
@@ -223,7 +215,7 @@ function JournalReflection({
   return (
     <>
       <MarkdownBlock text={visible} className="journal-entry__reflection" />
-      <NextPaths suggestions={suggestions} familiarId={familiarId} onNotice={onNotice} onError={onError} standalone={standalone} />
+      <NextPaths suggestions={suggestions} familiarId={familiarId} onNotice={onNotice} onError={onError} />
     </>
   );
 }
@@ -232,18 +224,12 @@ export function JournalEntries({
   familiars,
   activeFamiliarId,
   scopeFamiliarIds,
-  standalone,
 }: {
   familiars: Familiar[];
   activeFamiliarId: string | null;
   /** Multiselect scope (empty = All) — the reflections list filters to days
    *  whose `reflectedBy` is in this set. */
   scopeFamiliarIds?: ReadonlySet<string>;
-  /** True when rendered outside the Workspace (Settings → Familiars studio tab).
-   *  The workspace event bus has no listeners there: "Run now" is hidden (its
-   *  chat handoff can't happen) and toast actions become real navigations via
-   *  the `?mode=` deep link. */
-  standalone?: boolean;
 }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   // One clock read per render — reused for `today`, list labels, and the detail
@@ -747,7 +733,6 @@ export function JournalEntries({
                     familiarId={selectedFamiliarId}
                     onNotice={showNotice}
                     onError={setError}
-                    standalone={standalone}
                   />
                 )}
                 <div className="journal-entry__by">
@@ -801,14 +786,9 @@ export function JournalEntries({
               type="button"
               className="journal-notice__act"
               onClick={() => {
-                if (standalone) {
-                  // No workspace on /settings — deep-link back into it.
-                  window.location.assign(`/?mode=${encodeURIComponent(notice.action!.mode)}`);
-                } else {
-                  window.dispatchEvent(
-                    new CustomEvent("cave:navigate-mode", { detail: { mode: notice.action!.mode } }),
-                  );
-                }
+                window.dispatchEvent(
+                  new CustomEvent("cave:navigate-mode", { detail: { mode: notice.action!.mode } }),
+                );
                 setNotice(null);
               }}
             >

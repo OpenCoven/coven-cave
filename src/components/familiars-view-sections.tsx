@@ -395,9 +395,9 @@ type AgentDetailPanelProps = {
 };
 
 // Per-familiar overflow menu on the detail panel header. Remove routes to the
-// Studio lifecycle tab rather than confirming here — the destructive flow
+// Studio identity tab rather than confirming here — the destructive flow
 // (confirm copy, undo toast, tombstone coupling) lives only in
-// familiar-studio-lifecycle-tab.tsx, and this menu is the discoverable
+// familiar-lifecycle-section.tsx, and this menu is the discoverable
 // entry point the Familiars surface lacked.
 function FamiliarPanelMenu({ familiar }: { familiar: ResolvedFamiliar }) {
   const { openFamiliarStudio } = useFamiliarStudio();
@@ -441,7 +441,7 @@ function FamiliarPanelMenu({ familiar }: { familiar: ResolvedFamiliar }) {
             danger
             onSelect={() => {
               setOpen(false);
-              openFamiliarStudio(familiar.id, "lifecycle");
+              openFamiliarStudio(familiar.id, "identity");
             }}
           >
             Remove familiar…

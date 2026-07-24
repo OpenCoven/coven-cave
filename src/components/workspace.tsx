@@ -351,8 +351,7 @@ export function Workspace() {
       // Journal is now a tab inside the Grimoire surface. Every entry point
       // (sidebar row, ⌘K palette, ?mode= deep link, cave:navigate-mode,
       // dashboard links) funnels through setMode, so opening Grimoire on its
-      // Journal tab here covers them all. (Per-familiar journals still live in
-      // Settings → Familiars → Journal.)
+      // Journal tab here covers them all.
       setGrimoireView("journal");
       setModeRaw("grimoire");
       return;

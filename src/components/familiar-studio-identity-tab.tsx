@@ -10,12 +10,18 @@ import {
 } from "@/lib/cave-familiar-overrides";
 import { FAMILIAR_TYPES, resolveFamiliarType } from "@/lib/familiar-types";
 import { Icon } from "@/lib/icon";
+import { FamiliarStudioLookTab } from "@/components/familiar-studio-look-tab";
+import { FamiliarLifecycleSection } from "@/components/familiar-lifecycle-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type Props = {
   familiar: ResolvedFamiliar;
   /** Underlying daemon values shown as ghosted placeholders when no override is set. */
   rawDaemonValues: Partial<FamiliarOverride>;
+  /** Full resolved roster — the appearance controls diff accent colors across familiars. */
+  allFamiliars: ResolvedFamiliar[];
+  /** Re-fetch the roster after the lifecycle section removes/restores a familiar. */
+  onRosterChanged?: () => void;
 };
 
 const FIELDS: Array<{
@@ -29,10 +35,18 @@ const FIELDS: Array<{
   { key: "description", label: "Description", textarea: true },
 ];
 
-export function FamiliarStudioIdentityTab({ familiar, rawDaemonValues }: Props) {
+export function FamiliarStudioIdentityTab({
+  familiar,
+  rawDaemonValues,
+  allFamiliars,
+  onRosterChanged,
+}: Props) {
   const overrides = useFamiliarOverrides();
   const current = overrides[familiar.id] ?? {};
 
+  // One continuous page: who the familiar is (type + identity fields), how it
+  // looks (the merged Look sections — avatar, icon, backdrop, accent), then the
+  // lifecycle verbs (archive / remove) last, in the classic danger-zone slot.
   return (
     <div className="familiar-studio-identity">
       <FamiliarTypePicker familiar={familiar} />
@@ -48,6 +62,8 @@ export function FamiliarStudioIdentityTab({ familiar, rawDaemonValues }: Props) 
           onReset={() => clearFamiliarOverrideField(familiar.id, f.key)}
         />
       ))}
+      <FamiliarStudioLookTab familiar={familiar} allFamiliars={allFamiliars} />
+      <FamiliarLifecycleSection familiar={familiar} onRosterChanged={onRosterChanged} />
     </div>
   );
 }
