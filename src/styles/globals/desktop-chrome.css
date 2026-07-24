@@ -152,6 +152,18 @@ button:active > .edge-rail-chip {
 :root[data-tauri-titlebar] .fa-topbar {
   padding-left: var(--titlebar-lights-inset);
 }
+/* Destination shells now provide their own top-level shell bar, which owns the
+   traffic-light reserve. Their route-local headers sit below it and must keep
+   their normal content alignment rather than leaving a second, empty inset. */
+:root[data-tauri-titlebar] .aps-top + .aps-body .settings-shell__header {
+  padding-left: var(--space-3);
+}
+:root[data-tauri-titlebar] .aps-top + .aps-body .dr-topbar {
+  padding-left: clamp(20px, 5vw, 64px);
+}
+:root[data-tauri-titlebar] .aps-top + .aps-body .fa-topbar {
+  padding-left: var(--space-6);
+}
 /* …but NOT when the analytics view is embedded inside the workspace shell
    (the inspector tab) — there the band sits mid-window, under shell chrome. */
 :root[data-tauri-titlebar] .shell-frame .fa-topbar {

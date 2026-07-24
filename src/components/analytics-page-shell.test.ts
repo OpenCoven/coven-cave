@@ -9,7 +9,9 @@ async function source(path: string) {
 const routePage = await source("app/familiars/[id]/analytics/page.tsx");
 const dashPage = await source("app/dashboard/familiars/[id]/analytics/page.tsx");
 const shell = await source("components/analytics-page-shell.tsx");
+const workspaceShell = await source("components/shell.tsx");
 const css = await source("styles/analytics-page-shell.css");
+const desktopChrome = await source("styles/globals/desktop-chrome.css");
 const historyNav = await source("components/desktop-history-nav.tsx");
 
 // ── The canonical analytics route wraps the view in the left-sidepanel shell ──
@@ -48,6 +50,7 @@ assert.match(historyNav, /aria-label="Go back"/, "shared history navigation expo
 assert.match(historyNav, /aria-label="Go forward"/, "shared history navigation exposes Forward accessibly");
 assert.match(historyNav, /window\.history\.back\(\)/, "Back drives browser history");
 assert.match(historyNav, /window\.history\.forward\(\)/, "Forward drives browser history");
+assert.equal((workspaceShell.match(/<DesktopHistoryNav/g) ?? []).length, 1, "workspace renders one shared history group");
 
 // ── Persistent at EVERY screen size — the rail must not be hidden on small widths ─
 assert.match(css, /\.aps-rail\s*\{/, "the rail has base styles");
@@ -55,5 +58,7 @@ assert.doesNotMatch(css, /\.aps-rail[^{]*\{[^}]*display:\s*none/, "the rail is n
 assert.doesNotMatch(css, /@media[^{]*\{[^}]*\.aps-rail[^}]*display:\s*none/, "no media query hides the rail on small screens");
 assert.match(css, /@media \(max-width: 1023px\) \{[\s\S]*?\.aps-top\s*\{[\s\S]*?display:\s*none/, "mobile hides only the desktop title bar");
 assert.match(css, /\.aps-main > \.dr-page\s*\{[\s\S]*?min-height:\s*100%;[\s\S]*?height:\s*100%;/, "reporting pages stay within the pane below desktop chrome instead of adding a second page scrollbar");
+assert.match(desktopChrome, /\.aps-top \+ \.aps-body \.settings-shell__header\s*\{[\s\S]*?padding-left:\s*var\(--space-3\)/, "destination settings header does not reserve the traffic lights twice");
+assert.match(desktopChrome, /\.aps-top \+ \.aps-body \.dr-topbar\s*\{[\s\S]*?padding-left:\s*clamp\(20px, 5vw, 64px\)/, "destination report breadcrumbs do not reserve the traffic lights twice");
 
 console.log("analytics-page-shell guard passed");
