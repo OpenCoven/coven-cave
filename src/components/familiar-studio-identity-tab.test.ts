@@ -14,5 +14,10 @@ assert.match(source, /pronouns/);
 assert.match(source, /description/);
 assert.match(source, /setFamiliarOverride/);
 assert.match(source, /clearFamiliarOverrideField/);
+assert.match(source, /role="checkbox"/);
+assert.match(source, /parseFamiliarTypeIds/);
+// General must be stored as the explicit sentinel, not "" — an empty string
+// only clears the override and lets a daemon-provided type win (cave-gud8).
+assert.match(source, /familiarType: "general"/);
 
 console.log("familiar-studio-identity-tab.test.ts: ok");

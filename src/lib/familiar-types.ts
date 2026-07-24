@@ -7,6 +7,10 @@
  * room registry (role-surfaces.ts) matches surfaces against the combined set,
  * so types ADD grants and never subtract what a role label already gives.
  *
+ * The stored `familiarType` field is a comma-separated list of type ids
+ * (e.g. `"coding,research"`). General is the empty state and never appears
+ * as a member. Role grants are the union across all selected types.
+ *
  * The table is static on purpose: it is the single documented mapping from
  * "what the user picks in Familiar Studio → Identity" to "which room opens",
  * unit-testable without the component registry.
@@ -68,22 +72,48 @@ export function isFamiliarTypeId(value: string): value is FamiliarTypeId {
   return FAMILIAR_TYPES.some((t) => t.id === value);
 }
 
-/** Stored value → table entry; retired ids resolve to their documented
- *  successor, and unknown/absent values resolve to General — so a stale
- *  config never hides the picker or crashes matching. */
-export function resolveFamiliarType(value: string | undefined | null): FamiliarTypeSpec {
-  const id = (value ?? "").trim().toLowerCase();
-  const successor = RETIRED_FAMILIAR_TYPE_SUCCESSORS[id];
-  const resolved = successor ?? id;
-  return FAMILIAR_TYPES.find((t) => t.id === resolved) ?? FAMILIAR_TYPES[0];
+/**
+ * Parse a comma-separated type string into an ordered, deduped list of valid
+ * type ids. Retired ids resolve through RETIRED_FAMILIAR_TYPE_SUCCESSORS
+ * first; General is the empty state and is never included in the result.
+ */
+export function parseFamiliarTypeIds(value: string | undefined | null): FamiliarTypeId[] {
+  const seen = new Set<FamiliarTypeId>();
+  for (const token of (value ?? "").split(",")) {
+    const raw = token.trim().toLowerCase();
+    const id = RETIRED_FAMILIAR_TYPE_SUCCESSORS[raw] ?? raw;
+    if (id === "general" || !isFamiliarTypeId(id)) continue;
+    seen.add(id);
+  }
+  return [...seen];
 }
 
 /**
- * Role-id grants for a stored type value: the type id itself plus its role
- * token (both already normalizeRoleId-shaped). General grants nothing.
+ * Resolve a comma-separated type string to an ordered array of specs. Returns
+ * an empty array when the value is absent or resolves to no valid types.
+ */
+export function resolveFamiliarTypes(value: string | undefined | null): FamiliarTypeSpec[] {
+  return parseFamiliarTypeIds(value).map((id) => FAMILIAR_TYPES.find((t) => t.id === id)!);
+}
+
+/** Stored value → table entry: the first valid type found among the
+ *  comma-separated tokens (mapping retired ids to their successor, skipping
+ *  "general" and unknown/stale ids), or General when none are valid or the
+ *  value is absent — so a stale config
+ *  never hides the picker or crashes matching. */
+export function resolveFamiliarType(value: string | undefined | null): FamiliarTypeSpec {
+  return resolveFamiliarTypes(value)[0] ?? FAMILIAR_TYPES[0];
+}
+
+/**
+ * Role-id grants for a stored type value: unions the type id and role token
+ * for every parsed type. General grants nothing.
  */
 export function familiarTypeRoleIds(value: string | undefined | null): string[] {
-  const spec = resolveFamiliarType(value);
-  if (!spec.roleToken) return [];
-  return [spec.id, spec.roleToken];
+  const grants = new Set<string>();
+  for (const spec of resolveFamiliarTypes(value)) {
+    grants.add(spec.id);
+    if (spec.roleToken) grants.add(spec.roleToken);
+  }
+  return [...grants];
 }

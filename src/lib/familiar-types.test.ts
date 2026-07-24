@@ -10,7 +10,9 @@ import {
   RETIRED_FAMILIAR_TYPE_SUCCESSORS,
   familiarTypeRoleIds,
   isFamiliarTypeId,
+  parseFamiliarTypeIds,
   resolveFamiliarType,
+  resolveFamiliarTypes,
 } from "./familiar-types.ts";
 import { familiarRoleIds, normalizeRoleId, surfaceMatchesRoles } from "./role-surfaces.ts";
 
@@ -91,6 +93,68 @@ test("retired types grant exactly their successor's roles (general grants none)"
 test("familiarTypeRoleIds grants the type id AND its role token", () => {
   assert.deepEqual(familiarTypeRoleIds("coding"), ["coding", "coder"]);
   assert.deepEqual(familiarTypeRoleIds("research"), ["research", "researcher"]);
+});
+
+// ── Multi-value familiarType ─────────────────────────────────────────────────
+
+test("parseFamiliarTypeIds parses a single type", () => {
+  assert.deepEqual(parseFamiliarTypeIds("coding"), ["coding"]);
+});
+
+test("parseFamiliarTypeIds parses comma-separated types", () => {
+  assert.deepEqual(parseFamiliarTypeIds("coding,research"), ["coding", "research"]);
+});
+
+test("parseFamiliarTypeIds trims and lowercases each token", () => {
+  assert.deepEqual(parseFamiliarTypeIds(" CODING , research "), ["coding", "research"]);
+});
+
+test("parseFamiliarTypeIds dedupes repeated ids (first-occurrence order)", () => {
+  assert.deepEqual(parseFamiliarTypeIds("coding,coding,research"), ["coding", "research"]);
+});
+
+test("parseFamiliarTypeIds preserves parse order, not table order", () => {
+  assert.deepEqual(parseFamiliarTypeIds("research,coding,research"), ["research", "coding"]);
+});
+
+test("parseFamiliarTypeIds dedupes case-varied duplicates", () => {
+  assert.deepEqual(parseFamiliarTypeIds("CODING,coding"), ["coding"]);
+});
+
+test("parseFamiliarTypeIds silently drops unknown ids", () => {
+  assert.deepEqual(parseFamiliarTypeIds("coding,retired-type,research"), ["coding", "research"]);
+});
+
+test("parseFamiliarTypeIds treats general as empty state — never a member", () => {
+  assert.deepEqual(parseFamiliarTypeIds("general,coding"), ["coding"]);
+  assert.deepEqual(parseFamiliarTypeIds("general"), []);
+});
+
+test("parseFamiliarTypeIds returns [] for empty/absent values", () => {
+  assert.deepEqual(parseFamiliarTypeIds(""), []);
+  assert.deepEqual(parseFamiliarTypeIds(undefined), []);
+  assert.deepEqual(parseFamiliarTypeIds(null), []);
+});
+
+test("resolveFamiliarTypes returns the ordered specs for valid ids", () => {
+  const specs = resolveFamiliarTypes("coding,research");
+  assert.deepEqual(specs.map((s) => s.id), ["coding", "research"]);
+});
+
+test("resolveFamiliarTypes returns [] for empty value", () => {
+  assert.deepEqual(resolveFamiliarTypes(""), []);
+});
+
+test("familiarTypeRoleIds unions grants across multiple types", () => {
+  assert.deepEqual(familiarTypeRoleIds("coding,research"), ["coding", "coder", "research", "researcher"]);
+});
+
+test("resolveFamiliarType on a multi-value string returns the first parsed type", () => {
+  assert.equal(resolveFamiliarType("coding,research").id, "coding");
+});
+
+test("resolveFamiliarType on out-of-table-order input returns the first parsed type", () => {
+  assert.equal(resolveFamiliarType("research,coding").id, "research");
 });
 
 // ── Integration with the Role Surface matcher ────────────────────────────────
