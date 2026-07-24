@@ -148,15 +148,12 @@
 /* Peel-reveal (cave-3vgd): progressive-enhancement page-curl around the
    detail pane, revealing the sidebar when the collapsed rail is armed.
    Plain mode (every browser without experimental HTML-in-canvas, and any
-   reduced-motion user) is layout-invisible via display: contents. Live mode
+   reduced-motion user) renders no wrapper elements at all, keeping the
+   `.shell-detail > .cave-mode-fade` direct-child contracts intact. Live mode
    becomes the box the vendored Peel canvases fill; .shell-peel-scroll
    reproduces .shell-detail's scroll contract because the vendor's content
    wrapper is overflow: hidden. The under sheet is opaque (--bg-raised) and
    232px wide to hand off seamlessly into the .shell-nav--peek overlay. */
-.shell-peel-reveal--plain,
-.shell-peel-reveal--plain > .shell-peel-scroll {
-  display: contents;
-}
 .shell-peel-reveal--live {
   flex: 1;
   min-height: 0;

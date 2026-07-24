@@ -100,10 +100,13 @@ const emptySubscribe = () => () => {};
  * the cursor approaches, revealing the sidebar (`under`) beneath — a
  * decorative tease that hands off to the interactive .shell-nav--peek
  * overlay. Everywhere else (Tauri WKWebView, Safari, Firefox, stock Chrome,
- * reduced-motion users) this renders display:contents wrappers: zero layout
- * impact, zero GPU cost, and the children are never re-parented by `active`
- * changes within a mode. The live tree additionally waits for the vendored
- * chunk so enhancement never blanks the pane mid-load.
+ * reduced-motion users) this renders a bare Fragment: zero wrapper elements,
+ * so direct-child selector chains like `.shell-detail > .cave-mode-fade`
+ * (see detail-split-host.tsx) keep matching, and the children are never
+ * re-parented by `active` changes within a mode. The live tree additionally
+ * waits for the vendored chunk so enhancement never blanks the pane mid-load.
+ * Under the experimental flag those `>` chains do not reach through the
+ * vendor's canvas layers — a known, flag-gated divergence (Task 6 QA).
  */
 export function ShellPeelReveal({
   active,
@@ -140,11 +143,7 @@ export function ShellPeelReveal({
   }, [enhanced]);
 
   if (!enhanced) {
-    return (
-      <div className="shell-peel-reveal shell-peel-reveal--plain">
-        <div className="shell-peel-scroll">{children}</div>
-      </div>
-    );
+    return <>{children}</>;
   }
   return (
     <div ref={wrapRef} className="shell-peel-reveal shell-peel-reveal--live">

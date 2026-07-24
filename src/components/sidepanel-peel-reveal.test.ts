@@ -10,8 +10,8 @@ const css = readFileSync(
 // Plain mode (no HTML-in-canvas, or reduced motion) must be layout-invisible.
 assert.match(
   css,
-  /\.shell-peel-reveal--plain,\s*\.shell-peel-reveal--plain > \.shell-peel-scroll \{\s*display: contents;/,
-  "plain peel wrappers are display: contents",
+  /\.shell-peel-reveal--live \{/,
+  "live peel wrapper block exists",
 );
 
 // Live mode reproduces .shell-detail's scroll contract (the vendored content
@@ -113,11 +113,19 @@ assert.match(
   "context-loss restarts are capped",
 );
 
-// Plain path renders the stable display:contents wrappers.
+// Plain path is a bare Fragment: several production rules use direct-child
+// chains (`.shell-detail > .cave-mode-fade`, see detail-split-host.tsx) that
+// even display:contents wrappers would break — selectors match the DOM tree,
+// not the box tree.
 assert.match(
   wrapper,
-  /className="shell-peel-reveal shell-peel-reveal--plain"/,
-  "plain path renders the contents wrapper",
+  /if \(!enhanced\) \{\s*return <>\{children\}<\/>;\s*\}/,
+  "plain path renders children as a bare Fragment (no wrapper elements)",
+);
+assert.doesNotMatch(
+  wrapper,
+  /shell-peel-reveal--plain/,
+  "no plain wrapper class remains",
 );
 
 // Vendored file keeps its provenance and stays the module the wrapper imports.
