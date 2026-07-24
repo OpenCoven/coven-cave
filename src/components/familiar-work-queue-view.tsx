@@ -414,6 +414,10 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "comment failed");
+        // A comment can complete after the user selects a different Queue
+        // project. Its evidence belongs only to the root that initiated it;
+        // otherwise an equal bead id in the new project could unlock Close.
+        if (activeProjectRootRef.current !== projectRoot) return false;
         setEvidenceAdded((prev) => new Set(prev).add(id.toLowerCase()));
         announce(`Handoff note added to ${id}.`);
         await load(true);

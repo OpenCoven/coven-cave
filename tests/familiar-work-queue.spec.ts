@@ -30,6 +30,7 @@ const MERGED_PRS = [
   { number: 90, title: "Landed change", url: "https://gh/pull/90", beadIds: ["cave-open"], mergedAt: iso(1) },
 ];
 const QUEUE_PROJECT = { id: "queue-test-project", name: "Queue test project", root: "/tmp/coven-cave-queue-test-project" };
+const QUEUE_PROJECT_B = { id: "queue-test-project-b", name: "Queue test project B", root: "/tmp/coven-cave-queue-test-project-b" };
 const QUEUE_READINESS = { ok: true, message: "Queue project is ready.", canGenerate: false, project: QUEUE_PROJECT };
 
 test.beforeEach(async ({ page }) => {
@@ -253,6 +254,87 @@ test.describe("familiar work queue (PR control tower)", () => {
     });
     // …and Close unlocks (optimistic, without waiting for a re-read).
     await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeEnabled();
+  });
+
+  test("a delayed A handoff cannot unlock an equal bead id after switching to B", async ({ page }) => {
+    let selectedProject = QUEUE_PROJECT;
+    let releaseComment!: () => void;
+    const commentReleased = new Promise<void>((resolve) => { releaseComment = resolve; });
+    let commentStarted!: () => void;
+    const commentPending = new Promise<void>((resolve) => { commentStarted = resolve; });
+    const readUrls: string[] = [];
+    await page.route("**/api/queue/readiness", (route) =>
+      route.fulfill({ json: { ok: true, readiness: { ...QUEUE_READINESS, project: selectedProject } } }),
+    );
+    await page.route("**/api/beads", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON();
+      if (body.action === "comment") {
+        commentStarted();
+        await commentReleased;
+        return route.fulfill({ json: { ok: true, data: { id: "cave-open" } } });
+      }
+      return route.fallback();
+    });
+    await gotoWorkQueue(page, (request) => readUrls.push(request.url()));
+
+    const cleanup = page.locator(".fwq").getByRole("region", { name: "Post-merge cleanup" });
+    await cleanup.getByRole("button", { name: /Add a handoff note to cave-open/ }).click();
+    await cleanup.getByRole("textbox", { name: /Handoff note for cave-open/ }).fill("Verified in project A.");
+    await cleanup.getByRole("button", { name: "Add note" }).click();
+    await commentPending;
+
+    selectedProject = QUEUE_PROJECT_B;
+    await page.evaluate((project) => window.dispatchEvent(new CustomEvent("cave:queue-project-selected", { detail: { project } })), QUEUE_PROJECT_B);
+    await expect.poll(() => readUrls.some((url) => new URL(url).searchParams.get("projectRoot") === QUEUE_PROJECT_B.root)).toBe(true);
+    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeDisabled();
+
+    releaseComment();
+    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeDisabled();
+  });
+
+  test("PR and Asana bead creation use B after a Queue project switch", async ({ page }) => {
+    let selectedProject = QUEUE_PROJECT;
+    const createBodies: Array<{ projectRoot?: string; labels?: string[] }> = [];
+    const readUrls: string[] = [];
+    await page.route("**/api/queue/readiness", (route) =>
+      route.fulfill({ json: { ok: true, readiness: { ...QUEUE_READINESS, project: selectedProject } } }),
+    );
+    await page.route("**/api/asana/assigned**", (route) =>
+      route.fulfill({
+        json: {
+          ok: true,
+          configured: true,
+          assigned: true,
+          items: [{ gid: "asana-123", title: "Asana queue task", url: "https://app.asana.com/0/123", projectName: "Queue" }],
+        },
+      }),
+    );
+    await page.route("**/api/beads", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON();
+      if (body.action === "create") {
+        createBodies.push(body);
+        return route.fulfill({ json: { ok: true, data: { id: `cave-created-${createBodies.length}` } } });
+      }
+      return route.fallback();
+    });
+    await gotoWorkQueue(page, (request) => readUrls.push(request.url()));
+
+    selectedProject = QUEUE_PROJECT_B;
+    await page.evaluate((project) => window.dispatchEvent(new CustomEvent("cave:queue-project-selected", { detail: { project } })), QUEUE_PROJECT_B);
+    await expect.poll(() => readUrls.filter((url) => new URL(url).searchParams.get("projectRoot") === QUEUE_PROJECT_B.root).length).toBeGreaterThanOrEqual(2);
+
+    const fwq = page.locator(".fwq");
+    const attention = fwq.getByRole("region", { name: "PRs needing attention" });
+    await attention.locator(".fwq-attention-item", { hasText: "#103" }).getByRole("button", { name: "File bead" }).click();
+    await expect.poll(() => createBodies.length).toBe(1);
+    const asana = fwq.getByRole("region", { name: "Asana tasks assigned to you" });
+    await expect(asana).toBeVisible();
+    await asana.getByRole("button", { name: "File bead" }).click();
+    await expect.poll(() => createBodies.length).toBe(2);
+    expect(createBodies.map((body) => body.projectRoot)).toEqual([QUEUE_PROJECT_B.root, QUEUE_PROJECT_B.root]);
+    expect(createBodies.map((body) => body.labels)).toEqual([["from-pr"], ["asana"]]);
   });
 
   test("Attention strip surfaces stale and unlinked open PRs", async ({ page }) => {
