@@ -57,11 +57,11 @@ assert.match(
 assert.match(chatView, /openTargetFile = \(e: ReactMouseEvent\) => \{[\s\S]*?stopPropagation\(\)/, "open handler stops propagation");
 
 // (ComuxView's cave:open-project-file listener left with the component,
-// cave-c3yt — the workspace bridge into the Code surface is the live
-// consumer, cave-ohcj.)
+// cave-c3yt — the workspace bridge into the Code room is the live
+// consumer, cave-ohcj/cave-cc5r.)
 assert.match(
   workspace,
-  /File\/diff links land on the Code surface[\s\S]*?setPendingCodeOpen\([\s\S]*?setMode\("code"\)/,
+  /File\/diff links land on the Code room[\s\S]*?enqueuePendingCodeOpen\([\s\S]*?setMode\("code"\)/,
   "workspace preserves file-open event detail while switching into code",
 );
 assert.doesNotMatch(

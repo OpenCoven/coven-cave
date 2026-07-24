@@ -159,6 +159,8 @@ export type FamiliarBinding = {
   model: string;
   display_name?: string;
   role?: string;
+  /** Explicit familiar Type id (familiar-types.ts). Absent = "general". */
+  familiarType?: string;
   pronouns?: string;
   description?: string;
   color?: string;
@@ -574,6 +576,7 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     model: f.model ?? config.defaults.model,
     display_name: f.display_name,
     role: f.role,
+    familiarType: f.familiarType,
     pronouns: f.pronouns,
     description: f.description,
     color: f.color,

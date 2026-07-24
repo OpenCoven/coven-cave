@@ -8,6 +8,7 @@ breaking config changes; patch releases stay additive.
 ## [Unreleased]
 
 ### Changed
+- **Code becomes the Coding familiar's room** — the Code workbench now lives as a Role Surface room ("Code Workshop") granted by an explicit familiar Type, matching how Research gates its desk. Familiar Studio → Identity gains a Type picker (General, Coding, Research, Review, Writing, Comms, Watch, Planning, Indexing) that unlocks the matching room; role labels keep granting rooms as before (types add, never subtract). The standalone GitHub surface returns as a quiet sidebar row for every familiar, hiding only while the active familiar's Code room is visible. `?mode=code` deep links now alias onto the room.
 - **OpenAI theme renamed to Codex** — same void-dark monochrome palette under `data-theme="codex"`; stored `openai` preferences migrate automatically via the legacy rename map.
 
 ### Fixed

@@ -64,7 +64,6 @@ function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
 // warm-up must call the loaders directly to fetch a sidebar's chunks without
 // mounting the surface (and therefore without running any of its effects).
 const loadGitHubView = () => import("@/components/github-view").then((m) => m.GitHubView);
-const loadCodeView = () => import("@/components/code-view").then((m) => m.CodeView);
 const loadCalendarView = () => import("@/components/calendar-view").then((m) => m.CalendarView);
 const loadBoardView = () => import("@/components/board-view").then((m) => m.BoardView);
 const loadMarketplaceView = () =>
@@ -88,17 +87,18 @@ export type WarmableSidebarSurface =
   | "grimoire"
   | "agents";
 
-// The standalone GitHubView dynamic wrapper is gone (cave-m6ys): GitHub
-// mounts only as Code's GitHub tab (code-view.tsx owns that lazy import).
-// loadGitHubView stays for preloadSidebarSurface — warming the chunk still
-// pays off when the user opens the tab.
-
-// Code surface (cave-k0ua): hosts diffs, file tree + editor, terminal and the
-// GitHub tab — its chunk (CodeMirror et al.) must stay out of the boot bundle.
-export const CodeView = dynamic(
-  timed("code", loadCodeView),
+// The standalone GitHubView surface is back (cave-cc5r): the Code workbench
+// moved into the Coding familiar's Role Surface room, and every familiar
+// keeps GitHub as its own canonical surface again. loadGitHubView also feeds
+// preloadSidebarSurface — warming the chunk before the row is clicked.
+export const GitHubView = dynamic(
+  timed("github", loadGitHubView),
   { ssr: false, loading: SurfaceFallback },
 );
+
+// The Code workbench chunk (CodeMirror et al.) now rides the Code room's
+// dynamic import (role-surfaces/register.tsx → code-room.tsx), keeping it out
+// of the boot bundle without a wrapper here.
 
 export const CalendarView = dynamic(
   timed("calendar", loadCalendarView),

@@ -27,6 +27,7 @@ import { deskSummary, scribeStatus } from "./scribe-craft";
 import { chartRoomStatus } from "./navigator-charts";
 import { reviewDeckStatus } from "./review-deck";
 import {
+  CODE_SURFACE_ID,
   INDEXER_SURFACE_ID,
   MESSENGER_SURFACE_ID,
   NAVIGATOR_SURFACE_ID,
@@ -72,6 +73,10 @@ const ReviewerSurface = dynamic(
   () => import("./reviewer-surface").then((m) => m.ReviewerSurface),
   { ssr: false, loading: RoomFallback },
 );
+const CodeRoom = dynamic(
+  () => import("./code-room").then((m) => m.CodeRoom),
+  { ssr: false, loading: RoomFallback },
+);
 
 /** Flip the shared `drawerOpen` bit of a room's persisted state. The state
  *  hooks shallow-merge stored partials over their initial state, so partial
@@ -111,6 +116,36 @@ registerRoleSurface({
     };
   },
   render: (context) => <ResearcherSurface context={context} />,
+});
+
+// The Coding familiar's room (cave-cc5r): the full Code workbench, granted by
+// the "coder" role token — the Studio's Coding type or a role label carrying
+// any of the aliases below. GitHub-item opens stay on the standalone GitHub
+// surface, which every familiar keeps.
+registerRoleSurface({
+  id: CODE_SURFACE_ID,
+  role: "coder",
+  aliases: ["coding", "developer", "engineer", "programmer", "software-engineer", "code"],
+  title: "Code Workshop",
+  iconName: "ph:code",
+  description: "Multi-session coding workbench — diffs, files, terminals, branches, and GitHub",
+  accentHue: 250,
+  priority: 40,
+  shouldDisplay: () => true,
+  getContributions(context) {
+    return {
+      notifications: daemonNotices(context),
+      statusIndicators: [
+        {
+          id: "code.engine",
+          label: context.runtimeState.daemonRunning ? "workbench live" : "workbench offline",
+          tone: context.runtimeState.daemonRunning ? "ok" : "warn",
+          detail: "Sessions, diffs, and terminals ride the familiar's live daemon",
+        },
+      ],
+    };
+  },
+  render: (context) => <CodeRoom context={context} />,
 });
 
 registerRoleSurface({

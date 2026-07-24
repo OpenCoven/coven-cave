@@ -20,6 +20,8 @@ const OVERRIDES_KEY = "cave:familiar-overrides:v1";
 export type FamiliarOverride = {
   display_name?: string;
   role?: string;
+  /** Explicit familiar Type id (familiar-types.ts). Empty string clears. */
+  familiarType?: string;
   pronouns?: string;
   description?: string;
   /** CSS color string (hex, oklch, named). Drives the rail accent ring. */

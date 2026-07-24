@@ -72,7 +72,7 @@ import {
   FamiliarsView,
   FamiliarWorkQueueView,
   FamiliarGlyphPicker,
-  CodeView,
+  GitHubView,
   GrimoireView,
   InboxEscalationsView,
   MarketplaceView,
@@ -117,6 +117,7 @@ import {
 } from "@/lib/role-surfaces";
 import { useRoleSurfaceSession } from "@/lib/use-role-surfaces";
 import { RoleSurfaceHost } from "@/components/role-surface-host";
+import { CODE_SURFACE_ID } from "@/components/role-surfaces/ids";
 // Role Surfaces self-register via this manifest — the shell only ever handles
 // the generic `surface:<id>` mode and never names a role.
 import "@/components/role-surfaces/register";
@@ -143,7 +144,7 @@ import {
 } from "@/lib/first-project-gate-retry";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
-import type { PendingCodeOpen } from "@/lib/pending-code-open";
+import { enqueuePendingCodeOpen, type PendingCodeOpen } from "@/lib/pending-code-open";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import { startVoiceConversation, voiceChatStartErrorMessage } from "@/lib/voice/start-voice-chat";
 import {
@@ -365,6 +366,15 @@ export function Workspace() {
       setModeRaw("inbox");
       return;
     }
+    if (next === "code") {
+      // Code is the Coding familiar's room (cave-cc5r): every legacy entry
+      // point (?mode=code deep links, palette intents, cave:navigate-mode,
+      // persisted last-surface) funnels onto the registered Role Surface, so
+      // `mode` state never holds "code". Familiars without the coder role hit
+      // RoleSurfaceHost's explicit closed-room door.
+      setModeRaw(roleSurfaceMode(CODE_SURFACE_ID));
+      return;
+    }
     setModeRaw(next);
   }, []);
   // Chat mode replaces the global nav with the project-grouped Chats sidebar.
@@ -471,7 +481,6 @@ export function Workspace() {
   // attach the CURRENT session without re-subscribing on every change.
   const activeChatSessionIdRef = useRef<string | null>(null);
   activeChatSessionIdRef.current = activeChatSessionId;
-  const [pendingCodeOpen, setPendingCodeOpen] = useState<PendingCodeOpen | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingResolved, setOnboardingResolved] = useState(false);
   const [autoFinishOnboarding, setAutoFinishOnboarding] = useState(false);
@@ -507,13 +516,12 @@ export function Workspace() {
   }>({ fireAt: "", title: "", whenText: "" });
   const [editingReminder, setEditingReminder] = useState<InboxItem | null>(null);
   // Deep-link target for the native GitHub surface (a GitHub-event inbox
-  // notification's PR/issue). GitHub lives on the Code surface's GitHub tab
-  // (cave-m6ys), so the target survives within the whole surface — mode
-  // "github" (the tab alias) or "code" — and clears on leaving it so a later
-  // manual visit doesn't re-open a stale item.
+  // notification's PR/issue). The standalone GitHub surface hosts it for every
+  // familiar (cave-cc5r); the target clears on leaving so a later manual visit
+  // doesn't re-open a stale item.
   const [githubTarget, setGithubTarget] = useState<GitHubItemTarget | null>(null);
   useEffect(() => {
-    if (mode !== "github" && mode !== "code" && githubTarget) setGithubTarget(null);
+    if (mode !== "github" && githubTarget) setGithubTarget(null);
   }, [mode, githubTarget]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
@@ -787,16 +795,18 @@ export function Workspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // File/diff links land on the Code surface (cave-ohcj): every open — from
-  // chat transcripts, the Projects hub, anywhere — routes into code mode with
-  // the raising chat session attached so CodeView can select its workbench.
-  // The event detail is preserved in state until CodeView mounts.
+  // File/diff links land on the Code room (cave-ohcj, cave-cc5r): every open —
+  // from chat transcripts, the Projects hub, anywhere — enqueues into the
+  // pending-code-open module store and navigates to the coder's room, where
+  // CodeRoom consumes it. The store preserves the detail until CodeView
+  // mounts; non-coding familiars hit the room's closed door with the open
+  // left pending.
   useEffect(() => {
     const enqueue = (kind: PendingCodeOpen["kind"], e: Event) => {
       const detail = (e as CustomEvent<{ path?: string; line?: number }>).detail;
       if (!detail?.path) return;
       const sessionId = activeChatSessionIdRef.current ?? undefined;
-      setPendingCodeOpen(
+      enqueuePendingCodeOpen(
         kind === "files"
           ? { kind, path: detail.path, line: detail.line, sessionId, nonce: Date.now() }
           : { kind, path: detail.path, sessionId, nonce: Date.now() },
@@ -811,7 +821,7 @@ export function Workspace() {
     const onBrowseProjectFiles = (e: Event) => {
       const detail = (e as CustomEvent<{ root?: string }>).detail;
       if (!detail?.root) return;
-      setPendingCodeOpen({ kind: "files", root: detail.root, nonce: Date.now() });
+      enqueuePendingCodeOpen({ kind: "files", root: detail.root, nonce: Date.now() });
       setMode("code");
     };
     window.addEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
@@ -2503,6 +2513,16 @@ export function Workspace() {
   // Role Surfaces: build the shared context from the live session and resolve
   // which registered surfaces the active familiar should see. Entirely
   // registry-driven — the shell never branches on a specific role.
+  // `onPaletteIntent` is re-created every render, so the room's focus-card
+  // service goes through a ref to keep the context identity stable.
+  const onPaletteIntentRef = useRef<(intent: PaletteIntent) => void>(() => {});
+  onPaletteIntentRef.current = onPaletteIntent;
+  const focusCardFromRoom = useCallback((cardId: string) => {
+    onPaletteIntentRef.current({ kind: "focus-card", cardId });
+  }, []);
+  const refreshTasksFromRoom = useCallback(() => {
+    void loadGitHubTasks(true);
+  }, [loadGitHubTasks]);
   const roleSurfaceSession = useRoleSurfaceSession({
     familiar: active,
     sessions,
@@ -2510,6 +2530,8 @@ export function Workspace() {
     daemonRunning,
     openUrl: openUrlInAppBrowser,
     openSession: openFamiliarSession,
+    focusCard: focusCardFromRoom,
+    refreshTasks: refreshTasksFromRoom,
   });
 
   // If the current mode is a Role Surface this familiar can't see (role
@@ -2616,6 +2638,9 @@ export function Workspace() {
       boardOpenCount={boardTaskCount}
       scheduleNeedsCount={scheduleNeedsCount}
       githubAssignedCount={githubAssignedCount}
+      // The Code room carries its own GitHub tab — hide the standalone row
+      // while the room is visible for the active familiar (cave-cc5r).
+      hideGithubRow={roleSurfaceSession.visibleSurfaces.some((s) => s.id === CODE_SURFACE_ID)}
     />
   );
 
@@ -2836,19 +2861,14 @@ export function Workspace() {
         navigationRequest={browserNavigationQueue[0] ?? null}
         onNavigationConsumed={acknowledgeBrowserNavigation}
       />
-    ) : mode === "code" || mode === "github" ? (
-      // "github" is a tab alias (cave-m6ys): the standalone surface was
-      // absorbed as Code's GitHub tab. Keyed remount so ?mode=github deep
-      // links land on the tab even when Code is already the active surface.
-      <CodeView
-        key={mode}
-        sessions={sessions}
-        initialTopTab={mode === "github" ? "github" : undefined}
+    ) : mode === "github" ? (
+      // Standalone GitHub surface — every familiar keeps it (cave-cc5r). The
+      // Code workbench (which carries its own GitHub tab) lives in the Coding
+      // familiar's room; GitHub-item deep links land here for everyone.
+      <GitHubView
         onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-        githubTarget={githubTarget}
-        pendingOpen={pendingCodeOpen}
-        onPendingOpenHandled={() => setPendingCodeOpen(null)}
+        initialTarget={githubTarget}
         onTasksRefresh={() => void loadGitHubTasks(true)}
       />
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
@@ -3115,6 +3135,11 @@ export function Workspace() {
           familiars={familiars}
           sessions={sessions}
           activeFamiliarId={activeId}
+          roleSurfaces={roleSurfaceSession.visibleSurfaces.map((surface) => ({
+            mode: roleSurfaceMode(surface.id),
+            label: surface.title,
+            description: surface.description,
+          }))}
           initialQuery={topSearchQuery}
           onQueryChange={setTopSearchQuery}
           onIntent={onPaletteIntent}

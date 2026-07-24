@@ -8,6 +8,8 @@ import {
   useFamiliarOverrides,
   type FamiliarOverride,
 } from "@/lib/cave-familiar-overrides";
+import { FAMILIAR_TYPES, resolveFamiliarType } from "@/lib/familiar-types";
+import { Icon } from "@/lib/icon";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type Props = {
@@ -33,6 +35,7 @@ export function FamiliarStudioIdentityTab({ familiar, rawDaemonValues }: Props) 
 
   return (
     <div className="familiar-studio-identity">
+      <FamiliarTypePicker familiar={familiar} />
       {FIELDS.map((f) => (
         <IdentityField
           key={`${familiar.id}:${f.key}`}
@@ -45,6 +48,47 @@ export function FamiliarStudioIdentityTab({ familiar, rawDaemonValues }: Props) 
           onReset={() => clearFamiliarOverrideField(familiar.id, f.key)}
         />
       ))}
+    </div>
+  );
+}
+
+/**
+ * The explicit familiar Type picker (cave-cc5r): a chip radio-row over the
+ * static FAMILIAR_TYPES table. The choice is stored as a Cave override
+ * (`familiarType`) and synced to cave-config like every other identity field;
+ * it ADDS the type's role token to the familiar's Role Surface grants, so the
+ * free-text Role label below keeps working exactly as before. Picking General
+ * (the default) clears the override.
+ */
+function FamiliarTypePicker({ familiar }: { familiar: ResolvedFamiliar }) {
+  const selected = resolveFamiliarType(familiar.familiarType);
+  const labelId = `familiar-type-label-${familiar.id}`;
+  return (
+    <div className="familiar-studio-identity__row">
+      <span className="familiar-studio-identity__label" id={labelId}>
+        Type
+      </span>
+      <div role="radiogroup" aria-labelledby={labelId} className="familiar-studio-identity__types">
+        {FAMILIAR_TYPES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="radio"
+            aria-checked={selected.id === t.id}
+            title={t.description}
+            className={`focus-ring familiar-studio-type-chip${selected.id === t.id ? " familiar-studio-type-chip--active" : ""}`}
+            onClick={() =>
+              setFamiliarOverride(familiar.id, {
+                familiarType: t.id === "general" ? "" : t.id,
+              })
+            }
+          >
+            <Icon name={t.iconName} width={12} height={12} aria-hidden />
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <p className="familiar-studio-identity__hint">{selected.description}</p>
     </div>
   );
 }

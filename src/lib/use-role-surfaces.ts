@@ -59,8 +59,10 @@ export function useRoleSurfaceSession(input: {
   daemonRunning: boolean;
   openUrl: (url: string) => void;
   openSession: (sessionId: string, familiarId?: string) => void;
+  focusCard: (cardId: string) => void;
+  refreshTasks: () => void;
 }): RoleSurfaceSession {
-  const { familiar, sessions, activeSessionId, daemonRunning, openUrl, openSession } = input;
+  const { familiar, sessions, activeSessionId, daemonRunning, openUrl, openSession, focusCard, refreshTasks } = input;
   const familiarId = familiar?.id ?? null;
 
   const [manifests, setManifests] = useState<RoleEntryWire[]>([]);
@@ -164,6 +166,8 @@ export function useRoleSurfaceSession(input: {
     (sessionId: string, forFamiliar?: string) => openSession(sessionId, forFamiliar),
     [openSession],
   );
+  const focusCardStable = useCallback((cardId: string) => focusCard(cardId), [focusCard]);
+  const refreshTasksStable = useCallback(() => refreshTasks(), [refreshTasks]);
 
   const context: RoleSurfaceContext | null = useMemo(() => {
     if (!familiar) return null;
@@ -178,8 +182,10 @@ export function useRoleSurfaceSession(input: {
       plugins,
       openUrl: openUrlStable,
       openSession: openSessionStable,
+      focusCard: focusCardStable,
+      refreshTasks: refreshTasksStable,
     };
-  }, [familiar, sessions, activeSessionId, daemonRunning, memory, tools, plugins, openUrlStable, openSessionStable]);
+  }, [familiar, sessions, activeSessionId, daemonRunning, memory, tools, plugins, openUrlStable, openSessionStable, focusCardStable, refreshTasksStable]);
 
   const visibleSurfaces = useMemo(() => {
     if (!familiar || !context) return [];

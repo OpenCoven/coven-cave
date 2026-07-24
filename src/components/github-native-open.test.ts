@@ -36,12 +36,12 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<CodeView[\s\S]{0,300}githubTarget=\{githubTarget\}/,
-  "the Code surface receives the deep-link target (GitHub is its tab, cave-m6ys)",
+  /<GitHubView[\s\S]{0,300}initialTarget=\{githubTarget\}/,
+  "the standalone GitHub surface receives the deep-link target (cave-cc5r)",
 );
 assert.match(
   workspace,
-  /if \(mode !== "github" && mode !== "code" && githubTarget\) setGithubTarget\(null\);/,
+  /if \(mode !== "github" && githubTarget\) setGithubTarget\(null\);/,
   "leaving the surface clears the target so later visits don't re-open a stale item",
 );
 

@@ -42,6 +42,8 @@ function makeContext(overrides: Partial<RoleSurfaceContext> = {}): RoleSurfaceCo
     plugins: { listPlugins: async () => [] },
     openUrl: () => {},
     openSession: () => {},
+    focusCard: () => {},
+    refreshTasks: () => {},
     ...overrides,
   };
 }
@@ -102,6 +104,22 @@ test("surfaceMatchesRoles honors alias roles with the same normalization", () =>
   assert.ok(surfaceMatchesRoles({ role: "navigator", aliases: ["Planner"] }, planner));
   assert.ok(!surfaceMatchesRoles({ role: "navigator" }, planner));
   assert.ok(!surfaceMatchesRoles({ role: "navigator", aliases: ["editor"] }, planner));
+});
+
+test("familiarRoleIds grants the explicit familiar Type's tokens (cave-cc5r)", () => {
+  const ids = familiarRoleIds({ id: "f", role: "Orchestrator", familiarType: "coding" });
+  assert.ok(ids.has("coding"));
+  assert.ok(ids.has("coder"));
+  assert.ok(surfaceMatchesRoles({ role: "coder" }, ids));
+  // types add, never subtract: the role label's tokens still ride along
+  assert.ok(ids.has("orchestrator"));
+});
+
+test("a General or absent familiar Type grants no extra tokens", () => {
+  const general = familiarRoleIds({ id: "f", role: "Orchestrator", familiarType: "general" });
+  assert.ok(!surfaceMatchesRoles({ role: "coder" }, general));
+  const unknown = familiarRoleIds({ id: "f", role: "Orchestrator", familiarType: "not-a-type" });
+  assert.ok(!surfaceMatchesRoles({ role: "coder" }, unknown));
 });
 
 test("resolveVisibleRoleSurfaces shows alias-matched rooms", () => {

@@ -9,10 +9,11 @@ import { readFile } from "node:fs/promises";
 // The owner requested a Codex-style multi-session coding surface — diffs,
 // files, terminal, per-session PR context, worktrees, branches, with GitHub
 // absorbed as a tab — so the mode returned behind caveCodeSurface(). Phase 2
-// (cave-m6ys) made it default-on: the flag is retired, the standalone GitHub
-// surface/row is absorbed ("github" is a tab alias in MODE_ALIASES), and
-// Chat's own code rail stays untouched until the flagged follow-up that
-// slims it. These pins document that sanctioned shape.
+// (cave-m6ys) made it default-on. Phase 3 (cave-cc5r) moved the surface into
+// the Coding familiar's Role Surface room: "code" is now an alias landing on
+// `surface:code` (role-gated, explicit familiar Type picker in the Studio),
+// while the standalone GitHub surface returned as a canonical mode every
+// familiar keeps. These pins document that sanctioned shape.
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
@@ -22,10 +23,38 @@ const lazySurfaces = await readFile(new URL("./lazy-surfaces.tsx", import.meta.u
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const registerRooms = await readFile(new URL("./role-surfaces/register.tsx", import.meta.url), "utf8");
+const codeRoom = await readFile(new URL("./role-surfaces/code-room.tsx", import.meta.url), "utf8");
 
 // ── Mode vocabulary ──────────────────────────────────────────────────────────
 
-assert.match(modeType, /\|\s*"code"/, "WorkspaceMode includes the Code surface again (cave-k0ua)");
+assert.match(modeType, /\|\s*"code"/, "the code mode stays in the vocabulary (as an alias) so deep links keep working");
+
+// ── The Code room (cave-cc5r) ────────────────────────────────────────────────
+
+// Code is the Coding familiar's room: registered in the Role Surface registry
+// under the "coder" role, granted by the Studio's explicit Type picker or a
+// matching role label — never rendered as an ungated top-level surface.
+assert.match(
+  registerRooms,
+  /id: CODE_SURFACE_ID,\s*role: "coder",\s*aliases: \["coding", "developer", "engineer", "programmer", "software-engineer", "code"\]/,
+  "the Code room registers under the coder role with the sanctioned alias set",
+);
+assert.match(
+  registerRooms,
+  /const CodeRoom = dynamic\(\s*\(\) => import\("\.\/code-room"\)\.then\(\(m\) => m\.CodeRoom\)/,
+  "the Code room is code-split — the workbench chunk (CodeMirror et al.) must not join the boot bundle",
+);
+assert.match(
+  codeRoom,
+  /<CodeView\s+sessions=\{context\.runtimeState\.sessions\}/,
+  "the room adapter feeds CodeView the context's familiar-scoped sessions",
+);
+assert.match(
+  codeRoom,
+  /pendingOpen=\{pendingOpen\}\s+onPendingOpenHandled=\{clearPendingCodeOpen\}/,
+  "the room consumes pending file/diff opens from the module store and clears them",
+);
 
 // ── Workspace wiring ─────────────────────────────────────────────────────────
 
@@ -36,18 +65,28 @@ assert.match(
 );
 assert.match(
   workspace,
-  /mode === "code" \|\| mode === "github" \? \([\s\S]{0,300}?<CodeView/,
-  "Workspace renders CodeView on the code mode and the absorbed github alias",
+  /if \(next === "code"\) \{[\s\S]{0,700}?setModeRaw\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
+  "setMode funnels every code entry point (deep links, palette, navigate-mode, persisted restore) into the room",
+);
+assert.match(
+  workspace,
+  /mode === "github" \?[\s\S]{0,400}?<GitHubView/,
+  "Workspace renders the standalone GitHub surface on the canonical github mode",
 );
 assert.match(
   lazySurfaces,
-  /const loadCodeView = \(\) => import\("@\/components\/code-view"\)\.then\(\(m\) => m\.CodeView\)/,
-  "CodeView stays code-split behind lazy-surfaces — its chunk must not join the boot bundle",
+  /export const GitHubView = dynamic\(\s*timed\("github", loadGitHubView\)/,
+  "GitHubView stays code-split behind lazy-surfaces — its chunk must not join the boot bundle",
+);
+assert.doesNotMatch(
+  lazySurfaces,
+  /loadCodeView|export const CodeView/,
+  "no lazy CodeView wrapper survives — the workbench chunk rides the Code room's dynamic import",
 );
 
 // Default-on (cave-m6ys): the build-time flag is retired. No workspace wiring
 // may resurrect a gate in front of the surface, and the vocabulary records
-// GitHub's absorption — "github" is an alias landing on Code's GitHub tab.
+// the room routing — "code" is an alias landing on the surface:code room.
 const featureFlags = await readFile(new URL("../lib/feature-flags.ts", import.meta.url), "utf8");
 assert.doesNotMatch(
   featureFlags,
@@ -61,17 +100,17 @@ assert.doesNotMatch(
 );
 assert.match(
   modeType,
-  /github: "code"/,
-  "MODE_ALIASES routes the absorbed GitHub surface onto Code (cave-m6ys)",
+  /code: "surface:code"/,
+  "MODE_ALIASES routes the code alias onto the Coding familiar's room (cave-cc5r)",
 );
 
 // File/diff links from chat transcripts, inbox cards, the Projects hub —
-// everywhere — land on the Code surface (cave-ohcj): the workspace bridges
-// the events into code mode with the raising chat session attached.
+// everywhere — land on the Code room (cave-ohcj, cave-cc5r): the workspace
+// enqueues into the pending-code-open store and navigates; the room consumes.
 assert.match(
   workspace,
-  /File\/diff links land on the Code surface[\s\S]*?setPendingCodeOpen\([\s\S]*?setMode\("code"\)/,
-  "file-open events route to the Code surface, not Chat's code rail",
+  /File\/diff links land on the Code room[\s\S]*?enqueuePendingCodeOpen\([\s\S]*?setMode\("code"\)/,
+  "file-open events route to the Code room, not Chat's code rail",
 );
 
 // The primary keyboard cluster is unchanged: Code is a quiet destination, not
@@ -84,19 +123,24 @@ assert.match(
 
 // ── Sidebar row ──────────────────────────────────────────────────────────────
 
-// One quiet slot, one vocabulary (cave-m6ys): the Code row owns it and keeps
-// carrying the assigned-work badge; the standalone GitHub row is gone for
-// good — its surface lives under Code's GitHub tab and mode "github" aliases
-// there, so old muscle memory and deep links still land on the content.
+// One quiet slot, one vocabulary (cave-cc5r): the standalone GitHub row is
+// back for every familiar and keeps the assigned-work badge; the Code room's
+// row arrives via the registry-driven roleSurfaces cluster, and the GitHub
+// row hides while the room is visible (the room carries its own GitHub tab).
 assert.match(
   sidebar,
-  /\{ id: "code", label: "Code", iconName: "ph:code"[\s\S]{0,200}?badge: \(p\) => badgeText\(p\.githubAssignedCount\)/,
-  "the Code quiet row owns the slot and carries the assigned-work badge",
+  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"[\s\S]{0,300}?badge: \(p\) => badgeText\(p\.githubAssignedCount\)/,
+  "the GitHub quiet row owns the slot and carries the assigned-work badge",
 );
 assert.doesNotMatch(
   sidebar,
-  /id: "github"/,
-  "no standalone GitHub row survives in FOLDER_MODES",
+  /\{ id: "code", label: "Code"/,
+  "no static Code row survives in FOLDER_MODES — the room row is registry-driven",
+);
+assert.match(
+  workspace,
+  /hideGithubRow=\{roleSurfaceSession\.visibleSurfaces\.some\(\(s\) => s\.id === CODE_SURFACE_ID\)\}/,
+  "the GitHub row hides while the Code room is visible for the active familiar",
 );
 assert.match(
   codeView,
