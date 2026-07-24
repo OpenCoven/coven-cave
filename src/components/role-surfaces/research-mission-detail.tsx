@@ -268,6 +268,7 @@ export function ResearchMissionDetail({
   const copyWorkspacePath = async () => {
     const startedFor = mission.id;
     const stillCurrent = () => missionIdRef.current === startedFor;
+    setActionError(null);
     const workspacePath = await fetchResearchWorkspacePath(mission.id);
     if (!stillCurrent()) return;
     if (!workspacePath) {
