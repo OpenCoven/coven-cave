@@ -184,8 +184,13 @@ assert.match(
 );
 assert.match(
   desktopChrome,
-  /\.notification-bell__badge \{[^}]*background:\s*var\(--color-danger\);/,
-  "notification badges use the danger background",
+  /\.notification-bell__badge \{[^}]*background:\s*color-mix\(in oklch, var\(--color-warning\) 14%, var\(--bg-raised\)\);/,
+  "notification badges tint from the bell's warning hue over an opaque surface (the chip overlaps the glyph)",
+);
+assert.match(
+  desktopChrome,
+  /\.notification-bell__badge \{[^}]*border:\s*1px solid color-mix\(in oklch, var\(--color-warning\) 40%, var\(--bg-raised\)\);/,
+  "the count chip is the bordered element — fill vs outline separates it from the solid glyph",
 );
 assert.match(
   foundations,
@@ -199,8 +204,13 @@ assert.match(
 );
 assert.match(
   desktopChrome,
-  /\.notification-bell__badge \{[^}]*color:\s*var\(--color-danger-foreground\);/,
-  "notification badges use the semantic danger foreground",
+  /\.notification-bell__badge \{[^}]*color:\s*var\(--color-warning\);/,
+  "the count is solid warning text — same hue as the unread bell icon, per the one-token tint recipe",
+);
+assert.match(
+  notificationBell,
+  /name=\{displayBadgeCount > 0 \? "ph:bell-fill" : "ph:bell"\}/,
+  "unread solidifies the bell glyph; idle keeps the outline — fill, not a second hue, is the unread channel",
 );
 
 // Wiring in the workspace: the bar mounts in the Shell topBar slot with the
