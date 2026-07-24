@@ -928,14 +928,13 @@ export function OnboardingOverlay({
       },
       {
         key: "git",
-        title: "Find Git (recommended)",
-        optional: true,
-        // Advisory: absence never blocks setup; treat "not reported" as fine.
-        ok: s?.git ? s.git.ok : true,
+        title: "Find Git",
+        // Queue project selection is a required Git-repository boundary.
+        ok: !!s?.git?.ok,
         detail:
           s?.git?.detail ??
           s?.git?.hint ??
-          "Powers the changes panel, project files, and checkpoints.",
+          "Git is required to select and use a Queue project.",
         icon: "ph:git-branch-bold",
       },
     ];

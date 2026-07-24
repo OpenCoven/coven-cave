@@ -94,18 +94,18 @@ assert.doesNotMatch(
   "onboarding status should not return stale repo-source CLI install guidance",
 );
 
-// Dependency coverage: machines without git still complete onboarding, but
-// the checklist must surface git as a recommended install with a hint.
+// Queue project selection is a Git-repository boundary, so missing Git blocks
+// onboarding with an actionable installation hint.
 assert.match(source, /async function checkGit\(\): Promise<Step>/, "preflight checks for git");
 assert.match(
   source,
-  /optional: true/,
-  "git is an advisory step — its absence must not gate onboarding",
+  /Git is required to select and use a Queue project/,
+  "git failure explains the required Queue prerequisite",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /s\.ok \|\| s\.optional/,
-  "complete treats optional steps as non-blocking",
+  /if \(found\) return \{ ok: true, optional: true, detail: found \}/,
+  "git is not marked optional when Queue project selection is required",
 );
 
 // Familiar creation lives in the in-app Summoning Circle now: the familiars
@@ -128,8 +128,8 @@ assert.match(
 );
 assert.match(
   source,
-  /changes panel, project files, and checkpoints need Git/,
-  "git hint names the features that need it",
+  /Git is required to select and use a Queue project/,
+  "git hint names the required Queue feature",
 );
 assert.match(
   source,
@@ -146,7 +146,7 @@ const onboardingModel = readFileSync(
   "utf8",
 );
 assert.match(onboardingModel, /git\?: Step/, "onboarding model accepts the git step");
-assert.match(overlay, /Find Git \(recommended\)/, "overlay renders the git checklist row");
+assert.match(overlay, /title: "Find Git"/, "overlay renders the required git checklist row");
 
 const projectFiles = readFileSync(
   new URL("../../project/files/route.ts", import.meta.url),
