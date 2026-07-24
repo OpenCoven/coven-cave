@@ -167,7 +167,7 @@ export async function runBoundedAssist(opts: {
         );
       if (looksLikeAuth) {
         const loginCommand = /\s/.test(inv.command)
-          ? `"${inv.command}" login`
+          ? `"${inv.command.replace(/"/g, '\\"')}" login`
           : `${inv.command} login`;
         return {
           ok: false,
