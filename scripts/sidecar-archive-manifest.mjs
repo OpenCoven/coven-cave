@@ -400,11 +400,12 @@ async function recoverPreviousPublication(
   }
 
   // Neither public resource belongs to the prior pair. Remove the candidate
-  // archive before replacing the manifest so a failed manifest deletion never
-  // leaves it paired with stale metadata.
+  // and restore the prior archive before replacing the manifest. If the
+  // manifest has become an unexpected non-file, the old archive is still
+  // preserved and the manifest backup can complete recovery later.
   await removeFileWithRetries(archivePath);
-  await removeFileWithRetries(manifestPath);
   await rename(previousArchivePath, archivePath);
+  await removeFileWithRetries(manifestPath);
   await rename(previousManifestPath, manifestPath);
 }
 

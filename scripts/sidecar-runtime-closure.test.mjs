@@ -235,11 +235,15 @@ try {
     /EISDIR|EPERM|ENOTDIR|EACCES/,
     "final manifest publication failure must reject",
   );
-  assert.ok(await missing(publishedArchive), "final failure must remove the candidate archive before recovery is pending");
+  assert.deepEqual(
+    await readFile(publishedArchive),
+    publishedArchiveBytes,
+    "final failure must restore the prior archive before manifest recovery is pending",
+  );
   assert.equal(await readFile(failedManifestSentinel, "utf8"), "must survive rollback\n");
   assert.ok(await missing(failedManifestArchive), "final failure must remove its staged archive");
   assert.ok(await missing(failedManifestTemp), "final failure must remove its staged manifest");
-  assert.equal(await missing(`${publishedArchive}.previous`), false, "final failure must retain its archive backup");
+  assert.ok(await missing(`${publishedArchive}.previous`), "final failure must consume its restored archive backup");
   assert.equal(await missing(`${publishedManifest}.previous`), false, "final failure must retain its manifest backup");
 
   await rm(publishedManifest, { recursive: true });
