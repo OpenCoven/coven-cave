@@ -235,11 +235,7 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
   const exportPdf = () => {
     if (typeof window !== "undefined") window.print();
   };
-  const openUrl = (url: string | undefined) => {
-    if (!url) return;
-    if (onOpenUrl) onOpenUrl(url);
-    else window.open(url, "_blank", "noreferrer");
-  };
+    else window.open(url, "_blank", "noopener,noreferrer");
   const cite = async (source: ResearchSourceRef) => {
     const ok = await copyText(citationText(source));
     announce(ok ? "Citation copied." : "Citation could not be copied.");
