@@ -4,10 +4,17 @@ import test from "node:test";
 
 import {
   diffStatLabel,
+  needsHuman,
+  parseDiffLines,
   prLabel,
   prUrl,
   reviewDeckStatus,
   reviewQueue,
+  reviewSummary,
+  reviewType,
+  reviewTypeMeta,
+  sessionLifecycle,
+  verdictMeta,
 } from "./review-deck.ts";
 
 const surface = readFileSync(new URL("./reviewer-surface.tsx", import.meta.url), "utf8");
@@ -112,4 +119,85 @@ test("registration names the Review Deck with its own accent and drawer chrome",
 
 test("the Review Deck is documented as an initial room", () => {
   assert.match(docs, /\*\*Review Deck\*\* \(`reviewer-review-deck`, role `reviewer`\)/);
+});
+
+// ── Type, lifecycle & verdict derivation ─────────────────────────────────────
+
+test("reviewType picks the strongest handle a session carries", () => {
+  assert.equal(reviewType(["pull-request", "working-changes", "branch"]), "pull-request");
+  assert.equal(reviewType(["working-changes", "branch"]), "working-changes");
+  assert.equal(reviewType(["branch"]), "branch");
+});
+
+test("reviewTypeMeta labels each type with a real icon", () => {
+  assert.equal(reviewTypeMeta(["pull-request"]).label, "PR");
+  assert.equal(reviewTypeMeta(["pull-request"]).icon, "ph:git-pull-request");
+  assert.equal(reviewTypeMeta(["working-changes"]).icon, "ph:git-diff");
+  assert.equal(reviewTypeMeta(["branch"]).icon, "ph:git-branch");
+});
+
+test("sessionLifecycle maps daemon statuses onto the board lifecycle", () => {
+  assert.equal(sessionLifecycle("running"), "running");
+  assert.equal(sessionLifecycle("active"), "running");
+  assert.equal(sessionLifecycle("review"), "review");
+  assert.equal(sessionLifecycle("succeeded"), "completed");
+  assert.equal(sessionLifecycle("idle"), "completed");
+  assert.equal(sessionLifecycle("error"), "failed");
+  assert.equal(sessionLifecycle("killed"), "failed");
+  assert.equal(sessionLifecycle("queued"), "queued");
+  assert.equal(sessionLifecycle("something-new"), "queued");
+  assert.equal(sessionLifecycle(null), "queued");
+});
+
+test("verdictMeta gives each verdict a tone and icon", () => {
+  assert.deepEqual(verdictMeta("approved"), { label: "Approved", icon: "ph:seal-check", tone: "success" });
+  assert.equal(verdictMeta("changes").tone, "warning");
+  assert.equal(verdictMeta("merged").icon, "ph:git-merge");
+});
+
+test("needsHuman clears once a verdict lands, else flags review/failed", () => {
+  assert.equal(needsHuman("review", null), true);
+  assert.equal(needsHuman("failed", null), true);
+  assert.equal(needsHuman("running", null), false);
+  assert.equal(needsHuman("review", "approved"), false);
+});
+
+// ── Summary strip ────────────────────────────────────────────────────────────
+
+test("reviewSummary counts awaiting, approved, changes, and landed-clean", () => {
+  const summary = reviewSummary([
+    { diff: { additions: 4, deletions: 0 }, lifecycle: "review", verdict: null }, // awaiting + dirty
+    { diff: { additions: 0, deletions: 0 }, lifecycle: "completed", verdict: "approved" }, // approved + clean
+    { diff: null, lifecycle: "completed", verdict: "merged" }, // approved (merged) + clean
+    { diff: { additions: 1, deletions: 1 }, lifecycle: "review", verdict: "changes" }, // changes + dirty
+    { diff: { additions: 0, deletions: 0 }, lifecycle: "running", verdict: null }, // clean, not awaiting (running)
+  ]);
+  assert.deepEqual(summary, { awaiting: 1, approved: 2, changes: 1, landedClean: 3 });
+});
+
+// ── Unified-diff parsing (colored body) ──────────────────────────────────────
+
+test("parseDiffLines classifies headers, hunks, and edits", () => {
+  const diff = [
+    "diff --git a/x.ts b/x.ts",
+    "index 111..222 100644",
+    "--- a/x.ts",
+    "+++ b/x.ts",
+    "@@ -1,2 +1,2 @@",
+    " const a = 1;",
+    "-const b = 2;",
+    "+const b = 3;",
+    "", // trailing newline artifact
+  ].join("\n");
+  const lines = parseDiffLines(diff);
+  assert.deepEqual(
+    lines.map((l) => l.kind),
+    ["meta", "meta", "meta", "meta", "hunk", "ctx", "del", "add"],
+  );
+  const add = lines.find((l) => l.kind === "add");
+  assert.deepEqual({ mark: add?.mark, text: add?.text }, { mark: "+", text: "const b = 3;" });
+  const del = lines.find((l) => l.kind === "del");
+  assert.equal(del?.mark, "−");
+  const ctx = lines.find((l) => l.kind === "ctx");
+  assert.equal(ctx?.text, "const a = 1;"); // leading context space stripped
 });
