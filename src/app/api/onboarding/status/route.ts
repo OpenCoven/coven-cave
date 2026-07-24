@@ -310,7 +310,7 @@ export async function GET() {
     openclawAgentCount,
   );
 
-  const steps = {
+  const steps: Record<string, Step> = {
     covenCli,
     covenHome,
     // A Git project is mandatory for the Queue. An otherwise-valid repository
