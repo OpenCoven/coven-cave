@@ -291,27 +291,49 @@ test("removing a running download cancels it before it can publish", async () =>
   await rm(root, { recursive: true, force: true });
   const model = SPEECH_MODEL_REGISTRY[0];
   let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
-  const fetchImpl = async () => new Response(
-    new ReadableStream({
-      start(next) {
-        controller = next;
-        next.enqueue(new TextEncoder().encode("partial"));
-      },
-    }),
-    { headers: { "content-length": String(model.sizeBytes) } },
-  );
+  let aborted = false;
+  let markFetchStarted: (() => void) | undefined;
+  const fetchStarted = new Promise<void>((resolve) => { markFetchStarted = resolve; });
+  const fetchImpl = async (_url: string | URL, init?: RequestInit) => {
+    init?.signal?.addEventListener("abort", () => {
+      aborted = true;
+      controller?.error(new Error("aborted"));
+    }, { once: true });
+    markFetchStarted?.();
+    return new Response(
+      new ReadableStream({
+        start(next) {
+          controller = next;
+          next.enqueue(new TextEncoder().encode("partial"));
+        },
+      }),
+      { headers: { "content-length": String(model.sizeBytes) } },
+    );
+  };
 
   const started = await startSpeechModelDownload(model.id, fetchImpl as typeof fetch, root);
   assert.ok("job" in started && started.started);
+  await fetchStarted;
   assert.equal(await removeSpeechModel(model.id, root), "removed");
-  controller?.close();
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (getSpeechModelDownloadJob(started.job.id)?.status === "cancelled") break;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 
   assert.equal(getSpeechModelDownloadJob(started.job.id)?.status, "cancelled");
+  assert.equal(aborted, true, "removal aborts the active download request");
+  const modelDir = path.dirname(speechModelPath(model, root));
+  const stagingDir = path.join(path.dirname(modelDir), `.${model.id}.${started.job.id}.download`);
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      await stat(stagingDir);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    } catch {
+      break;
+    }
+  }
   await assert.rejects(stat(speechModelPath(model, root)), /ENOENT/);
+  await assert.rejects(stat(stagingDir), /ENOENT/);
   await rm(root, { recursive: true, force: true });
 });
 

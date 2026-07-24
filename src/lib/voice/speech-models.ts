@@ -107,6 +107,7 @@ export const SPEECH_MODEL_REGISTRY: readonly SpeechModelRegistryEntry[] = [
 
 const jobs = new Map<string, SpeechModelDownloadJob>();
 const cancelledDownloadJobs = new Set<string>();
+const downloadAbortControllers = new Map<string, AbortController>();
 
 export function speechModelsRoot(): string {
   return path.join(/* turbopackIgnore: true */ covenHome(), "voice-models");
@@ -296,6 +297,7 @@ function cancelSpeechModelDownloads(modelId: string): boolean {
   for (const job of jobs.values()) {
     if (job.modelId !== modelId || (job.status !== "running" && job.ready !== true)) continue;
     cancelledDownloadJobs.add(job.id);
+    downloadAbortControllers.get(job.id)?.abort();
     putJob({ ...job, status: "cancelled", ready: false });
     cancelled = true;
   }
@@ -393,6 +395,8 @@ export async function runSpeechModelDownload(
   dependencies: { onPublished?: () => void | Promise<void> } = {},
 ): Promise<void> {
   putJob(job);
+  const abortController = new AbortController();
+  downloadAbortControllers.set(job.id, abortController);
   const dest = speechModelPath(model, root);
   const dir = path.dirname(dest);
   const stagingDir = path.join(
@@ -419,9 +423,13 @@ export async function runSpeechModelDownload(
     for (const asset of assets) {
       if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
       const temp = path.join(/* turbopackIgnore: true */ stagingDir, asset.fileName);
-      const res = await fetchImpl(asset.url, {
-        signal: AbortSignal.timeout(30 * 60_000),
-      });
+      const timeout = setTimeout(() => abortController.abort(), 30 * 60_000);
+      let res: Response;
+      try {
+        res = await fetchImpl(asset.url, { signal: abortController.signal });
+      } finally {
+        clearTimeout(timeout);
+      }
       if (!res.ok) throw new Error(`download_http_${res.status}`);
       const headerSize = Number(res.headers.get("content-length"));
       if (
@@ -463,6 +471,7 @@ export async function runSpeechModelDownload(
     });
   } finally {
     cancelledDownloadJobs.delete(job.id);
+    downloadAbortControllers.delete(job.id);
   }
 }
 
