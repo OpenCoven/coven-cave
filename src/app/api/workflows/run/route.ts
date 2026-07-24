@@ -7,8 +7,14 @@ import {
   setSessionTitle,
 } from "@/lib/cave-config";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
+import { copilotStreamSpec } from "@/lib/copilot-stream";
+import { isSshRuntime } from "@/lib/familiar-runtime";
+import { familiarWorkspace } from "@/lib/coven-paths";
+import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
+import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
+import { realpath, stat } from "node:fs/promises";
 import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
@@ -166,6 +172,32 @@ export async function POST(req: Request) {
   );
 }
 
+/**
+ * The familiar's own workspace, trusted at the harness level (`--add-dir`) so a
+ * copilot one-shot can reach it for memory / self-report writes the workflow
+ * prompt directs there. The spawn cwd (projectRoot) is already trusted and must
+ * not be listed. Mirrors flow-executor's flowFamiliarAddDirs (cave-n1yc).
+ */
+async function workflowFamiliarAddDirs(
+  familiarId: string | null,
+  projectRoot: string,
+): Promise<string[]> {
+  if (!familiarId || !isValidFamiliarId(familiarId)) return [];
+  try {
+    const workspace = await realpath(await familiarWorkspace(familiarId));
+    if (!(await stat(workspace)).isDirectory()) return [];
+    let root = projectRoot;
+    try {
+      root = await realpath(projectRoot);
+    } catch {
+      /* keep the normalized form for comparison */
+    }
+    return workspace === root ? [] : [workspace];
+  } catch {
+    return [];
+  }
+}
+
 /** Spawn a real agent session that carries out the workflow plan. */
 async function runViaSession(body: RunBody) {
   const workflow = await resolveWorkflow(body);
@@ -191,6 +223,60 @@ async function runViaSession(body: RunBody) {
   }
 
   const prompt = buildWorkflowRunPrompt(workflow, body.inputs);
+
+  // Persist the started session onto a running workflow-run record and return —
+  // shared by the daemon and copilot-direct spawn paths. Session-executed
+  // workflow runs have no status reconcile loop: the record stays "running" and
+  // the chat surface opens the session's transcript, so both paths behave the
+  // same from the store's view.
+  const finishSession = async (sessionId: string) => {
+    await Promise.all([
+      familiarId ? recordSessionFamiliar(sessionId, familiarId) : Promise.resolve(),
+      setSessionTitle(sessionId, `Workflow: ${workflow.name ?? workflow.id}`),
+    ]);
+    const run = await recordRun({
+      workflowId: workflow.id,
+      version: workflow.version,
+      kind: "execution",
+      status: "running",
+      startedAt: new Date().toISOString(),
+      steps: (workflow.steps ?? []).map((step) => ({
+        id: step.id,
+        kind: step.kind,
+        status: "ready" as const,
+      })),
+      summary: `agent session ${sessionId.slice(0, 8)}`,
+      source: "cave",
+      sessionId,
+    });
+    return NextResponse.json({ ok: true, run, sessionId, executor: "session" });
+  };
+
+  // Copilot: spawn the CLI directly (cave-aikv). Its interactive daemon launch
+  // is an immortal, never-attached TUI that redraw-spams coven.sqlite3, and its
+  // nonInteractive daemon launch mangles multi-word prompts — so, exactly as
+  // flows do (flow-executor.ts, cave-yesg), a local copilot workflow runs as a
+  // non-interactive one-shot whose transcript persists as the Cave conversation
+  // the run's chat surface opens. SSH/hub copilot stays on the daemon (remote
+  // host / hub authority boundary).
+  const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
+  const hubAuthority = config.multiHost?.mode === "hub";
+  if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
+    const spec = copilotStreamSpec();
+    if (spec) {
+      const { sessionId } = startCopilotFlowRun({
+        spec,
+        prompt,
+        projectRoot,
+        familiarId,
+        familiarName: "display_name" in binding ? binding.display_name : undefined,
+        familiarRole: "role" in binding ? binding.role : undefined,
+        addDirs: await workflowFamiliarAddDirs(familiarId, projectRoot),
+      });
+      return finishSession(sessionId);
+    }
+  }
+
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",
@@ -204,6 +290,14 @@ async function runViaSession(body: RunBody) {
       model: binding.model,
       prompt,
       ...(familiarId ? { familiarId } : {}),
+      // Non-interactive launch: the daemon streams the orchestration prompt's
+      // assistant output instead of spawning a fullscreen, never-reaped harness
+      // TUI that nothing attaches to and that redraw-spams coven.sqlite3
+      // (cave-aikv, same fix as board task chat). Copilot is exempt — its
+      // nonInteractive launch mangles multi-word prompts (flow-executor.ts), and
+      // unlike board chat this path has no native bridge to route it to, so keep
+      // its historical interactive launch until it gets a direct-spawn.
+      ...(binding.harness === "copilot" ? {} : { launchMode: "nonInteractive" }),
     },
     timeoutMs: 8000,
   });
@@ -219,27 +313,5 @@ async function runViaSession(body: RunBody) {
     );
   }
 
-  const sessionId = res.data.id;
-  await Promise.all([
-    familiarId ? recordSessionFamiliar(sessionId, familiarId) : Promise.resolve(),
-    setSessionTitle(sessionId, `Workflow: ${workflow.name ?? workflow.id}`),
-  ]);
-
-  const run = await recordRun({
-    workflowId: workflow.id,
-    version: workflow.version,
-    kind: "execution",
-    status: "running",
-    startedAt: new Date().toISOString(),
-    steps: (workflow.steps ?? []).map((step) => ({
-      id: step.id,
-      kind: step.kind,
-      status: "ready" as const,
-    })),
-    summary: `agent session ${sessionId.slice(0, 8)}`,
-    source: "cave",
-    sessionId,
-  });
-
-  return NextResponse.json({ ok: true, run, sessionId, executor: "session" });
+  return finishSession(res.data.id);
 }

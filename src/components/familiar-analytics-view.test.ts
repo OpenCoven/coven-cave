@@ -501,6 +501,57 @@ describe("FamiliarAnalyticsView", () => {
     assert.ok(sessionsIndex >= 0 && sessionsIndex < contractIndex, "contract compliance closes the grid after the sessions pair");
   });
 
+  it("stretches grid rows and centers empty states so short empty cards don't leave holes", () => {
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    const grid = faCss.match(/\.fa-grid\s*\{[^}]*\}/);
+    assert.ok(grid, ".fa-grid rule should exist");
+    assert.doesNotMatch(
+      grid![0],
+      /align-items:/,
+      "grid rows stretch (the default), so an empty card fills its row instead of floating over a blank gap",
+    );
+    assert.match(
+      faCss,
+      /\.fa-section > \.ui-empty-state,\s*\.fa-section > \.fa-thread-empty\s*\{[^}]*margin-block:\s*auto/,
+      "empty states center vertically inside a stretched card",
+    );
+  });
+
+  it("offers a direct review launch when the contract fails", () => {
+    // Same flow as the Studio Contract tab: seed a chat with the shared,
+    // deterministic rehabilitation brief. No confirm modal — direct launch.
+    assert.match(
+      source,
+      /import \{ buildRehabilitationBrief \} from "@\/lib\/familiar-rehabilitation";/,
+      "content reuses the shared rehabilitation brief builder",
+    );
+    assert.match(
+      source,
+      /buildRehabilitationBrief\(familiarName, model\.contractReport\)/,
+      "the review thread is seeded with the brief for this familiar's failing report",
+    );
+    assert.match(
+      source,
+      /\{!report\.pass \? \([\s\S]*?Review and resolve[\s\S]*?\) : null\}/,
+      "the Review and resolve button renders only for failing reports",
+    );
+    assert.match(
+      source,
+      /onReview=\{reviewContract\}/,
+      "the contract section is wired to the parent-owned launch callback",
+    );
+    assert.match(
+      source,
+      /const reviewContract = useCallback\(\(\) => \{[\s\S]*?requestAgentsNewChat\(\{[\s\S]*?familiarId: model\.familiarId,[\s\S]*?origin: "chat"/,
+      "review launches a familiar-scoped working thread via the agents-new-chat bridge",
+    );
+    assert.match(
+      source,
+      /announce\(`Opening a review thread to repair \$\{familiarName\}'s contract\.`\)/,
+      "the launch is announced to assistive tech",
+    );
+  });
+
   it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {
     const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     const block = faCss.match(/\.fa-page\s*\{[^}]*\}/);

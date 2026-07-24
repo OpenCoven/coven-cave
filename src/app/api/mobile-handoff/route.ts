@@ -18,6 +18,7 @@ import {
   withChatFragment,
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
+  resolveIosInstallUrl,
   tailnetDiscoveryProof,
   tailscaleBin,
   tailscaleSpawnEnv,
@@ -579,6 +580,21 @@ export async function POST(req: Request) {
   // Tailscale spawn, no Serve reconcile — just the last token-refresh beat.
   if (action === "status") {
     return NextResponse.json({ ok: true, lastSeenAt: await readMobileLastSeen() });
+  }
+
+  // Install-the-app QR (cave-jr4r.3): cheap like "status" — no Tailscale
+  // spawn, no invented URL. `configured:false` until the TestFlight link
+  // exists (fill in OFFICIAL_IOS_INSTALL_URL, or set COVEN_CAVE_IOS_INSTALL_URL).
+  if (action === "install-info") {
+    const installUrl = resolveIosInstallUrl();
+    if (!installUrl) return NextResponse.json({ ok: true, configured: false });
+    const installQrSvg = await QRCode.toString(installUrl, {
+      type: "svg",
+      margin: 1,
+      width: 256,
+      errorCorrectionLevel: "M",
+    });
+    return NextResponse.json({ ok: true, configured: true, url: installUrl, qrSvg: installQrSvg });
   }
 
   if (action === "app-start") {

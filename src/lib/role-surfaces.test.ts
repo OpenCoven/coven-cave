@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   clearRoleSurfacesForTest,
   familiarRoleIds,
@@ -122,6 +123,14 @@ test("a General or absent familiar Type grants no extra tokens", () => {
   assert.ok(!surfaceMatchesRoles({ role: "coder" }, unknown));
 });
 
+test("a multi-value familiarType unions grants from all types (cave-gud8)", () => {
+  const ids = familiarRoleIds({ id: "f", role: "Orchestrator", familiarType: "coding,research" });
+  assert.ok(ids.has("coding"));
+  assert.ok(ids.has("coder"));
+  assert.ok(ids.has("research"));
+  assert.ok(ids.has("researcher"));
+});
+
 test("resolveVisibleRoleSurfaces shows alias-matched rooms", () => {
   clearRoleSurfacesForTest();
   const context = makeContext();
@@ -219,4 +228,19 @@ test("matchesShortcutCombo honors mod aliasing and rejects extra modifiers", () 
   assert.ok(!matchesShortcutCombo({ ...base, metaKey: true, shiftKey: true }, "mod+e")); // extra shift
   assert.ok(matchesShortcutCombo({ ...base, metaKey: true, shiftKey: true }, "mod+shift+e"));
   assert.ok(!matchesShortcutCombo({ ...base, key: "f", metaKey: true }, "mod+e")); // wrong key
+});
+
+test("registry keeps retired familiar-type words as aliases (cave-lgcb)", () => {
+  // The vocabulary reduction removed watch/planning/writing/indexing from the
+  // Type picker; their rooms stay reachable through Role labels only because
+  // register.tsx carries these alias words. Pin them so the continuity story
+  // can't silently drift from the shapes asserted in familiar-types.test.ts.
+  const source = readFileSync(
+    new URL("../components/role-surfaces/register.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /aliases:\s*\["watch",\s*"guardian"\]/);
+  assert.match(source, /aliases:\s*\["planner",\s*"planning"\]/);
+  assert.match(source, /aliases:\s*\["editor",\s*"writer",\s*"writing"\]/);
+  assert.match(source, /aliases:\s*\["archivist",\s*"indexing"\]/);
 });

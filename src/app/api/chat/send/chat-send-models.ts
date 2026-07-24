@@ -7,6 +7,7 @@ import {
 } from "@/lib/chat-model-state";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { buildCovenMarkersDirective } from "@/lib/coven-marker-directive";
+import { buildCitationsDirective } from "@/lib/citations-directive";
 
 type ModelRequest = {
   familiarId: string;
@@ -94,6 +95,8 @@ export function buildPromptWithResponseControls(prompt: string, body: ResponseCo
     buildNextPathsDirective(),
     "",
     buildCovenMarkersDirective(),
+    "",
+    buildCitationsDirective(),
     "",
     prompt,
   ].join("\n");

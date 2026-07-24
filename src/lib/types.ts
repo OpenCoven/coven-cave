@@ -30,9 +30,10 @@ export type Familiar = {
   // CovenCave-side enrichment from cave-config.json
   harness?: string;
   /**
-   * Explicit familiar Type (FamiliarTypeId from familiar-types.ts): the
-   * user-modifiable vocation that unlocks Role Surface rooms alongside the
-   * free-text `role` label. Absent = "general".
+   * Explicit familiar Type id(s) (FamiliarTypeId from familiar-types.ts): the
+   * user-modifiable vocation(s) that unlock Role Surface rooms alongside the
+   * free-text `role` label. May be a single id or a comma-separated list of
+   * ids for multi-type selection. "general" or absent/empty = General.
    */
   familiarType?: string;
   defaultHarness?: string;

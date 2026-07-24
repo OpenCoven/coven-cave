@@ -27,6 +27,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -37,6 +38,8 @@ import type { Block } from "@create-markdown/core";
 import type { PreviewPlugin } from "@create-markdown/preview";
 import { getShikiHighlighter } from "@/lib/shiki-highlighter";
 import { Icon } from "@/lib/icon";
+import { renderCitedBody } from "@/lib/citations";
+import { CitationSources } from "@/components/ui/citation";
 import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { copyText } from "@/lib/clipboard";
@@ -862,6 +865,12 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
 
   const shouldShowTs = showTimestamp || tsVisible;
 
+  // Citations: lift standard markdown footnotes out of the body so the sources
+  // render as a rich footer below the message (never inside the sanitized HTML
+  // pipeline). Bodies without footnotes pass through unchanged. Mid-stream the
+  // definition block hasn't arrived, so this is a no-op until the turn settles.
+  const cited = useMemo(() => renderCitedBody(content), [content]);
+
   if (role === "system") {
     return (
       <div className="group" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
@@ -955,8 +964,9 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             ),
           )
         ) : (
-          <MarkdownContent text={content} pending={pending} onOpenUrl={onOpenUrl} />
+          <MarkdownContent text={cited.body} pending={pending} onOpenUrl={onOpenUrl} />
         )}
+        {cited.citations.length > 0 ? <CitationSources citations={cited.citations} /> : null}
       </div>
       {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
           actions are reachable by keyboard (Tab), screen readers, and touch. */}

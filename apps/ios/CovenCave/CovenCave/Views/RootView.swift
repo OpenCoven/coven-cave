@@ -197,21 +197,24 @@ struct MainTabView: View {
             Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
                 TasksView()
             }
-            Tab("Canvas", systemImage: "wand.and.stars", value: AppTab.canvas) {
-                CanvasView()
+            Tab("Terminal", systemImage: "terminal.fill", value: AppTab.terminal) {
+                TerminalView()
             }
-            Tab(value: .search, role: .search) {
-                SearchView()
+            Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
+                SettingsView()
             }
             TabSection("More") {
+                Tab("Canvas", systemImage: "wand.and.stars", value: AppTab.canvas) {
+                    CanvasView()
+                }
+                Tab(value: .search, role: .search) {
+                    SearchView()
+                }
                 Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
                     CalendarView()
                 }
                 Tab("Developer", systemImage: "chevron.left.forwardslash.chevron.right", value: AppTab.dev) {
                     DeveloperView()
-                }
-                Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
-                    SettingsView()
                 }
             }
             // Keep occasional surfaces out of the iPhone tab bar; they stay

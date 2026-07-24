@@ -75,6 +75,13 @@ free-text role labels.
 
 ### 4. Explicit familiar Type
 
+> **Amended 2026-07-24 (cave-lgcb, familiar-type vocabulary reduction):** the
+> shipped table was later trimmed to General, Coding, Research, Review, and
+> Comms. Watch/Planning/Writing/Indexing were retired on usage evidence
+> (~2% of sessions combined); their ids resolve through
+> `RETIRED_FAMILIAR_TYPE_SUCCESSORS` and their rooms stay reachable via
+> registry aliases. The paragraphs below describe the original design.
+
 - New `src/lib/familiar-types.ts`: a static `FAMILIAR_TYPES` table —
   General (default, grants nothing), Coding → `coder`, Research →
   `researcher`, Review → `reviewer`, Writing → `scribe`, Comms →

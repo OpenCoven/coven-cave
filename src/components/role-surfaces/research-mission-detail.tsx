@@ -22,6 +22,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { CitationSources } from "@/components/ui/citation";
+import { sourcesToCitations } from "@/lib/citations";
 import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
 import {
@@ -475,6 +477,12 @@ export function ResearchMissionDetail({
               {iteration?.summary ? (
                 <p className="research-desk-block__note">{iteration.summary}</p>
               ) : null}
+              {/* The sources the mission actually leaned on, rendered as
+                  citations under the synthesis (the same shared component the
+                  chat surface uses). */}
+              <CitationSources
+                citations={sourcesToCitations(mission.sources.filter((source) => source.status === "used"))}
+              />
             </section>
           ) : null}
 

@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 // locks the load-bearing pieces: PencilKit input that stays Simulator-testable,
 // Vision handwriting recognition composited on white, pen-lift (not per-stroke)
 // submission, the SSE stream feeding a paced reveal loop, session resume for
-// follow-ups, and the iPad-only entry point.
+// follow-ups, and app-level presentation.
 
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const diary = await read("apps/ios/CovenCave/CovenCave/Views/DiaryView.swift");
@@ -102,12 +102,12 @@ assert.match(
   "Reduce Motion collapses the reveal/soak animations",
 );
 
-// ── iPad-only entry point, presented above the connection switch ────────────
+// ── Presented above the connection switch ───────────────────────────────────
 const root = await read("apps/ios/CovenCave/CovenCave/Views/RootView.swift");
-assert.match(
+assert.doesNotMatch(
   home,
-  /if sizeClass == \.regular \{[\s\S]*?app\.diaryPresented = true/,
-  "the Diary entry point only shows in regular width (iPad) — the page is sized for Pencil writing",
+  /private var bottomBar/,
+  "ChatsHomeView must not retain the disconnected bottom bar that previously held the Diary entry point",
 );
 assert.match(
   root,

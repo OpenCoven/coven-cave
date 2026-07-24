@@ -25,13 +25,14 @@ struct TaskDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
-                if let familiar { assigneeRow(familiar) }
+                propertyGrid
                 chatCard
                 stepsCard
                 notesSection
                 scheduleCard
                 if !live.labelList.isEmpty { labelsRow }
                 metaCard
+                bottomActions
             }
             .padding(20)
             .readableWidth(680)
@@ -167,6 +168,10 @@ struct TaskDetailView: View {
                     .font(.title2.bold())
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .onTapGesture(count: 2) {
+                        titleDraft = live.title
+                        renamingTitle = true
+                    }
                 Button {
                     titleDraft = live.title
                     renamingTitle = true
@@ -186,6 +191,48 @@ struct TaskDetailView: View {
                 if live.needsHuman == true { NeedsYouBadge() }
             }
         }
+    }
+
+    private var propertyGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            cycleChip("Status", value: live.status.label, color: Theme.color(for: live.status)) {
+                guard let index = CardStatus.allCases.firstIndex(of: live.status) else { return }
+                let next = CardStatus.allCases[(index + 1) % CardStatus.allCases.count]
+                Task { await app.setTaskStatus(live, next) }
+            }
+            cycleChip("Priority", value: live.priority.label, color: Theme.color(for: live.priority)) {
+                guard let index = CardPriority.allCases.firstIndex(of: live.priority) else { return }
+                let next = CardPriority.allCases[(index + 1) % CardPriority.allCases.count]
+                Task { await app.setTaskPriority(live, next) }
+            }
+            // TODO(no backend): task project mutation is not exposed by CaveClient.
+            displayChip("Project", value: live.projectId.flatMap(app.project)?.name ?? "None")
+            // TODO(no backend): task assignee mutation is not exposed by CaveClient.
+            displayChip("Assignee", value: familiar?.displayName ?? "Unassigned")
+        }
+    }
+
+    private func cycleChip(_ label: String, value: String, color: Color,
+                           action: @escaping () -> Void) -> some View {
+        Button { Haptics.tap(); action() } label: {
+            propertyChip(label, value: value, color: color)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Double tap to cycle")
+    }
+
+    private func displayChip(_ label: String, value: String) -> some View {
+        propertyChip(label, value: value, color: .secondary)
+    }
+
+    private func propertyChip(_ label: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.callout.weight(.semibold)).foregroundStyle(color).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .glass(.control, cornerRadius: 12)
     }
 
     private var priorityBadge: some View {
@@ -216,7 +263,7 @@ struct TaskDetailView: View {
         let steps = live.steps ?? []
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Steps").font(.headline)
+            Text("Activity").font(.headline)
                 Spacer()
                 if live.hasSteps {
                     Text("\(live.doneStepCount)/\(live.stepCount)")
@@ -336,6 +383,29 @@ struct TaskDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .glass(.raised, cornerRadius: 14)
+        .onTapGesture(count: 2) { editingNotes = true }
+    }
+
+    private var bottomActions: some View {
+        VStack(spacing: 10) {
+            Button {
+                if live.familiarId != nil { app.openChat(for: live) }
+                else { showFamiliarPicker = true }
+            } label: {
+                Label("Open in chat", systemImage: "bubble.left.and.bubble.right.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                Task { await app.setTaskStatus(live, .done) }
+            } label: {
+                Label("Mark done", systemImage: "checkmark.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(live.status == .done)
+        }
     }
 
     private var labelsRow: some View {
