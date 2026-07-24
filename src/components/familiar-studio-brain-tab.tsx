@@ -1059,7 +1059,13 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               <Button
                 size="xs"
                 variant="ghost"
-                onClick={() => setLocalVoiceCatalogAttempt((attempt) => attempt + 1)}
+                onClick={() => {
+                  setLocalVoiceCatalog((catalog) => ({
+                    ...catalog,
+                    status: "idle",
+                  }));
+                  setLocalVoiceCatalogAttempt((attempt) => attempt + 1);
+                }}
               >
                 Refresh local voices
               </Button>

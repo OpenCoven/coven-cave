@@ -255,6 +255,11 @@ assert.match(
   /localVoiceCatalog\.status === "error"[\s\S]{0,800}<Button[\s\S]{0,500}status: "idle"[\s\S]{0,300}Retry/,
   "local voice readiness failures expose a real retry action",
 );
+assert.match(
+  source,
+  /setLocalVoiceCatalog\(\(catalog\) => \(\{[\s\S]{0,100}status: "idle"[\s\S]{0,200}setLocalVoiceCatalogAttempt[\s\S]{0,300}Refresh local voices/,
+  "refresh invalidates a ready local catalog before triggering a new readiness request",
+);
 
 console.log("familiar-studio-brain-tab.test.ts: ok");
 
