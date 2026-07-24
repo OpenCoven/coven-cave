@@ -27,8 +27,8 @@ assert.match(
   /onDismiss\(\)\s*\n\s*item\.action\(\)/,
   "floating-menu rows dismiss the menu on selection before acting",
 );
-assert.match(chrome, /struct DrawerRow: View/, "drawer rows are a shared component");
-assert.match(chrome, /accessibilityAddTraits\(active \? \[\.isSelected\] : \[\]\)/, "active drawer row is exposed as selected to AT");
+assert.match(drawer, /struct NavRow: View/, "drawer destination rows are a dedicated component");
+assert.match(drawer, /accessibilityAddTraits\(active \? \[\.isSelected\] : \[\]\)/, "active drawer row is exposed as selected to AT");
 assert.match(chrome, /struct EmptyChatSuggestionRow: View/, "empty-state suggestion rows are a shared component");
 
 // ── ChatView header: the agent pill opens the model/agent picker ────────────
@@ -67,7 +67,7 @@ assert.match(camera, /UIImagePickerController/, "camera capture wraps the system
 // ── Empty state: starter rows FILL the composer (not auto-send) ─────────────
 assert.match(
   chatView,
-  /EmptyChatSuggestionRow\(systemImage: suggestion\.icon, label: suggestion\.label\) \{\s*\n\s*draft = suggestion\.label\s*\n\s*composerFocused = true/,
+  /EmptyChatSuggestionRow\(systemImage: suggestion\.icon,\s*\n\s*label: suggestion\.label,\s*\n\s*hint: suggestion\.hint\) \{\s*\n\s*draft = suggestion\.label\s*\n\s*composerFocused = true/,
   "empty-state suggestions fill the composer for tweak-and-send",
 );
 
@@ -81,12 +81,12 @@ assert.match(
 assert.match(modelControl, /Chat with another familiar/, "deeper agent configuration is reachable from the picker");
 assert.match(chatView, /onSwitchFamiliar: \{ showFamiliarPicker = true \}/, "the picker's agent hop opens the familiar picker");
 
-// ── Side drawer: search, sections, pinned, recents, New Chat, dismissals ─────
+// ── Side drawer: brand header + search, destinations, projects, recents ─────
 assert.match(drawer, /struct ChatDrawer: View/, "the drawer is its own component");
-assert.match(drawer, /TextField\("Search chats", text: \$query\)/, "the drawer leads with search");
-assert.match(drawer, /sectionHeader\("Sections"\)[\s\S]*?sectionHeader\("Pinned"\)[\s\S]*?sectionHeader\("Recent"\)/, "drawer groups: sections, pinned, recents — in that order");
+assert.match(drawer, /go\(\.search\)/, "the drawer header routes to global search");
+assert.match(drawer, /sectionLabel\("Projects"\)[\s\S]*?Text\("Recent Chats"\)/, "drawer groups: destinations, projects, then recent chats");
 assert.match(drawer, /app\.selectedTab = tab/, "primary sections route through the existing tab selection");
-assert.match(drawer, /Label\("New Chat", systemImage: "square\.and\.pencil"\)/, "a floating New Chat button sits near the lower edge");
+assert.match(drawer, /Label\("Chat", systemImage: "square\.and\.pencil"\)/, "the primary Chat button sits in the bottom bar");
 assert.match(drawer, /onTapGesture \{ close\(\) \}/, "the scrim closes the drawer on outside tap");
 assert.match(drawer, /value\.translation\.width < -40 \{ close\(\) \}/, "a leftward drag closes the drawer");
 assert.match(drawer, /Color\.black\.opacity\(isOpen \? 0\.45 : 0\)/, "the list behind stays visible through a dim scrim, not hidden");

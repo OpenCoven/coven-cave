@@ -55,7 +55,7 @@ assert.match(
 // --- Status row copy -------------------------------------------------------------
 assert.match(
   view,
-  /Desktop found on port \\\(\$0\)\./,
+  /Desktop found · responding on :\\\(\$0\)/,
   "success names the discovered port",
 );
 assert.match(

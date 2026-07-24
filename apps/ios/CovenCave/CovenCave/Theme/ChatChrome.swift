@@ -169,50 +169,6 @@ struct FloatingActionMenu: View {
     }
 }
 
-// MARK: - DrawerRow
-
-/// Icon + label row for the side drawer: quiet by default, accent-tinted only
-/// while it names the active destination.
-struct DrawerRow: View {
-    let systemImage: String
-    let label: String
-    var detail: String? = nil
-    var active: Bool = false
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(active ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
-                    .frame(width: 24)
-                Text(label)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if let detail {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(active ? Color.accentColor.opacity(0.12) : .clear)
-            )
-        }
-        .buttonStyle(GlassPressStyle(scale: 0.98))
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(active ? [.isSelected] : [])
-    }
-}
-
 // MARK: - EmptyChatSuggestionRow
 
 /// A spacious icon + short-label row for the empty chat state; tapping fills

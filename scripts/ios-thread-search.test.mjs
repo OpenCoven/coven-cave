@@ -6,23 +6,23 @@ const home = await readFile(
   "utf8",
 );
 
-// A computed that finds direct threads by title, member name, and message text.
-assert.match(home, /private var matchingThreads: \[ChatThread\]/, "should expose matchingThreads");
+// A computed that finds conversations by title, member name, and message text
+// (the unified Recent list from the chats-home redesign — direct and group).
+assert.match(home, /private var recentThreads: \[ChatThread\]/, "should expose the search-aware recentThreads");
 assert.match(home, /thread\.title\.lowercased\(\)\.contains\(q\)/, "should match by thread title");
 assert.match(home, /\$0\.displayName\.lowercased\(\)\.contains\(q\)/, "should match by a member's name");
 assert.match(home, /thread\.messages\.contains \{ \$0\.text\.lowercased\(\)\.contains\(q\) \}/, "should match by message text");
-assert.match(home, /\.filter \{ !\$0\.isGroup && \(showArchived \|\| !\$0\.archived\) \}/, "should search direct, non-archived threads");
+assert.match(home, /app\.threads\.filter \{ showArchived \|\| !\$0\.archived \}/, "should search non-archived threads unless archived are shown");
 
-// A "Chats" results section, shown only when there are matches.
-assert.match(home, /if !matchingThreads\.isEmpty \{[\s\S]*Section\("Chats"\) \{[\s\S]*ForEach\(matchingThreads\)/, "should render a Chats results section");
-// Rows are selection-tagged so the split view opens the conversation in the
-// detail column (and pushes it when collapsed on iPhone).
-assert.match(home, /ForEach\(matchingThreads\)[\s\S]*\.tag\(ChatRoute\.thread\(thread\)\)/, "results should open the thread via selection");
+// The Recent section renders the matches, selection-tagged so the split view
+// opens the conversation in the detail column (and pushes it when collapsed
+// on iPhone).
+assert.match(home, /ForEach\(recentThreads\)[\s\S]*?\.tag\(ChatRoute\.thread\(thread\)\)/, "results should open the thread via selection");
 
 // Empty-state accounts for thread matches too.
 assert.match(
   home,
-  /filteredFamiliars\.isEmpty && filteredGroups\.isEmpty && matchingThreads\.isEmpty/,
+  /filteredFamiliars\.isEmpty && recentThreads\.isEmpty/,
   "search empty-state should consider matching threads",
 );
 
