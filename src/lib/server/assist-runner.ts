@@ -167,7 +167,9 @@ export async function runBoundedAssist(opts: {
         );
       if (looksLikeAuth) {
         const loginCommand = /\s/.test(inv.command)
-          ? `"${inv.command.replace(/"/g, '\\"')}" login`
+          ? // Escape backslashes before quotes so a Windows path (C:\…\coven.cmd)
+            // can't break out of the double-quoted suggestion (js/incomplete-sanitization).
+            `"${inv.command.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}" login`
           : `${inv.command} login`;
         return {
           ok: false,
