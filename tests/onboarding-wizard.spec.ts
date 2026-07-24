@@ -146,7 +146,10 @@ test.describe("onboarding wizard", () => {
   });
 
   test("stays hidden once dismissed", async ({ page }) => {
-    await gotoApp(page, FRESH_STATUS, { dismissed: true });
+    // A persisted dismissal is not permitted to bypass a missing required
+    // Queue project. Use a genuinely complete setup to exercise the stored
+    // dismissal behavior without masking a prerequisite regression.
+    await gotoApp(page, COMPLETE_NO_FAMILIARS_STATUS, { dismissed: true });
     await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
     await page.waitForTimeout(1_000);
     await expect(wizard(page)).toHaveCount(0);
