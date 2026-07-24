@@ -372,12 +372,13 @@
 .fa-kpi--warn .fa-kpi__value { color: var(--color-warning); }
 .fa-kpi--bad .fa-kpi__value { color: var(--color-danger); }
 .fa-kpi__sub { color: var(--text-muted); font-size: 11px; }
-/* Sections flow in two columns on wide panes; `--wide` spans both. */
+/* Sections flow in two columns on wide panes; `--wide` spans both. Rows
+   stretch (grid default) so a short card sharing a row with a tall neighbor
+   fills the cell instead of floating over a blank gap. */
 .fa-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
-  align-items: start;
 }
 .fa-section--wide { grid-column: 1 / -1; }
 .fa-section {
@@ -391,6 +392,11 @@
   /* KPI drill-throughs land clear of the sticky breadcrumb. */
   scroll-margin-top: 64px;
 }
+/* Inside a stretched card, an empty-state notice centers in the leftover
+   space instead of hugging the top. Covers both shapes that occur as direct
+   section children: the shared EmptyState and thread-signals' wrapper. */
+.fa-section > .ui-empty-state,
+.fa-section > .fa-thread-empty { margin-block: auto; }
 /* Arriving via a drill-through flashes the section border once, so the eye
    lands where the jump did. */
 .fa-section:target {
