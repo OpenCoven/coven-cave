@@ -46,7 +46,11 @@ stage_linux() {
   tar -xzf "$archive" -C "$WORK"
   local source="$WORK/whisper-bin-ubuntu-x64"
   cp -L "$source/whisper-cli" "$DEST/whisper-cli"
-  find "$source" -maxdepth 1 -type f \( -name 'libwhisper.so*' -o -name 'libggml*.so*' \) -exec cp -L {} "$DEST/" \;
+  # Preserve both the versioned ELF files and their SONAME links (for example
+  # libwhisper.so.1 -> libwhisper.so.1.9.1). The binary requests the SONAME,
+  # not necessarily the filename selected by the archive extraction order.
+  find "$source" -maxdepth 1 \( -type f -o -type l \) \( -name 'libwhisper.so*' -o -name 'libggml*.so*' \) -exec cp -P {} "$DEST/" \;
+  test -L "$DEST/libwhisper.so.1"
   chmod 755 "$DEST/whisper-cli"
 }
 
@@ -85,7 +89,6 @@ stage_macos() {
   cmake --build "$source/build" --target whisper-cli --parallel 2
   cp "$source/build/bin/whisper-cli" "$DEST/whisper-cli"
   find "$source/build/bin" -maxdepth 1 -type f -name '*.dylib' -exec cp {} "$DEST/" \;
-  install_name_tool -add_rpath '@loader_path' "$DEST/whisper-cli"
   chmod 755 "$DEST/whisper-cli"
 }
 

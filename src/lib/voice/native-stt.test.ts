@@ -353,3 +353,19 @@ test("a ready sidecar Whisper model outranks the native bridge", async () => {
     globalThis.fetch = priorFetch;
   }
 });
+
+test("strict Local voice rejects when neither sidecar nor native STT is available", async () => {
+  const priorWindow = globalThis.window;
+  const priorFetch = globalThis.fetch;
+  globalThis.window = { __TAURI_INTERNALS__: {}, location: { hostname: "localhost" } };
+  globalThis.fetch = async () => new Response("unavailable", { status: 503 });
+  try {
+    await assert.rejects(
+      () => resolvePreferredEars({ requireOnDevice: true }),
+      (error) => error?.name === "VoiceConnectError" && error.message === "stt_on_device_unavailable",
+    );
+  } finally {
+    globalThis.window = priorWindow;
+    globalThis.fetch = priorFetch;
+  }
+});

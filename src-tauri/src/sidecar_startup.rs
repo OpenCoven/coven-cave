@@ -251,6 +251,14 @@ pub(super) fn start_sidecar_runtime(
         .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
         .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token);
 
+    // Ubuntu's pinned whisper.cpp archive keeps its shared objects next to the
+    // CLI. Constrain the loader path to that bundled directory so the local
+    // runner never depends on system libraries or a developer's shell setup.
+    #[cfg(target_os = "linux")]
+    if let Some(whisper_dir) = whisper_cli.parent() {
+        command.env("LD_LIBRARY_PATH", whisper_dir);
+    }
+
     if let Some(output) = stdout_log {
         command.stdout(Stdio::from(output));
     } else {

@@ -284,7 +284,15 @@ export async function resolvePreferredEars(
   }
   const lang = typeof navigator !== "undefined" ? navigator.language || undefined : undefined;
   const availability = await nativeSttAvailability(bridge, lang);
-  if (availability?.supported !== true) return undefined;
+  if (availability?.supported !== true) {
+    if (opts.requireOnDevice) {
+      throw new VoiceConnectError(
+        "stt_on_device_unavailable",
+        "Download a local Whisper model in Settings to use Local voice on this device.",
+      );
+    }
+    return undefined;
+  }
   const engine = selectNativeEarsEngine(availability, opts.requireOnDevice ?? false);
   return {
     factory: createNativeSttEars(bridge, {

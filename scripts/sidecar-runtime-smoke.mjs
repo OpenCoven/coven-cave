@@ -200,7 +200,12 @@ async function main() {
   await access(bundledNode);
   await access(bundledWhisper);
 
-  const whisperVersion = spawnSync(bundledWhisper, ["--version"], { encoding: "utf8" });
+  const whisperVersion = spawnSync(bundledWhisper, ["--version"], {
+    encoding: "utf8",
+    env: process.platform === "linux"
+      ? { ...process.env, LD_LIBRARY_PATH: path.dirname(bundledWhisper) }
+      : process.env,
+  });
   assert.equal(
     whisperVersion.status,
     0,

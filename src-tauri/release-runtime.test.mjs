@@ -168,6 +168,8 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   assert.match(whisperBundleScript, /whisper-bin-ubuntu-x64\.tar\.gz/, "Linux must stage a pinned Whisper CLI archive");
   assert.match(whisperBundleScript, /f049fff95a089aa9969deb009cdd4892b3e74916/, "macOS must build the pinned Whisper release commit");
   assert.match(whisperBundleScript, /CMAKE_INSTALL_RPATH='@loader_path'/, "macOS Whisper must resolve copied dylibs relative to its executable");
+  assert.doesNotMatch(whisperBundleScript, /install_name_tool -add_rpath/, "macOS Whisper must not add a duplicate CMake-provided rpath");
+  assert.match(whisperBundleScript, /cp -P/, "Linux Whisper staging must preserve SONAME links");
   assert.match(whisperBundleScript, /checksum mismatch/, "Whisper artifact downloads must be hash-verified");
   assert.match(
     launcher,
@@ -181,6 +183,7 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   );
   assert.match(launcher, /fn find_bundled_whisper_cli\(resource_dir: &Path\)/, "launcher must resolve Whisper relative to app resources");
   assert.match(launcher, /COVEN_WHISPER_CPP_BIN/, "launcher must provide the absolute bundled Whisper path to the sidecar");
+  assert.match(launcher, /LD_LIBRARY_PATH/, "Linux sidecars must load Whisper's bundled shared libraries");
   assert.match(
     launcher,
     /sidecar_archive::prepare_sidecar_runtime\(app, &resource_dir\)/,
