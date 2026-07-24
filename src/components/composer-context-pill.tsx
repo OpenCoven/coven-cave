@@ -55,6 +55,10 @@ export type ComposerContextProps = {
   projectRoot?: string;
   /** Opens the branch PR in the app's browser pane; falls back to window.open. */
   onOpenUrl?: (url: string) => void;
+  /** Ad-hoc root the chat runs in — enables the picker's in-place
+   *  "Register this folder" row (spec 2026-07-24). */
+  registerCurrentRoot?: string;
+  onRegisterCurrentRoot?: () => void;
   disabled?: boolean;
 };
 
@@ -155,6 +159,8 @@ export function ComposerContextPickers({
         allowNoProject={context.config.allowNoProject}
         onAddProject={context.config.createProject ? context.addFlow.beginAddProject : undefined}
         addingProject={context.addFlow.adding}
+        registerCurrentRoot={context.config.registerCurrentRoot}
+        onRegisterCurrentRoot={context.config.onRegisterCurrentRoot}
         ariaLabel="Choose project"
       />
       <ComposerRuntimePopover
@@ -273,6 +279,8 @@ export function ComposerContextChips(props: ComposerContextProps) {
         allowNoProject={context.config.allowNoProject}
         onAddProject={context.config.createProject ? context.addFlow.beginAddProject : undefined}
         addingProject={context.addFlow.adding}
+        registerCurrentRoot={context.config.registerCurrentRoot}
+        onRegisterCurrentRoot={context.config.onRegisterCurrentRoot}
         ariaLabel="Choose project"
       />
       <ComposerRuntimePopover
