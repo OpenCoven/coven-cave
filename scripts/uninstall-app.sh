@@ -189,9 +189,9 @@ stop_recorded_reachability_sidecar() {
   local state_path="${home}/Library/Application Support/${APP_ID}/desktop-daemon-state.json"
   [[ -f "$state_path" ]] || return 0
 
-  # The state file is private app data. Still require a numeric PID and the
-  # packaged server entrypoint before signalling anything, so a stale PID can
-  # never target an unrelated user process during uninstall.
+  # launchd has already been booted out before this runs. Still require a
+  # numeric PID and the packaged server entrypoint before signalling anything,
+  # so a stale PID can never target an unrelated user process during uninstall.
   local sidecar_pid
   sidecar_pid="$(sed -nE 's/.*"pid"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$state_path" | head -n 1)"
   [[ "$sidecar_pid" =~ ^[0-9]+$ ]] || return 0
@@ -199,19 +199,35 @@ stop_recorded_reachability_sidecar() {
   command_line="$(ps -p "$sidecar_pid" -o command= 2>/dev/null || true)"
   [[ "$command_line" == *"/resources/server/server.mjs"* ]] || return 0
 
-  log "Stopping recorded background CovenCave sidecar ${sidecar_pid} before unloading launchd..."
+  log "Stopping recorded background CovenCave sidecar ${sidecar_pid} after unloading launchd..."
   run kill -TERM "$sidecar_pid" || true
+
+  [[ "$EXECUTE" == "1" ]] || return 0
+  local attempt
+  for ((attempt = 0; attempt < 50; attempt += 1)); do
+    command_line="$(ps -p "$sidecar_pid" -o command= 2>/dev/null || true)"
+    [[ "$command_line" == *"/resources/server/server.mjs"* ]] || return 0
+    sleep 0.1
+  done
+  log "warning: background sidecar ${sidecar_pid} did not exit after TERM; sending KILL"
+  run kill -KILL "$sidecar_pid" || true
+  for ((attempt = 0; attempt < 10; attempt += 1)); do
+    command_line="$(ps -p "$sidecar_pid" -o command= 2>/dev/null || true)"
+    [[ "$command_line" == *"/resources/server/server.mjs"* ]] || return 0
+    sleep 0.1
+  done
+  log "warning: background sidecar ${sidecar_pid} is still present after KILL"
 }
 
 remove_macos_artifacts() {
   local home="$HOME"
   log "Uninstalling macOS CovenCave artifacts..."
 
-  # Stop background availability before removing its executable, runtime
-  # state, or logs. Otherwise launchd can restart the sidecar while uninstall
-  # is tearing those paths down.
-  stop_recorded_reachability_sidecar "$home"
+  # Unload launchd first so KeepAlive cannot replace the sidecar while it is
+  # being reaped. The daemon's SIGTERM handler performs its normal cleanup;
+  # the recorded-state cleanup below is the bounded orphan fallback.
   forget_launch_agent "$APP_ID" "${home}/Library/LaunchAgents/${APP_ID}.plist"
+  stop_recorded_reachability_sidecar "$home"
   forget_launch_agent "$LEGACY_APP_ID" "${home}/Library/LaunchAgents/${LEGACY_APP_ID}.plist"
   forget_launch_agent "com.opencoven.CovenCave" "${home}/Library/LaunchAgents/com.opencoven.CovenCave.plist"
 

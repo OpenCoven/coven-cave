@@ -142,8 +142,13 @@ const removeApp = uninstall.indexOf('remove_path "$app_path"');
 assert.ok(unload !== -1 && removeApp !== -1 && unload < removeApp, "uninstall must unload launchd before removing the app");
 assert.match(
   uninstall,
-  /stop_recorded_reachability_sidecar "\$home"\r?\n\s*forget_launch_agent "\$APP_ID"/,
-  "uninstall must terminate the recorded reachability sidecar before unloading launchd",
+  /forget_launch_agent "\$APP_ID" "\$\{home\}\/Library\/LaunchAgents\/\$\{APP_ID\}\.plist"\r?\n\s*stop_recorded_reachability_sidecar "\$home"/,
+  "uninstall must unload launchd before terminating and waiting for the recorded sidecar",
+);
+assert.match(
+  uninstall,
+  /for \(\(attempt = 0; attempt < 50; attempt \+= 1\)\)[\s\S]*kill -KILL/,
+  "uninstall must wait for the sidecar after launchd is unloaded before removing app paths",
 );
 assert.match(
   docs,
