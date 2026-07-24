@@ -182,5 +182,10 @@ assert.match(
   /NextResponse\.json\(\{ ok: true, remoteUrl: remoteUrl \|\| null \}\)/,
   "absent origin remotes resolve to remoteUrl: null, not an error",
 );
+assert.match(
+  source,
+  /catch[\s\S]{0,200}?NextResponse\.json\(\{ ok: true, remoteUrl: null \}\)/,
+  "the absent-origin catch branch still answers ok:true with a null remoteUrl",
+);
 
 console.log("changes route.test.ts: ok");
