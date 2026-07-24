@@ -108,7 +108,7 @@ registered in `api-contracts.test.ts`, alphabetical):
 | `/api/github/merge` | POST | Squash/merge/rebase a PR; surfaces GitHub's own guard errors verbatim |
 | `/api/github/rerun` | POST | Re-run a check run / failed jobs of a run |
 | `/api/github/review` | POST | Submit review {repo, number, event: APPROVE\|REQUEST_CHANGES\|COMMENT, body} |
-| `/api/github/runs` | GET | List recent Actions runs {repo, branch?} |
+| `/api/github/runs` | GET | List recent Actions runs {repo, branch?} or one run {repo, id} |
 
 Existing `comment` and `resolve-thread` routes are reused unchanged.
 
@@ -250,9 +250,6 @@ seven-gap summary is fully closed (see the postscript in
 [the capability map](specs/2026-07-14-chat-github-capability-map.md)).
 Residual gaps, filed as follow-up beads rather than blocking the epic:
 
-- **Commit/Run card hydration** — `/api/github/commit` and `/runs` exist
-  (W2a) but the cards still render attrs-only; hydrate them the way PR/issue
-  cards do.
 - **Review-thread reply** — thread cards resolve/unresolve but can't reply in
   place (needs the review-comment reply endpoint); agent `reply` proposals
   fall back to conversation comments.
