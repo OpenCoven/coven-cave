@@ -1104,6 +1104,69 @@ function mergePreferences(legacy: unknown, canonical: unknown): MergeOutcome {
   return { ok: true, value: merged, summary: "Merged independent preference sections by revision and timestamp." };
 }
 
+/** Cards keyed by stable id, or a review reason when the copy is malformed. */
+function boardCardsById(value: unknown): Map<string, Record<string, unknown>> | string {
+  const raw = record(value);
+  if (!raw || !Array.isArray(raw.cards)) return "Board data is malformed and requires review.";
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const rawCard of raw.cards) {
+    const card = record(rawCard);
+    if (!card || typeof card.id !== "string" || !card.id) return "Board card without a stable ID requires review.";
+    if (byId.has(card.id)) return `Board contains duplicate card ID ${card.id} and requires review.`;
+    byId.set(card.id, card);
+  }
+  return byId;
+}
+
+/**
+ * Card-id union merge for divergent board copies (cave-6z41, deferred
+ * follow-up from the 2026-07-22 board near-loss incident). Explicit-only:
+ * a one-sided card is ambiguous (new on this side vs deleted on the other),
+ * so the union — which resurrects rather than discards — never runs
+ * unprompted; the caller gates it on the user picking "merge" for this
+ * entry. Shared ids keep the newer per-card updatedAt; a shared id whose
+ * copies differ without a usable timestamp order refuses the merge.
+ */
+function mergeBoard(legacy: unknown, canonical: unknown): MergeOutcome {
+  const left = boardCardsById(legacy);
+  if (typeof left === "string") return { ok: false, summary: left };
+  const right = boardCardsById(canonical);
+  if (typeof right === "string") return { ok: false, summary: right };
+  let recovered = 0;
+  let newerLegacy = 0;
+  const cards: Record<string, unknown>[] = [];
+  for (const [id, canonicalCard] of right) {
+    const legacyCard = left.get(id);
+    if (!legacyCard || JSON.stringify(legacyCard) === JSON.stringify(canonicalCard)) {
+      cards.push(canonicalCard);
+      continue;
+    }
+    const legacyTime = parseDate(legacyCard.updatedAt);
+    const canonicalTime = parseDate(canonicalCard.updatedAt);
+    if (!legacyTime || !canonicalTime || legacyTime === canonicalTime) {
+      return { ok: false, summary: `Board card ${id} differs without a usable updatedAt order and requires review.` };
+    }
+    if (legacyTime > canonicalTime) newerLegacy += 1;
+    cards.push(legacyTime > canonicalTime ? legacyCard : canonicalCard);
+  }
+  for (const [id, legacyCard] of left) {
+    if (right.has(id)) continue;
+    cards.push(legacyCard);
+    recovered += 1;
+  }
+  const leftRaw = record(legacy) as Record<string, unknown>;
+  const rightRaw = record(canonical) as Record<string, unknown>;
+  const version = Math.max(
+    typeof leftRaw.version === "number" ? leftRaw.version : 1,
+    typeof rightRaw.version === "number" ? rightRaw.version : 1,
+  );
+  return {
+    ok: true,
+    value: { ...rightRaw, version, cards },
+    summary: `Merged ${cards.length} card(s) by stable ID (${recovered} recovered from legacy, ${newerLegacy} newer legacy edit(s) kept).`,
+  };
+}
+
 async function mergeJson(strategy: ReconciliationStrategy, legacyPath: string, canonicalPath: string): Promise<MergeOutcome> {
   let legacy: unknown;
   let canonical: unknown;
@@ -1116,6 +1179,7 @@ async function mergeJson(strategy: ReconciliationStrategy, legacyPath: string, c
   if (strategy === "inbox") return mergeInbox(legacy, canonical);
   if (strategy === "state") return mergeState(legacy, canonical);
   if (strategy === "preferences") return mergePreferences(legacy, canonical);
+  if (strategy === "board") return mergeBoard(legacy, canonical);
   return { ok: false, summary: "This file type requires an explicit choice." };
 }
 
@@ -1142,6 +1206,12 @@ async function validateCanonical(
       if (!value || STATE_MAPS.some((key) => !record(value[key] ?? {})) || !record(value.travel ?? {})) throw new Error("canonical state validation failed");
     } else if (entry.strategy === "preferences" && !validPreferences(parsed)) {
       throw new Error("canonical preferences validation failed");
+    } else if (entry.strategy === "board") {
+      const value = record(parsed);
+      if (!value || !Array.isArray(value.cards) || value.cards.some((card) => {
+        const id = record(card)?.id;
+        return typeof id !== "string" || !id;
+      })) throw new Error("canonical board validation failed");
     }
   }
 }
@@ -1558,13 +1628,22 @@ async function reconcileEntry(
       ? (await reconcileDirectory(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, result, options)).outcome
       : { ok: false, summary: "Directory entries differ and require an explicit merge or whole-directory choice." };
   }
-  else if (["inbox", "state", "preferences"].includes(entry.strategy)) {
+  else if (
+    ["inbox", "state", "preferences"].includes(entry.strategy) ||
+    (entry.strategy === "board" && options.action === "merge")
+  ) {
     // Merge the exact snapshots recorded in the verified bundle. Reading the
     // live paths here would let an uncoordinated store writer change either
     // input after backup verification.
     const legacyBackup = await verifiedBundleRole(backup.directory, "legacy");
     const canonicalBackup = await verifiedBundleRole(backup.directory, "canonical");
     merged = await mergeJson(entry.strategy, legacyBackup.source, canonicalBackup.source);
+  }
+  else if (entry.strategy === "board") {
+    // A one-sided board card is ambiguous (new vs deleted-on-the-other-side),
+    // so the union never runs unprompted — it is offered as the suggested
+    // resolution instead (cave-6z41; conservative philosophy from cave-5ax2).
+    merged = { ok: false, summary: "Divergent board copies support an explicit card-id merge — every card from both copies is kept, the newest edit wins per card — or a whole-file choice." };
   }
   else merged = { ok: false, summary: "This file has no lossless automatic merge and requires an explicit choice." };
 
