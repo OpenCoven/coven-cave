@@ -1581,7 +1581,7 @@ function QueueProjectSetup({ onSelected }: { onSelected: () => void }) {
   }, [refreshReadiness]);
 
   const selectProject = async (projectId: string) => {
-    ++requestGeneration.current;
+    const generation = ++requestGeneration.current;
     setSelecting(true);
     setError(null);
     try {
@@ -1598,13 +1598,16 @@ function QueueProjectSetup({ onSelected }: { onSelected: () => void }) {
       if (!response.ok || !body.ok || !body.readiness) {
         throw new Error(body.error ?? "Couldn’t save the Queue project.");
       }
+      if (generation !== requestGeneration.current) return;
       setReadiness(body.readiness);
       window.dispatchEvent(new CustomEvent("cave:queue-project-selected", { detail: { project: body.readiness.project } }));
       onSelected();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Couldn’t save the Queue project.");
+      if (generation === requestGeneration.current) {
+        setError(cause instanceof Error ? cause.message : "Couldn’t save the Queue project.");
+      }
     } finally {
-      setSelecting(false);
+      if (generation === requestGeneration.current) setSelecting(false);
     }
   };
 

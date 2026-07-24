@@ -119,6 +119,12 @@ assert.match(
   "Node.js setup instructions render inline when npm is missing",
 );
 
+assert.match(
+  source,
+  /const generation = \+\+requestGeneration\.current;[\s\S]{0,900}if \(generation !== requestGeneration\.current\) return;[\s\S]{0,700}if \(generation === requestGeneration\.current\) setSelecting\(false\);/,
+  "out-of-order Queue-project selections cannot overwrite or unlock the latest selection",
+);
+
 // ── Cross-platform instructions ─────────────────────────────────────────────
 
 for (const platform of ["windows", "linux", "mac"]) {
