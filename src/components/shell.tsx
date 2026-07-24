@@ -880,8 +880,9 @@ function ShellInner({
       <Panel id="detail" className="shell-detail-panel">
         <main className="shell-detail" id="shell-main-content" tabIndex={-1} ref={detailElRef}>
           {/* Peel-reveal (cave-3vgd): decorative page-curl toward the collapsed
-              rail on HTML-in-canvas browsers; display:contents pass-through
-              everywhere else. The interactive reveal remains the hover-peek. */}
+              rail on HTML-in-canvas browsers; a bare Fragment everywhere else
+              (no wrapper elements, so the `.shell-detail > .cave-mode-fade`
+              chains keep matching). The interactive reveal stays the hover-peek. */}
           <ShellPeelReveal active={navPeekEnabled} under={nav}>
             <UpdateBannerTrigger />
             <OpenCovenToolsBannerTrigger />
