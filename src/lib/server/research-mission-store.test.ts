@@ -14,7 +14,9 @@ import path from "node:path";
 import type { ResearchMission } from "../research-missions.ts";
 import {
   MAX_RESEARCH_FILE_BYTES,
+  ResearchFileIntegrityError,
   createResearchMissionWorkspace,
+  isResearchFileIntegrityError,
   listResearchMissions,
   loadResearchMission,
   missionArtifactPath,
@@ -123,6 +125,31 @@ test("validated reads remain contained in the mission workspace", async () => {
     () => readValidatedMissionFile(created.id, "../mission.json"),
     /outside mission workspace/i,
   );
+});
+
+test("containment failures throw the typed integrity error; a missing file does not (cave-v73d)", async () => {
+  const created = await createResearchMissionWorkspace(mission("typed-integrity"));
+  await symlink("/etc/hosts", missionArtifactPath(created.id, "primary.md"));
+
+  // Symlink, escape, and oversized reads are all ResearchFileIntegrityError so
+  // routes can map them to 4xx by type instead of brittle message matching.
+  for (const relativePath of ["artifacts/primary.md", "../mission.json"]) {
+    const error = await readValidatedMissionFile(created.id, relativePath).then(
+      () => null,
+      (caught) => caught,
+    );
+    assert.ok(isResearchFileIntegrityError(error), `${relativePath} is a typed integrity error`);
+    assert.ok(error instanceof ResearchFileIntegrityError);
+  }
+
+  // A genuinely missing file carries Node's ENOENT and is NOT an integrity
+  // failure — callers (the runner's readMissionFile) special-case it to null.
+  const missing = await readValidatedMissionFile(created.id, "artifacts/nope.md").then(
+    () => null,
+    (caught) => caught,
+  );
+  assert.equal(isResearchFileIntegrityError(missing), false);
+  assert.equal((missing as NodeJS.ErrnoException).code, "ENOENT");
 });
 
 test("loadResearchMission backfills standard artifact refs on legacy missions", async (t) => {

@@ -4,6 +4,7 @@ import type { ConversationFile } from "../cave-conversations.ts";
 import type { AutomationRunRecord } from "../automation-runs.ts";
 import type { FlowRunRecord } from "../flows.ts";
 import { allowedResearchActions, type ResearchMission, type ResearchSourcePatch } from "../research-missions.ts";
+import { ResearchFileIntegrityError } from "./research-mission-store.ts";
 import {
   makeResearchMissionRunner,
   parseResearchSourcesFile,
@@ -646,8 +647,32 @@ test("publish-artifact publishes one working ref on a settled mission", async ()
   assert.equal(result.status, "checkpoint", "manual publish never changes mission status");
   assert.equal(
     result.lastError,
-    "Artifact publish failed — findings: vault write failed",
-    "publish-failure lastError stays until no unpublished working refs remain",
+    undefined,
+    "publishing the only ref named in the failure banner clears it — it must never keep naming a now-published artifact (cave-o780)",
+  );
+});
+
+test("publish-artifact rebuilds the failure banner from the refs that are STILL failing (cave-o780)", async () => {
+  // Two refs failed to publish; retrying one successfully must drop only its
+  // segment and keep the other's original reason — never keep naming the ref
+  // that just published, and never clear while a real failure remains.
+  let stored = checkpointMission({
+    artifacts: [
+      { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+      { key: "research-log", kind: "research-log", title: "Research log", relativePath: "research-log.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+    ],
+    lastError: "Artifact publish failed — findings: vault write failed; research-log: vault write failed",
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    readMissionFile: async (_id, relativePath) => `# Content of ${relativePath}\n`,
+  }));
+  const result = await runner.act(stored.id, { action: "publish-artifact", artifactKey: "findings" });
+  assert.equal(
+    result.lastError,
+    "Artifact publish failed — research-log: vault write failed",
+    "the just-published ref drops out; the still-failing ref keeps its reason",
   );
 });
 
@@ -777,4 +802,56 @@ test("finish surfaces publish failures without blocking completion", async () =>
   assert.equal(findings?.knowledgeId, undefined);
   const primary = result.artifacts.find((artifact) => artifact.key === "primary");
   assert.equal(primary?.state, "published");
+});
+
+test("finish degrades an unreadable primary instead of 500ing after pauseAutomation (cave-v73d)", async () => {
+  // A symlinked/oversized/escaping primary makes the store throw. Because finish
+  // has already run pauseAutomation, a raw throw would 500 the whole action and
+  // leave automation paused while the mission never settles. The read is now
+  // defensive: the primary degrades to a named publish failure and finish still
+  // completes — no throw escapes act().
+  let stored = checkpointMission({
+    artifacts: [
+      { key: "primary", kind: "findings", title: "Iterative research", relativePath: "artifacts/primary.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+      { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+    ],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    readMissionFile: async (_id, relativePath) => {
+      if (relativePath === "artifacts/primary.md") {
+        throw new ResearchFileIntegrityError("research files cannot be symlinks");
+      }
+      return `# Content of ${relativePath}\n`;
+    },
+  }));
+  const result = await runner.act(stored.id, { action: "finish" });
+  assert.equal(result.status, "completed", "finish still settles despite the unreadable primary");
+  const primary = result.artifacts.find((artifact) => artifact.key === "primary");
+  assert.notEqual(primary?.state, "published", "the unreadable primary is not published");
+  const findings = result.artifacts.find((artifact) => artifact.key === "findings");
+  assert.equal(findings?.state, "published", "the readable refs still publish");
+  assert.match(result.lastError ?? "", /primary/, "the failed primary is named in the banner");
+});
+
+test("reject-artifact clears the stale publish-failure banner for the rejected ref (cave-o780)", async () => {
+  let stored = checkpointMission({
+    artifacts: [
+      { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+    ],
+    lastError: "Artifact publish failed — findings: vault write failed",
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+  }));
+  const result = await runner.act(stored.id, { action: "reject-artifact", artifactKey: "findings", reason: "bad data" });
+  const findings = result.artifacts.find((artifact) => artifact.key === "findings");
+  assert.equal(findings?.state, "rejected");
+  assert.equal(
+    result.lastError,
+    undefined,
+    "rejecting the last publish-pending ref clears its stale failure banner",
+  );
 });

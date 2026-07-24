@@ -59,6 +59,11 @@ test("errors map by kind: unknown action 400, client mistakes 400, missing missi
     source,
     /if \(message === "pause the linked automation before running manually"\) return 409;/,
   );
+  // Workspace-containment failures (a symlinked/oversized/escaping artifact
+  // reached during a manual publish/finish) are a typed 4xx, never a 500 — the
+  // request was valid, the file fails the sandbox (cave-v73d).
+  assert.match(source, /isResearchFileIntegrityError\(error\)/);
+  assert.match(source, /\{ status: 422 \}/);
   // The classified messages are the runner's real validation throws.
   for (const known of [
     "Source id and title are required",

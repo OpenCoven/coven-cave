@@ -330,8 +330,35 @@ async function publishFinalArtifacts(
   return { artifacts, failures };
 }
 
+const PUBLISH_FAILURE_PREFIX = "Artifact publish failed — ";
+
 function publishFailureError(failures: string[]): string | undefined {
-  return failures.length ? `Artifact publish failed — ${failures.join("; ")}` : undefined;
+  return failures.length ? `${PUBLISH_FAILURE_PREFIX}${failures.join("; ")}` : undefined;
+}
+
+/**
+ * Rebuild a publish-failure banner after the artifact set changes (a manual
+ * publish succeeds, or a failed ref is rejected), keeping only the segments
+ * whose ref is STILL unpublished-and-working — so the banner never keeps
+ * naming an artifact that is now published or rejected, and clears entirely
+ * once nothing publishable remains (cave-o780). The original per-ref reasons
+ * are preserved by segment; a lastError that isn't ours is returned untouched.
+ */
+function rebuildPublishFailure(
+  lastError: string | undefined,
+  artifacts: ResearchArtifactRef[],
+): string | undefined {
+  if (!lastError?.startsWith(PUBLISH_FAILURE_PREFIX)) return lastError;
+  const stillFailing = new Set(
+    artifacts
+      .filter((artifact) => artifact.state === "working" && !artifact.knowledgeId)
+      .map((artifact) => artifact.key),
+  );
+  const remaining = lastError
+    .slice(PUBLISH_FAILURE_PREFIX.length)
+    .split("; ")
+    .filter((segment) => stillFailing.has(segment.split(":")[0]?.trim() ?? ""));
+  return remaining.length ? `${PUBLISH_FAILURE_PREFIX}${remaining.join("; ")}` : undefined;
 }
 
 const STANDARD_RESEARCH_ARTIFACT_KEYS = new Set(
@@ -684,7 +711,14 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
           };
         });
         if (!found) throw new Error("research artifact not found");
-        return saveUpdated({ ...mission, artifacts });
+        // Rejecting a ref makes it no longer publish-pending — rebuild any
+        // publish-failure banner so it stops naming the rejected ref and
+        // clears when that was the last publish-pending one (cave-o780).
+        return saveUpdated({
+          ...mission,
+          artifacts,
+          lastError: rebuildPublishFailure(mission.lastError, artifacts),
+        });
       }
       if (input.action === "publish-artifact") {
         if (!["checkpoint", "completed", "failed"].includes(mission.status)) {
@@ -715,13 +749,15 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
             ? { ...item, knowledgeId: entry.id, state: "published" as const, updatedAt: timestamp }
             : item
         ));
-        // The publish-failure lastError clears once nothing publishable is
-        // left unpublished; any other lastError is not ours to clear.
-        const publishPending = artifacts.some((item) => item.state === "working" && !item.knowledgeId);
-        const lastError = mission.lastError?.startsWith("Artifact publish failed") && !publishPending
-          ? undefined
-          : mission.lastError;
-        return saveUpdated({ ...mission, artifacts, lastError });
+        // Rebuild the publish-failure banner from what's still unpublished:
+        // retrying one artifact successfully must drop it from the banner (and
+        // clear it entirely once nothing publishable is left), never keep
+        // naming a now-published ref. A non-publish lastError is left alone.
+        return saveUpdated({
+          ...mission,
+          artifacts,
+          lastError: rebuildPublishFailure(mission.lastError, artifacts),
+        });
       }
 
       if (!allowedResearchActions(mission).includes(input.action)) return mission;
@@ -775,6 +811,19 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       }
       if (input.action === "finish") {
         mission = await pauseAutomation(mission, "Mission finished");
+        // Read the primary defensively — like the `complete` path does. A
+        // symlinked/oversized/escaping primary must NOT throw here: pauseAutomation
+        // has already flipped the automation store, so a raw throw would 500 the
+        // whole finish and leave automation paused while the mission never
+        // settles (status divergence, cave-v73d). An unreadable primary degrades:
+        // publishFinalArtifacts isolates it as a named publish failure and the
+        // mission still finishes.
+        let primaryMarkdown: string | null = null;
+        try {
+          primaryMarkdown = await deps.readMissionFile(mission.id, "artifacts/primary.md");
+        } catch {
+          primaryMarkdown = null;
+        }
         // Finishing by hand saves the same final artifacts a `complete`
         // decision would — the checkpointed files are the deliverables.
         const outcome = await publishFinalArtifacts({
@@ -783,7 +832,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
             artifact.state === "rejected" ? artifact : { ...artifact, updatedAt: timestamp }
           )),
           sources: mission.sources,
-          primaryMarkdown: await deps.readMissionFile(mission.id, "artifacts/primary.md"),
+          primaryMarkdown,
           provenance: latestIterationProvenance(mission, timestamp),
           deps,
         });
