@@ -92,6 +92,10 @@ import {
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
 } from "@/lib/openclaw-bridge";
+import {
+  OpenClawToolEventLedger,
+  subscribeOpenClawGatewayToolEvents,
+} from "@/lib/openclaw-tool-events";
 import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   type ConversationFile,
@@ -566,6 +570,35 @@ function openClawChatResponse(args: {
         gatewaySessionId: undefined,
         sessionKey: openClawSessionKey(conversationId),
       };
+      // Keep the established `openclaw agent --json` text path authoritative,
+      // while an authenticated Gateway subscription supplies structured tool
+      // lifecycle only when its negotiated protocol explicitly supports it.
+      // This makes an unavailable, old, or future-incompatible gateway a
+      // visible plain-chat fallback instead of a broken or fabricated bubble.
+      const openClawTools = new OpenClawToolEventLedger();
+      const gatewayToolSubscription = await subscribeOpenClawGatewayToolEvents({
+        sessionKey: openClawSessionKey(conversationId),
+        agentId,
+        onToolEvent: (event) => {
+          const tool = openClawTools.accept(event);
+          if (tool) push({ kind: "tool_use", ...tool });
+        },
+      });
+      if (gatewayToolSubscription.active) {
+        pushProgress(
+          "openclaw-tool-activity",
+          "Live OpenClaw tool activity enabled",
+          "done",
+          `Gateway protocol ${gatewayToolSubscription.compatibility?.protocol}`,
+        );
+      } else {
+        pushProgress(
+          "openclaw-tool-activity",
+          "Live OpenClaw tool activity unavailable",
+          "done",
+          "Showing the completed OpenClaw response; no tool activity was inferred.",
+        );
+      }
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
       const child = spawn(openclawLaunch.command, spawnArgv, {
         cwd,
@@ -644,6 +677,7 @@ function openClawChatResponse(args: {
         stderr += stripAnsi(data.toString("utf8"));
       });
       child.on("error", (err: NodeJS.ErrnoException) => {
+        gatewayToolSubscription.close();
         const message =
           err.code === "ENOENT"
             ? "openclaw CLI not found on PATH. Open Setup to install it, then try again."
@@ -663,6 +697,7 @@ function openClawChatResponse(args: {
         close();
       });
       child.on("close", async (code) => {
+        gatewayToolSubscription.close();
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         unregisterChatRun(runHandle);
@@ -726,6 +761,17 @@ function openClawChatResponse(args: {
             : `_The "openclaw" agent bridge returned no text._`;
           isError = true;
         }
+
+        // A Gateway may disconnect while the CLI process still returns text.
+        // Explicitly settle any observed running cards so reload/resume never
+        // leaves an inaccessible spinner or invents a successful tool result.
+        const unsettledToolMessage = cancelledByUser
+          ? "OpenClaw tool cancelled before it settled."
+          : "OpenClaw tool did not settle before the turn ended.";
+        for (const tool of openClawTools.finalizeUnsettled(unsettledToolMessage)) {
+          push({ kind: "tool_use", ...tool });
+        }
+        const persistedOpenClawTools = toPersistedTools(openClawTools.snapshot(), 0);
 
         if (sessionId) push({ kind: "session", sessionId });
         push({ kind: "assistant_chunk", text: assistantText });
@@ -798,6 +844,7 @@ function openClawChatResponse(args: {
               parentId: userTurnId,
               responseMetadata,
               ...(cancelledByUser ? { cancelled: true } : {}),
+              ...(persistedOpenClawTools ? { tools: persistedOpenClawTools } : {}),
             },
           );
           conv.activeLeafId = assistantTurnId;

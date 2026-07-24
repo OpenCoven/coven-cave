@@ -100,6 +100,27 @@ assert.match(
   "tools persist on the assistant turn alongside usage and cost",
 );
 
+assert.match(
+  chatRoute,
+  /subscribeOpenClawGatewayToolEvents\([\s\S]*?sessionKey: openClawSessionKey\(conversationId\)[\s\S]*?agentId,[\s\S]*?onToolEvent:/,
+  "OpenClaw should subscribe by its Cave-owned session key before the CLI turn begins",
+);
+assert.match(
+  chatRoute,
+  /const openClawTools = new OpenClawToolEventLedger\(\);[\s\S]*?openClawTools\.accept\(event\)[\s\S]*?kind: "tool_use"/,
+  "validated OpenClaw lifecycle frames should feed stable SSE tool events",
+);
+assert.match(
+  chatRoute,
+  /gatewayToolSubscription\.close\(\);[\s\S]*?gatewayToolSubscription\.close\(\);/,
+  "Gateway subscriptions must close on both process error and terminal close",
+);
+assert.match(
+  chatRoute,
+  /openClawTools\.finalizeUnsettled\(unsettledToolMessage\)[\s\S]*?toPersistedTools\(openClawTools\.snapshot\(\), 0\)[\s\S]*?persistedOpenClawTools \? \{ tools: persistedOpenClawTools \} : \{\}/,
+  "OpenClaw tool cards must survive reload through the saved assistant turn",
+);
+
 // Behavioral: per-name FIFO queue gives overlapping same-name calls distinct
 // ids and pairs each post with the oldest open pre (correct durations).
 {

@@ -1,0 +1,66 @@
+{
+  "schema": "openclaw.session-tool.v1",
+  "protocol": 4,
+  "hello": {
+    "type": "hello-ok",
+    "protocol": 4,
+    "server": { "version": "2026.7.24" },
+    "features": {
+      "methods": ["sessions.messages.subscribe", "chat.send"],
+      "events": ["session.tool", "chat"]
+    }
+  },
+  "frames": [
+    {
+      "type": "event",
+      "event": "session.tool",
+      "payload": {
+        "sessionKey": "cave-session",
+        "runId": "run-1",
+        "seq": 1,
+        "ts": 1000,
+        "stream": "tool",
+        "data": {
+          "phase": "start",
+          "toolCallId": "call-1",
+          "name": "exec",
+          "args": { "command": "pwd" }
+        }
+      }
+    },
+    {
+      "type": "event",
+      "event": "session.tool",
+      "payload": {
+        "sessionKey": "cave-session",
+        "runId": "run-1",
+        "seq": 2,
+        "ts": 1050,
+        "stream": "tool",
+        "data": {
+          "phase": "update",
+          "toolCallId": "call-1",
+          "name": "exec",
+          "partialResult": "still running"
+        }
+      }
+    },
+    {
+      "type": "event",
+      "event": "session.tool",
+      "payload": {
+        "sessionKey": "cave-session",
+        "runId": "run-1",
+        "seq": 3,
+        "ts": 1100,
+        "stream": "tool",
+        "data": {
+          "phase": "result",
+          "toolCallId": "call-1",
+          "name": "exec",
+          "result": { "output": "ok" }
+        }
+      }
+    }
+  ]
+}
