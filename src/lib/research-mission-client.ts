@@ -1,5 +1,6 @@
 import type {
   CreateResearchMissionInput,
+  ResearchArtifactKind,
   ResearchMission,
   ResearchMissionActionInput,
 } from "./research-missions.ts";
@@ -21,7 +22,7 @@ export type ResearchMissionResponse = {
 
 export type ResearchMissionFile = {
   key: string;
-  kind: string;
+  kind: ResearchArtifactKind;
   title: string;
   fileName: string;
   relativePath: string;
@@ -30,11 +31,9 @@ export type ResearchMissionFile = {
   updatedAt: string;
 };
 
-export type ResearchMissionFileResponse = {
-  ok: boolean;
-  file?: ResearchMissionFile;
-  error?: string;
-};
+export type ResearchMissionFileResponse =
+  | { ok: true; file: ResearchMissionFile }
+  | { ok: false; error?: string };
 
 async function readJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
@@ -88,7 +87,7 @@ export async function getResearchMissionFile(
   );
   const data = await readJson<ResearchMissionFileResponse>(response);
   if (!data.ok) throw new Error(data.error ?? "request failed");
-  return data.file!;
+  return data.file;
 }
 
 export async function createResearchMission(

@@ -19,6 +19,7 @@ test("route validates the mission id and resolves the artifact by key", () => {
 
 test("route reads through the validated store reader and tolerates missing files", () => {
   assert.match(source, /readValidatedMissionFile/);
+  assert.match(source, /ENOENT/);
   assert.match(source, /content: string \| null/);
   assert.match(source, /workspacePath/);
 });
