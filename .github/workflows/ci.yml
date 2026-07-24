@@ -320,6 +320,19 @@ jobs:
             throw 'Idempotent sidecar cleanup filter did not run exactly one test.'
           }
 
+      - name: Test Windows sidecar cleanup guard reaps process
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::dropping_application_cleanup_guard_stops_and_reaps_sidecar -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'Sidecar cleanup guard reap filter did not run exactly one test.'
+          }
+
       - name: Test Windows sidecar descendant cleanup
         if: matrix.os == 'windows-latest'
         shell: pwsh
