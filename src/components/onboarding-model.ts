@@ -16,6 +16,7 @@ export type OnboardingStatus = {
   steps: {
     covenCli: Step;
     covenHome: Step;
+    project: Step;
     git?: Step;
     adapters: Step;
     daemon: Step;

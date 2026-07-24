@@ -19,6 +19,7 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
+import { queueProjectReadiness } from "@/lib/queue-project-readiness";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -290,12 +291,13 @@ async function checkBinding(
 
 export async function GET() {
   const openclawAgentCount = await countOpenClawAgents();
-  const [openCovenTools, covenHome, git, daemon, familiarsRes] = await Promise.all([
+  const [openCovenTools, covenHome, git, daemon, familiarsRes, queueProject] = await Promise.all([
     openCovenToolReadinessStatuses(),
     checkCovenHome(),
     checkGit(),
     checkDaemon(),
     checkFamiliars(),
+    queueProjectReadiness(),
   ]);
   const covenCli = checkCovenCli(
     openCovenTools.find((tool) => tool.id === "coven-cli"),
@@ -311,6 +313,13 @@ export async function GET() {
   const steps = {
     covenCli,
     covenHome,
+    // A Git project is mandatory for the Queue. An otherwise-valid repository
+    // without Beads is ready for the explicit Generate action on the Queue
+    // page, so it satisfies project selection during onboarding.
+    project: {
+      ok: queueProject.ok || queueProject.canGenerate,
+      detail: queueProject.message,
+    },
     git,
     adapters: adapters.step,
     daemon,
@@ -321,8 +330,8 @@ export async function GET() {
     binding: { ...binding, optional: true },
   };
   // Optional steps (git, familiars, binding) surface in the checklist but
-  // never gate completion — `complete` means the INFRASTRUCTURE is ready
-  // (CLI, home, runtime, daemon); the first familiar is summoned in-app.
+  // never gate completion — `complete` means the required infrastructure and
+  // Queue project are ready; the first familiar is summoned in-app.
   const complete = Object.values(steps).every((s) => s.ok || s.optional);
 
   return NextResponse.json({ ok: true, complete, steps, tools: openCovenTools });
