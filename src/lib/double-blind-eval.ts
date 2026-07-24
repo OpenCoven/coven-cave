@@ -196,3 +196,94 @@ export function shouldReveal(rule: StoppingRule, p: TrialProgress): boolean {
       return false;
   }
 }
+
+// --- reveal-ceremony audit log (design-10q) ---------------------------------
+
+/**
+ * The immutable record written the moment the reveal ceremony fires. Captures
+ * who/when/rule/seed and the full token->id maps so the unblinding is fully
+ * auditable and reproducible from {seed, arms}. `integrity` is a hash over the
+ * revealed maps so tampering is detectable after persistence.
+ */
+export type RevealAudit = {
+  trialId: string;
+  seed: number;
+  revealedAt: string; // ISO-8601
+  revealedBy: string; // actor id
+  rule: StoppingRule;
+  progress: TrialProgress;
+  arms: Record<string, string>; // armToken -> runtime id
+  sessions: Record<string, string>; // sessionToken -> evaluator id
+  integrity: string; // sha256 over {trialId, seed, arms, sessions}
+};
+
+function auditIntegrity(input: {
+  trialId: string;
+  seed: number;
+  arms: Record<string, string>;
+  sessions: Record<string, string>;
+}): string {
+  // Stable key ordering so the hash is deterministic regardless of insertion order.
+  const canonical = JSON.stringify({
+    trialId: input.trialId,
+    seed: input.seed,
+    arms: sortRecord(input.arms),
+    sessions: sortRecord(input.sessions),
+  });
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+function sortRecord(rec: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const k of Object.keys(rec).sort()) out[k] = rec[k]!;
+  return out;
+}
+
+/**
+ * Build the reveal audit record. Throws (fail closed) if the stopping rule is
+ * not actually satisfied — the ceremony must never produce a record for an
+ * unlocked trial, which would let a caller forge an early unblind.
+ */
+export function buildRevealAudit(
+  env: BlindingEnvelope,
+  rule: StoppingRule,
+  progress: TrialProgress,
+  revealedBy: string,
+  now: Date,
+): RevealAudit {
+  if (!shouldReveal(rule, progress)) {
+    throw new Error("reveal ceremony blocked: stopping rule not satisfied");
+  }
+  const arms = revealEnvelope(env);
+  const sessions = revealSessions(env);
+  return {
+    trialId: env.trialId,
+    seed: env.seed,
+    revealedAt: now.toISOString(),
+    revealedBy,
+    rule,
+    progress,
+    arms,
+    sessions,
+    integrity: auditIntegrity({ trialId: env.trialId, seed: env.seed, arms, sessions }),
+  };
+}
+
+/**
+ * Verify a persisted audit record's integrity hash matches its revealed maps.
+ * Returns true iff the record has not been tampered with since reveal.
+ */
+export function verifyRevealAudit(audit: RevealAudit): boolean {
+  const expected = auditIntegrity({
+    trialId: audit.trialId,
+    seed: audit.seed,
+    arms: audit.arms,
+    sessions: audit.sessions,
+  });
+  return expected === audit.integrity;
+}
+
+/** One JSONL line for append-only persistence. */
+export function serializeRevealAudit(audit: RevealAudit): string {
+  return JSON.stringify(audit);
+}

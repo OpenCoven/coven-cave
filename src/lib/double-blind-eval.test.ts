@@ -12,6 +12,9 @@ import {
   resolveSessionToken,
   publicArmTokens,
   shouldReveal,
+  buildRevealAudit,
+  verifyRevealAudit,
+  serializeRevealAudit,
 } from "./double-blind-eval.ts";
 
 // --- seeded shuffle + arm-token ---
@@ -116,6 +119,76 @@ test("locked reveal fires only when the pre-committed rule is met", () => {
   assert.equal(shouldReveal(rule, { completedTrials: 19 }), false);
   assert.equal(shouldReveal(rule, { completedTrials: 20 }), true);
   assert.equal(shouldReveal(rule, { completedTrials: 25 }), true);
+});
+
+// --- reveal-ceremony audit log (design-10q) ---
+
+function sealedTrial() {
+  const base = sealEnvelope({ trialId: "trial_7", seed: 5, arms: ["copilot", "grok"] });
+  const { env } = sealSession(base, 0, "reviewer-alice");
+  return env;
+}
+
+test("buildRevealAudit captures who/when/rule/seed + full maps and self-verifies", () => {
+  const env = sealedTrial();
+  const rule = { kind: "min-trials" as const, n: 10 };
+  const progress = { completedTrials: 10 };
+  const now = new Date("2026-07-24T10:44:00.000Z");
+  const audit = buildRevealAudit(env, rule, progress, "ceremony-bot", now);
+
+  assert.equal(audit.trialId, "trial_7");
+  assert.equal(audit.seed, 5);
+  assert.equal(audit.revealedAt, "2026-07-24T10:44:00.000Z");
+  assert.equal(audit.revealedBy, "ceremony-bot");
+  assert.deepEqual(audit.rule, rule);
+  assert.deepEqual([...Object.values(audit.arms)].sort(), ["copilot", "grok"]);
+  assert.equal(Object.values(audit.sessions)[0], "reviewer-alice");
+  assert.equal(verifyRevealAudit(audit), true);
+});
+
+test("buildRevealAudit fails closed when the stopping rule is unmet", () => {
+  const env = sealedTrial();
+  assert.throws(
+    () =>
+      buildRevealAudit(
+        env,
+        { kind: "min-trials", n: 10 },
+        { completedTrials: 9 },
+        "ceremony-bot",
+        new Date("2026-07-24T10:44:00.000Z"),
+      ),
+    /stopping rule not satisfied/,
+  );
+});
+
+test("verifyRevealAudit detects tampering with the revealed map", () => {
+  const env = sealedTrial();
+  const audit = buildRevealAudit(
+    env,
+    { kind: "min-trials", n: 10 },
+    { completedTrials: 10 },
+    "ceremony-bot",
+    new Date("2026-07-24T10:44:00.000Z"),
+  );
+  // Round-trip through JSONL, then tamper: swap one arm's runtime id.
+  const parsed = JSON.parse(serializeRevealAudit(audit));
+  const firstToken = Object.keys(parsed.arms)[0];
+  parsed.arms[firstToken] = "malicious-runtime";
+  assert.equal(verifyRevealAudit(parsed), false);
+});
+
+test("reveal audit integrity is stable regardless of map key order", () => {
+  const env = sealedTrial();
+  const audit = buildRevealAudit(
+    env,
+    { kind: "min-trials", n: 10 },
+    { completedTrials: 10 },
+    "ceremony-bot",
+    new Date("2026-07-24T10:44:00.000Z"),
+  );
+  // Re-serialize arms in reversed key order; integrity must still verify.
+  const reordered = { ...audit, arms: Object.fromEntries(Object.entries(audit.arms).reverse()) };
+  assert.equal(verifyRevealAudit(reordered), true);
 });
 
 // --- no-leak invariant ---
