@@ -30,6 +30,13 @@ import {
   createCanvasInspectorChannel,
   isCanvasComponentSelectedMessage,
 } from "@/lib/canvas-inspector";
+import {
+  CANVAS_VIEWPORT_PRESETS,
+  canvasViewportPreset,
+  describeViewport,
+  resolveViewportScale,
+  type CanvasViewportPresetId,
+} from "@/lib/canvas-viewport";
 
 type EditorMode = "select" | "comment" | "edit";
 
@@ -178,9 +185,12 @@ export function CanvasEditor(props: {
   const [expanded, setExpanded] = useState(false);
   const [nativeFullscreen, setNativeFullscreen] = useState(false);
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
+  const [viewportId, setViewportId] = useState<CanvasViewportPresetId>("fill");
+  const [viewportScale, setViewportScale] = useState(1);
 
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const frameShellRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const artifactRef = useRef(artifact);
   const codeRef = useRef(code);
@@ -406,6 +416,57 @@ export function CanvasEditor(props: {
     setExpanded(!expanded);
     setAnnouncement(!expanded ? "Sketch expanded." : "Sketch restored.");
   }, [expanded]);
+
+  // ── Viewport presets (cave-ztbo) ──────────────────────────────────────────
+  // Devtools-style device sizing: the sketch iframe renders at the preset's
+  // true CSS pixels (so the sketch's media queries fire for real) and the
+  // whole frame scales down to fit the stage. Scale tracks stage resizes via
+  // ResizeObserver; in native fullscreen the shell IS the screen (UA-forced
+  // 100%), so the window is the available box instead.
+  const viewport = canvasViewportPreset(viewportId);
+
+  useLayoutEffect(() => {
+    if (!viewport.width || !viewport.height) {
+      setViewportScale(1);
+      return;
+    }
+    const stage = stageRef.current;
+    const compute = () => {
+      const avail = nativeFullscreen
+        ? { width: window.innerWidth, height: window.innerHeight }
+        : (() => {
+            if (!stage) return { width: 0, height: 0 };
+            const style = getComputedStyle(stage);
+            const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+            const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+            return { width: stage.clientWidth - padX, height: stage.clientHeight - padY };
+          })();
+      setViewportScale(resolveViewportScale(viewport, avail.width, avail.height));
+    };
+    compute();
+    if (nativeFullscreen || !stage || typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", compute);
+      return () => window.removeEventListener("resize", compute);
+    }
+    const observer = new ResizeObserver(compute);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [viewport, nativeFullscreen]);
+
+  const selectViewport = useCallback((id: CanvasViewportPresetId) => {
+    setViewportId(id);
+    const preset = canvasViewportPreset(id);
+    setAnnouncement(
+      preset.width && preset.height
+        ? `Viewport: ${preset.label}, ${preset.width} by ${preset.height}.`
+        : "Viewport: fill the stage.",
+    );
+  }, []);
+
+  const viewportCaption = describeViewport(viewport, viewportScale);
+  const sizedViewport = viewport.width && viewport.height
+    ? { width: viewport.width, height: viewport.height }
+    : null;
 
   const toggleNativeFullscreen = useCallback(() => {
     const doc = document as FullscreenDocument;
@@ -733,6 +794,24 @@ export function CanvasEditor(props: {
           ← Gallery
         </button>
         <span className="canvas-editor__title" title={artifact.title}>{artifact.title}</span>
+        <span className="canvas-editor__view-controls" role="group" aria-label="Viewport size">
+          {CANVAS_VIEWPORT_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className={`canvas-editor__view focus-ring-inset${viewportId === preset.id ? " is-active" : ""}`}
+              title={preset.width && preset.height ? `${preset.label} — ${preset.width}×${preset.height}` : `${preset.label} the stage`}
+              aria-label={preset.width && preset.height ? `${preset.label} viewport — ${preset.width}×${preset.height}` : "Fill the stage"}
+              aria-pressed={viewportId === preset.id}
+              onClick={() => selectViewport(preset.id)}
+            >
+              <Icon name={preset.icon} width={15} aria-hidden />
+            </button>
+          ))}
+        </span>
+        {viewportCaption ? (
+          <span className="canvas-editor__viewport-size" aria-hidden>{viewportCaption}</span>
+        ) : null}
         <span className="canvas-editor__view-controls" role="group" aria-label="Sketch view">
           <button
             type="button"
@@ -767,16 +846,37 @@ export function CanvasEditor(props: {
       </div>
 
       <div className="canvas-editor__body">
-        <div className="canvas-editor__stage">
-          <div className="canvas-editor__frame-shell" ref={frameShellRef}>
-            <iframe
-              ref={frameRef}
-              className="canvas-editor__frame"
-              title={artifact.title || "sketch"}
-              sandbox="allow-scripts allow-popups allow-modals"
-              srcDoc={srcDoc}
-              onLoad={handlePreviewLoad}
-            />
+        <div className="canvas-editor__stage" ref={stageRef}>
+          <div
+            className={`canvas-editor__frame-shell${sizedViewport ? " canvas-editor__frame-shell--viewport" : ""}`}
+            ref={frameShellRef}
+          >
+            {/* The frame box is ALWAYS mounted so preset toggles never reparent
+                (and so never reload) the sketch iframe. Fill: it tracks the
+                shell. Preset: it is the scaled device footprint, and the
+                iframe inside renders at true device pixels scaled to fit. */}
+            <div
+              className="canvas-editor__frame-box"
+              style={sizedViewport ? {
+                width: sizedViewport.width * viewportScale,
+                height: sizedViewport.height * viewportScale,
+              } : undefined}
+            >
+              <iframe
+                ref={frameRef}
+                className="canvas-editor__frame"
+                title={artifact.title || "sketch"}
+                sandbox="allow-scripts allow-popups allow-modals"
+                srcDoc={srcDoc}
+                onLoad={handlePreviewLoad}
+                style={sizedViewport ? {
+                  width: sizedViewport.width,
+                  height: sizedViewport.height,
+                  transform: `scale(${viewportScale})`,
+                  transformOrigin: "top left",
+                } : undefined}
+              />
+            </div>
             {runtimeError ? (
               <div className="canvas-editor__error" role="alert">
                 <Icon name="ph:warning-circle-fill" width={15} aria-hidden />

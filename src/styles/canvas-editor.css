@@ -151,6 +151,45 @@
      precedent as the gallery thumbnail's #fff). */
   background: #fff;
 }
+/* Always-mounted wrapper between the shell and the iframe (viewport presets,
+   cave-ztbo): keeping it in the tree in BOTH modes means switching presets
+   never reparents — so never reloads — the sketch iframe. */
+.canvas-editor__frame-box {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+/* A sized preset: the shell keeps its stage-filling box (so nothing about
+   its size feeds back into layout) and turns transparent; the frame box —
+   absolutely centered, which keeps its explicit device dimensions OUT of
+   intrinsic sizing so a transiently stale scale can never stretch ancestor
+   panes — carries the scaled device footprint and the visual chrome. The
+   outline — not a border — keeps the box's content area at exactly the
+   scaled device size, so no device pixels are clipped. */
+.canvas-editor__frame-shell--viewport {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+.canvas-editor__frame-shell--viewport .canvas-editor__frame-box {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  outline: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-panel);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+}
+.canvas-editor__viewport-size {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .canvas-editor__error {
   position: absolute;
   left: 10px;
