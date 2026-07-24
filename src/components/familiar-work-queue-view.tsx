@@ -13,6 +13,7 @@ import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { relativeTime } from "@/lib/relative-time";
 import { subscribeToQueueProjectSelection, type QueueProjectSelection } from "@/lib/queue-project-selection";
+import { QueueProjectSetup } from "@/components/queue-project-setup";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   buildWorkQueue,
@@ -617,15 +618,16 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
             headline={readinessUnavailable ? "Queue check unavailable" : sourcesUnavailable ? "Queue sources unavailable" : canGenerate ? "Generate your Queue" : projectUnavailable ? "Queue project needs attention" : "Queue needs a project"}
             subtitle={readinessUnavailable ? readinessFailure : error}
             actions={
-              <div className="flex flex-wrap justify-center gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-2">
                 {readinessUnavailable || sourcesUnavailable || projectUnavailable ? null : canGenerate ? (
                   <Button variant="primary" leadingIcon="ph:magic-wand-fill" loading={generating} onClick={() => void generateQueue()}>
                     Generate
                   </Button>
                 ) : (
-                  <Button variant="secondary" leadingIcon="ph:folder-open" onClick={() => window.dispatchEvent(new Event("cave:onboarding-open"))}>
-                    Choose project
-                  </Button>
+                  // Queue setup happens here, on the tab itself — selection
+                  // publishes, the subscription resets state, and load(true)
+                  // re-reads readiness for the newly chosen repository.
+                  <QueueProjectSetup selectedProjectId={readiness?.project?.id ?? null} />
                 )}
                 <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load(true)}>
                   Retry

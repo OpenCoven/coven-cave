@@ -19,7 +19,6 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
-import { cachedQueueProjectReadiness } from "@/lib/queue-project-readiness";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,9 +39,10 @@ function gitInstallHint(): string {
 }
 
 /**
- * Queue project selection is a required Git-repository boundary. Cave can
- * render some surfaces without Git, but it cannot safely initialize or load
- * the selected Queue project until Git is available.
+ * Queue project selection lives on the Tasks page's Queue tab now, not in
+ * onboarding — but it remains a Git-repository boundary. Cave can render some
+ * surfaces without Git, yet it cannot safely initialize or load a selected
+ * Queue project until Git is available.
  */
 async function checkGit(): Promise<Step> {
   const found = await commandPath("git");
@@ -288,33 +288,14 @@ async function checkBinding(
   };
 }
 
-/**
- * A Git project is mandatory for the Queue. An otherwise-valid repository
- * without Beads is ready for the explicit Generate action on the Queue page,
- * so it satisfies project selection during onboarding.
- *
- * The daemon-less e2e harness (COVEN_CAVE_E2E=1, see playwright.config.ts)
- * has no selected Queue project by design; report the step satisfied there
- * so a stored dismissal keeps the wizard closed, exactly like the daemon
- * short-circuit. Specs that exercise project readiness mock this route.
- */
-async function checkQueueProject(): Promise<Step> {
-  if (process.env.COVEN_CAVE_E2E === "1") {
-    return { ok: true, detail: "e2e harness stub — no Queue project in daemon-less runs" };
-  }
-  const readiness = await cachedQueueProjectReadiness();
-  return { ok: readiness.ok || readiness.canGenerate, detail: readiness.message };
-}
-
 export async function GET() {
   const openclawAgentCount = await countOpenClawAgents();
-  const [openCovenTools, covenHome, git, daemon, familiarsRes, queueProject] = await Promise.all([
+  const [openCovenTools, covenHome, git, daemon, familiarsRes] = await Promise.all([
     openCovenToolReadinessStatuses(),
     checkCovenHome(),
     checkGit(),
     checkDaemon(),
     checkFamiliars(),
-    checkQueueProject(),
   ]);
   const covenCli = checkCovenCli(
     openCovenTools.find((tool) => tool.id === "coven-cli"),
@@ -330,7 +311,6 @@ export async function GET() {
   const steps: Record<string, Step> = {
     covenCli,
     covenHome,
-    project: queueProject,
     git,
     adapters: adapters.step,
     daemon,
@@ -341,7 +321,8 @@ export async function GET() {
     binding: { ...binding, optional: true },
   };
   // Optional familiar and binding steps surface in the checklist but never
-  // gate completion. Git and the Queue project remain required boundaries.
+  // gate completion. Git remains a required boundary; the Queue project is
+  // chosen on the Tasks page's Queue tab, not during onboarding.
   const complete = Object.values(steps).every((s) => s.ok || s.optional);
 
   return NextResponse.json({ ok: true, complete, steps, tools: openCovenTools });

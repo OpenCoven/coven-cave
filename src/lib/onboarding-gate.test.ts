@@ -19,7 +19,6 @@ const allStepsOk = {
   covenCli: { ok: true },
   covenHome: { ok: true },
   adapters: { ok: true },
-  project: { ok: true },
   daemon: { ok: true },
   binding: { ok: true },
   familiars: { ok: true },
@@ -47,8 +46,8 @@ assert.equal(
   shouldAutoOpenOnboarding(
     payload({ complete: false, steps: { ...allStepsOk, project: { ok: false }, daemon: { ok: false } } }),
   ),
-  true,
-  "an unavailable Queue project reopens onboarding even when the daemon is down",
+  false,
+  "a Queue project is not a setup step — selection lives on the Tasks page's Queue tab, so it never reopens the wizard",
 );
 
 // ── Coven Code is not a setup requirement (the cave-219 AND-gate is gone) ────
