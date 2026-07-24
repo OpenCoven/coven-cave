@@ -281,7 +281,7 @@ test.describe("familiar work queue (PR control tower)", () => {
     const cleanup = page.locator(".fwq").getByRole("region", { name: "Post-merge cleanup" });
     await cleanup.getByRole("button", { name: /Add a handoff note to cave-open/ }).click();
     await cleanup.getByRole("textbox", { name: /Handoff note for cave-open/ }).fill("Verified in project A.");
-    await cleanup.getByRole("button", { name: "Add note" }).click();
+    await cleanup.getByRole("button", { name: "Save note" }).click();
     await commentPending;
 
     selectedProject = QUEUE_PROJECT_B;

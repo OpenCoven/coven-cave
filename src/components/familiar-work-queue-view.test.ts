@@ -90,7 +90,7 @@ assert.match(
 
 // ── Bead inspector (cave-u2p1) ───────────────────────────────────────────────
 // Bead titles open a focus-trapped dialog over the existing show contract.
-assert.match(view, /className="fwq-card-name fwq-card-name--link focus-ring-inset"/);
+assert.match(view, /className="fwq-row-name fwq-row-name--link focus-ring-inset"/);
 assert.match(view, /\/api\/beads\?mode=show&id=\$\{encodeURIComponent\(id\)\}&projectRoot=\$\{encodeURIComponent\(projectRoot\)\}/, "drawer reads the selected project's bead");
 assert.match(view, /import \{ Modal \} from "@\/components\/ui\/modal"/, "reuses the focus-trapped house dialog");
 assert.match(view, /breadcrumb=\{\["Queue", id\]\}/);
