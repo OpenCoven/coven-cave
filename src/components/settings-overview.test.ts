@@ -12,7 +12,7 @@ import {
 // ── settings-sections catalog (pure) ─────────────────────────────────────────
 
 test("every section has full overview metadata + a highlight strip", () => {
-  const ids = ["profile", "general", "daemon", "familiars", "mobile", "appearance", "about"];
+  const ids = ["profile", "general", "daemon", "familiars", "github", "mobile", "appearance", "about"];
   assert.deepEqual(SECTIONS.map((s) => s.id), ids, "the section set matches the shell nav");
   for (const s of SECTIONS) {
     assert.ok(s.label && s.icon.startsWith("ph:") && s.description.length > 0, `${s.id} has label/icon/description`);

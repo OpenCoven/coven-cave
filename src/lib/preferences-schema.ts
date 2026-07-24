@@ -118,6 +118,14 @@ export type CavePreferences = {
   phone: {
     mobileMode: boolean;
   };
+  github: {
+    /**
+     * Org logins the GitHub surface is scoped to. Empty means "all of the
+     * authenticated account's memberships" (the default); a non-empty list
+     * restricts the surface to just those orgs.
+     */
+    orgScope: string[];
+  };
 };
 
 export type CavePreferencesPatch = {
@@ -135,6 +143,7 @@ export type CavePreferencesPatch = {
   };
   general?: Partial<CavePreferences["general"]>;
   phone?: Partial<CavePreferences["phone"]>;
+  github?: Partial<CavePreferences["github"]>;
 };
 
 const DEFAULT_THEME: CaveThemePreferences = {
@@ -154,6 +163,21 @@ const DEFAULT_THEME: CaveThemePreferences = {
 export const DEFAULT_STOP_PHRASE = "stop, cancel, halt, abort";
 /** Longest phrase list the preference stores; UI and matcher share this bound. */
 export const STOP_PHRASE_MAX_LENGTH = 160;
+
+/**
+ * A GitHub org-scope list: deduped, trimmed, non-empty org logins. Anything
+ * that isn't a string is dropped; an empty result means "all memberships".
+ */
+export function normalizeOrgScope(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const login = entry.trim();
+    if (login) seen.add(login);
+  }
+  return [...seen];
+}
 
 function normalizeStopPhrase(value: unknown): string {
   if (typeof value !== "string") return DEFAULT_STOP_PHRASE;
@@ -193,6 +217,7 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
     },
     general: { newsHeadlines: true, stopPhrase: DEFAULT_STOP_PHRASE, celebrations: true },
     phone: { mobileMode: true },
+    github: { orgScope: [] },
   };
 }
 
@@ -346,6 +371,7 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
   const image = record(backdrop.image);
   const general = record(source.general);
   const phone = record(source.phone);
+  const github = record(source.github);
 
   const modePreference = oneOf(theme.modePreference, MODE_PREFERENCES, "dark");
   const resolvedMode = oneOf(
@@ -427,6 +453,7 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
       celebrations: general.celebrations !== false,
     },
     phone: { mobileMode: phone.mobileMode !== false },
+    github: { orgScope: normalizeOrgScope(github.orgScope) },
   };
 }
 
@@ -520,7 +547,7 @@ function strictAccentSeed(value: unknown, path: string): CaveBackdropAccentSeed 
 
 export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
   const input = strictRecord(value, "preferences patch");
-  assertAllowedKeys(input, ["appearance", "general", "phone"], "preferences patch");
+  assertAllowedKeys(input, ["appearance", "general", "phone", "github"], "preferences patch");
   const patch: CavePreferencesPatch = {};
 
   if (Object.hasOwn(input, "appearance")) {
@@ -682,6 +709,16 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
       ? { mobileMode: strictBoolean(phone.mobileMode, "phone.mobileMode") }
       : {};
   }
+  if (Object.hasOwn(input, "github")) {
+    const github = strictRecord(input.github, "github");
+    assertAllowedKeys(github, ["orgScope"], "github");
+    const githubPatch: NonNullable<CavePreferencesPatch["github"]> = {};
+    if (Object.hasOwn(github, "orgScope")) {
+      if (!Array.isArray(github.orgScope)) fail("github.orgScope", "must be an array of strings");
+      githubPatch.orgScope = normalizeOrgScope(github.orgScope);
+    }
+    patch.github = githubPatch;
+  }
 
   return patch;
 }
@@ -759,6 +796,7 @@ export function applyPreferencesPatch(
     },
     general: { ...current.general, ...(patch.general ?? {}) },
     phone: { ...current.phone, ...(patch.phone ?? {}) },
+    github: { ...current.github, ...(patch.github ?? {}) },
   };
 
   const semanticCurrent = { ...current, initialized: true, revision: 0, updatedAt: "" };

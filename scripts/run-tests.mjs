@@ -288,6 +288,7 @@ export const SUITES = {
     "src/lib/app-preferences-runtime.test.ts",
     "src/lib/app-preferences-paint-bootstrap.test.ts",
     "src/components/settings-appearance.test.ts",
+    "src/components/settings-github.test.ts",
     "src/components/settings-profile.test.ts",
     "src/components/settings-search.test.ts",
     "src/components/settings-daemon-multihost.test.ts",
