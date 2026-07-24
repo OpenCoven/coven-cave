@@ -2,6 +2,7 @@
 
 import "@/styles/cave-composer.css";
 import "@/styles/home-composer.css";
+import "@/styles/home-dashboard.css";
 
 /**
  * HomeComposer — universal intent surface; the Cave's cold-start view.
@@ -60,7 +61,20 @@ import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapte
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { HomeFromTaskRow, type HomeTaskOrigin } from "@/components/home/home-from-task";
-import { HomeContinue } from "@/components/home/home-continue";
+import { resumableSessions } from "@/components/home/home-continue";
+import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
+import { relativeAge } from "@/lib/rss";
+import { useDashboardBoard } from "@/components/home/use-dashboard-board";
+import {
+  OPEN_WORK_FILTERS,
+  OPEN_WORK_FILTER_LABEL,
+  filterOpenWork,
+  openWorkCounts,
+  openWorkPriorityLabel,
+  openWorkRows,
+  runningTimeoutBadge,
+  type OpenWorkFilter,
+} from "@/components/home/dashboard-open-work";
 import { PromptSnippetsModal } from "@/components/prompt-snippets-modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
@@ -393,25 +407,6 @@ export function HomeComposer({
     }, 80);
   }, []);
 
-  // Maps a familiar id to its display name for the Continue column.
-  const familiarNameById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const f of familiars) m.set(f.id, f.display_name);
-    return m;
-  }, [familiars]);
-
-  // Live-context subtitle under the heading: familiar · role only. The
-  // runtime/model already reads verbatim in the composer's context pill one
-  // line below — repeating it in the hero was chrome, not information.
-  const contextLine = useMemo(() => {
-    return [
-      selectedFamiliar?.display_name ?? null,
-      selectedFamiliar?.role?.trim() || null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  }, [selectedFamiliar]);
-
   // From-task row (chat revamp 1a): prop-driven and ready, but UNWIRED — no
   // surface routes a task into the home composer today (board cards open
   // chats directly via pending-chat-action). First task→home handoff sets
@@ -448,6 +443,57 @@ export function HomeComposer({
     promptEnhance.reset();
     setTimeout(() => textareaRef.current?.focus(), 0);
   }, [promptEnhance.reset]);
+
+  // ── Dashboard model (launcher 3a) ──────────────────────────────────────────
+  // The Home surface is a work-led dashboard: a context rail, an open-work
+  // board with filter tabs, and the composer docked below. All rows are the
+  // real board/sessions data — the board GET degrades to an empty state.
+  const [nowMs] = useState(() => Date.now());
+  const boardCards = useDashboardBoard();
+  // Open work = the Tasks board's live cards, followed by the "needs you"
+  // attention tier (fired reminders / response-needed) as inbox rows. Each row
+  // carries its own open handler: board rows jump to Tasks, needs-you rows open
+  // that item's target — the same handler the bell popover uses.
+  const openWork = useMemo(() => {
+    const board = openWorkRows(boardCards).map((r) => ({
+      ...r,
+      onOpen: () => onNavigateToBoard(),
+    }));
+    const needs = needsYou.map((item) => ({
+      id: `needs-${item.id}`,
+      title: item.title,
+      kind: "inbox" as const,
+      priority: "high" as const,
+      needsHuman: true,
+      runningSince: undefined,
+      timeoutMs: undefined,
+      onOpen: () => onOpenInboxItem(item),
+    }));
+    return [...board, ...needs];
+  }, [boardCards, needsYou, onNavigateToBoard, onOpenInboxItem]);
+  const [workFilter, setWorkFilter] = useState<OpenWorkFilter>("all");
+  const workCounts = useMemo(() => openWorkCounts(openWork), [openWork]);
+  const visibleWork = useMemo(
+    () => filterOpenWork(openWork, workFilter),
+    [openWork, workFilter],
+  );
+  // Rail "Pick up": the two most-recent resumable sessions. Recent threads:
+  // the next titled sessions, newest-first, minus the two already surfaced.
+  const pickUp = useMemo(() => resumableSessions(sessions, 2), [sessions]);
+  const recentThreads = useMemo(() => {
+    const skip = new Set(pickUp.map((s) => s.id));
+    return sessions
+      .filter(
+        (s) => !s.archived_at && !s.generated && Boolean(s.title?.trim()) && !skip.has(s.id),
+      )
+      .sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""))
+      .slice(0, 4);
+  }, [sessions, pickUp]);
+  // The active familiar drives the chrome identity; the composer's live model
+  // pick rides beside it. Avatar is the familiar's initial.
+  const familiarName = selectedFamiliar?.display_name?.trim() || "Familiar";
+  const familiarInitial = familiarName.charAt(0).toUpperCase();
+  const chromeModel = selectedModelId || selectedFamiliar?.model || null;
 
   // Destination pills behave as a single-select radiogroup: arrow/Home/End
   // move the selection and the roving focus, matching the ARIA radio pattern.
@@ -717,22 +763,272 @@ export function HomeComposer({
   );
 
   return (
-    <div className="home-composer-root">
+    <div className="home-composer-root home-dash">
 
-      {/* The hearth card (chat revamp 1a): one centered panel holding the
-          greeting, the composer, and the resume/work/snippet sections. */}
-      <div className="home-hearth-card">
+      {/* ── Top chrome — familiar identity + presence, live model, palette ── */}
+      <header className="home-dash__chrome">
+        <div className="home-dash__ident">
+          <span className="home-dash__avatar" aria-hidden>{familiarInitial}</span>
+          <span className="home-dash__name">
+            {familiarName}
+            {chromeModel ? <span className="home-dash__name-model"> · {chromeModel}</span> : null}
+          </span>
+          <span className="home-dash__status">
+            <span className="home-dash__status-dot" aria-hidden />
+            online{greeting ? ` · ${greeting.toLowerCase()}` : ""}
+          </span>
+        </div>
+        <div className="home-dash__chrome-actions">
+          {chromeModel ? (
+            <span className="home-dash__chip" title={`Model — ${chromeModel}`}>
+              <Icon name="ph:sparkle" width={12} aria-hidden />
+              <span>{chromeModel}</span>
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="home-dash__icon-btn"
+            title="Open command palette"
+            aria-label="Open command palette"
+            onClick={() => onSlash?.("/palette", "")}
+          >
+            <Icon name="ph:gear-six" width={16} aria-hidden />
+          </button>
+        </div>
+      </header>
 
-      {/* Headline — presence kicker over the display face, then a one-line
-          live-context subtitle (familiar · role · model). */}
-      <div className="home-composer-hero">
-        <p className={`home-composer-eyebrow${greeting ? " is-ready" : ""}`}>
-          <span className="home-composer-eyebrow-dot" aria-hidden />
-          {greeting ?? "\u00A0"}
-        </p>
-        <h1 className="home-composer-headline">What are we casting today?</h1>
-        {contextLine ? <p className="home-composer-sub">{contextLine}</p> : null}
+      {/* ── Body: context rail + work board ────────────────────────────── */}
+      <div className="home-dash__body">
+
+        {/* Context rail */}
+        <aside className="home-dash__rail" aria-label="Context">
+          <div className="home-dash__rail-group">
+            <div className="home-dash__rail-label">Project</div>
+            <button
+              type="button"
+              className="home-dash__project"
+              onClick={() => plusAnchorRef.current?.click()}
+              title="Change project in the composer"
+            >
+              <span className="home-dash__project-glyph" aria-hidden>
+                {(selectedProject?.name ?? "··").slice(0, 2)}
+              </span>
+              <span className="home-dash__project-name">
+                {selectedProject?.name ?? "No project"}
+              </span>
+              <Icon name="ph:caret-up-down" width={14} className="home-dash__project-chev" aria-hidden />
+            </button>
+            {selectedProject?.root ? (
+              <div className="home-dash__project-path">{selectedProject.root}</div>
+            ) : null}
+            {selectedProject ? (
+              <span className="home-dash__project-ready">project files ready</span>
+            ) : null}
+          </div>
+
+          <div className="home-dash__divider" />
+
+          <div className="home-dash__rail-group">
+            <div className="home-dash__rail-label">Quick start</div>
+            <div className="home-dash__quick">
+              <button
+                type="button"
+                className="home-dash__quick-row"
+                onClick={() => insertPrompt("Summarise everything that happened today.")}
+              >
+                <span className="home-dash__quick-icon home-dash__quick-icon--accent" aria-hidden>
+                  <Icon name="ph:sparkle" width={15} />
+                </span>
+                <span className="home-dash__quick-label">Summarise today</span>
+                <Icon name="ph:arrow-right-bold" width={14} className="home-dash__quick-go" aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="home-dash__quick-row"
+                onClick={() => insertPrompt("Review my recent changes and flag anything risky.")}
+              >
+                <span className="home-dash__quick-icon" aria-hidden>
+                  <Icon name="ph:git-diff" width={15} />
+                </span>
+                <span className="home-dash__quick-label">Review recent changes</span>
+                <Icon name="ph:arrow-right-bold" width={14} className="home-dash__quick-go" aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="home-dash__quick-row"
+                onClick={() => setSnippetsBrowserOpen(true)}
+              >
+                <span className="home-dash__quick-icon" aria-hidden>
+                  <Icon name="ph:chat-centered-text" width={15} />
+                </span>
+                <span className="home-dash__quick-label">Prompt snippets</span>
+                <Icon name="ph:arrow-right-bold" width={14} className="home-dash__quick-go" aria-hidden />
+              </button>
+            </div>
+          </div>
+
+          {pickUp.length > 0 && onOpenSession ? (
+            <>
+              <div className="home-dash__divider" />
+              <div className="home-dash__rail-group">
+                <div className="home-dash__rail-label">Pick up</div>
+                <div className="home-dash__pick">
+                  {pickUp.map((s) => {
+                    const running = s.status === "running";
+                    const age = relativeAge(s.updated_at, nowMs);
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className="home-dash__pick-card"
+                        onClick={() => onOpenSession(s.id, s.familiarId ?? null)}
+                        title={`Resume “${s.title}”`}
+                      >
+                        <span className="home-dash__pick-glyph" aria-hidden>
+                          <Icon
+                            name={running ? "ph:terminal-window" : "ph:chat-circle-dots"}
+                            width={15}
+                          />
+                        </span>
+                        <span className="home-dash__pick-body">
+                          <span className="home-dash__pick-title">{s.title}</span>
+                          <span className="home-dash__pick-time">{age}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          ) : null}
+        </aside>
+
+        {/* Work board */}
+        <main className="home-dash__board" aria-label="Work board">
+          <div className="home-dash__board-inner">
+
+            <div className="home-dash__board-head">
+              <div className="home-dash__head-text">
+                <p className="home-dash__eyebrow">
+                  <span className="home-dash__eyebrow-dot" aria-hidden />
+                  {greeting ?? "In the cave"}
+                </p>
+                <h1 className="home-dash__headline">
+                  {openWork.length > 0
+                    ? `${openWork.length} thread${openWork.length === 1 ? "" : "s"} open.`
+                    : "A clean slate — what shall we conjure?"}
+                </h1>
+              </div>
+              <div className="home-dash__filters" role="tablist" aria-label="Filter open work">
+                {OPEN_WORK_FILTERS.map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    role="tab"
+                    aria-selected={workFilter === f}
+                    className={`home-dash__filter${workFilter === f ? " is-active" : ""}`}
+                    onClick={() => setWorkFilter(f)}
+                  >
+                    {OPEN_WORK_FILTER_LABEL[f]}
+                    {workCounts[f] > 0 ? (
+                      <span className="home-dash__filter-count">{workCounts[f]}</span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Open work */}
+            <section className="home-dash__section" aria-label="Open work">
+              <div className="home-dash__section-head">
+                <div className="home-dash__rail-label">Open work</div>
+                {workFilter === "inbox" && needsYou.length > 0 ? (
+                  <button type="button" className="home-dash__section-link" onClick={onOpenSchedules}>
+                    View all in Rituals →
+                  </button>
+                ) : (
+                  <button type="button" className="home-dash__section-link" onClick={onNavigateToBoard}>
+                    View all in Tasks →
+                  </button>
+                )}
+              </div>
+              <div className="home-dash__work">
+                {visibleWork.length === 0 ? (
+                  <div className="home-dash__work-empty">
+                    {openWork.length === 0
+                      ? "No open work — start something below."
+                      : `Nothing ${OPEN_WORK_FILTER_LABEL[workFilter].toLowerCase()} right now.`}
+                  </div>
+                ) : (
+                  visibleWork.map((row) => {
+                    const priority = openWorkPriorityLabel(row.priority);
+                    const badge =
+                      row.kind === "running"
+                        ? runningTimeoutBadge(row.runningSince, row.timeoutMs, nowMs)
+                        : null;
+                    return (
+                      <button
+                        key={row.id}
+                        type="button"
+                        className="home-dash__work-row"
+                        onClick={row.onOpen}
+                        title={`Open “${row.title}”`}
+                      >
+                        {row.kind === "running" ? (
+                          <LifecycleBadge lifecycle="running" needsHuman={row.needsHuman} />
+                        ) : (
+                          <span className="home-dash__work-chip" data-kind={row.kind}>
+                            {row.kind}
+                          </span>
+                        )}
+                        <span className="home-dash__work-title">{row.title}</span>
+                        {badge ? <span className="home-dash__work-meta">{badge}</span> : null}
+                        {priority ? (
+                          <span className="home-dash__work-priority" data-priority={priority}>
+                            {priority}
+                          </span>
+                        ) : null}
+                        {/* Visual CTA only — the whole row is the button, so
+                            this stays a non-interactive span (no nested button). */}
+                        <span className="home-dash__work-resume" aria-hidden>
+                          Resume
+                          <Icon name="ph:arrow-right-bold" width={11} />
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </section>
+
+            {/* Recent threads */}
+            {recentThreads.length > 0 && onOpenSession ? (
+              <section className="home-dash__section" aria-label="Recent threads">
+                <div className="home-dash__rail-label">Recent threads</div>
+                <div className="home-dash__recent">
+                  {recentThreads.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className="home-dash__recent-row"
+                      onClick={() => onOpenSession(s.id, s.familiarId ?? null)}
+                      title={`Resume “${s.title}”`}
+                    >
+                      <span className="home-dash__recent-title">{s.title}</span>
+                      <span className="home-dash__recent-time">{relativeAge(s.updated_at, nowMs)}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+          </div>
+        </main>
       </div>
+
+      {/* ── Docked composer — the real intent surface, full-width ───────── */}
+      <div className="home-dash__dock">
+        <div className="home-dash__dock-inner">
 
       {/* Composer card — wrapped so the slash menu can render above the
           card without being clipped by the card's `overflow: hidden`. */}
@@ -1119,27 +1415,15 @@ export function HomeComposer({
         </div>
       </div>
 
-      {/* From-task hand-off row — the only chip strip left under the
-          composer, and only when home opened from a task. The cold-start
-          suggestion pills were removed (cards-only home 2026-07-22): below
-          the composer there is nothing but the centered Continue cards. */}
+      {/* From-task hand-off row — only when Home opened from a task. Prop-
+          driven; taskOrigin is null today (no task→home handoff is wired yet).
+          The "Continue" strip moved into the rail's "Pick up" group. */}
       {taskOrigin ? (
         <HomeFromTaskRow origin={taskOrigin} onPickSuggestion={insertPrompt} />
       ) : null}
 
-      {/* "Continue where you left off" (reference parity 2026-07-22): up to
-          three recent resumable sessions as horizontal cards. Only on a blank
-          draft and when there is real resume history — stays out of the way
-          once you start typing. */}
-      {!text.trim() ? (
-        <HomeContinue
-          sessions={sessions}
-          familiarNameById={familiarNameById}
-          onOpenSession={onOpenSession}
-        />
-      ) : null}
-
-      </div>{/* /.home-hearth-card */}
+        </div>{/* /.home-dash__dock-inner */}
+      </div>{/* /.home-dash__dock */}
 
       <PromptSnippetsModal
         open={snippetsBrowserOpen}
