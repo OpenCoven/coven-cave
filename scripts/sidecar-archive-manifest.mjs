@@ -483,10 +483,18 @@ async function publishSidecarArchiveUnlocked(
     const manifest = await writeSidecarArchiveManifest(sourceRoot, temporaryArchivePath, temporaryManifestPath);
     // Both files are fully written, hashed, and budgeted before either public
     // path changes. Publish the manifest last so readers never accept a new
-    // archive using stale integrity metadata. Keep a durable copy of the
-    // prior manifest and archive so an interrupted publication can be
-    // recovered by the next bundle attempt.
-    if (await fileExists(manifestPath)) await copyFile(manifestPath, previousManifestPath);
+    // archive using stale integrity metadata. Move a coherent prior manifest
+    // out of the public path before the candidate archive is published: a
+    // Windows lock then fails before publication instead of leaving stale
+    // metadata beside a locked candidate. An orphan manifest stays public.
+    const hasPublicArchive = await fileExists(archivePath);
+    if (await fileExists(manifestPath)) {
+      if (hasPublicArchive) {
+        await rename(manifestPath, previousManifestPath);
+      } else {
+        await copyFile(manifestPath, previousManifestPath);
+      }
+    }
     try {
       await rename(archivePath, previousArchivePath);
     } catch (error) {

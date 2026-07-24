@@ -226,7 +226,7 @@ try {
       failedManifestTemp,
       {
         beforeManifestPublish: async () => {
-          await rm(publishedManifest);
+          await rm(publishedManifest, { force: true });
           await mkdir(publishedManifest);
           await writeFile(failedManifestSentinel, "must survive rollback\n");
         },
