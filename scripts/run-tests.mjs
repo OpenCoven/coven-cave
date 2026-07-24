@@ -1270,6 +1270,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/omnigent/ward-preflight.test.ts",
   "src/lib/cave-inbox-bulk.test.ts",
   "src/lib/cave-inbox-create.test.ts",
+  "src/lib/queue-project-readiness.test.ts",
   "src/app/api/chat/stream/route.test.ts",
   "src/app/api/proposals-flow-e2e.test.ts",
   "src/app/api/prompts/route.test.ts",
