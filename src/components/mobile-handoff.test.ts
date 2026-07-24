@@ -392,8 +392,17 @@ assert.match(
   /<SettingsGroup label="Get the app">\s*<IosInstallQrCard \/>/,
   "the install QR leads the Get-the-app group",
 );
+// Tempered scans: the window between the named groups may contain anything
+// EXCEPT another group opening, so an interposed group fails the pin (a
+// plain `[\s\S]{0,N}` window matched any group's closing tag and let
+// backtracking absorb an injected group — review follow-up, cave-jc3l).
 assert.match(
   settings,
-  /<\/SettingsGroup>\s*<SettingsGroup label="Get the app">[\s\S]{0,900}<SettingsGroup label="Phone write access">/,
-  "Get the app sits directly after Pair — install comes before the deep supporting groups",
+  /<SettingsGroup label="Pair">(?:(?!<SettingsGroup )[\s\S])*<\/SettingsGroup>\s*<SettingsGroup label="Get the app">/,
+  "Get the app sits directly after Pair — no group can slip between them",
+);
+assert.match(
+  settings,
+  /<SettingsGroup label="Get the app">(?:(?!<SettingsGroup )[\s\S])*<\/SettingsGroup>\s*<SettingsGroup label="Phone write access">/,
+  "install comes before the deep supporting groups — Phone write access directly follows Get the app",
 );
