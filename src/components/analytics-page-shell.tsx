@@ -1,8 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { Icon, CAVE_ICON_SIZE, type IconName } from "@/lib/icon";
+import { useIsMobile } from "@/lib/use-viewport";
 import "@/styles/analytics-page-shell.css";
 
 type RailDest = { href: string; label: string; icon: IconName };
@@ -39,32 +41,64 @@ export function AnalyticsPageShell({ children }: { children: ReactNode }) {
   // into the SPA at `/`, which this shell never wraps.
   const pathname = usePathname();
   const onDashboard = pathname === "/dashboard";
+  const isMobile = useIsMobile();
+  const [navOpen, setNavOpen] = useState(true);
+  // Mobile keeps its persistent rail even if this shell was collapsed before a
+  // viewport resize. Its existing navigation remains the mobile fallback.
+  const railOpen = navOpen || isMobile;
+
+  const desktopChrome = !isMobile ? (
+    <header className="aps-top shell-top" data-tauri-drag-region="deep">
+      <div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" />
+      <button
+        type="button"
+        className={`shell-top-toggle shell-top-toggle--nav focus-ring${navOpen ? " shell-top-toggle--active" : ""}`}
+        aria-label={navOpen ? "Collapse navigation" : "Expand navigation"}
+        aria-expanded={navOpen}
+        title={navOpen ? "Collapse navigation" : "Expand navigation"}
+        onClick={() => setNavOpen((open) => !open)}
+      >
+        <Icon
+          name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
+          width={CAVE_ICON_SIZE.shellToggle}
+          height={CAVE_ICON_SIZE.shellToggle}
+        />
+      </button>
+      <DesktopHistoryNav />
+    </header>
+  ) : null;
+
   return (
     <div className="aps">
-      <nav className="aps-rail" aria-label="Primary">
-        <a className="aps-brand" href="/" aria-label="CovenCave home" title="CovenCave">
-          <Icon name="ph:sparkle-bold" width={NAV_ICON} height={NAV_ICON} aria-hidden />
-        </a>
-        <ul className="aps-rail-list">
-          {PRIMARY.map((d) => (
-            <li key={d.href}>
-              <a className="aps-rail-link" href={d.href} aria-label={d.label} title={d.label}>
-                <Icon name={d.icon} width={NAV_ICON} height={NAV_ICON} aria-hidden />
-              </a>
-            </li>
-          ))}
-        </ul>
-        <a
-          className="aps-rail-link aps-rail-foot"
-          href="/dashboard"
-          aria-label="Dashboard"
-          title="Dashboard"
-          aria-current={onDashboard ? "page" : undefined}
-        >
-          <Icon name="ph:squares-four" width={NAV_ICON} height={NAV_ICON} aria-hidden />
-        </a>
-      </nav>
-      <main className="aps-main">{children}</main>
+      {desktopChrome}
+      <div className="aps-body">
+        {railOpen ? (
+          <nav className="aps-rail" aria-label="Primary">
+            <a className="aps-brand" href="/" aria-label="CovenCave home" title="CovenCave">
+              <Icon name="ph:sparkle-bold" width={NAV_ICON} height={NAV_ICON} aria-hidden />
+            </a>
+            <ul className="aps-rail-list">
+              {PRIMARY.map((d) => (
+                <li key={d.href}>
+                  <a className="aps-rail-link" href={d.href} aria-label={d.label} title={d.label}>
+                    <Icon name={d.icon} width={NAV_ICON} height={NAV_ICON} aria-hidden />
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <a
+              className="aps-rail-link aps-rail-foot"
+              href="/dashboard"
+              aria-label="Dashboard"
+              title="Dashboard"
+              aria-current={onDashboard ? "page" : undefined}
+            >
+              <Icon name="ph:squares-four" width={NAV_ICON} height={NAV_ICON} aria-hidden />
+            </a>
+          </nav>
+        ) : null}
+        <main className="aps-main">{children}</main>
+      </div>
     </div>
   );
 }
