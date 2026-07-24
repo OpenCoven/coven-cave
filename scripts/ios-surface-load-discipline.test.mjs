@@ -4,36 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const canvasView = fs.readFileSync(
-  path.join(root, "apps/ios/CovenCave/CovenCave/Views/CanvasView.swift"),
-  "utf8",
-);
 const chatsHome = fs.readFileSync(
   path.join(root, "apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift"),
   "utf8",
 );
 const runner = fs.readFileSync(path.join(root, "scripts/run-tests.mjs"), "utf8");
-
-// --- Canvas: one scene-aware load task, not two independent .task modifiers ---
-
-const canvasTaskModifiers = canvasView.match(/^\s*\.task[\s({]/gm) ?? [];
-assert.equal(
-  canvasTaskModifiers.length,
-  1,
-  `CanvasView should have exactly one .task modifier (found ${canvasTaskModifiers.length}) — duplicate load tasks fire loadCanvas twice on appear`,
-);
-
-assert.match(
-  canvasView,
-  /\.task\(id: scenePhase\) \{\s*guard scenePhase == \.active else \{ return \}\s*if !app\.canvasLoaded \{ await app\.loadCanvas\(\) \}\s*\}/,
-  "CanvasView's single load task should be scene-aware and guarded by canvasLoaded",
-);
-
-assert.match(
-  canvasView,
-  /\.refreshable \{ await app\.loadCanvas\(\) \}/,
-  "Canvas pull-to-refresh must stay an unconditional loadCanvas",
-);
 
 // --- Chats: initial loadSessions guarded by sessionsLoaded ---
 

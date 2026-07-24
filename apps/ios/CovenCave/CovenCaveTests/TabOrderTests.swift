@@ -1,17 +1,11 @@
 import XCTest
 @testable import CovenCave
 
-/// The tab bar IA: four surfaces in the bar (Chats, Tasks, Canvas, Search),
-/// the occasional ones (Calendar, Developer, Settings) in a "More" section
-/// that is a sidebar group on iPad and hidden from the iPhone tab bar. These
-/// tests pin the invariants that keep every surface reachable and every
-/// persisted/deep-linked tab value decodable.
+/// The four primary tabs and their keyboard order.
 final class TabOrderTests: XCTestCase {
 
-    /// Every tab is either in the bar, in More, or the search role tab —
-    /// no surface can silently fall out of the IA when cases are added.
     func testEveryTabIsPlacedExactlyOnce() {
-        let placed = AppTab.barTabs + [.search] + AppTab.moreTabs
+        let placed = AppTab.barTabs
         XCTAssertEqual(placed.count, Set(placed).count, "a tab is placed twice")
         XCTAssertEqual(Set(placed), Set(AppTab.allCases),
                        "every AppTab case must be placed in the tab IA")
@@ -24,21 +18,16 @@ final class TabOrderTests: XCTestCase {
         XCTAssertEqual(Set(AppTab.shortcutOrder), Set(AppTab.allCases))
     }
 
-    /// Bar tabs come first in shortcut order (⌘1–3 match the visible bar,
-    /// ⌘4 is search), so muscle memory tracks what's on screen.
     func testShortcutOrderLeadsWithBarTabs() {
-        XCTAssertEqual(Array(AppTab.shortcutOrder.prefix(AppTab.barTabs.count)),
-                       AppTab.barTabs)
-        XCTAssertEqual(AppTab.shortcutOrder[AppTab.barTabs.count], .search)
+        XCTAssertEqual(AppTab.shortcutOrder, AppTab.barTabs)
     }
 
     /// Raw values are persisted (restored tab) and used in deep links —
     /// they must never change spelling.
     func testRawValuesAreStable() {
         let expected: [AppTab: String] = [
-            .chats: "chats", .canvas: "canvas", .tasks: "tasks",
-            .calendar: "calendar", .dev: "dev", .settings: "settings",
-            .search: "search",
+            .chats: "chats", .tasks: "tasks", .terminal: "terminal",
+            .settings: "settings",
         ]
         XCTAssertEqual(expected.count, AppTab.allCases.count)
         for (tab, raw) in expected {

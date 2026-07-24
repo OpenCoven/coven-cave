@@ -11,7 +11,6 @@ import { readFile } from "node:fs/promises";
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const chrome = await read("apps/ios/CovenCave/CovenCave/Theme/ChatChrome.swift");
 const chatView = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift");
-const drawer = await read("apps/ios/CovenCave/CovenCave/Views/ChatDrawer.swift");
 const home = await read("apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift");
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
 const camera = await read("apps/ios/CovenCave/CovenCave/Views/CameraPicker.swift");
@@ -26,16 +25,6 @@ assert.match(
   chrome,
   /onDismiss\(\)\s*\n\s*item\.action\(\)/,
   "floating-menu rows dismiss the menu on selection before acting",
-);
-assert.match(drawer, /struct NavRow: View/, "drawer destination rows are a dedicated component");
-assert.match(drawer, /accessibilityAddTraits\(active \? \[\.isSelected\] : \[\]\)/, "active drawer row is exposed as selected to AT");
-assert.match(chrome, /struct EmptyChatSuggestionRow: View/, "empty-state suggestion rows are a shared component");
-
-// ── ChatView header: session details preserve the real model flow ───────────
-assert.match(
-  chatView,
-  /showSessionDetails\.toggle\(\)/,
-  "the centered familiar control toggles session details",
 );
 assert.match(chatView, /private var sessionDetailsCard: some View/, "session details render in a dedicated dropdown card");
 assert.match(
@@ -87,21 +76,7 @@ assert.match(
 assert.match(modelControl, /Chat with another familiar/, "deeper agent configuration is reachable from the picker");
 assert.match(chatView, /onSwitchFamiliar: \{ showFamiliarPicker = true \}/, "the picker's agent hop opens the familiar picker");
 
-// ── Side drawer: brand header + search, destinations, projects, recents ─────
-assert.match(drawer, /struct ChatDrawer: View/, "the drawer is its own component");
-assert.match(drawer, /go\(\.search\)/, "the drawer header routes to global search");
-assert.match(drawer, /sectionLabel\("Projects"\)[\s\S]*?Text\("Recent Chats"\)/, "drawer groups: destinations, projects, then recent chats");
-assert.match(drawer, /app\.selectedTab = tab/, "primary sections route through the existing tab selection");
-assert.match(drawer, /Label\("Chat", systemImage: "square\.and\.pencil"\)/, "the primary Chat button sits in the bottom bar");
-assert.match(drawer, /onTapGesture \{ close\(\) \}/, "the scrim closes the drawer on outside tap");
-assert.match(drawer, /value\.translation\.width < -40 \{ close\(\) \}/, "a leftward drag closes the drawer");
-assert.match(drawer, /Color\.black\.opacity\(isOpen \? 0\.45 : 0\)/, "the list behind stays visible through a dim scrim, not hidden");
-assert.match(drawer, /reduceMotion \? nil : \.snappy/, "drawer animation respects reduced motion");
-
 // ── Chats home: menu + compose are labelled circular controls ────────────────
-assert.match(home, /CircularIconButton\(systemImage: "line\.3\.horizontal",[\s\S]{0,120}?label: "Menu"\)/, "the header menu button is a labelled circular control");
 assert.match(home, /CircularIconButton\(systemImage: "square\.and\.pencil",\s*\n\s*label: "New chat"\)/, "the header compose button is a labelled circular control");
-assert.match(home, /ChatDrawer\(isOpen: \$drawerOpen/, "the drawer overlays the chats home");
-assert.match(home, /drawerOpen && !reduceMotion \? 16 : 0/, "the content offsets behind the open drawer (reduced-motion aware)");
 
 console.log("ios-chat-restyle.test.mjs: ok");

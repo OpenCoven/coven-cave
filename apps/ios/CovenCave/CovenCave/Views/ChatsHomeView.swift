@@ -37,9 +37,7 @@ struct ChatsHomeView: View {
     @State private var showReorder = false
     /// Reveal archived chats in the list.
     @State private var showArchived = false
-    /// Left slide-out drawer (menu button in the header).
-    @State private var drawerOpen = false
-    /// All-familiars roster sheet (drawer's Familiars destination).
+    /// All-familiars roster sheet.
     @State private var showFamiliars = false
     @State private var showProjects = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -48,31 +46,12 @@ struct ChatsHomeView: View {
     @Namespace private var zoomNamespace
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            splitView
-                // The list stays visible behind the drawer — dimmed by the
-                // drawer's scrim and nudged right for depth (unless the user
-                // prefers reduced motion).
-                .offset(x: drawerOpen && !reduceMotion ? 16 : 0)
-                .animation(reduceMotion ? nil : .snappy(duration: 0.24), value: drawerOpen)
-            ChatDrawer(isOpen: $drawerOpen,
-                       openThread: { open(.thread($0)) },
-                       newChat: { showNewChat = true },
-                       openFamiliars: { showFamiliars = true })
-        }
-        // The drawer overlays this tab's content only, so the tab bar would
-        // otherwise float above it — hide the bar while the drawer is open.
-        .toolbar(drawerOpen ? .hidden : .automatic, for: .tabBar)
+        splitView
         .sheet(isPresented: $showFamiliars) {
             FamiliarsListView { open(.familiar($0)) }
         }
         .onAppear {
             #if DEBUG
-            // Snapshot hook: `simctl launch … --ui-open-drawer` opens the
-            // drawer on boot so automated screenshots can verify it.
-            if ProcessInfo.processInfo.arguments.contains("--ui-open-drawer") {
-                drawerOpen = true
-            }
             if ProcessInfo.processInfo.arguments.contains("--ui-open-familiars") {
                 showFamiliars = true
             }
@@ -114,7 +93,6 @@ struct ChatsHomeView: View {
             .task { if !app.sessionsLoaded { await app.loadSessions() } }
             .onAppear {
                 openDeepLinkedThread()
-                openRequestedFamiliar()
             }
             // A slash command (`/new`, `/familiar <name>`) or a task link asked to
             // open a specific thread — surface it in the detail column.
@@ -123,7 +101,6 @@ struct ChatsHomeView: View {
                 if lastThreadId != thread.id { open(.thread(thread)) }
                 app.threadToOpen = nil
             }
-            .onChange(of: app.familiarToOpen) { _, _ in openRequestedFamiliar() }
             .sidebarColumn()
         } detail: {
             detailColumn
@@ -213,22 +190,32 @@ struct ChatsHomeView: View {
         open(.thread(thread))
     }
 
-    private func openRequestedFamiliar() {
-        guard let familiar = app.familiarToOpen else { return }
-        open(.familiar(familiar))
-        app.familiarToOpen = nil
-    }
-
     /// Large-title header pinned to the top, mirroring the Read / Tasks tabs
     /// so every tab's title aligns at the same flush position.
     private var header: some View {
         VStack(spacing: 12) {
             HStack(spacing: 10) {
-                CircularIconButton(systemImage: "line.3.horizontal",
-                                   active: drawerOpen,
-                                   label: "Menu") {
-                    drawerOpen = true
+                Menu {
+                    Button {
+                        showNewChat = true
+                    } label: {
+                        Label("New chat", systemImage: "square.and.pencil")
+                    }
+                    Button {
+                        showFamiliars = true
+                    } label: {
+                        Label("Familiars", systemImage: "person.2")
+                    }
+                    Button {
+                        app.selectedTab = .settings
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title2)
                 }
+                .accessibilityLabel("Chats menu")
                 Text("Chats")
                     .font(.largeTitle.weight(.bold))
                 Spacer()

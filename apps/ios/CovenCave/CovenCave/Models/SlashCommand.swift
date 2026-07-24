@@ -38,8 +38,7 @@ struct SlashCommand: Identifiable, Hashable {
         case familiarPicker        // switch familiar (arg = name) or open the picker
         case openSessions          // jump to the Chats list
         case openBoard             // switch to the Tasks tab
-        case openCalendar          // switch to the Calendar/Schedules tab
-        case openDeveloper(String) // switch to Developer and select a section
+        case openTerminal          // switch to the Terminal tab
         case sendAsPrompt          // /run /codex /claude — send the args as a message
         case daemonStatus          // /daemon — fetch + show status inline
         case doctor                // /doctor — run `coven doctor` inline
@@ -134,9 +133,6 @@ enum SlashCatalog {
         SlashCommand(name: "/board", hint: "Tasks",
                      description: "Open the Tasks board.",
                      section: .view, availability: .native, action: .openBoard),
-        SlashCommand(name: "/rituals", aliases: ["/schedules"], hint: "Rituals",
-                     description: "Open Rituals — calendar and scheduled jobs.",
-                     section: .view, availability: .native, action: .openCalendar),
         SlashCommand(name: "/journal", hint: "Journal",
                      description: "Your daily journal — open it on the desktop.",
                      section: .view, availability: .desktopOnly, action: .desktopOnly("Journal")),
@@ -148,11 +144,8 @@ enum SlashCatalog {
                      argPlaceholder: "when + text", section: .view,
                      availability: .desktopOnly, action: .desktopOnly("Reminders")),
         SlashCommand(name: "/terminal", aliases: ["/comux"], hint: "Terminal",
-                     description: "Open the Developer terminal.",
-                     section: .view, availability: .native, action: .openDeveloper("terminal")),
-        SlashCommand(name: "/projects", hint: "Projects",
-                     description: "Open the Developer code browser.",
-                     section: .view, availability: .native, action: .openDeveloper("code")),
+                     description: "Open the Terminal.",
+                     section: .view, availability: .native, action: .openTerminal),
         SlashCommand(name: "/attach", hint: "open session",
                      description: "Open a daemon session by id — desktop for now.",
                      argPlaceholder: "session-id", section: .view,

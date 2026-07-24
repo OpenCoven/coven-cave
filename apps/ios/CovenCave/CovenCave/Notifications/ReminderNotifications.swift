@@ -53,7 +53,8 @@ enum ReminderNotifications {
             content.body = reminder.title
             content.sound = .default
             // Tapping routes to the reminders list via the app's deep-link handler.
-            content.userInfo = ["deepLink": "covencave://reminders"]
+            // TODO: add a needs-attention Tasks filter when one is available.
+            content.userInfo = ["deepLink": "covencave://tasks"]
             let comps = Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute, .second], from: fireDate)
             let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)

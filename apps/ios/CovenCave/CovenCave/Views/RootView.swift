@@ -8,15 +8,7 @@ struct RootView: View {
     var body: some View {
         @Bindable var app = app
         Group {
-            if app.deepLink == .search && !app.hasLoadedSurfaces && app.connectionState != .connected {
-                // Search deep link before a connection exists: land on the
-                // local-index SearchView rather than the Connect screen. The
-                // hasLoadedSurfaces guard limits this to the genuine
-                // pre-connection case — once the tab tree has data, a stale
-                // .search marker must never tear it down on a connection blip.
-                SearchView()
-            } else {
-                switch app.connectionState {
+            switch app.connectionState {
                 case .unconfigured, .needsAuth:
                     // No endpoint, or the desktop is up but demands pairing —
                     // only the user can fix either, so the Connect screen takes
@@ -33,7 +25,6 @@ struct RootView: View {
                     // compose keeps queueing) and narrate recovery with the pill
                     // instead of tearing down to the Connect screen.
                     MainTabView()
-                }
             }
         }
         .overlay(alignment: .top) {
@@ -71,13 +62,6 @@ struct RootView: View {
         // Frosted, accent-infused tab + navigation bars that track the desktop
         // palette and degrade to solid themed surfaces under Reduce Transparency.
         .glassBars()
-        // The Diary presents HERE, not inside MainTabView: the switch above
-        // swaps the tab tree out on a transient connection flap, and a cover
-        // presented from within it would dismiss mid-reply, aborting the
-        // diary's stream.
-        .fullScreenCover(isPresented: $app.diaryPresented) {
-            DiaryView()
-        }
     }
 
     /// The tabs are mounted but the desktop is out of reach (or a recovery
@@ -174,11 +158,7 @@ private struct ReconnectPill: View {
     }
 }
 
-/// Bottom tab bar shown once connected: Chats, Tasks, Canvas, Search, with
-/// Calendar / Developer / Settings grouped in a "More" section — a real
-/// sidebar group on iPad (`.sidebarAdaptable`), hidden from the iPhone tab
-/// bar (reached via the chat drawer, the avatar button, ⌘5–7, slash commands,
-/// and deep links; hidden tabs stay programmatically selectable).
+/// Bottom tab bar shown once connected: Chats, Tasks, Terminal, and Settings.
 ///
 /// Uses the modern `Tab(value:)` API (iOS 18+). The legacy `.tabItem`/`.tag`
 /// TabView on the iOS 26 SDK reset the selection to the first tab on a cold
@@ -203,29 +183,12 @@ struct MainTabView: View {
             Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
                 SettingsView()
             }
-            TabSection("More") {
-                Tab("Canvas", systemImage: "wand.and.stars", value: AppTab.canvas) {
-                    CanvasView()
-                }
-                Tab(value: .search, role: .search) {
-                    SearchView()
-                }
-                Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
-                    CalendarView()
-                }
-                Tab("Developer", systemImage: "chevron.left.forwardslash.chevron.right", value: AppTab.dev) {
-                    DeveloperView()
-                }
-            }
-            // Keep occasional surfaces out of the iPhone tab bar; they stay
-            // visible in the iPad/Mac sidebar.
-            .defaultVisibility(.hidden, for: .tabBar)
         }
         .tabViewStyle(.sidebarAdaptable)
         // Command confirmations float above the whole tab bar so they're visible
         // whether a command stays in chat or jumps to the Tasks tab.
         .toast($app.toast)
-        // Hardware-keyboard tab switching (iPad / Mac over Tailscale): ⌘1–7.
+        // Hardware-keyboard tab switching (iPad / Mac over Tailscale): ⌘1–4.
         // Hidden buttons keep the shortcuts active without affecting layout.
         .background {
             ForEach(Array(AppTab.shortcutOrder.enumerated()), id: \.element) { index, tab in

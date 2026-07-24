@@ -24,10 +24,6 @@ struct FamiliarThreadsView: View {
     @State private var exportArchive: ExportArchive?
     /// Per-familiar permissions sheet (project access scoped to this familiar).
     @State private var showPermissions = false
-    /// Threads vs the OpenCoven content feed (mirrors the desktop Feed tab).
-    @State private var section: ThreadSection = .threads
-    private enum ThreadSection { case threads, feed }
-
     /// One row in the list: an on-device thread or a server-only session.
     private enum Entry: Identifiable {
         case local(ChatThread)
@@ -64,25 +60,10 @@ struct FamiliarThreadsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Section", selection: $section) {
-                Text("Threads").tag(ThreadSection.threads)
-                Text("Feed").tag(ThreadSection.feed)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-
-            switch section {
-            case .threads:
-                if entries.isEmpty && archivedLocalCount == 0 {
-                    emptyState
-                } else {
-                    // Align the thread column with ChatView's 740pt transcript
-                    // so drilling into a conversation doesn't shift the content.
-                    threadList.readableListWidth(740)
-                }
-            case .feed:
-                FamiliarFeedView()
+            if entries.isEmpty && archivedLocalCount == 0 {
+                emptyState
+            } else {
+                threadList.readableListWidth(740)
             }
         }
         .navigationTitle(familiar.displayName)
@@ -115,7 +96,7 @@ struct FamiliarThreadsView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                if !selectMode && hasLocalThreads && section == .threads {
+                if !selectMode && hasLocalThreads {
                     Button("Select") { withAnimation { selectMode = true } }
                 }
             }
@@ -124,7 +105,7 @@ struct FamiliarThreadsView: View {
         .task { await app.loadSessions() }
         .onAppear { app.markFamiliarViewed([familiar.id]) }
         .safeAreaInset(edge: .bottom) {
-            if selectMode && section == .threads {
+            if selectMode {
                 HStack {
                     Button(allLocalSelected ? "Deselect All" : "Select All") { toggleSelectAll() }
                     Spacer()
