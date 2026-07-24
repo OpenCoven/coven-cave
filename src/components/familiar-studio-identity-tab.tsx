@@ -10,6 +10,7 @@ import {
 } from "@/lib/cave-familiar-overrides";
 import { FAMILIAR_TYPES, parseFamiliarTypeIds } from "@/lib/familiar-types";
 import { Icon } from "@/lib/icon";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { FamiliarStudioLookTab } from "@/components/familiar-studio-look-tab";
 import { FamiliarLifecycleSection } from "@/components/familiar-lifecycle-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -75,10 +76,18 @@ export function FamiliarStudioIdentityTab({
  * Cave override and synced to cave-config like every other identity field.
  * Each selected type ADDS its role token to the familiar's Role Surface
  * grants; the free-text Role label below keeps working exactly as before.
- * General is the empty state — it is checked when nothing is selected, and
- * clicking it clears all selections.
+ * General is the empty state — it is checked when nothing is selected.
+ * Picking General, or unchecking the last selected type, stores the literal
+ * `"general"` sentinel rather than an empty string: an empty string would
+ * only *clear* the override (see cave-familiar-overrides.ts) and let a
+ * daemon-provided `familiarType` win on resolution, making General a
+ * visible no-op. `"general"` is already treated as the empty state
+ * everywhere downstream (parseFamiliarTypeIds excludes it,
+ * familiarTypeRoleIds grants nothing, resolveFamiliarType falls back to
+ * General), so it safely beats any base value.
  */
 function FamiliarTypePicker({ familiar }: { familiar: ResolvedFamiliar }) {
+  const { announce } = useAnnouncer();
   const selectedIds = parseFamiliarTypeIds(familiar.familiarType);
   const labelId = `familiar-type-label-${familiar.id}`;
   return (
@@ -99,12 +108,19 @@ function FamiliarTypePicker({ familiar }: { familiar: ResolvedFamiliar }) {
               className={`focus-ring familiar-studio-type-chip${isChecked ? " familiar-studio-type-chip--active" : ""}`}
               onClick={() => {
                 if (t.id === "general") {
-                  setFamiliarOverride(familiar.id, { familiarType: "" });
+                  setFamiliarOverride(familiar.id, { familiarType: "general" });
+                  announce("Type set to General");
                 } else {
                   const next = new Set(selectedIds);
                   if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
-                  const value = FAMILIAR_TYPES.filter((s) => next.has(s.id)).map((s) => s.id).join(",");
+                  const selected = FAMILIAR_TYPES.filter((s) => next.has(s.id));
+                  const value = selected.length === 0 ? "general" : selected.map((s) => s.id).join(",");
                   setFamiliarOverride(familiar.id, { familiarType: value });
+                  announce(
+                    selected.length === 0
+                      ? "Type set to General"
+                      : `Type set to ${selected.map((s) => s.label).join(", ")}`,
+                  );
                 }
               }}
             >
