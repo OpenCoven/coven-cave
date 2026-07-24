@@ -38,6 +38,8 @@ struct ChatsHomeView: View {
     @State private var showArchived = false
     /// Left slide-out drawer (menu button in the header).
     @State private var drawerOpen = false
+    /// All-familiars roster sheet (drawer's Familiars destination).
+    @State private var showFamiliars = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Anchors the iOS 18 zoom transition: thread rows mark themselves as
     /// sources; the pushed conversation zooms out of its row.
@@ -53,7 +55,26 @@ struct ChatsHomeView: View {
                 .animation(reduceMotion ? nil : .snappy(duration: 0.24), value: drawerOpen)
             ChatDrawer(isOpen: $drawerOpen,
                        openThread: { open(.thread($0)) },
-                       newChat: { showNewChat = true })
+                       newChat: { showNewChat = true },
+                       openFamiliars: { showFamiliars = true })
+        }
+        // The drawer overlays this tab's content only, so the tab bar would
+        // otherwise float above it — hide the bar while the drawer is open.
+        .toolbar(drawerOpen ? .hidden : .automatic, for: .tabBar)
+        .sheet(isPresented: $showFamiliars) {
+            FamiliarsListView { open(.familiar($0)) }
+        }
+        .onAppear {
+            #if DEBUG
+            // Snapshot hook: `simctl launch … --ui-open-drawer` opens the
+            // drawer on boot so automated screenshots can verify it.
+            if ProcessInfo.processInfo.arguments.contains("--ui-open-drawer") {
+                drawerOpen = true
+            }
+            if ProcessInfo.processInfo.arguments.contains("--ui-open-familiars") {
+                showFamiliars = true
+            }
+            #endif
         }
     }
 
