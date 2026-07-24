@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before } from "node:test";
 import test from "node:test";
 import {
+  mkdir,
   mkdtemp,
   readFile,
   rm,
@@ -121,5 +122,56 @@ test("validated reads remain contained in the mission workspace", async () => {
   await assert.rejects(
     () => readValidatedMissionFile(created.id, "../mission.json"),
     /outside mission workspace/i,
+  );
+});
+
+test("loadResearchMission backfills standard artifact refs on legacy missions", async (t) => {
+  const legacyRoot = await mkdtemp(path.join(os.tmpdir(), "research-store-backfill-"));
+  const previousRoot = process.env.COVEN_RESEARCH_MISSIONS_DIR;
+  process.env.COVEN_RESEARCH_MISSIONS_DIR = legacyRoot;
+  t.after(async () => {
+    if (previousRoot === undefined) delete process.env.COVEN_RESEARCH_MISSIONS_DIR;
+    else process.env.COVEN_RESEARCH_MISSIONS_DIR = previousRoot;
+    await rm(legacyRoot, { recursive: true, force: true });
+  });
+  const legacy = {
+    version: 1,
+    id: "legacy-mission",
+    familiarId: "sage",
+    title: "Legacy",
+    intent: "Legacy mission from before standard refs",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 20,
+      maxIterations: 1,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+    status: "completed",
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T01:00:00.000Z",
+    iterations: [{ number: 1, status: "completed" }],
+    artifacts: [{
+      key: "primary",
+      kind: "brief",
+      title: "Legacy",
+      relativePath: "artifacts/primary.md",
+      iteration: 1,
+      state: "working",
+      updatedAt: "2026-07-01T01:00:00.000Z",
+    }],
+    sources: [],
+  };
+  await mkdir(path.join(legacyRoot, "legacy-mission"), { recursive: true });
+  await writeFile(path.join(legacyRoot, "legacy-mission", "mission.json"), JSON.stringify(legacy));
+  const loaded = await loadResearchMission("legacy-mission");
+  assert.ok(loaded);
+  assert.deepEqual(
+    loaded.artifacts.map((artifact) => artifact.key),
+    ["primary", "findings", "source-ledger", "research-log"],
   );
 });

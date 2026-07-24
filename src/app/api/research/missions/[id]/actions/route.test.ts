@@ -70,3 +70,12 @@ test("errors map by kind: unknown action 400, client mistakes 400, missing missi
     assert.match(source, new RegExp(known));
   }
 });
+
+test("publish-artifact is routable with its validation and conflict mappings", () => {
+  assert.match(source, /"publish-artifact"/);
+  assert.match(source, /"research mission is not settled yet"/);
+  assert.match(source, /"rejected artifacts need a new working version before publishing"/);
+  assert.match(source, /"research artifact file missing"/);
+  assert.match(source, /"Research artifact is too large"/);
+  assert.match(source, /research artifact already published/);
+});

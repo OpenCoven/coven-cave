@@ -9,6 +9,7 @@ import {
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import type { ResearchMission } from "../research-missions.ts";
+import { ensureStandardArtifactRefs } from "../research-missions.ts";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-write.ts";
 
 const MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -153,7 +154,9 @@ export async function loadResearchMission(id: string): Promise<ResearchMission |
     const raw = await readFile(path.join(/* turbopackIgnore: true */ directory, "mission.json"), "utf8");
     const parsed: unknown = JSON.parse(raw);
     if (!isResearchMission(parsed) || parsed.id !== id) return null;
-    return parsed;
+    // Additive read-time backfill: missions created before the standard refs
+    // existed gain them on load; the refs persist on the next save.
+    return ensureStandardArtifactRefs(parsed);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || error instanceof SyntaxError) return null;

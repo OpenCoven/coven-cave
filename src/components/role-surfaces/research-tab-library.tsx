@@ -13,10 +13,8 @@
  * - Card summaries are real text only: the iteration summary that produced
  *   the artifact when one exists, otherwise the mission intent. Nothing is
  *   paraphrased or invented.
- * - The design's file-export buttons are omitted: artifacts expose no
- *   client-reachable file export (relativePath is server-side only), so the
- *   only real open path is the Grimoire knowledgeId — Open ships as the same
- *   openGrimoireDoc("knowledge", …) jump the evidence ledger uses.
+ * - Artifacts are backed by real mission workspace files served via
+ *   /api/research/missions/[id]/files/[key].
  */
 
 import { useCallback, useMemo, useState } from "react";
@@ -35,6 +33,7 @@ import {
 import { relativeTime } from "@/lib/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import type { ResearchTabProps } from "./researcher-surface";
+import { ResearchArtifactActions } from "./research-artifact-actions";
 
 // ── Cards / rows view preference (persisted, SSR-guarded) ────────────────────
 
@@ -423,7 +422,9 @@ export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
                           >
                             Open
                           </Button>
-                        ) : null}
+                        ) : (
+                          <ResearchArtifactActions mission={mission} artifact={artifact} />
+                        )}
                         <button
                           type="button"
                           className="research-library-card__run focus-ring"

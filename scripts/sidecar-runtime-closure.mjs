@@ -123,7 +123,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-24 (Queue project readiness): the selected-project readiness
   // route and its server helpers trace four more files. Native Windows
   // packaging measured 5,671 files; retain the established ten-file buffer.
-  fileCount: 5_681,
+  // 2026-07-24 (research final artifacts): the mission files route
+  // ([id]/files/[key]) traces two more chunks; the PR merge tree measured
+  // 5,683 on Windows. Retain the ten-file buffer without relaxing the byte
+  // ceiling.
+  fileCount: 5_693,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

@@ -232,7 +232,10 @@ test("mission list and evidence trajectory expose semantic state", () => {
   assert.match(list, /aria-current=\{selected/);
   assert.match(detail, /aria-label="Research progress"/);
   assert.match(detail, /Open session/);
-  assert.match(ledger, /Open in Grimoire/);
+  // The ledger's Grimoire-open affordance now rides the shared artifact
+  // actions component (research-artifact-actions.tsx) instead of a local
+  // "Open in Grimoire" button.
+  assert.match(ledger, /ResearchArtifactActions/);
 });
 
 test("the mission header does not print the intent twice", () => {

@@ -235,3 +235,20 @@ test("desk-tab responsive collapses match the existing container breakpoints", (
   assert.match(css, /@container research-desk \(max-width: 760px\) \{[\s\S]*?\.research-desk-tab \.research-mission-detail__body \{ grid-template-columns: 1fr; \}/);
   assert.match(css, /\.research-desk-rail \{ border-left: 0; border-top: 1px solid var\(--border\); \}/);
 });
+
+// ── Artifact actions: shared component mounted on rail + saved summary ──────
+
+test("desk rail renders shared artifact actions with publish on settled missions", () => {
+  assert.match(detail, /ResearchArtifactActions/);
+  assert.match(detail, /onPublish=\{settled \? publishArtifact : undefined\}/);
+  assert.match(detail, /action: "publish-artifact"/);
+  assert.match(detail, /Artifact published to the Grimoire\./);
+});
+
+test("desk shows a saved-artifacts summary with a copy-workspace-path affordance", () => {
+  assert.match(detail, /fetchResearchWorkspacePath/);
+  assert.match(detail, /artifacts published to the Grimoire\./);
+  assert.match(detail, /working files saved in the mission workspace\./);
+  assert.match(detail, /Copy workspace path/);
+  assert.match(detail, /Workspace path copied/);
+});

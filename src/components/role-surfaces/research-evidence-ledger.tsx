@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
 import {
   researchSourceStatusCounts,
   type ResearchMission,
@@ -13,6 +12,7 @@ import {
   type ResearchSourceRef,
 } from "@/lib/research-missions";
 import { relativeTime } from "@/lib/relative-time";
+import { ResearchArtifactActions } from "./research-artifact-actions";
 
 type Props = {
   mission: ResearchMission;
@@ -59,6 +59,9 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
   const visibleSources = sourceFilter === "all"
     ? mission.sources
     : mission.sources.filter((source) => source.status === sourceFilter);
+  // Publishing is offered on settled missions only — a cancelled/archived run
+  // should not gain a fresh Grimoire entry after the fact.
+  const settled = ["checkpoint", "completed", "failed"].includes(mission.status);
 
   /** Failures arrive as { ok: false } from the hook; the catch is transport
    *  defense only — a throw skips the ok branch, so a failure is never
@@ -87,6 +90,11 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
     } finally {
       if (stillCurrent()) setBusy(false);
     }
+  };
+
+  const publishArtifact = async (artifactKey: string) => {
+    const ok = await act({ action: "publish-artifact", artifactKey });
+    if (ok) announce("Artifact published to the Grimoire.");
   };
 
   const attach = async (event: React.FormEvent) => {
@@ -150,15 +158,12 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
                   <time dateTime={artifact.updatedAt}>{relativeTime(artifact.updatedAt) || "just now"}</time>
                 </span>
                 {artifact.rejectionReason ? <p>{artifact.rejectionReason}</p> : null}
-                {artifact.knowledgeId ? (
-                  <button
-                    type="button"
-                    onClick={() => openGrimoireDoc("knowledge", artifact.knowledgeId!)}
-                  >
-                    Open in Grimoire
-                    <Icon name="ph:arrow-square-out" width={12} height={12} aria-hidden />
-                  </button>
-                ) : null}
+                <ResearchArtifactActions
+                  mission={mission}
+                  artifact={artifact}
+                  busy={busy}
+                  onPublish={settled ? publishArtifact : undefined}
+                />
                 {artifact.state !== "rejected" ? (
                   <details className="research-artifact-reject">
                     <summary>Reject artifact</summary>

@@ -7,14 +7,17 @@ import {
 import {
   allowedResearchActions,
   describeResearchSchedule,
+  ensureStandardArtifactRefs,
   normalizeResearchBounds,
   RESEARCH_BOUND_LIMITS,
   RESEARCH_INTENT_MIN_LENGTH,
+  researchArtifactKindForMode,
   researchBoundReadings,
   researchContinueLabel,
   researchIntentAddsContext,
   researchPhaseStatuses,
   researchSourceStatusCounts,
+  type ResearchMission,
   validateCreateResearchMissionInput,
 } from "./research-missions.ts";
 
@@ -616,6 +619,112 @@ test("source status counts drive the triage filters", () => {
     ]),
     { candidate: 2, used: 1, conflicting: 0, rejected: 1 },
   );
+});
+
+// --- researchArtifactKindForMode / ensureStandardArtifactRefs ---
+
+function missionWithArtifacts(
+  artifacts: ResearchMission["artifacts"],
+  iterations: ResearchMission["iterations"] = [{ number: 2, status: "checkpoint" }],
+): ResearchMission {
+  return {
+    version: 1,
+    id: "mission-refs",
+    familiarId: "sage",
+    title: "Storage decision",
+    intent: "Compare SQLite and Postgres",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 20,
+      maxIterations: 3,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+    status: "checkpoint",
+    createdAt: "2026-07-24T00:00:00.000Z",
+    updatedAt: "2026-07-24T01:00:00.000Z",
+    iterations,
+    artifacts,
+    sources: [],
+  };
+}
+
+test("researchArtifactKindForMode maps every mode to its deliverable kind", () => {
+  assert.equal(researchArtifactKindForMode("sweep"), "report");
+  assert.equal(researchArtifactKindForMode("paper"), "paper");
+  assert.equal(researchArtifactKindForMode("autoresearch"), "findings");
+  assert.equal(researchArtifactKindForMode("brief"), "brief");
+});
+
+test("ensureStandardArtifactRefs appends missing standard refs after existing ones", () => {
+  const primary = {
+    key: "primary",
+    kind: "brief" as const,
+    title: "Storage decision",
+    relativePath: "artifacts/primary.md",
+    iteration: 2,
+    state: "working" as const,
+    updatedAt: "2026-07-24T00:30:00.000Z",
+  };
+  const result = ensureStandardArtifactRefs(missionWithArtifacts([primary]));
+  assert.equal(result.artifacts.length, 4);
+  assert.equal(result.artifacts[0], primary, "primary stays first and untouched");
+  assert.deepEqual(
+    result.artifacts.slice(1).map((artifact) => [artifact.key, artifact.kind, artifact.relativePath]),
+    [
+      ["findings", "findings", "findings.md"],
+      ["source-ledger", "source-ledger", "sources.json"],
+      ["research-log", "research-log", "research-log.md"],
+    ],
+  );
+  for (const artifact of result.artifacts.slice(1)) {
+    assert.equal(artifact.state, "working");
+    assert.equal(artifact.iteration, 2, "backfilled refs adopt the latest iteration number");
+    assert.equal(artifact.updatedAt, "2026-07-24T00:30:00.000Z", "backfilled refs stamped no fresher than the primary");
+  }
+});
+
+test("ensureStandardArtifactRefs stamps refs from createdAt when no primary exists", () => {
+  const result = ensureStandardArtifactRefs(missionWithArtifacts([]));
+  assert.equal(result.artifacts.length, 3);
+  for (const artifact of result.artifacts) {
+    assert.equal(artifact.updatedAt, "2026-07-24T00:00:00.000Z");
+  }
+});
+
+test("ensureStandardArtifactRefs is identity when nothing is missing and never overwrites", () => {
+  const complete = ensureStandardArtifactRefs(missionWithArtifacts([{
+    key: "primary",
+    kind: "brief",
+    title: "Storage decision",
+    relativePath: "artifacts/primary.md",
+    iteration: 1,
+    state: "working",
+    updatedAt: "2026-07-24T00:30:00.000Z",
+  }]));
+  assert.equal(ensureStandardArtifactRefs(complete), complete, "same object when complete");
+
+  const customFindings = {
+    key: "findings",
+    kind: "findings" as const,
+    title: "Custom findings title",
+    relativePath: "findings.md",
+    knowledgeId: "research-mission-refs-findings",
+    iteration: 1,
+    state: "published" as const,
+    updatedAt: "2026-07-24T00:10:00.000Z",
+  };
+  const result = ensureStandardArtifactRefs(missionWithArtifacts([customFindings]));
+  assert.equal(
+    result.artifacts.find((artifact) => artifact.key === "findings"),
+    customFindings,
+    "existing refs are never overwritten",
+  );
+  assert.equal(result.artifacts.length, 3);
 });
 
 // --- researchContinueLabel: Continue must say what it will actually do ---

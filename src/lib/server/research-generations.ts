@@ -3,7 +3,9 @@
  *
  * One JSON file per familiar under ~/.coven/…/research-generations/. Drafting
  * is synchronous and strictly extractive: content is derived from the source
- * mission's newest published (else working) markdown artifact plus the
+ * mission's primary-lineage artifact (newest published, else working; falling
+ * back to the mission's newest published/working markdown artifact when no
+ * primary-lineage ref exists — see pickGenerationSourceArtifact) plus the
  * mission's own phase/step structure. Every content string either comes from
  * the artifact/mission fields verbatim or is pure structure ("graph TD",
  * slide numbering, "1/4" thread markers) — nothing is invented.
@@ -212,20 +214,49 @@ function isMarkdownArtifact(artifact: ResearchArtifactRef): boolean {
   return artifact.relativePath.toLowerCase().endsWith(".md");
 }
 
+/** research-mission-runner.ts's createMissionRecord seeds the primary ref's
+ *  relativePath as "artifacts/primary.md", and startNextIteration's rejected-
+ *  primary resurrection only ever renames the *key* (to `primary-i${n}`),
+ *  never the relativePath — so relativePath alone already identifies every
+ *  primary-lineage ref. The key pattern is matched too, defensively, so the
+ *  lineage is still found even if that relativePath invariant ever drifts. */
+const PRIMARY_ARTIFACT_RELATIVE_PATH = "artifacts/primary.md";
+const PRIMARY_ARTIFACT_KEY_PATTERN = /^primary(-i\d+)?$/;
+
+function isPrimaryLineageArtifact(artifact: ResearchArtifactRef): boolean {
+  return (
+    artifact.relativePath === PRIMARY_ARTIFACT_RELATIVE_PATH ||
+    PRIMARY_ARTIFACT_KEY_PATTERN.test(artifact.key)
+  );
+}
+
+function newestPublishedElseWorking(pool: ResearchArtifactRef[]): ResearchArtifactRef | null {
+  const byNewest = (a: ResearchArtifactRef, b: ResearchArtifactRef) =>
+    b.updatedAt.localeCompare(a.updatedAt);
+  const published = pool.filter((artifact) => artifact.state === "published").sort(byNewest);
+  if (published.length > 0) return published[0];
+  const working = pool.filter((artifact) => artifact.state === "working").sort(byNewest);
+  return working[0] ?? null;
+}
+
 /**
- * The newest published markdown artifact; when the mission has published
- * nothing yet, the newest working one. Rejected artifacts never qualify.
+ * Prefers the mission's primary lineage: its newest published markdown ref,
+ * else its newest working one. Only when the mission has no non-rejected
+ * primary-lineage ref at all does this fall back to the same newest-
+ * published-else-working pick over every other markdown ref — e.g. a
+ * manually-retried research-log publish, or a checkpoint where only a
+ * standard ref has been published, must never outrank the primary just for
+ * being the newer publish (cave research-final-artifacts Fix 1). Rejected
+ * artifacts never qualify, in either the primary lineage or the fallback.
  */
 export function pickGenerationSourceArtifact(
   mission: Pick<ResearchMission, "artifacts">,
 ): ResearchArtifactRef | null {
   const markdown = mission.artifacts.filter(isMarkdownArtifact);
-  const byNewest = (a: ResearchArtifactRef, b: ResearchArtifactRef) =>
-    b.updatedAt.localeCompare(a.updatedAt);
-  const published = markdown.filter((artifact) => artifact.state === "published").sort(byNewest);
-  if (published.length > 0) return published[0];
-  const working = markdown.filter((artifact) => artifact.state === "working").sort(byNewest);
-  return working[0] ?? null;
+  const nonRejected = markdown.filter((artifact) => artifact.state !== "rejected");
+  const primaryLineage = nonRejected.filter(isPrimaryLineageArtifact);
+  if (primaryLineage.length > 0) return newestPublishedElseWorking(primaryLineage);
+  return newestPublishedElseWorking(nonRejected);
 }
 
 // ── markdown structure extraction (pure) ─────────────────────────────────────

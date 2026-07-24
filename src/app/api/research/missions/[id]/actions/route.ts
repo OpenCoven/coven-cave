@@ -23,7 +23,7 @@ const MISSION_STATUSES: ResearchMissionStatus[] = [
 ];
 const ACTIONS = new Set<string>([
   ...MISSION_STATUSES.flatMap((status) => allowedResearchActions({ status })),
-  "attach-source", "update-source", "reject-artifact",
+  "attach-source", "update-source", "reject-artifact", "publish-artifact",
 ]);
 
 // Messages the runner throws when the CLIENT sent a bad request (invalid
@@ -39,6 +39,11 @@ const VALIDATION_ERRORS = new Set([
   "research source not found",
   "refined direction required",
   "invalid project root override",
+  "research mission is not settled yet",
+  "rejected artifacts need a new working version before publishing",
+  "research artifact file missing",
+  "Research artifact is too large",
+  "Unsupported research artifact kind",
 ]);
 
 function actionErrorStatus(message: string): number {
@@ -46,6 +51,9 @@ function actionErrorStatus(message: string): number {
   // Manual runs are refused while the linked automation is ACTIVE — a state
   // conflict the user resolves by pausing the schedule, not a bad request.
   if (message === "pause the linked automation before running manually") return 409;
+  // Re-publishing an already-vaulted artifact is a state conflict, not a bad
+  // request — the UI resolves it by refreshing the mission.
+  if (message === "research artifact already published") return 409;
   if (
     VALIDATION_ERRORS.has(message) ||
     // Retry project-root rejections carry the offending path; source-patch

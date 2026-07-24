@@ -66,3 +66,9 @@ test("act failures surface and never leak across a mission switch", () => {
   assert.match(source, /const startedFor = mission\.id/);
   assert.match(source, /missionIdRef\.current === startedFor/);
 });
+
+test("ledger artifact cards mount the shared actions with publish wiring", () => {
+  assert.match(source, /ResearchArtifactActions/);
+  assert.match(source, /action: "publish-artifact"/);
+  assert.match(source, /Artifact published to the Grimoire\./);
+});

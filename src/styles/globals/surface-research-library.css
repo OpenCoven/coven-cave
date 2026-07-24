@@ -230,9 +230,13 @@
 .research-library-card__meta-when { display: none; }
 .research-library-card__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 2px;
   align-items: center;
+}
+.research-library-card__actions .research-desk-artifact__error {
+  flex-basis: 100%;
 }
 .research-library-card__run {
   margin-left: auto;

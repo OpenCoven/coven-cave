@@ -703,3 +703,32 @@
 @media (prefers-reduced-motion: reduce) {
   .research-desk-step--running .research-desk-step__node { animation: none; }
 }
+
+/* Artifact action row (research-artifact-actions.tsx) */
+.research-desk-artifact__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.research-desk-artifact__error {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: var(--danger-text);
+}
+
+.research-artifact-viewer__content {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 60vh;
+  overflow: auto;
+  font-size: var(--text-2xs);
+}
+
+.research-artifact-viewer__empty {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}

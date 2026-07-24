@@ -1,7 +1,10 @@
 import type {
   CreateResearchMissionInput,
-  ResearchArtifactKind,
   ResearchMission,
+} from "../research-missions.ts";
+import {
+  researchArtifactKindForMode,
+  STANDARD_RESEARCH_ARTIFACTS,
 } from "../research-missions.ts";
 import type { FlowRunRecord } from "../flows.ts";
 
@@ -14,13 +17,6 @@ export type ResearchFlowStartResult = {
   unavailable?: boolean;
   error?: string;
 };
-
-function artifactKindForMode(mode: ResearchMission["mode"]): ResearchArtifactKind {
-  if (mode === "sweep") return "report";
-  if (mode === "paper") return "paper";
-  if (mode === "autoresearch") return "findings";
-  return "brief";
-}
 
 function missionTitle(input: CreateResearchMissionInput): string {
   const explicit = input.title?.trim();
@@ -36,7 +32,7 @@ export function createMissionRecord(
   now: Date,
 ): ResearchMission {
   const timestamp = now.toISOString();
-  const kind = artifactKindForMode(input.mode);
+  const kind = researchArtifactKindForMode(input.mode);
   return {
     version: 1,
     id,
@@ -54,15 +50,23 @@ export function createMissionRecord(
     createdAt: timestamp,
     updatedAt: timestamp,
     iterations: [{ number: 1, status: "queued" }],
-    artifacts: [{
-      key: "primary",
-      kind,
-      title: missionTitle(input),
-      relativePath: "artifacts/primary.md",
-      iteration: 1,
-      state: "working",
-      updatedAt: timestamp,
-    }],
+    artifacts: [
+      {
+        key: "primary",
+        kind,
+        title: missionTitle(input),
+        relativePath: "artifacts/primary.md",
+        iteration: 1,
+        state: "working",
+        updatedAt: timestamp,
+      },
+      ...STANDARD_RESEARCH_ARTIFACTS.map((standard) => ({
+        ...standard,
+        iteration: 1,
+        state: "working" as const,
+        updatedAt: timestamp,
+      })),
+    ],
     sources: [],
   };
 }
