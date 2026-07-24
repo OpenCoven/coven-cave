@@ -91,6 +91,49 @@ export type ResearchArtifactRef = {
   updatedAt: string;
 };
 
+/** Mode → primary-deliverable kind. Single source of truth — the lifecycle
+ *  and runner previously duplicated this mapping privately. */
+export function researchArtifactKindForMode(mode: ResearchMissionMode): ResearchArtifactKind {
+  if (mode === "sweep") return "report";
+  if (mode === "paper") return "paper";
+  if (mode === "autoresearch") return "findings";
+  return "brief";
+}
+
+/** The always-produced workspace files every mission must track and save,
+ *  beyond the mode-specific primary deliverable. */
+export const STANDARD_RESEARCH_ARTIFACTS: ReadonlyArray<
+  Pick<ResearchArtifactRef, "key" | "kind" | "title" | "relativePath">
+> = [
+  { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md" },
+  { key: "source-ledger", kind: "source-ledger", title: "Source ledger", relativePath: "sources.json" },
+  { key: "research-log", kind: "research-log", title: "Research log", relativePath: "research-log.md" },
+];
+
+/** Additive backfill for missions created before the standard refs existed:
+ *  appends any standard ref whose key is absent. Never overwrites, never
+ *  reorders (the primary working copy must stay first), identity when
+ *  nothing is missing. */
+export function ensureStandardArtifactRefs(mission: ResearchMission): ResearchMission {
+  const missing = STANDARD_RESEARCH_ARTIFACTS.filter(
+    (standard) => !mission.artifacts.some((artifact) => artifact.key === standard.key),
+  );
+  if (missing.length === 0) return mission;
+  const iteration = mission.iterations.at(-1)?.number ?? 1;
+  return {
+    ...mission,
+    artifacts: [
+      ...mission.artifacts,
+      ...missing.map((standard) => ({
+        ...standard,
+        iteration,
+        state: "working" as const,
+        updatedAt: mission.updatedAt,
+      })),
+    ],
+  };
+}
+
 export type ResearchSourceRef = {
   id: string;
   title: string;
