@@ -165,6 +165,32 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect.poll(() => readUrls.some((url) => new URL(url).searchParams.get("mode") === "show")).toBe(true);
   });
 
+  test("clears A before a newly selected project's readiness check fails", async ({ page }) => {
+    let failNextReadiness = false;
+    let aRootMutation = false;
+    await page.route("**/api/queue/readiness", (route) => {
+      if (failNextReadiness) return route.fulfill({ status: 503, json: { ok: false, error: "Queue readiness temporarily unavailable" } });
+      return route.fulfill({ json: { ok: true, readiness: QUEUE_READINESS } });
+    });
+    await page.route("**/api/beads", (route) => {
+      if (route.request().method() === "POST" && route.request().postDataJSON()?.projectRoot === QUEUE_PROJECT.root) aRootMutation = true;
+      return route.fallback();
+    });
+    await gotoWorkQueue(page);
+
+    const fwq = page.locator(".fwq");
+    await expect(fwq.getByText("iOS profile avatar")).toBeVisible();
+    failNextReadiness = true;
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:queue-project-selected", {
+      detail: { project: { id: "queue-project-b", name: "Queue project B", root: "/tmp/coven-cave-queue-test-project-b" } },
+    })));
+
+    await expect(fwq.getByText("Queue check unavailable")).toBeVisible();
+    await expect(fwq.getByText("iOS profile avatar")).toHaveCount(0);
+    await expect(fwq.getByRole("button", { name: "Claim", exact: true })).toHaveCount(0);
+    expect(aRootMutation).toBe(false);
+  });
+
   test("claiming for a familiar posts the selected assignee", async ({ page }) => {
     let claimBody: unknown = null;
     await page.route("**/api/beads", async (route) => {

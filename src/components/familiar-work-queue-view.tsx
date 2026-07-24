@@ -323,7 +323,25 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   }, [load]);
 
   useEffect(() => {
-    const onProjectSelected = () => { void load(true); };
+    const onProjectSelected = (event: Event) => {
+      const selected = event as CustomEvent<{ project?: { root?: string } | null }>;
+      // Selection is an isolation boundary even if its readiness request is
+      // unavailable. Clear all prior-project controls synchronously so a
+      // transient B failure cannot leave actionable cards from A on screen.
+      activeProjectRootRef.current = selected.detail?.project?.root ?? null;
+      hadPrDataRef.current = false;
+      setQueue(null);
+      setReadiness(null);
+      setReadinessFailure(null);
+      setError(null);
+      setBeadsDegraded(false);
+      setPrsDegraded(null);
+      setLastUpdated(null);
+      setBusyId(null);
+      setDetailId(null);
+      setEvidenceAdded(new Set());
+      void load(true);
+    };
     window.addEventListener("cave:queue-project-selected", onProjectSelected);
     return () => window.removeEventListener("cave:queue-project-selected", onProjectSelected);
   }, [load]);
@@ -533,7 +551,10 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     return { all: queue.total, unassigned };
   }, [queue]);
 
-  if (!hasLoaded) {
+  // A project-selection event intentionally clears the prior Queue before the
+  // next readiness response arrives. Render a short loading state during that
+  // gap rather than dereferencing the removed Queue or retaining its controls.
+  if (!hasLoaded || (!queue && !error)) {
     return (
       <div className="fwq" aria-busy>
         <header className="surface-compact-header">

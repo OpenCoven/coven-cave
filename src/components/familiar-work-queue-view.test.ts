@@ -156,7 +156,9 @@ assert.match(view, /projectRoot=\{readiness\?\.project\?\.root\}/, "Asana filing
 assert.match(view, /const sourcesUnavailable = !readinessUnavailable && readiness\?\.ok === true && readiness\.project !== null/, "a ready project with failing adapters is not treated as unselected");
 assert.match(view, /code\?: string/, "Queue preserves readiness remediation codes from the server");
 assert.match(view, /const selectionRemediable = readiness\?\.code === "no-project"/, "stale and invalid selections retain a Choose-project recovery");
+assert.match(view, /readiness\?\.code === "not-git-repository"/, "ordinary non-Git projects retain Choose-project recovery");
 assert.match(view, /const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && !canGenerate && !selectionRemediable && readiness\?\.project !== null/, "only non-repairable selected projects suppress Generate");
+assert.match(view, /Clear all prior-project controls synchronously/, "selection clears Queue state before the next readiness response");
 assert.match(view, /headline=\{readinessUnavailable \? "Queue check unavailable" : sourcesUnavailable \? "Queue sources unavailable" : canGenerate \? "Generate your Queue" : projectUnavailable \? "Queue project needs attention" : "Queue needs a project"\}/);
 assert.match(view, /readinessUnavailable \|\| sourcesUnavailable \|\| projectUnavailable \? null : canGenerate \? \(/, "Generate wins before a selected-project warning and stale roots offer Choose project");
 assert.match(view, />\s*Generate\s*<\/Button>/, "empty Queue state offers Generate");

@@ -135,9 +135,15 @@ async function gitTopLevel(root: string): Promise<GitTopLevel> {
     if (!top) return { ok: false, code: "not-git-repository", message: "The selected Queue project is not a Git repository." };
     return { ok: true, root: await realpath(/* turbopackIgnore: true */ top) };
   } catch (cause) {
-    const error = cause as NodeJS.ErrnoException;
+    const error = cause as Error & { code?: string | number; stderr?: string };
     if (error.code === "ENOENT") {
       return { ok: false, code: "git-unavailable", message: "Git is required to use the Queue project. Install Git and try again." };
+    }
+    // Git uses exit 128 for the ordinary, recoverable "not a repository"
+    // result. Keep permission, timeout, and safe-directory failures distinct
+    // so only the former offers the Choose-project remediation.
+    if (Number(error.code) === 128 && /not a git repository/i.test(`${error.message}\n${error.stderr ?? ""}`)) {
+      return { ok: false, code: "not-git-repository", message: "The selected Queue project is not a Git repository." };
     }
     return {
       ok: false,

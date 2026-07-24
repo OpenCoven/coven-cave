@@ -7,6 +7,7 @@ import path from "node:path";
 
 const tempDir = await mkdtemp(path.join(os.tmpdir(), "cave-queue-project-"));
 const projectRoot = path.join(tempDir, "project");
+const nonGitRoot = path.join(tempDir, "not-a-git-project");
 const projectsPath = path.join(tempDir, "projects.json");
 const queueProjectPath = path.join(tempDir, "queue-project.json");
 const previousProjectsPath = process.env.CAVE_PROJECTS_PATH_OVERRIDE;
@@ -17,6 +18,7 @@ process.env.CAVE_QUEUE_PROJECT_PATH_OVERRIDE = queueProjectPath;
 
 try {
   await mkdir(projectRoot);
+  await mkdir(nonGitRoot);
   execFileSync("git", ["init", "-q"], { cwd: projectRoot });
   await writeFile(
     projectsPath,
@@ -41,6 +43,22 @@ try {
 
   assert.equal((await queueProjectReadiness()).code, "no-project", "Queue never falls back to the app cwd");
   assert.equal((await selectQueueProject("queue-project"))?.root, projectRoot, "selection persists a registered project");
+
+  await writeFile(
+    projectsPath,
+    JSON.stringify({
+      version: 1,
+      projects: [
+        { id: "queue-project", name: "Queue project", root: projectRoot, createdAt: "2026-07-23T00:00:00.000Z", updatedAt: "2026-07-23T00:00:00.000Z" },
+        { id: "non-git-project", name: "Not a Git project", root: nonGitRoot, createdAt: "2026-07-23T00:00:00.000Z", updatedAt: "2026-07-23T00:00:00.000Z" },
+      ],
+    }),
+  );
+  await selectQueueProject("non-git-project");
+  const nonGit = await queueProjectReadiness();
+  assert.equal(nonGit.code, "not-git-repository", "ordinary non-Git directories offer project reselection rather than a Git execution warning");
+  assert.equal(nonGit.canGenerate, false);
+  await selectQueueProject("queue-project");
 
   const unavailableWithoutWorkspace = await queueProjectReadiness({
     beadsProbe: async () => ({ ok: false, status: 503, error: "bd unavailable", stdout: "", stderr: "" }),
