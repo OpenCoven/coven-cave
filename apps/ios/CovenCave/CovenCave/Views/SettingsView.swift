@@ -232,15 +232,18 @@ struct SettingsView: View {
         }
     }
 
+    @ViewBuilder
     private func communityLink(_ label: String, value: String, url: String) -> some View {
-        Link(destination: URL(string: url)!) {
-            LabeledContent(label) {
-                Label(value, systemImage: "arrow.up.right")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        if let destination = URL(string: url) {
+            Link(destination: destination) {
+                LabeledContent(label) {
+                    Label(value, systemImage: "arrow.up.right")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .foregroundStyle(.primary)
         }
-        .foregroundStyle(.primary)
     }
 
     // MARK: - Change host

@@ -430,67 +430,6 @@ struct ChatsHomeView: View {
     /// Number of archived chats (drives the show/hide-archived toggle).
     private var archivedCount: Int { app.threads.filter(\.archived).count }
 
-    /// Floating bottom bar: a search field beside a circular compose button,
-    /// styled after iOS Messages — accent-infused frosted glass that tracks the
-    /// desktop theme and degrades to a solid surface under Reduce Transparency.
-    private var bottomBar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Search", text: $query)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .focused($searchFocused)
-                if !query.isEmpty {
-                    Button {
-                        query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 11)
-            .glass(.control, in: Capsule())
-            .accentGlow(active: searchFocused)
-
-            // The Diary — Pencil-handwriting experiment. iPad only: the page is
-            // sized for Pencil writing, so the entry point hides on iPhone.
-            // Presented from RootView (app.diaryPresented) so a connection
-            // flap swapping the tab tree can't dismiss it mid-reply.
-            if sizeClass == .regular {
-                Button {
-                    app.diaryPresented = true
-                } label: {
-                    Image(systemName: "book.closed")
-                        .font(.system(.title3, weight: .medium))
-                        .scaledControlFrame(50)
-                        .glass(.control, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open the Diary — write with Apple Pencil")
-            }
-
-            Button {
-                showNewChat = true
-            } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(.title3, weight: .medium))
-                    .scaledControlFrame(50)
-                    .glass(.control, in: Circle())
-                    .accentGlow(active: true)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("New chat")
-            .keyboardShortcut("n", modifiers: .command)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-    }
-
     private var emptyState: some View {
         ContentUnavailableView {
             Label("No familiars yet", systemImage: "bubble.left.and.bubble.right")
