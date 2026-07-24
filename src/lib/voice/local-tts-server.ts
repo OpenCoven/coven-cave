@@ -10,6 +10,8 @@ const MAX_AUDIO_BYTES = 32 * 1024 * 1024;
 const MAX_STDERR_CHARS = 8_000;
 const PIPER_PROBE_TIMEOUT_MS = 3_000;
 const PIPER_FILE_CHECK_INTERVAL_MS = 100;
+const PIPER_TERMINATION_GRACE_MS = 1_000;
+const PIPER_FORCE_KILL_SETTLE_MS = 1_000;
 
 /**
  * Piper has no reason to receive the sidecar's provider credentials. Start
@@ -113,13 +115,32 @@ export async function piperRuntimeAvailability(): Promise<PiperRuntimeAvailabili
 
 type PiperSpawn = typeof spawn;
 
+type PiperTiming = {
+  timeoutMs: number;
+  fileCheckIntervalMs: number;
+  terminationGraceMs: number;
+  forceKillSettleMs: number;
+};
+
+const defaultPiperTiming: PiperTiming = {
+  timeoutMs: PIPER_TIMEOUT_MS,
+  fileCheckIntervalMs: PIPER_FILE_CHECK_INTERVAL_MS,
+  terminationGraceMs: PIPER_TERMINATION_GRACE_MS,
+  forceKillSettleMs: PIPER_FORCE_KILL_SETTLE_MS,
+};
+
 export async function runPiperWithDependencies(
   modelPath: string,
   text: string,
   signal?: AbortSignal,
-  dependencies: { spawnImpl?: PiperSpawn; executable?: string | null } = {},
+  dependencies: {
+    spawnImpl?: PiperSpawn;
+    executable?: string | null;
+    timing?: Partial<PiperTiming>;
+  } = {},
 ): Promise<Uint8Array> {
   const spawnImpl = dependencies.spawnImpl ?? spawn;
+  const timing = { ...defaultPiperTiming, ...dependencies.timing };
   const executable = dependencies.executable ?? piperExecutable();
   if (!executable) {
     throw new LocalTtsSynthesisError(
@@ -142,11 +163,15 @@ export async function runPiperWithDependencies(
       let settled = false;
       let terminating: LocalTtsSynthesisError | null = null;
       let checkingFile = false;
+      let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+      let forceSettleTimer: ReturnType<typeof setTimeout> | undefined;
       const finish = (error?: Error) => {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
         clearInterval(fileCheck);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
+        if (forceSettleTimer) clearTimeout(forceSettleTimer);
         signal?.removeEventListener("abort", abort);
         if (error) reject(error);
         else resolve();
@@ -154,7 +179,27 @@ export async function runPiperWithDependencies(
       const terminate = (error: LocalTtsSynthesisError) => {
         if (terminating) return;
         terminating = error;
-        child.kill();
+        child.stdin?.destroy();
+        try {
+          child.kill();
+        } catch {
+          // The child may have exited between the timeout and termination.
+        }
+        // SIGTERM can be ignored. Escalate, then settle even if a broken
+        // process never emits close so the request and temp-file cleanup do
+        // not outlive the configured timeout indefinitely.
+        forceKillTimer = setTimeout(() => {
+          if (settled) return;
+          try {
+            child.kill("SIGKILL");
+          } catch {
+            // The close event or final settle timer handles an exited child.
+          }
+          forceSettleTimer = setTimeout(
+            () => finish(error),
+            timing.forceKillSettleMs,
+          );
+        }, timing.terminationGraceMs);
       };
       const abort = () => terminate(new LocalTtsSynthesisError(
         "local_tts_cancelled",
@@ -163,7 +208,7 @@ export async function runPiperWithDependencies(
       const timeout = setTimeout(() => terminate(new LocalTtsSynthesisError(
         "local_tts_failed",
         "Piper took too long to synthesize this utterance.",
-      )), PIPER_TIMEOUT_MS);
+      )), timing.timeoutMs);
       const fileCheck = setInterval(() => {
         if (checkingFile || terminating) return;
         checkingFile = true;
@@ -178,13 +223,14 @@ export async function runPiperWithDependencies(
           })
           .catch(() => undefined)
           .finally(() => { checkingFile = false; });
-      }, PIPER_FILE_CHECK_INTERVAL_MS);
+      }, timing.fileCheckIntervalMs);
 
       child.stderr?.setEncoding("utf8");
       child.stderr?.on("data", (chunk: string) => {
         if (stderr.length < MAX_STDERR_CHARS) stderr += chunk.slice(0, MAX_STDERR_CHARS - stderr.length);
       });
       child.on("error", (error: NodeJS.ErrnoException) => {
+        if (terminating) return finish(terminating);
         finish(error.code === "ENOENT"
           ? new LocalTtsSynthesisError("local_tts_engine_unavailable", "The local Piper runtime isn't available. Install it before selecting a Piper voice.")
           : new LocalTtsSynthesisError("local_tts_failed", `Piper couldn't start (${error.message}).`));

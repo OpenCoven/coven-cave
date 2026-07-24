@@ -15,6 +15,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const LOCAL_TTS_MAX_CHARS = 4_000;
+// A UTF-8 character can use four bytes; reserve a small amount for the JSON
+// envelope and voice id. This remains deliberately tight because the sidecar
+// only accepts one bounded utterance at a time.
+export const LOCAL_TTS_MAX_BODY_BYTES = LOCAL_TTS_MAX_CHARS * 4 + 1_024;
 
 type LocalTtsRouteDependencies = {
   readiness?: (voiceName: string) => Promise<SpeechModelReadiness | null>;
@@ -27,6 +31,45 @@ type CachedReadiness = {
 };
 
 const readinessCache = new Map<string, CachedReadiness>();
+
+class LocalTtsBodyTooLargeError extends Error {}
+
+async function parseLocalTtsRequestBody(req: Request): Promise<unknown> {
+  const contentLength = req.headers.get("content-length");
+  if (contentLength) {
+    const declaredBytes = Number(contentLength);
+    if (Number.isSafeInteger(declaredBytes) && declaredBytes > LOCAL_TTS_MAX_BODY_BYTES) {
+      throw new LocalTtsBodyTooLargeError();
+    }
+  }
+
+  const reader = req.body?.getReader();
+  if (!reader) throw new SyntaxError("Request body is empty");
+  const chunks: Uint8Array[] = [];
+  let receivedBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      receivedBytes += value.byteLength;
+      if (receivedBytes > LOCAL_TTS_MAX_BODY_BYTES) {
+        await reader.cancel();
+        throw new LocalTtsBodyTooLargeError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(receivedBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+}
 
 async function readinessFingerprint(readiness: SpeechModelReadiness): Promise<string | null> {
   try {
@@ -66,8 +109,14 @@ export async function handleLocalTtsPost(
 ): Promise<Response> {
   let body: unknown;
   try {
-    body = await req.json();
-  } catch {
+    body = await parseLocalTtsRequestBody(req);
+  } catch (error) {
+    if (error instanceof LocalTtsBodyTooLargeError) {
+      return NextResponse.json(
+        { ok: false, error: "payload_too_large" },
+        { status: 413 },
+      );
+    }
     // Preserve an explicit invalid JSON response instead of allowing Next to
     // turn a malformed local request into a generic 500.
     return NextResponse.json(

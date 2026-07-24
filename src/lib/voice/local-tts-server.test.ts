@@ -67,6 +67,34 @@ test("Piper runner sends text on stdin and cleans its bounded WAV output", async
   assert.deepEqual([...wav], [82, 73, 70, 70]);
 });
 
+test("Piper runner force-kills a process that never closes after timeout", async () => {
+  const signals = [];
+  const hangingRunner = () => {
+    const child = new EventEmitter();
+    child.stdin = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = (signal) => {
+      signals.push(signal);
+      return true;
+    };
+    return child;
+  };
+
+  await assert.rejects(
+    () => runPiperWithDependencies("voice.onnx", "Hello locally.", undefined, {
+      spawnImpl: hangingRunner,
+      timing: {
+        timeoutMs: 5,
+        terminationGraceMs: 5,
+        forceKillSettleMs: 5,
+        fileCheckIntervalMs: 50,
+      },
+    }),
+    (error) => error instanceof LocalTtsSynthesisError && error.code === "local_tts_failed",
+  );
+  assert.deepEqual(signals, [undefined, "SIGKILL"]);
+});
+
 test("Piper inherits only required runtime variables", () => {
   const env = piperSpawnEnv({
     PATH: "safe-path",

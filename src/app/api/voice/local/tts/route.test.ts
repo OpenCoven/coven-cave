@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { LocalTtsSynthesisError } from "../../../../../lib/voice/local-tts-server.ts";
 import {
   handleLocalTtsPost,
+  LOCAL_TTS_MAX_BODY_BYTES,
   LOCAL_TTS_MAX_CHARS,
 } from "./route.ts";
 
@@ -59,6 +60,33 @@ test("POST local TTS validates JSON, text, and local voice ids", async () => {
     ).status,
     400,
   );
+});
+
+test("POST local TTS bounds declared and streamed request bodies before JSON parsing", async () => {
+  const declaredTooLarge = await handleLocalTtsPost(new Request("http://test/api/voice/local/tts", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "content-length": String(LOCAL_TTS_MAX_BODY_BYTES + 1),
+    },
+    body: "{}",
+  }));
+  assert.equal(declaredTooLarge.status, 413);
+  assert.equal((await declaredTooLarge.json()).error, "payload_too_large");
+
+  const streamedTooLarge = await handleLocalTtsPost(new Request("http://test/api/voice/local/tts", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("x".repeat(LOCAL_TTS_MAX_BODY_BYTES + 1)));
+        controller.close();
+      },
+    }),
+    duplex: "half",
+  }));
+  assert.equal(streamedTooLarge.status, 413);
+  assert.equal((await streamedTooLarge.json()).error, "payload_too_large");
 });
 
 test("POST local TTS selects a verified voice and returns Piper WAV audio", async () => {
