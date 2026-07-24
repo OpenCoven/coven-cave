@@ -253,9 +253,11 @@ Residual gaps, filed as follow-up beads rather than blocking the epic:
 - **Review-thread reply** — thread cards resolve/unresolve but can't reply in
   place (needs the review-comment reply endpoint); agent `reply` proposals
   fall back to conversation comments.
-- **Marker adoption directive** — nothing teaches agents to emit
-  `<coven:github>` / `<coven:skill>` markers yet; a prompt directive à la
-  `buildNextPathsDirective` would drive organic usage.
+- ~~**Marker adoption directive**~~ — shipped (cave-kj6j):
+  `buildCovenMarkersDirective` (`src/lib/coven-marker-directive.ts`) rides
+  every chat turn beside the next-paths directive, teaching
+  `<coven:github>` / `<coven:github-action>` / `<coven:skill>`; its test
+  keeps the taught examples parseable by the real extractors.
 - **Failing-tint consistency** — the stage header's ✕ and the card checks
   strip use `--color-warning`; the W5 rail dot uses `--color-danger`; pick
   one failing tint.
