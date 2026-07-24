@@ -44,5 +44,14 @@ assert.match(source, /source:\s*"cave"/, "a session-executed run is sourced to c
 // Honesty: only a truly unreachable daemon yields `unavailable: true`.
 assert.match(source, /engine\.status === 0[\s\S]{0,120}unavailable:\s*true/, "an offline daemon yields unavailable, not a fake run");
 assert.match(source, /res\.status === 0[\s\S]{0,120}unavailable:\s*true/, "a daemon that drops during spawn yields unavailable");
+// cave-aikv: a session-executed workflow must not spawn an immortal, never-
+// attached fullscreen harness TUI. Non-copilot sessions launch non-interactively
+// (copilot exempt — its nonInteractive launch mangles multi-word prompts and
+// this path has no native bridge to route it to).
+assert.match(
+  source,
+  /binding\.harness === "copilot" \? \{\} : \{ launchMode: "nonInteractive" \}/,
+  "non-copilot workflow sessions launch non-interactively (no immortal TUI)",
+);
 
 console.log("workflow run route.test.ts: ok");

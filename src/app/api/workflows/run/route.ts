@@ -204,6 +204,14 @@ async function runViaSession(body: RunBody) {
       model: binding.model,
       prompt,
       ...(familiarId ? { familiarId } : {}),
+      // Non-interactive launch: the daemon streams the orchestration prompt's
+      // assistant output instead of spawning a fullscreen, never-reaped harness
+      // TUI that nothing attaches to and that redraw-spams coven.sqlite3
+      // (cave-aikv, same fix as board task chat). Copilot is exempt — its
+      // nonInteractive launch mangles multi-word prompts (flow-executor.ts), and
+      // unlike board chat this path has no native bridge to route it to, so keep
+      // its historical interactive launch until it gets a direct-spawn.
+      ...(binding.harness === "copilot" ? {} : { launchMode: "nonInteractive" }),
     },
     timeoutMs: 8000,
   });
