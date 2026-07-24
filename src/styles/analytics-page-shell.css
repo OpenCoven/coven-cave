@@ -103,6 +103,14 @@
   height: 100%;
 }
 
+/* Reporting pages own their scroll container and previously filled the whole
+   viewport. Keep that contract scoped to the space below the desktop chrome so
+   the parent does not acquire a second scrollbar for the title-bar height. */
+.aps-main > .dr-page {
+  min-height: 100%;
+  height: 100%;
+}
+
 /* The history controls are mounted after hydration on mobile; hide the
    SSR-safe first render at the same breakpoint so mobile keeps its own chrome. */
 @media (max-width: 1023px) {
