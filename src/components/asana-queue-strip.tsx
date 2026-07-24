@@ -51,6 +51,12 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId, projectRoo
   const [filed, setFiled] = useState<Set<string>>(() => new Set());
   const abortRef = useRef<AbortController | null>(null);
 
+  // Filed is a per-Queue-project fact. The same Asana item may validly be
+  // filed into a different selected repository after a project switch.
+  useEffect(() => {
+    setFiled(new Set());
+  }, [projectRoot]);
+
   const load = useCallback(async () => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
