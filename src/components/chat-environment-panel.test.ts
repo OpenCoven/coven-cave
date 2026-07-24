@@ -77,7 +77,7 @@ const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8
 assert.match(
   chatView,
   /<ChatEnvironmentPanel\n\s+projectRoot=\{session\?\.project_root \?\? projectRoot \?\? null\}/,
-  "panel keys on the SAME session-root derivation as ChatStageHeader (cave-r0gt)",
+  "panel keys on the SESSION-root derivation (cave-r0gt)",
 );
 assert.match(chatView, /runtime=\{session\?\.runtime \?\? null\}/, "runtime rides the session row for the Local/ssh label");
 assert.match(chatView, /hasTurns=\{turns\.length > 0\}/, "empty-state chats keep the transcript clean");

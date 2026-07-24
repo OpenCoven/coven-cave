@@ -129,6 +129,12 @@ require a user tap even for Tier-1 kinds.
 
 ## §4 Stage header strip
 
+> **Removed 2026-07 (cave-ohcj):** the stage header strip and the §6
+> failing-checks rail badge were retired when the dedicated **Code surface**
+> took ownership of stage/PR context (per-session PR panel). `stage-model.ts`
+> lives on as the shared model behind the Code surface's PR panel and the
+> Beads work queue. The sections below are kept as historical design record.
+
 **`src/lib/stage-model.ts` (new, extracted):** the bead↔PR↔session join and
 lane resolution currently inside `src/lib/beads-work-queue.ts` (lanes:
 checks-failing, needs-review, ready-to-merge, waiting, post-merge-cleanup)
@@ -163,6 +169,10 @@ leakage; the marker is the sanctioned channel and is extracted before
 filtering can touch it (same ordering as next-paths).
 
 ## §6 Code-rail GitHub awareness
+
+> **Removed 2026-07 (cave-ohcj):** see the §4 note — the failing-checks badge
+> died with its only publisher (the stage header). Checks visibility now lives
+> on the Code surface's PR panel.
 
 Minimal by design: the rail strip (and its collapsed `</>` form) shows a
 small failing-checks badge fed by `stage-model` when the session's PR has a

@@ -140,7 +140,6 @@ import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { GitHubCard } from "@/components/github-card";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
-import { ChatStageHeader } from "@/components/chat-stage-header";
 import {
   NO_PROJECT_ID,
   chatProjectById,
@@ -1426,8 +1425,8 @@ function MetaLine({
   const task = linkedContext?.task ?? null;
   // Chat-revamp 1b: the header meta carries the session's live git branch
   // beside the familiar + model. The fetch rides the shared changes-summary
-  // gate (cave-v8hh) — the composer git chip and stage header already poll the
-  // same root, so this subscriber adds no extra requests.
+  // gate (cave-v8hh) — the composer git chip already polls the same root, so
+  // this subscriber adds no extra requests.
   const { branch: gitBranch } = useChangesSummary(
     session?.project_root ?? projectRoot ?? undefined,
     Boolean(session?.project_root ?? projectRoot),
@@ -5563,15 +5562,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </MetaLine>
       </header>
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
-      {/* Stage header keys on the SESSION's root — the same source the rail
-          badge listeners use (chat-surface railProjectRoot) — so publisher
-          and listener can't drift onto different derivations (cave-r0gt). */}
-      <ChatStageHeader projectRoot={session?.project_root ?? projectRoot ?? null} onOpenUrl={onOpenUrl} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
         {/* Floating Environment HUD (cave-68vv): wide panes only; keys on the
-            same session-root derivation as ChatStageHeader above. */}
+            SESSION-root derivation (cave-r0gt). */}
         <ChatEnvironmentPanel
           projectRoot={session?.project_root ?? projectRoot ?? null}
           runtime={session?.runtime ?? null}

@@ -6,16 +6,9 @@ const src = readFileSync(new URL("./workspace-rail.tsx", import.meta.url), "utf8
 assert.match(src, /export function WorkspaceRail\(/, "exports WorkspaceRail");
 assert.match(src, /className=\{`workspace-rail\$\{isFullscreen \? " workspace-rail--fullscreen" : ""\}`\}/, "root class includes fullscreen modifier state");
 assert.match(src, /aria-label="Code rail"/, "labels the rail region");
-for (const t of ["Files", "Terminal"]) {
+for (const t of ["Changes", "Files", "Terminal"]) {
   assert.match(src, new RegExp(`aria-label="${t}"`), `has a ${t} tab`);
 }
-// Changes carries a conditional label — the failing-checks badge (cave-fpqx.12)
-// announces itself through the tab's accessible name.
-assert.match(
-  src,
-  /aria-label=\{checksFailing \? "Changes — PR checks failing" : "Changes"\}/,
-  "has a Changes tab (with the failing-checks announcement)",
-);
 assert.match(src, /SessionChangesPanel/, "Changes tab reuses SessionChangesPanel");
 // Files tab renders the composed tree + inline-editable file preview panel.
 assert.match(src, /RailFilesPanel/, "Files tab renders RailFilesPanel");

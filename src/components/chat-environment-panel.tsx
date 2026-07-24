@@ -48,7 +48,7 @@ const ROW_CLASS =
   "focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]";
 
 type Props = {
-  /** The session's project root (same derivation as ChatStageHeader). */
+  /** The session's project root (session.project_root over the surface fallback, cave-r0gt). */
   projectRoot: string | null;
   /** The conversation's recorded runtime ("local:<cwd>" | "ssh:<host>:<cwd>"). */
   runtime?: string | null;

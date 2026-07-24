@@ -173,7 +173,6 @@ export function ChatSurface({
     changeCount,
     effectiveProjectRoot,
     focus: codeRailFocus,
-    reopenChecksFailing,
     isMobile,
     paneNarrow,
     showInline: showCodeRail,
@@ -534,14 +533,13 @@ export function ChatSurface({
       {rail.available && !rail.open && !isMobile && !paneNarrow && (
         <button
           type="button"
-          aria-label={reopenChecksFailing ? "Show code rail — PR checks failing" : "Show code rail"}
-          title={reopenChecksFailing ? "PR checks failing" : "Show code rail"}
+          aria-label="Show code rail"
+          title="Show code rail"
           className="workspace-rail-reopen focus-ring"
           onClick={rail.reopen}
         >
           <Icon name="ph:sidebar-simple" width={15} aria-hidden />
           <span className="workspace-rail-reopen__label">Code</span>
-          {reopenChecksFailing ? <span className="workspace-rail__badge workspace-rail__badge--alert" aria-hidden /> : null}
         </button>
       )}
       {/* Mobile / narrow code rail: same WorkspaceRail as desktop, but hosted in
