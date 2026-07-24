@@ -6,7 +6,10 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const railController = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const pendingChatActionLib = await readFile(new URL("../lib/pending-chat-action.ts", import.meta.url), "utf8");
-const pendingCodeRailOpenLib = await readFile(new URL("../lib/pending-code-rail-open.ts", import.meta.url), "utf8");
+const pendingCodeOpenLib = await readFile(new URL("../lib/pending-code-open.ts", import.meta.url), "utf8");
+const codeView = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
+const codeWorkbench = await readFile(new URL("./code-workbench.tsx", import.meta.url), "utf8");
+const codeWorkbenchFiles = await readFile(new URL("./code-workbench-files.tsx", import.meta.url), "utf8");
 const workspaceRail = await readFile(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
 const railFilesPanel = await readFile(new URL("./rail-files-panel.tsx", import.meta.url), "utf8");
 
@@ -118,98 +121,119 @@ assert.match(
   "ChatSurface should pass pending initial controls into ChatRouter.newChat",
 );
 
-// File/diff links can be dispatched while ChatSurface is not mounted. Workspace
-// must keep the event detail long enough for ChatSurface to route it into the
-// repo-aware code rail after switching to chat.
+// File/diff links land on the Code surface (cave-ohcj) — from ANY mode,
+// including chat. Workspace keeps the event detail (plus the raising chat
+// session) in state long enough for CodeView to mount and route it into the
+// right session's workbench.
 assert.match(
-  pendingCodeRailOpenLib,
-  /export type PendingCodeRailOpen =[\s\S]*kind: "files"[\s\S]*kind: "changes"[\s\S]*path: string[\s\S]*nonce: number/,
-  "PendingCodeRailOpen should be defined once in the shared lib so Workspace and ChatSurface cannot drift",
+  pendingCodeOpenLib,
+  /export type PendingCodeOpen =[\s\S]*kind: "files"[\s\S]*sessionId\?: string[\s\S]*kind: "changes"[\s\S]*path: string[\s\S]*sessionId\?: string[\s\S]*nonce: number/,
+  "PendingCodeOpen should be defined once in the shared lib and carry the raising session",
 );
 assert.match(
   workspace,
-  /import type \{ PendingCodeRailOpen \} from "@\/lib\/pending-code-rail-open"/,
-  "Workspace should import the shared pending code-rail open type",
+  /import type \{ PendingCodeOpen \} from "@\/lib\/pending-code-open"/,
+  "Workspace should import the shared pending code open type",
 );
-assert.match(
+assert.doesNotMatch(
   chatSurface,
-  /import type \{ PendingCodeRailOpen \} from "@\/lib\/pending-code-rail-open"/,
-  "ChatSurface should import the shared pending code-rail open type",
+  /PendingCodeRailOpen|PendingCodeOpen|pendingCodeRailOpen/,
+  "ChatSurface no longer participates in file/diff open routing (cave-ohcj)",
 );
 assert.match(
   workspace,
-  /const \[pendingCodeRailOpen, setPendingCodeRailOpen\] = useState<PendingCodeRailOpen \| null>\(null\)/,
-  "Workspace should retain file/diff open detail across the mode switch into chat",
+  /const \[pendingCodeOpen, setPendingCodeOpen\] = useState<PendingCodeOpen \| null>\(null\)/,
+  "Workspace should retain file/diff open detail across the mode switch into code",
 );
 assert.match(
   workspace,
   /window\.addEventListener\("cave:open-project-file", onOpenProjectFile as EventListener\);[\s\S]*window\.addEventListener\("cave:open-file-diff", onOpenFileDiff as EventListener\);/,
-  "Workspace should bridge both file preview and diff events from non-chat modes",
+  "Workspace should bridge both file preview and diff events",
 );
 assert.match(
   workspace,
-  /if \(modeRef\.current === "chat"\) return;[\s\S]*setPendingCodeRailOpen\([\s\S]*kind === "files"[\s\S]*path: detail\.path[\s\S]*line: detail\.line[\s\S]*path: detail\.path[\s\S]*nonce: Date\.now\(\)[\s\S]*\);[\s\S]*setMode\("chat"\)/,
-  "Workspace should skip duplicate handling in chat but preserve path/line detail before switching there",
+  /const sessionId = activeChatSessionIdRef\.current \?\? undefined;[\s\S]*setPendingCodeOpen\([\s\S]*kind === "files"[\s\S]*path: detail\.path[\s\S]*line: detail\.line[\s\S]*sessionId[\s\S]*path: detail\.path[\s\S]*sessionId[\s\S]*nonce: Date\.now\(\)[\s\S]*\);[\s\S]*setMode\("code"\)/,
+  "Workspace should attach the raising chat session and switch into code mode",
 );
 assert.match(
   workspace,
-  /pendingCodeRailOpen=\{pendingCodeRailOpen\}[\s\S]*onPendingCodeRailOpenHandled=\{\(\) => setPendingCodeRailOpen\(null\)\}/,
-  "Workspace should pass pending file/diff opens into ChatSurface and clear them after consumption",
-);
-assert.match(
-  chatSurface,
-  /pendingCodeRailOpen\?: PendingCodeRailOpen/,
-  "ChatSurface should accept pending code-rail open actions",
+  /pendingOpen=\{pendingCodeOpen\}[\s\S]*onPendingOpenHandled=\{\(\) => setPendingCodeOpen\(null\)\}/,
+  "Workspace should pass pending file/diff opens into CodeView and clear them after consumption",
 );
 assert.match(
   railController,
   /openTarget[\s\S]*rail\.reopen\(\)[\s\S]*rail\.setActiveTab\(target\.kind === "changes" \? "changes" : "files"\)[\s\S]*setFocus/,
   "The shared rail controller should reopen the code rail, select Files/Changes, and store the focused path",
 );
-assert.match(
+assert.doesNotMatch(
   railController,
-  /openProjectFile[\s\S]*openTarget\(\{ kind: "files"[\s\S]*openFileDiff[\s\S]*openTarget\(\{ kind: "changes"[\s\S]*addEventListener\("cave:open-project-file"[\s\S]*addEventListener\("cave:open-file-diff"/,
-  "The shared rail controller should directly consume file and diff events while mounted",
+  /addEventListener\("cave:open-project-file"|addEventListener\("cave:open-file-diff"|addEventListener\("cave:browse-project-files"/,
+  "the rail controller no longer consumes global file/diff/browse open events (cave-ohcj)",
 );
 assert.match(
-  chatSurface,
-  /if \(!pendingCodeRailOpen\) return[\s\S]*openCodeRailTarget\(pendingCodeRailOpen\)[\s\S]*onPendingCodeRailOpenHandled\(\)/,
-  "ChatSurface should consume pending file/diff opens after mounting",
+  railController,
+  /window\.addEventListener\("cave:changes-open", openChanges\)/,
+  "the rail controller keeps its surface-internal show-changes affordance",
+);
+assert.match(
+  codeView,
+  /if \(!pendingOpen\) return;[\s\S]*pendingOpen\.sessionId[\s\S]*\.find\(\(row\) => row\.id === pendingOpen\.sessionId\)[\s\S]*setTopTab\("sessions"\);[\s\S]*if \(target\) setSelectedId\(target\.id\);[\s\S]*onPendingOpenHandled\?\.\(\)/,
+  "CodeView should consume pending opens by selecting the raising session's workbench",
+);
+assert.match(
+  codeView,
+  /openTarget=\{\s*workbenchTarget && \(workbenchTarget\.sessionId \?\? selected\.id\) === selected\.id\s*\? workbenchTarget\.open\s*: undefined\s*\}/,
+  "CodeView should hand the open target only to the session it resolved to",
+);
+assert.match(
+  codeWorkbench,
+  /if \(!openTarget\) return;[\s\S]*setTab\(openTarget\.kind === "changes" \? "diff" : "files"\)/,
+  "the workbench should land a routed open on the Diff or Files tab",
+);
+assert.match(
+  codeWorkbench,
+  /<SessionChangesInner[\s\S]*focusPath=\{openTarget\?\.kind === "changes" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "changes" \? openTarget\.nonce : undefined\}/,
+  "the workbench should focus diff targets in its Diff tab",
+);
+assert.match(
+  codeWorkbench,
+  /<LazyFilesTab[\s\S]*focusPath=\{openTarget\?\.kind === "files" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "files" \? openTarget\.nonce : undefined\}/,
+  "the workbench should focus file targets in its Files tab",
+);
+assert.match(
+  codeWorkbenchFiles,
+  /focusPath\?: string \| null[\s\S]*focusNonce\?: number[\s\S]*useEffect\(\(\) => \{[\s\S]*if \(!focusPath\) return;[\s\S]*openPath\(focusPath\)/,
+  "the workbench Files tab should select an externally focused path",
 );
 
 // cave-z44: Projects hub "Browse files" drills into a project ROOT (no file).
-// The shared type carries an optional root; Workspace bridges the event from
-// non-chat modes; ChatSurface consumes it directly when already mounted and
-// arms the browse override.
+// The shared type carries an optional root; Workspace bridges the event into
+// code mode; CodeView picks that root's newest session (or degrades to the
+// surface with no workbench focus when none exists).
 assert.match(
-  pendingCodeRailOpenLib,
+  pendingCodeOpenLib,
   /kind: "files";[\s\S]*root\?: string;/,
   "the shared type carries an optional browse root on the files open",
 );
 assert.match(
   workspace,
   /window\.addEventListener\("cave:browse-project-files", onBrowseProjectFiles as EventListener\)/,
-  "Workspace bridges the Projects-hub browse-files event into chat mode",
+  "Workspace bridges the Projects-hub browse-files event into code mode",
 );
 assert.match(
   workspace,
-  /onBrowseProjectFiles = \(e: Event\) => \{[\s\S]*if \(modeRef\.current === "chat"\) return;[\s\S]*if \(!detail\?\.root\) return;[\s\S]*setPendingCodeRailOpen\(\{ kind: "files", root: detail\.root, nonce: Date\.now\(\) \}\)[\s\S]*setMode\("chat"\)/,
-  "Workspace preserves the browse root and switches to chat",
+  /onBrowseProjectFiles = \(e: Event\) => \{[\s\S]*if \(!detail\?\.root\) return;[\s\S]*setPendingCodeOpen\(\{ kind: "files", root: detail\.root, nonce: Date\.now\(\) \}\)[\s\S]*setMode\("code"\)/,
+  "Workspace preserves the browse root and switches to code",
 );
 assert.match(
-  railController,
-  /browseProjectFiles[\s\S]*if \(detail\?\.root\) openTarget\(\{ kind: "files", root: detail\.root, nonce: Date\.now\(\) \}\)/,
-  "The shared rail controller directly consumes the browse-files event when already mounted",
+  codeView,
+  /const byRoot =[\s\S]*trim\(codeSessionWorkRoot\(row\)\) === trim\(root\)/,
+  "CodeView resolves a browse root to the newest session working in it",
 );
 assert.match(
-  railController,
-  /window\.addEventListener\("cave:browse-project-files", browseProjectFiles as EventListener\)/,
-  "The shared rail controller listens for the browse-files event",
-);
-assert.match(
-  railController,
-  /setBrowseRootOverride\(target\.kind === "files" \? \(target\.root \?\? null\) : null\)/,
-  "openTarget arms the browse override from a files target's root and clears it otherwise",
+  codeView,
+  /setWorkbenchTarget\(root && !target \? null : \{ open: pendingOpen, sessionId: target\?\.id \?\? null \}\)/,
+  "a browse root with no matching session degrades to the surface without a stale focus",
 );
 assert.match(
   chatSurface,

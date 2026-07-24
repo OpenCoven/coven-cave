@@ -57,16 +57,17 @@ assert.match(
 assert.match(chatView, /openTargetFile = \(e: ReactMouseEvent\) => \{[\s\S]*?stopPropagation\(\)/, "open handler stops propagation");
 
 // (ComuxView's cave:open-project-file listener left with the component,
-// cave-c3yt — the chat code rail below is the live consumer.)
+// cave-c3yt — the workspace bridge into the Code surface is the live
+// consumer, cave-ohcj.)
 assert.match(
   workspace,
-  /File\/diff links target ChatSurface's code rail[\s\S]*?setPendingCodeRailOpen\([\s\S]*?setMode\("chat"\)/,
-  "workspace preserves file-open event detail while switching into chat",
+  /File\/diff links land on the Code surface[\s\S]*?setPendingCodeOpen\([\s\S]*?setMode\("code"\)/,
+  "workspace preserves file-open event detail while switching into code",
 );
-assert.match(
+assert.doesNotMatch(
   railController,
-  /addEventListener\("cave:open-project-file"[\s\S]*addEventListener\("cave:open-file-diff"[\s\S]*openTarget/,
-  "the shared rail controller routes file and diff open events into the code rail",
+  /addEventListener\("cave:open-project-file"|addEventListener\("cave:open-file-diff"/,
+  "the chat rail controller no longer consumes global file/diff open events (cave-ohcj)",
 );
 
 console.log("tool-target-file.test.ts: ok");

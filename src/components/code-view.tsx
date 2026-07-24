@@ -19,6 +19,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import {
+  codeSessionWorkRoot,
   groupCodeRailSessions,
   parseCodeDeepLink,
   type CodeTopTab,
@@ -27,6 +28,7 @@ import { CodeSessionRail } from "@/components/code-session-rail";
 import { CodeWorkbench } from "@/components/code-workbench";
 import { CodeNewSession } from "@/components/code-new-session";
 import type { GitHubItemTarget } from "@/lib/github-item-url";
+import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { SessionRow } from "@/lib/types";
 
 // GitHubView keeps its own chunk: CodeView opens far more often than its
@@ -45,6 +47,11 @@ export type CodeViewProps = {
   onJumpToSession: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard: (cardId: string) => void;
   githubTarget?: GitHubItemTarget | null;
+  /** A file/diff open raised anywhere in the app (cave-ohcj): the workspace
+   *  routes cave:open-project-file / cave:open-file-diff /
+   *  cave:browse-project-files here instead of Chat's code rail. */
+  pendingOpen?: PendingCodeOpen | null;
+  onPendingOpenHandled?: () => void;
   onTasksRefresh: () => void;
 };
 
@@ -54,6 +61,8 @@ export function CodeView({
   onJumpToSession,
   onFocusCard,
   githubTarget,
+  pendingOpen,
+  onPendingOpenHandled,
   onTasksRefresh,
 }: CodeViewProps) {
   // `?mode=code&session=<id>&ctab=<sessions|github>&wtab=<diff|files|terminal|pr>`
@@ -96,6 +105,36 @@ export function CodeView({
   );
 
   const groups = useMemo(() => groupCodeRailSessions(sessions), [sessions]);
+
+  // Consume a routed file/diff open (cave-ohcj): select the raising chat
+  // session's workbench — or, for a Projects-hub root browse, the newest
+  // session working in that root — and hand the target down for tab focus.
+  // Held with the session it resolved to so a later manual session switch
+  // doesn't replay a stale file focus into an unrelated workbench.
+  const [workbenchTarget, setWorkbenchTarget] = useState<{
+    open: PendingCodeOpen;
+    sessionId: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!pendingOpen) return;
+    const byId = pendingOpen.sessionId
+      ? groups.flatMap((g) => g.sessions).find((row) => row.id === pendingOpen.sessionId)
+      : undefined;
+    const root = pendingOpen.kind === "files" ? pendingOpen.root : undefined;
+    const trim = (p: string) => p.replace(/\/+$/, "");
+    const byRoot =
+      !byId && root
+        ? groups.flatMap((g) => g.sessions).find((row) => trim(codeSessionWorkRoot(row)) === trim(root))
+        : undefined;
+    const target = byId ?? byRoot;
+    setTopTab("sessions");
+    if (target) setSelectedId(target.id);
+    // Root browse with no matching session: there is no workbench to focus —
+    // land on the surface and leave the rail/selection as-is.
+    setWorkbenchTarget(root && !target ? null : { open: pendingOpen, sessionId: target?.id ?? null });
+    onPendingOpenHandled?.();
+  }, [groups, onPendingOpenHandled, pendingOpen]);
+
   const selected = useMemo(() => {
     if (!selectedId) return null;
     for (const group of groups) {
@@ -175,7 +214,12 @@ export function CodeView({
             <CodeSessionRail
               sessions={sessions}
               selectedId={selectedId ?? null}
-              onSelect={setSelectedId}
+              onSelect={(id) => {
+                // A manual switch is a context change — drop any pending file
+                // focus so it can't replay into the newly picked workbench.
+                setWorkbenchTarget(null);
+                setSelectedId(id);
+              }}
               onNewSession={() => setNewSessionOpen(true)}
             />
           </div>
@@ -198,6 +242,11 @@ export function CodeView({
                     key={selected.id}
                     row={selected}
                     initialTab={deepLink?.sessionId === selected.id ? deepLink?.workbenchTab : undefined}
+                    openTarget={
+                      workbenchTarget && (workbenchTarget.sessionId ?? selected.id) === selected.id
+                        ? workbenchTarget.open
+                        : undefined
+                    }
                     onJumpToSession={onJumpToSession}
                     onRefresh={onTasksRefresh}
                   />

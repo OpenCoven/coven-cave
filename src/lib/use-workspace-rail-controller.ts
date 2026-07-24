@@ -7,7 +7,7 @@ import { useCodeRail } from "@/lib/use-code-rail";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useStageChecksBadge } from "@/lib/use-stage-checks-badge";
 import { useIsMobile } from "@/lib/use-viewport";
-import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
+import type { PendingCodeOpen } from "@/lib/pending-code-open";
 
 type Args = {
   containerRef: RefObject<HTMLElement | null>;
@@ -106,7 +106,7 @@ export function useWorkspaceRailController({
     terminalActive: terminalOpened,
     browseActive: browseRootOverride !== null,
   });
-  const [focus, setFocus] = useState<PendingCodeRailOpen | null>(null);
+  const [focus, setFocus] = useState<PendingCodeOpen | null>(null);
   useEffect(() => {
     if (rail.activeTab === "terminal" && rail.open) setTerminalOpened(true);
   }, [rail.activeTab, rail.open]);
@@ -144,7 +144,7 @@ export function useWorkspaceRailController({
     if (!rail.available || (!isMobile && !paneNarrow) || !active) setMobileOpen(false);
   }, [active, isMobile, paneNarrow, rail.available]);
 
-  const openTarget = useCallback((target: PendingCodeRailOpen) => {
+  const openTarget = useCallback((target: PendingCodeOpen) => {
     onActivate?.();
     setBrowseRootOverride(target.kind === "files" ? (target.root ?? null) : null);
     rail.reopen();
@@ -161,30 +161,16 @@ export function useWorkspaceRailController({
     if (isMobile || paneNarrow) setMobileOpen(true);
   }, [isMobile, onActivate, paneNarrow, rail]);
 
+  // File/diff/browse open events (cave:open-project-file, cave:open-file-diff,
+  // cave:browse-project-files) are workspace-level concerns now — they route
+  // to the Code surface (cave-ohcj), not this rail. The rail keeps only its
+  // surface-internal "show changes" affordance.
   useEffect(() => {
-    const openProjectFile = (event: Event) => {
-      const detail = (event as CustomEvent<{ path?: string; line?: number }>).detail;
-      if (detail?.path) openTarget({ kind: "files", path: detail.path, line: detail.line, nonce: Date.now() });
-    };
-    const openFileDiff = (event: Event) => {
-      const detail = (event as CustomEvent<{ path?: string }>).detail;
-      if (detail?.path) openTarget({ kind: "changes", path: detail.path, nonce: Date.now() });
-    };
-    const browseProjectFiles = (event: Event) => {
-      const detail = (event as CustomEvent<{ root?: string }>).detail;
-      if (detail?.root) openTarget({ kind: "files", root: detail.root, nonce: Date.now() });
-    };
-    window.addEventListener("cave:open-project-file", openProjectFile as EventListener);
-    window.addEventListener("cave:open-file-diff", openFileDiff as EventListener);
-    window.addEventListener("cave:browse-project-files", browseProjectFiles as EventListener);
     window.addEventListener("cave:changes-open", openChanges);
     return () => {
-      window.removeEventListener("cave:open-project-file", openProjectFile as EventListener);
-      window.removeEventListener("cave:open-file-diff", openFileDiff as EventListener);
-      window.removeEventListener("cave:browse-project-files", browseProjectFiles as EventListener);
       window.removeEventListener("cave:changes-open", openChanges);
     };
-  }, [openChanges, openTarget]);
+  }, [openChanges]);
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("cave:code-rail-visibility", { detail: { open: showInline } }));

@@ -25,7 +25,6 @@ import { useWorkspaceRailController } from "@/lib/use-workspace-rail-controller"
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
-import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 
@@ -82,12 +81,10 @@ type Props = {
   onRetryFamiliars?: () => void;
   pendingProjectRoot: string | null;
   pendingChatAction?: PendingChatAction;
-  pendingCodeRailOpen?: PendingCodeRailOpen | null;
   onSetActiveFamiliar: (id: string | null) => void;
   onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => void;
   onClearPendingProjectRoot: () => void;
   onPendingChatActionHandled: () => void;
-  onPendingCodeRailOpenHandled: () => void;
   onSessionStarted: () => void;
   onSlashFromChat: (command: string, args: string) => boolean;
   onOpenOnboarding: () => void;
@@ -123,12 +120,10 @@ export function ChatSurface({
   onRetryFamiliars,
   pendingProjectRoot,
   pendingChatAction,
-  pendingCodeRailOpen,
   onSetActiveFamiliar,
   onFamiliarScopeChange,
   onClearPendingProjectRoot,
   onPendingChatActionHandled,
-  onPendingCodeRailOpenHandled,
   onSessionStarted,
   onSlashFromChat,
   onOpenOnboarding,
@@ -185,7 +180,6 @@ export function ChatSurface({
     mobileAvailable: mobileRail,
     mobileOpen: mobileRailOpen,
     setMobileOpen: setMobileRailOpen,
-    openTarget: openCodeRailTarget,
     collapse: collapseCodeRail,
   } = railController;
 
@@ -298,12 +292,6 @@ export function ChatSurface({
     window.setTimeout(() => routerRef.current?.goToList(), 0);
     onPendingChatActionHandled();
   }, [onPendingChatActionHandled, onSetActiveFamiliar, pendingChatAction, routerRef]);
-
-  useEffect(() => {
-    if (!pendingCodeRailOpen) return;
-    openCodeRailTarget(pendingCodeRailOpen);
-    onPendingCodeRailOpenHandled();
-  }, [onPendingCodeRailOpenHandled, openCodeRailTarget, pendingCodeRailOpen]);
 
   function startProjectChat(projectRoot: string) {
     setScope("conversation");

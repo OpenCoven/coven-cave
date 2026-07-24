@@ -7,7 +7,7 @@ import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { RailFilesPanel } from "@/components/rail-files-panel";
 import { RailTerminalPanel } from "@/components/rail-terminal-panel";
 import type { CodeRailTab } from "@/lib/code-rail";
-import type { PendingCodeRailOpen as CodeRailFocus } from "@/lib/pending-code-rail-open";
+import type { PendingCodeOpen as CodeRailFocus } from "@/lib/pending-code-open";
 import { useStageChecksBadge } from "@/lib/use-stage-checks-badge";
 
 const TAB_TITLE: Record<CodeRailTab, string> = {
