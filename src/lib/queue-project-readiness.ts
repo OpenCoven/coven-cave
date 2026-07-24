@@ -8,7 +8,7 @@ import { loadProjects, projectById } from "@/lib/cave-projects";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { caveHome } from "@/lib/coven-paths";
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
-import { runBdCommand } from "@/lib/server/beads-cli";
+import { runBdCommand, type BdResult } from "@/lib/server/beads-cli";
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
@@ -27,7 +27,8 @@ export type QueueProjectReadinessCode =
   | "not-git-repository"
   | "git-unavailable"
   | "git-error"
-  | "project-not-git-root";
+  | "project-not-git-root"
+  | "project-storage-error";
 
 export type QueueProjectReadiness = {
   ok: boolean;
@@ -37,6 +38,18 @@ export type QueueProjectReadiness = {
   /** A valid repository can be generated into when it has no Beads workspace. */
   canGenerate: boolean;
 };
+
+type BeadsProbe = (repoRoot: string, beadsDir: string, args: string[]) => Promise<BdResult>;
+type QueueProjectReadinessOptions = { beadsProbe?: BeadsProbe };
+const READY_PROBE_TTL_MS = 2_000;
+const readyProbeCache = new Map<string, { expiresAt: number; result: BdResult }>();
+
+export class QueueProjectStorageError extends Error {
+  constructor(message = "Cave could not read or save the Queue project selection.") {
+    super(message);
+    this.name = "QueueProjectStorageError";
+  }
+}
 
 function queueProjectFilePath(): string {
   // The data directory is chosen at runtime. Keep it out of Next's output
@@ -72,11 +85,15 @@ async function readSelectedProjectId(): Promise<string | null> {
   try {
     const raw = await readFile(/* turbopackIgnore: true */ queueProjectFilePath(), "utf8");
     const value = JSON.parse(raw) as Partial<QueueProjectFile>;
-    return value.version === 1 && typeof value.projectId === "string" && value.projectId.trim()
-      ? value.projectId.trim()
-      : null;
-  } catch {
-    return null;
+    if (value.version !== 1 || typeof value.projectId !== "string" || !value.projectId.trim()) {
+      throw new QueueProjectStorageError("The saved Queue project selection is invalid. Choose the project again.");
+    }
+    return value.projectId.trim();
+  } catch (cause) {
+    const error = cause as NodeJS.ErrnoException;
+    if (error.code === "ENOENT") return null;
+    if (cause instanceof QueueProjectStorageError) throw cause;
+    throw new QueueProjectStorageError("Cave could not read the saved Queue project selection. Check Cave home permissions and try again.");
   }
 }
 
@@ -123,7 +140,7 @@ async function gitTopLevel(root: string): Promise<GitTopLevel> {
   }
 }
 
-async function hasUsableBeadsWorkspace(repoRoot: string): Promise<boolean> {
+async function hasUsableBeadsWorkspace(repoRoot: string, probe: BeadsProbe): Promise<boolean> {
   const beadsDir = path.join(/* turbopackIgnore: true */ repoRoot, ".beads");
   try {
     const entry = await lstat(/* turbopackIgnore: true */ beadsDir);
@@ -135,7 +152,20 @@ async function hasUsableBeadsWorkspace(repoRoot: string): Promise<boolean> {
   }
   // Directory presence alone is not a workspace: a failed bd init can leave an
   // empty .beads behind. A read-only probe keeps Generate available to repair it.
-  return (await runBdCommand(repoRoot, beadsDir, ["ready", "--json"])).ok;
+  const result = await probe(repoRoot, beadsDir, ["ready", "--json"]);
+  if (result.ok) readyProbeCache.set(repoRoot, { expiresAt: Date.now() + READY_PROBE_TTL_MS, result });
+  return result.ok;
+}
+
+/** Let the immediately-following Queue list read reuse its verified bd ready output. */
+export function takeQueueReadyProbe(repoRoot: string): BdResult | null {
+  const cached = readyProbeCache.get(repoRoot);
+  if (!cached || cached.expiresAt < Date.now()) {
+    readyProbeCache.delete(repoRoot);
+    return null;
+  }
+  readyProbeCache.delete(repoRoot);
+  return cached.result;
 }
 
 function projectShape(project: CaveProject): Pick<CaveProject, "id" | "name" | "root"> {
@@ -147,8 +177,14 @@ function projectShape(project: CaveProject): Pick<CaveProject, "id" | "name" | "
  * cwd is application data, never a user workspace; callers must use this
  * readiness result instead of falling back to process.cwd().
  */
-export async function queueProjectReadiness(): Promise<QueueProjectReadiness> {
-  const projectId = await readSelectedProjectId();
+export async function queueProjectReadiness(options: QueueProjectReadinessOptions = {}): Promise<QueueProjectReadiness> {
+  let projectId: string | null;
+  try {
+    projectId = await readSelectedProjectId();
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : "Cave could not read the Queue project selection.";
+    return { ok: false, code: "project-storage-error", message, project: null, canGenerate: false };
+  }
   if (!projectId) {
     return {
       ok: false,
@@ -227,7 +263,7 @@ export async function queueProjectReadiness(): Promise<QueueProjectReadiness> {
     };
   }
 
-  if (!(await hasUsableBeadsWorkspace(gitRoot.root))) {
+  if (!(await hasUsableBeadsWorkspace(gitRoot.root, options.beadsProbe ?? runBdCommand))) {
     return {
       ok: false,
       code: "needs-beads",

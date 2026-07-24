@@ -5,6 +5,7 @@ import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { runBdCommand } from "@/lib/server/beads-cli";
 import { MAX_SESSION_JSON_BYTES } from "@/lib/server/session-security";
 import { resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
+import { takeQueueReadyProbe } from "@/lib/queue-project-readiness";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -89,7 +90,7 @@ export async function GET(req: Request) {
     default:
       return NextResponse.json({ ok: false, error: "unsupported mode" }, { status: 400 });
   }
-  const result = await runBdCommand(root.repoRoot, root.beadsDir, args);
+  const result = mode === "ready" ? takeQueueReadyProbe(root.repoRoot) ?? await runBdCommand(root.repoRoot, root.beadsDir, args) : await runBdCommand(root.repoRoot, root.beadsDir, args);
   if (!result.ok) {
     return NextResponse.json(
       { ok: false, error: result.error, stdout: result.stdout, stderr: result.stderr },

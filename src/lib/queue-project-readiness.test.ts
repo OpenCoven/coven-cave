@@ -47,8 +47,10 @@ try {
   assert.equal(partial.code, "needs-beads", "an empty .beads directory remains repairable");
   assert.equal(partial.canGenerate, true);
   await rm(path.join(projectRoot, ".beads"), { recursive: true, force: true });
-  execFileSync("bd", ["init"], { cwd: projectRoot, stdio: "pipe" });
-  const ready = await queueProjectReadiness();
+  await mkdir(path.join(projectRoot, ".beads"));
+  const ready = await queueProjectReadiness({
+    beadsProbe: async () => ({ ok: true, stdout: "[]", stderr: "" }),
+  });
   assert.equal(ready.code, "ready");
   assert.equal(ready.ok, true);
 
@@ -92,6 +94,13 @@ try {
   assert.equal(stale.code, "project-missing", "a path from another host is remediated before invoking Git");
   assert.match(stale.message, /Choose a project again/);
 
+  await writeFile(queueProjectPath, "{ not valid JSON", "utf8");
+  assert.equal(
+    (await queueProjectReadiness()).code,
+    "project-storage-error",
+    "a corrupt selection reports storage remediation instead of pretending no project was selected",
+  );
+
   const route = await (await import("node:fs/promises")).readFile(
     new URL("../app/api/queue/readiness/route.ts", import.meta.url),
     "utf8",
@@ -99,6 +108,14 @@ try {
   assert.match(route, /rejectNonLocalRequest/, "selection and generation are loopback-only");
   assert.match(route, /projectId is required/, "Generate is bound to an explicit project identity");
   assert.match(route, /withGenerationLock/, "Generate serializes initialization per repository");
+  assert.match(route, /current\.ok && identityMatches/, "a matching concurrent Generate succeeds idempotently");
+
+  const prBridgeRoute = await (await import("node:fs/promises")).readFile(
+    new URL("../app/api/beads/prs/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(prBridgeRoute, /projectRoot is required/, "the PR bridge rejects anonymous Queue requests");
+  assert.doesNotMatch(prBridgeRoute, /projectRoot\) \|\| process\.cwd\(\)/, "the PR bridge cannot use the app cwd as a project fallback");
 } finally {
   if (previousProjectsPath === undefined) delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
   else process.env.CAVE_PROJECTS_PATH_OVERRIDE = previousProjectsPath;

@@ -61,7 +61,9 @@ export async function GET(req: Request) {
   if (forbidden) return forbidden;
 
   const url = new URL(req.url);
-  const root = await resolveRepoRoot(url.searchParams.get("projectRoot") || process.cwd());
+  const projectRoot = url.searchParams.get("projectRoot");
+  if (!projectRoot) return NextResponse.json({ ok: false, error: "projectRoot is required" }, { status: 400 });
+  const root = await resolveRepoRoot(projectRoot);
   if (!root.ok) {
     if ((root.error || "path not allowed") === "path not allowed") {
       return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });

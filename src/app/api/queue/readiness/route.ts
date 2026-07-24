@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { runBdCommand } from "@/lib/server/beads-cli";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
-import { queueProjectReadiness, selectQueueProject } from "@/lib/queue-project-readiness";
+import { QueueProjectStorageError, queueProjectReadiness, selectQueueProject } from "@/lib/queue-project-readiness";
 import { MAX_SESSION_JSON_BYTES } from "@/lib/server/session-security";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +49,15 @@ export async function POST(req: Request) {
   const projectId = body.projectId.trim();
 
   if (body.action === "select") {
-    const project = await selectQueueProject(projectId);
+    let project;
+    try {
+      project = await selectQueueProject(projectId);
+    } catch (cause) {
+      const error = cause instanceof QueueProjectStorageError || cause instanceof Error
+        ? cause.message
+        : "Couldn’t save the Queue project selection.";
+      return NextResponse.json({ ok: false, error }, { status: 503 });
+    }
     if (!project) return NextResponse.json({ ok: false, error: "project not found" }, { status: 404 });
     return NextResponse.json({ ok: true, readiness: await queueProjectReadiness() });
   }
@@ -63,7 +71,13 @@ export async function POST(req: Request) {
       // Re-read the persisted selection after the per-repository lock: another
       // window may have selected a different project while this request waited.
       const current = await queueProjectReadiness();
-      if (!current.canGenerate || !current.project || current.project.id !== projectId || current.project.root !== readiness.project?.root) {
+      const identityMatches = current.project?.id === projectId && current.project.root === readiness.project?.root;
+      if (current.ok && identityMatches) {
+        // Another window completed the same initialization while this caller
+        // waited for the lock. Generate is idempotent for that identity.
+        return NextResponse.json({ ok: true, readiness: current });
+      }
+      if (!current.canGenerate || !current.project || !identityMatches) {
         return NextResponse.json({ ok: false, error: "Queue project changed; choose Generate again for the current project.", readiness: current }, { status: 409 });
       }
       const result = await runBdCommand(
