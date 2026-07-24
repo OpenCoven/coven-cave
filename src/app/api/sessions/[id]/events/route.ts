@@ -46,6 +46,14 @@ export async function GET(
     timeoutMs: 4000,
   });
 
+  // The daemon 404s sessions it has no event log for — Cave-local chats that
+  // never ran through the daemon, and rows lost on a daemon restart. That's an
+  // expected no-data state (cave-pfu8): surface it as a machine-readable 404
+  // so the trace overlay can render a calm empty state instead of parsing
+  // "daemon http 404" out of a 502.
+  if (!res.ok && res.status === 404) {
+    return NextResponse.json({ ok: false, error: "no_event_timeline" }, { status: 404 });
+  }
   if (!res.ok || !res.data) {
     return NextResponse.json(
       { ok: false, error: res.error ?? `daemon http ${res.status}` },
