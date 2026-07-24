@@ -215,11 +215,22 @@ async function readResponseTextLimited(response: Response): Promise<string> {
 
 async function fetchSchemaBundle(url: string, fetcher: typeof fetch): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error("schema registry refresh timed out"));
+    }, REFRESH_TIMEOUT_MS);
+  });
   try {
-    return await fetcher(url, { headers: { accept: "application/json" }, signal: controller.signal });
+    // Test and embedding fetch shims are not required to honor AbortSignal;
+    // racing the timeout prevents a hung registry from delaying a chat turn.
+    return await Promise.race([
+      fetcher(url, { headers: { accept: "application/json" }, signal: controller.signal }),
+      timedOut,
+    ]);
   } finally {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   }
 }
 
