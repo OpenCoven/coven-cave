@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -11,7 +11,7 @@ import {
   SIDECAR_RUNTIME_BUDGETS,
   verifySidecarRuntime,
 } from "./sidecar-runtime-closure.mjs";
-import { publishSidecarArchive } from "./sidecar-archive-manifest.mjs";
+import { publishSidecarArchive, writeSidecarArchiveManifest } from "./sidecar-archive-manifest.mjs";
 
 async function write(root, relativePath, contents = "fixture\n") {
   const output = path.join(root, relativePath);
@@ -201,29 +201,60 @@ try {
     publishedManifest,
   );
   const publishedArchiveBytes = await readFile(publishedArchive);
+  const publishedManifestBytes = await readFile(publishedManifest);
   assert.equal(createHash("sha256").update(publishedArchiveBytes).digest("hex"), published.archiveSha256);
   assert.deepEqual(JSON.parse(await readFile(publishedManifest, "utf8")), published);
   assert.ok(await missing(verifiedArchive), "successful publication must consume its staged archive");
+  assert.ok(await missing(`${publishedArchive}.previous`), "successful publication must remove its archive backup");
+  assert.ok(await missing(`${publishedManifest}.previous`), "successful publication must remove its manifest backup");
 
-  const manifestDirectory = path.join(fixture, "published", "manifest-directory");
+  await write(projectRoot, "public/sandbox/tailwind.js", "changed runtime\n");
+  const candidateArchive = path.join(fixture, "published", ".server.tar.zst.candidate.tmp");
+  const candidateManifest = path.join(fixture, "published", ".manifest.json.candidate.tmp");
+  await writeSidecarArchiveManifest(path.join(projectRoot, "public"), candidateArchive, candidateManifest);
+  const candidateArchiveBytes = await readFile(candidateArchive);
+  assert.notDeepEqual(candidateArchiveBytes, publishedArchiveBytes, "rollback candidate must differ from the prior archive");
+
+  const previousArchive = `${publishedArchive}.previous`;
+  const previousManifest = `${publishedManifest}.previous`;
+  await rename(publishedArchive, previousArchive);
+  await writeFile(publishedArchive, candidateArchiveBytes);
+  await writeFile(previousManifest, publishedManifestBytes);
+  await rm(candidateArchive);
+  await rm(candidateManifest);
+
   const rollbackArchive = path.join(fixture, "published", ".server.tar.zst.rollback.tmp");
-  await mkdir(manifestDirectory);
   await assert.rejects(
     publishSidecarArchive(
-      path.join(projectRoot, "public"),
+      path.join(fixture, "missing-runtime"),
       rollbackArchive,
       publishedArchive,
-      manifestDirectory,
+      publishedManifest,
     ),
-    /EISDIR|EPERM|ENOTDIR|EACCES/,
-    "manifest publication failure must reject",
+    /ENOENT/,
+    "recovery must preserve the original publication when the next build fails",
   );
   assert.deepEqual(
     await readFile(publishedArchive),
     publishedArchiveBytes,
-    "manifest publication failure must restore the prior public archive",
+    "recovery must restore the prior public archive",
   );
+  assert.deepEqual(await readFile(publishedManifest), publishedManifestBytes, "recovery must restore the prior manifest");
   assert.ok(await missing(rollbackArchive), "failed publication must remove its staged archive");
+  assert.ok(await missing(previousArchive), "recovery must consume the prior archive backup");
+  assert.ok(await missing(previousManifest), "recovery must consume the prior manifest backup");
+
+  const noPriorArchive = path.join(fixture, "no-prior", "server.tar.zst");
+  const noPriorManifest = path.join(fixture, "no-prior", "manifest-directory");
+  const noPriorTemporaryArchive = path.join(fixture, "no-prior", ".server.tar.zst.tmp");
+  await mkdir(noPriorManifest, { recursive: true });
+  await assert.rejects(
+    publishSidecarArchive(path.join(projectRoot, "public"), noPriorTemporaryArchive, noPriorArchive, noPriorManifest),
+    /EISDIR|EPERM|ENOTDIR|EACCES/,
+    "a no-prior publication failure must reject",
+  );
+  assert.ok(await missing(noPriorArchive), "a no-prior failure must not leave a public archive");
+  assert.ok(await missing(noPriorTemporaryArchive), "a no-prior failure must remove its staged archive");
 
   await writeFile(tracePath, `${JSON.stringify({ version: 1, files: ["../../../outside.txt"] })}\n`, "utf8");
   await assert.rejects(

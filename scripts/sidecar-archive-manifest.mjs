@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { createReadStream, createWriteStream } from "node:fs";
-import { lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
@@ -300,6 +300,76 @@ export async function writeSidecarArchiveManifest(sourceRoot, archivePath, outpu
   return manifest;
 }
 
+async function fileExists(file) {
+  try {
+    await lstat(file);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function removeFileWithRetries(file) {
+  let failure;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await rm(file, { force: true });
+      return;
+    } catch (error) {
+      failure = error;
+      if (!["EACCES", "EBUSY", "EPERM"].includes(error?.code) || attempt === 3) break;
+      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
+  throw failure;
+}
+
+async function archiveMatchesManifest(archivePath, manifestPath) {
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    return typeof manifest.archiveSha256 === "string"
+      && manifest.archiveSha256 === await sha256File(archivePath);
+  } catch {
+    return false;
+  }
+}
+
+async function recoverPreviousPublication(
+  archivePath,
+  manifestPath,
+  previousArchivePath,
+  previousManifestPath,
+) {
+  const [hasPreviousArchive, hasPreviousManifest] = await Promise.all([
+    fileExists(previousArchivePath),
+    fileExists(previousManifestPath),
+  ]);
+  if (!hasPreviousArchive && !hasPreviousManifest) return;
+
+  if (await archiveMatchesManifest(archivePath, manifestPath)) {
+    await removeFileWithRetries(previousArchivePath);
+    await removeFileWithRetries(previousManifestPath);
+    return;
+  }
+
+  // An interrupted or failed publication left a non-matching public pair.
+  // Remove its manifest first so a locked candidate never remains paired with
+  // stale integrity metadata, then restore the last coherent pair.
+  await removeFileWithRetries(manifestPath);
+  await removeFileWithRetries(archivePath);
+  if (hasPreviousArchive) await rename(previousArchivePath, archivePath);
+  if (hasPreviousManifest) await rename(previousManifestPath, manifestPath);
+}
+
+function publicationFailure(error, failures) {
+  if (failures.length === 0) return error;
+  return new AggregateError(
+    [error, ...failures],
+    `sidecar archive publication failed and recovery is pending: ${error.message}`,
+  );
+}
+
 export async function publishSidecarArchive(
   sourceRoot,
   temporaryArchivePath,
@@ -307,36 +377,56 @@ export async function publishSidecarArchive(
   manifestPath,
   temporaryManifestPath = `${manifestPath}.${process.pid}.tmp`,
 ) {
-  const previousArchivePath = `${temporaryArchivePath}.previous`;
-  let previousArchive = false;
-  let publishedArchive = false;
+  const previousArchivePath = `${archivePath}.previous`;
+  const previousManifestPath = `${manifestPath}.previous`;
+  let manifestPublished = false;
   try {
+    await recoverPreviousPublication(
+      archivePath,
+      manifestPath,
+      previousArchivePath,
+      previousManifestPath,
+    );
     const manifest = await writeSidecarArchiveManifest(sourceRoot, temporaryArchivePath, temporaryManifestPath);
     // Both files are fully written, hashed, and budgeted before either public
     // path changes. Publish the manifest last so readers never accept a new
-    // archive using stale integrity metadata. Keep the prior archive until
-    // that final rename succeeds so a manifest publication failure cannot
-    // leave a mismatched public archive/manifest pair behind.
+    // archive using stale integrity metadata. Keep a durable copy of the
+    // prior manifest and archive so an interrupted publication can be
+    // recovered by the next bundle attempt.
+    if (await fileExists(manifestPath)) await copyFile(manifestPath, previousManifestPath);
     try {
       await rename(archivePath, previousArchivePath);
-      previousArchive = true;
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
     await rename(temporaryArchivePath, archivePath);
-    publishedArchive = true;
     await rename(temporaryManifestPath, manifestPath);
-    await rm(previousArchivePath, { force: true }).catch(() => {});
+    manifestPublished = true;
+    await removeFileWithRetries(previousArchivePath);
+    await removeFileWithRetries(previousManifestPath);
     return manifest;
   } catch (error) {
-    if (publishedArchive) await rm(archivePath, { force: true });
-    if (previousArchive) await rename(previousArchivePath, archivePath);
-    await Promise.all([
-      rm(temporaryArchivePath, { force: true }),
-      rm(temporaryManifestPath, { force: true }),
-      rm(previousArchivePath, { force: true }),
-    ]);
-    throw error;
+    const failures = [];
+    if (!manifestPublished) {
+      try {
+        await recoverPreviousPublication(
+          archivePath,
+          manifestPath,
+          previousArchivePath,
+          previousManifestPath,
+        );
+      } catch (recoveryError) {
+        failures.push(recoveryError);
+      }
+    }
+    for (const temporaryPath of [temporaryArchivePath, temporaryManifestPath]) {
+      try {
+        await removeFileWithRetries(temporaryPath);
+      } catch (cleanupError) {
+        failures.push(cleanupError);
+      }
+    }
+    throw publicationFailure(error, failures);
   }
 }
 
