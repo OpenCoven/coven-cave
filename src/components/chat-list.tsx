@@ -202,12 +202,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [activeId, setActiveId] = useState<string | null>(null);
   // Toolbar group-by (none / project / date), persisted as a plain string.
   const [groupBy, setGroupBy] = useState<ChatSessionGroupBy>("none");
-  // Expandable-row disclosure: a single click opens an inline detail strip
-  // (Resume/Open + Archive); double-click and Enter keep the fast open path.
-  // Mobile keeps tap = open (messengers' convention; double-tap is awkward on
-  // touch) — the disclosure is a desktop affordance.
-  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
-  useEffect(() => { setExpandedRowId(null); }, [familiar?.id]);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [selection, setSelection] = useState<ProjectSelection>("all");
   const [sidebarHydrated, setSidebarHydrated] = useState(false);
@@ -292,11 +286,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         e.preventDefault();
         searchRef.current?.focus();
         return;
-      }
-      // Escape collapses the expanded row first (mock behavior); anything that
-      // already consumed the key (popovers, modals) wins.
-      if (e.key === "Escape" && !e.defaultPrevented) {
-        setExpandedRowId((cur) => (cur ? null : cur));
       }
     };
     window.addEventListener("keydown", handler);
@@ -794,12 +783,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key !== "Escape") return;
-                // Escape collapses an expanded row first, then clears search.
-                if (expandedRowId) {
-                  e.preventDefault();
-                  setExpandedRowId(null);
-                  return;
-                }
                 if (search) {
                   e.preventDefault();
                   setSearch("");
@@ -1155,8 +1138,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                       sectioned && (pinned ? collapsedSections.has("pinned") : collapsedSections.has("sessions"));
                     const rowName = s.title || s.id;
                     const daySection = daySectionsByIndex?.get(idx) ?? null;
-                    const isExpanded = !selectMode && expandedRowId === s.id;
-                    const detailId = `chat-list-row-detail-${s.id}`;
 
                     return (
                       <Fragment key={s.id}>
@@ -1193,40 +1174,27 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           role={selectMode ? "checkbox" : "button"}
                           aria-checked={selectMode ? selectedIds.has(s.id) : undefined}
                           aria-current={!selectMode && isActive ? "true" : undefined}
-                          aria-expanded={selectMode ? undefined : isExpanded}
-                          aria-controls={isExpanded ? detailId : undefined}
                           tabIndex={0}
-                          onClick={() => { if (selectMode) { toggleSelect(s.id); return; } if (isMobile) { setActiveId(s.id); onOpen(s.id, s.familiarId); return; } setExpandedRowId((cur) => (cur === s.id ? null : s.id)); }}
-                          onDoubleClick={() => { if (selectMode) return; setActiveId(s.id); onOpen(s.id, s.familiarId); }}
+                          onClick={() => { if (selectMode) { toggleSelect(s.id); return; } setActiveId(s.id); onOpen(s.id, s.familiarId); }}
                           onMouseEnter={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
                           onMouseLeave={cancelHoverPrefetch}
                           onFocus={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
                           onBlur={cancelHoverPrefetch}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter" || (selectMode && e.key === " ")) {
+                            if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
                               if (selectMode) { toggleSelect(s.id); return; }
                               setActiveId(s.id); onOpen(s.id, s.familiarId);
-                              return;
-                            }
-                            // Space toggles the inline detail disclosure —
-                            // Enter stays the fast open path.
-                            if (e.key === " ") {
-                              e.preventDefault();
-                              setExpandedRowId((cur) => (cur === s.id ? null : s.id));
                             }
                           }}
                           data-selected={selectMode && selectedIds.has(s.id) ? "true" : undefined}
                           data-status={st.label}
                           data-active={isActive ? "true" : undefined}
-                          data-expanded={isExpanded ? "true" : undefined}
                           className={[
                             "chat-list-row focus-ring-inset group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
                             isActive
                               ? "bg-[var(--bg-raised)]"
-                              : isExpanded
-                                ? "bg-[var(--bg-raised)]/60"
-                                : "hover:bg-[var(--bg-raised)]/50",
+                              : "hover:bg-[var(--bg-raised)]/50",
                             selectMode && selectedIds.has(s.id) ? "bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)]" : "",
                           ].join(" ")}
                         >
@@ -1531,44 +1499,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             </span>
                           ))}
                         </div>
-                        {/* Inline detail strip — the row's disclosure target.
-                            Resume/Open is the existing open-session action;
-                            Archive reuses the undo-safe archive PATCH. */}
-                        {isExpanded && (
-                          <div
-                            id={detailId}
-                            className="chat-list-row-detail mb-2 ml-[26px] mr-4 mt-1 flex items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3.5 py-2.5"
-                          >
-                            <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                              {rowFamiliarName}
-                              {" · "}
-                              {project || "no project"}
-                              {" · "}
-                              {s.status === "running" ? "running now" : "idle"}
-                              {" · last activity "}
-                              {rel}
-                            </span>
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveId(s.id);
-                                onOpen(s.id, s.familiarId);
-                              }}
-                            >
-                              {s.status === "running" ? "Resume" : "Open"}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={archivingId !== null}
-                              onClick={(e) => void setSessionArchived(e, s.id, !s.archived_at)}
-                            >
-                              {s.archived_at ? "Unarchive" : "Archive"}
-                            </Button>
-                          </div>
-                        )}
                         </>
                         )}
                       </SortableChatListItem>

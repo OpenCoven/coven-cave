@@ -112,54 +112,39 @@ test("railGroupPreview + railMoreLabel: 6-row cap with Show N more / fewer", () 
   assert.equal(railMoreLabel(true, 0), "Show fewer");
 });
 
-// ── Source pins: expandable-row disclosure semantics (chat-list.tsx) ─────────
+// ── Source pins: rows open directly on click (chat-list.tsx) ─────────────────
 
-test("chat-list: rows are proper disclosures (aria-expanded + aria-controls)", () => {
+test("chat-list: a row click opens the session directly (no disclosure strip)", () => {
   assert.match(
     chatList,
-    /aria-expanded=\{selectMode \? undefined : isExpanded\}/,
-    "the row button reports its disclosure state outside select mode",
+    /onClick=\{\(\) => \{ if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\); \}\}/,
+    "a row click selects in select mode, otherwise opens the session",
   );
-  assert.match(
+  assert.doesNotMatch(
     chatList,
-    /aria-controls=\{isExpanded \? detailId : undefined\}/,
-    "the expanded row points at its detail strip",
+    /expandedRowId|setExpandedRowId/,
+    "the inline detail-strip disclosure state is gone",
   );
-  assert.match(
+  assert.doesNotMatch(
     chatList,
-    /const detailId = `chat-list-row-detail-\$\{s\.id\}`/,
-    "detail strips carry stable per-session ids",
+    /chat-list-row-detail|onDoubleClick/,
+    "no detail strip or double-click fast path remains — click IS the open path",
   );
 });
 
-test("chat-list: detail strip carries Resume/Open (existing open path) + Archive", () => {
+test("chat-list: Enter and Space both open the focused row", () => {
   assert.match(
     chatList,
-    /\{s\.status === "running" \? "Resume" : "Open"\}/,
-    "the primary action is Resume while running, Open otherwise",
-  );
-  assert.match(
-    chatList,
-    /chat-list-row-detail[\s\S]{0,1400}setActiveId\(s\.id\);\s*\n\s*onOpen\(s\.id, s\.familiarId\);/,
-    "Resume/Open routes through the existing open-session action",
-  );
-  assert.match(
-    chatList,
-    /onClick=\{\(e\) => void setSessionArchived\(e, s\.id, !s\.archived_at\)\}/,
-    "Archive reuses the existing archive PATCH action",
+    /if \(e\.key === "Enter" \|\| e\.key === " "\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*if \(selectMode\) \{ toggleSelect\(s\.id\); return; \}\s*\n\s*setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\);/,
+    "keyboard activation mirrors the click: select in select mode, open otherwise",
   );
 });
 
-test("chat-list: Escape collapses the expanded row before clearing search", () => {
+test("chat-list: Escape in search clears the query", () => {
   assert.match(
     chatList,
-    /if \(expandedRowId\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*setExpandedRowId\(null\);\s*\n\s*return;\s*\n\s*\}\s*\n\s*if \(search\) \{/,
-    "the search field's Escape handler collapses first, clears second",
-  );
-  assert.match(
-    chatList,
-    /if \(e\.key === "Escape" && !e\.defaultPrevented\) \{\s*\n\s*setExpandedRowId\(\(cur\) => \(cur \? null : cur\)\);/,
-    "a global Escape collapses the expanded row (deferring to consumers that already handled it)",
+    /if \(e\.key !== "Escape"\) return;\s*\n\s*if \(search\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*setSearch\(""\);/,
+    "the search field's Escape handler clears the query",
   );
 });
 
