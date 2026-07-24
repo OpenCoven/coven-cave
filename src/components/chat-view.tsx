@@ -170,6 +170,8 @@ import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { useAddProjectFlow } from "@/components/project-picker";
+import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/project-setup-offer";
+import { ProjectSetupModal } from "@/components/project-setup-modal";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
 import { useChangesSummary } from "@/lib/use-changes-summary";
 import { toolVisual } from "@/lib/tool-visual";
@@ -358,7 +360,7 @@ type ComposerResponseSpeed = CommandResponseSpeed;
 // the .cave-composer-input rule (13 lines: 13*24 + 20px padding).
 const COMPOSER_MAX_HEIGHT = 332;
 // Persist the in-progress composer text so a page reload doesn't eat a
-// half-written message. The composer is a single shared input (it isn't
+// half-written message. The composer is a single shared input (it isn’t
 // remounted per session), so one key mirrors the in-memory behaviour.
 const COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
 const COMPOSER_DRAFT_WRITE_DELAY_MS = 250;
@@ -2065,7 +2067,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Scope the picker to the projects THIS familiar has been granted access to —
   // the chat-send route enforces the same grant (assertProjectAccess → 403), so
   // an unscoped list would offer projects that fail on send.
-  const { projects, createProject, reload: reloadProjects } = useProjects({ familiarId: familiar.id });
+  const { projects, createProject, createProjectOrThrow, reload: reloadProjects } = useProjects({ familiarId: familiar.id });
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
   // The project the most recent chat ran in — the default a brand-new chat
@@ -2124,6 +2126,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       reloadProjects();
     },
   });
+  // In-place registration for ad-hoc chat homes (spec 2026-07-24): a chat
+  // running in an unregistered folder — not a project worktree, not a
+  // familiar workspace — can be promoted to a registered project without
+  // re-browsing to it. Pure eligibility lives in project-setup-offer.ts.
+  const setupCandidateRoot = projectSetupCandidateRoot(projectSelection, projects);
+  const [projectSetupRoot, setProjectSetupRoot] = useState<string | null>(null);
+  // Default dismissed until the per-root localStorage read says otherwise, so
+  // the banner never flashes for an already-dismissed folder.
+  const [setupBannerDismissed, setSetupBannerDismissed] = useState(true);
+  useEffect(() => {
+    if (!setupCandidateRoot) {
+      setSetupBannerDismissed(true);
+      return;
+    }
+    try {
+      setSetupBannerDismissed(
+        localStorage.getItem(projectSetupDismissKey(setupCandidateRoot)) === "1",
+      );
+    } catch {
+      setSetupBannerDismissed(true);
+    }
+  }, [setupCandidateRoot]);
+  const dismissSetupBanner = () => {
+    if (setupCandidateRoot) {
+      try {
+        localStorage.setItem(projectSetupDismissKey(setupCandidateRoot), "1");
+      } catch {
+        /* banner-only state — session dismissal still applies */
+      }
+    }
+    setSetupBannerDismissed(true);
+  };
   useEffect(() => {
     onProjectRootChange?.(activeProjectRoot || null);
   }, [activeProjectRoot, onProjectRootChange]);
@@ -4266,7 +4300,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (res.status === 400 && /project_root_required|projectRoot is required/i.test(message)) {
           setProjectRootRequired(true);
           surfacedMessage =
-            "This chat isn't tied to a project folder yet, so there's nowhere to run it. Pick a project below and your message will be retried there.";
+            "This chat isn’t tied to a project folder yet, so there's nowhere to run it. Pick a project below and your message will be retried there.";
         }
         setError(surfacedMessage);
         upsertTurnProgress(assistantId, {
@@ -5587,9 +5621,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onOpenDebug={openDebug}
                 reflecting={reflecting}
                 onReflect={familiar.id ? () => void reflectOnThread() : undefined}
+                registerCurrentRoot={setupCandidateRoot ?? undefined}
+                onRegisterCurrentRoot={
+                  setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
+                }
               />
             )}
             {overflowAddProject.addProjectModal}
+            <ProjectSetupModal
+              root={projectSetupRoot}
+              familiar={{ id: familiar.id ?? null, name: familiar.display_name }}
+              createProject={createProjectOrThrow}
+              onClose={() => setProjectSetupRoot(null)}
+              onCreated={(newProjectId) => {
+                setProjectIdDraft(newProjectId);
+                reloadProjects();
+              }}
+            />
           </div>
         </MetaLine>
       </header>
@@ -5838,6 +5886,37 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 </button>
               ))}
             </div>
+          </div>
+        ) : null}
+        {setupCandidateRoot && !setupBannerDismissed ? (
+          <div
+            role="status"
+            className="mb-2 flex items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]"
+          >
+            <Icon
+              name="ph:folder-plus"
+              width={14}
+              aria-hidden
+              className="shrink-0 text-[var(--text-muted)]"
+            />
+            <span className="min-w-0 flex-1 truncate" title={setupCandidateRoot}>
+              This chat runs in{" "}
+              <span className="font-medium text-[var(--text-primary)]">
+                {projectNameForRoot(setupCandidateRoot)}
+              </span>
+              , which isn’t a registered project.
+            </span>
+            <Button variant="ghost" onClick={() => setProjectSetupRoot(setupCandidateRoot)}>
+              Set up as project…
+            </Button>
+            <button
+              type="button"
+              className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              aria-label="Dismiss project setup suggestion"
+              onClick={dismissSetupBanner}
+            >
+              <Icon name="ph:x" width={11} aria-hidden />
+            </button>
           </div>
         ) : null}
         <div className="cave-composer-shell">
@@ -6363,6 +6442,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   modelDisabled={busy}
                   projectRoot={activeProjectRoot}
                   onOpenUrl={onOpenUrl}
+                  registerCurrentRoot={setupCandidateRoot ?? undefined}
+                  onRegisterCurrentRoot={
+                    setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
+                  }
                 />
               </div>
               {linkedContextRow}

@@ -20,6 +20,8 @@ export function SessionOverflowMenu({
   projectId,
   onProjectChange,
   onAddProject,
+  registerCurrentRoot,
+  onRegisterCurrentRoot,
   sessionId,
   hasTurns,
   onOpenDebug,
@@ -31,6 +33,10 @@ export function SessionOverflowMenu({
   onProjectChange: (value: string) => void;
   /** Opens the shared add-project flow (register + grant) — proactive, not 403-recovery-only. */
   onAddProject?: () => void;
+  /** Ad-hoc root the chat runs in — enables the picker's in-place
+   *  "Register this folder" row (spec 2026-07-24). */
+  registerCurrentRoot?: string;
+  onRegisterCurrentRoot?: () => void;
   /** Active conversation id — powers "Continue on phone" (cave-i74f). */
   sessionId?: string | null;
   /** Gates the Show-thinking toggle — pointless on an empty transcript. */
@@ -148,6 +154,8 @@ export function SessionOverflowMenu({
         onChange={onProjectChange}
         allowNoProject
         onAddProject={onAddProject}
+        registerCurrentRoot={registerCurrentRoot}
+        onRegisterCurrentRoot={onRegisterCurrentRoot}
         placement="bottom-end"
         ariaLabel="Project for this chat"
       />

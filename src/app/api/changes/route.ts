@@ -8,6 +8,7 @@ import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
 import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
 import { isSafeBranchName } from "@/lib/issue-worktree";
+import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 
 export const dynamic = "force-dynamic";
@@ -426,6 +427,7 @@ export async function GET(req: NextRequest) {
   const checkpointName = req.nextUrl.searchParams.get("checkpoint");
   const wantPr = req.nextUrl.searchParams.get("pr");
   const wantBranches = req.nextUrl.searchParams.get("branches");
+  const wantRemote = req.nextUrl.searchParams.get("remote");
   if (!projectRoot) {
     return NextResponse.json({ ok: false, error: "missing projectRoot param" }, { status: 400 });
   }
@@ -460,6 +462,7 @@ export async function GET(req: NextRequest) {
       });
     }
     if (wantPr !== null) return await branchPr(root.repoRoot);
+    if (wantRemote !== null) return await originRemoteUrl(root.repoRoot);
     if (wantBranches !== null) return await listBranches(root.repoRoot);
     if (filePath === null) return await listChanges(root.repoRoot);
     const abs = resolveContainedFile(root.repoRoot, filePath);
@@ -469,6 +472,22 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+/** Origin remote URL for the repo, normalized to a canonical GitHub HTTPS URL
+ *  or null — read-only probe behind the project-setup modal's GitHub prefill.
+ *  Credential-bearing remotes (https://token@github.com/…) and non-GitHub
+ *  remotes are stripped to null so secrets never reach the client. */
+async function originRemoteUrl(repoRoot: string): Promise<NextResponse> {
+  try {
+    const { stdout } = await git(repoRoot, ["config", "--get", "remote.origin.url"]);
+    const remoteUrl = stdout.trim();
+    return NextResponse.json({ ok: true, remoteUrl: normalizeGitHubRepoUrl(remoteUrl) });
+  } catch {
+    // `git config --get` exits 1 when the key is absent — a repo with no
+    // origin remote is a normal state, not an error.
+    return NextResponse.json({ ok: true, remoteUrl: null });
   }
 }
 

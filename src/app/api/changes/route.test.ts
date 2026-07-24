@@ -163,4 +163,36 @@ assert.match(
   "revert requests should only operate on paths present in git status",
 );
 
+// remote=1 — read-only origin probe powering the project-setup modal's GitHub
+// prefill. Must ride the same resolveRepoRoot containment as every other GET
+// mode and go through execFile argv (no shell); an absent origin is a normal
+// state (null), never an error. The returned URL is normalized server-side
+// (via normalizeGitHubRepoUrl) so credential-bearing or non-GitHub remotes
+// never reach the client.
+assert.match(
+  source,
+  /if \(wantRemote !== null\) return await originRemoteUrl\(root\.repoRoot\);/,
+  "remote=1 resolves through the shared resolveRepoRoot containment",
+);
+assert.match(
+  source,
+  /\["config", "--get", "remote\.origin\.url"\]/,
+  "the origin probe reads git config through argv, not a shell",
+);
+assert.match(
+  source,
+  /normalizeGitHubRepoUrl\(remoteUrl\)/,
+  "the raw origin URL is normalized server-side before returning to the client",
+);
+assert.match(
+  source,
+  /NextResponse\.json\(\{ ok: true, remoteUrl: normalizeGitHubRepoUrl\(remoteUrl\) \}\)/,
+  "absent or non-GitHub remotes resolve to remoteUrl: null after normalization",
+);
+assert.match(
+  source,
+  /catch[\s\S]{0,200}?NextResponse\.json\(\{ ok: true, remoteUrl: null \}\)/,
+  "the absent-origin catch branch still answers ok:true with a null remoteUrl",
+);
+
 console.log("changes route.test.ts: ok");

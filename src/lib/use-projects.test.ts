@@ -166,4 +166,13 @@ assert.match(
   "the hook returns both the nullable and throwing create helpers",
 );
 
+// The setup modal registers with an explicit color and GitHub link in the
+// same request — createProject must carry optional color/repoUrl through to
+// the POST body the projects route already accepts.
+assert.match(
+  source,
+  /body: JSON\.stringify\(\{\s*name,\s*root,\s*\.\.\.\(options\?\.color \? \{ color: options\.color \} : \{\}\),\s*\.\.\.\(options\?\.repoUrl \? \{ repoUrl: options\.repoUrl \} : \{\}\),\s*\}\)/,
+  "createProject threads optional color/repoUrl into the POST body",
+);
+
 console.log("use-projects.test.ts: ok");

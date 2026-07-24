@@ -119,6 +119,8 @@ export function ProjectPickerPopover({
   allowNoProject = false,
   onAddProject,
   addingProject = false,
+  registerCurrentRoot,
+  onRegisterCurrentRoot,
   placement = "bottom-start",
   ariaLabel,
 }: {
@@ -133,6 +135,10 @@ export function ProjectPickerPopover({
   /** Presence enables the "Add project…" row. */
   onAddProject?: () => void;
   addingProject?: boolean;
+  /** Ad-hoc root the current chat runs in (spec 2026-07-24) — presence with
+   *  onRegisterCurrentRoot enables the in-place "Register this folder" row. */
+  registerCurrentRoot?: string;
+  onRegisterCurrentRoot?: () => void;
   placement?: "bottom-start" | "bottom-end";
   ariaLabel: string;
 }) {
@@ -219,20 +225,36 @@ export function ProjectPickerPopover({
         {query.trim() && visible.length === 0 ? (
           <div className="cave-project-picker__none">No projects match</div>
         ) : null}
+        {(onRegisterCurrentRoot && registerCurrentRoot) || onAddProject ? (
+          <PopoverSeparator />
+        ) : null}
+        {onRegisterCurrentRoot && registerCurrentRoot ? (
+          <PopoverItem
+            icon="ph:folder-plus"
+            onSelect={() => {
+              close();
+              onRegisterCurrentRoot();
+            }}
+          >
+            <span className="cave-project-picker__option">
+              <span className="cave-project-picker__option-name">
+                Register this folder as a project…
+              </span>
+              <span className="cave-project-picker__option-root">{registerCurrentRoot}</span>
+            </span>
+          </PopoverItem>
+        ) : null}
         {onAddProject ? (
-          <>
-            <PopoverSeparator />
-            <PopoverItem
-              icon="ph:plus"
-              disabled={addingProject}
-              onSelect={() => {
-                close();
-                onAddProject();
-              }}
-            >
-              {addingProject ? "Adding project…" : "Add project…"}
-            </PopoverItem>
-          </>
+          <PopoverItem
+            icon="ph:plus"
+            disabled={addingProject}
+            onSelect={() => {
+              close();
+              onAddProject();
+            }}
+          >
+            {addingProject ? "Adding project…" : "Add project…"}
+          </PopoverItem>
         ) : null}
       </PopoverBody>
     </Popover>

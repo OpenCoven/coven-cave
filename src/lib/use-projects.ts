@@ -6,9 +6,11 @@ import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-project
 import { emitProjectRegistryMutation, subscribeProjectRegistryMutation } from "./project-registry-events.ts";
 import { applyProjectRegistryMutation } from "./project-registry-mutation.ts";
 import { clearProjectsCache, fetchProjectsFromCache, type ProjectsPayload } from "./use-projects-cache.ts";
+import type { CreateProjectOptions } from "./chat-add-project.ts";
+
+export type { CreateProjectOptions } from "./chat-add-project.ts";
 
 type ProjectMutationPayload = { ok?: boolean; project?: CaveProject; error?: string };
-type CreateProjectOptions = { emitMutation?: boolean };
 type CreateProjectResult =
   | { ok: true; project: CaveProject }
   | { ok: false; error: string };
@@ -133,7 +135,12 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, root }),
+        body: JSON.stringify({
+          name,
+          root,
+          ...(options?.color ? { color: options.color } : {}),
+          ...(options?.repoUrl ? { repoUrl: options.repoUrl } : {}),
+        }),
       });
       const data = (await res.json().catch(() => null)) as ProjectMutationPayload | null;
       if (res.ok && data?.ok && data.project) {

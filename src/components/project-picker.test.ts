@@ -72,4 +72,12 @@ assert.match(
   "project picker grows the text column without stretching avatar badges",
 );
 
+// ── In-place registration row (spec 2026-07-24) ─────────────────────────────
+// A chat running in an ad-hoc unregistered folder offers to register THAT
+// folder — no directory re-browse — above the generic Add-project row.
+assert.match(src, /registerCurrentRoot\?: string;/, "picker takes the candidate root");
+assert.match(src, /onRegisterCurrentRoot\?: \(\) => void;/, "and the setup-open callback");
+assert.match(src, /Register this folder as a project…/, "in-place registration row");
+assert.match(src, /ph:folder-plus/, "register row carries the folder-plus icon");
+
 console.log("project-picker.test.ts OK");
