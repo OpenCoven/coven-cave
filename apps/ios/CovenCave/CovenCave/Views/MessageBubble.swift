@@ -35,6 +35,8 @@ struct MessageBubble: View {
     @Environment(\.chrome) private var chrome
 
     @State private var mdHeight: CGFloat = 0
+    /// Brief "copied" confirmation on the action row (design: copy → check).
+    @State private var justCopied = false
     /// Set when the markdown WebView can't render (missing/stale bundle, JS
     /// error) — flips this bubble back to plain `Text` so the reply is never
     /// shown as a blank sliver.
@@ -272,6 +274,13 @@ struct MessageBubble: View {
                         .padding(isUser ? .trailing : .leading, 6)
                 }
 
+                // Design's persistent action row under the latest settled
+                // reply — copy (flips to a check) and regenerate — so the two
+                // most common actions don't hide behind a long-press.
+                if !isUser, isLast, !message.streaming, !message.isError, !parsed.visible.isEmpty {
+                    actionRow
+                }
+
                 if !isUser, isLast, !message.streaming, !parsed.suggestions.isEmpty {
                     SuggestionPills(suggestions: parsed.suggestions, onTap: onSuggestion)
                 }
@@ -285,6 +294,46 @@ struct MessageBubble: View {
 
             if !isUser { Spacer(minLength: 48) }
         }
+    }
+
+    /// Quiet icon row under the last settled assistant reply.
+    private var actionRow: some View {
+        HStack(spacing: 18) {
+            Button {
+                UIPasteboard.general.string = parsed.visible
+                Haptics.tap()
+                withAnimation(.snappy(duration: 0.18)) { justCopied = true }
+                Task {
+                    try? await Task.sleep(for: .seconds(1.4))
+                    withAnimation(.snappy(duration: 0.18)) { justCopied = false }
+                }
+            } label: {
+                Image(systemName: justCopied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(justCopied ? AnyShapeStyle(Color.green) : AnyShapeStyle(.secondary))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(justCopied ? "Copied" : "Copy reply")
+
+            if let onRetry {
+                Button {
+                    Haptics.tap()
+                    onRetry()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Regenerate reply")
+            }
+        }
+        .padding(.leading, 2)
+        .padding(.top, 2)
     }
 
     @ViewBuilder private var attachmentImages: some View {
