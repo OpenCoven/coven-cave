@@ -281,6 +281,7 @@ pub(super) fn start_sidecar_runtime(
     };
     #[cfg(not(target_os = "windows"))]
     let child = SidecarProcess::new(child);
+    let sidecar_pid = child.id();
     let sidecar_state = app.state::<SidecarState>();
     match sidecar_state.0.lock() {
         Ok(mut sidecar) => *sidecar = Some(child),
@@ -326,6 +327,8 @@ pub(super) fn start_sidecar_runtime(
             )));
         }
     }
+
+    sidecar_reachability_ready(app, port, sidecar_pid);
 
     #[cfg(target_os = "windows")]
     sidecar_archive::cleanup_stale_sidecar_runtimes(&server_dir_root);

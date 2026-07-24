@@ -221,6 +221,7 @@ if (process.platform !== "win32") {
   assert.match(result.stdout, /Diagnostics:/);
   assert.match(result.stdout, /Diagnostics copied to clipboard/);
   assert.match(await readFile(copiedDiagnostics, "utf8"), /timed out after 1s/);
+  await assert.rejects(access(plist), "uninstall should remove the background availability LaunchAgent");
 }
 
 console.log("uninstall-app.test.mjs: ok");
