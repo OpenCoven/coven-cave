@@ -447,6 +447,18 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     // state rather than a body portal. The rAF runs after the DOM commit.
     const onInteraction = () => scheduleImmediateReconcile();
     const onShellLayout = () => startMotionWindow();
+    // A per-monitor DPI transition can preserve the CSS layout viewport, so
+    // neither ResizeObserver nor window.resize is guaranteed to run. Re-arm a
+    // resolution query after every change; the next reconcile recalculates the
+    // physical child-WebView bounds with the new device-pixel ratio.
+    let dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    const onDprChange = () => {
+      dprQuery.removeEventListener("change", onDprChange);
+      dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      dprQuery.addEventListener("change", onDprChange);
+      scheduleImmediateReconcile();
+    };
+    dprQuery.addEventListener("change", onDprChange);
     window.addEventListener("resize", scheduleImmediateReconcile);
     window.addEventListener("scroll", scheduleImmediateReconcile, true);
     window.addEventListener("cave:native-webview-layout", onShellLayout);
@@ -469,6 +481,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
       clearTimeout(motionTimer);
       resizeObserver.disconnect();
       portalObserver.disconnect();
+      dprQuery.removeEventListener("change", onDprChange);
       window.removeEventListener("resize", scheduleImmediateReconcile);
       window.removeEventListener("scroll", scheduleImmediateReconcile, true);
       window.removeEventListener("cave:native-webview-layout", onShellLayout);

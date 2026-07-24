@@ -22,7 +22,7 @@ test("native browser bounds use the renderer's physical pixel ratio", () => {
     x: 84,
     y: 53,
     w: 1972,
-    h: 1308,
+    h: 1309,
   });
   assert.deepEqual(nativeBrowserBounds(rect, true, 2), {
     x: WEBVIEW_OFFSCREEN,
@@ -35,5 +35,12 @@ test("native browser bounds use the renderer's physical pixel ratio", () => {
     y: 36,
     w: 1315,
     h: 872,
+  });
+
+  assert.deepEqual(nativeBrowserBounds({ left: 0.4, top: 0.4, width: 1.2, height: 1.2 }, false, 1.25), {
+    x: 1,
+    y: 1,
+    w: 1,
+    h: 1,
   });
 });

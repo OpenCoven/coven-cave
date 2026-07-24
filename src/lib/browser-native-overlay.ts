@@ -34,11 +34,15 @@ export function nativeBrowserBounds(
   const scale = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0
     ? devicePixelRatio
     : 1;
+  const left = Math.round(rect.left * scale);
+  const top = Math.round(rect.top * scale);
+  const right = Math.round((rect.left + rect.width) * scale);
+  const bottom = Math.round((rect.top + rect.height) * scale);
   return {
-    x: offscreen ? WEBVIEW_OFFSCREEN : Math.round(rect.left * scale),
-    y: offscreen ? WEBVIEW_OFFSCREEN : Math.round(rect.top * scale),
-    w: Math.round(rect.width * scale),
-    h: Math.round(rect.height * scale),
+    x: offscreen ? WEBVIEW_OFFSCREEN : left,
+    y: offscreen ? WEBVIEW_OFFSCREEN : top,
+    w: right - left,
+    h: bottom - top,
   };
 }
 

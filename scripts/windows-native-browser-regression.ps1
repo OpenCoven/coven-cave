@@ -29,7 +29,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-brows
 
 .EXAMPLE
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-browser-regression.ps1 `
-  -Executable C:\candidate\app.exe -StartupProbeOnly -Cycles 0
+  -Executable C:\candidate\app.exe -MinimumDevicePixelRatio 1.25
 #>
 
 [CmdletBinding()]
@@ -71,6 +71,9 @@ param(
 
     [ValidateRange(0, 1)]
     [int]$ClientContainmentTolerancePx = 1,
+
+    [ValidateRange(1.0, 4.0)]
+    [double]$MinimumDevicePixelRatio = 1.0,
 
     [switch]$ExpectPackagedSidecar,
     [switch]$ExpectPtyDescendant,
@@ -222,7 +225,7 @@ $report = [ordered]@{
         pollErrors = @()
     }
     startupGeometry = $null
-    geometryTolerances = [ordered]@{ viewportPixels = $BoundsTolerancePx; clientContainmentPixels = $ClientContainmentTolerancePx }
+    geometryTolerances = [ordered]@{ viewportPixels = $BoundsTolerancePx; clientContainmentPixels = $ClientContainmentTolerancePx; minimumDevicePixelRatio = $MinimumDevicePixelRatio }
     lastPhysicalInput = $null
     processSnapshot = @()
     ptySetup = [ordered]@{
@@ -1576,6 +1579,7 @@ function Get-MainDomState {
     addressOverlayVisible: visible(document.querySelector('[aria-label="Close address bar"]')),
     reloadControl: stop ? 'Stop' : (reload ? 'Reload' : null),
     loading: Boolean(stop),
+    devicePixelRatio: window.devicePixelRatio,
     innerWidth: window.innerWidth,
     innerHeight: window.innerHeight
   };
@@ -1798,6 +1802,21 @@ function Assert-RectNear {
     }
 }
 
+function Assert-MainRendererPhysicalScale {
+    param($Dom, $MainWebView)
+    $dpr = [double]$Dom.devicePixelRatio
+    Assert-Condition ($dpr -ge $MinimumDevicePixelRatio) (
+        "Main renderer DPR $dpr is below the required $MinimumDevicePixelRatio. Run on a target HiDPI display."
+    )
+    $expectedWidth = [int][Math]::Round([double]$Dom.innerWidth * $dpr)
+    $expectedHeight = [int][Math]::Round([double]$Dom.innerHeight * $dpr)
+    Assert-Condition (
+        [Math]::Abs([int]$MainWebView.width - $expectedWidth) -le 1 -and
+        [Math]::Abs([int]$MainWebView.height - $expectedHeight) -le 1
+    ) "Main renderer WRY dimensions do not match the observed DOM DPR."
+    return [ordered]@{ devicePixelRatio = $dpr; expectedWidth = $expectedWidth; expectedHeight = $expectedHeight }
+}
+
 function Wait-NativeBrowserActive {
     param([IntPtr]$MainWindow, $MainTarget, [int]$TimeoutMs = 6000)
     $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -1810,6 +1829,7 @@ function Wait-NativeBrowserActive {
             if ($visible.Count -eq 1) {
                 try {
                     $viewport = Wait-DomBox $MainTarget "[data-native-browser-viewport]" "selector" 1000
+                    $rendererScale = Assert-MainRendererPhysicalScale (Get-MainDomState $MainTarget) $mainWry
                     $expected = Convert-DomBoxToScreenRect $viewport $mainWry
                     $actual = $visible[0]
                     $client = Get-ClientScreenRectRecord $MainWindow
@@ -1820,7 +1840,7 @@ function Wait-NativeBrowserActive {
                         $actual.bottom -le ($client.bottom + $ClientContainmentTolerancePx)
                     ) "Native Browser WRY_WEBVIEW escaped the main client rectangle beyond the strict ${ClientContainmentTolerancePx}px containment limit."
                     Assert-RectNear $actual $expected $BoundsTolerancePx "Native Browser viewport"
-                    return [pscustomobject]@{ webView = $actual; expected = $expected; directWryCount = $wrys.Count }
+                    return [pscustomobject]@{ webView = $actual; expected = $expected; rendererScale = $rendererScale; directWryCount = $wrys.Count }
                 }
                 catch {
                     # Resize/reflow updates the DOM and HWND on separate queues.

@@ -166,13 +166,18 @@ assert.match(
 );
 assert.match(
   nativeOverlay,
-  /function nativeBrowserBounds[\s\S]*window\.devicePixelRatio[\s\S]*rect\.left \* scale[\s\S]*rect\.height \* scale/,
+  /function nativeBrowserBounds[\s\S]*window\.devicePixelRatio[\s\S]*const left = Math\.round\(rect\.left \* scale\)[\s\S]*const right = Math\.round\(\(rect\.left \+ rect\.width\) \* scale\)[\s\S]*w: right - left/,
   "browser bounds cross the DOM/native boundary in renderer physical pixels",
 );
 assert.match(
   pane,
   /const covered = toolbarOpenRef\.current \|\| surfaceIsCovered\(surface, rect\);[\s\S]{0,320}\.{3}nativeBrowserBounds\(rect, covered\)/,
   "navigate loads covered webviews offscreen; the bounds loop re-seats them when the cover lifts",
+);
+assert.match(
+  pane,
+  /window\.matchMedia\(`\(resolution: \$\{window\.devicePixelRatio\}dppx\)`\)[\s\S]*onDprChange[\s\S]*scheduleImmediateReconcile\(\)/,
+  "a monitor DPI transition re-seats the native child even when CSS layout dimensions do not change",
 );
 
 // ───────── Native webview lifecycle: deactivate on surface leave ─────────
