@@ -230,7 +230,13 @@ function sectionRefIds(blocks: FindingsBlock[]): string[] {
 /** Strip the leading `<!-- research-provenance … -->` header (and any other
  *  HTML comments) so it never renders as prose. */
 function stripComments(markdown: string): string {
-  return markdown.replace(/<!--[\s\S]*?-->/g, "");
+  let current = markdown;
+  let previous: string;
+  do {
+    previous = current;
+    current = current.replace(/<!--[\s\S]*?-->/g, "");
+  } while (current !== previous);
+  return current;
 }
 
 /**
