@@ -255,6 +255,20 @@ export async function POST(
     return reserveNativeChatTask();
   }
 
+  // Copilot's daemon session is the worst offender behind cave-aikv: the daemon
+  // spawns `copilot --interactive=<prompt>` as an immortal PTY child whose
+  // redraw output pumps millions of events into coven.sqlite3, and nothing in
+  // Cave ever attaches to it (task chat drives a native coven run instead). Its
+  // nonInteractive launch also mangles multi-word prompts. So — exactly as flows
+  // do (flow-executor.ts, cave-yesg) — a local copilot task takes the native
+  // Chat bridge, spawning the CLI directly with no orphaned daemon TUI. SSH/hub
+  // copilot must stay on the daemon path (remote host / hub authority boundary).
+  const sshBound = isSshRuntime(binding.runtime);
+  const hubAuthority = config.multiHost?.mode === "hub";
+  if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
+    return reserveNativeChatTask();
+  }
+
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",
@@ -263,6 +277,13 @@ export async function POST(
       harness: binding.harness,
       model: taskModelOverride ?? binding.model,
       prompt: buildInitialTaskChatPrompt(card),
+      // Non-interactive launch: the daemon streams the initial prompt's
+      // assistant output instead of spawning a fullscreen, never-reaped harness
+      // TUI (cave-aikv). Copilot only reaches here when SSH/hub-bound — where it
+      // must stay on the daemon — and there its nonInteractive prompt-mangling
+      // is the pre-existing limitation, so keep its historical interactive
+      // launch rather than regress it.
+      ...(binding.harness === "copilot" ? {} : { launchMode: "nonInteractive" }),
     },
     timeoutMs: 8000,
   });
