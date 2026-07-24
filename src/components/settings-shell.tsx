@@ -3112,6 +3112,63 @@ function MobileWriteAccessCard() {
   );
 }
 
+// ─── Section: Mobile — install-the-app QR ─────────────────────────────────────
+
+/** Install-the-app QR (cave-jr4r.3, #3802): a phone without the app can't act
+ *  on the pairing code, so the Get-the-app group leads with an install QR.
+ *  Config-gated — the card renders only when the route reports a real
+ *  TestFlight/App Store link (OFFICIAL_IOS_INSTALL_URL or
+ *  COVEN_CAVE_IOS_INSTALL_URL); until O4 (cave-f1wo) publishes one, the group
+ *  keeps its Xcode row only. */
+function IosInstallQrCard() {
+  const [install, setInstall] = useState<{ url: string; qrSvg: string } | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/mobile-handoff", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "install-info" }),
+      signal: controller.signal,
+    })
+      .then((res) => res.json())
+      .then((json: { ok?: boolean; configured?: boolean; url?: string; qrSvg?: string }) => {
+        if (controller.signal.aborted) return;
+        if (json?.ok && json.configured && json.url && json.qrSvg) {
+          setInstall({ url: json.url, qrSvg: json.qrSvg });
+        }
+      })
+      .catch(() => {
+        // Not configured / route unavailable — the card simply doesn't render.
+      });
+    return () => controller.abort();
+  }, []);
+
+  if (!install) return null;
+
+  return (
+    <div className="flex flex-col items-center gap-2.5 px-4 py-3">
+      <div
+        className="mobile-handoff-qr__svg overflow-hidden rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-white p-2"
+        role="img"
+        aria-label="Install code for your iPhone camera"
+        dangerouslySetInnerHTML={{ __html: install.qrSvg }}
+      />
+      <p className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+        Scan with your iPhone camera to install the app via TestFlight.
+      </p>
+      <Button
+        size="xs"
+        variant="secondary"
+        leadingIcon="ph:arrow-square-out"
+        onClick={() => openExternalUrl(install.url)}
+      >
+        Open install link
+      </Button>
+    </div>
+  );
+}
+
 function MobileSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
   return (
     <SettingsPage
@@ -3121,6 +3178,22 @@ function MobileSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
     >
       <SettingsGroup label="Pair">
         <MobileModeToggle onUseAsHub={onUseAsHub} />
+      </SettingsGroup>
+
+      <SettingsGroup label="Get the app">
+        <IosInstallQrCard />
+        <SettingsRow label="Build it with Xcode" description="apps/ios/CovenCave — open in Xcode and run on your device, or install the TestFlight build." />
+        <div className="flex flex-wrap gap-2 px-4 py-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="settings-touch-action"
+            onClick={() => openExternalUrl("https://github.com/OpenCoven/coven-cave/blob/main/docs/ios-native-rebuild.md")}
+            leadingIcon="ph:file-text"
+          >
+            Setup guide
+          </Button>
+        </div>
       </SettingsGroup>
 
       <SettingsGroup label="Phone write access">
@@ -3134,21 +3207,6 @@ function MobileSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
             Being on your Tailscale network <em>is</em> the credential. The desktop only serves the mobile API over the
             tailnet — encrypted and private — so nothing is exposed to the public internet, and there’s no token to copy.
           </p>
-        </div>
-      </SettingsGroup>
-
-      <SettingsGroup label="Get the app">
-        <SettingsRow label="Build it with Xcode" description="apps/ios/CovenCave — open in Xcode and run on your device, or install the TestFlight build." />
-        <div className="flex flex-wrap gap-2 px-4 py-3">
-          <Button
-            variant="secondary"
-            size="sm"
-            className="settings-touch-action"
-            onClick={() => openExternalUrl("https://github.com/OpenCoven/coven-cave/blob/main/docs/ios-native-rebuild.md")}
-            leadingIcon="ph:file-text"
-          >
-            Setup guide
-          </Button>
         </div>
       </SettingsGroup>
     </SettingsPage>
