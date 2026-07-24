@@ -230,6 +230,7 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
   const skillsUsed = new Map<string, number>();
   const clarity = new Map<string, { skillId: string; reason: string }>();
   const access = new Map<string, { skillId: string; reason: string }>();
+  const accessDecided = new Set<string>();
   const capVital = new Map<string, { name: string; currentState: CapabilityState; notes?: string }>();
   const capLacking = new Map<string, { name: string; importance: CapabilityImportance; detail: string }>();
   const blockerFreq = new Map<string, number>();
@@ -241,7 +242,22 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     contextCounts[r.contextPressure]++;
     for (const s of r.skillsUsed) libIncrement(skillsUsed, s);
     for (const s of r.skillsNeedingClarity) if (!clarity.has(s.skillId)) clarity.set(s.skillId, s);
-    for (const s of r.skillsNeedingAccess) if (!access.has(s.skillId)) access.set(s.skillId, s);
+    // Latest report wins per skillId: an access gap is a *current* state, not
+    // complaint history. The newest report mentioning a skill decides — either
+    // it re-files the complaint, or it lists the skill in `skillsUsed` without
+    // one, which clears the row. Without the clearing rule, one old "not
+    // installed" report pinned `status: blocked` for the whole window even
+    // after later threads used the skill successfully (skill-creator; same bug
+    // class as the capabilitiesVital fix below, cave-hdkx). Within a single
+    // report the complaint wins over its own `skillsUsed` mention: threads can
+    // use a skill through a fallback path while access is still broken.
+    for (const s of r.skillsNeedingAccess) {
+      if (!accessDecided.has(s.skillId)) {
+        accessDecided.add(s.skillId);
+        access.set(s.skillId, s);
+      }
+    }
+    for (const skillId of r.skillsUsed) accessDecided.add(skillId);
     for (const c of r.capabilitiesVital) {
       // Latest report wins: `currentState` is a *current* observation, and
       // reports iterate newest-first. Letting an older, worse state override
