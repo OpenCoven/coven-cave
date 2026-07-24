@@ -50,12 +50,13 @@ export function ProjectSetupModal({
   /** Normalized ad-hoc folder being registered; null keeps the modal closed. */
   root: string | null;
   familiar: { id: string | null; name: string };
-  /** From the caller's useProjects() so its local list updates in place. */
+  /** The caller's useProjects().createProjectOrThrow so its local list
+   *  updates in place AND create failures carry the server's message. */
   createProject: (
     name: string,
     root: string,
     options?: CreateProjectOptions,
-  ) => Promise<CaveProject | null>;
+  ) => Promise<CaveProject>;
   onClose: () => void;
   onCreated: (projectId: string) => void;
 }) {
@@ -158,10 +159,6 @@ export function ProjectSetupModal({
           ...(color ? { color } : {}),
           ...(normalizedRepo ? { repoUrl: normalizedRepo } : {}),
         });
-        if (!project) {
-          setError("Couldn't register the project. Is the desktop reachable?");
-          return;
-        }
         setCreatedProject(project);
         resolvedProject = project;
       }
@@ -211,13 +208,17 @@ export function ProjectSetupModal({
       announce("Project created.");
       onCreated(project.id);
       onClose();
-    } catch {
+    } catch (error) {
       if (resolvedProject) {
         failAfterCreate(
           "Project registered, but applying access failed — retry, or grant it from Permissions.",
         );
       } else {
-        setError("Couldn't reach the desktop — nothing was created. Retry?");
+        setError(
+          error instanceof Error && error.message
+            ? error.message
+            : "Couldn't reach the desktop — nothing was created. Retry?",
+        );
       }
     } finally {
       setBusy(false);

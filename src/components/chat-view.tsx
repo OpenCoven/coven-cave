@@ -2067,7 +2067,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Scope the picker to the projects THIS familiar has been granted access to —
   // the chat-send route enforces the same grant (assertProjectAccess → 403), so
   // an unscoped list would offer projects that fail on send.
-  const { projects, createProject, reload: reloadProjects } = useProjects({ familiarId: familiar.id });
+  const { projects, createProject, createProjectOrThrow, reload: reloadProjects } = useProjects({ familiarId: familiar.id });
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
   // The project the most recent chat ran in — the default a brand-new chat
@@ -5631,7 +5631,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             <ProjectSetupModal
               root={projectSetupRoot}
               familiar={{ id: familiar.id ?? null, name: familiar.display_name }}
-              createProject={createProject}
+              createProject={createProjectOrThrow}
               onClose={() => setProjectSetupRoot(null)}
               onCreated={(newProjectId) => {
                 setProjectIdDraft(newProjectId);

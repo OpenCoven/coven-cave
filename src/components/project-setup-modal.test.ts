@@ -46,4 +46,15 @@ assert.match(src, /StandardSelect/, "access levels use the shared select primiti
 assert.match(src, /aria-pressed=/, "color swatches expose pressed state");
 assert.match(src, /PROJECT_SETUP_COLOR_CHOICES/, "swatch palette comes from the lib, not render literals");
 
+assert.match(
+  src,
+  /createProject: \(\s*name: string,\s*root: string,\s*options\?: CreateProjectOptions,\s*\) => Promise<CaveProject>;/,
+  "the modal requires the throwing create variant so failures carry the server message",
+);
+assert.match(
+  src,
+  /error instanceof Error && error\.message\s*\?\s*error\.message/,
+  "create failures surface the server's error body, not a generic guess",
+);
+
 console.log("project-setup-modal.test.ts OK");

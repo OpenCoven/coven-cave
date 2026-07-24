@@ -298,3 +298,8 @@ assert.match(
   /<SessionOverflowMenu(?:(?!\/>)[\s\S])*?registerCurrentRoot=\{setupCandidateRoot \?\? undefined\}/,
   "the session kebab picker carries it too",
 );
+assert.match(
+  source,
+  /<ProjectSetupModal[\s\S]*?createProject=\{createProjectOrThrow\}/,
+  "the setup modal gets the throwing create variant for real error messages",
+);
