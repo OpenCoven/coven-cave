@@ -69,7 +69,7 @@ try {
     "utf8",
   );
   assert.match(route, /rejectNonLocalRequest/, "selection and generation are loopback-only");
-  assert.match(route, /runBdCommand\(readiness\.project\.root, path\.join\(readiness\.project\.root, "\.beads"\), \["init"\]\)/, "Generate runs only in the selected repository");
+  assert.match(route, /runBdCommand\(\s*readiness\.project\.root,\s*path\.join\([^)]*readiness\.project\.root, "\.beads"\),\s*\["init"\],\s*\)/, "Generate runs only in the selected repository");
 } finally {
   if (previousProjectsPath === undefined) delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
   else process.env.CAVE_PROJECTS_PATH_OVERRIDE = previousProjectsPath;

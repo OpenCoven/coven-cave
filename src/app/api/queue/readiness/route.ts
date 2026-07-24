@@ -42,7 +42,11 @@ export async function POST(req: Request) {
     }
     // Explicit user action only: `bd init` receives the selected repository's
     // root and cannot create files in the bundled sidecar/runtime cwd.
-    const result = await runBdCommand(readiness.project.root, path.join(readiness.project.root, ".beads"), ["init"]);
+    const result = await runBdCommand(
+      readiness.project.root,
+      path.join(/* turbopackIgnore: true */ readiness.project.root, ".beads"),
+      ["init"],
+    );
     if (!result.ok) {
       return NextResponse.json({ ok: false, error: result.error, readiness }, { status: result.status });
     }

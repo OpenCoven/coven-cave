@@ -34,7 +34,10 @@ export type QueueProjectReadiness = {
 };
 
 function queueProjectFilePath(): string {
-  return process.env.CAVE_QUEUE_PROJECT_PATH_OVERRIDE ?? path.join(caveHome(), "queue-project.json");
+  // The data directory is chosen at runtime. Keep it out of Next's output
+  // tracing so a packaged Queue check does not pull the checkout into the
+  // sidecar archive.
+  return process.env.CAVE_QUEUE_PROJECT_PATH_OVERRIDE ?? path.join(/* turbopackIgnore: true */ caveHome(), "queue-project.json");
 }
 
 async function readSelectedProjectId(): Promise<string | null> {
@@ -152,7 +155,7 @@ export async function queueProjectReadiness(): Promise<QueueProjectReadiness> {
     };
   }
 
-  if (!(await isDirectory(path.join(repoRoot, ".beads")))) {
+  if (!(await isDirectory(path.join(/* turbopackIgnore: true */ repoRoot, ".beads")))) {
     return {
       ok: false,
       code: "needs-beads",
