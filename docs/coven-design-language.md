@@ -219,7 +219,7 @@ wired into `prebuild`):
    name, preferring `-fill`.
 
 Weight conventions: `-bold` for chrome actions (`ph:plus-bold`, `ph:x-bold`,
-`ph:magnifying-glass-bold`, `ph:gear-bold`), `-fill` for status/presence
+`ph:magnifying-glass-bold`, `ph:gear-six-bold`), `-fill` for status/presence
 glyphs (`ph:check-circle-fill`, `ph:warning-circle-fill`,
 `ph:paw-print-fill`), regular for inline content. Sizes come from the
 `--icon-2xs..xl` ladder / `CAVE_ICON_SIZE` map — top chrome is pinned to

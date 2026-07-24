@@ -197,17 +197,28 @@ assert.ok(
   `doc states the --border-strong mixes (${strongPct(foundations)}/${strongPct(lightSlice)})`,
 );
 
-// 5. Icon-count claim stays within 15% of the real ICON_NAMES roster.
+// 5. Icon-count claim stays within 15% of the real ICON_NAMES roster, and
+//    every ph:* icon name the doc cites must exist in that roster.
 const iconSource = readFileSync(new URL("src/lib/icon.tsx", repoRoot), "utf8");
 const iconBlock = iconSource.match(/ICON_NAMES = \[([\s\S]*?)\] as const/);
 assert.ok(iconBlock, "icon.tsx declares ICON_NAMES");
-const iconCount = (iconBlock[1].match(/"ph:[a-z0-9-]+"/g) ?? []).length;
+const iconNames = new Set(
+  (iconBlock[1].match(/"ph:[a-z0-9-]+"/g) ?? []).map((name) => name.slice(1, -1)),
+);
+const iconCount = iconNames.size;
 const iconClaim = designLanguage.match(/\(~(\d+) icons\)/);
 assert.ok(iconClaim, "doc §5 states an approximate icon count");
 assert.ok(
   Math.abs(Number(iconClaim[1]) - iconCount) / iconCount <= 0.15,
   `doc §5 claims ~${iconClaim[1]} icons but ICON_NAMES has ${iconCount} — refresh the claim`,
 );
+for (const cited of designLanguage.match(/`ph:[a-z0-9-]+`/g) ?? []) {
+  const name = cited.slice(1, -1);
+  assert.ok(
+    iconNames.has(name),
+    `doc cites \`${name}\` but ICON_NAMES has no such icon — use a shipped name`,
+  );
+}
 
 // 6. Agent entry points keep pointing at the design system.
 assert.match(
