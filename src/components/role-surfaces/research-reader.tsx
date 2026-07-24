@@ -127,6 +127,12 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
   const [focusTable, setFocusTable] = useState<Extract<FindingsBlock, { kind: "table" }> | null>(null);
   const [tip, setTip] = useState<{ id: string; title: string; meta: string; label: string; tone: "ok" | "warn" | "muted"; left: number; top: number } | null>(null);
 
+  useEffect(() => {
+    setOpenSections(new Set(doc.sections.map((section) => section.id)));
+    setActiveSection(doc.sections[0]?.id ?? null);
+  }, [doc.sections]);
+  const [tip, setTip] = useState<{ id: string; title: string; meta: string; label: string; tone: "ok" | "warn" | "muted"; left: number; top: number } | null>(null);
+
   const closeFocusOrReader = () => {
     if (focusTable) setFocusTable(null);
     else onClose();
