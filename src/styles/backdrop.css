@@ -119,16 +119,17 @@ html[data-backdrop-on] .cave-group-chat-shell {
    (faces, props) fights the copy. Ground the centered content clusters
    without dulling the scene at its edges. */
 
-/* Home (launcher 3a dashboard): a glass ground over the whole surface — the
-   same idiom the Familiar tab earns, since the dashboard is another dense
-   surface whose section labels, greeting, and board rows sit straight on the
-   photo. The image reads as a soft tinted wash behind the board content, while
-   the rail and docked composer keep their own solid --bg-panel fills, so they
-   stay grounded and the scene shows through the content area only. (The old
-   centered hearth card is gone; this replaces its fill.) */
-html[data-backdrop-on] .home-composer-root.home-dash {
-  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+/* Home: one uniform, theme-derived readability surface on the existing
+   hearth card (cave-hct3). The old full-area radial ground behind the whole
+   column read as a blurry oval over busy imagery; the card is the thing that
+   needs the contrast, so deepen ITS fill instead and leave the scene visible
+   around it. (The 3a dashboard that briefly replaced the hearth moved to the
+   new-chat starting view, where the chat thread's glass column grounds it.) */
+html[data-backdrop-on] .home-hearth-card {
+  background: color-mix(in oklch, var(--bg-base) 72%, transparent);
+  /* --radius-xl (not a hard-coded px / square corner) so the hearth glass
+     follows the Appearance → Corner radius setting like the chat glass. */
+  border-radius: var(--radius-xl);
 }
 
 /* Chat landing (no thread yet): the greeting/identity/suggestions cluster
@@ -169,12 +170,6 @@ html[data-backdrop-on] .home-composer-root {
   html[data-backdrop-on] .familiar-tab {
     background: color-mix(in oklch, var(--bg-base) 92%, transparent);
   }
-
-  /* Same for the Home dashboard ground — no blur means a see-through wash is
-     unreadable, so go near-opaque over the photo. */
-  html[data-backdrop-on] .home-composer-root.home-dash {
-    background: color-mix(in oklch, var(--bg-base) 92%, transparent);
-  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -194,11 +189,10 @@ html[data-backdrop-on] .home-composer-root {
     padding-inline: 0;
   }
 
-  /* Same reasoning for the new grounds: no image → no glass over nothing;
-     restore the Home dashboard's normal opaque base surface. */
-  html[data-backdrop-on] .home-composer-root.home-dash {
-    background: var(--bg-base);
-    backdrop-filter: none;
+  /* Same reasoning for the new grounds: no image → no deepened fill; restore
+     the hearth card's normal translucent panel fill. */
+  html[data-backdrop-on] .home-hearth-card {
+    background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
   }
 
   html[data-backdrop-on] .cave-chat-empty-shell {

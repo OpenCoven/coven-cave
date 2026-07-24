@@ -191,12 +191,9 @@ assert.doesNotMatch(source, /className="home-recent/, "the recents strip markup 
 assert.doesNotMatch(css, /\.home-recent\b/, "the recents strip CSS is removed");
 // Chat revamp 1a: the digest carousel is HIDDEN from the default home.
 assert.doesNotMatch(source, /<HomeDigestCarousel/, "the digest carousel no longer renders on home");
-// Launcher 3a (work-led dashboard): the resumable-sessions strip moved OFF a
-// standalone <HomeContinue> and INTO the context rail's "Pick up" group, built
-// from the same resumableSessions() helper.
-assert.doesNotMatch(source, /<HomeContinue/, "the standalone Continue component is retired (resumables live in the rail)");
-assert.match(source, /home-dash__pick-card/, "resumable sessions render as the rail's Pick up cards");
-assert.match(source, /resumableSessions\(sessions, 2\)/, "Pick up shows the two most-recent resumable sessions");
+// Minimal pass: the stacked sections and the Ask Salem doorway are gone.
+// HomeContinue re-added in reference parity pass (2026-07-22): assert.doesNotMatch(source, /<HomeContinue/, "...");
+assert.match(source, /<HomeContinue/, "Continue cards present (reference parity pass 2026-07-22)");
 assert.doesNotMatch(source, /<HomeOpenWork/, "the Open work section no longer renders on the minimal home");
 assert.doesNotMatch(source, /<HomeSnippets/, "the Prompt snippets section no longer renders on the minimal home");
 assert.doesNotMatch(source, /home-ask-salem/, "the Ask Salem doorway no longer renders on the minimal home");

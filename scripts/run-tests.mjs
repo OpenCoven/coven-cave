@@ -376,6 +376,7 @@ export const SUITES = {
     "src/components/composer-git-chip.test.ts",
     "src/components/chat-siderail-hide-archived.test.ts",
     "src/components/chat-empty-state.test.ts",
+    "src/components/chat-new-dashboard.test.ts",
     "src/components/user-chat-avatar.test.ts",
     "src/components/user-profile-invariants.test.ts",
     "src/components/run-activity-strip.test.ts",

@@ -36,28 +36,30 @@ assert.match(
   "HomeComposer should load a familiar-scoped project list for the project selector",
 );
 
-// Launcher 3a (work-led dashboard): Home renders as a full-bleed shell — the
-// root carries .home-dash beside .home-composer-root, with an identity chrome,
-// a context rail, an open-work board, and the composer docked below.
+// Chat revamp 1a + minimal pass: the hero is the hearth card's heading —
+// greeting kicker, "What are we casting today?", then a live-context subtitle
+// (familiar · role). The project name and runtime/model both live in the
+// composer context pill — the hero never repeats them.
 assert.match(
   source,
-  /className="home-composer-root home-dash"/,
-  "Home renders as the work-led dashboard shell (.home-dash on the root)",
+  /home-composer-headline">What are we casting today\?<\/h1>/,
+  "HomeComposer heading is the hearth card's 'What are we casting today?'",
 );
 assert.match(
   source,
-  /<header className="home-dash__chrome">[\s\S]*?home-dash__avatar[\s\S]*?\{familiarInitial\}/,
-  "the top chrome shows the active familiar's identity",
+  /\{contextLine \? <p className="home-composer-sub">\{contextLine\}<\/p> : null\}/,
+  "the heading is followed by the live-context subtitle when derivable",
 );
-// The serif board headline leads with the live open-work count (no invented
-// user name); the model reads in the chrome + the composer context pill.
 assert.match(
   source,
-  /home-dash__headline">\s*\{openWork\.length > 0[\s\S]*?thread\$\{openWork\.length === 1 \? "" : "s"\} open\./,
-  "the board headline reports the live open-work count",
+  /const contextLine = useMemo\(\(\) => \{[\s\S]*?selectedFamiliar\?\.display_name[\s\S]*?selectedFamiliar\?\.role[\s\S]*?\}, \[selectedFamiliar\]\)/,
+  "the subtitle derives from the live familiar only (model reads in the context pill; no invented user profile)",
 );
-assert.doesNotMatch(source, /casting today, /, "no invented user name in the heading");
-assert.doesNotMatch(source, /home-hearth-card/, "the centered hearth card is replaced by the dashboard shell");
+assert.match(
+  source,
+  /className="home-hearth-card"/,
+  "home renders inside the single centered hearth card",
+);
 
 // ── Hero presence eyebrow ────────────────────────────────────────────────────
 // The greeting samples the client clock AFTER mount (SSR markup must stay
@@ -75,32 +77,13 @@ assert.match(
 );
 assert.match(
   source,
-  /home-dash__eyebrow">\s*<span className="home-dash__eyebrow-dot"[\s\S]*?\{greeting \?\? "In the cave"\}/,
-  "the board eyebrow carries the presence dot + the after-mount greeting",
+  /home-composer-eyebrow\$\{greeting \? " is-ready" : ""\}/,
+  "the eyebrow fades in via .is-ready once the client greeting lands",
 );
 assert.doesNotMatch(
   source,
   /home-halo/,
   "the hearth-glow halo is retired — its breathing radial oval read as blurry background color",
-);
-
-// ── Open-work board is data-driven ───────────────────────────────────────────
-// The board reads the live Tasks board (one /api/board GET via the dashboard
-// hook) and offers the All/Running/Blocked/Inbox filter tabs.
-assert.match(
-  source,
-  /const boardCards = useDashboardBoard\(\)/,
-  "the open-work board reads the live Tasks board (useDashboardBoard)",
-);
-assert.match(
-  source,
-  /home-dash__filters"[\s\S]*?OPEN_WORK_FILTERS\.map/,
-  "the board offers the All/Running/Blocked/Inbox filter tabs",
-);
-assert.match(
-  source,
-  /needsYou\.map\(\(item\) =>[\s\S]*?onOpen: \(\) => onOpenInboxItem\(item\)/,
-  "the 'needs you' attention tier joins the board as inbox rows",
 );
 
 // Project selection lives in the composer's context pill (chat revamp 1d):
