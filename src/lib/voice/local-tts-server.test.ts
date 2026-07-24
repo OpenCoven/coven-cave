@@ -1,7 +1,9 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { writeFileSync } from "node:fs";
+import { existsSync, statSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import {
@@ -33,6 +35,7 @@ test("Piper runner sends text on stdin and cleans its bounded WAV output", async
   let argv = null;
   let options = null;
   let stdin = "";
+  let outputDirectory = null;
   const fakeRunner = (receivedCommand, receivedArgs, receivedOptions) => {
     command = receivedCommand;
     argv = receivedArgs;
@@ -46,7 +49,14 @@ test("Piper runner sends text on stdin and cleans its bounded WAV output", async
       stdin += chunk;
     });
     child.stdin.on("end", () => {
-      writeFileSync(receivedArgs[receivedArgs.indexOf("-f") + 1], Buffer.from("RIFF"));
+      const outputPath = receivedArgs[receivedArgs.indexOf("-f") + 1];
+      outputDirectory = path.dirname(outputPath);
+      assert.notEqual(outputDirectory, os.tmpdir());
+      assert.match(path.basename(outputDirectory), /^coven-piper-/);
+      if (process.platform !== "win32") {
+        assert.equal(statSync(outputDirectory).mode & 0o777, 0o700);
+      }
+      writeFileSync(outputPath, Buffer.from("RIFF"));
       queueMicrotask(() => child.emit("close", 0));
     });
     return child;
@@ -65,6 +75,8 @@ test("Piper runner sends text on stdin and cleans its bounded WAV output", async
   assert.equal(options.stdio[0], "pipe");
   assert.equal(stdin, "Hello from Piper.\n");
   assert.deepEqual([...wav], [82, 73, 70, 70]);
+  assert.ok(outputDirectory);
+  assert.equal(existsSync(outputDirectory), false, "the private audio directory is removed");
 });
 
 test("Piper runner force-kills a process that never closes after timeout", async () => {

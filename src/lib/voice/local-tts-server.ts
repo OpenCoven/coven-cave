@@ -1,9 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 
 const PIPER_TIMEOUT_MS = 60_000;
 const MAX_AUDIO_BYTES = 32 * 1024 * 1024;
@@ -148,11 +147,15 @@ export async function runPiperWithDependencies(
       "The bundled Piper runtime is missing. Reinstall CovenCave before selecting a Piper voice.",
     );
   }
-  const outputPath = path.join(
-    /* turbopackIgnore: true */ os.tmpdir(),
-    `coven-piper-${process.pid}-${randomUUID()}.wav`,
+  const outputDirectory = await mkdtemp(
+    path.join(/* turbopackIgnore: true */ os.tmpdir(), "coven-piper-"),
   );
+  const outputPath = path.join(/* turbopackIgnore: true */ outputDirectory, "speech.wav");
   try {
+    // mkdtemp creates a private directory on POSIX; chmod makes that privacy
+    // boundary explicit before Piper receives a path to write conversational
+    // audio into. Windows ignores POSIX permission bits safely.
+    await chmod(/* turbopackIgnore: true */ outputDirectory, 0o700);
     await new Promise<void>((resolve, reject) => {
       const child: ChildProcess = spawnImpl(executable, ["-m", modelPath, "-f", outputPath], {
         env: piperSpawnEnv(),
@@ -257,7 +260,7 @@ export async function runPiperWithDependencies(
     }
     return new Uint8Array(await readFile(/* turbopackIgnore: true */ outputPath));
   } finally {
-    await rm(/* turbopackIgnore: true */ outputPath, { force: true }).catch(() => undefined);
+    await rm(/* turbopackIgnore: true */ outputDirectory, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
