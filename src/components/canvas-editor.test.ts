@@ -7,6 +7,12 @@ import { readFileSync } from "node:fs";
 
 import * as inspector from "../lib/canvas-inspector.ts";
 import { resolveEscapeAction } from "../lib/canvas-editor-escape.ts";
+import {
+  CANVAS_VIEWPORT_PRESETS,
+  canvasViewportPreset,
+  describeViewport,
+  resolveViewportScale,
+} from "../lib/canvas-viewport.ts";
 
 const {
   buildCanvasInspectorScript,
@@ -335,6 +341,92 @@ assert.match(
   editorCss,
   /\.canvas-editor__frame-shell:fullscreen \{[^}]*border: 0;/,
   "native fullscreen strips the frame chrome",
+);
+
+// ── Viewport presets (cave-ztbo) ────────────────────────────────────────────
+// The design interface renders the sketch at preset device sizes: true CSS
+// pixels inside the iframe (media queries fire), scaled to fit the stage.
+assert.deepEqual(
+  CANVAS_VIEWPORT_PRESETS.map((p) => p.id),
+  ["fill", "desktop", "tablet", "phone"],
+  "the preset vocabulary: fill + three device classes",
+);
+{
+  const byId = Object.fromEntries(CANVAS_VIEWPORT_PRESETS.map((p) => [p.id, p]));
+  assert.equal(byId.fill.width, undefined, "fill has no fixed size — it tracks the stage");
+  assert.deepEqual([byId.desktop.width, byId.desktop.height], [1280, 800], "desktop preset is 1280×800");
+  assert.deepEqual([byId.tablet.width, byId.tablet.height], [768, 1024], "tablet preset is portrait 768×1024");
+  assert.deepEqual([byId.phone.width, byId.phone.height], [390, 844], "phone preset is 390×844");
+}
+assert.equal(canvasViewportPreset("tablet").id, "tablet", "presets resolve by id");
+assert.equal(canvasViewportPreset("nope").id, "fill", "unknown ids fall back to fill");
+assert.equal(resolveViewportScale(canvasViewportPreset("fill"), 500, 500), 1, "fill never scales");
+assert.equal(
+  resolveViewportScale(canvasViewportPreset("desktop"), 640, 400),
+  0.5,
+  "a sized preset scales down to fit the tighter axis",
+);
+assert.equal(
+  resolveViewportScale(canvasViewportPreset("phone"), 4000, 4000),
+  1,
+  "presets never upscale — small devices render 1:1 on big stages",
+);
+assert.equal(
+  resolveViewportScale(canvasViewportPreset("desktop"), 0, 0),
+  1,
+  "an unmeasured stage (pre-ResizeObserver) resolves to 1, never 0/NaN",
+);
+assert.equal(
+  resolveViewportScale(canvasViewportPreset("desktop"), 1, 1),
+  0.05,
+  "scale floors at 0.05 so the frame can never collapse",
+);
+assert.equal(describeViewport(canvasViewportPreset("fill"), 1), null, "fill has no size caption");
+assert.equal(
+  describeViewport(canvasViewportPreset("desktop"), 0.5),
+  "1280×800 · 50%",
+  "scaled presets caption device size + zoom",
+);
+assert.equal(
+  describeViewport(canvasViewportPreset("phone"), 1),
+  "390×844",
+  "1:1 presets caption the size alone",
+);
+
+// Editor wiring: a labelled preset group in the header, and the frame box
+// stays mounted in BOTH modes so toggling presets never reloads the iframe.
+assert.match(editor, /role="group" aria-label="Viewport size"/, "header exposes the viewport preset group");
+assert.match(
+  editor,
+  /CANVAS_VIEWPORT_PRESETS\.map\(\(preset\) =>/,
+  "preset buttons render from the shared preset table",
+);
+assert.match(
+  editor,
+  /aria-pressed=\{viewportId === preset\.id\}/,
+  "the active preset is announced via aria-pressed",
+);
+assert.match(editor, /className="canvas-editor__frame-box"/, "the frame box wrapper is always mounted");
+assert.match(
+  editor,
+  /transform: `scale\(\$\{viewportScale\}\)`,\s*transformOrigin: "top left",/,
+  "the iframe renders at device pixels and scales to fit (devtools-style)",
+);
+assert.match(editor, /new ResizeObserver\(compute\)/, "scale tracks stage resizes");
+assert.match(
+  editor,
+  /nativeFullscreen\s*\? \{ width: window\.innerWidth, height: window\.innerHeight \}/,
+  "native fullscreen measures the screen — the UA forces the shell to 100%",
+);
+assert.match(
+  editorCss,
+  /\.canvas-editor__frame-shell--viewport \.canvas-editor__frame-box \{[^}]*transform: translate\(-50%, -50%\);/,
+  "the device box centers via absolute positioning — its explicit device size stays out of intrinsic sizing, so a stale scale can never stretch the pane",
+);
+assert.match(
+  editorCss,
+  /\.canvas-editor__frame-shell--viewport \.canvas-editor__frame-box \{[^}]*outline: 1px solid/,
+  "device chrome is an outline, not a border — no device pixels get clipped",
 );
 
 // ── Escape precedence: native fullscreen → field → selection → expand ───────
