@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { sacrificeSessionLocal } from "@/lib/cave-config";
+import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
 import { callDaemon } from "@/lib/coven-daemon";
 import { invalidateSessionsListCache } from "@/lib/server/sessions-list-cache";
+import { isValidSessionId } from "@/lib/server/session-id";
 import { prunePayload } from "./prune-response";
+
+const execFileAsync = promisify(execFile);
+
+const SACRIFICE_TIMEOUT_MS = 8000;
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +24,11 @@ export const dynamic = "force-dynamic";
  *   { pruned: number }
  *
  * If the daemon doesn't support the endpoint yet, we perform client-side
- * pruning: we list all sessions, filter locally, and DELETE each one.
+ * pruning: we list all sessions, filter locally, and remove each one via
+ * `coven sacrifice` — the daemon has no HTTP delete route (DELETE
+ * /api/v1/sessions/{id} 404s), so the CLI is the only real deletion path
+ * (same as stuck-created-sweep). Each swept row is also tombstoned locally
+ * so the merged session list hides it even when the CLI call fails.
  *
  * Query/body params:
  *   olderThanHours  number  default 24
@@ -85,14 +98,28 @@ export async function POST(req: Request) {
 
   let pruned = 0;
   for (const s of candidates) {
-    const del = await callDaemon({
-      method: "DELETE",
-      path: `/api/v1/sessions/${s.id}`,
-      timeoutMs: 4_000,
-    });
-    if (del.ok) pruned++;
+    // Mirrors the sessions/[id] route's id validation — no argv surprises.
+    if (!isValidSessionId(s.id)) continue;
+    try {
+      const { command, fixedArgs } = covenLaunchCommand();
+      await execFileAsync(command, [...fixedArgs, "sacrifice", s.id, "--yes"], {
+        env: covenSpawnEnv(),
+        timeout: SACRIFICE_TIMEOUT_MS,
+      });
+      pruned++;
+    } catch {
+      // The daemon row survives (daemon down or CLI missing); the local
+      // tombstone below still hides it from every session list.
+    }
+    try {
+      await sacrificeSessionLocal(s.id);
+    } catch {
+      // State write failed; the daemon-side sacrifice above still counts.
+    }
   }
 
-  if (pruned > 0) invalidateSessionsListCache();
+  // Local tombstones are written even when the CLI call fails, so the merged
+  // list changes whenever anything was attempted — not just on CLI successes.
+  if (candidates.length > 0) invalidateSessionsListCache();
   return NextResponse.json(prunePayload({ dryRun: false, count: pruned, method: "client" }));
 }
