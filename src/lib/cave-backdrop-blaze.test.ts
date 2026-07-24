@@ -103,4 +103,17 @@ assert.match(
   );
 }
 
+// ── CSS: fill + reduced-motion hide ──────────────────────────────────────────
+const css = readFileSync(new URL("../styles/backdrop.css", import.meta.url), "utf8");
+assert.match(
+  css,
+  /\.cave-backdrop-blaze \{\n  position: absolute;\n  inset: 0;\n\}/,
+  "the Blaze visual fills the fixed layer",
+);
+assert.match(
+  css,
+  /@media \(prefers-reduced-motion: reduce\) \{\n  html\[data-backdrop\] \.cave-backdrop-layer\[data-backdrop-style="blaze"\] \{\n    display: none;\n  \}\n\}/,
+  "reduced motion hides the animated style entirely (no frozen fire frame)",
+);
+
 console.log("cave-backdrop-blaze.test.ts: ok");

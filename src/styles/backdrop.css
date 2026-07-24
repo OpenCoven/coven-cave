@@ -39,6 +39,30 @@ html[data-backdrop] .cave-backdrop-layer::after {
   );
 }
 
+/* ── Blaze style (cave-99s9) ─────────────────────────────────────────────────
+   The animated option: the vendored Canvas UI Blaze renders inside the same
+   fixed layer the image uses, so enablement, the intensity opacity, the
+   scrim above, and the glass contracts below all apply unchanged. The canvas
+   is decorative and inert (aria-hidden; the layer already ignores pointers). */
+.cave-backdrop-blaze {
+  position: absolute;
+  inset: 0;
+}
+
+.cave-backdrop-blaze__fill {
+  width: 100%;
+  height: 100%;
+}
+
+/* No frozen fire frame: reduced motion drops the animated style entirely
+   (the component also skips mounting — this rule is the CSS belt to that
+   suspender). The static image style is unaffected. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-backdrop] .cave-backdrop-layer[data-backdrop-style="blaze"] {
+    display: none;
+  }
+}
+
 /* The big opaque paints over the layer go translucent while a backdrop
    surface (home/chat) is frontmost — the layer component flips
    html[data-backdrop-on]. Side panes (nav, list) keep their own solid
