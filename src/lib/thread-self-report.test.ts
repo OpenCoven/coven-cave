@@ -207,3 +207,80 @@ describe("aggregateThreadSignals vital capabilities", () => {
     );
   });
 });
+
+describe("aggregateThreadSignals skill access gaps", () => {
+  function reportWithSkills(
+    id: string,
+    reportedAt: string,
+    opts: { used?: string[]; access?: ThreadSelfReport["skillsNeedingAccess"] },
+  ): ThreadSelfReport {
+    return {
+      ...fullReport(),
+      id,
+      sessionId: id,
+      reportedAt,
+      skillsUsed: opts.used ?? [],
+      skillsNeedingAccess: opts.access ?? [],
+    };
+  }
+
+  it("clears an access gap once a newer report uses the skill without re-filing it", () => {
+    // Regression: skill-creator was reported blocked mid-install (07-12/07-14),
+    // then worked in every later session — the row must not stay `blocked`
+    // for the whole report window (same latest-wins semantics as cave-hdkx).
+    const stale = reportWithSkills("session-old", "2026-07-14T15:22:31.000Z", {
+      used: ["skill-creator"],
+      access: [{ skillId: "skill-creator", reason: "Freshly installed skills aren't visible mid-session." }],
+    });
+    const recovered = reportWithSkills("session-new", "2026-07-23T19:00:00.000Z", {
+      used: ["skill-creator"],
+    });
+    // Order of the input array must not matter — only reportedAt recency.
+    for (const reports of [
+      [stale, recovered],
+      [recovered, stale],
+    ]) {
+      assert.deepEqual(aggregateThreadSignals(reports).skillsNeedingAccess, []);
+    }
+  });
+
+  it("keeps the complaint when the newest mention of the skill still files one", () => {
+    const usedFine = reportWithSkills("session-old", "2026-07-10T08:00:00.000Z", {
+      used: ["github"],
+    });
+    const nowBlocked = reportWithSkills("session-new", "2026-07-14T09:00:00.000Z", {
+      access: [{ skillId: "github", reason: "Needs PR merge access." }],
+    });
+    assert.deepEqual(aggregateThreadSignals([usedFine, nowBlocked]).skillsNeedingAccess, [
+      { skillId: "github", reason: "Needs PR merge access." },
+    ]);
+  });
+
+  it("lets a report's own complaint win over its own skillsUsed mention", () => {
+    // A thread can drive a skill through a bash fallback (so it lands in
+    // skillsUsed) while skill-tool access is still broken — that report's
+    // complaint must stand until a NEWER report uses the skill cleanly.
+    const fallbackRun = reportWithSkills("session-only", "2026-07-14T15:22:31.000Z", {
+      used: ["skill-creator"],
+      access: [{ skillId: "skill-creator", reason: "Drove it via bash scripts instead of skill invocation." }],
+    });
+    assert.deepEqual(aggregateThreadSignals([fallbackRun]).skillsNeedingAccess, [
+      { skillId: "skill-creator", reason: "Drove it via bash scripts instead of skill invocation." },
+    ]);
+  });
+
+  it("tracks distinct skill ids independently", () => {
+    const older = reportWithSkills("session-a", "2026-07-13T10:00:00.000Z", {
+      access: [
+        { skillId: "skill-creator", reason: "Not installed yet." },
+        { skillId: "github", reason: "Needs PR merge access." },
+      ],
+    });
+    const newer = reportWithSkills("session-b", "2026-07-14T10:00:00.000Z", {
+      used: ["skill-creator"],
+    });
+    assert.deepEqual(aggregateThreadSignals([older, newer]).skillsNeedingAccess, [
+      { skillId: "github", reason: "Needs PR merge access." },
+    ]);
+  });
+});
