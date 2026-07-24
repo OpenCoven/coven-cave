@@ -1,0 +1,70 @@
+// @ts-nocheck
+// Blaze backdrop style (cave-99s9): unit tests for the accent → fire-color
+// derivation, plus source pins for the component contract (reduced motion,
+// lazy chunk, live theme tracking).
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import {
+  blazeColorsFromAccent,
+  BLAZE_FALLBACK_SMOKE,
+  BLAZE_FALLBACK_SPARK,
+  BLAZE_OPTIONS,
+} from "./cave-backdrop-blaze-colors.ts";
+
+// ── Smoke IS the accent; sparks sit 70% toward neutral grey ──────────────────
+{
+  const { sparkColor, smokeColor } = blazeColorsFromAccent("rgb(255, 0, 0)");
+  assert.deepEqual(smokeColor, [1, 0, 0], "smoke takes the accent directly");
+  const expected = [1 * 0.3 + 0.66 * 0.7, 0.66 * 0.7, 0.66 * 0.7];
+  for (let i = 0; i < 3; i++) {
+    assert.ok(Math.abs(sparkColor[i] - expected[i]) < 1e-6, "sparks mix 70% toward 0.66 grey");
+  }
+}
+
+// ── The oklch syntax the theme tokens actually use parses in range ───────────
+{
+  const { sparkColor, smokeColor } = blazeColorsFromAccent("oklch(0.72 0.16 293)");
+  assert.ok(smokeColor.every((c) => c >= 0 && c <= 1), "oklch accents land in 0–1 channels");
+  assert.ok(sparkColor.every((c) => c >= 0 && c <= 1), "spark channels stay clamped");
+}
+
+// ── Unparseable accent → the exact Canvas UI playground values ───────────────
+{
+  const { sparkColor, smokeColor } = blazeColorsFromAccent("");
+  assert.deepEqual(sparkColor, BLAZE_FALLBACK_SPARK);
+  assert.deepEqual(smokeColor, BLAZE_FALLBACK_SMOKE);
+}
+
+// ── The exact playground option values (user-configured) ─────────────────────
+assert.deepEqual(BLAZE_OPTIONS, {
+  height: 0.75,
+  distortion: 0.5,
+  distortionScale: 1,
+  speed: 0.5,
+  sparks: 0.75,
+  sparkDensity: 0.75,
+  sparkSize: 0.75,
+  layers: 5,
+  smoke: 1,
+  glow: 0.5,
+});
+
+// ── Component contract pins ──────────────────────────────────────────────────
+const component = readFileSync(new URL("../components/cave-backdrop-blaze.tsx", import.meta.url), "utf8");
+assert.match(
+  component,
+  /if \(reducedMotion \|\| accentCss === null\) return null;/,
+  "reduced motion skips mounting the GPU loop entirely",
+);
+assert.match(
+  component,
+  /dynamic\(\(\) => import\("@\/components\/canvasui\/Blaze"\), \{ ssr: false \}\)/,
+  "the vendored WebGL file stays out of the main bundle",
+);
+assert.match(
+  component,
+  /attributeFilter: \["data-theme", "data-mode", "style"\]/,
+  "colors re-derive live on theme/mode/custom-accent changes",
+);
+
+console.log("cave-backdrop-blaze.test.ts: ok");
