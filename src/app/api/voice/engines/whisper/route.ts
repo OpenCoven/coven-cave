@@ -5,6 +5,7 @@ import {
   readyWhisperModel,
   transcribeSidecarWav,
 } from "../../../../../lib/voice/sidecar-whisper.ts";
+import { isLocalOrigin } from "../../../../../lib/server/local-origin.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,13 @@ function eventKind(value: FormDataEntryValue | null): "partial" | "final" | null
 
 /** Transcribe one browser-captured PCM WAV with the first verified local model. */
 export async function POST(req: Request) {
+  if (!isLocalOrigin(req)) {
+    return NextResponse.json({ ok: false, error: "local_origin_required" }, { status: 403 });
+  }
+  const contentLength = Number(req.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_WHISPER_WAV_BYTES + 128 * 1024) {
+    return badRequest("invalid_audio", "The recorded utterance is too large for local Whisper.");
+  }
   let form: FormData;
   try { form = await req.formData(); } catch {
     return badRequest("invalid_form", "Send one WAV utterance as multipart form data.");
@@ -52,7 +60,10 @@ export async function POST(req: Request) {
     const text = await transcribeSidecarWav(
       new Uint8Array(await audio.arrayBuffer()),
       model,
-      { lang: typeof lang === "string" && /^[A-Za-z]{2,3}(?:-[A-Za-z]{2})?$/.test(lang) ? lang : undefined },
+      {
+        lang: typeof lang === "string" && /^[A-Za-z]{2,3}(?:-[A-Za-z]{2})?$/.test(lang) ? lang : undefined,
+        signal: req.signal,
+      },
     );
     return NextResponse.json({ ok: true, session, kind, text });
   } catch (error) {

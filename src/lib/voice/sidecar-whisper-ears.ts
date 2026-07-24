@@ -18,6 +18,7 @@ export const WHISPER_PARTIAL_MS = 600;
 type EnginesPayload = {
   ok?: boolean;
   stt?: Array<{ engine?: string; ready?: boolean }>;
+  runtimes?: { whisper?: { available?: boolean } };
 };
 
 type WhisperResponse = {
@@ -46,12 +47,33 @@ export async function sidecarWhisperAvailable(fetchImpl: typeof fetch = fetch): 
     const res = await fetchImpl("/api/voice/engines", { cache: "no-store" });
     if (!res.ok) return false;
     const payload = await res.json() as EnginesPayload;
-    return payload.ok === true && payload.stt?.some(
+    return payload.ok === true && payload.runtimes?.whisper?.available === true && payload.stt?.some(
       (model) => model.engine === "whisper" && model.ready === true,
     ) === true;
   } catch {
     return false;
   }
+}
+
+/** Mobile Tauri deliberately uses a remote daemon instead of a local Node
+ * sidecar. Never treat that remote audio hop as the Local provider's strict
+ * on-device engine. */
+async function hasLocalDesktopSidecar(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  if (!(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__) return true;
+  try {
+    const { platform } = await import("@tauri-apps/plugin-os");
+    const value = platform();
+    return value !== "ios" && value !== "android";
+  } catch {
+    // Mobile builds register the OS plugin. Retain compatibility for older
+    // desktop builds where it did not yet exist.
+    return true;
+  }
+}
+
+export async function localSidecarWhisperAvailable(fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  return (await hasLocalDesktopSidecar()) && sidecarWhisperAvailable(fetchImpl);
 }
 
 /** Encode mono float PCM into the 16-bit WAV accepted directly by whisper.cpp. */
@@ -152,6 +174,7 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
     let silentOutput: GainNode | null = null;
     let chunks: Float32Array[] = [];
     let hasSpeech = false;
+    let finalizing = false;
 
     const clearTimers = () => {
       if (stabilityTimer !== null) { unschedule(stabilityTimer); stabilityTimer = null; }
@@ -172,7 +195,18 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
     };
 
     const restart = () => {
-      if (wanted && !closed) start();
+      if (wanted && !closed && !finalizing) start();
+    };
+
+    const armPartial = (session: number) => {
+      if (
+        closed || !wanted || finalizing || current !== session || chunks.length === 0 ||
+        partialInFlight || partialTimer !== null
+      ) return;
+      partialTimer = schedule(() => {
+        partialTimer = null;
+        sendPartial(session);
+      }, WHISPER_PARTIAL_MS);
     };
 
     const postAudio = (
@@ -193,7 +227,7 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
     };
 
     const sendPartial = (session: number) => {
-      if (closed || !wanted || current !== session || partialInFlight || chunks.length === 0) return;
+      if (closed || !wanted || finalizing || current !== session || partialInFlight || chunks.length === 0) return;
       const partialAudio = chunks.slice();
       const sampleRate = context?.sampleRate ?? WHISPER_SAMPLE_RATE;
       const requestController = new AbortController();
@@ -201,12 +235,13 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
       partialInFlight = true;
       void postAudio(session, partialAudio, sampleRate, "partial", requestController.signal)
         .then(({ res, body }) => {
-          if (closed || requestController.signal.aborted || current !== session) return;
+          if (closed || requestController.signal.aborted || finalizing || current !== session) return;
           if (!res.ok || !body?.ok || body.session !== session || body.kind !== "partial") {
             // An early incremental decode can legitimately contain no complete
             // words yet. Keep collecting; the final decode remains authoritative.
             if (body?.error === "whisper_empty") return;
             wanted = false;
+            stop();
             handlers.onError(body?.error ?? "whisper_failed", body?.hint);
             return;
           }
@@ -216,44 +251,62 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
         .catch((error) => {
           if (closed || requestController.signal.aborted) return;
           wanted = false;
+          stop();
           handlers.onError("whisper_unavailable", error instanceof Error ? error.message : String(error));
         })
         .finally(() => {
           partialInFlight = false;
           if (partialController === requestController) partialController = null;
+          armPartial(session);
         });
     };
 
     const finish = (session: number) => {
-      if (closed || session !== current) return;
+      if (closed || !wanted || finalizing || session !== current) return;
       clearTimers();
-      current = 0;
+      finalizing = true;
+      partialController?.abort();
+      partialController = null;
       const sampleRate = context?.sampleRate ?? 16_000;
       releaseCapture();
       const audio = chunks;
       chunks = [];
-      if (!hasSpeech || audio.length === 0) { restart(); return; }
+      if (!hasSpeech || audio.length === 0) {
+        current = 0;
+        finalizing = false;
+        restart();
+        return;
+      }
       hasSpeech = false;
       const requestController = new AbortController();
       controller = requestController;
       void postAudio(session, audio, sampleRate, "final", requestController.signal)
         .then(({ res, body }) => {
-          if (closed || requestController.signal.aborted) return;
+          if (closed || requestController.signal.aborted || !wanted || !finalizing || current !== session) return;
           if (!res.ok || !body?.ok || body.session !== session || body.kind !== "final") {
             // Match native STT's empty-final behavior: resume listening rather
             // than turning a pause or an unrecognized sound into a call error.
-            if (body?.error === "whisper_empty") { restart(); return; }
+            if (body?.error === "whisper_empty") {
+              current = 0;
+              finalizing = false;
+              restart();
+              return;
+            }
             wanted = false;
+            stop();
             handlers.onError(body?.error ?? "whisper_failed", body?.hint);
             return;
           }
           const text = body.text?.trim();
+          current = 0;
+          finalizing = false;
           if (text) handlers.onFinal(text);
           restart();
         })
         .catch((error) => {
           if (closed || requestController.signal.aborted) return;
           wanted = false;
+          stop();
           handlers.onError("whisper_unavailable", error instanceof Error ? error.message : String(error));
         })
         .finally(() => {
@@ -262,7 +315,7 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
     };
 
     const start = () => {
-      if (closed || !wanted || current !== 0) return;
+      if (closed || !wanted || finalizing || current !== 0) return;
       if (!mic) {
         wanted = false;
         handlers.onError("whisper_unavailable", "The local Whisper engine could not access the microphone stream.");
@@ -278,6 +331,7 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
       current = session;
       chunks = [];
       hasSpeech = false;
+      finalizing = false;
       context = new Context();
       source = context.createMediaStreamSource(mic);
       processor = context.createScriptProcessor(4_096, 1, 1);
@@ -293,23 +347,21 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
         hasSpeech = true;
         if (stabilityTimer !== null) unschedule(stabilityTimer);
         stabilityTimer = schedule(() => finish(session), stabilityMs);
-        if (capTimer === null) capTimer = schedule(() => finish(session), maxUtteranceMs);
-        if (partialTimer === null && !partialInFlight) {
-          partialTimer = schedule(() => {
-            partialTimer = null;
-            sendPartial(session);
-          }, WHISPER_PARTIAL_MS);
-        }
+        armPartial(session);
       };
       source.connect(processor);
       processor.connect(silentOutput);
       silentOutput.connect(context.destination);
+      // Bound initial silence and a failed/quiet microphone. The empty path in
+      // finish() discards its PCM and reopens listening without a network call.
+      capTimer = schedule(() => finish(session), maxUtteranceMs);
       void context.resume().catch(() => { /* user gesture is supplied by call start */ });
     };
 
     const stop = () => {
       clearTimers();
       current = 0;
+      finalizing = false;
       releaseCapture();
       chunks = [];
       hasSpeech = false;

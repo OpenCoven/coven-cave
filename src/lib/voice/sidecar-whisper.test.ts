@@ -10,7 +10,12 @@ import {
   whisperCliArgs,
   whisperCliCommand,
 } from "./sidecar-whisper.ts";
-import { encodePcmWav, resampleMonoPcm, sidecarWhisperAvailable } from "./sidecar-whisper-ears.ts";
+import {
+  createSidecarWhisperEars,
+  encodePcmWav,
+  resampleMonoPcm,
+  sidecarWhisperAvailable,
+} from "./sidecar-whisper-ears.ts";
 
 const cacheRoot = path.join(process.cwd(), "node_modules", ".cache", "coven-cave-tests", "sidecar-whisper");
 
@@ -52,6 +57,27 @@ test("transcription rejects oversized input before creating a subprocess", async
   );
 });
 
+test("transcription forwards cancellation to its Whisper runner", async () => {
+  const controller = new AbortController();
+  let receivedSignal;
+  await mkdir(cacheRoot, { recursive: true });
+  await assert.rejects(
+    () => transcribeSidecarWav(new Uint8Array([1]), {
+      id: "whisper-tiny-en", name: "Whisper tiny.en", path: "model.bin",
+    }, {
+      tempRoot: cacheRoot,
+      signal: controller.signal,
+      run: async (_command, _args, signal) => {
+        receivedSignal = signal;
+        throw new SidecarWhisperError("whisper_failed", "cancelled");
+      },
+    }),
+    /whisper_failed/,
+  );
+  assert.equal(receivedSignal, controller.signal);
+  await rm(cacheRoot, { recursive: true, force: true });
+});
+
 test("PCM capture serializes as a standard mono 16-bit WAV", () => {
   const wav = encodePcmWav([new Float32Array([-1, 0, 1])], 16_000);
   const view = new DataView(wav.buffer);
@@ -71,10 +97,68 @@ test("browser PCM is downsampled to whisper.cpp's 16 kHz input", () => {
 
 test("sidecar availability requires a verified ready Whisper model", async () => {
   assert.equal(await sidecarWhisperAvailable(async () => new Response(JSON.stringify({
-    ok: true, stt: [{ engine: "whisper", ready: true }],
+    ok: true, runtimes: { whisper: { available: true } }, stt: [{ engine: "whisper", ready: true }],
   }))), true);
   assert.equal(await sidecarWhisperAvailable(async () => new Response(JSON.stringify({
-    ok: true, stt: [{ engine: "whisper", ready: false }],
+    ok: true, runtimes: { whisper: { available: true } }, stt: [{ engine: "whisper", ready: false }],
+  }))), false);
+  assert.equal(await sidecarWhisperAvailable(async () => new Response(JSON.stringify({
+    ok: true, runtimes: { whisper: { available: false } }, stt: [{ engine: "whisper", ready: true }],
   }))), false);
   assert.equal(await sidecarWhisperAvailable(async () => new Response("nope", { status: 503 })), false);
+});
+
+function fakeTimers() {
+  let next = 0;
+  const pending = new Map();
+  return {
+    setTimeout(fn, ms) { const id = ++next; pending.set(id, { fn, ms }); return id; },
+    clearTimeout(id) { pending.delete(id); },
+    fire(ms) {
+      const entry = [...pending.entries()].find(([, value]) => value.ms === ms);
+      assert.ok(entry, `missing timer ${ms}`);
+      pending.delete(entry[0]);
+      entry[1].fn();
+    },
+  };
+}
+
+test("initial silence is capped, discarded, and restarted without a Whisper request", () => {
+  const priorWindow = globalThis.window;
+  const timers = fakeTimers();
+  const processors = [];
+  let closes = 0;
+  class AudioContext {
+    sampleRate = 48_000;
+    state = "running";
+    destination = {};
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createScriptProcessor() {
+      const processor = { connect() {}, disconnect() {}, onaudioprocess: null };
+      processors.push(processor);
+      return processor;
+    }
+    createGain() { return { connect() {}, disconnect() {}, gain: { value: 1 } }; }
+    resume() { return Promise.resolve(); }
+    close() { closes += 1; this.state = "closed"; return Promise.resolve(); }
+  }
+  globalThis.window = { AudioContext };
+  let requests = 0;
+  const ears = createSidecarWhisperEars({
+    maxUtteranceMs: 99,
+    fetchImpl: async () => { requests += 1; return new Response("{}"); },
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+  })({ onPartial() {}, onFinal() {}, onError() {} }, {});
+  try {
+    ears.listen();
+    processors[0].onaudioprocess({ inputBuffer: { getChannelData: () => new Float32Array(4096) } });
+    timers.fire(99);
+    assert.equal(closes, 1, "silent capture releases its first audio context");
+    assert.equal(requests, 0, "silent capture never submits a WAV");
+    assert.equal(processors.length, 2, "ears restart listening after the empty cap");
+  } finally {
+    ears.close();
+    globalThis.window = priorWindow;
+  }
 });

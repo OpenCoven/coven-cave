@@ -4,7 +4,11 @@ import { test } from "node:test";
 import { POST } from "./route.ts";
 
 function request(form: FormData) {
-  return new Request("http://test/api/voice/engines/whisper", { method: "POST", body: form });
+  return new Request("http://localhost/api/voice/engines/whisper", {
+    method: "POST",
+    headers: { host: "localhost" },
+    body: form,
+  });
 }
 
 test("Whisper endpoint requires a numbered PCM WAV utterance", async () => {

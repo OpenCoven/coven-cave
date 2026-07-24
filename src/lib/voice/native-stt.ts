@@ -17,7 +17,7 @@
 import type { SpeechEars, SpeechEarsFactory, SpeechEarsHandlers } from "./speech-loop.ts";
 import type { VoiceEarsEngine } from "./types.ts";
 import { VoiceConnectError } from "./types.ts";
-import { createSidecarWhisperEars, sidecarWhisperAvailable } from "./sidecar-whisper-ears.ts";
+import { createSidecarWhisperEars, localSidecarWhisperAvailable } from "./sidecar-whisper-ears.ts";
 
 /** Event channel mirrored from src-tauri/src/speech.rs. */
 export const STT_EVENT = "speech-stt:event";
@@ -269,7 +269,7 @@ export async function resolvePreferredEars(
   // deliberately outranks the Apple-specific recognizer for consistent voice
   // behavior. Do not probe this during SSR: the browser's authenticated fetch
   // is what reaches a packaged sidecar.
-  if (opts.allowSidecar !== false && typeof window !== "undefined" && await sidecarWhisperAvailable()) {
+  if (opts.allowSidecar !== false && typeof window !== "undefined" && await localSidecarWhisperAvailable()) {
     return { factory: createSidecarWhisperEars(), engine: "sidecar-whisper" };
   }
   const bridge = await loadNativeSttBridge();

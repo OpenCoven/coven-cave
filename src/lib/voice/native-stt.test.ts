@@ -342,6 +342,7 @@ test("a ready sidecar Whisper model outranks the native bridge", async () => {
   globalThis.window = {};
   globalThis.fetch = async () => new Response(JSON.stringify({
     ok: true,
+    runtimes: { whisper: { available: true } },
     stt: [{ engine: "whisper", ready: true }],
   }));
   try {

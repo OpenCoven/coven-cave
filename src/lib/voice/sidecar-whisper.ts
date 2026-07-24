@@ -43,20 +43,39 @@ export function whisperCliCommand(env: NodeJS.ProcessEnv = process.env): string 
   return env.COVEN_WHISPER_CPP_BIN?.trim() || "whisper-cli";
 }
 
+/** Probe the executable separately from the downloaded GGML model. A model
+ * alone must never make the client advertise an engine that cannot start. */
+export async function whisperRuntimeAvailable(command = whisperCliCommand()): Promise<boolean> {
+  try {
+    await execFileAsync(command, ["--version"], {
+      timeout: 1_500,
+      maxBuffer: 64 * 1024,
+      windowsHide: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function whisperCliArgs(modelPath: string, wavPath: string, outputStem: string, lang?: string): string[] {
   return ["-m", modelPath, "-f", wavPath, "-otxt", "-of", outputStem, ...(lang ? ["-l", lang] : [])];
 }
 
-type RunWhisper = (command: string, args: string[]) => Promise<void>;
+type RunWhisper = (command: string, args: string[], signal?: AbortSignal) => Promise<void>;
 
-async function defaultRunWhisper(command: string, args: string[]): Promise<void> {
+async function defaultRunWhisper(command: string, args: string[], signal?: AbortSignal): Promise<void> {
   try {
     await execFileAsync(command, args, {
       timeout: WHISPER_TIMEOUT_MS,
       maxBuffer: 1024 * 1024,
       windowsHide: true,
+      signal,
     });
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).name === "AbortError" || signal?.aborted) {
+      throw new SidecarWhisperError("whisper_failed", "Local Whisper transcription was cancelled.");
+    }
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
       throw new SidecarWhisperError(
@@ -74,7 +93,7 @@ async function defaultRunWhisper(command: string, args: string[]): Promise<void>
 export async function transcribeSidecarWav(
   wav: Uint8Array,
   model: ReadyWhisperModel,
-  options: { lang?: string; run?: RunWhisper; tempRoot?: string } = {},
+  options: { lang?: string; run?: RunWhisper; tempRoot?: string; signal?: AbortSignal } = {},
 ): Promise<string> {
   if (wav.byteLength === 0 || wav.byteLength > MAX_WHISPER_WAV_BYTES) {
     throw new SidecarWhisperError("whisper_failed", "The recorded utterance is too large for local Whisper.");
@@ -84,9 +103,13 @@ export async function transcribeSidecarWav(
   const outputStem = path.join(tempDir, "transcript");
   try {
     await writeFile(wavPath, wav, { mode: 0o600 });
+    if (options.signal?.aborted) {
+      throw new SidecarWhisperError("whisper_failed", "Local Whisper transcription was cancelled.");
+    }
     await (options.run ?? defaultRunWhisper)(
       whisperCliCommand(),
       whisperCliArgs(model.path, wavPath, outputStem, options.lang),
+      options.signal,
     );
     const text = (await readFile(`${outputStem}.txt`, "utf8")).trim();
     if (!text) {
