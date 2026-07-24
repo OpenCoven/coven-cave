@@ -220,6 +220,8 @@ struct DrawerRow: View {
 struct EmptyChatSuggestionRow: View {
     let systemImage: String
     let label: String
+    /// Optional muted second line (design's suggestion-card hint).
+    var hint: String? = nil
     var action: () -> Void
 
     var body: some View {
@@ -230,11 +232,19 @@ struct EmptyChatSuggestionRow: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 30, height: 30)
                     .glassFill(.raised, in: Circle())
-                Text(label)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                    if let hint {
+                        Text(hint)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
                 Spacer(minLength: 8)
             }
             .padding(.horizontal, 12)
@@ -243,7 +253,7 @@ struct EmptyChatSuggestionRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(GlassPressStyle(scale: 0.98))
-        .accessibilityLabel(label)
+        .accessibilityLabel(hint == nil ? label : "\(label). \(hint!)")
         .accessibilityHint("Fills the message field")
     }
 }
