@@ -680,6 +680,7 @@ export function Peel({
   const native = supported && !failed;
 
   useEffect(() => {
+    if (!native) return;
     const source = sourceRef.current;
     const content = contentRef.current;
     const output = outputRef.current;
@@ -688,7 +689,7 @@ export function Peel({
       { source, content, output, under: underRef.current ?? undefined },
       initialOptions,
     );
-    if (native && !instanceRef.current) setFailed(true);
+    if (!instanceRef.current) setFailed(true);
     return () => {
       instanceRef.current?.destroy();
       instanceRef.current = null;
