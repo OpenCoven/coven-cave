@@ -131,8 +131,9 @@ test("Piper Amy registry metadata matches the reviewed pinned artifact", () => {
     (model) => model.id === "piper-amy-medium-en-us",
   );
   assert.deepEqual(
-    amy && { sizeBytes: amy.sizeBytes, sha256: amy.sha256 },
+    amy && { url: amy.url, sizeBytes: amy.sizeBytes, sha256: amy.sha256 },
     {
+      url: "https://huggingface.co/rhasspy/piper-voices/resolve/0d907f158acc877ddeebcbf827659ee13bea8bcd/en/en_US/amy/medium/en_US-amy-medium.onnx",
       sizeBytes: 63_201_294,
       sha256: "b3a6e47b57b8c7fbe6a0ce2518161a50f59a9cdd8a50835c02cb02bdd6206c18",
     },
