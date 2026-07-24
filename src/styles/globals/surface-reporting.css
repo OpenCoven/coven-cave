@@ -467,7 +467,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   width: 100%;
   border-radius: var(--radius-panel);
   border: 1px solid var(--border-hairline);
-  box-shadow: 0 24px 60px -36px color-mix(in oklch, var(--accent-presence) 70%, #000);
+  box-shadow: 0 24px 60px -36px color-mix(in oklch, var(--accent-presence) 70%, black);
 }
 
 /* Day-in-review: sessions grouped by project ------------------------------- */

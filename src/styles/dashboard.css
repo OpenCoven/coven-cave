@@ -178,13 +178,16 @@
 }
 
 .settings-overview__mark {
+  /* Fixed near-black glyph ink: the tile behind it is accent-tinted inline
+     (meta.accent) and light enough for this ink in both modes. */
+  --mark-ink: #111;
   display: grid;
   place-items: center;
   width: 42px;
   height: 42px;
   flex-shrink: 0;
   border-radius: var(--radius-card);
-  color: #111;
+  color: var(--mark-ink);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, white 38%, transparent);
 }
 

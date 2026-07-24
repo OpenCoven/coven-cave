@@ -94,6 +94,11 @@
   --bg-sunken: color-mix(in oklch, var(--bg-base) 88%, black);
   --bg-elevated: oklch(0.275 0.006 291);     /* dropdowns / popovers */
   --bg-hover: oklch(0.305 0.007 291);        /* hover state */
+  /* Fixed "document page" ground for embedded light-page content — sketch
+     iframes, HTML artifact previews, canvas thumbnails, the mobile-handoff QR
+     card. These are documents/scannables, not interface surfaces, so the
+     ground is deliberately identical in both modes (cave-yxiz). */
+  --surface-paper: #ffffff;
   --border-hairline: var(--border);
   --fg-base: var(--text-primary);
   --fg-muted: var(--text-secondary);

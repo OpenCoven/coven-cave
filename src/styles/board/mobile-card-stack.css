@@ -155,9 +155,9 @@
   color: var(--color-warning);
 }
 /* Raw danger/warning text reads on the dark-mode tint but fails WCAG on the
-   light-mode tint (warning especially); darken it toward #000 in light mode. */
-[data-mode="light"] .board-card-stack__priority-pill--urgent { color: color-mix(in oklch, var(--color-danger) 76%, #000); }
-[data-mode="light"] .board-card-stack__priority-pill--high { color: color-mix(in oklch, var(--color-warning) 76%, #000); }
+   light-mode tint (warning especially); darken it toward black in light mode. */
+[data-mode="light"] .board-card-stack__priority-pill--urgent { color: color-mix(in oklch, var(--color-danger) 76%, black); }
+[data-mode="light"] .board-card-stack__priority-pill--high { color: color-mix(in oklch, var(--color-warning) 76%, black); }
 .board-card-stack__row-title {
   font-size: var(--text-md);
   font-weight: 500;

@@ -103,7 +103,7 @@
   background: linear-gradient(
     100deg,
     transparent 20%,
-    color-mix(in oklch, #fff 38%, transparent) 50%,
+    color-mix(in oklch, white 38%, transparent) 50%,
     transparent 80%
   );
   transform: translateX(-100%);

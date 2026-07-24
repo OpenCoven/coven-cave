@@ -126,20 +126,20 @@
 
 .board-kanban-card-top { display:flex; align-items:center; justify-content:space-between; gap:6px; min-height:18px; }
 .board-kanban-priority-pill { display:inline-flex; align-items:center; padding:1px 7px; border-radius:5px; font-size:9px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; }
-.board-kanban-priority-pill--urgent { background:color-mix(in oklch,var(--color-danger) 18%,transparent); color:color-mix(in oklch,var(--color-danger) 70%,#fff); }
-.board-kanban-priority-pill--high { background:color-mix(in oklch,var(--color-warning) 18%,transparent); color:color-mix(in oklch,var(--color-warning) 70%,#fff); }
-.board-kanban-priority-pill--medium { background:color-mix(in oklch,var(--accent-presence) 18%,transparent); color:color-mix(in oklch,var(--accent-presence) 80%,#fff); }
+.board-kanban-priority-pill--urgent { background:color-mix(in oklch,var(--color-danger) 18%,transparent); color:color-mix(in oklch,var(--color-danger) 70%,white); }
+.board-kanban-priority-pill--high { background:color-mix(in oklch,var(--color-warning) 18%,transparent); color:color-mix(in oklch,var(--color-warning) 70%,white); }
+.board-kanban-priority-pill--medium { background:color-mix(in oklch,var(--accent-presence) 18%,transparent); color:color-mix(in oklch,var(--accent-presence) 80%,white); }
 .board-kanban-priority-pill--low { background:var(--bg-elevated); color:var(--text-muted); }
 /* Glyph-only marker: the loud all-caps text pill became a tiny flag that
    echoes the card's left color bar (cave-8nw2). Same per-priority color
    classes; the tint square stays compact. */
 .board-kanban-priority-pill--glyph { padding:2px; border-radius:4px; }
-/* The pill text is lightened toward #fff for legibility on the dark-mode tint.
+/* The pill text is lightened toward white for legibility on the dark-mode tint.
    In light mode that lightened text fails WCAG on the faint tint, so darken it
-   toward #000 instead (≈5.8–7:1 vs the prior 2.0–2.6:1). */
-[data-mode="light"] .board-kanban-priority-pill--urgent { color:color-mix(in oklch,var(--color-danger) 76%,#000); }
-[data-mode="light"] .board-kanban-priority-pill--high { color:color-mix(in oklch,var(--color-warning) 76%,#000); }
-[data-mode="light"] .board-kanban-priority-pill--medium { color:color-mix(in oklch,var(--accent-presence) 76%,#000); }
+   toward black instead (≈5.8–7:1 vs the prior 2.0–2.6:1). */
+[data-mode="light"] .board-kanban-priority-pill--urgent { color:color-mix(in oklch,var(--color-danger) 76%,black); }
+[data-mode="light"] .board-kanban-priority-pill--high { color:color-mix(in oklch,var(--color-warning) 76%,black); }
+[data-mode="light"] .board-kanban-priority-pill--medium { color:color-mix(in oklch,var(--accent-presence) 76%,black); }
 
 .board-kanban-card-title { font-size:12.5px; font-weight:500; color:var(--text-primary); line-height:1.4; word-break:break-word; }
 .board-kanban-card-notes { font-size:11px; line-height:1.5; color:var(--text-muted); margin:0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
@@ -301,7 +301,7 @@
 .board-drawer-confirm-text { font-size:11.5px; color:var(--text-secondary); }
 .board-drawer-delete-btn { display:inline-flex; align-items:center; gap:5px; }
 .board-drawer-delete-btn--solid { background:var(--color-danger); color:var(--color-danger-foreground); border-color:var(--color-danger); }
-.board-drawer-delete-btn--solid:hover { background:color-mix(in oklch,var(--color-danger) 85%,#000); border-color:color-mix(in oklch,var(--color-danger) 85%,#000); }
+.board-drawer-delete-btn--solid:hover { background:color-mix(in oklch,var(--color-danger) 85%,black); border-color:color-mix(in oklch,var(--color-danger) 85%,black); }
 
 .board-label-chips { display:flex; flex-wrap:wrap; gap:5px; }
 .board-label-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:20px; border:1px solid var(--border-strong); background:var(--bg-base); color:var(--text-secondary); font-size:11px; transition:background .12s,border-color .12s,color .12s; }
