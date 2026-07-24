@@ -557,3 +557,133 @@ test("continue and refine are refused while the linked automation is ACTIVE", as
   const result = await runner.act(stored.id, { action: "continue" });
   assert.equal(result.iterations.length, 2, "a paused schedule releases the manual-run guard");
 });
+
+test("publish-artifact publishes one working ref on a settled mission", async () => {
+  let stored = checkpointMission({
+    artifacts: [
+      { key: "primary", kind: "findings", title: "Iterative research", relativePath: "artifacts/primary.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+      { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+    ],
+    lastError: "Artifact publish failed — findings: vault write failed",
+  });
+  const published: string[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    readMissionFile: async (_id, relativePath) => `# Content of ${relativePath}\n`,
+    publishKnowledge: async (entry) => { published.push(entry.id); return entry; },
+  }));
+  const result = await runner.act(stored.id, { action: "publish-artifact", artifactKey: "findings" });
+  assert.deepEqual(published, ["research-mission-actions-findings"]);
+  const findings = result.artifacts.find((artifact) => artifact.key === "findings");
+  assert.equal(findings?.state, "published");
+  assert.equal(findings?.knowledgeId, "research-mission-actions-findings");
+  assert.equal(result.status, "checkpoint", "manual publish never changes mission status");
+  assert.equal(
+    result.lastError,
+    "Artifact publish failed — findings: vault write failed",
+    "publish-failure lastError stays until no unpublished working refs remain",
+  );
+});
+
+test("publish-artifact clears the publish-failure lastError once nothing is left unpublished", async () => {
+  let stored = checkpointMission({
+    artifacts: [
+      { key: "primary", kind: "findings", title: "Iterative research", relativePath: "artifacts/primary.md", iteration: 1, state: "working", updatedAt: NOW.toISOString(), knowledgeId: "research-mission-actions-primary" },
+      { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+    ],
+    lastError: "Artifact publish failed — findings: vault write failed",
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    readMissionFile: async () => "# Findings\n",
+  }));
+  const result = await runner.act(stored.id, { action: "publish-artifact", artifactKey: "findings" });
+  assert.equal(result.lastError, undefined);
+});
+
+test("publish-artifact preserves an unrelated lastError", async () => {
+  let stored = checkpointMission({
+    artifacts: [
+      { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+    ],
+    lastError: "run exceeded wall clock budget",
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    readMissionFile: async () => "# Findings\n",
+  }));
+  const result = await runner.act(stored.id, { action: "publish-artifact", artifactKey: "findings" });
+  assert.equal(result.lastError, "run exceeded wall clock budget");
+});
+
+test("publish-artifact rejects running missions, published refs, rejected refs, and unknown keys", async () => {
+  const base = checkpointMission({
+    artifacts: [
+      { key: "primary", kind: "findings", title: "Iterative research", relativePath: "artifacts/primary.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+      { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md", iteration: 1, state: "published", knowledgeId: "research-mission-actions-findings", updatedAt: NOW.toISOString() },
+      { key: "research-log", kind: "research-log", title: "Research log", relativePath: "research-log.md", iteration: 1, state: "rejected", rejectionReason: "sparse", updatedAt: NOW.toISOString() },
+    ],
+  });
+  const cases: Array<[object, string, string]> = [
+    [{ status: "running" }, "primary", "research mission is still running"],
+    [{}, "findings", "research artifact already published"],
+    [{}, "research-log", "rejected artifacts need a new working version before publishing"],
+    [{}, "nope", "research artifact not found"],
+  ];
+  for (const [overrides, artifactKey, message] of cases) {
+    let stored = { ...structuredClone(base), ...overrides };
+    const runner = makeResearchMissionRunner(deps({
+      loadMission: async () => structuredClone(stored),
+      saveMission: async (mission) => { stored = structuredClone(mission); },
+      readMissionFile: async () => "# Content\n",
+    }));
+    await assert.rejects(
+      () => runner.act(stored.id, { action: "publish-artifact", artifactKey }),
+      new Error(message),
+      message,
+    );
+  }
+});
+
+test("publish-artifact surfaces a missing file as a clear validation error", async () => {
+  let stored = checkpointMission({
+    artifacts: [{ key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() }],
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    readMissionFile: async () => null,
+  }));
+  await assert.rejects(
+    () => runner.act(stored.id, { action: "publish-artifact", artifactKey: "findings" }),
+    new Error("research artifact file missing"),
+  );
+});
+
+test("finish publishes the mission's working refs like a complete decision", async () => {
+  let stored = checkpointMission({
+    artifacts: [
+      { key: "primary", kind: "findings", title: "Iterative research", relativePath: "artifacts/primary.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+      { key: "source-ledger", kind: "source-ledger", title: "Source ledger", relativePath: "sources.json", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+    ],
+    sources: [{ id: "s1", title: "SQLite docs", url: "https://sqlite.org", sourceType: "web", status: "used" }],
+  });
+  const published: string[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    readMissionFile: async (_id, relativePath) => `# Content of ${relativePath}\n`,
+    publishKnowledge: async (entry) => { published.push(entry.id); return entry; },
+  }));
+  const result = await runner.act(stored.id, { action: "finish" });
+  assert.equal(result.status, "completed");
+  assert.deepEqual(published.sort(), [
+    "research-mission-actions-primary",
+    "research-mission-actions-source-ledger",
+  ]);
+  assert.equal(result.lastError, undefined);
+  for (const artifact of result.artifacts) assert.equal(artifact.state, "published");
+});

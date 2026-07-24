@@ -639,6 +639,51 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         if (!found) throw new Error("research artifact not found");
         return saveUpdated({ ...mission, artifacts });
       }
+      if (input.action === "publish-artifact") {
+        if (!["checkpoint", "completed", "failed"].includes(mission.status)) {
+          throw new Error("research mission is still running");
+        }
+        const artifact = mission.artifacts.find((item) => item.key === input.artifactKey);
+        if (!artifact) throw new Error("research artifact not found");
+        if (artifact.knowledgeId || artifact.state === "published") {
+          throw new Error("research artifact already published");
+        }
+        if (artifact.state === "rejected") {
+          throw new Error("rejected artifacts need a new working version before publishing");
+        }
+        const markdown = artifact.kind === "source-ledger"
+          ? renderSourceLedgerMarkdown(mission.sources)
+          : await deps.readMissionFile(mission.id, artifact.relativePath);
+        if (!markdown) throw new Error("research artifact file missing");
+        const content = validateResearchArtifactContent(artifact.kind, markdown);
+        if (!content.ok) throw new Error(content.reason);
+        const lastIteration = mission.iterations.at(-1);
+        const entry = await deps.publishKnowledge(researchKnowledgeEntry({
+          mission,
+          artifact,
+          provenance: {
+            missionId: mission.id,
+            iteration: lastIteration?.number ?? mission.iterations.length,
+            flowRunId: lastIteration?.flowRunId,
+            sessionId: lastIteration?.sessionId,
+            automationRunId: lastIteration?.automationRunId,
+            generatedAt: timestamp,
+          },
+          markdown: content.value,
+        }));
+        const artifacts = mission.artifacts.map((item) => (
+          item.key === artifact.key
+            ? { ...item, knowledgeId: entry.id, state: "published" as const, updatedAt: timestamp }
+            : item
+        ));
+        // The publish-failure lastError clears once nothing publishable is
+        // left unpublished; any other lastError is not ours to clear.
+        const publishPending = artifacts.some((item) => item.state === "working" && !item.knowledgeId);
+        const lastError = mission.lastError?.startsWith("Artifact publish failed") && !publishPending
+          ? undefined
+          : mission.lastError;
+        return saveUpdated({ ...mission, artifacts, lastError });
+      }
 
       if (!allowedResearchActions(mission).includes(input.action)) return mission;
       // A manual iteration would run concurrently with the linked ACTIVE
@@ -691,11 +736,32 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       }
       if (input.action === "finish") {
         mission = await pauseAutomation(mission, "Mission finished");
+        // Finishing by hand saves the same final artifacts a `complete`
+        // decision would — the checkpointed files are the deliverables.
+        const lastIteration = mission.iterations.at(-1);
+        const outcome = await publishFinalArtifacts({
+          mission,
+          artifacts: mission.artifacts.map((artifact) => (
+            artifact.state === "rejected" ? artifact : { ...artifact, updatedAt: timestamp }
+          )),
+          sources: mission.sources,
+          primaryMarkdown: await deps.readMissionFile(mission.id, "artifacts/primary.md"),
+          provenance: {
+            missionId: mission.id,
+            iteration: lastIteration?.number ?? mission.iterations.length,
+            flowRunId: lastIteration?.flowRunId,
+            sessionId: lastIteration?.sessionId,
+            automationRunId: lastIteration?.automationRunId,
+            generatedAt: timestamp,
+          },
+          deps,
+        });
         return saveUpdated({
           ...mission,
           status: "completed",
           finishedAt: timestamp,
-          lastError: undefined,
+          artifacts: outcome.artifacts,
+          lastError: publishFailureError(outcome.failures),
         });
       }
       if (input.action === "archive") {

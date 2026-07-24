@@ -225,7 +225,8 @@ export type ResearchMissionActionInput =
   }
   | { action: "attach-source"; source: ResearchSourceDraft }
   | { action: "update-source"; sourceId: string; patch: ResearchSourcePatch }
-  | { action: "reject-artifact"; artifactKey: string; reason: string };
+  | { action: "reject-artifact"; artifactKey: string; reason: string }
+  | { action: "publish-artifact"; artifactKey: string };
 
 export type CreateResearchMissionResult =
   | { ok: true; value: CreateResearchMissionInput }
