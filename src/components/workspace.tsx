@@ -18,6 +18,13 @@ import {
   type WorkspaceMode as WorkspaceModeFromDaemon,
 } from "@/lib/workspace-mode";
 import { clearChatHash, clearModeParam, readChatHash, readModeParam } from "@/lib/workspace-url-state";
+import {
+  canMoveWorkspaceNavigation,
+  createWorkspaceNavigationHistory,
+  moveWorkspaceNavigation,
+  pushWorkspaceNavigation,
+  restoreWorkspaceNavigation,
+} from "@/lib/workspace-navigation-history";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
@@ -318,6 +325,31 @@ export function Workspace() {
   // deep links (?mode=, #chat-…) and cave:navigate-mode override this as
   // before, so restored sessions and share links still land where they point.
   const [mode, setModeRaw] = useState<CaveMode>("home");
+  const modeRef = useRef<CaveMode>("home");
+  const navigationRestoreRef = useRef(false);
+  const suppressInitialChatHistoryPushRef = useRef(false);
+  const navigationHistoryRef = useRef(createWorkspaceNavigationHistory<CaveMode>("home"));
+  const [navigationHistory, setNavigationHistory] = useState(navigationHistoryRef.current);
+  // Chat hashes retain browser-addressable URLs, but the workspace only asks
+  // the browser to traverse entries that it recorded. A direct `#chat-…`
+  // launch therefore never walks out into unrelated webview history.
+  const chatNavigationHistoryRef = useRef(createWorkspaceNavigationHistory<string | null>(null));
+  const [chatNavigationHistory, setChatNavigationHistory] = useState(chatNavigationHistoryRef.current);
+  const pendingChatNavigationDirectionRef = useRef<-1 | 1 | null>(null);
+  const commitMode = useCallback((next: CaveMode) => {
+    const changed = modeRef.current !== next;
+    modeRef.current = next;
+    setModeRaw(next);
+    if (!changed || navigationRestoreRef.current) return;
+    if (next === "chat" && suppressInitialChatHistoryPushRef.current) {
+      suppressInitialChatHistoryPushRef.current = false;
+      return;
+    }
+    const updated = pushWorkspaceNavigation(navigationHistoryRef.current, next);
+    if (updated === navigationHistoryRef.current) return;
+    navigationHistoryRef.current = updated;
+    setNavigationHistory(updated);
+  }, []);
   // Which tab the Grimoire surface shows. Lifted here so the Journal nav row can
   // route straight into Grimoire's Journal tab (see the setMode `journal` branch)
   // and so the choice persists across Grimoire remounts within a session.
@@ -343,7 +375,7 @@ export function Workspace() {
       // Set the latch synchronously so a freshly-mounting ChatSurface opens the
       // Group tab on mount; the event covers an already-mounted ChatSurface.
       markCovenTabPending();
-      setModeRaw("chat");
+      commitMode("chat");
       window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_COVEN_EVENT)), 0);
       return;
     }
@@ -353,7 +385,7 @@ export function Workspace() {
       // dashboard links) funnels through setMode, so opening Grimoire on its
       // Journal tab here covers them all.
       setGrimoireView("journal");
-      setModeRaw("grimoire");
+      commitMode("grimoire");
       return;
     }
     if (next === "flow") {
@@ -362,7 +394,7 @@ export function Workspace() {
       // wrong sr-title and no nav highlight (cave-hyor). The remap lives HERE —
       // the single choke point — so ?mode=flow deep links, cave:navigate-mode,
       // and last-mode restore all land on Schedules.
-      setModeRaw("inbox");
+      commitMode("inbox");
       return;
     }
     if (next === "code") {
@@ -371,10 +403,61 @@ export function Workspace() {
       // persisted last-surface) funnels onto the registered Role Surface, so
       // `mode` state never holds "code". Familiars without the coder role hit
       // RoleSurfaceHost's explicit closed-room door.
-      setModeRaw(roleSurfaceMode(CODE_SURFACE_ID));
+      commitMode(roleSurfaceMode(CODE_SURFACE_ID));
       return;
     }
-    setModeRaw(next);
+    commitMode(next);
+  }, [commitMode]);
+  const navigateWorkspaceHistory = useCallback((direction: -1 | 1) => {
+    const current = navigationHistoryRef.current;
+    const updated = moveWorkspaceNavigation(current, direction);
+    if (updated === current) return;
+    navigationRestoreRef.current = true;
+    navigationHistoryRef.current = updated;
+    setNavigationHistory(updated);
+    setMode(updated.entries[updated.index]);
+    navigationRestoreRef.current = false;
+  }, [setMode]);
+  const moveChatNavigation = useCallback((direction: -1 | 1) => {
+    if (modeRef.current !== "chat" || !canMoveWorkspaceNavigation(chatNavigationHistoryRef.current, direction)) return false;
+    pendingChatNavigationDirectionRef.current = direction;
+    if (direction === -1) {
+      window.history.back();
+    } else {
+      window.history.forward();
+    }
+    return true;
+  }, []);
+  const goBack = useCallback(() => {
+    // The chat stack is browser-backed for shareable hashes, but never lets a
+    // direct deep link (which has no app-owned predecessor) escape the app.
+    if (moveChatNavigation(-1)) return;
+    navigateWorkspaceHistory(-1);
+  }, [moveChatNavigation, navigateWorkspaceHistory]);
+  const goForward = useCallback(() => {
+    if (moveChatNavigation(1)) return;
+    navigateWorkspaceHistory(1);
+  }, [moveChatNavigation, navigateWorkspaceHistory]);
+  useEffect(() => {
+    const onChatHistoryPush = () => {
+      const updated = pushWorkspaceNavigation(chatNavigationHistoryRef.current, readChatHash());
+      if (updated === chatNavigationHistoryRef.current) return;
+      chatNavigationHistoryRef.current = updated;
+      setChatNavigationHistory(updated);
+    };
+    window.addEventListener("cave:chat-history-push", onChatHistoryPush);
+    // A shared chat link has no app-owned predecessor. Seed it at its current
+    // hash instead of treating the browser entry before the link as Back.
+    const initialChatId = readChatHash();
+    if (initialChatId) {
+      suppressInitialChatHistoryPushRef.current = true;
+      navigationHistoryRef.current = createWorkspaceNavigationHistory<CaveMode>("chat");
+      setNavigationHistory(navigationHistoryRef.current);
+      const initialChatHistory = createWorkspaceNavigationHistory<string | null>(initialChatId);
+      chatNavigationHistoryRef.current = initialChatHistory;
+      setChatNavigationHistory(initialChatHistory);
+    }
+    return () => window.removeEventListener("cave:chat-history-push", onChatHistoryPush);
   }, []);
   // Chat mode replaces the global nav with the project-grouped Chats sidebar.
   // Its Home button exits Chat, restoring the normal navigation.
@@ -562,7 +645,6 @@ export function Workspace() {
   const narrativeAttemptAtRef = useRef(0);
   const sessionsLoadedRef = useRef(sessionsLoaded);
   sessionsLoadedRef.current = sessionsLoaded;
-  const modeRef = useRef(mode);
   modeRef.current = mode;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
@@ -2075,6 +2157,13 @@ export function Workspace() {
   useEffect(() => {
     const onPopState = () => {
       const sid = readChatHash();
+      const expectedDirection = pendingChatNavigationDirectionRef.current;
+      pendingChatNavigationDirectionRef.current = null;
+      const chatEntry = sid ?? null;
+      const currentChatHistory = chatNavigationHistoryRef.current;
+      const restored = restoreWorkspaceNavigation(currentChatHistory, chatEntry, expectedDirection);
+      chatNavigationHistoryRef.current = restored;
+      setChatNavigationHistory(restored);
       if (sid) {
         const target = sessionsRef.current.find((s) => s.id === sid);
         if (target) {
@@ -2102,7 +2191,9 @@ export function Workspace() {
       // the board switch in the same render batch and strands the user on the
       // chat list. Gating on the empty hash leaves cross-surface deep links to
       // their owners while preserving genuine Back-to-list.
-      if (modeRef.current === "chat" && !window.location.hash) showFamiliarChatList();
+      if (modeRef.current === "chat" && !window.location.hash) {
+        showFamiliarChatList();
+      }
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -2114,6 +2205,9 @@ export function Workspace() {
   useEffect(() => {
     if (mode === "chat" || pendingChatDeepLinkRef.current) return;
     clearChatHash();
+    const listHistory = createWorkspaceNavigationHistory<string | null>(null);
+    chatNavigationHistoryRef.current = listHistory;
+    setChatNavigationHistory(listHistory);
   }, [mode]);
 
   const openToastTarget = useCallback((toast: Toast) => {
@@ -3020,6 +3114,12 @@ export function Workspace() {
       />
       <Shell
         ref={shellRef}
+        historyNavigation={{
+          canGoBack: canMoveWorkspaceNavigation(chatNavigationHistory, -1) || canMoveWorkspaceNavigation(navigationHistory, -1),
+          canGoForward: canMoveWorkspaceNavigation(chatNavigationHistory, 1) || canMoveWorkspaceNavigation(navigationHistory, 1),
+          goBack,
+          goForward,
+        }}
         mobileTabs={mobileTabs}
         // Drag-to-split: a sidebar page dropped into the main area opens beside
         // the current surface, resizable with desktop-style snapping.

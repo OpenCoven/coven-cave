@@ -67,7 +67,7 @@ const slash = read("../lib/slash-commands.ts");
 // It opens the Grimoire surface on its Journal tab.
 assert.match(
   ws,
-  /if \(next === "journal"\) \{[\s\S]{0,400}?setGrimoireView\("journal"\);\s*\n\s*setModeRaw\("grimoire"\)/,
+  /if \(next === "journal"\) \{[\s\S]{0,400}?setGrimoireView\("journal"\);\s*\n\s*commitMode\("grimoire"\)/,
   "setMode routes journal into the Grimoire Journal tab",
 );
 assert.doesNotMatch(ws, /import \{ JournalView \}/, "workspace no longer imports JournalView");

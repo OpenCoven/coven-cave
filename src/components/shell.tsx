@@ -213,6 +213,7 @@ function ShellInner({
   navPolicy = "remembered",
   listPolicy = "collapsible",
   panelShortcutOverrides,
+  historyNavigation,
 }: {
   nav: ReactNode;
   list?: ReactNode;
@@ -234,6 +235,12 @@ function ShellInner({
   navPolicy?: ShellNavPolicy;
   listPolicy?: ShellListPolicy;
   panelShortcutOverrides?: Partial<PanelShortcutBindings>;
+  historyNavigation?: {
+    canGoBack: boolean;
+    canGoForward: boolean;
+    goBack: () => void;
+    goForward: () => void;
+  };
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
@@ -954,17 +961,17 @@ function ShellInner({
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
     </button>
   ) : null;
-  // Codex-style history controls beside the nav toggle: browser Back/Forward
-  // drive the app's own history entries (chat hashes and surface deep links
-  // already push state and handle popstate in workspace.tsx).
+  // Workspace owns the destination stack. Keeping it app-scoped means these
+  // controls never escape into an unrelated webview page at the boundary.
   const historyNav = !isMobile ? (
     <div className="shell-top-history" role="group" aria-label="History">
       <button
         type="button"
         className="shell-top-toggle focus-ring"
         aria-label="Go back"
-        title="Back"
-        onClick={() => window.history.back()}
+        title={historyNavigation?.canGoBack ? "Back" : "No previous destination"}
+        disabled={!historyNavigation?.canGoBack}
+        onClick={historyNavigation?.goBack}
       >
         <Icon name="ph:caret-left" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
       </button>
@@ -972,8 +979,9 @@ function ShellInner({
         type="button"
         className="shell-top-toggle focus-ring"
         aria-label="Go forward"
-        title="Forward"
-        onClick={() => window.history.forward()}
+        title={historyNavigation?.canGoForward ? "Forward" : "No next destination"}
+        disabled={!historyNavigation?.canGoForward}
+        onClick={historyNavigation?.goForward}
       >
         <Icon name="ph:caret-right" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
       </button>
