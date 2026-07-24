@@ -237,6 +237,96 @@ try {
     assert.equal((await json(path.join(cave, "preferences.json"))).general.newsHeadlines, false);
   }
 
+  // Divergent board copies never auto-merge (conservative philosophy from
+  // cave-5ax2): a one-sided card is ambiguous, so startup reconciliation
+  // leaves both files and the durable summary advertises the explicit
+  // card-id merge alongside the whole-file choices (cave-6z41).
+  {
+    const { coven, cave } = await home("board-no-auto");
+    await mkdir(cave, { recursive: true });
+    await writeFile(path.join(coven, "cave-board.json"), JSON.stringify({ version: 1, cards: [
+      { id: "legacy-only", title: "Legacy card", status: "backlog", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z" },
+    ] }));
+    await writeFile(path.join(cave, "board.json"), JSON.stringify({ version: 1, cards: [
+      { id: "canonical-only", title: "Canonical card", status: "backlog", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-03T00:00:00Z" },
+    ] }));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.deepEqual(result.errors, []);
+    assert.ok(result.skipped.includes("cave-board.json"), "board conflict must not auto-resolve");
+    assert.deepEqual((await json(path.join(cave, "board.json"))).cards.map((card) => card.id), ["canonical-only"], "canonical copy untouched without an explicit choice");
+    const status = await caveHomeMigrationStatus();
+    assert.equal(status.conflicts.includes("cave-board.json"), true);
+    const detail = status.details.find((entry) => entry.legacy === "cave-board.json");
+    assert.equal(detail.strategy, "board");
+    assert.deepEqual(detail.actions, ["merge", "keep-canonical", "recover-legacy", "defer"], "the card-id merge is offered first among the resolutions");
+    assert.match(detail.summary, /card-id merge/, "the conflict summary suggests the lossless merge");
+
+    // The explicit merge unions by card id: every one-sided card from BOTH
+    // copies is kept — the whole point after the near-loss incident.
+    const merged = await migrateCaveHome({ legacy: "cave-board.json", action: "merge", createSymlink: denySymlink });
+    assert.deepEqual(merged.errors, []);
+    assert.ok(merged.resolved.includes("cave-board.json"));
+    const board = await json(path.join(cave, "board.json"));
+    assert.deepEqual(board.cards.map((card) => card.id), ["canonical-only", "legacy-only"], "canonical order first, recovered legacy cards appended");
+    assert.equal((await caveHomeMigrationStatus()).migrated, true);
+  }
+
+  // A card present in both copies resolves to the newest per-card updatedAt,
+  // and the file version keeps the larger of the two.
+  {
+    const { coven, cave } = await home("board-newest-wins");
+    await mkdir(cave, { recursive: true });
+    await writeFile(path.join(coven, "cave-board.json"), JSON.stringify({ version: 3, cards: [
+      { id: "shared", title: "newer legacy edit", status: "review", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-03-01T00:00:00Z" },
+    ] }));
+    await writeFile(path.join(cave, "board.json"), JSON.stringify({ version: 2, cards: [
+      { id: "shared", title: "older canonical edit", status: "backlog", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-02-01T00:00:00Z" },
+    ] }));
+    const result = await migrateCaveHome({ legacy: "cave-board.json", action: "merge", createSymlink: denySymlink });
+    assert.deepEqual(result.errors, []);
+    assert.ok(result.resolved.includes("cave-board.json"));
+    const board = await json(path.join(cave, "board.json"));
+    assert.equal(board.cards.length, 1);
+    assert.equal(board.cards[0].title, "newer legacy edit");
+    assert.equal(board.version, 3);
+  }
+
+  // A shared card whose copies differ at the same updatedAt has no safe
+  // winner; the explicit merge refuses instead of guessing.
+  {
+    const { coven, cave } = await home("board-ambiguous-edit");
+    await mkdir(cave, { recursive: true });
+    await writeFile(path.join(coven, "cave-board.json"), JSON.stringify({ version: 1, cards: [
+      { id: "shared", title: "legacy words", status: "backlog", updatedAt: "2026-02-01T00:00:00Z" },
+    ] }));
+    await writeFile(path.join(cave, "board.json"), JSON.stringify({ version: 1, cards: [
+      { id: "shared", title: "canonical words", status: "backlog", updatedAt: "2026-02-01T00:00:00Z" },
+    ] }));
+    const result = await migrateCaveHome({ legacy: "cave-board.json", action: "merge", createSymlink: denySymlink });
+    assert.ok(result.skipped.includes("cave-board.json"));
+    assert.equal((await json(path.join(cave, "board.json"))).cards[0].title, "canonical words", "canonical copy untouched by the refused merge");
+    const detail = (await caveHomeMigrationStatus()).details.find((entry) => entry.legacy === "cave-board.json");
+    assert.match(detail.summary, /without a usable updatedAt order/);
+  }
+
+  // Duplicate card ids inside one copy are malformed: a Map union would
+  // silently discard one of the records, so the merge refuses.
+  {
+    const { coven, cave } = await home("board-duplicate-id");
+    await mkdir(cave, { recursive: true });
+    await writeFile(path.join(coven, "cave-board.json"), JSON.stringify({ version: 1, cards: [
+      { id: "duplicate", title: "first", updatedAt: "2026-01-01T00:00:00Z" },
+      { id: "duplicate", title: "second", updatedAt: "2026-02-01T00:00:00Z" },
+    ] }));
+    await writeFile(path.join(cave, "board.json"), JSON.stringify({ version: 1, cards: [] }));
+    const result = await migrateCaveHome({ legacy: "cave-board.json", action: "merge", createSymlink: denySymlink });
+    assert.ok(result.skipped.includes("cave-board.json"));
+    assert.match(
+      (await caveHomeMigrationStatus()).details.find((entry) => entry.legacy === "cave-board.json").summary,
+      /duplicate card ID/,
+    );
+  }
+
   console.log("cave-home-migration-json-merge.test.ts: ok");
 } finally {
   for (const root of roots) await rm(root, { recursive: true, force: true });
