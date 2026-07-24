@@ -330,7 +330,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     const hash = window.location.hash;
     if (view.kind === "chat" && view.sessionId) {
       const next = `#chat-${encodeURIComponent(view.sessionId)}`;
-      if (hash !== next) window.history.pushState(null, "", next);
+      if (hash !== next) {
+        window.history.pushState(null, "", next);
+        window.dispatchEvent(new Event("cave:chat-history-push"));
+      }
       return;
     }
     // Mount always lands on the list view; never clear a deep-link hash here
