@@ -10,6 +10,8 @@ import {
   magicDnsHost,
   magicDnsServeUrl,
   nativeAppDiscoveryProof,
+  OFFICIAL_IOS_INSTALL_URL,
+  resolveIosInstallUrl,
   resolveTailscaleBin,
   tailnetDiscoveryProof,
   tailscaleIpHost,
@@ -363,3 +365,44 @@ console.log("mobile-handoff.test.ts OK");
 }
 
 console.log("pairing checklist: ok");
+
+// ─── resolveIosInstallUrl (cave-jr4r.3, #3802) ────────────────────────────────
+// Config-gated install link: only real Apple install destinations qualify,
+// everything else — unset, junk, http, wrong host — resolves to null so the
+// Phone card never shows an invented URL.
+{
+  assert.equal(resolveIosInstallUrl({}), null, "unset resolves to null");
+  assert.equal(
+    resolveIosInstallUrl({ COVEN_CAVE_IOS_INSTALL_URL: "   " }),
+    null,
+    "blank env resolves to null",
+  );
+  assert.equal(
+    resolveIosInstallUrl({ COVEN_CAVE_IOS_INSTALL_URL: "not a url" }),
+    null,
+    "unparseable value resolves to null",
+  );
+  assert.equal(
+    resolveIosInstallUrl({ COVEN_CAVE_IOS_INSTALL_URL: "http://testflight.apple.com/join/AbC123" }),
+    null,
+    "http is rejected — Apple install links are https",
+  );
+  assert.equal(
+    resolveIosInstallUrl({ COVEN_CAVE_IOS_INSTALL_URL: "https://example.com/join/AbC123" }),
+    null,
+    "non-Apple hosts are rejected",
+  );
+  assert.equal(
+    resolveIosInstallUrl({ COVEN_CAVE_IOS_INSTALL_URL: "https://testflight.apple.com/join/AbC123" }),
+    "https://testflight.apple.com/join/AbC123",
+    "a TestFlight public link resolves",
+  );
+  assert.equal(
+    resolveIosInstallUrl({ COVEN_CAVE_IOS_INSTALL_URL: " https://apps.apple.com/app/id0000000000 " }),
+    "https://apps.apple.com/app/id0000000000",
+    "an App Store link resolves, trimmed",
+  );
+  // The checked-in default is still the O4 fill-in: null until the TestFlight
+  // lane publishes a public link.
+  assert.equal(OFFICIAL_IOS_INSTALL_URL, null, "no official link is baked in yet (O4 owns producing one)");
+}

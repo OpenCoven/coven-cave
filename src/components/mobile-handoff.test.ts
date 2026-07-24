@@ -360,3 +360,40 @@ assert.match(
 assert.match(css, /\.mobile-handoff__warning/, "the non-fatal warning has stable styling");
 
 console.log("mobile-handoff.test.ts OK");
+
+// ─── Install-the-app QR (cave-jr4r.3, #3802) ─────────────────────────────────
+// The Phone card leads its Get-the-app group with an install QR — a phone
+// without the app can't act on the pairing code. Config-gated: the route only
+// reports a URL when a real TestFlight/App Store link is configured, so
+// nothing is ever invented.
+assert.match(
+  handoffRoute,
+  /if \(action === "install-info"\) \{[\s\S]{0,120}resolveIosInstallUrl\(\)/,
+  "the route answers install-info from the config-gated resolver",
+);
+assert.match(
+  handoffRoute,
+  /if \(!installUrl\) return NextResponse\.json\(\{ ok: true, configured: false \}\)/,
+  "an unconfigured install link reports configured:false — never an invented URL",
+);
+assert.match(settings, /action: "install-info"/, "the Phone card asks the route for the install link");
+assert.match(
+  settings,
+  /aria-label="Install code for your iPhone camera"[\s\S]{0,80}dangerouslySetInnerHTML=\{\{ __html: install\.qrSvg \}\}/,
+  "the Phone card renders the install QR when configured",
+);
+assert.match(
+  settings,
+  /if \(!install\) return null;/,
+  "without a configured link the install card renders nothing",
+);
+assert.match(
+  settings,
+  /<SettingsGroup label="Get the app">\s*<IosInstallQrCard \/>/,
+  "the install QR leads the Get-the-app group",
+);
+assert.match(
+  settings,
+  /<\/SettingsGroup>\s*<SettingsGroup label="Get the app">[\s\S]{0,900}<SettingsGroup label="Phone write access">/,
+  "Get the app sits directly after Pair — install comes before the deep supporting groups",
+);
