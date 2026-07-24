@@ -13,9 +13,6 @@ import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
-import { ProjectPicker } from "@/components/project-picker";
-import { NO_PROJECT_ID } from "@/lib/chat-projects";
-import { useProjects } from "@/lib/use-projects";
 import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
 import { openExternalUrl } from "@/lib/open-external";
@@ -26,7 +23,6 @@ import {
   type LatestCheckDisplay,
 } from "@/lib/opencoven-tools-status-display";
 import { requestSummonFamiliar } from "@/lib/summon-events";
-import { publishQueueProjectSelection } from "@/lib/queue-project-selection";
 import {
   classifySetupFailure,
   setupRetryLabel,
@@ -923,20 +919,14 @@ export function OnboardingOverlay({
       {
         key: "git",
         title: "Find Git",
-        // Queue project selection is a required Git-repository boundary.
+        // Queue project selection (on the Tasks page's Queue tab) is a
+        // required Git-repository boundary.
         ok: !!s?.git?.ok,
         detail:
           s?.git?.detail ??
           s?.git?.hint ??
           "Git is required to select and use a Queue project.",
         icon: "ph:git-branch-bold",
-      },
-      {
-        key: "project",
-        title: "Choose your Queue project",
-        ok: !!s?.project?.ok,
-        detail: s?.project?.detail ?? s?.project?.hint ?? "checking…",
-        icon: "ph:folder-simple-dashed",
       },
     ];
   }, [status]);
@@ -1467,14 +1457,13 @@ export function OnboardingOverlay({
                               ) : null}
                             </div>
                           </div>
-                        ) : step.key === "project" ? (
-                          <QueueProjectSetup onSelected={() => void refresh()} />
                         ) : step.key === "git" ? (
                           <div className="flex flex-col gap-2">
                             <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
-                              Git is required before selecting a Queue project.
-                              Chat can work without Git, but Queue setup, the
-                              changes panel, project file tree, and checkpoints all use it.
+                              Git is required before choosing a Queue project on
+                              the Tasks page. Chat can work without Git, but the
+                              Queue, the changes panel, project file tree, and
+                              checkpoints all use it.
                             </p>
                             <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-muted)]">
                               {status?.steps.git?.hint ??
@@ -1537,112 +1526,6 @@ export function OnboardingOverlay({
 }
 
 // ── Step bodies ───────────────────────────────────────────────────────────────
-
-type QueueReadinessView = {
-  ok: boolean;
-  message: string;
-  canGenerate: boolean;
-  project: { id: string; name: string; root: string } | null;
-};
-
-/** The Queue always starts with a concrete, host-native project selection.
- * This component deliberately uses the same project picker as the rest of
- * Cave, including the native folder chooser used to register a new root. */
-function QueueProjectSetup({ onSelected }: { onSelected: () => void }) {
-  const { projects, loading, createProject } = useProjects();
-  const [readiness, setReadiness] = useState<QueueReadinessView | null>(null);
-  const [selecting, setSelecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const requestGeneration = useRef(0);
-
-  const refreshReadiness = useCallback(async () => {
-    const generation = ++requestGeneration.current;
-    try {
-      const response = await fetch("/api/queue/readiness", { cache: "no-store" });
-      const body = (await response.json()) as {
-        ok?: boolean;
-        readiness?: QueueReadinessView;
-        error?: string;
-      };
-      if (!response.ok || !body.ok || !body.readiness) {
-        throw new Error(body.error ?? "Couldn’t check the Queue project.");
-      }
-      if (generation === requestGeneration.current) {
-        setReadiness(body.readiness);
-        setError(null);
-      }
-    } catch (cause) {
-      if (generation === requestGeneration.current) {
-        setError(cause instanceof Error ? cause.message : "Couldn’t check the Queue project.");
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshReadiness();
-  }, [refreshReadiness]);
-
-  const selectProject = async (projectId: string) => {
-    const generation = ++requestGeneration.current;
-    setSelecting(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/queue/readiness", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "select", projectId }),
-      });
-      const body = (await response.json()) as {
-        ok?: boolean;
-        readiness?: QueueReadinessView;
-        error?: string;
-      };
-      if (!response.ok || !body.ok || !body.readiness) {
-        throw new Error(body.error ?? "Couldn’t save the Queue project.");
-      }
-      if (generation !== requestGeneration.current) return;
-      setReadiness(body.readiness);
-      publishQueueProjectSelection(body.readiness.project);
-      onSelected();
-    } catch (cause) {
-      if (generation === requestGeneration.current) {
-        setError(cause instanceof Error ? cause.message : "Couldn’t save the Queue project.");
-      }
-    } finally {
-      if (generation === requestGeneration.current) setSelecting(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
-        Choose the local Git repository Cave should use for Queue work. Cave stores this
-        host-native path and never substitutes the app&rsquo;s own runtime folder.
-      </p>
-      <ProjectPicker
-        projects={projects}
-        value={readiness?.project?.id ?? NO_PROJECT_ID}
-        onChange={(projectId) => void selectProject(projectId)}
-        createProject={createProject}
-        disabled={loading || selecting}
-        ariaLabel="Choose Queue project"
-      />
-      {readiness ? (
-        <p role="status" className={`text-[length:var(--text-xs)] ${readiness.ok || readiness.canGenerate ? "text-[var(--color-success)]" : "text-[var(--text-muted)]"}`}>
-          {readiness.message}
-        </p>
-      ) : null}
-      {error ? (
-        <div className="flex items-center gap-2 text-[length:var(--text-xs)] text-[var(--color-danger)]" role="alert">
-          <span>{error}</span>
-          <Button size="xs" variant="ghost" onClick={() => void refreshReadiness()}>
-            Retry
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 /** The three-beat first-run journey: infrastructure (this wizard) → summon a
  *  familiar (the in-app circle) → first chat. Orientation only — beats light

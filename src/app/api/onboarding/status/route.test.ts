@@ -76,10 +76,10 @@ assert.doesNotMatch(
   "the frequently-polled status route never invokes package-registry discovery",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /cachedQueueProjectReadiness\(\)/,
-  "the onboarding heartbeat reuses the short Queue readiness cache instead of spawning Git and bd every poll",
+  /cachedQueueProjectReadiness|checkQueueProject/,
+  "the onboarding heartbeat no longer probes Queue readiness — Queue setup lives on the Tasks page's Queue tab",
 );
 
 assert.match(
@@ -152,16 +152,21 @@ const onboardingModel = readFileSync(
   "utf8",
 );
 assert.match(onboardingModel, /git\?: Step/, "onboarding model accepts the git step");
+assert.doesNotMatch(
+  onboardingModel,
+  /project: Step/,
+  "the Queue project is not an onboarding step — selection lives on the Tasks page's Queue tab",
+);
 assert.match(overlay, /title: "Find Git"/, "overlay renders the required git checklist row");
-assert.match(
+assert.doesNotMatch(
   overlay,
-  /key: "git"[\s\S]*?title: "Find Git"[\s\S]*?key: "project"[\s\S]*?title: "Choose your Queue project"/,
-  "Git is presented before the Queue project it is required to validate",
+  /key: "project"|Choose your Queue project/,
+  "the wizard no longer hosts Queue project selection",
 );
 assert.match(
   overlay,
-  /Git is required before selecting a Queue project/,
-  "the Git pane explains the required Queue prerequisite rather than calling Git optional",
+  /Git is required before choosing a Queue project on\s+the Tasks page/,
+  "the Git pane points at the Tasks-page Queue setup rather than calling Git optional",
 );
 
 const projectFiles = readFileSync(

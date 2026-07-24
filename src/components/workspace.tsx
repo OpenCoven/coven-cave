@@ -1426,14 +1426,13 @@ export function Workspace() {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
         if (!res.ok || cancelled) return;
         const json = (await res.json()) as OnboardingStatusPayload;
-        const queueProjectNeedsRepair = json.steps?.project?.ok === false;
         if (
           shouldApplyStartupOnboardingStatus({
             status: json,
             cancelled,
             manuallyOpened: manualOnboardingOpenedRef.current,
           }) &&
-          (!skipped || queueProjectNeedsRepair)
+          !skipped
         ) {
           setAutoFinishOnboarding(true);
           setOnboardingOpen(true);

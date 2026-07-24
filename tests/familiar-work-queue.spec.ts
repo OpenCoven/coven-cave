@@ -38,7 +38,7 @@ test.beforeEach(async ({ page }) => {
     route.fulfill({ json: { ok: true, readiness: QUEUE_READINESS } }),
   );
   await page.route("**/api/onboarding/status**", (route) =>
-    route.fulfill({ json: { ok: true, complete: true, steps: { project: { ok: true } }, tools: [] } }),
+    route.fulfill({ json: { ok: true, complete: true, steps: {}, tools: [] } }),
   );
 });
 
@@ -269,7 +269,7 @@ test.describe("familiar work queue (PR control tower)", () => {
           return route.fulfill({ json: { ok: true, readiness: { ...QUEUE_READINESS, project: selectedProject } } });
         });
         await page.route("**/api/onboarding/status**", (route) =>
-          route.fulfill({ json: { ok: true, complete: true, steps: { project: { ok: true } }, tools: [] } }),
+          route.fulfill({ json: { ok: true, complete: true, steps: {}, tools: [] } }),
         );
       }
       // These pages belong to an explicitly created BrowserContext, so the
@@ -301,6 +301,61 @@ test.describe("familiar work queue (PR control tower)", () => {
     } finally {
       await context.close();
     }
+  });
+
+  test("an unselected Queue offers inline project setup on the tab itself", async ({ page }) => {
+    // No project selected yet: readiness reports no-project until the picker
+    // POSTs a selection, then flips to ready for the chosen repository. The
+    // onboarding wizard is never part of this flow.
+    const selectBodies: Array<{ action?: string; projectId?: string }> = [];
+    let selectedProject: typeof QUEUE_PROJECT | null = null;
+    const readinessFor = (project: typeof QUEUE_PROJECT) => ({
+      ok: true,
+      code: "ready",
+      message: "Queue project is ready.",
+      canGenerate: false,
+      project,
+    });
+    await page.route("**/api/projects", (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      return route.fulfill({ json: { ok: true, projects: [QUEUE_PROJECT, QUEUE_PROJECT_B] } });
+    });
+    await page.route("**/api/queue/readiness", (route) => {
+      const request = route.request();
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as { action?: string; projectId?: string };
+        selectBodies.push(body);
+        selectedProject = [QUEUE_PROJECT, QUEUE_PROJECT_B].find((p) => p.id === body.projectId) ?? null;
+        return route.fulfill({ json: { ok: true, readiness: readinessFor(selectedProject ?? QUEUE_PROJECT) } });
+      }
+      if (!selectedProject) {
+        return route.fulfill({
+          json: {
+            ok: true,
+            readiness: { ok: false, code: "no-project", message: "Choose a Queue project to load work.", canGenerate: false, project: null },
+          },
+        });
+      }
+      return route.fulfill({ json: { ok: true, readiness: readinessFor(selectedProject) } });
+    });
+    await gotoWorkQueue(page);
+
+    const fwq = page.locator(".fwq");
+    await expect(fwq.getByText("Queue needs a project")).toBeVisible();
+
+    // The picker is inline — selection must not bounce through the wizard.
+    await fwq.getByRole("button", { name: "Choose Queue project" }).click();
+    await expect(page.getByRole("dialog", { name: "Onboarding" })).toHaveCount(0);
+    await page
+      .getByRole("dialog", { name: "Choose Queue project" })
+      .getByRole("menuitemradio", { name: /Queue test project B/ })
+      .click();
+
+    await expect.poll(() => selectBodies).toEqual([{ action: "select", projectId: QUEUE_PROJECT_B.id }]);
+    // The published selection reloads the view for the chosen repository.
+    await expect(fwq.getByText(/5 actionable/)).toBeVisible();
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
+    await expect(fwq.getByText("Queue needs a project")).toHaveCount(0);
   });
 
   test("claiming for a familiar posts the selected assignee", async ({ page }) => {

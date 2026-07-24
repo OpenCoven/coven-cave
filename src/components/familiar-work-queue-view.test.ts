@@ -12,6 +12,7 @@ const view = [
   readFileSync(new URL("./familiar-work-queue-view.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./familiar-work-queue-sections.tsx", import.meta.url), "utf8"),
 ].join("\n");
+const setup = readFileSync(new URL("./queue-project-setup.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/familiar-work-queue.css", import.meta.url), "utf8");
 
 // Lane headers are real disclosure controls, not decorative rows.
@@ -160,9 +161,41 @@ assert.match(view, /readiness\?\.code === "not-git-repository"/, "ordinary non-G
 assert.match(view, /const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && !canGenerate && !selectionRemediable && readiness\?\.project !== null/, "only non-repairable selected projects suppress Generate");
 assert.match(view, /Clear all prior-project controls synchronously/, "selection clears Queue state before the next readiness response");
 assert.match(view, /headline=\{readinessUnavailable \? "Queue check unavailable" : sourcesUnavailable \? "Queue sources unavailable" : canGenerate \? "Generate your Queue" : projectUnavailable \? "Queue project needs attention" : "Queue needs a project"\}/);
-assert.match(view, /readinessUnavailable \|\| sourcesUnavailable \|\| projectUnavailable \? null : canGenerate \? \(/, "Generate wins before a selected-project warning and stale roots offer Choose project");
+assert.match(view, /readinessUnavailable \|\| sourcesUnavailable \|\| projectUnavailable \? null : canGenerate \? \(/, "Generate wins before a selected-project warning and stale roots offer the inline picker");
 assert.match(view, />\s*Generate\s*<\/Button>/, "empty Queue state offers Generate");
 assert.doesNotMatch(view, /readSurfaceResource\("tasks:queue"/, "Queue no longer consumes an unscoped warm cache");
+
+// ── Queue project setup happens on the tab, not in onboarding ────────────────
+// A missing/remediable selection renders the picker inline; choosing a project
+// POSTs the selection and publishes it, and the view's own subscription
+// (resetForProject + load) refreshes every mounted Queue surface.
+assert.match(
+  view,
+  /<QueueProjectSetup selectedProjectId=\{readiness\?\.project\?\.id \?\? null\} \/>/,
+  "the needs-a-project empty state hosts the inline Queue project picker",
+);
+assert.doesNotMatch(
+  view,
+  /cave:onboarding-open/,
+  "the Queue never bounces users to the onboarding wizard for project selection",
+);
+assert.match(setup, /ariaLabel="Choose Queue project"/, "the inline picker keeps its AT name");
+assert.match(
+  setup,
+  /JSON\.stringify\(\{ action: "select", projectId \}\)/,
+  "the picker persists selection through the readiness route",
+);
+assert.match(
+  setup,
+  /publishQueueProjectSelection\(body\.readiness\.project\)/,
+  "a saved selection is published so every mounted Queue surface reloads",
+);
+assert.match(
+  setup,
+  /const generation = \+\+requestGeneration\.current;[\s\S]{0,900}if \(generation !== requestGeneration\.current\) return;[\s\S]{0,700}if \(generation === requestGeneration\.current\) setSelecting\(false\);/,
+  "out-of-order Queue-project selections cannot overwrite or unlock the latest selection",
+);
+assert.match(setup, /createProject=\{createProject\}/, "registering a new root stays available from the Queue tab");
 
 // ── cave-p63a: forward-to-familiar menu (redesign) ───────────────────────────
 // The split control's picker is now a custom dropdown (design's "Forward to

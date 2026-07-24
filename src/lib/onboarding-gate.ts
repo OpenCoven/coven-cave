@@ -46,13 +46,14 @@ export type OnboardingAutoFinishGateDecision = {
  * reachable, any remaining incompleteness (a missing tool or runtime) is
  * genuine setup work, so the wizard opens. A machine with no familiars is NOT
  * unfinished — the status route reports familiars/binding as advisory since
- * creation moved to the in-app Summoning Circle.
+ * creation moved to the in-app Summoning Circle. The Queue project is not a
+ * setup step either: its selection lives on the Tasks page's Queue tab.
  */
 export function shouldAutoOpenOnboarding(payload: OnboardingStatusPayload): boolean {
   if (payload.complete) return false;
   const step = (key: string) => payload.steps?.[key]?.ok === true;
   const structuralMissing =
-    !step("covenCli") || !step("covenHome") || !step("adapters") || !step("project");
+    !step("covenCli") || !step("covenHome") || !step("adapters");
   const daemonUpButUnfinished = step("daemon");
   return structuralMissing || daemonUpButUnfinished;
 }
