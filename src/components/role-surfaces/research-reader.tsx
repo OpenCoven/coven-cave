@@ -779,16 +779,7 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
       </div>
 
       {focusTable ? (
-        <div className="rr-kroverlay" role="presentation" onClick={() => setFocusTable(null)}>
-          <div className="rr-kroverlay-card" role="dialog" aria-label="Key results" onClick={(event) => event.stopPropagation()}>
-            <div className="rr-kroverlay__head">
-              <div>
-                <div className="rr-kroverlay__title">Key results</div>
-                <div className="rr-kroverlay__sub">{focusTable.rows.length} findings · reference table</div>
-              </div>
-              <button className="rr-iconbtn focus-ring" type="button" aria-label="Close" onClick={() => setFocusTable(null)}>
-                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9}><path d="M6 6l12 12M18 6 6 18" /></svg>
-              </button>
+          <div className="rr-kroverlay-card" role="dialog" aria-modal="true" tabIndex={-1} aria-label="Key results" onClick={(event) => event.stopPropagation()}>
             </div>
             {renderTable(focusTable)}
           </div>
