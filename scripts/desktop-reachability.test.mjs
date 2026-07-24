@@ -43,8 +43,28 @@ assert.match(
 
 assert.match(
   reachability,
-  /<string>--cave-sidecar-daemon<\/string>[\s\S]*<key>StartInterval<\/key>[\s\S]*<key>SuccessfulExit<\/key>/,
-  "the LaunchAgent must run the dedicated background entrypoint and recover after crashes",
+  /<string>--cave-sidecar-daemon<\/string>[\s\S]*<key>SuccessfulExit<\/key>[\s\S]*<key>AbandonProcessGroup<\/key>[\s\S]*<false\/>/,
+  "the LaunchAgent must retain its process group and recover after crashes without periodic GUI churn",
+);
+assert.match(
+  reachability,
+  /create_fresh_log_file[\s\S]*\.truncate\(true\)/,
+  "each daemon launch must discard stale readiness output before repairing Serve",
+);
+assert.match(
+  reachability,
+  /stop_recorded_daemon_sidecar\(app_data_dir\)\?;[\s\S]*bootout_launch_agent\(\)\?;/,
+  "daemon sidecars must be stopped before their LaunchAgent is unloaded",
+);
+assert.match(
+  reachability,
+  /process_identity[\s\S]*lease_matches/,
+  "GUI and daemon ownership markers must validate process identity as well as PID",
+);
+assert.match(
+  reachability,
+  /owned_sidecar_is_live[\s\S]*is_live_with_pid/,
+  "sleep assertions must require a live, retained sidecar process",
 );
 assert.match(
   reachability,
@@ -91,6 +111,7 @@ assert.match(
 assert.match(settings, /label="Keep Mac awake for phone"/);
 assert.match(settings, /label="Only keep awake on power"/);
 assert.match(settings, /label="Background availability"/);
+assert.match(settings, /aria-label=\{[\s\S]*Keep Mac awake for phone/);
 assert.match(
   bridge,
   /desktop_reachability_configure/,
@@ -100,6 +121,11 @@ assert.match(
 const unload = uninstall.indexOf('forget_launch_agent "$APP_ID"');
 const removeApp = uninstall.indexOf('remove_path "$app_path"');
 assert.ok(unload !== -1 && removeApp !== -1 && unload < removeApp, "uninstall must unload launchd before removing the app");
+assert.match(
+  uninstall,
+  /stop_recorded_reachability_sidecar "\$home"\r?\n\s*forget_launch_agent "\$APP_ID"/,
+  "uninstall must terminate the recorded reachability sidecar before unloading launchd",
+);
 assert.match(
   docs,
   /Tailscale cannot wake a sleeping Mac[\s\S]*Bonjour\s+sleep proxy is limited to local-network mDNS/,

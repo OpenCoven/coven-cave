@@ -22,6 +22,20 @@ impl SidecarProcess {
     pub(super) fn id(&self) -> u32 {
         self.child.id()
     }
+
+    /// A reachability assertion may only follow the exact child retained by
+    /// this state. PID existence alone is not ownership: the OS may reuse a
+    /// PID after a crashed sidecar exits.
+    #[cfg(target_os = "macos")]
+    pub(super) fn is_live_with_pid(&mut self, pid: u32) -> Result<bool, String> {
+        if self.child.id() != pid {
+            return Ok(false);
+        }
+        self.child
+            .try_wait()
+            .map(|status| status.is_none())
+            .map_err(|error| format!("could not inspect sidecar process: {error}"))
+    }
 }
 
 #[cfg(desktop)]
