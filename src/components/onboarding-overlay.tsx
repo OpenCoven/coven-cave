@@ -26,6 +26,7 @@ import {
   type LatestCheckDisplay,
 } from "@/lib/opencoven-tools-status-display";
 import { requestSummonFamiliar } from "@/lib/summon-events";
+import { publishQueueProjectSelection } from "@/lib/queue-project-selection";
 import {
   classifySetupFailure,
   setupRetryLabel,
@@ -920,13 +921,6 @@ export function OnboardingOverlay({
         icon: "ph:plug",
       },
       {
-        key: "project",
-        title: "Choose your Queue project",
-        ok: !!s?.project?.ok,
-        detail: s?.project?.detail ?? s?.project?.hint ?? "checking…",
-        icon: "ph:folder-simple-dashed",
-      },
-      {
         key: "git",
         title: "Find Git",
         // Queue project selection is a required Git-repository boundary.
@@ -936,6 +930,13 @@ export function OnboardingOverlay({
           s?.git?.hint ??
           "Git is required to select and use a Queue project.",
         icon: "ph:git-branch-bold",
+      },
+      {
+        key: "project",
+        title: "Choose your Queue project",
+        ok: !!s?.project?.ok,
+        detail: s?.project?.detail ?? s?.project?.hint ?? "checking…",
+        icon: "ph:folder-simple-dashed",
       },
     ];
   }, [status]);
@@ -1471,8 +1472,9 @@ export function OnboardingOverlay({
                         ) : step.key === "git" ? (
                           <div className="flex flex-col gap-2">
                             <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
-                              Chat works without Git, but the changes panel,
-                              project file tree, and checkpoints all use it.
+                              Git is required before selecting a Queue project.
+                              Chat can work without Git, but Queue setup, the
+                              changes panel, project file tree, and checkpoints all use it.
                             </p>
                             <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-muted)]">
                               {status?.steps.git?.hint ??
@@ -1600,7 +1602,7 @@ function QueueProjectSetup({ onSelected }: { onSelected: () => void }) {
       }
       if (generation !== requestGeneration.current) return;
       setReadiness(body.readiness);
-      window.dispatchEvent(new CustomEvent("cave:queue-project-selected", { detail: { project: body.readiness.project } }));
+      publishQueueProjectSelection(body.readiness.project);
       onSelected();
     } catch (cause) {
       if (generation === requestGeneration.current) {

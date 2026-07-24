@@ -153,6 +153,16 @@ const onboardingModel = readFileSync(
 );
 assert.match(onboardingModel, /git\?: Step/, "onboarding model accepts the git step");
 assert.match(overlay, /title: "Find Git"/, "overlay renders the required git checklist row");
+assert.match(
+  overlay,
+  /key: "git"[\s\S]*?title: "Find Git"[\s\S]*?key: "project"[\s\S]*?title: "Choose your Queue project"/,
+  "Git is presented before the Queue project it is required to validate",
+);
+assert.match(
+  overlay,
+  /Git is required before selecting a Queue project/,
+  "the Git pane explains the required Queue prerequisite rather than calling Git optional",
+);
 
 const projectFiles = readFileSync(
   new URL("../../project/files/route.ts", import.meta.url),

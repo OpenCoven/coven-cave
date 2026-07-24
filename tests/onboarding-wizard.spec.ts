@@ -45,6 +45,22 @@ const DAEMON_DOWN_VETERAN_STATUS = {
   tools: [],
 };
 
+const GIT_REQUIRED_STATUS = {
+  ok: true,
+  complete: false,
+  steps: {
+    covenCli: { ok: true, detail: "0.0.60" },
+    covenHome: { ok: true, detail: "~/.coven" },
+    adapters: { ok: true, detail: "Codex" },
+    daemon: { ok: true, detail: "running" },
+    git: { ok: false, detail: "Git is required to select and use a Queue project.", hint: "Install Git from https://git-scm.com, then re-check." },
+    project: { ok: false, detail: "Git is required before selecting a Queue project." },
+    familiars: { ok: false, optional: true, detail: "no familiars" },
+    binding: { ok: false, optional: true, detail: "no binding configured" },
+  },
+  tools: [],
+};
+
 // Every step healthy but the roster empty — the state the finish CTA's
 // "summon your familiar" promise is about. Server `complete` alone drives the
 // wizard's finish state: Coven Code is an optional runtime adapter, so it is
@@ -133,6 +149,15 @@ test.describe("onboarding wizard", () => {
     const current = wizard(page).locator('li[aria-current="step"]');
     await expect(current).toHaveCount(1);
     await expect(current.first()).toContainText("Install the Coven CLI");
+  });
+
+  test("puts Git remediation before an unavailable Queue project selector", async ({ page }) => {
+    await gotoApp(page, GIT_REQUIRED_STATUS);
+    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
+    const current = wizard(page).locator('li[aria-current="step"]');
+    await expect(current).toContainText("Find Git");
+    await expect(current).toContainText("Git is required before selecting a Queue project.");
+    await expect(current).toContainText("Install Git from https://git-scm.com");
   });
 
   test("Escape closes for the session without permanently skipping", async ({ page }) => {
