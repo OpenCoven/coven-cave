@@ -263,14 +263,20 @@ test.describe("familiar work queue (PR control tower)", () => {
     let releaseBReadiness!: () => void;
     const bReadiness = new Promise<void>((resolve) => { releaseBReadiness = resolve; });
     try {
-      await gotoWorkQueue(pageA);
-      await gotoWorkQueue(pageB);
       for (const page of [pageA, pageB]) {
         await page.route("**/api/queue/readiness", async (route) => {
           if (selectedProject.id === QUEUE_PROJECT_B.id) await bReadiness;
           return route.fulfill({ json: { ok: true, readiness: { ...QUEUE_READINESS, project: selectedProject } } });
         });
+        await page.route("**/api/onboarding/status**", (route) =>
+          route.fulfill({ json: { ok: true, complete: true, steps: { project: { ok: true } }, tools: [] } }),
+        );
       }
+      // These pages belong to an explicitly created BrowserContext, so the
+      // page-fixture beforeEach routes do not apply. Install their readiness
+      // routes before navigation to keep the initial A load deterministic.
+      await gotoWorkQueue(pageA);
+      await gotoWorkQueue(pageB);
       await pageB.route(/\/api\/beads\?/, (route) => {
         if (new URL(route.request().url()).searchParams.get("projectRoot") !== QUEUE_PROJECT_B.root) return route.fallback();
         return route.fulfill({
