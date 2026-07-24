@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { BUILTIN_OPENCODE_SCHEMA_BUNDLE } from "./opencode-compatibility.ts";
 import { parseOpenCodeRunEvent } from "./opencode-stream.ts";
 
 assert.deepEqual(
@@ -12,7 +13,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   parseOpenCodeRunEvent({ type: "text" }),
-  { kind: "other", sessionId: undefined },
+  { kind: "other", sessionId: undefined, diagnostic: "malformed-event" },
   "malformed events never produce assistant text",
 );
 assert.deepEqual(
@@ -23,5 +24,42 @@ assert.deepEqual(
   }),
   { kind: "error", sessionId: "ses_123", message: "Selected model is unavailable" },
   "OpenCode nests command errors under error.data.message",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool_start", sessionId: "ses_123", data: { id: "tool_1", name: "Read", state: { input: { path: "README.md" } } } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "tool_start", sessionId: "ses_123", id: "tool_1", name: "Read", input: { path: "README.md" } },
+  "newer split lifecycle events keep their upstream id",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool_result", session_id: "ses_123", data: { id: "tool_1", state: { output: "ok" } } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "tool_end", sessionId: "ses_123", id: "tool_1", output: "ok", isError: false },
+  "reordered results can close the same stable tool bubble",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool", sessionID: "ses_123", callID: "call_1", tool: "bash", state: { input: { command: "pwd" }, status: "running" } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "tool_start", sessionId: "ses_123", id: "call_1", name: "bash", input: { command: "pwd" } },
+  "current root tool updates use callID without fabricating a local id",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool", sessionID: "ses_123", callID: "call_1", tool: "bash", state: { input: { command: "pwd" }, output: "ok", status: "completed" } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "tool", sessionId: "ses_123", id: "call_1", name: "bash", input: { command: "pwd" }, output: "ok", isError: false },
+  "current root terminal tool updates preserve input and output",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent({ type: "tool_use", part: { tool: "Read" } }),
+  { kind: "other", sessionId: undefined, diagnostic: "malformed-event" },
+  "missing tool ids never create random, non-resumable bubbles",
 );
 console.log("opencode-stream.test.ts: ok");

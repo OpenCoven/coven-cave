@@ -63,6 +63,7 @@ import {
 } from "@/lib/grok-build";
 import { grokLaunchCommand } from "@/lib/grok-bin";
 import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
+import { resolveOpenCodeCompatibility } from "@/lib/opencode-compatibility";
 import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
@@ -165,7 +166,7 @@ import {
   covenRunSupportsModel,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
-  openCodeRunSupportsModel,
+  openCodeRunCapabilities,
 } from "./chat-send-capabilities";
 import {
   buildPromptWithResponseControls,
@@ -930,11 +931,14 @@ export async function POST(req: Request) {
   // harness uses coven run's capability probe.
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
+  const openCodeCompatibility = openCodeDirect
+    ? await resolveOpenCodeCompatibility(await openCodeRunCapabilities())
+    : null;
   const modelForwardingEnabled =
     hermesDirect
       ? await hermesChatSupportsModel()
       : openCodeDirect
-        ? await openCodeRunSupportsModel()
+        ? openCodeCompatibility?.capabilities.model ?? false
         : binding.harness === "grok" ||
           (binding.harness !== "openclaw" && (await covenRunSupportsModel()));
   // Grok and OpenCode are direct integrations, so neither may wait on coven
@@ -1353,10 +1357,12 @@ export async function POST(req: Request) {
       });
     }
     if (openCodeDirect) {
-      // OpenCode owns its durable session store. JSON mode is its documented
-      // non-interactive event protocol and includes the minted session id.
-      const a = ["run", "--format", "json"];
-      if (resumeSessionId) a.push("--session", resumeSessionId);
+      // The selected schema is capability based, never a version threshold.
+      // If JSON is unavailable, preserve plain chat instead of launching with
+      // an unsupported flag and losing the whole reply.
+      const a = ["run"];
+      if (openCodeCompatibility?.mode === "structured") a.push("--format", "json");
+      if (resumeSessionId && openCodeCompatibility?.capabilities.session) a.push("--session", resumeSessionId);
       if (forwardModel) a.push("--model", forwardModel);
       a.push(prompt);
       return a;
@@ -1399,9 +1405,18 @@ export async function POST(req: Request) {
   const grokSandboxRetry = grokFreshSessionForSandbox
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
+  // A client which no longer advertises `--session` cannot safely be pointed
+  // at Cave's saved session id. Start a fresh native session with recent
+  // transcript context instead; the in-stream notice makes this explicit.
+  const openCodeFreshSessionForCompatibility = Boolean(
+    openCodeDirect && resumeTarget && !openCodeCompatibility?.capabilities.session,
+  );
+  const openCodeCompatibilityRetry = openCodeFreshSessionForCompatibility
+    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    : null;
   const args = buildArgs(
-    grokFreshSessionForSandbox ? null : resumeTarget,
-    grokSandboxRetry?.prompt,
+    grokFreshSessionForSandbox || openCodeFreshSessionForCompatibility ? null : resumeTarget,
+    grokSandboxRetry?.prompt ?? openCodeCompatibilityRetry?.prompt,
   );
 
   // Resume failures from common harnesses. Codex emits
@@ -1541,6 +1556,7 @@ export async function POST(req: Request) {
       // `coven run` at startup, so the turn ends with no assistant text.
       // Detected from stderr; healed (manifest quarantined) and retried below.
       let adapterConflict: BuiltinAdapterConflict | null = null;
+      let openCodeCompatibilityNoticeSent = false;
 
       // Model parity: the harness echoes its resolved model on the init/system
       // stream event. Capturing it lets the application state render honestly as
@@ -1751,8 +1767,14 @@ export async function POST(req: Request) {
       };
 
       const handleOpenCodeLine = (line: string) => {
+        if (openCodeCompatibility?.mode === "plain") {
+          const text = `${resolveBackspaces(stripAnsi(line))}\n`;
+          assistantText += text;
+          push({ kind: "assistant_chunk", text });
+          return;
+        }
         try {
-          const ev = parseOpenCodeRunEvent(JSON.parse(line));
+          const ev = parseOpenCodeRunEvent(JSON.parse(line), openCodeCompatibility?.schema);
           if (!ev) return;
           if (ev.sessionId && !sessionId) announceSession(ev.sessionId);
           if (ev.kind === "text") {
@@ -1778,12 +1800,44 @@ export async function POST(req: Request) {
             if (ended) push({ kind: "tool_use", ...ended });
             return;
           }
+          if (ev.kind === "tool_start") {
+            boundarySentinel?.observe(ev.name, ev.input);
+            const started = toolTracker.envelopeToolUse(
+              ev.id,
+              ev.name,
+              formatToolInputValue(ev.input),
+              assistantText.length,
+            );
+            if (started) push({ kind: "tool_use", ...started });
+            const reorderedEnd = toolTracker.consumePendingEnvelopeResult(ev.id);
+            if (reorderedEnd) push({ kind: "tool_use", ...reorderedEnd });
+            return;
+          }
+          if (ev.kind === "tool_end") {
+            const ended = toolTracker.envelopeToolResult(
+              ev.id,
+              typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
+              ev.isError,
+            );
+            if (ended) push({ kind: "tool_use", ...ended });
+            return;
+          }
           if (ev.kind === "error") {
             // This is an explicit error envelope, so preserve even messages
             // such as "Selected model is unavailable" that do not match the
             // generic stderr-like keyword filter.
             recordStdoutErrorTail(ev.message, true);
             result = { ...result, is_error: true };
+            return;
+          }
+          if (ev.kind === "other" && !openCodeCompatibilityNoticeSent) {
+            openCodeCompatibilityNoticeSent = true;
+            pushProgress(
+              "opencode-compatibility",
+              "OpenCode sent an unrecognized tool event; continuing with assistant text",
+              "error",
+              ev.diagnostic ?? "unknown-event",
+            );
           }
         } catch {
           recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
@@ -1796,6 +1850,15 @@ export async function POST(req: Request) {
         // leak into bubble text.
         const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
         if (!line) return;
+        if (openCodeDirect && !openCodeCompatibilityNoticeSent && openCodeCompatibility?.diagnostic) {
+          openCodeCompatibilityNoticeSent = true;
+          const diagnostic = openCodeCompatibility.diagnostic === "json-format-unavailable"
+            ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
+            : openCodeCompatibility.diagnostic === "no-compatible-schema"
+              ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
+              : "OpenCode schema refresh was not trusted; using the last known compatible parser";
+          pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
+        }
         if (RESUME_ERR_RE.test(line)) resumeFailed = true;
         const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
         if (copilotStream) {
@@ -2143,6 +2206,14 @@ export async function POST(req: Request) {
 
       // First attempt — uses --continue if body.sessionId was set.
       const turnSpawnStartMs = Date.now();
+      if (openCodeFreshSessionForCompatibility) {
+        pushProgress(
+          "opencode-compatibility",
+          "This OpenCode client cannot resume sessions; replaying recent context in a fresh chat",
+          "error",
+          "session-unavailable",
+        );
+      }
       await runAttempt(args);
 
       // Self-heal (cave-1c05): a stale scaffolded manifest whose id the
@@ -2171,6 +2242,7 @@ export async function POST(req: Request) {
         jsonBuf = "";
         result = {};
         toolTracker = new ToolCallTracker();
+        openCodeCompatibilityNoticeSent = false;
         copilotText.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
@@ -2210,6 +2282,7 @@ export async function POST(req: Request) {
         jsonBuf = "";
         result = {};
         toolTracker = new ToolCallTracker();
+        openCodeCompatibilityNoticeSent = false;
         copilotText.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;

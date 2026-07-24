@@ -7,12 +7,14 @@ import {
 } from "@/lib/harness-adapters";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
+import type { OpenCodeRunCapabilities } from "@/lib/opencode-compatibility";
 
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let hermesModelFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
+let openCodeCapabilitiesProbe: Promise<OpenCodeRunCapabilities> | null = null;
 
 function probeHelp(
   command: string,
@@ -55,6 +57,40 @@ function probeHelp(
       });
     } catch {
       done(false);
+    }
+  });
+}
+
+function probeOutput(command: string, args: string[], env = harnessSpawnEnv(), input?: string): Promise<string> {
+  return new Promise<string>((resolve) => {
+    let output = "";
+    const MAX_PROBE_OUTPUT = 64 * 1024;
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      resolve(output);
+    };
+    try {
+      const child = spawn(command, args, {
+        env,
+        stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
+      }) as ChildProcessWithoutNullStreams;
+      if (input !== undefined) writeOpenCodeLaunchInput(child, { command, args, input });
+      const append = (chunk: Buffer) => {
+        if (output.length >= MAX_PROBE_OUTPUT) return;
+        output += chunk.toString().slice(0, MAX_PROBE_OUTPUT - output.length);
+      };
+      child.stdout.on("data", append);
+      child.stderr.on("data", append);
+      const timeout = setTimeout(() => {
+        try { child.kill("SIGTERM"); } catch { /* Probe failures are capabilities=false. */ }
+        done();
+      }, 2500);
+      child.on("close", () => { clearTimeout(timeout); done(); });
+      child.on("error", () => { clearTimeout(timeout); done(); });
+    } catch {
+      done();
     }
   });
 }
@@ -107,4 +143,27 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
     openCodeSpawnEnv(),
     launch.input,
   ));
+}
+
+/**
+ * Discover the installed client's usable surface from its own help output.
+ * The version is retained for support diagnostics only; it never gates a
+ * schema because vendors can backport or change protocol behavior.
+ */
+export function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
+  return (openCodeCapabilitiesProbe ??= (async () => {
+    const helpLaunch = openCodeLaunch(["run", "--help"]);
+    const versionLaunch = openCodeLaunch(["--version"]);
+    const [help, versionOutput] = await Promise.all([
+      probeOutput(helpLaunch.command, helpLaunch.args, openCodeSpawnEnv(), helpLaunch.input),
+      probeOutput(versionLaunch.command, versionLaunch.args, openCodeSpawnEnv(), versionLaunch.input),
+    ]);
+    const version = versionOutput.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null;
+    return {
+      version,
+      json: /--format(?:[=\s][^\n]*)?/m.test(help) && /\bjson\b/i.test(help),
+      model: /(^|\s)--model(?![\w-])/m.test(help),
+      session: /(^|\s)--session(?![\w-])/m.test(help),
+    };
+  })());
 }

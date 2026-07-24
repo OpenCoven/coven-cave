@@ -12,12 +12,12 @@ assert.match(
 );
 assert.match(
   route,
-  /const a = \["run", "--format", "json"\];[\s\S]*?a\.push\("--session", resumeSessionId\);[\s\S]*?a\.push\("--model", forwardModel\);/,
-  "OpenCode forwards resume session and selected model to its non-interactive JSON command",
+  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?a\.push\("--format", "json"\);[\s\S]*?openCodeCompatibility\?\.capabilities\.session[\s\S]*?a\.push\("--session", resumeSessionId\);/,
+  "OpenCode uses discovered JSON and session capabilities rather than a version threshold",
 );
 assert.match(
   route,
-  /const ev = parseOpenCodeRunEvent\(JSON\.parse\(line\)\);[\s\S]*?announceSession\(ev\.sessionId\);/,
+  /parseOpenCodeRunEvent\(JSON\.parse\(line\), openCodeCompatibility\?\.schema\);[\s\S]*?announceSession\(ev\.sessionId\);/,
   "the first structured OpenCode event persists its minted session id",
 );
 assert.match(
@@ -69,6 +69,26 @@ assert.match(
   route,
   /ev\.kind === "error"[\s\S]*?recordStdoutErrorTail\(ev\.message, true\)/,
   "structured OpenCode errors retain model-rejection details even when they lack generic error keywords",
+);
+assert.match(
+  route,
+  /openCodeCompatibility\?\.mode === "plain"[\s\S]*?assistant_chunk/,
+  "clients without structured output fall back to plain assistant text instead of dropping a reply",
+);
+assert.match(
+  route,
+  /ev\.kind === "tool_start"[\s\S]*?envelopeToolUse[\s\S]*?ev\.kind === "tool_end"[\s\S]*?envelopeToolResult/,
+  "split tool lifecycle frames preserve the stable bubble id across progress and result",
+);
+assert.match(
+  route,
+  /opencode-compatibility[\s\S]*?unrecognized tool event/,
+  "unknown future event shapes surface a safe visible diagnostic",
+);
+assert.match(
+  capabilities,
+  /export function openCodeRunCapabilities\([^)]*\)[\s\S]*?\["--version"\][\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
+  "OpenCode discovers feature support and records version only for diagnostics",
 );
 
 console.log("opencode harness routing tests passed");

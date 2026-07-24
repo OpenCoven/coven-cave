@@ -472,6 +472,8 @@ export const SUITES = {
     "src/lib/slash-model.test.ts",
     "src/lib/opencode-models.test.ts",
     "src/lib/opencode-bin.test.ts",
+    "src/lib/chat-tool-events.test.ts",
+    "src/lib/opencode-compatibility.test.ts",
     "src/lib/opencode-stream.test.ts",
     "src/lib/use-runtime-model-options.test.ts",
     "src/lib/slash-skill.test.ts",
@@ -1277,6 +1279,8 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/opencode-compatibility.test.ts",
+  "src/lib/opencode-stream.test.ts",
   "src/lib/familiar-workspace-sessions.test.ts",
   "scripts/cave-home-migration-windows.test.ts",
   "src/lib/bento-dashboard.test.ts",

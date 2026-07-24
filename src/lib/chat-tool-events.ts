@@ -102,6 +102,8 @@ export class ToolCallTracker {
   private byEnvelopeId = new Map<string, OpenCall>();
   /** Envelope ids whose calls were already settled (dedup tool_result). */
   private settledEnvelopeIds = new Set<string>();
+  /** Terminal envelopes can precede starts after a reconnect or CLI flush. */
+  private pendingEnvelopeResults = new Map<string, { output: string | undefined; isError: boolean }>();
   /** Final state of every call this tracker has emitted, by stream id —
    *  insertion-ordered, so snapshot() preserves call order for persistence. */
   private recorded = new Map<string, RecordedToolEvent>();
@@ -247,10 +249,20 @@ export class ToolCallTracker {
     return ev;
   }
 
+  /** Settle a result that arrived before its start, once the id is known. */
+  consumePendingEnvelopeResult(toolUseId: string): ToolStreamEvent | null {
+    const pending = this.pendingEnvelopeResults.get(toolUseId);
+    if (!pending) return null;
+    this.pendingEnvelopeResults.delete(toolUseId);
+    return this.envelopeToolResult(toolUseId, pending.output, pending.isError);
+  }
+
   /**
    * stream-json `tool_result` block (from the follow-up user message).
    * Returns null when the matching call was already settled by a post hook
-   * (hook output + duration win) or was never announced.
+   * (hook output + duration win). A result that arrives before its start is
+   * retained by native id until the start frame arrives, avoiding a silently
+   * stuck/missing bubble after a reconnect or reordered JSONL flush.
    */
   envelopeToolResult(
     toolUseId: string,
@@ -259,7 +271,17 @@ export class ToolCallTracker {
   ): ToolStreamEvent | null {
     if (this.settledEnvelopeIds.has(toolUseId)) return null;
     const call = this.byEnvelopeId.get(toolUseId);
-    if (!call) return null;
+    if (!call) {
+      // A malformed stream must not turn arbitrary unmatched ids into an
+      // unbounded in-memory buffer. Retain a small FIFO window for genuine
+      // reorderings; the start event remains the authority for rendering.
+      if (this.pendingEnvelopeResults.size >= 100) {
+        const oldest = this.pendingEnvelopeResults.keys().next().value;
+        if (oldest) this.pendingEnvelopeResults.delete(oldest);
+      }
+      this.pendingEnvelopeResults.set(toolUseId, { output, isError });
+      return null;
+    }
     const durationMs = this.now() - call.startedAt;
     this.settle(call);
     const ev: ToolStreamEvent = {
