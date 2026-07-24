@@ -14,6 +14,7 @@ const ALLOWED_TOP_LEVEL_KEYS = new Set([
   "multiHost",
   "omnigent",
   "chatAutoArchive",
+  "chatAutoRename",
 ]);
 type ConfigPatchBody = Record<string, unknown>;
 

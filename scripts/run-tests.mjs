@@ -730,6 +730,7 @@ export const SUITES = {
     "src/lib/task-archive-nudge-wiring.test.ts",
     "src/lib/chat-archive-nudge.test.ts",
     "src/lib/chat-auto-archive.test.ts",
+    "src/lib/chat-auto-rename.test.ts",
     "src/components/chat-archive-nudge.test.ts",
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
