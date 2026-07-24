@@ -477,11 +477,13 @@ describe("FamiliarAnalyticsView", () => {
   });
 
   it("lays sections out in a container-responsive grid (inspector-pane safe)", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    // The .fa-* surface CSS is component-imported (not in the global bundle) per
+    // #3264, so these rules live in src/styles/familiar-analytics.css.
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     assert.match(source, /className="fa-grid"/, "sections are wrapped in the grid");
-    assert.match(globals, /\.fa-grid\s*\{/, ".fa-grid rule exists");
-    assert.match(globals, /container-name: fa/, ".fa-page is a size container");
-    assert.match(globals, /@container fa \(max-width: 880px\)/, "grid collapses by pane width, not viewport");
+    assert.match(faCss, /\.fa-grid\s*\{/, ".fa-grid rule exists");
+    assert.match(faCss, /container-name: fa/, ".fa-page is a size container");
+    assert.match(faCss, /@container fa \(max-width: 880px\)/, "grid collapses by pane width, not viewport");
   });
 
   it("leads the grid with the full-width self-heal queue and closes with wide contract compliance", () => {
@@ -500,8 +502,8 @@ describe("FamiliarAnalyticsView", () => {
   });
 
   it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-    const block = globals.match(/\.fa-page\s*\{[^}]*\}/);
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    const block = faCss.match(/\.fa-page\s*\{[^}]*\}/);
     assert.ok(block, ".fa-page rule should exist");
     assert.match(block![0], /overflow-y:\s*auto/, ".fa-page must scroll its own content on the full-page route");
     assert.doesNotMatch(block![0], /min-height:\s*100%/, ".fa-page should fill (height:100%), not just min-height, so overflow can trigger");
@@ -509,18 +511,22 @@ describe("FamiliarAnalyticsView", () => {
 
   it("modernized chrome: sticky freshness topbar, drill flashes, actionable insight (cave UX audit)", () => {
     const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    // .fa-* surface rules are component-imported (#3264); the reduced-motion
+    // .fa-page override rides the shared global reduced-motion block, so it
+    // stays in globals below.
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
 
     // Truthful freshness stamp + visible refresh progress in a sticky topbar.
     assert.match(source, /setUpdatedAt\(new Date\(\)\.toISOString\(\)\)/, "updatedAt is stamped by the load that actually landed");
     assert.match(source, /Updated <RelativeTime iso=\{updatedAt\} \/>/, "topbar renders the freshness stamp");
     assert.match(source, /refreshing \? " is-refreshing" : ""/, "refresh button carries a refreshing state class");
-    assert.match(globals, /\.fa-topbar\s*\{[^}]*position:\s*sticky/, "breadcrumb topbar is sticky");
-    assert.match(globals, /fa-refresh-spin/, "refresh spins while a quiet reload is in flight");
+    assert.match(faCss, /\.fa-topbar\s*\{[^}]*position:\s*sticky/, "breadcrumb topbar is sticky");
+    assert.match(faCss, /fa-refresh-spin/, "refresh spins while a quiet reload is in flight");
 
     // Drill-throughs glide and flash their landing section.
-    assert.match(globals, /\.fa-page\s*\{[^}]*scroll-behavior:\s*smooth/, "in-page drills scroll smoothly");
-    assert.match(globals, /\.fa-section\s*\{[^}]*scroll-margin-top/, "sections land clear of the sticky bar");
-    assert.match(globals, /\.fa-section:target\s*\{/, "the landing section flashes for orientation");
+    assert.match(faCss, /\.fa-page\s*\{[^}]*scroll-behavior:\s*smooth/, "in-page drills scroll smoothly");
+    assert.match(faCss, /\.fa-section\s*\{[^}]*scroll-margin-top/, "sections land clear of the sticky bar");
+    assert.match(faCss, /\.fa-section:target\s*\{/, "the landing section flashes for orientation");
 
     // KPI tiles carry a reveal-on-hover drill cue.
     assert.match(source, /className="fa-kpi__go"/, "KPI tiles render the drill chevron");
@@ -536,7 +542,7 @@ describe("FamiliarAnalyticsView", () => {
     );
 
     // Narrow-pane tier exists (inspector tab / phones).
-    assert.match(globals, /@container fa \(max-width: 420px\)/, "a phone-width container tier hardens the narrowest panes");
+    assert.match(faCss, /@container fa \(max-width: 420px\)/, "a phone-width container tier hardens the narrowest panes");
   });
 });
 
@@ -625,11 +631,11 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(source, /<Sparkline points=\{points\} color=\{trendTokenFor\(overall\.direction\)\}/, "the trend sparkline reuses ui/sparkline");
     assert.match(source, /value: bucket\.score/, "sparkline points come from bucket scores (nulls = honest gaps)");
     assert.match(source, /Trends appear once reports land on two different/, "sparse data explains itself");
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-    assert.match(globals, /\.fa-trend-verdict--improving \{ color: var\(--accent-presence\); \}/, "verdict improving tint is tokenized");
-    assert.match(globals, /\.fa-trend-verdict--regressing \{ color: var\(--color-warning\); \}/, "verdict regressing tint is tokenized");
-    assert.match(globals, /\.fa-trend-chip--improving \{ color: var\(--accent-presence\); \}/, "chip improving tint is tokenized");
-    assert.match(globals, /\.fa-trend-chip--regressing \{ color: var\(--color-warning\); \}/, "chip regressing tint is tokenized");
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    assert.match(faCss, /\.fa-trend-verdict--improving \{ color: var\(--accent-presence\); \}/, "verdict improving tint is tokenized");
+    assert.match(faCss, /\.fa-trend-verdict--regressing \{ color: var\(--color-warning\); \}/, "verdict regressing tint is tokenized");
+    assert.match(faCss, /\.fa-trend-chip--improving \{ color: var\(--accent-presence\); \}/, "chip improving tint is tokenized");
+    assert.match(faCss, /\.fa-trend-chip--regressing \{ color: var\(--color-warning\); \}/, "chip regressing tint is tokenized");
   });
 
   it("annotates each metric bar with a delta chip against the previous period", () => {
@@ -645,15 +651,15 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(source, /confidence\.hasData \? confidenceTier\(confidence\.label\) : "none"/, "no reports → neutral ring, never a fake Low");
     assert.match(source, /Thread confidence not measured yet/, "the unmeasured ring says so to AT");
     assert.match(source, /from \$\{reportPhrase\}/, "the measured ring cites its report count");
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-    assert.match(globals, /\.fa-ring--none\s*\{[^}]*--fa-ring-color:\s*var\(--border-strong\)/, "the unmeasured tier stays neutral (tokens only)");
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    assert.match(faCss, /\.fa-ring--none\s*\{[^}]*--fa-ring-color:\s*var\(--border-strong\)/, "the unmeasured tier stays neutral (tokens only)");
   });
 
   it("keeps shared metric-unit styling for 0–100 scores", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     assert.match(source, /className="fa-metric-unit"/, "0–100 scores carry a muted unit suffix");
-    assert.match(globals, /\.fa-metric-unit\s*\{/, "the metric-unit style exists");
-    assert.match(globals, /\.fa-factor-bar\s*\{[\s\S]*?min-width:\s*44px/, "the metric bar keeps a min-width floor in narrow cells");
-    assert.match(globals, /\.fa-thread-analysis\s*\{/, "the thread-analysis panel has its own layout block");
+    assert.match(faCss, /\.fa-metric-unit\s*\{/, "the metric-unit style exists");
+    assert.match(faCss, /\.fa-factor-bar\s*\{[\s\S]*?min-width:\s*44px/, "the metric bar keeps a min-width floor in narrow cells");
+    assert.match(faCss, /\.fa-thread-analysis\s*\{/, "the thread-analysis panel has its own layout block");
   });
 });
