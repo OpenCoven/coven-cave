@@ -155,11 +155,11 @@ test("Open is the Grimoire jump — offered only when a knowledgeId exists, no f
   // Same open path as the evidence ledger's artifact cards.
   assert.match(tab, /openGrimoireDoc\("knowledge", artifact\.knowledgeId!\)/);
   assert.match(tab, /\{artifact\.knowledgeId \? \(/);
-  // Artifacts expose no client-reachable file export (relativePath is
-  // server-side only), so the design's ⤓ md / ⤓ pdf buttons must not ship.
+  // File access ships through the shared ResearchArtifactActions component
+  // (View/Download backed by the files API); the design's ad-hoc ⤓ md / ⤓ pdf
+  // buttons still must not ship on this surface.
   assert.doesNotMatch(tab, /⤓/);
   assert.doesNotMatch(tab, /pdf/i);
-  assert.doesNotMatch(tab, /download/i);
 });
 
 test("empty states are honest with a real next step", () => {
