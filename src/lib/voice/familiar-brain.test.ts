@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { familiarBrainProvider } from "./familiar-brain.ts";
 
 test("mintSession grants a keyless familiar-brain session bound to the chat session", async () => {
@@ -39,4 +40,18 @@ test("the provider persists its own transcripts (real chat turns)", () => {
   assert.equal(familiarBrainProvider.persistsTranscripts, true);
   assert.equal(familiarBrainProvider.id, "familiar");
   assert.equal(typeof familiarBrainProvider.clientAdapter.connect, "function");
+});
+
+test("downloaded local voice ids replace only the familiar's system mouth", () => {
+  const source = readFileSync(
+    new URL("./familiar-brain.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /isLocalTtsVoiceName\(connection\.voice\)/);
+  assert.match(source, /createLocalTtsMouth\(\{ voiceName: localVoice \}\)/);
+  assert.match(
+    source,
+    /voiceName: localVoice \? undefined : connection\.voice/,
+    "saved system voice names must keep the built-in synthesizer fallback",
+  );
 });

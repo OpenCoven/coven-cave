@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   buildLocalBrainMessages,
   DEFAULT_LOCAL_LLM_BASE,
@@ -125,4 +126,18 @@ test("mintSession probes the COVEN_LOCAL_LLM_URL override", async () => {
     familiarId: "milo", model: "qwen3", voice: "", instructions: "x",
   });
   assert.equal(lastUrl, "http://127.0.0.1:1234/v1/models");
+});
+
+test("downloaded local voice ids replace only the local loop's system mouth", () => {
+  const source = readFileSync(
+    new URL("./local-loop.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /isLocalTtsVoiceName\(connection\.voice\)/);
+  assert.match(source, /createLocalTtsMouth\(\{ voiceName: localVoice \}\)/);
+  assert.match(
+    source,
+    /voiceName: localVoice \? undefined : connection\.voice/,
+    "saved system voice names must keep the built-in synthesizer fallback",
+  );
 });
