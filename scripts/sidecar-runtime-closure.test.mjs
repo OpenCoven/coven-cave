@@ -97,10 +97,10 @@ try {
 
   await assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination);
   const metrics = await verifySidecarRuntime(destination);
-  assert.ok(metrics.fileCount <= 5_667);
+  assert.ok(metrics.fileCount <= 5_681);
   assert.ok(metrics.unpackedBytes < 200 * 1024 * 1024);
   assert.deepEqual(SIDECAR_RUNTIME_BUDGETS, {
-    fileCount: 5_667,
+    fileCount: 5_681,
     unpackedBytes: 200 * 1024 * 1024 - 1,
   });
 

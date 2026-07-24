@@ -120,7 +120,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // and endpoint-validators chunks; CI measured 5,655 on Ubuntu and 5,657 on
   // Windows. Retain ten files of headroom over the measured maximum without
   // relaxing the byte ceiling.
-  fileCount: 5_667,
+  // 2026-07-24 (Queue project readiness): the selected-project readiness
+  // route and its server helpers trace four more files. Native Windows
+  // packaging measured 5,671 files; retain the established ten-file buffer.
+  fileCount: 5_681,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
