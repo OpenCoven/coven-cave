@@ -1511,21 +1511,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .retro-run-row__top { align-items: stretch; flex-direction: column; }
   .retro-pill { width: max-content; }
   .growth-surface { padding: 16px; }
-  .fa-page { padding: 16px; }
-  /* Sticky topbar's edge-to-edge negative margins track the tighter padding. */
-  .fa-topbar { margin: -16px -16px 0; padding: 8px 16px; }
-}
-
-/* Analytics motion is decorative — all of it holds still on request. */
-@media (prefers-reduced-motion: reduce) {
-  .fa-page { scroll-behavior: auto; }
-  .fa-topbar .retro-icon-btn.is-refreshing svg { animation: none; opacity: 0.6; }
-  .fa-section:target {
-    animation: none;
-    border-color: var(--accent-presence);
-  }
-  .fa-kpi:hover { transform: none; }
-  .fa-kpi__head svg.fa-kpi__go { transition: none; }
 }
 
 /* Recommended follow-up: the agent lists next steps best-first, so the top

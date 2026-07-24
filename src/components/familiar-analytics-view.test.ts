@@ -510,10 +510,9 @@ describe("FamiliarAnalyticsView", () => {
   });
 
   it("modernized chrome: sticky freshness topbar, drill flashes, actionable insight (cave UX audit)", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-    // .fa-* surface rules are component-imported (#3264); the reduced-motion
-    // .fa-page override rides the shared global reduced-motion block, so it
-    // stays in globals below.
+    // All .fa-* surface rules — including the reduced-motion and phone-width
+    // overrides — are component-imported (#3264), so they live in the
+    // familiar-analytics sheet, not the global facade.
     const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
 
     // Truthful freshness stamp + visible refresh progress in a sticky topbar.
@@ -536,7 +535,7 @@ describe("FamiliarAnalyticsView", () => {
 
     // All decorative motion holds still under prefers-reduced-motion.
     assert.match(
-      globals,
+      faCss,
       /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.fa-page\s*\{\s*scroll-behavior:\s*auto/,
       "smooth scrolling is disabled under reduced motion",
     );
