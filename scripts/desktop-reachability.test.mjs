@@ -58,6 +58,11 @@ assert.match(
 );
 assert.match(
   reachability,
+  /install_daemon_shutdown_handler[\s\S]*DAEMON_SHUTDOWN_REQUESTED[\s\S]*stop_daemon_children/,
+  "a launchd SIGTERM must make the daemon synchronously reap its sidecar and assertion",
+);
+assert.match(
+  reachability,
   /process_identity[\s\S]*lease_matches/,
   "GUI and daemon ownership markers must validate process identity as well as PID",
 );

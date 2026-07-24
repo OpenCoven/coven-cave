@@ -27,6 +27,9 @@ const SERVE_REPAIR_INTERVAL: Duration = Duration::from_secs(30);
 #[cfg(desktop)]
 const DAEMON_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[cfg(all(desktop, target_os = "macos"))]
+static DAEMON_SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+
 #[cfg(desktop)]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -911,6 +914,53 @@ fn create_fresh_log_file(path: &Path) -> Result<std::fs::File, String> {
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
+fn daemon_shutdown_requested() -> bool {
+    DAEMON_SHUTDOWN_REQUESTED.load(Ordering::Acquire)
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn install_daemon_shutdown_handler() -> Result<(), String> {
+    DAEMON_SHUTDOWN_REQUESTED.store(false, Ordering::Release);
+    for signal in [
+        signal_hook_registry::consts::signal::SIGTERM,
+        signal_hook_registry::consts::signal::SIGINT,
+        signal_hook_registry::consts::signal::SIGHUP,
+    ] {
+        unsafe {
+            signal_hook_registry::register(signal, || {
+                DAEMON_SHUTDOWN_REQUESTED.store(true, Ordering::Release);
+            })
+        }
+        .map_err(|error| format!("could not install daemon shutdown handler: {error}"))?;
+    }
+    Ok(())
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn wait_for_daemon_activity(duration: Duration) {
+    let deadline = Instant::now() + duration;
+    while !daemon_shutdown_requested() && Instant::now() < deadline {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        thread::sleep(remaining.min(Duration::from_millis(100)));
+    }
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn stop_daemon_children(
+    child: &mut std::process::Child,
+    assertion: &mut Option<PowerAssertion>,
+    state_path: &Path,
+) {
+    let _ = child.kill();
+    let _ = child.wait();
+    if let Some(mut assertion) = assertion.take() {
+        let _ = assertion.child.kill();
+        let _ = assertion.child.wait();
+    }
+    let _ = std::fs::remove_file(state_path);
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
 fn daemon_augmented_path(node: &Path) -> String {
     let mut directories = Vec::new();
     if let Some(directory) = node.parent() {
@@ -941,6 +991,7 @@ fn daemon_augmented_path(node: &Path) -> String {
 
 #[cfg(all(desktop, target_os = "macos"))]
 fn run_sidecar_daemon() -> Result<i32, String> {
+    install_daemon_shutdown_handler()?;
     let app_data_dir = app_data_path_without_handle()?;
     let config_path = app_data_dir.join(REACHABILITY_CONFIG_FILE);
     if !read_reachability_config(&config_path).daemon_mode {
@@ -949,10 +1000,13 @@ fn run_sidecar_daemon() -> Result<i32, String> {
     // Keep one launchd wrapper alive while the GUI owns the server. This gives
     // crash recovery without StartInterval repeatedly launching app processes.
     while gui_is_active(&app_data_dir) {
+        if daemon_shutdown_requested() {
+            return Ok(0);
+        }
         if !read_reachability_config(&config_path).daemon_mode {
             return Ok(0);
         }
-        thread::sleep(Duration::from_secs(1));
+        wait_for_daemon_activity(Duration::from_secs(1));
     }
     // A previous wrapper can crash without reaping Node. Its signed state is
     // identity-checked before we stop it, so a restart never creates a second
@@ -1009,7 +1063,7 @@ fn run_sidecar_daemon() -> Result<i32, String> {
         .map_err(|error| format!("could not start background sidecar: {error}"))?;
     let child_pid = child.id();
     match wait_for_sidecar_ready(port, &server_log, Duration::from_secs(30), || {
-        gui_is_active(&app_data_dir)
+        gui_is_active(&app_data_dir) || daemon_shutdown_requested()
     }) {
         PortWaitResult::Ready => {}
         PortWaitResult::Cancelled => {
@@ -1024,6 +1078,12 @@ fn run_sidecar_daemon() -> Result<i32, String> {
                 "background sidecar did not become ready on port {port}"
             ));
         }
+    }
+
+    if daemon_shutdown_requested() {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Ok(0);
     }
 
     let lease = ProcessLease {
@@ -1042,14 +1102,15 @@ fn run_sidecar_daemon() -> Result<i32, String> {
     let mut assertion: Option<PowerAssertion> = None;
     let mut last_serve_repair = Instant::now();
     loop {
-        if gui_is_active(&app_data_dir) || !read_reachability_config(&config_path).daemon_mode {
-            let _ = child.kill();
-            let _ = child.wait();
-            if let Some(mut assertion) = assertion.take() {
-                let _ = assertion.child.kill();
-                let _ = assertion.child.wait();
-            }
-            let _ = std::fs::remove_file(app_data_dir.join(DAEMON_STATE_FILE));
+        if daemon_shutdown_requested()
+            || gui_is_active(&app_data_dir)
+            || !read_reachability_config(&config_path).daemon_mode
+        {
+            stop_daemon_children(
+                &mut child,
+                &mut assertion,
+                &app_data_dir.join(DAEMON_STATE_FILE),
+            );
             return Ok(0);
         }
         if let Some(status) = child
@@ -1087,7 +1148,7 @@ fn run_sidecar_daemon() -> Result<i32, String> {
             repair_tailscale_serve_for_port(port);
             last_serve_repair = Instant::now();
         }
-        thread::sleep(POWER_MONITOR_INTERVAL);
+        wait_for_daemon_activity(POWER_MONITOR_INTERVAL);
     }
 }
 
