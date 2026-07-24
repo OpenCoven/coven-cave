@@ -30,6 +30,7 @@ struct SettingsView: View {
                 appearanceSection
                 chatsSection
                 permissionsSection
+                communitySection
                 hostSection
                 disconnectSection
                 aboutSection
@@ -88,7 +89,7 @@ struct SettingsView: View {
                     }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Your Cave")
+                    Text(app.operatorDisplayName)
                         .font(.headline)
                     Text(app.connection?.host ?? "Not set up")
                         .font(.footnote.monospaced())
@@ -219,6 +220,27 @@ struct SettingsView: View {
         } footer: {
             Text("See and manage which projects each familiar can read or change. Changing them from the phone requires the desktop opt-in.")
         }
+    }
+
+    private var communitySection: some View {
+        Section("Community") {
+            communityLink("Discord", value: "OpenCoven", url: "https://discord.gg/opencoven")
+            communityLink("X", value: "@OpenCvn", url: "https://x.com/OpenCvn")
+            communityLink("Docs", value: "docs.opencoven.ai", url: "https://docs.opencoven.ai")
+            communityLink("Podcast", value: "pod.opencoven.ai", url: "https://pod.opencoven.ai")
+            communityLink("Blog", value: "mind.opencoven.ai", url: "https://mind.opencoven.ai")
+        }
+    }
+
+    private func communityLink(_ label: String, value: String, url: String) -> some View {
+        Link(destination: URL(string: url)!) {
+            LabeledContent(label) {
+                Label(value, systemImage: "arrow.up.right")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .foregroundStyle(.primary)
     }
 
     // MARK: - Change host

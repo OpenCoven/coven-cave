@@ -7,12 +7,17 @@ import SwiftUI
 /// server adopts the session and replays scrollback on reconnect).
 struct TerminalView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("cave.terminal.shorthands") private var storedShorthands = "git status|pnpm test:mobile"
 
     @State private var terminal = PtyTerminal()
     @State private var cwd: String?      // nil = Home
     @State private var cols = 80
     @State private var rows = 24
+    @State private var showingNewShorthand = false
+    @State private var showingProjectPicker = false
+    @State private var newShorthand = ""
 
     /// Per-cwd thread id → one durable shell per working directory.
     private var threadId: String { "ios-terminal::" + (cwd ?? "home") }
@@ -26,6 +31,20 @@ struct TerminalView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text("Terminal")
+                    .font(.largeTitle.weight(.bold))
+                cwdMenu
+                Spacer()
+                CircularIconButton(systemImage: "plus", label: "New terminal") {
+                    // PtyTerminal supports one durable session per project root;
+                    // selecting a root creates/adopts that real server session.
+                    showingProjectPicker = true
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(chrome.bgBase)
             // The xterm webview renders even when the PTY socket is down, so a
             // failed connection otherwise looks like a frozen shell. Surface it.
             if !terminal.connected, let err = terminal.error {
@@ -60,6 +79,24 @@ struct TerminalView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, !terminal.connected, !terminal.exited { connect() }
         }
+        .confirmationDialog("New terminal", isPresented: $showingProjectPicker) {
+            Button("Home") { switchCwd(nil) }
+            ForEach(app.projects) { project in
+                Button(project.name) { switchCwd(project.root) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Choose a project for the terminal session.")
+        }
+        .alert("New shorthand", isPresented: $showingNewShorthand) {
+            TextField("Command", text: $newShorthand)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Add") { addShorthand() }
+            Button("Cancel", role: .cancel) { newShorthand = "" }
+        } message: {
+            Text("This command is stored on this phone.")
+        }
     }
 
     // MARK: - Key row (special keys the soft keyboard lacks → straight to the PTY)
@@ -69,6 +106,21 @@ struct TerminalView: View {
             HStack(spacing: 8) {
                 cwdMenu
                 keyButton("esc", "Escape") { terminal.sendInput("\u{1B}") }
+                ForEach(["git status", "pwd", "clear"], id: \.self) { command in
+                    keyButton(command, command) { terminal.sendInput(command + "\n") }
+                }
+                ForEach(shorthands, id: \.self) { command in
+                    keyButton(command, "Run \(command)") { terminal.sendInput(command + "\n") }
+                }
+                Button {
+                    showingNewShorthand = true
+                } label: {
+                    Label("Shorthand", systemImage: "plus")
+                        .font(.system(.footnote, design: .monospaced))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .overlay(Capsule().stroke(style: StrokeStyle(lineWidth: 1, dash: [4])))
+                }
+                .buttonStyle(.plain)
                 keyButton("tab", "Tab") { terminal.sendInput("\t") }
                 keyButton("⌃C", "Control C") { terminal.sendInput("\u{03}") }
                 keyButton("⌃D", "Control D") { terminal.sendInput("\u{04}") }
@@ -137,5 +189,16 @@ struct TerminalView: View {
         guard root != cwd else { return }
         cwd = root
         connect()   // threadId is derived from cwd → fresh/persistent per directory
+    }
+
+    private var shorthands: [String] {
+        storedShorthands.split(separator: "|").map(String.init).filter { !$0.isEmpty }
+    }
+
+    private func addShorthand() {
+        let value = newShorthand.trimmingCharacters(in: .whitespacesAndNewlines)
+        defer { newShorthand = "" }
+        guard !value.isEmpty, !shorthands.contains(value) else { return }
+        storedShorthands = (shorthands + [value]).joined(separator: "|")
     }
 }

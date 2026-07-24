@@ -4,6 +4,7 @@ import SwiftUI
 /// a `/command`. Mirrors the web composer popover for native iOS commands:
 /// name · description · arg hint.
 struct SlashCommandMenu: View {
+    @Environment(\.chrome) private var chrome
     /// Commands matching the current partial token.
     let commands: [SlashCommand]
     /// Invoked when a row is tapped.
@@ -40,7 +41,7 @@ struct SlashCommandMenu: View {
                 HStack(spacing: 6) {
                     Text(command.name)
                         .font(.system(.subheadline, design: .monospaced).weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(chrome.accent)
                     if let arg = command.argPlaceholder {
                         Text(arg)
                             .font(.system(.caption2, design: .monospaced))

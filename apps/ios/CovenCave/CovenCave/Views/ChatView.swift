@@ -35,6 +35,7 @@ struct ChatView: View {
     @State private var modelPickerOptions: [ChatModelOption] = []
     @State private var modelPickerCurrent = ""
     @State private var showTasks = false
+    @State private var showSessionDetails = false
     @State private var atBottom = true
     /// Coalesces streaming auto-scroll: several text flushes can land inside
     /// one display frame (group fan-out, resume replay) — issue one scrollTo.
@@ -64,6 +65,7 @@ struct ChatView: View {
     @State private var showPhotosPicker = false
     @State private var showCamera = false
     @State private var showFileImporter = false
+    @State private var showPlugins = false
     @State private var responseReader: ResponseReaderItem?
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
@@ -161,30 +163,27 @@ struct ChatView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                // Agent pill: who you're talking to, and (direct chats) the door
-                // to the model/agent picker. Groups keep a static pill — the
-                // fan-out has no single model to switch.
-                if thread.isGroup {
-                    PillSelector(label: thread.title,
-                                 sublabel: "\(thread.familiarIds.count) familiars",
-                                 chevron: false,
-                                 accessibilityHint: nil,
-                                 action: {}) {
-                        AvatarView(familiar: nil, size: 22,
-                                   fallbackName: thread.title)
-                    }
-                    .disabled(true)
-                } else {
-                    let familiar = app.familiar(thread.familiarIds.first ?? "")
-                    PillSelector(label: thread.title,
-                                 sublabel: familiar?.role,
-                                 accessibilityHint: "Opens the model and agent picker",
-                                 action: { Task { await switchModel("") } }) {
-                        AvatarView(familiar: familiar,
-                                   url: familiar.flatMap { app.client?.avatarURL(for: $0) },
-                                   size: 22)
+                Button {
+                    Haptics.tap()
+                    showSessionDetails.toggle()
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(thread.isStreaming ? Color.orange : Color.green)
+                            .frame(width: 7, height: 7)
+                        Text(thread.isGroup
+                             ? thread.title
+                             : (app.familiar(thread.familiarIds.first ?? "")?.displayName ?? thread.title))
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        Image(systemName: showSessionDetails ? "chevron.up" : "chevron.down")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
                     }
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Session details for \(thread.title)")
+                .accessibilityValue(showSessionDetails ? "Expanded" : "Collapsed")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showTasks = true } label: {
@@ -210,8 +209,23 @@ struct ChatView: View {
             // in the composer's + menu (same sheet), and Markdown export stays
             // on the thread list's flows — neither earns a toolbar slot here.
         }
+        .overlay(alignment: .top) {
+            if showSessionDetails {
+                sessionDetailsCard
+                    .padding(.horizontal, 24)
+                    .padding(.top, 6)
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                    .zIndex(20)
+            }
+        }
         .sheet(isPresented: $showCommands) {
             CommandsSheet { command in prefill(command) }
+        }
+        .fullScreenCover(isPresented: $showPlugins) {
+            PluginsPanel {
+                showPlugins = false
+                composerFocused = true
+            }
         }
         .sheet(isPresented: $showModelPicker) {
             ModelPickerSheet(options: modelPickerOptions, current: modelPickerCurrent, onSelect: { id in
@@ -284,6 +298,68 @@ struct ChatView: View {
         .fullScreenCover(item: $zoomTarget) { target in
             ZoomableContentView(target: target)
         }
+    }
+
+    private var sessionDetailsCard: some View {
+        VStack(spacing: 0) {
+            Button {
+                showSessionDetails = false
+                Task { await switchModel("") }
+            } label: {
+                sessionDetailRow("Model", value: "Choose", systemImage: "cpu", showsChevron: true)
+            }
+            .buttonStyle(.plain)
+            .disabled(thread.isGroup)
+
+            Divider()
+            // TODO(no backend): expose the toggle when a real per-session thinking-level API exists.
+            HStack(spacing: 10) {
+                Image(systemName: "brain")
+                    .foregroundStyle(chrome.accent)
+                    .frame(width: 22)
+                Toggle("Think", isOn: .constant(false))
+                    .disabled(true)
+            }
+            .font(.callout)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .accessibilityHint("Thinking level is not available from the current backend")
+            Divider()
+            // TODO(no backend): these values are presentation-only until session metadata exposes them.
+            sessionDetailRow("Mode", value: "Chat", systemImage: "bubble.left")
+            Divider()
+            sessionDetailRow("Runtime", value: "Desktop", systemImage: "desktopcomputer")
+            Divider()
+            sessionDetailRow("Intelligence", value: "Default", systemImage: "sparkles")
+            Divider()
+            sessionDetailRow("Speed", value: "Default", systemImage: "gauge.with.dots.needle.50percent")
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: 420)
+        .glass(.raised, cornerRadius: 16)
+        .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+    }
+
+    private func sessionDetailRow(
+        _ label: String, value: String, systemImage: String, showsChevron: Bool = false
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(chrome.accent)
+                .frame(width: 22)
+            Text(label).foregroundStyle(.primary)
+            Spacer()
+            Text(value).foregroundStyle(.secondary)
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
     }
 
     private var messageScroll: some View {
@@ -606,6 +682,7 @@ struct ChatView: View {
             FloatingAction(id: "camera", systemImage: "camera", label: "Camera") { showCamera = true },
             FloatingAction(id: "photos", systemImage: "photo.on.rectangle", label: "Photos") { showPhotosPicker = true },
             FloatingAction(id: "files", systemImage: "folder", label: "Files") { showFileImporter = true },
+            FloatingAction(id: "plugins", systemImage: "puzzlepiece.extension", label: "Plugins") { showPlugins = true },
             FloatingAction(id: "commands", systemImage: "command", label: "Commands") { showCommands = true },
         ]
     }
