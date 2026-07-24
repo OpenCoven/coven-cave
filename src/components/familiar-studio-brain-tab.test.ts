@@ -357,3 +357,38 @@ assert.match(
   /const pendingImageModel = draftImageModel\.trim\(\);\s*if \(pendingImageModel !== \(familiar\.imageModel \?\? ""\)\) patch\.imageModel = pendingImageModel \|\| null;/,
   "a dirty custom image model id is tracked for the unmount flush",
 );
+
+// ── Local (on-device) recognition readiness at config time (cave-qfyx) ──────
+// Picking Local probes the native speech engine right here, so a missing
+// on-device dictation model is discovered while configuring — not as
+// stt_on_device_unsupported when a call finally connects.
+assert.match(
+  source,
+  /draftVoiceProvider !== "local" \|\| !isTauri\(\)/,
+  "the readiness probe is desktop-gated and only runs for the Local provider",
+);
+assert.match(
+  source,
+  /nativeSttAvailability\(bridge, navigator\.language\)/,
+  "readiness reuses the same native availability probe as the call path",
+);
+assert.match(
+  source,
+  /kind === "no-on-device"[\s\S]{0,400}System Settings → Keyboard → Dictation/,
+  "the missing-model warning tells the user where to download the dictation model",
+);
+assert.match(
+  source,
+  /familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status"/,
+  "not-ready states render as warning hints announced via role=status",
+);
+assert.match(
+  source,
+  /kind === "on-device"[\s\S]{0,200}runs fully on-device/,
+  "the ready state confirms recognition stays on-device",
+);
+assert.match(
+  css,
+  /\.familiar-studio-brain__hint--warn \{ color: var\(--color-warning\); \}/,
+  "the warn hint modifier colors via the warning token only",
+);
