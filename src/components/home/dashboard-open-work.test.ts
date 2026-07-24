@@ -88,7 +88,8 @@ assert.equal(openWorkPriorityLabel("low"), null);
   assert.equal(runningTimeoutBadge(since, 1000, new Date("2026-07-23T00:00:00Z").getTime()), null, "negative elapsed → no badge");
 }
 
-// The tab order the UI relies on.
-assert.deepEqual(OPEN_WORK_FILTERS, ["all", "running", "blocked", "inbox"]);
+// The tab order the UI relies on — trimmed to All + Needs you (cave-gxap);
+// the label for "inbox" reads "Needs you" on the simplified new-chat board.
+assert.deepEqual(OPEN_WORK_FILTERS, ["all", "inbox"]);
 
 console.log("dashboard-open-work.test.ts: ok");

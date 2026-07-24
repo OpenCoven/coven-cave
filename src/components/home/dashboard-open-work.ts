@@ -10,16 +10,18 @@ import type { DashboardCard } from "@/components/home/use-dashboard-board";
 /** Row kinds the board renders (board columns minus "done", which is not open work). */
 export type OpenWorkKind = "running" | "blocked" | "inbox" | "review" | "backlog";
 
-/** The filter tabs. Mirrors the mock: All · Running · Blocked · Inbox. */
+/** The filter tabs the simplified new-chat board shows: everything, or just
+ *  what waits on a human. (The wider OpenWorkFilter union stays so the pure
+ *  helpers below keep covering every kind.) */
 export type OpenWorkFilter = "all" | "running" | "blocked" | "inbox";
 
-export const OPEN_WORK_FILTERS: OpenWorkFilter[] = ["all", "running", "blocked", "inbox"];
+export const OPEN_WORK_FILTERS: OpenWorkFilter[] = ["all", "inbox"];
 
 export const OPEN_WORK_FILTER_LABEL: Record<OpenWorkFilter, string> = {
   all: "All",
   running: "Running",
   blocked: "Blocked",
-  inbox: "Inbox",
+  inbox: "Needs you",
 };
 
 export type OpenWorkRow = {
