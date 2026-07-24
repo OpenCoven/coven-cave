@@ -4,6 +4,7 @@ import type { ConversationFile } from "../cave-conversations.ts";
 import type { AutomationRunRecord } from "../automation-runs.ts";
 import type { FlowRunRecord } from "../flows.ts";
 import { allowedResearchActions, type ResearchMission } from "../research-missions.ts";
+import type { KnowledgeEntry } from "./knowledge-vault.ts";
 import {
   makeResearchMissionRunner,
   parseResearchSourcesFile,
@@ -439,4 +440,194 @@ test("one poisoned mission degrades to its stored snapshot instead of failing th
   assert.deepEqual(result[0], poisoned, "the poisoned mission falls back to its stored snapshot");
   assert.equal(result[1].lastError, "reconciled");
   assert.equal(healthyReconciles, 1);
+});
+
+// ── Publish every final artifact on complete, not only the primary ─────────
+// Every mission carries four standard refs (primary, findings, source-ledger,
+// research-log — cave research-final-artifacts Task 3). A `complete` decision
+// must publish all of them, with per-artifact failure isolation: one failed
+// vault write or missing file may never block the mission's terminal state
+// or the other refs.
+
+const FOUR_REFS: ResearchMission["artifacts"] = [
+  { key: "primary", kind: "findings", title: "Iterative research", relativePath: "artifacts/primary.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+  { key: "findings", kind: "findings", title: "Findings", relativePath: "findings.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+  { key: "source-ledger", kind: "source-ledger", title: "Source ledger", relativePath: "sources.json", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+  { key: "research-log", kind: "research-log", title: "Research log", relativePath: "research-log.md", iteration: 1, state: "working", updatedAt: NOW.toISOString() },
+];
+
+function completingRunDeps(
+  stored: { mission: ResearchMission },
+  overrides: Partial<ResearchMissionRunnerDeps> = {},
+): ResearchMissionRunnerDeps {
+  return deps({
+    loadMission: async () => structuredClone(stored.mission),
+    saveMission: async (mission) => { stored.mission = structuredClone(mission); },
+    loadFlowRun: async () => ({ ...RUN, status: "succeeded", finishedAt: NOW.toISOString() }),
+    loadConversation: async () => ({
+      sessionId: "session-1",
+      familiarId: "sage",
+      harness: "codex",
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+      turns: [{
+        id: "turn-1",
+        role: "assistant",
+        text: [
+          "@@research-control",
+          '{"decision":"complete","reason":"Done","confidence":0.9}',
+          "@@research-artifacts-written",
+        ].join("\n"),
+        createdAt: NOW.toISOString(),
+      }],
+    }),
+    readMissionFile: async (_id, relativePath) => `# Content of ${relativePath}\n`,
+    ...overrides,
+  });
+}
+
+test("complete publishes all four final artifacts to the vault", async () => {
+  const stored: { mission: ResearchMission } = {
+    mission: checkpointMission({
+      status: "running",
+      artifacts: FOUR_REFS,
+      iterations: [{
+        ...checkpointMission().iterations[0],
+        status: "running",
+        finishedAt: undefined,
+      }],
+    }),
+  };
+  const published: KnowledgeEntry[] = [];
+  const runner = makeResearchMissionRunner(completingRunDeps(stored, {
+    readSources: async () => [{
+      id: "s1",
+      title: "SQLite docs",
+      url: "https://sqlite.org",
+      sourceType: "web",
+      status: "used",
+    }],
+    publishKnowledge: async (entry) => { published.push(entry); return entry; },
+  }));
+  const result = await runner.reconcile(stored.mission);
+  assert.equal(result.status, "completed");
+  assert.equal(result.lastError, undefined);
+  assert.deepEqual(
+    published.map((entry) => entry.id).sort(),
+    [
+      `research-${result.id}-findings`,
+      `research-${result.id}-primary`,
+      `research-${result.id}-research-log`,
+      `research-${result.id}-source-ledger`,
+    ],
+  );
+  const ledger = published.find((entry) => entry.id === `research-${result.id}-source-ledger`);
+  assert.match(ledger?.body ?? "", /SQLite docs/);
+  assert.equal(result.artifacts.length, 4);
+  for (const artifact of result.artifacts) {
+    assert.equal(artifact.state, "published");
+    assert.ok(artifact.knowledgeId, `${artifact.key} must carry a knowledgeId`);
+  }
+});
+
+test("checkpoint publishes nothing but bumps every working ref", async () => {
+  const stored: { mission: ResearchMission } = {
+    mission: checkpointMission({
+      status: "running",
+      artifacts: FOUR_REFS,
+      iterations: [{
+        number: 2,
+        status: "running",
+        flowRunId: "run-1",
+        sessionId: "session-1",
+        startedAt: NOW.toISOString(),
+      }],
+    }),
+  };
+  const published: KnowledgeEntry[] = [];
+  const runner = makeResearchMissionRunner(completingRunDeps(stored, {
+    loadConversation: async () => ({
+      sessionId: "session-1",
+      familiarId: "sage",
+      harness: "codex",
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+      turns: [{
+        id: "turn-1",
+        role: "assistant",
+        text: [
+          "@@research-control",
+          '{"decision":"checkpoint","reason":"More to gather","confidence":0.5}',
+          "@@research-artifacts-written",
+        ].join("\n"),
+        createdAt: NOW.toISOString(),
+      }],
+    }),
+    publishKnowledge: async (entry) => { published.push(entry); return entry; },
+  }));
+  const result = await runner.reconcile(stored.mission);
+  assert.equal(result.status, "checkpoint");
+  assert.equal(published.length, 0);
+  assert.equal(result.artifacts.length, 4);
+  for (const artifact of result.artifacts) {
+    assert.equal(artifact.state, "working");
+    assert.equal(artifact.iteration, 2);
+  }
+});
+
+test("a single publish failure is isolated", async () => {
+  const stored: { mission: ResearchMission } = {
+    mission: checkpointMission({
+      status: "running",
+      artifacts: FOUR_REFS,
+      iterations: [{
+        ...checkpointMission().iterations[0],
+        status: "running",
+        finishedAt: undefined,
+      }],
+    }),
+  };
+  const published: KnowledgeEntry[] = [];
+  const runner = makeResearchMissionRunner(completingRunDeps(stored, {
+    publishKnowledge: async (entry) => {
+      if (entry.id.endsWith("-findings")) throw new Error("vault write failed");
+      published.push(entry);
+      return entry;
+    },
+  }));
+  const result = await runner.reconcile(stored.mission);
+  assert.equal(result.status, "completed");
+  assert.match(result.lastError ?? "", /findings: vault write failed/);
+  const findings = result.artifacts.find((artifact) => artifact.key === "findings");
+  assert.equal(findings?.state, "working");
+  assert.equal(findings?.knowledgeId, undefined);
+  assert.equal(published.length, 3);
+});
+
+test("a missing standard file fails only that artifact", async () => {
+  const stored: { mission: ResearchMission } = {
+    mission: checkpointMission({
+      status: "running",
+      artifacts: FOUR_REFS,
+      iterations: [{
+        ...checkpointMission().iterations[0],
+        status: "running",
+        finishedAt: undefined,
+      }],
+    }),
+  };
+  const published: KnowledgeEntry[] = [];
+  const runner = makeResearchMissionRunner(completingRunDeps(stored, {
+    readMissionFile: async (_id, relativePath) => (
+      relativePath === "research-log.md" ? null : `# Content of ${relativePath}\n`
+    ),
+    publishKnowledge: async (entry) => { published.push(entry); return entry; },
+  }));
+  const result = await runner.reconcile(stored.mission);
+  assert.equal(result.status, "completed");
+  assert.match(result.lastError ?? "", /research-log: file missing/);
+  const researchLog = result.artifacts.find((artifact) => artifact.key === "research-log");
+  assert.equal(researchLog?.state, "working");
+  assert.equal(researchLog?.knowledgeId, undefined);
+  assert.equal(published.length, 3);
 });

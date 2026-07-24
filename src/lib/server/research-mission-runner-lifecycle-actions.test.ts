@@ -249,7 +249,7 @@ test("running reconciliation carries real Flow phase progress", async () => {
   ]);
 });
 
-test("successful evidence reconciliation publishes one provenance-rich artifact", async () => {
+test("successful evidence reconciliation publishes every provenance-rich artifact", async () => {
   const published: string[] = [];
   const conversation = {
     sessionId: "session-1",
@@ -271,8 +271,15 @@ test("successful evidence reconciliation publishes one provenance-rich artifact"
   const runner = makeResearchMissionRunner(deps({
     loadFlowRun: async () => ({ ...RUN, status: "succeeded", finishedAt: NOW.toISOString() }),
     loadConversation: async () => conversation,
-    readMissionFile: async (_id, relativePath) =>
-      relativePath === "artifacts/primary.md" ? "# Evidence-backed answer\n" : null,
+    // createAndStart provisions the real four-ref set (primary, findings,
+    // source-ledger, research-log — cave research-final-artifacts Task 3),
+    // so every standard file must resolve, not just the primary.
+    readMissionFile: async (_id, relativePath) => (
+      relativePath === "artifacts/primary.md" ? "# Evidence-backed answer\n" :
+      relativePath === "findings.md" ? "# Findings\n" :
+      relativePath === "research-log.md" ? "# Research log\n" :
+      null
+    ),
     readSources: async () => [{
       id: "source-1",
       title: "Primary source",
@@ -288,9 +295,13 @@ test("successful evidence reconciliation publishes one provenance-rich artifact"
   const started = await runner.createAndStart(INPUT);
   const result = await runner.reconcile(started);
   assert.equal(result.status, "completed");
-  assert.equal(result.artifacts[0].state, "published");
+  assert.equal(result.lastError, undefined);
+  assert.equal(result.artifacts.length, 4);
+  for (const artifact of result.artifacts) {
+    assert.equal(artifact.state, "published", `${artifact.key} must publish`);
+  }
   assert.equal(result.sources.length, 1);
-  assert.equal(published.length, 1);
+  assert.equal(published.length, 4);
   assert.match(published[0], /mission: mission-1/);
   assert.match(published[0], /# Evidence-backed answer/);
 });

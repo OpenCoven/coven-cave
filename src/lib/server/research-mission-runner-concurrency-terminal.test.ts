@@ -213,8 +213,12 @@ test("a finished session reconciles from its transcript while the flow run still
         createdAt: NOW.toISOString(),
       }],
     }),
-    readMissionFile: async (_id, relativePath) =>
-      relativePath === "artifacts/primary.md" ? "# Evidence-backed answer\n" : null,
+    readMissionFile: async (_id, relativePath) => (
+      relativePath === "artifacts/primary.md" ? "# Evidence-backed answer\n" :
+      relativePath === "findings.md" ? "# Findings\n" :
+      relativePath === "research-log.md" ? "# Research log\n" :
+      null
+    ),
     publishKnowledge: async (entry) => {
       published.push(entry.body);
       return entry;
@@ -225,7 +229,11 @@ test("a finished session reconciles from its transcript while the flow run still
   assert.equal(result.status, "completed");
   assert.equal(result.iterations[0].status, "completed");
   assert.equal(result.iterations[0].costUsd, 1.25);
-  assert.equal(published.length, 1);
+  assert.equal(result.lastError, undefined);
+  // createAndStart provisions the real four-ref set (primary, findings,
+  // source-ledger, research-log — cave research-final-artifacts Task 3);
+  // every standard file resolves above, so all four publish.
+  assert.equal(published.length, 4);
 });
 
 test("a dead session fails the mission with Retry enabled instead of hanging", async () => {

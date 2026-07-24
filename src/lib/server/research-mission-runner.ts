@@ -6,14 +6,16 @@ import type { KnowledgeEntry } from "./knowledge-vault.ts";
 import {
   normalizeResearchSource,
   parseResearchControl,
+  renderSourceLedgerMarkdown,
   researchKnowledgeEntry,
+  type ResearchProvenance,
   validateResearchArtifactContent,
 } from "../research-artifact-contract.ts";
 import { buildResearchMissionFlow } from "../research-mission-flow.ts";
 import {
   allowedResearchActions,
+  researchArtifactKindForMode,
   type CreateResearchMissionInput,
-  type ResearchArtifactKind,
   type ResearchArtifactRef,
   type ResearchMission,
   type ResearchMissionActionInput,
@@ -201,18 +203,6 @@ function mergeFileSources(
   return [...file, ...stored.filter((item) => !matchesFileEntry(item))];
 }
 
-/**
- * Default primary-artifact kind for a mission mode — mirrors
- * artifactKindForMode in research-mission-lifecycle.ts, used only when a
- * stored mission carries no artifact refs at all.
- */
-function defaultArtifactKindForMode(mode: ResearchMission["mode"]): ResearchArtifactKind {
-  if (mode === "sweep") return "report";
-  if (mode === "paper") return "paper";
-  if (mode === "autoresearch") return "findings";
-  return "brief";
-}
-
 const PATCHABLE_SOURCE_FIELDS = [
   "title", "publisher", "publishedAt", "sourceType", "claim", "note", "confidence", "status",
 ] as const satisfies ReadonlyArray<keyof ResearchSourcePatch>;
@@ -278,6 +268,58 @@ function patchResearchSource(
   return { ...mission, sources };
 }
 
+type PublishFinalArtifactsArgs = {
+  mission: ResearchMission;
+  artifacts: ResearchArtifactRef[];
+  sources: ResearchSourceRef[];
+  /** Pre-read artifacts/primary.md content; null when unavailable. */
+  primaryMarkdown: string | null;
+  provenance: ResearchProvenance;
+  deps: Pick<ResearchMissionRunnerDeps, "readMissionFile" | "publishKnowledge">;
+};
+
+/** Publish every unpublished, non-rejected ref. Per-artifact isolation: one
+ *  failed vault write or missing file never blocks the others or the
+ *  mission's terminal state — the failed ref stays `working` (retryable
+ *  later) and is named in the returned failures. */
+async function publishFinalArtifacts(
+  args: PublishFinalArtifactsArgs,
+): Promise<{ artifacts: ResearchArtifactRef[]; failures: string[] }> {
+  const artifacts: ResearchArtifactRef[] = [];
+  const failures: string[] = [];
+  for (const artifact of args.artifacts) {
+    if (artifact.state === "rejected" || artifact.knowledgeId) {
+      artifacts.push(artifact);
+      continue;
+    }
+    try {
+      const markdown = artifact.relativePath === "artifacts/primary.md"
+        ? args.primaryMarkdown
+        : artifact.kind === "source-ledger"
+          ? renderSourceLedgerMarkdown(args.sources)
+          : await args.deps.readMissionFile(args.mission.id, artifact.relativePath);
+      if (markdown === null) throw new Error("file missing");
+      const content = validateResearchArtifactContent(artifact.kind, markdown);
+      if (!content.ok) throw new Error(content.reason);
+      const entry = await args.deps.publishKnowledge(researchKnowledgeEntry({
+        mission: args.mission,
+        artifact,
+        provenance: args.provenance,
+        markdown: content.value,
+      }));
+      artifacts.push({ ...artifact, knowledgeId: entry.id, state: "published" });
+    } catch (error) {
+      failures.push(`${artifact.key}: ${error instanceof Error ? error.message : "publish failed"}`);
+      artifacts.push(artifact);
+    }
+  }
+  return { artifacts, failures };
+}
+
+function publishFailureError(failures: string[]): string | undefined {
+  return failures.length ? `Artifact publish failed — ${failures.join("; ")}` : undefined;
+}
+
 async function reconcileCompletedRun(
   mission: ResearchMission,
   iterationIndex: number,
@@ -335,12 +377,13 @@ async function reconcileCompletedRun(
       iterations: mission.iterations.map((item, index) => index === iterationIndex ? nextIteration : item),
     };
   }
-  // A mission whose artifacts array is empty must reconcile instead of
-  // throwing: validate against the mode's default kind and skip the
-  // artifact-derived updates (there is no ref to update or publish).
-  const primaryArtifact: ResearchArtifactRef | undefined = mission.artifacts[0];
+  // Primary lookup by path, not index — backfilled legacy arrays and the
+  // reject flow's prepended working copies both keep this stable.
+  const primaryArtifact = mission.artifacts.find(
+    (artifact) => artifact.relativePath === "artifacts/primary.md" && artifact.state !== "rejected",
+  );
   const content = validateResearchArtifactContent(
-    primaryArtifact?.kind ?? defaultArtifactKindForMode(mission.mode),
+    primaryArtifact?.kind ?? researchArtifactKindForMode(mission.mode),
     markdown,
   );
   if (!content.ok) {
@@ -354,30 +397,30 @@ async function reconcileCompletedRun(
     };
   }
 
-  let artifacts = mission.artifacts;
-  if (primaryArtifact) {
-    let artifact: ResearchArtifactRef = {
-      ...primaryArtifact,
-      iteration: iteration.number,
-      updatedAt: timestamp,
-    };
-    if (control.decision === "complete" && !artifact.knowledgeId) {
-      const entry = await deps.publishKnowledge(researchKnowledgeEntry({
-        mission,
-        artifact,
-        provenance: {
-          missionId: mission.id,
-          iteration: iteration.number,
-          flowRunId: iteration.flowRunId,
-          sessionId: iteration.sessionId,
-          automationRunId: iteration.automationRunId,
-          generatedAt: timestamp,
-        },
-        markdown: content.value,
-      }));
-      artifact = { ...artifact, knowledgeId: entry.id, state: "published" };
-    }
-    artifacts = [artifact, ...mission.artifacts.slice(1)];
+  // Every pass through the normal evidence path bumps every live ref — the
+  // standard files are rewritten by each run just like the primary.
+  let artifacts = mission.artifacts.map((artifact) => (
+    artifact.state === "rejected" ? artifact : { ...artifact, iteration: iteration.number, updatedAt: timestamp }
+  ));
+  let publishFailures: string[] = [];
+  if (control.decision === "complete") {
+    const outcome = await publishFinalArtifacts({
+      mission,
+      artifacts,
+      sources,
+      primaryMarkdown: content.value,
+      provenance: {
+        missionId: mission.id,
+        iteration: iteration.number,
+        flowRunId: iteration.flowRunId,
+        sessionId: iteration.sessionId,
+        automationRunId: iteration.automationRunId,
+        generatedAt: timestamp,
+      },
+      deps,
+    });
+    artifacts = outcome.artifacts;
+    publishFailures = outcome.failures;
   }
 
   return {
@@ -385,7 +428,7 @@ async function reconcileCompletedRun(
     status: control.decision === "complete" ? "completed" : "checkpoint",
     updatedAt: timestamp,
     ...(control.decision === "complete" ? { finishedAt: timestamp } : {}),
-    lastError: undefined,
+    lastError: publishFailureError(publishFailures),
     sources,
     artifacts,
     iterations: mission.iterations.map((item, index) => index === iterationIndex ? nextIteration : item),
