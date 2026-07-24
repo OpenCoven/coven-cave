@@ -65,6 +65,27 @@ stage_windows() {
   cp "$source/whisper-cli.exe" "$DEST/whisper-cli.exe"
   cp "$source/whisper.dll" "$DEST/whisper.dll"
   find "$source" -maxdepth 1 -type f -name 'ggml*.dll' -exec cp {} "$DEST/" \;
+
+  # whisper.cpp's official Windows build is dynamically linked to the MSVC
+  # CRT/OpenMP DLLs. Ship the redistributable app-locally so a fresh Windows
+  # install does not need a separate Visual C++ Redistributable install.
+  local runtime_dir="" candidate dll complete
+  local -a msvc_dlls=(MSVCP140.dll VCRUNTIME140.dll VCRUNTIME140_1.dll VCOMP140.dll)
+  for candidate in \
+    "${VCToolsRedistDir:-}/x64/Microsoft.VC143.CRT" \
+    "${WINDIR:-C:/Windows}/System32"; do
+    [ -d "$candidate" ] || continue
+    complete=1
+    for dll in "${msvc_dlls[@]}"; do
+      [ -f "$candidate/$dll" ] || { complete=0; break; }
+    done
+    if [ "$complete" = "1" ]; then runtime_dir="$candidate"; break; fi
+  done
+  if [ -z "$runtime_dir" ]; then
+    echo "ERROR: could not find the x64 Microsoft Visual C++ runtime for bundled Whisper" >&2
+    exit 1
+  fi
+  for dll in "${msvc_dlls[@]}"; do cp "$runtime_dir/$dll" "$DEST/$dll"; done
 }
 
 stage_macos() {

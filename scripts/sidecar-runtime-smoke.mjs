@@ -199,6 +199,11 @@ async function main() {
   await access(sidecarServer);
   await access(bundledNode);
   await access(bundledWhisper);
+  if (process.platform === "win32") {
+    for (const runtimeDll of ["MSVCP140.dll", "VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "VCOMP140.dll"]) {
+      await access(path.join(path.dirname(bundledWhisper), runtimeDll));
+    }
+  }
 
   const whisperVersion = spawnSync(bundledWhisper, ["--version"], {
     encoding: "utf8",
