@@ -46,6 +46,19 @@ export function mintArmToken(trialId: string, slot: number): string {
   return `arm_${h.slice(0, 12)}`;
 }
 
+/**
+ * Evaluator-side mirror of arm-token: opaque, stable per (trialId, turn). Masks
+ * the evaluator/context identity so the agent never sees which reviewer or
+ * context is scoring a turn. Domain-separated from arm-token via the `sess:`
+ * prefix so an arm-token and a session-token can never collide.
+ */
+export function mintSessionToken(trialId: string, turn: number): string {
+  const h = createHash("sha256")
+    .update(`sess:${trialId}:${turn}`)
+    .digest("hex");
+  return `sess_${h.slice(0, 12)}`;
+}
+
 // --- blinding envelope seal/reveal ------------------------------------------
 
 export type SealInput = {
@@ -56,12 +69,19 @@ export type SealInput = {
 
 export type PublicArm = { armToken: string; slot: number };
 
+export type PublicSession = { sessionToken: string; turn: number };
+
 export type BlindingEnvelope = {
   trialId: string;
   seed: number;
   publicArms: PublicArm[];
   /** Sealed: token -> runtime id. Never serialized to pre-reveal surfaces. */
   readonly sealed: Readonly<Record<string, string>>;
+  /**
+   * Sealed: session-token -> evaluator/context id. Never serialized to
+   * pre-reveal surfaces. Grows one entry per evaluated turn.
+   */
+  readonly sealedSessions: Readonly<Record<string, string>>;
 };
 
 export function sealEnvelope(input: SealInput): BlindingEnvelope {
@@ -78,12 +98,59 @@ export function sealEnvelope(input: SealInput): BlindingEnvelope {
     seed: input.seed,
     publicArms,
     sealed: Object.freeze(sealed),
+    sealedSessions: Object.freeze({}),
   };
+}
+
+/**
+ * Register an evaluator/context identity for one turn, returning the updated
+ * envelope and the public session handle. The evaluator id is sealed exactly
+ * like a runtime id — it must not reach any pre-reveal surface. Pure: returns a
+ * new envelope rather than mutating the frozen input.
+ */
+export function sealSession(
+  env: BlindingEnvelope,
+  turn: number,
+  evaluatorId: string,
+): { env: BlindingEnvelope; session: PublicSession } {
+  const sessionToken = mintSessionToken(env.trialId, turn);
+  const sealedSessions = {
+    ...env.sealedSessions,
+    [sessionToken]: evaluatorId,
+  };
+  return {
+    env: { ...env, sealedSessions: Object.freeze(sealedSessions) },
+    session: { sessionToken, turn },
+  };
+}
+
+/**
+ * Resolve a session-token to its evaluator/context id. Reveal-ceremony use
+ * only. Fails closed on unknown tokens.
+ */
+export function resolveSessionToken(
+  env: BlindingEnvelope,
+  sessionToken: string,
+): string {
+  const evaluatorId = env.sealedSessions[sessionToken];
+  if (evaluatorId === undefined) {
+    throw new Error(`unknown session-token: ${sessionToken}`);
+  }
+  return evaluatorId;
 }
 
 /** Reveal: token -> runtime id. Call only from the reveal ceremony. */
 export function revealEnvelope(env: BlindingEnvelope): Record<string, string> {
   return { ...env.sealed };
+}
+
+/**
+ * Reveal: session-token -> evaluator/context id. Reveal-ceremony use only.
+ */
+export function revealSessions(
+  env: BlindingEnvelope,
+): Record<string, string> {
+  return { ...env.sealedSessions };
 }
 
 // --- arm-token routing (design-eva) -----------------------------------------
