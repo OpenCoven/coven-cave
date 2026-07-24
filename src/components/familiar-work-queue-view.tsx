@@ -10,7 +10,6 @@ import { SearchInput } from "@/components/ui/search-input";
 import { Modal } from "@/components/ui/modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { relativeTime } from "@/lib/relative-time";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -109,15 +108,32 @@ type FetchedQueue = {
 };
 
 type QueueSource = { ok?: boolean; data?: ReadyBead[]; open?: PullRequestSummary[]; merged?: MergedPrRef[]; error?: string };
+type QueueReadiness = {
+  ok: boolean;
+  message: string;
+  canGenerate: boolean;
+  project: { id: string; name: string; root: string } | null;
+};
 
 // Either source alone still renders a useful queue, so a single failing
 // adapter DEGRADES the surface (with a truthful banner) instead of failing the
 // whole load: beads-only when the gh PR bridge is down, PRs-only when the
 // beads adapter is down. Only both failing rejects — then there is genuinely
 // nothing to show.
-async function fetchQueue(signal: AbortSignal, force = false): Promise<FetchedQueue> {
+async function fetchQueue(projectRoot: string, signal: AbortSignal): Promise<FetchedQueue> {
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-  const { data } = await readSurfaceResource<PromiseSettledResult<QueueSource>[]>("tasks:queue", force);
+  const query = `projectRoot=${encodeURIComponent(projectRoot)}`;
+  const readJson = async (url: string): Promise<QueueSource> => {
+    const response = await fetch(url, { cache: "no-store", signal });
+    return response.json() as Promise<QueueSource>;
+  };
+  // The Queue always supplies its explicitly selected project. In particular,
+  // do not let a packaged desktop sidecar substitute its application-resource
+  // cwd for the user's repository.
+  const data = await Promise.allSettled([
+    readJson(`/api/beads?mode=ready&${query}`),
+    readJson(`/api/beads/prs?${query}`),
+  ]);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const [beadsSettled, prsSettled] = data;
 
@@ -161,6 +177,8 @@ function sameQueue(a: WorkQueue, b: WorkQueue): boolean {
 export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = false, activeFamiliarId }: Props) {
   const { announce } = useAnnouncer();
   const [queue, setQueue] = useState<WorkQueue | null>(null);
+  const [readiness, setReadiness] = useState<QueueReadiness | null>(null);
+  const [generating, setGenerating] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [beadsDegraded, setBeadsDegraded] = useState(false);
@@ -222,7 +240,20 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
-      const { queue: next, beadsOk, prsOk, prsError } = await fetchQueue(ctrl.signal, force);
+      const readinessResponse = await fetch("/api/queue/readiness", { cache: "no-store", signal: ctrl.signal });
+      const readinessJson = (await readinessResponse.json()) as { ok?: boolean; readiness?: QueueReadiness; error?: string };
+      const nextReadiness = readinessJson.readiness;
+      if (!readinessResponse.ok || !readinessJson.ok || !nextReadiness) {
+        throw new Error(readinessJson.error || "Couldn't check the Queue project");
+      }
+      if (seq !== loadSeq.current) return;
+      setReadiness(nextReadiness);
+      if (!nextReadiness.ok || !nextReadiness.project) {
+        setQueue(null);
+        setError(nextReadiness.message);
+        return;
+      }
+      const { queue: next, beadsOk, prsOk, prsError } = await fetchQueue(nextReadiness.project.root, ctrl.signal);
       if (seq !== loadSeq.current) return; // a newer load won
       if (!prsOk && hadPrDataRef.current) {
         // The bridge worked before and just failed — keep earlier data on
@@ -246,6 +277,25 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       if (seq === loadSeq.current) setHasLoaded(true);
     }
   }, []);
+
+  const generateQueue = useCallback(async () => {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      const response = await fetch("/api/queue/readiness", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "generate" }),
+      });
+      const json = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !json?.ok) throw new Error(json?.error || "Couldn't generate the Queue workspace");
+      await load(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't generate the Queue workspace");
+    } finally {
+      setGenerating(false);
+    }
+  }, [generating, load]);
 
   useEffect(() => {
     void load();
@@ -291,7 +341,6 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || `${action} failed`);
         announce(action === "claim" ? `Claimed ${id}.` : `Closed ${id}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not ${action} ${id}`, "assertive");
@@ -321,7 +370,6 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         if (!json.ok) throw new Error(json.error || "comment failed");
         setEvidenceAdded((prev) => new Set(prev).add(id.toLowerCase()));
         announce(`Handoff note added to ${id}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
         return true;
       } catch (err) {
@@ -351,7 +399,6 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "claim failed");
         announce(`Claimed ${id} for ${familiar.display_name}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not claim ${id}`, "assertive");
@@ -385,7 +432,6 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         if (!json.ok) throw new Error(json.error || "create failed");
         const beadId = (json.data as { id?: string } | null)?.id;
         announce(beadId ? `Filed ${beadId} for PR #${pr.number}.` : `Filed a bead for PR #${pr.number}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
         return true;
       } catch (err) {
@@ -469,17 +515,29 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   }
 
   if (error && !queue) {
+    const canGenerate = readiness?.canGenerate === true;
     return (
       <div className="fwq">
         <div className="fwq-body">
           <EmptyState
             icon="ph:warning-circle"
-            headline="Couldn't load the queue"
+            headline={canGenerate ? "Generate your Queue" : "Queue needs a project"}
             subtitle={error}
             actions={
-              <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load(true)}>
-                Retry
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                {canGenerate ? (
+                  <Button variant="primary" leadingIcon="ph:magic-wand-fill" loading={generating} onClick={() => void generateQueue()}>
+                    Generate
+                  </Button>
+                ) : (
+                  <Button variant="secondary" leadingIcon="ph:folder-open" onClick={() => window.dispatchEvent(new Event("cave:onboarding-open"))}>
+                    Choose project
+                  </Button>
+                )}
+                <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load(true)}>
+                  Retry
+                </Button>
+              </div>
             }
           />
         </div>

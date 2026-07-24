@@ -18,7 +18,7 @@ class SurfaceWarmupBackpressureError extends Error {
 export const surfaceWarmupResources = {
   github: ["github:pat", "github:activity", "github:familiars", "board:cards"],
   marketplace: ["marketplace:catalog", "marketplace:skills"],
-  board: ["board:cards", "tasks:queue"],
+  board: ["board:cards"],
   schedules: ["schedules:inbox", "schedules:automations"],
   grimoire: ["grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal"],
   agents: ["agents:coven-memory", "memory:list"],
@@ -72,11 +72,6 @@ defineResource("grimoire:collections", (signal) => json(signal, "/api/knowledge/
 defineResource("memory:list", (signal) => json(signal, "/api/memory"), 30_000);
 defineResource("grimoire:journal", (signal) => json(signal, "/api/journal"), 45_000);
 defineResource("agents:coven-memory", (signal) => json(signal, "/api/coven-memory"), 30_000);
-defineResource("tasks:queue", async (signal) => {
-  // Work Queue intentionally degrades to either source when the other is
-  // unavailable. Preserve that landing behaviour in the shared resource.
-  return Promise.allSettled([json(signal, "/api/beads?mode=ready"), json(signal, "/api/beads/prs")]);
-}, 30_000);
 
 export async function readSurfaceResource<T>(key: string, force = false): Promise<SurfaceWarmCacheRead<T>> {
   const result = await read<T>(key, { force });
