@@ -308,6 +308,41 @@ assert.throws(
   PreferencesValidationError,
   "the strict validator bounds the familiars map size",
 );
+
+// ── appearance.backdrop.style "off" (cave-kbh1) ──────────────────────────────
+// The explicit no-backdrop choice: a persisted style, always disabled.
+const offNormalized = normalizeCavePreferences({
+  appearance: { backdrop: { style: "off", enabled: true } },
+});
+assert.equal(offNormalized.appearance.backdrop.style, "off", "off round-trips as a persisted style");
+assert.equal(
+  offNormalized.appearance.backdrop.enabled,
+  false,
+  "normalize coerces the off style to disabled — no empty-scrim contradiction can persist",
+);
+assert.equal(
+  normalizeCavePreferences({ appearance: { backdrop: { style: "sparkles" } } })
+    .appearance.backdrop.style,
+  "image",
+  "an unknown style still defaults to image",
+);
+assert.equal(
+  normalizeCavePreferences({ appearance: { backdrop: { style: "blaze", enabled: true } } })
+    .appearance.backdrop.enabled,
+  true,
+  "the off coercion leaves the other styles' enablement alone",
+);
+assert.equal(
+  validatePreferencesPatch({ appearance: { backdrop: { style: "off" } } })
+    .appearance?.backdrop?.style,
+  "off",
+  "the strict validator accepts the off style",
+);
+const offApplied = applyPreferencesPatch(createDefaultPreferences(true), {
+  appearance: { backdrop: { style: "off", enabled: false } },
+});
+assert.equal(offApplied.appearance.backdrop.style, "off");
+assert.equal(offApplied.appearance.backdrop.enabled, false);
 assert.throws(
   () => validatePreferencesPatch({
     appearance: { backdrop: { familiars: { ["f".repeat(129)]: true } } },

@@ -96,6 +96,10 @@ export function readBackdropPrefs(): BackdropPrefs {
 
 export function writeBackdropPrefs(patch: Partial<BackdropPrefs>): BackdropPrefs {
   const next = { ...readBackdropPrefs(), ...patch };
+  // Invariant (cave-kbh1): the explicit "off" style is always disabled. The
+  // schema coerces persisted reads the same way; holding it here too keeps
+  // the synchronous cache from ever painting an empty scrim.
+  if (next.style === "off") next.enabled = false;
   cachedPrefs = next;
   updateAppPreferences({ appearance: { backdrop: next } });
   try {

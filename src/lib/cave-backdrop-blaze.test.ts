@@ -53,7 +53,12 @@ assert.deepEqual(BLAZE_OPTIONS, {
 const component = readFileSync(new URL("../components/cave-backdrop-blaze.tsx", import.meta.url), "utf8");
 assert.match(
   component,
-  /if \(reducedMotion \|\| accentCss === null\) return null;/,
+  /const showing = !reducedMotion && accentCss !== null;/,
+  "reduced motion (or an unread accent) keeps the GPU loop from mounting",
+);
+assert.match(
+  component,
+  /if \(!showing\) return null;/,
   "reduced motion skips mounting the GPU loop entirely",
 );
 assert.match(
@@ -65,6 +70,35 @@ assert.match(
   component,
   /attributeFilter: \["data-theme", "data-mode", "style"\]/,
   "colors re-derive live on theme/mode/custom-accent changes",
+);
+
+// ── WebGL context-loss recovery (cave-kbh1) ──────────────────────────────────
+// The vendored Blaze file is vendor-verbatim and has no context-restore path;
+// the wrapper remounts it (fresh canvas, fresh context) when the GPU drops.
+assert.match(
+  component,
+  /node\.addEventListener\("webglcontextlost", onContextLost, true\);/,
+  "context loss is watched capture-phase on the wrapper (the event does not bubble)",
+);
+assert.match(
+  component,
+  /node\.removeEventListener\("webglcontextlost", onContextLost, true\);/,
+  "the capture listener detaches on cleanup",
+);
+assert.match(
+  component,
+  /const MAX_CONTEXT_RESTARTS = 3;/,
+  "remounts are capped so a crashing GPU loop cannot thrash forever",
+);
+assert.match(
+  component,
+  /setGlEpoch\(\(epoch\) => \(epoch < MAX_CONTEXT_RESTARTS \? epoch \+ 1 : epoch\)\);/,
+  "past the cap the epoch stops advancing (layer stays blank — the pre-recovery behavior)",
+);
+assert.match(
+  component,
+  /<Blaze\n\s+key=\{glEpoch\}/,
+  "the epoch keys the vendored component, so a bump remounts it",
 );
 
 // ── Layer integration ────────────────────────────────────────────────────────
@@ -145,6 +179,37 @@ assert.match(
   "the image chooser and accent-match rows are image-style-only",
 );
 
+// ── Explicit off (cave-kbh1) ─────────────────────────────────────────────────
+{
+  const schema = readFileSync(new URL("./preferences-schema.ts", import.meta.url), "utf8");
+  assert.match(
+    schema,
+    /export const BACKDROP_STYLES = \["off", "image", "blaze"\] as const;/,
+    "Off is a first-class style segment (Segmented renders BACKDROP_STYLES directly)",
+  );
+  assert.match(
+    schema,
+    /enabled: backdrop\.enabled === true && oneOf\(backdrop\.style, BACKDROP_STYLES, "image"\) !== "off",/,
+    "normalize coerces the off style to disabled — {style:'off', enabled:true} cannot paint an empty scrim",
+  );
+  const store = readFileSync(new URL("./cave-backdrop.ts", import.meta.url), "utf8");
+  assert.match(
+    store,
+    /if \(next\.style === "off"\) next\.enabled = false;/,
+    "the synchronous write path holds the same off⇒disabled invariant",
+  );
+}
+assert.match(
+  settings,
+  /if \(prefs\.style === "off" && !prefs\.enabled\) return;\n\s+writeBackdropPrefs\(\{ style, enabled: false \}\);/,
+  "choosing Off disables the backdrop without discarding the stored image or accent seed",
+);
+assert.match(
+  settings,
+  /announce\("Backdrop off\."\);/,
+  "turning the backdrop off is announced",
+);
+
 // ── Boot script: pre-paint parity with the hydrated runtime ──────────────────
 const boot = readFileSync(new URL("../../public/scripts/theme-init.js", import.meta.url), "utf8");
 assert.match(
@@ -154,8 +219,8 @@ assert.match(
 );
 assert.match(
   boot,
-  /style: backdrop\.style === "blaze" \? "blaze" : "image"/,
-  "the boot legacy-mirror write carries style, so it round-trips instead of being stomped every boot",
+  /style: backdrop\.style === "blaze" \? "blaze" : backdrop\.style === "off" \? "off" : "image"/,
+  "the boot legacy-mirror write carries style (including explicit off), so it round-trips instead of being stomped every boot",
 );
 
 // ── Familiar Look tab: fallback copy knows about the Blaze style ─────────────
@@ -167,6 +232,11 @@ assert.match(
   lookTab,
   /the animated Blaze backdrop shows/,
   "the no-familiar-image fallback note describes Blaze when that style is selected",
+);
+assert.match(
+  lookTab,
+  /: prefs\.style === "image" && appImagePresent/,
+  "the 'app backdrop image is used' note requires the image style — an app set to Off shows tint-only copy",
 );
 
 console.log("cave-backdrop-blaze.test.ts: ok");
