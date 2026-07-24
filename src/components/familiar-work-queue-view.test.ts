@@ -142,7 +142,16 @@ assert.match(view, /description: `Filed from unlinked PR #\$\{pr\.number\} — \
 assert.match(view, /externalRef: `gh-\$\{pr\.number\}`/, "externalRef uses the gh-<n> form");
 assert.match(view, /labels: \["from-pr"\]/);
 assert.match(view, /`Filed \$\{beadId\} for PR #\$\{pr\.number\}\.`/, "success announces the new bead id");
-assert.match(view, /invalidateSurfaceResources\("tasks:queue"\);\s*await load\(true\)/, "queue mutations invalidate an in-flight warm before reloading");
+assert.match(view, /await load\(true\)/, "queue mutations reload the explicitly selected project");
+
+// Queue readiness is explicit: load its selected root first, include it in
+// both bridge calls, and offer the requested Generate recovery if Beads is
+// absent. It must not warm anonymous Queue requests in the background.
+assert.match(view, /fetch\("\/api\/queue\/readiness"/, "Queue checks readiness before reading work");
+assert.match(view, /projectRoot=\$\{encodeURIComponent\(projectRoot\)\}/, "both Queue sources receive the selected root");
+assert.match(view, /headline=\{canGenerate \? "Generate your Queue" : "Queue needs a project"\}/);
+assert.match(view, />\s*Generate\s*<\/Button>/, "empty Queue state offers Generate");
+assert.doesNotMatch(view, /readSurfaceResource\("tasks:queue"/, "Queue no longer consumes an unscoped warm cache");
 
 // ── cave-p63a: forward-to-familiar menu (redesign) ───────────────────────────
 // The split control's picker is now a custom dropdown (design's "Forward to

@@ -19,6 +19,7 @@ const allStepsOk = {
   covenCli: { ok: true },
   covenHome: { ok: true },
   adapters: { ok: true },
+  project: { ok: true },
   daemon: { ok: true },
   binding: { ok: true },
   familiars: { ok: true },
@@ -41,6 +42,13 @@ assert.equal(
   shouldAutoOpenOnboarding(payload({})),
   false,
   "server complete → no auto-open",
+);
+assert.equal(
+  shouldAutoOpenOnboarding(
+    payload({ complete: false, steps: { ...allStepsOk, project: { ok: false }, daemon: { ok: false } } }),
+  ),
+  true,
+  "an unavailable Queue project reopens onboarding even when the daemon is down",
 );
 
 // ── Coven Code is not a setup requirement (the cave-219 AND-gate is gone) ────
