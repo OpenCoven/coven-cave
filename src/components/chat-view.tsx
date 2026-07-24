@@ -5638,31 +5638,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onBack={onBack}
               />
             ) : sessionId === null ? (
-              // Brand-new chat (no session yet): the work-led dashboard that
-              // used to be Home — rail + open-work board over ChatView's own
-              // composer. Existing zero-turn sessions (fresh task chats with
-              // linked context) keep the quieter ChatEmptyState below.
+              // Brand-new chat (no session yet): the simplified work-led
+              // dashboard that used to be Home — a single no-scroll open-work
+              // board over ChatView's own composer (the composer owns project
+              // picking and prompt snippets). Existing zero-turn sessions
+              // (fresh task chats with linked context) keep the quieter
+              // ChatEmptyState below.
               <ChatNewDashboard
                 familiar={familiar}
-                onPrompt={(text) => {
-                  setInput(text);
-                  inputRef.current?.focus();
-                }}
-                onOpenPromptSnippets={() => setPromptSnippetsOpen(true)}
-                projectId={resolvedProjectId}
-                onProjectChange={setProjectIdDraft}
-                projects={projects}
-                createProject={createProject}
-                fileMentions={Boolean(mentionRoot)}
                 sessions={sessions}
                 modelId={
                   modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
                     ? modelState.effectiveModel
                     : familiar.model ?? null
                 }
-                taskArmed={taskArmed}
-                onArmTask={armTask}
-                onDisarmTask={disarmTask}
               />
             ) : (
               <ChatEmptyState
