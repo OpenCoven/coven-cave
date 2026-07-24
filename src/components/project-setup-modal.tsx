@@ -149,6 +149,7 @@ export function ProjectSetupModal({
       emitProjectRegistryMutation();
       setError(message);
     };
+    let resolvedProject = createdProject;
     try {
       let project = createdProject;
       if (!project) {
@@ -162,6 +163,7 @@ export function ProjectSetupModal({
           return;
         }
         setCreatedProject(project);
+        resolvedProject = project;
       }
       if (familiar.id && familiarAccess !== "none" && !isSupremeFamiliar) {
         const res = await fetch("/api/project-grants", {
@@ -174,7 +176,12 @@ export function ProjectSetupModal({
           }),
         });
         if (!res.ok) {
-          failAfterCreate(`Project registered, but granting ${familiar.name} failed — retry, or grant it from Permissions.`);
+          const data = await res.json().catch(() => ({} as { error?: string }));
+          failAfterCreate(
+            data.error
+              ? `Project registered, but granting ${familiar.name} failed: ${data.error}`
+              : `Project registered, but granting ${familiar.name} failed — retry, or grant it from Permissions.`,
+          );
           return;
         }
       }
@@ -191,7 +198,12 @@ export function ProjectSetupModal({
           body: JSON.stringify({ projectGrants }),
         });
         if (!res.ok) {
-          failAfterCreate(`Project registered, but granting the ${group.name} group failed — retry, or grant it from Permissions.`);
+          const data = await res.json().catch(() => ({} as { error?: string }));
+          failAfterCreate(
+            data.error
+              ? `Project registered, but granting the ${group.name} group failed: ${data.error}`
+              : `Project registered, but granting the ${group.name} group failed — retry, or grant it from Permissions.`,
+          );
           return;
         }
       }
@@ -199,6 +211,14 @@ export function ProjectSetupModal({
       announce("Project created.");
       onCreated(project.id);
       onClose();
+    } catch {
+      if (resolvedProject) {
+        failAfterCreate(
+          "Project registered, but applying access failed — retry, or grant it from Permissions.",
+        );
+      } else {
+        setError("Couldn't reach the desktop — nothing was created. Retry?");
+      }
     } finally {
       setBusy(false);
     }
@@ -208,6 +228,7 @@ export function ProjectSetupModal({
     <Modal
       open
       onClose={onClose}
+      dismissOnBackdrop={!busy}
       breadcrumb={["Projects", "Set up project"]}
       footerActions={
         <>
