@@ -107,6 +107,30 @@ test("a follow-up turn owns the shared conversation key; unknown keys return nul
   resetRunBuffersForTest();
 });
 
+test("a follow-up preserves the predecessor reap timer", (t) => {
+  resetRunBuffersForTest();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+
+  const first = openRunBuffer(["run-old", "conv-shared"]);
+  first.record({ kind: "assistant_chunk", text: "old transcript" });
+  first.finish();
+
+  openRunBuffer(["run-new", "conv-shared"]);
+  t.mock.timers.tick(2 * 60_000);
+
+  assert.equal(
+    hasRunBuffer("run-old"),
+    false,
+    "the finished predecessor is reaped under its unique run id",
+  );
+  assert.equal(
+    hasRunBuffer("conv-shared"),
+    true,
+    "the predecessor timer never deletes the replacement conversation mapping",
+  );
+  resetRunBuffersForTest();
+});
+
 test("getRunBufferStatus returns payload-free metadata without side effects", () => {
   resetRunBuffersForTest();
   let attachCount = 0;
