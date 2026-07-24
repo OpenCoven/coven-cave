@@ -24,15 +24,17 @@ assert.match(model, /private func applyFamiliarOrder\(_ loaded: \[Familiar\]\) -
 assert.match(model, /cave-familiar-order\.json/, "order should persist to cave-familiar-order.json");
 assert.match(model, /private func persistFamiliarOrder\(\)/, "persistFamiliarOrder should exist");
 
-// Chats tab exposes drag-reorder behind an edit toggle.
-assert.match(home, /@State private var editMode: EditMode = \.inactive/, "ChatsHomeView should track edit mode");
+// Chats tab exposes drag-reorder behind a header button that opens a dedicated
+// sheet (rail avatars aren't List rows, so reordering can't use inline edit mode).
+assert.match(home, /@State private var showReorder = false/, "ChatsHomeView should track the reorder sheet");
 assert.match(
   home,
   /\.onMove \{ source, destination in\s*app\.moveFamiliar\(fromOffsets: source, toOffset: destination\)/,
-  "the Familiars list should reorder via moveFamiliar",
+  "the reorder sheet should reorder via moveFamiliar",
 );
-assert.match(home, /\.environment\(\\\.editMode, \$editMode\)/, "the list should bind edit mode");
-assert.match(home, /editMode\.isEditing \? "Done" : "Reorder"/, "the header should toggle a Reorder button");
+assert.match(home, /\.environment\(\\\.editMode, \.constant\(\.active\)\)/, "the sheet list should stay in active edit mode");
+assert.match(home, /Button\("Reorder"\) \{ showReorder = true \}/, "the header should offer a Reorder button");
+assert.match(home, /\.sheet\(isPresented: \$showReorder\) \{ ReorderFamiliarsSheet\(\) \}/, "the Reorder button should present the sheet");
 assert.match(
   home,
   /private var canReorder: Bool \{[\s\S]*app\.familiars\.count > 1[\s\S]*query\.trimmingCharacters[\s\S]*isEmpty/,

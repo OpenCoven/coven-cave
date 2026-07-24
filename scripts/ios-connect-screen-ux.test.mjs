@@ -2,29 +2,45 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 // The native connect screen is the first-run experience. Keep it pairing-first:
-// scan/paste/connect guidance, a branded hero, a distinct pairing-required
-// recovery callout, and a trust footer that makes the private Tailscale path
-// explicit.
+// a scan-first hierarchy (one prominent Scan QR Code action, manual entry folded
+// behind a link), a branded hero, a distinct pairing-required recovery callout,
+// and a trust footer that keeps the private Tailscale path explicit.
 
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const src = await read("apps/ios/CovenCave/CovenCave/Views/ConnectionView.swift");
 
+// --- Scan-first hierarchy: scan hero leads, manual entry folds behind a link --
 assert.match(
   src,
-  /private var pairingSteps: some View \{[\s\S]*?Scan[\s\S]*?Paste[\s\S]*?Connect/,
-  "connect screen should show the scan/paste/connect path as a compact step guide",
+  /if scannerAvailable \{\s*scanHeroButton\s*\}/,
+  "the scan action should lead whenever the camera is available",
+);
+assert.match(
+  src,
+  /if manualEntry \|\| !scannerAvailable \{[\s\S]*?manualSection[\s\S]*?\} else \{\s*manualEntryLink\s*\}/,
+  "manual entry should stay folded behind a link until asked for (or no camera)",
+);
+assert.match(
+  src,
+  /Text\("Enter address manually"\)/,
+  "manual entry stays discoverable under the scan hero",
 );
 
 assert.match(
   src,
-  /private var heroBadge: some View \{[\s\S]*?Image\(systemName: "cat\.fill"\)[\s\S]*?Image\(systemName: "wifi"\)/,
-  "hero should pair the familiar mark with a network signal cue",
+  /private var glyph: some View \{[\s\S]*?appMark/,
+  "hero should carry the branded app mark",
+);
+assert.match(
+  src,
+  /UIImage\(named: "AppIcon"\)[\s\S]*?Image\(systemName: "moon\.stars\.fill"\)/,
+  "the app mark prefers the real icon and falls back to a themed symbol",
 );
 
 assert.match(
   src,
-  /private var addressField: some View \{[\s\S]*?Text\("Desktop"\)[\s\S]*?Text\("Tailscale address or invite link"\)/,
-  "address section should use concise desktop/invite labeling",
+  /private var manualSection: some View \{[\s\S]*?Text\("MagicDNS name or address"\)[\s\S]*?TextField\("my-mac\.example\.ts\.net", text: \$host\)/,
+  "address section should use concise MagicDNS labeling with a concrete placeholder",
 );
 
 assert.match(
@@ -55,65 +71,45 @@ assert.match(
 
 assert.match(
   src,
-  /Label\(busy \? "Connecting…" : "Connect desktop", systemImage: busy \? "arrow\.triangle\.2\.circlepath" : "bolt\.horizontal\.circle\.fill"\)/,
-  "primary action should read as connecting the desktop, not a generic form submit",
+  /Label\(\s*busy \? "Connecting…" : "Connect",\s*systemImage: busy \? "arrow\.triangle\.2\.circlepath" : "bolt\.horizontal\.circle\.fill"\s*\)/,
+  "primary action should read as a connect, with a spinner glyph while busy",
 );
 
 assert.match(
   src,
-  /Label\("Scan QR", systemImage: "qrcode\.viewfinder"\)/,
-  "secondary scan action should stay short enough for mobile buttons",
+  /Label\("Scan QR Code", systemImage: "qrcode\.viewfinder"\)/,
+  "the scan hero action names the QR path",
 );
 
 assert.match(
   src,
-  /private var trustNote: some View \{[\s\S]*?Private Tailscale mesh[\s\S]*?No public internet exposure/,
-  "trust footer should summarize the private encrypted path with scannable labels",
+  /private var trustFooter: some View \{[\s\S]*?Label\("Private & encrypted", systemImage: "lock\.fill"\)[\s\S]*?Traffic stays on your Tailscale network/,
+  "trust footer should summarize the private encrypted path",
 );
 
-// --- The step chips are real buttons wired to real actions --------------------
+// --- The hero actions are real buttons wired to real flows --------------------
 assert.match(
   src,
-  /stepChip\(\s*"Scan"[\s\S]*?\) \{ showScanner = true \}/,
-  "Scan chip opens the QR scanner",
+  /private var scanHeroButton: some View \{\s*Button \{\s*showScanner = true/,
+  "the scan hero opens the QR scanner",
 );
 assert.match(
   src,
-  /stepChip\(\s*"Paste"[\s\S]*?\) \{ pasteHost\(\) \}/,
-  "Paste chip invokes the paste flow",
+  /private var manualEntryLink: some View \{\s*Button \{\s*manualEntry = true\s*focused = true/,
+  "the manual-entry link reveals the address field and focuses it",
 );
 assert.match(
   src,
-  /stepChip\(\s*"Connect"[\s\S]*?\) \{ connect\(\) \}/,
-  "Connect chip invokes connect",
+  /Button\(action: pasteHost\) \{\s*Label\("Paste", systemImage: "doc\.on\.clipboard"\)/,
+  "the paste affordance invokes the paste flow",
 );
 assert.match(
   src,
-  /private func stepChip\([\s\S]*?action: @escaping \(\) -> Void\s*\) -> some View \{\s*Button\(action: action\)/,
-  "chips are Buttons with accessibility hints, not decorative labels",
-);
-assert.match(
-  src,
-  /private var connectStep: StepState \{\s*if app\.connectionState == \.connected \{ return \.done \}/,
-  "the Connect chip reflects the live connection state (done once connected)",
-);
-assert.match(
-  src,
-  /state == \.done \? "checkmark\.circle\.fill" : systemImage/,
-  "completed steps swap to a checkmark",
+  /Button\(action: connect\) \{/,
+  "the Connect button invokes connect",
 );
 
-// --- Scan-first hierarchy + connected moment -----------------------------------
-assert.match(
-  src,
-  /private var scanFirst: Bool \{\s*QRScannerSheet\.isSupported && !hostPresent\s*\}/,
-  "camera-first: scanning leads while no address exists yet",
-);
-assert.match(
-  src,
-  /or enter the address manually/,
-  "manual entry stays discoverable under the scan hero",
-);
+// --- Connected moment ----------------------------------------------------------
 assert.match(
   src,
   /if app\.connectionState == \.connected \{ Haptics\.success\(\) \}/,

@@ -460,28 +460,42 @@ struct ChatView: View {
 
     // MARK: - Empty state
 
-    /// Spacious cold-start state: a quiet greeting up top, and a short stack of
-    /// starter rows in the lower half. Rows FILL the composer (focused, ready
-    /// to tweak) rather than firing a send — same convention as the desktop
-    /// quick-chat suggestions.
+    /// Cold-start state per the design's "Start a new session" screen: a
+    /// rotated-square sigil with a soft glow, serif headline, a short warded
+    /// line, and "Conjure something" starter cards. Cards FILL the composer
+    /// (focused, ready to tweak) rather than firing a send — same convention
+    /// as the desktop quick-chat suggestions.
     private var emptyState: some View {
         VStack(spacing: 0) {
             Spacer()
-            VStack(spacing: 10) {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 26, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Text(thread.isGroup
-                     ? "Message all \(thread.familiarIds.count) familiars"
-                     : "Message \(app.familiar(thread.familiarIds.first ?? "")?.displayName ?? "your familiar")")
-                    .font(.title3.weight(.semibold))
-                    .multilineTextAlignment(.center)
+            VStack(spacing: 18) {
+                sigil
+                VStack(spacing: 8) {
+                    Text("Start a new session")
+                        .font(.system(size: 26, weight: .medium, design: .serif))
+                        .italic()
+                        .foregroundStyle(.primary)
+                    Text(thread.isGroup
+                         ? "All \(thread.familiarIds.count) familiars are listening. Warded — this stays in your cave."
+                         : "\(app.familiar(thread.familiarIds.first ?? "")?.displayName ?? "Your familiar") is listening. Warded — this stays in your cave.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 28)
             Spacer()
-            VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Conjure something")
+                    .font(.caption.weight(.semibold))
+                    .textCase(.uppercase)
+                    .kerning(0.6)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 4)
                 ForEach(emptySuggestions, id: \.label) { suggestion in
-                    EmptyChatSuggestionRow(systemImage: suggestion.icon, label: suggestion.label) {
+                    EmptyChatSuggestionRow(systemImage: suggestion.icon,
+                                           label: suggestion.label,
+                                           hint: suggestion.hint) {
                         draft = suggestion.label
                         composerFocused = true
                     }
@@ -492,12 +506,28 @@ struct ChatView: View {
         }
     }
 
-    private var emptySuggestions: [(icon: String, label: String)] {
+    /// Rotated-square moon-stars mark with a radial accent glow (design's
+    /// empty-session sigil).
+    private var sigil: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(chrome.accentGradient)
+            .frame(width: 58, height: 58)
+            .rotationEffect(.degrees(45))
+            .overlay {
+                Image(systemName: "moon.stars.fill")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(chrome.accentForeground)
+            }
+            .shadow(color: chrome.accent.opacity(0.45), radius: 26)
+            .padding(.top, 6)
+            .accessibilityHidden(true)
+    }
+
+    private var emptySuggestions: [(icon: String, label: String, hint: String)] {
         [
-            ("sparkles", "What can you help me with?"),
-            ("checklist", "Summarize my open tasks"),
-            ("calendar", "What's on my calendar today?"),
-            ("doc.text", "Draft a short status update"),
+            ("sparkles", "What can you help me with?", "Meet your familiar"),
+            ("checklist", "Summarize my open tasks", "Pulls from the board"),
+            ("calendar", "What's on my calendar today?", "Today at a glance"),
         ]
     }
 

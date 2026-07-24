@@ -17,6 +17,7 @@ const chatView = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift")
 const bubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
 const theme = await read("apps/ios/CovenCave/CovenCave/Theme/Theme.swift");
 const chrome = await read("apps/ios/CovenCave/CovenCave/Theme/ChatChrome.swift");
+const drawer = await read("apps/ios/CovenCave/CovenCave/Views/ChatDrawer.swift");
 
 // ── 1. Haptics: cached generators, kept prepared ─────────────────────────────
 assert.match(
@@ -141,11 +142,15 @@ for (const [component, pattern] of [
   ["CircularIconButton", /struct CircularIconButton: View[\s\S]{0,900}?\.buttonStyle\(\.glassPress\)/],
   ["PillSelector", /struct PillSelector<Leading: View>: View[\s\S]{0,1400}?\.buttonStyle\(\.glassPress\)/],
   ["FloatingActionMenu", /struct FloatingActionMenu: View[\s\S]{0,1600}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
-  ["DrawerRow", /struct DrawerRow: View[\s\S]{0,1600}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
-  ["EmptyChatSuggestionRow", /struct EmptyChatSuggestionRow: View[\s\S]{0,1300}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
+  ["EmptyChatSuggestionRow", /struct EmptyChatSuggestionRow: View[\s\S]{0,1600}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
 ]) {
   assert.match(chrome, pattern, `${component} should answer touches with the press style`);
 }
+assert.match(
+  drawer,
+  /struct NavRow: View[\s\S]{0,1600}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/,
+  "NavRow should answer touches with the press style",
+);
 assert.match(
   bubble,
   /struct SuggestionPills: View[\s\S]*?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/,

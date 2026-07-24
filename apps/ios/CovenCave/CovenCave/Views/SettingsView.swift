@@ -72,23 +72,23 @@ struct SettingsView: View {
 
     // MARK: - Connection hero
 
-    /// A glanceable header card: a themed glyph, the desktop host, and a live
-    /// status pill — so the most important state (am I connected?) reads at once
-    /// instead of buried in a labelled row.
+    /// Profile-style hero per the design: a gradient sigil avatar, the cave's
+    /// name, the desktop host in mono, and a live status pill — so the most
+    /// important state (am I connected?) reads at once.
     private var connectionCard: some View {
         Section {
             HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(chrome.accent.opacity(0.18))
-                    Image(systemName: "desktopcomputer")
-                        .font(.title2)
-                        .foregroundStyle(chrome.accent)
-                }
-                .frame(width: 52, height: 52)
+                Circle()
+                    .fill(chrome.accentGradient)
+                    .frame(width: 54, height: 54)
+                    .overlay {
+                        Image(systemName: "moon.stars.fill")
+                            .font(.system(size: 22, weight: .medium))
+                            .foregroundStyle(chrome.accentForeground)
+                    }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Your desktop")
+                    Text("Your Cave")
                         .font(.headline)
                     Text(app.connection?.host ?? "Not set up")
                         .font(.footnote.monospaced())
@@ -215,7 +215,7 @@ struct SettingsView: View {
                     .foregroundStyle(.primary)
             }
         } header: {
-            Text("Permissions")
+            Text("Wards")
         } footer: {
             Text("See and manage which projects each familiar can read or change. Changing them from the phone requires the desktop opt-in.")
         }
@@ -255,12 +255,20 @@ struct SettingsView: View {
     }
 
     private var aboutSection: some View {
-        Section("About") {
+        Section {
             LabeledContent("Version") {
                 Text(appVersion)
                     .font(.callout.monospaced())
                     .foregroundStyle(.secondary)
             }
+        } header: {
+            Text("About")
+        } footer: {
+            // Design's mono brand footer, centered under the last group.
+            Text("Coven Cave · \(appVersion)")
+                .font(.caption.monospaced())
+                .frame(maxWidth: .infinity)
+                .padding(.top, 10)
         }
     }
 

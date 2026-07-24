@@ -24,7 +24,7 @@ assert.doesNotMatch(
 assert.match(src, /@State private var selection: ChatRoute\?/, "should track a sidebar selection");
 assert.match(src, /@State private var detailPath: \[ChatRoute\] = \[\]/, "should track detail-column navigation");
 assert.match(src, /List\(selection: \$selection\)/, "the home list should be selection-driven");
-assert.match(src, /\.tag\(ChatRoute\.familiar\(familiar\)\)/, "familiar rows should be tagged for selection");
+assert.match(src, /open\(\.familiar\(familiar\)\)/, "familiar rail items should drive the selection");
 assert.match(src, /\.tag\(ChatRoute\.thread\(thread\)\)/, "thread/group rows should be tagged for selection");
 
 // Detail column: familiar → its thread list (pushing onto detailPath), a thread →

@@ -64,8 +64,13 @@ assert.match(
 // does the real probing); the button stays gated only on empty/busy.
 assert.match(
   src,
-  /\.disabled\(host\.trimmingCharacters\(in: \.whitespaces\)\.isEmpty \|\| busy\)/,
+  /\.disabled\(!hostPresent \|\| busy\)/,
   "Connect should stay enabled regardless of the advisory hint",
+);
+assert.match(
+  src,
+  /private var hostPresent: Bool \{\s*!host\.trimmingCharacters\(in: \.whitespaces\)\.isEmpty\s*\}/,
+  "the presence gate is exactly the trimmed-empty check",
 );
 
 console.log("ios-connect-paste: OK");

@@ -8,9 +8,11 @@ enum ChatRoute: Hashable {
     case thread(ChatThread)
 }
 
-/// The Chats tab: a list of familiars (tap one to see its threads) plus any
-/// group chats as their own rows. Tapping a familiar pushes `FamiliarThreadsView`;
-/// tapping a thread pushes `ChatView`.
+/// The Chats tab, redesigned per the 2026-07 design handoff (screen 1a): a
+/// horizontal familiar rail (tap one to see its threads) above one unified
+/// "Recent" list of every conversation — direct and group — sorted by recency.
+/// Tapping a rail avatar pushes `FamiliarThreadsView`; tapping a row opens
+/// the conversation.
 struct ChatsHomeView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -27,13 +29,17 @@ struct ChatsHomeView: View {
     /// pushing a conversation. Reset whenever the sidebar selection changes.
     @State private var detailPath: [ChatRoute] = []
     @State private var renamingThread: ChatThread?
-    /// A group thread awaiting delete confirmation (swipe or context menu).
+    /// A thread awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: ChatThread?
-    @State private var editMode: EditMode = .inactive
-    /// Reveal archived group chats in the list.
+    /// Rail avatars aren't List rows, so familiar reordering happens in a
+    /// dedicated drag-to-reorder sheet instead of List edit mode.
+    @State private var showReorder = false
+    /// Reveal archived chats in the list.
     @State private var showArchived = false
     /// Left slide-out drawer (menu button in the header).
     @State private var drawerOpen = false
+    /// All-familiars roster sheet (drawer's Familiars destination).
+    @State private var showFamiliars = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Anchors the iOS 18 zoom transition: thread rows mark themselves as
     /// sources; the pushed conversation zooms out of its row.
@@ -49,7 +55,26 @@ struct ChatsHomeView: View {
                 .animation(reduceMotion ? nil : .snappy(duration: 0.24), value: drawerOpen)
             ChatDrawer(isOpen: $drawerOpen,
                        openThread: { open(.thread($0)) },
-                       newChat: { showNewChat = true })
+                       newChat: { showNewChat = true },
+                       openFamiliars: { showFamiliars = true })
+        }
+        // The drawer overlays this tab's content only, so the tab bar would
+        // otherwise float above it — hide the bar while the drawer is open.
+        .toolbar(drawerOpen ? .hidden : .automatic, for: .tabBar)
+        .sheet(isPresented: $showFamiliars) {
+            FamiliarsListView { open(.familiar($0)) }
+        }
+        .onAppear {
+            #if DEBUG
+            // Snapshot hook: `simctl launch … --ui-open-drawer` opens the
+            // drawer on boot so automated screenshots can verify it.
+            if ProcessInfo.processInfo.arguments.contains("--ui-open-drawer") {
+                drawerOpen = true
+            }
+            if ProcessInfo.processInfo.arguments.contains("--ui-open-familiars") {
+                showFamiliars = true
+            }
+            #endif
         }
     }
 
@@ -58,7 +83,7 @@ struct ChatsHomeView: View {
             Group {
                 if app.familiars.isEmpty && app.threads.isEmpty {
                     emptyState
-                } else if filteredFamiliars.isEmpty && filteredGroups.isEmpty && matchingThreads.isEmpty {
+                } else if filteredFamiliars.isEmpty && recentThreads.isEmpty {
                     ContentUnavailableView.search(text: query)
                 } else {
                     homeList
@@ -206,14 +231,8 @@ struct ChatsHomeView: View {
                 .font(.title2.weight(.bold))
             Spacer()
             if canReorder {
-                Button(editMode.isEditing ? "Done" : "Reorder") {
-                    withAnimation { editMode = editMode.isEditing ? .inactive : .active }
-                }
-                .font(.subheadline.weight(.medium))
-            } else if !app.familiars.isEmpty {
-                Text("^[\(app.familiars.count) familiar](inflect: true)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Button("Reorder") { showReorder = true }
+                    .font(.subheadline.weight(.medium))
             }
             // Telegram-style profile entry: Settings moved off the tab bar
             // and lives behind the operator's avatar here.
@@ -239,151 +258,105 @@ struct ChatsHomeView: View {
     }
 
     /// Reordering is only meaningful with ≥2 familiars and no active search
-    /// filter (drag indices must map to the full, unfiltered list).
+    /// filter (the sheet reorders the full, unfiltered list).
     private var canReorder: Bool {
         app.familiars.count > 1 && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var homeList: some View {
         List(selection: $selection) {
-            Section(filteredFamiliars.isEmpty ? "" : "Familiars") {
-                ForEach(filteredFamiliars) { familiar in
-                    FamiliarRow(familiar: familiar)
-                    .tag(ChatRoute.familiar(familiar))
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                        Button { startNewChat(with: familiar) } label: {
-                            Label("New chat", systemImage: "square.and.pencil")
+            if !filteredFamiliars.isEmpty {
+                Section {
+                    familiarRail
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+            }
+            Section {
+                ForEach(recentThreads) { thread in
+                    RecentThreadRow(thread: thread)
+                    .tag(ChatRoute.thread(thread))
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    // Rows sit flush on the themed floor (design 1a); iPad keeps
+                    // the default cell background so the sidebar selection
+                    // highlight stays visible.
+                    .listRowBackground(sizeClass == .compact ? Color.clear : nil)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) { pendingDelete = thread } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        Button { app.setThreadArchived(thread, !thread.archived) } label: {
+                            Label(thread.archived ? "Unarchive" : "Archive",
+                                  systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")
+                        }
+                        .tint(.indigo)
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button { renamingThread = thread } label: {
+                            Label("Rename", systemImage: "pencil")
                         }
                         .tint(.accentColor)
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if app.hasUnread(familiar.id) {
-                            Button { app.markFamiliarViewed([familiar.id]) } label: {
-                                Label("Mark read", systemImage: "checkmark")
-                            }
-                            .tint(.gray)
+                        Button { app.setThreadPinned(thread, !thread.pinned) } label: {
+                            Label(thread.pinned ? "Unpin" : "Pin",
+                                  systemImage: thread.pinned ? "pin.slash" : "pin")
                         }
+                        .tint(.orange)
                     }
                     .contextMenu {
-                        Button { startNewChat(with: familiar) } label: {
-                            Label("New chat", systemImage: "square.and.pencil")
+                        Button { renamingThread = thread } label: {
+                            Label("Rename", systemImage: "pencil")
                         }
-                        if app.hasUnread(familiar.id) {
-                            Button { app.markFamiliarViewed([familiar.id]) } label: {
-                                Label("Mark all read", systemImage: "checkmark.circle")
-                            }
+                        Button { app.duplicateThread(thread) } label: {
+                            Label("Duplicate", systemImage: "plus.square.on.square")
+                        }
+                        Button { app.setThreadPinned(thread, !thread.pinned) } label: {
+                            Label(thread.pinned ? "Unpin" : "Pin",
+                                  systemImage: thread.pinned ? "pin.slash" : "pin")
+                        }
+                        Button { app.setThreadMuted(thread, !thread.muted) } label: {
+                            Label(thread.muted ? "Unmute" : "Mute",
+                                  systemImage: thread.muted ? "bell" : "bell.slash")
+                        }
+                        Button { app.setThreadArchived(thread, !thread.archived) } label: {
+                            Label(thread.archived ? "Unarchive" : "Archive",
+                                  systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")
+                        }
+                        Button(role: .destructive) { pendingDelete = thread } label: {
+                            Label("Delete", systemImage: "trash")
                         }
                     }
                 }
-                .onMove { source, destination in
-                    app.moveFamiliar(fromOffsets: source, toOffset: destination)
-                }
-            }
-            if !filteredGroups.isEmpty || archivedGroupCount > 0 {
-                Section {
-                    ForEach(filteredGroups) { thread in
-                        ThreadRow(thread: thread)
-                        .tag(ChatRoute.thread(thread))
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) { pendingDelete = thread } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                            Button { app.setThreadArchived(thread, !thread.archived) } label: {
-                                Label(thread.archived ? "Unarchive" : "Archive",
-                                      systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")
-                            }
-                            .tint(.indigo)
-                        }
-                        .swipeActions(edge: .leading) {
-                            Button { renamingThread = thread } label: {
-                                Label("Rename", systemImage: "pencil")
-                            }
-                            .tint(.accentColor)
-                            Button { app.setThreadPinned(thread, !thread.pinned) } label: {
-                                Label(thread.pinned ? "Unpin" : "Pin",
-                                      systemImage: thread.pinned ? "pin.slash" : "pin")
-                            }
-                            .tint(.orange)
-                        }
-                        .contextMenu {
-                            Button { renamingThread = thread } label: {
-                                Label("Rename", systemImage: "pencil")
-                            }
-                            Button { app.duplicateThread(thread) } label: {
-                                Label("Duplicate", systemImage: "plus.square.on.square")
-                            }
-                            Button { app.setThreadPinned(thread, !thread.pinned) } label: {
-                                Label(thread.pinned ? "Unpin" : "Pin",
-                                      systemImage: thread.pinned ? "pin.slash" : "pin")
-                            }
-                            Button { app.setThreadMuted(thread, !thread.muted) } label: {
-                                Label(thread.muted ? "Unmute" : "Mute",
-                                      systemImage: thread.muted ? "bell" : "bell.slash")
-                            }
-                            Button { app.setThreadArchived(thread, !thread.archived) } label: {
-                                Label(thread.archived ? "Unarchive" : "Archive",
-                                      systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")
-                            }
-                            Button(role: .destructive) { pendingDelete = thread } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Groups")
-                } footer: {
-                    if archivedGroupCount > 0 {
-                        Button {
-                            withAnimation { showArchived.toggle() }
-                        } label: {
-                            Label(showArchived ? "Hide archived"
-                                               : "Show \(archivedGroupCount) archived",
-                                  systemImage: showArchived ? "chevron.up" : "archivebox")
-                                .font(.footnote)
-                        }
-                        .buttonStyle(.plain)
+                if recentThreads.isEmpty && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("No conversations yet — tap a familiar above to start one.")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            if !matchingThreads.isEmpty {
-                Section("Chats") {
-                    ForEach(matchingThreads) { thread in
-                        ThreadRow(thread: thread)
-                        .tag(ChatRoute.thread(thread))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                        .contextMenu {
-                            Button { renamingThread = thread } label: {
-                                Label("Rename", systemImage: "pencil")
-                            }
-                            Button { app.duplicateThread(thread) } label: {
-                                Label("Duplicate", systemImage: "plus.square.on.square")
-                            }
-                            Button { app.setThreadPinned(thread, !thread.pinned) } label: {
-                                Label(thread.pinned ? "Unpin" : "Pin",
-                                      systemImage: thread.pinned ? "pin.slash" : "pin")
-                            }
-                            Button { app.setThreadMuted(thread, !thread.muted) } label: {
-                                Label(thread.muted ? "Unmute" : "Mute",
-                                      systemImage: thread.muted ? "bell" : "bell.slash")
-                            }
-                            Button { app.setThreadArchived(thread, !thread.archived) } label: {
-                                Label(thread.archived ? "Unarchive" : "Archive",
-                                      systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")
-                            }
-                            Button(role: .destructive) { pendingDelete = thread } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
+                }
+            } header: {
+                Text("Recent")
+                    .font(.caption.weight(.semibold))
+                    .kerning(0.8)
+                    .textCase(.uppercase)
+            } footer: {
+                if archivedCount > 0 {
+                    Button {
+                        withAnimation { showArchived.toggle() }
+                    } label: {
+                        Label(showArchived ? "Hide archived"
+                                           : "Show \(archivedCount) archived",
+                              systemImage: showArchived ? "chevron.up" : "archivebox")
+                            .font(.footnote)
                     }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
                 }
             }
         }
         .listStyle(.plain)
         .themedListBackground()
-        .environment(\.editMode, $editMode)
         .threadRenameAlert($renamingThread) { thread, name in app.renameThread(thread, to: name) }
         .confirmationDialog("Delete this chat?",
                             isPresented: deleteDialogBinding,
@@ -392,10 +365,26 @@ struct ChatsHomeView: View {
             Button("Delete", role: .destructive) { app.deleteThread(thread) }
             Button("Cancel", role: .cancel) {}
         } message: { thread in Text(thread.title) }
-        // A search filters the list, so indices stop matching the full familiar
-        // array — leave reorder mode if the user starts searching.
-        .onChange(of: query) { _, q in
-            if !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { editMode = .inactive }
+        .sheet(isPresented: $showReorder) { ReorderFamiliarsSheet() }
+    }
+
+    /// The horizontal familiar rail (design 1a): 56pt avatars with presence
+    /// dots and an unread accent dot, name below. Tapping drills into that
+    /// familiar's thread list, exactly like the old vertical rows.
+    private var familiarRail: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .top, spacing: 14) {
+                ForEach(filteredFamiliars) { familiar in
+                    FamiliarRailItem(familiar: familiar) {
+                        open(.familiar(familiar))
+                    } newChat: {
+                        startNewChat(with: familiar)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 6)
         }
     }
 
@@ -403,25 +392,22 @@ struct ChatsHomeView: View {
         Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
     }
 
-    /// Direct (non-group) threads matching the search query by title, a member's
-    /// name, or message text. Empty while not searching (groups have their own
-    /// section; this surfaces individual conversations otherwise filed under a
-    /// familiar).
-    private var matchingThreads: [ChatThread] {
+    /// The unified "Recent" list (design 1a): every conversation — direct and
+    /// group — newest first, pinned on top, filtered by the search query
+    /// (title, a member's name, or message text).
+    private var recentThreads: [ChatThread] {
+        let base = app.threads.filter { showArchived || !$0.archived }
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return [] }
-        return app.threads
-            .filter { !$0.isGroup && (showArchived || !$0.archived) }
-            .filter { thread in
-                if thread.title.lowercased().contains(q) { return true }
-                if thread.familiarIds.compactMap(app.familiar)
-                    .contains(where: { $0.displayName.lowercased().contains(q) }) { return true }
-                return thread.messages.contains { $0.text.lowercased().contains(q) }
-            }
-            .sorted { a, b in
-                if a.pinned != b.pinned { return a.pinned }
-                return a.updatedAt > b.updatedAt
-            }
+        let filtered = q.isEmpty ? base : base.filter { thread in
+            if thread.title.lowercased().contains(q) { return true }
+            if thread.familiarIds.compactMap(app.familiar)
+                .contains(where: { $0.displayName.lowercased().contains(q) }) { return true }
+            return thread.messages.contains { $0.text.lowercased().contains(q) }
+        }
+        return filtered.sorted { a, b in
+            if a.pinned != b.pinned { return a.pinned }
+            return a.updatedAt > b.updatedAt
+        }
     }
 
     /// Familiars matching the search query (name or role). Empty query → all.
@@ -433,21 +419,8 @@ struct ChatsHomeView: View {
         }
     }
 
-    /// Group threads matching the search query (title or a member's name).
-    /// Number of archived group chats (drives the show/hide-archived toggle).
-    private var archivedGroupCount: Int { app.groupThreads.filter(\.archived).count }
-
-    private var filteredGroups: [ChatThread] {
-        let base = app.groupThreads.filter { showArchived || !$0.archived }
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return base }
-        return base.filter { thread in
-            if thread.title.lowercased().contains(q) { return true }
-            return thread.familiarIds.compactMap(app.familiar).contains {
-                $0.displayName.lowercased().contains(q)
-            }
-        }
-    }
+    /// Number of archived chats (drives the show/hide-archived toggle).
+    private var archivedCount: Int { app.threads.filter(\.archived).count }
 
     /// Floating bottom bar: a search field beside a circular compose button,
     /// styled after iOS Messages — accent-infused frosted glass that tracks the
@@ -522,8 +495,214 @@ struct ChatsHomeView: View {
     }
 }
 
-/// A familiar row on the Chats home: avatar, name, role, and a trailing summary
-/// of how many conversations they have and when they were last active.
+/// One familiar on the horizontal rail: 56pt avatar with presence dot, an
+/// accent unread dot at the top corner, and the name beneath.
+struct FamiliarRailItem: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
+    let familiar: Familiar
+    var open: () -> Void
+    var newChat: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            VStack(spacing: 6) {
+                AvatarView(familiar: familiar,
+                           url: app.client?.avatarURL(for: familiar),
+                           size: 56, showStatus: true)
+                    .overlay(alignment: .topTrailing) {
+                        if app.hasUnread(familiar.id) {
+                            Circle()
+                                .fill(chrome.accent)
+                                .overlay(Circle().strokeBorder(chrome.bgBase, lineWidth: 2))
+                                .frame(width: 12, height: 12)
+                                .offset(x: 1, y: -1)
+                        }
+                    }
+                Text(familiar.displayName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(width: 62)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(action: newChat) {
+                Label("New chat", systemImage: "square.and.pencil")
+            }
+            if app.hasUnread(familiar.id) {
+                Button { app.markFamiliarViewed([familiar.id]) } label: {
+                    Label("Mark all read", systemImage: "checkmark.circle")
+                }
+            }
+        }
+        .accessibilityLabel(accessibilityText)
+        .accessibilityHint("Opens chats with this familiar")
+    }
+
+    private var accessibilityText: String {
+        var parts: [String] = [familiar.displayName]
+        if app.hasUnread(familiar.id) { parts.append("unread") }
+        let count = app.threadCount(for: familiar.id)
+        parts.append(count == 1 ? "1 chat" : "\(count) chats")
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// A conversation on the unified "Recent" list (design 1a): 46pt avatar,
+/// name + relative time on the top line, a one-line preview below — with a
+/// bold sender prefix in group chats — and an accent dot when unread.
+struct RecentThreadRow: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
+    let thread: ChatThread
+
+    private var familiars: [Familiar] { thread.familiarIds.compactMap(app.familiar) }
+    private var lastMessage: DisplayMessage? { thread.messages.last }
+
+    var body: some View {
+        HStack(spacing: 13) {
+            if thread.isGroup {
+                AvatarClusterView(familiars: familiars, size: 46)
+            } else {
+                AvatarView(familiar: familiars.first,
+                           url: familiars.first.flatMap { app.client?.avatarURL(for: $0) },
+                           size: 46, showStatus: true)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(thread.title).font(.headline).lineLimit(1)
+                    if thread.pinned {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2).foregroundStyle(.orange)
+                            .accessibilityLabel("Pinned")
+                    }
+                    if thread.muted {
+                        Image(systemName: "bell.slash.fill")
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .accessibilityLabel("Muted")
+                    }
+                    if thread.isGroup {
+                        Image(systemName: "person.2.fill")
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .accessibilityLabel("Group chat")
+                    }
+                    Spacer(minLength: 8)
+                    Text(thread.updatedAt, format: .relative(presentation: .numeric))
+                        .font(.caption).foregroundStyle(.tertiary)
+                }
+                preview
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            if isUnread {
+                Circle().fill(chrome.accent).frame(width: 9, height: 9)
+            }
+        }
+        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+        // Collapse title, status glyphs, time, and preview into one spoken element.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    /// Newer activity than the last time this thread's familiars were viewed,
+    /// and not something you just said yourself.
+    private var isUnread: Bool {
+        guard lastMessage?.role != .user,
+              let boundary = app.seenBoundary(for: thread) else { return false }
+        return thread.updatedAt > boundary
+    }
+
+    @ViewBuilder private var preview: some View {
+        if let draftText = app.threadDrafts[thread.id] {
+            // A persisted unsent draft outranks the last-message preview
+            // (standard messenger affordance — makes drafts discoverable).
+            Text("Draft: ").foregroundStyle(chrome.accent)
+                + Text(draftText.replacingOccurrences(of: "\n", with: " "))
+        } else if let last = lastMessage {
+            if last.streaming && last.text.isEmpty {
+                Text("…")
+            } else if let prefix = senderPrefix(for: last) {
+                Text(prefix + ": ").foregroundStyle(.primary).fontWeight(.medium)
+                    + Text(flattened(last.text))
+            } else {
+                Text(flattened(last.text))
+            }
+        } else {
+            Text("Tap to start chatting")
+        }
+    }
+
+    /// "You" for your own last message; the sender's name in group chats
+    /// (design 1a shows **Sable:** on group rows). Direct familiar replies
+    /// carry no prefix — the row's title already names them.
+    private func senderPrefix(for message: DisplayMessage) -> String? {
+        if message.role == .user { return "You" }
+        guard thread.isGroup else { return nil }
+        return message.familiarId.flatMap { app.familiar($0)?.displayName }
+    }
+
+    private func flattened(_ text: String) -> String {
+        text.replacingOccurrences(of: "\n", with: " ")
+    }
+
+    /// One spoken summary of the row: title, status, last activity, preview.
+    private var accessibilityText: String {
+        var parts: [String] = [thread.title]
+        if isUnread { parts.append("unread") }
+        if thread.isGroup { parts.append("group chat") }
+        if thread.pinned { parts.append("pinned") }
+        if thread.muted { parts.append("muted") }
+        parts.append("last active " + Self.relativeFormatter.localizedString(for: thread.updatedAt, relativeTo: Date()))
+        if let draftText = app.threadDrafts[thread.id] {
+            parts.append("draft: " + draftText)
+        } else if let last = lastMessage {
+            let prefix = senderPrefix(for: last).map { $0 + ": " } ?? ""
+            parts.append(prefix + flattened(last.text))
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private static let relativeFormatter = RelativeDateTimeFormatter()
+}
+
+/// Drag-to-reorder sheet for the familiar rail (rail avatars aren't List rows,
+/// so reordering lives here instead of List edit mode).
+struct ReorderFamiliarsSheet: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(app.familiars) { familiar in
+                    FamiliarRow(familiar: familiar)
+                }
+                .onMove { source, destination in
+                    app.moveFamiliar(fromOffsets: source, toOffset: destination)
+                }
+            }
+            .listStyle(.plain)
+            .themedListBackground()
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Reorder familiars")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .themedSheetBackground()
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// A familiar row (avatar, name, role, trailing chat count + last activity),
+/// used by the reorder sheet.
 struct FamiliarRow: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
