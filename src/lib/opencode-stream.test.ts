@@ -58,6 +58,14 @@ assert.deepEqual(
   "current root terminal tool updates preserve input and output",
 );
 assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool_use", sessionID: "ses_123", part: { id: "prt_failed", tool: "bash", state: { input: { command: "false" }, error: "permission denied", status: "error" } } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "tool", sessionId: "ses_123", id: "prt_failed", name: "bash", input: { command: "false" }, output: "permission denied", isError: true },
+  "terminal tool failures preserve a safe partial error output",
+);
+assert.deepEqual(
   parseOpenCodeRunEvent({ type: "tool_use", part: { tool: "Read" } }),
   { kind: "other", sessionId: undefined, diagnostic: "malformed-event" },
   "missing tool ids never create random, non-resumable bubbles",
