@@ -14,6 +14,8 @@ import { extractNextPaths } from "@/lib/next-paths";
 import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug } from "@/lib/daily-report";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { generateReflection } from "@/lib/journal-generate";
+import { DEFAULT_JOURNAL_PROMPT, readStoredJournalPrompt, splitPromptSegments, writeStoredJournalPrompt } from "@/lib/journal-prompt";
+import { openGrimoireDoc } from "@/lib/grimoire-link";import { JournalConstellation } from "@/components/journal/journal-constellation";
 import { familiarInScope } from "@/lib/familiar-multiselect";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import { invalidateIfDefined } from "@/lib/surface-warm-cache";
@@ -25,6 +27,8 @@ const EMPTY_SCOPE: ReadonlySet<string> = new Set();
 
 type JournalSummary = { date: string; preview: string; reflectedBy: string | null; modified: string | null };
 type JournalStats = { covenOrigin: number; externalRuntimes: number; runtimeMemory: number };
+/** A memory file touched on the entry's day (server-attributed by mtime). */
+type JournalSource = { relPath: string; fullPath: string; rootLabel: string };
 type JournalDay = {
   date: string;
   exists: boolean;
@@ -33,6 +37,7 @@ type JournalDay = {
   /** Inventory-derived block; null until the non-blocking ?stats=1 fetch lands. */
   stats: JournalStats | null;
   context: string | null;
+  sources: JournalSource[] | null;
 };
 
 type NoticeAction = { label: string; mode: string };
@@ -260,6 +265,23 @@ export function JournalEntries({
   }, []);
   useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
   const [filter, setFilter] = useState("");
+  // Editable Generation-prompt template ("Memories Prototype" entry pane).
+  // Starts at the default for SSR/hydration parity; the stored override loads
+  // on mount. Edits persist immediately; Reset returns to the default.
+  const [journalPrompt, setJournalPrompt] = useState(DEFAULT_JOURNAL_PROMPT);
+  const promptHlRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const stored = readStoredJournalPrompt();
+    if (stored) setJournalPrompt(stored);
+  }, []);
+  const changePrompt = useCallback((value: string) => {
+    setJournalPrompt(value);
+    writeStoredJournalPrompt(value);
+  }, []);
+  const resetPrompt = useCallback(() => {
+    setJournalPrompt(DEFAULT_JOURNAL_PROMPT);
+    writeStoredJournalPrompt(null);
+  }, []);
   const selectedFamiliarId = activeFamiliarId ?? familiars[0]?.id ?? null;
   // Guard async setState after unmount, and ignore a stale day fetch when the
   // selection changed before its response arrived (rapid day switching).
@@ -330,11 +352,17 @@ export function JournalEntries({
       : `date=${encodeURIComponent(slug)}`
   ), [activeFamiliarId]);
 
-  const fetchDayStats = useCallback(async (slug: string): Promise<{ stats: JournalStats; context: string } | null> => {
+  const fetchDayStats = useCallback(async (slug: string): Promise<{ stats: JournalStats; context: string; sources: JournalSource[] } | null> => {
     try {
       const res = await fetch(`/api/journal?${dayQuery(slug)}&stats=1`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
-      return json.ok ? { stats: json.stats as JournalStats, context: String(json.context ?? "") } : null;
+      return json.ok
+        ? {
+            stats: json.stats as JournalStats,
+            context: String(json.context ?? ""),
+            sources: Array.isArray(json.sources) ? (json.sources as JournalSource[]) : [],
+          }
+        : null;
     } catch {
       return null;
     }
@@ -347,7 +375,7 @@ export function JournalEntries({
       const json = await res.json().catch(() => ({}));
       // Drop a stale response: a newer loadDay (different day) superseded it.
       if (reqId !== loadDayReqRef.current || !mountedRef.current) return;
-      if (json.ok) setDay({ ...(json as Omit<JournalDay, "stats" | "context">), stats: null, context: null });
+      if (json.ok) setDay({ ...(json as Omit<JournalDay, "stats" | "context" | "sources">), stats: null, context: null, sources: null });
     } catch {
       if (reqId === loadDayReqRef.current && mountedRef.current) setDay(null);
       return;
@@ -401,7 +429,14 @@ export function JournalEntries({
     // beats it (or it failed), fetch it inline — generation needs the scope note.
     const context = day.context ?? (await fetchDayStats(day.date))?.context ?? "";
     if (!mountedRef.current) return;
-    const result = await generateReflection({ familiarId, context });
+    const dateObj = parseDateSlug(day.date);
+    const result = await generateReflection({
+      familiarId,
+      context,
+      promptTemplate: journalPrompt,
+      familiarName: familiarName(familiarId) ?? undefined,
+      dateLabel: dateObj ? longDateLabel(dateObj) : day.date,
+    });
     if (!mountedRef.current) return;
     if (result.error || !result.text) {
       setGenerating(false);
@@ -432,7 +467,7 @@ export function JournalEntries({
     await loadDays();
     // The reflection appearing is the only visual confirmation — say it too.
     announce("Reflection generated.");
-  }, [selectedFamiliarId, day, loadDay, loadDays, outOfScopeBy, announce, fetchDayStats]);
+  }, [selectedFamiliarId, day, loadDay, loadDays, outOfScopeBy, announce, fetchDayStats, journalPrompt, familiarName]);
 
   function startEdit() {
     if (!day) return;
@@ -740,6 +775,29 @@ export function JournalEntries({
                   Reflected by <b>{familiarName(day.entry.reflectedBy) ?? "a familiar"}</b>
                   {day.entry.generatedAt ? ` · ${relativeTime(day.entry.generatedAt)}` : ""}
                 </div>
+                {day.sources?.length ? (
+                  <div className="journal-sources">
+                    <h4 className="journal-entry__sec journal-entry__sec-heading">Sources</h4>
+                    <div className="journal-sources__chips">
+                      {day.sources.map((s) => (
+                        <button
+                          key={s.fullPath}
+                          type="button"
+                          className="journal-sources__chip focus-ring"
+                          title={`${s.rootLabel} · ${s.relPath}`}
+                          onClick={() => openGrimoireDoc("memory", s.fullPath)}
+                        >
+                          <Icon name="ph:file-text" width={11} aria-hidden />
+                          <span className="journal-sources__name">{s.relPath.split("/").pop() || s.relPath}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <JournalConstellation
+                  date={day.date}
+                  caption={`Memory constellation — the day's sources orbiting ${familiarName(day.entry.reflectedBy) ?? "the familiar"}.`}
+                />
               </>
             ) : (
               <EmptyState
@@ -772,6 +830,55 @@ export function JournalEntries({
                 }
               />
             )}
+            {!outOfScopeBy && (hasEntry || day.date === today) ? (
+              <div className="journal-prompt">
+                <div className="journal-prompt__head">
+                  <h4 className="journal-entry__sec journal-entry__sec-heading">Generation prompt</h4>
+                  {journalPrompt !== DEFAULT_JOURNAL_PROMPT ? (
+                    <button type="button" className="journal-prompt__reset focus-ring" onClick={resetPrompt}>
+                      Reset to default
+                    </button>
+                  ) : null}
+                </div>
+                <div className="journal-prompt__editor">
+                  <div ref={promptHlRef} className="journal-prompt__hl" aria-hidden>
+                    {splitPromptSegments(journalPrompt).map((seg, i) =>
+                      seg.placeholder ? (
+                        <mark key={i} className="journal-prompt__ph">{seg.text}</mark>
+                      ) : (
+                        <span key={i}>{seg.text}</span>
+                      ),
+                    )}
+                    {"\n"}
+                  </div>
+                  <textarea
+                    className="journal-prompt__ta focus-ring"
+                    value={journalPrompt}
+                    rows={6}
+                    spellCheck={false}
+                    aria-label="Generation prompt template"
+                    onChange={(e) => changePrompt(e.target.value)}
+                    onScroll={(e) => {
+                      if (promptHlRef.current) promptHlRef.current.scrollTop = e.currentTarget.scrollTop;
+                    }}
+                  />
+                </div>
+                <div className="journal-prompt__foot">
+                  <span className="journal-prompt__hint">
+                    {"{familiar}, {date} and {context} are filled in at generation time."}
+                  </span>
+                  {hasEntry && day.date === today ? (
+                    <Button
+                      leadingIcon="ph:arrows-clockwise"
+                      onClick={generate}
+                      disabled={!canGenerate || generating || saving}
+                    >
+                      {generating ? "Reflecting…" : "Regenerate entry"}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </>
         ) : (
           <div className="journal-empty journal-empty--pane"><SkeletonRows count={5} /></div>

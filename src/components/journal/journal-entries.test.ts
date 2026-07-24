@@ -76,7 +76,7 @@ assert.match(
 );
 assert.match(
   entries,
-  /setDay\(\{ \.\.\.\(json as Omit<JournalDay, "stats" \| "context">\), stats: null, context: null \}\)/,
+  /setDay\(\{ \.\.\.\(json as Omit<JournalDay, "stats" \| "context" \| "sources">\), stats: null, context: null, sources: null \}\)/,
   "JournalEntries paints the entry immediately with stats pending",
 );
 assert.match(
@@ -176,6 +176,40 @@ assert.match(entries, /<h4 className="journal-entry__sec journal-entry__sec-head
 assert.match(entries, /aria-live="polite" aria-atomic="true"/, "the notice toast announces atomically");
 assert.match(css, /\.journal-day:focus-visible \{\n  outline: var\(--ring-width, 2px\) solid var\(--ring-focus\)/, "day-rail rows have a visible focus ring");
 assert.match(css, /\.journal-entry__action:focus-visible \{\n  outline: var\(--ring-width, 2px\) solid var\(--ring-focus\)/, "entry actions have a distinct focus ring");
+
+// ── Sources / Visual / Generation prompt ("Memories Prototype", cave-hlic) ───
+// The entry pane carries the prototype's three post-reflection sections:
+// mtime-attributed source chips that deep-link into the Grimoire reader, a
+// deterministic memory-constellation visual, and the editable prompt template
+// behind Generate/Regenerate.
+assert.match(entries, /<h4 className="journal-entry__sec journal-entry__sec-heading">Sources<\/h4>/, "the sources section is a real heading");
+assert.match(entries, /day\.sources\?\.length \?/, "sources render only when the day touched memory files");
+assert.match(entries, /openGrimoireDoc\("memory", s\.fullPath\)/, "a source chip deep-links into the Grimoire memory reader");
+assert.doesNotMatch(
+  entries,
+  /grimoireHash/,
+  "no standalone-host navigation fork remains — the journal lives only in the workspace Grimoire (PR #3751)",
+);
+assert.match(entries, /sources: Array\.isArray\(json\.sources\) \? \(json\.sources as JournalSource\[\]\) : \[\]/, "sources ride the non-blocking stats fetch");
+assert.match(entries, /<JournalConstellation/, "the entry pane renders the constellation Visual");
+assert.match(entries, /<h4 className="journal-entry__sec journal-entry__sec-heading">Generation prompt<\/h4>/, "the generation-prompt section is a real heading");
+assert.match(entries, /aria-label="Generation prompt template"/, "the template textarea is labelled");
+assert.match(entries, /splitPromptSegments\(journalPrompt\)/, "the highlight overlay marks {placeholder} runs");
+assert.match(entries, /writeStoredJournalPrompt\(value\)/, "template edits persist");
+assert.match(entries, /journalPrompt !== DEFAULT_JOURNAL_PROMPT \?/, "Reset appears only for a customized template");
+assert.match(
+  entries,
+  /promptTemplate: journalPrompt,\s*\n\s*familiarName: familiarName\(familiarId\) \?\? undefined,/,
+  "generate sends the edited template + placeholder vars",
+);
+assert.match(entries, /\{generating \? "Reflecting…" : "Regenerate entry"\}/, "an existing today-entry can be regenerated from the prompt section");
+const constellation = read("./journal-constellation.tsx");
+assert.match(constellation, /usePrefersReducedMotion\(\)/, "the visual's sketch beat respects prefers-reduced-motion");
+assert.match(constellation, /var\(--accent-presence\)/, "constellation stars use theme tokens (no raw hex)");
+assert.doesNotMatch(constellation, /#[0-9a-fA-F]{3,8}\b/, "no hardcoded colors in the constellation renderer");
+assert.match(constellation, /role="img"/, "the constellation SVG is an image with an accessible name");
+assert.match(css, /\.journal-prompt__ph \{[\s\S]*?color-mix\(in srgb, var\(--accent-presence\) 14%, transparent\)/, "placeholder highlight uses the one-hue tint recipe");
+assert.match(css, /\.journal-sources__chip \{[\s\S]*?cursor: pointer;/, "source chips are styled, interactive controls");
 
 // ── Journal write conflict + generatedAt (cave-9f2e) ─────────────────────────
 // generate is the only real generation → it stamps generatedAt and sends the
