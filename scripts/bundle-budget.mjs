@@ -52,8 +52,12 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // Raised 910→915 (2026-07-23, cave-c7hy): --accent-presence-hover token
 // definitions (foundations + 15 theme overrides) are cascade-wide a11y
 // tokens, +~1 KiB; the measured home set was already at 910.
+// Raised 915→920 (2026-07-24, cave-99s9): Blaze backdrop-style rules in
+// backdrop.css (fill + reduced-motion hide) are home-startup surface CSS,
+// +<1 KiB; the measured home set already sat exactly at the 915 boundary
+// after the 3a dashboard redesign (#3758/#3763).
 const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 690) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 915) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 920) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(
