@@ -41,6 +41,11 @@ bundle_piper_runtime() {
   local platform asset expected_sha archive extract_root executable runtime_root actual_sha
   platform="$(node -p 'process.platform')"
   case "$platform/$(node -p 'process.arch')" in
+    linux/x64)
+      asset="piper_linux_x86_64.tar.gz"
+      expected_sha="a50cb45f355b7af1f6d758c1b360717877ba0a398cc8cbe6d2a7a3a26e225992"
+      executable="piper"
+      ;;
     win32/x64)
       asset="piper_windows_amd64.zip"
       expected_sha="f3c58906402b24f3a96d92145f58acba6d86c9b5db896d207f78dc80811efcea"
