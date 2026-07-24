@@ -65,6 +65,8 @@ fn ensure_browser(
     let client = main.inner_size().map_err(|e| e.to_string())?;
     let (w, h) =
         offscreen_browser_creation_bounds(f64::from(client.width), f64::from(client.height), w, h)?;
+    let (offscreen_x, offscreen_y) =
+        offscreen_browser_position(f64::from(client.width), f64::from(client.height), w, h)?;
 
     let parsed_url = Url::parse(url).map_err(|e| e.to_string())?;
     let read_only_target = read_only_url.and_then(|raw| Url::parse(raw).ok());
@@ -293,7 +295,7 @@ fn ensure_browser(
 
     main.add_child(
         builder,
-        PhysicalPosition::new(OFFSCREEN_X, OFFSCREEN_Y),
+        PhysicalPosition::new(offscreen_x, offscreen_y),
         PhysicalSize::new(w, h),
     )
     .map_err(|e| e.to_string())?;

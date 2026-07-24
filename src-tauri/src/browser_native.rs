@@ -1,6 +1,6 @@
-use super::{browser_bounds_within_client, BrowserBounds};
 #[cfg(not(target_os = "windows"))]
-use super::{OFFSCREEN_X, OFFSCREEN_Y};
+use super::offscreen_browser_position;
+use super::{browser_bounds_within_client, BrowserBounds};
 use tauri::{PhysicalPosition, PhysicalSize, Rect};
 
 // Park the webview offscreen at its CURRENT size. Do not shrink it to 1×1:
@@ -16,10 +16,24 @@ pub(super) fn hide_webview(webview: &tauri::Webview) -> Result<(), String> {
     webview.hide().map_err(|e| e.to_string())?;
 
     // WKWebView may drop its backing surface when hidden, so other platforms
-    // retain the realized layer at its current size and move it offscreen.
+    // retain the realized layer at its current size and move it entirely
+    // outside the physical client area.
+    #[cfg(not(target_os = "windows"))]
+    let offscreen_position = {
+        let window = webview.window();
+        let client = window.inner_size().map_err(|e| e.to_string())?;
+        let child = webview.size().map_err(|e| e.to_string())?;
+        let (x, y) = offscreen_browser_position(
+            f64::from(client.width),
+            f64::from(client.height),
+            f64::from(child.width),
+            f64::from(child.height),
+        )?;
+        PhysicalPosition::new(x, y)
+    };
     #[cfg(not(target_os = "windows"))]
     webview
-        .set_position(PhysicalPosition::new(OFFSCREEN_X, OFFSCREEN_Y))
+        .set_position(offscreen_position)
         .map_err(|e| e.to_string())?;
     Ok(())
 }

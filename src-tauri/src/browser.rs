@@ -53,7 +53,8 @@ mod browser_reconciliation;
 mod browser_state;
 
 use browser_bounds::{
-    browser_bounds_within_client, offscreen_browser_creation_bounds, BrowserBounds,
+    browser_bounds_within_client, offscreen_browser_creation_bounds, offscreen_browser_position,
+    BrowserBounds,
 };
 pub use browser_commands::*;
 use browser_events::BrowserEventTracker;
