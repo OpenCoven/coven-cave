@@ -228,8 +228,13 @@ test("native updater cleanup stops the sidecar before Windows exits", async () =
   );
   assert.match(
     launcher,
-    /installer_args\(\[[\s\S]*OsString::from\("\/L\*V"\)/,
-    "updater-driven MSI installs must retain a verbose per-run diagnostic log",
+    /fn msi_verbose_log_installer_args\([\s\S]*quoted_log_path\.push\(log_path\.as_os_str\(\)\)[\s\S]*OsString::from\("\/L\*V"\)/,
+    "the extracted updater helper must retain a verbose MSI log argument while preserving the native path",
+  );
+  assert.match(
+    launcher,
+    /updater_builder\.installer_args\(msi_verbose_log_installer_args\(&log_path\)\)/,
+    "updater-driven MSI installs must use the verbose per-run diagnostic log helper",
   );
 });
 
