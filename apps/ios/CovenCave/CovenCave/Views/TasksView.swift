@@ -43,6 +43,7 @@ struct TasksView: View {
     /// A task awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: BoardCard?
     @State private var showReminders = false
+    @State private var collapsedSections: Set<String> = []
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// How the task list is partitioned into sections.
@@ -346,11 +347,15 @@ struct TasksView: View {
         List(selection: $selection) {
             ForEach(sections) { section in
                 Section {
-                    ForEach(section.cards) { card in
-                        TaskRow(card: card)
-                            .tag(card)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 12))
-                            .contextMenu { taskMenu(card) }
+                    if !collapsedSections.contains(section.id) {
+                        ForEach(section.cards) { card in
+                            TaskRow(card: card)
+                                .tag(card)
+                                .padding(12)
+                                .glass(.raised, cornerRadius: 14)
+                                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                                .listRowBackground(Color.clear)
+                                .contextMenu { taskMenu(card) }
                             // Trailing = destructive (delete); leading = the
                             // positive quick-action (done/reopen), full-swipe to
                             // complete — matching RemindersView + iOS convention.
@@ -366,16 +371,35 @@ struct TasksView: View {
                                 }
                                 .tint(card.status == .done ? .orange : .green)
                             }
+                        }
                     }
                 } header: {
-                    HStack(spacing: 6) {
-                        if let image = section.systemImage { Image(systemName: image).accessibilityHidden(true) }
-                        Text(section.title)
-                        Spacer()
-                        Text("\(section.cards.count)").monospacedDigit()
+                    Button {
+                        Haptics.tap()
+                        if collapsedSections.contains(section.id) {
+                            collapsedSections.remove(section.id)
+                        } else {
+                            collapsedSections.insert(section.id)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: collapsedSections.contains(section.id) ? "chevron.right" : "chevron.down")
+                                .font(.caption.weight(.bold))
+                            Circle().fill(section.tint ?? .secondary).frame(width: 8, height: 8)
+                            Text(section.title)
+                            Spacer()
+                            Text("\(section.cards.count)")
+                                .font(.caption.weight(.semibold).monospacedDigit())
+                                .padding(.horizontal, 7).padding(.vertical, 2)
+                                .background(Color.secondary.opacity(0.14), in: Capsule())
+                        }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(section.tint ?? .secondary)
+                    .accessibilityLabel("\(section.title), \(section.cards.count) tasks")
+                    .accessibilityValue(collapsedSections.contains(section.id) ? "Collapsed" : "Expanded")
                 }
             }
         }
@@ -507,59 +531,41 @@ struct TaskRow: View {
     let card: BoardCard
 
     private var familiar: Familiar? { card.familiarId.flatMap(app.familiar) }
+    private var project: ProjectInfo? { card.projectId.flatMap(app.project) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Capsule()
-                .fill(Theme.color(for: card.status))
-                .frame(width: 3)
-                .frame(maxHeight: .infinity)
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    if card.priority == .urgent || card.priority == .high {
-                        Image(systemName: "flag.fill")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.color(for: card.priority))
-                            .accessibilityLabel("\(card.priority.label) priority")
-                    }
-                    Text(card.title)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
+        VStack(alignment: .leading, spacing: 10) {
+            Text(card.title)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            HStack(spacing: 7) {
+                TaskMetadataPill(text: card.priority.label, color: Theme.color(for: card.priority))
+                if let project {
+                    TaskMetadataPill(text: project.name, color: .secondary)
                 }
-
-                HStack(spacing: 8) {
-                    if card.needsHuman == true { NeedsYouBadge() }
-                    if card.hasSteps {
-                        Label("\(card.doneStepCount)/\(card.stepCount)", systemImage: "checklist")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    if app.hasLinkedChat(card) {
-                        Image(systemName: "bubble.left.and.bubble.right.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.tint)
-                            .accessibilityLabel("Has linked chat")
-                    }
-                    ForEach(card.labelList.prefix(2), id: \.self) { LabelChip(text: $0) }
-                    if let updated = caveParseISO(card.updatedAt) {
-                        Text(updated, format: .relative(presentation: .numeric))
-                            .font(.caption2).foregroundStyle(.tertiary)
-                    }
+                if let familiar {
+                    TaskMetadataPill(text: familiar.displayName, color: .secondary)
                 }
-            }
-
-            Spacer(minLength: 0)
-
-            if let familiar {
-                AvatarView(familiar: familiar,
-                           url: app.client?.avatarURL(for: familiar),
-                           size: 30)
+                Spacer(minLength: 0)
             }
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
+    }
+}
+
+private struct TaskMetadataPill: View {
+    let text: String
+    let color: Color
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(color.opacity(0.14), in: Capsule())
+            .overlay(Capsule().stroke(color.opacity(0.38), lineWidth: 1))
+            .foregroundStyle(color)
     }
 }
 

@@ -15,6 +15,7 @@ enum ChatRoute: Hashable {
 /// the conversation.
 struct ChatsHomeView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var showNewChat = false
     @State private var query = ""
@@ -40,6 +41,7 @@ struct ChatsHomeView: View {
     @State private var drawerOpen = false
     /// All-familiars roster sheet (drawer's Familiars destination).
     @State private var showFamiliars = false
+    @State private var showProjects = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Anchors the iOS 18 zoom transition: thread rows mark themselves as
     /// sources; the pushed conversation zooms out of its row.
@@ -94,15 +96,14 @@ struct ChatsHomeView: View {
             // every tab's header aligns. Search + compose stay in the bottom bar.
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { header }
-            // Search + compose live in a floating bottom bar (iMessage-style),
-            // not the top toolbar; Settings lives behind the avatar button in
-            // the header (and in the drawer / iPad sidebar).
-            .safeAreaInset(edge: .bottom) { bottomBar }
             .sheet(isPresented: $showNewChat) {
                 NewChatView { thread in
                     showNewChat = false
                     open(.thread(thread))
                 }
+            }
+            .fullScreenCover(isPresented: $showProjects) {
+                ProjectsPanel { showProjects = false }
             }
             .refreshable {
                 await app.loadFamiliars()
@@ -221,35 +222,50 @@ struct ChatsHomeView: View {
     /// Large-title header pinned to the top, mirroring the Read / Tasks tabs
     /// so every tab's title aligns at the same flush position.
     private var header: some View {
-        HStack(spacing: 12) {
-            CircularIconButton(systemImage: "line.3.horizontal",
-                               active: drawerOpen,
-                               label: "Menu") {
-                drawerOpen = true
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                CircularIconButton(systemImage: "line.3.horizontal",
+                                   active: drawerOpen,
+                                   label: "Menu") {
+                    drawerOpen = true
+                }
+                Text("Chats")
+                    .font(.largeTitle.weight(.bold))
+                Spacer()
+                if canReorder {
+                    Button("Reorder") { showReorder = true }
+                        .font(.subheadline.weight(.medium))
+                }
+                CircularIconButton(systemImage: "folder",
+                                   label: "Projects") {
+                    showProjects = true
+                }
+                CircularIconButton(systemImage: "square.and.pencil",
+                                   label: "New chat") {
+                    showNewChat = true
+                }
             }
-            Text("Chats")
-                .font(.title2.weight(.bold))
-            Spacer()
-            if canReorder {
-                Button("Reorder") { showReorder = true }
-                    .font(.subheadline.weight(.medium))
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search chats…", text: $query)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .focused($searchFocused)
+                if !query.isEmpty {
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                }
             }
-            // Telegram-style profile entry: Settings moved off the tab bar
-            // and lives behind the operator's avatar here.
-            Button {
-                app.selectedTab = .settings
-            } label: {
-                AvatarView(familiar: nil,
-                           url: app.operatorAvatarURL,
-                           size: ChatChrome.control,
-                           fallbackName: app.operatorDisplayName)
-            }
-            .buttonStyle(.glassPress)
-            .accessibilityLabel("Settings")
-            CircularIconButton(systemImage: "square.and.pencil",
-                               label: "New chat") {
-                showNewChat = true
-            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(chrome.bgRaised, in: Capsule())
+            .overlay(Capsule().stroke(chrome.border.opacity(0.7), lineWidth: 1))
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
@@ -265,14 +281,6 @@ struct ChatsHomeView: View {
 
     private var homeList: some View {
         List(selection: $selection) {
-            if !filteredFamiliars.isEmpty {
-                Section {
-                    familiarRail
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                }
-            }
             Section {
                 ForEach(recentThreads) { thread in
                     RecentThreadRow(thread: thread)
@@ -564,11 +572,11 @@ struct RecentThreadRow: View {
     var body: some View {
         HStack(spacing: 13) {
             if thread.isGroup {
-                AvatarClusterView(familiars: familiars, size: 46)
+                AvatarClusterView(familiars: familiars, size: 42)
             } else {
                 AvatarView(familiar: familiars.first,
                            url: familiars.first.flatMap { app.client?.avatarURL(for: $0) },
-                           size: 46, showStatus: true)
+                           size: 42, showStatus: true)
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -598,7 +606,11 @@ struct RecentThreadRow: View {
                     .lineLimit(1)
             }
             if isUnread {
-                Circle().fill(chrome.accent).frame(width: 9, height: 9)
+                Text("1")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(chrome.accentForeground)
+                    .frame(minWidth: 20, minHeight: 20)
+                    .background(chrome.accent, in: Capsule())
             }
         }
         .padding(.vertical, 3)

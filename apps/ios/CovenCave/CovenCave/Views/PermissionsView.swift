@@ -93,75 +93,113 @@ struct PermissionsView: View {
     // MARK: - Access pane
 
     private var accessPane: some View {
-        List {
-            if scopedFamiliarId == nil {
-                Section {
-                    Picker("Familiar", selection: familiarSelection) {
-                        Text("Choose a familiar").tag(String?.none)
-                        ForEach(app.familiars) { familiar in
-                            Text(familiar.displayName).tag(String?.some(familiar.id))
-                        }
-                    }
-                } footer: {
-                    Text("Pick a familiar to see and change which projects it can touch.")
+        ScrollView {
+            LazyVStack(spacing: 14) {
+                ForEach(accessFamiliars) { familiar in
+                    familiarAccessCard(familiar)
+                }
+                if accessFamiliars.isEmpty {
+                    ContentUnavailableView("No familiars", systemImage: "person.2")
                 }
             }
+            .padding(16)
+            .readableWidth(680)
+        }
+        .background(chrome.bgBase)
+    }
 
-            if let familiarId {
-                if isSupreme {
-                    Section {
-                        Label("Supreme familiar — always has access to every project. Its grants can’t be edited.",
-                              systemImage: "crown.fill")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+    private var accessFamiliars: [Familiar] {
+        guard let scopedFamiliarId else { return app.familiars }
+        return app.familiars.filter { $0.id == scopedFamiliarId }
+    }
+
+    private func familiarAccessCard(_ familiar: Familiar) -> some View {
+        let supreme = familiar.id == supremeFamiliarId
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                AvatarView(familiar: familiar, url: app.client?.avatarURL(for: familiar), size: 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(familiar.displayName).font(.headline)
+                    if supreme {
+                        Text("Supreme familiar · all access")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Section("Projects") {
-                    if projects.isEmpty {
-                        Text("No projects registered on the desktop.")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(projects) { project in
-                        projectRow(project: project, familiarId: familiarId)
-                    }
+                Spacer()
+            }
+            .padding(14)
+
+            if projects.isEmpty {
+                Divider()
+                Text("No projects registered on the desktop.")
+                    .font(.footnote).foregroundStyle(.secondary).padding(14)
+            } else {
+                ForEach(projects) { project in
+                    Divider().padding(.leading, 14)
+                    projectRow(project: project, familiarId: familiar.id, supreme: supreme)
                 }
             }
         }
-        .listStyle(.insetGrouped)
-        .themedListBackground()
-    }
-
-    private var familiarSelection: Binding<String?> {
-        Binding(get: { selectedFamiliarId }, set: { selectedFamiliarId = $0 })
+        .glass(.raised, cornerRadius: 16)
     }
 
     @ViewBuilder
-    private func projectRow(project: ProjectInfo, familiarId: String) -> some View {
+    private func projectRow(project: ProjectInfo, familiarId: String, supreme: Bool) -> some View {
         let effective = PermissionModels.resolveEffectiveAccess(
             directGrants: grants, groups: groups,
             familiarId: familiarId, projectId: project.id
         )
         let key = "\(familiarId)::\(project.id)"
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(project.name).font(.body)
-                if isSupreme {
-                    Text("All access").font(.caption).foregroundStyle(.secondary)
-                } else if let groupNames = groupHint(effective) {
-                    Text(groupNames).font(.caption).foregroundStyle(.secondary)
+        Button {
+            cycleAccess(project: project, familiarId: familiarId, effective: effective, key: key)
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(project.name).font(.body).foregroundStyle(.primary)
+                    if supreme {
+                        Text("All access").font(.caption).foregroundStyle(.secondary)
+                    } else if let groupNames = groupHint(effective) {
+                        Text(groupNames).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                if busyKeys.contains(key) {
+                    ProgressView().controlSize(.small)
+                } else {
+                    accessBadge(supreme ? .write : effective.level)
                 }
             }
-            Spacer(minLength: 8)
-            if busyKeys.contains(key) {
-                ProgressView().controlSize(.small)
-            } else {
-                accessBadge(isSupreme ? .write : effective.level)
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(supreme || !mutationsAllowed || busyKeys.contains(key))
+        .accessibilityHint(mutationsAllowed ? "Cycles no access, read, and write" : "Phone permission changes are disabled")
+    }
+
+    private func cycleAccess(
+        project: ProjectInfo, familiarId: String,
+        effective: EffectiveProjectAccess, key: String
+    ) {
+        guard mutationsAllowed else { return }
+        Haptics.tap()
+        switch effective.direct ?? effective.level {
+        case nil:
+            mutate(key: key) {
+                try await app.client?.grantProject(
+                    targetFamiliarId: familiarId, projectId: project.id, access: .read)
             }
-            if !isSupreme && mutationsAllowed {
-                accessMenu(project: project, familiarId: familiarId, effective: effective, key: key)
+        case .read:
+            mutate(key: key) {
+                try await app.client?.grantProject(
+                    targetFamiliarId: familiarId, projectId: project.id, access: .write)
+            }
+        case .write:
+            mutate(key: key) {
+                try await app.client?.revokeProject(
+                    targetFamiliarId: familiarId, projectId: project.id)
             }
         }
-        .contentShape(Rectangle())
     }
 
     private func groupHint(_ effective: EffectiveProjectAccess) -> String? {

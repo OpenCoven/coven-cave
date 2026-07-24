@@ -31,13 +31,19 @@ assert.match(drawer, /struct NavRow: View/, "drawer destination rows are a dedic
 assert.match(drawer, /accessibilityAddTraits\(active \? \[\.isSelected\] : \[\]\)/, "active drawer row is exposed as selected to AT");
 assert.match(chrome, /struct EmptyChatSuggestionRow: View/, "empty-state suggestion rows are a shared component");
 
-// ── ChatView header: the agent pill opens the model/agent picker ────────────
+// ── ChatView header: session details preserve the real model flow ───────────
 assert.match(
   chatView,
-  /PillSelector\(label: thread\.title,[\s\S]{0,200}?action: \{ Task \{ await switchModel\(""\) \} \}/,
-  "the direct-chat agent pill opens the model picker via the existing /model path",
+  /showSessionDetails\.toggle\(\)/,
+  "the centered familiar control toggles session details",
 );
-assert.match(chatView, /if thread\.isGroup \{[\s\S]{0,300}?chevron: false/, "group chats keep a static pill (no single model to switch)");
+assert.match(chatView, /private var sessionDetailsCard: some View/, "session details render in a dedicated dropdown card");
+assert.match(
+  chatView,
+  /showSessionDetails = false\s*\n\s*Task \{ await switchModel\(""\) \}/,
+  "the dropdown model row preserves the existing /model path",
+);
+assert.match(chatView, /TODO\(no backend\)/, "unsupported session metadata is explicitly non-persisted");
 assert.doesNotMatch(chatView, /ChatModelBar\(thread:/, "the between-list model bar is retired — model access lives in the header pill");
 
 // ── Composer "+" menu: fan-out + all three dismissal paths ───────────────────

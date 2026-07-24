@@ -399,8 +399,20 @@ struct MessageBubble: View {
         }
     }
 
-    private var bubbleShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: isUser ? 22 : 26, style: .continuous)
+    private var bubbleShape: UnevenRoundedRectangle {
+        if isUser {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 18, bottomLeadingRadius: 18,
+                bottomTrailingRadius: 6, topTrailingRadius: 18,
+                style: .continuous
+            )
+        } else {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 18, bottomLeadingRadius: 6,
+                bottomTrailingRadius: 18, topTrailingRadius: 18,
+                style: .continuous
+            )
+        }
     }
 
     /// Bubble fills: errors stay red; the user's bubble is a soft vertical
