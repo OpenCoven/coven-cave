@@ -498,18 +498,7 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
         onMouseEnter={() => setHoverKey(source.id)}
         onMouseLeave={() => setHoverKey(null)}
       >
-        <button className="rr-src__toggle" type="button" aria-expanded={open} onClick={() => toggleCard(source.id)}>
-          <div className="rr-src__head">
-            <span className={`rr-sref${refTone}`}>{source.id}</span>
-            <span className={`rr-srcstat rr-srcstat--${card.statusTone}`}>
-              <i className="rr-srcstat__dot" aria-hidden />
-              {card.statusLabel}
-            </span>
-            <CaretDown />
-          </div>
-          <div className="rr-src__title">{source.title}</div>
-          <div className="rr-src__meta">{card.meta}</div>
-        </button>
+        <button className="rr-src__toggle focus-ring" type="button" aria-expanded={open} onClick={() => toggleCard(source.id)}>
         {open ? (
           <div className="rr-srcdetail">
             {source.claim ? <div className="rr-sd-quote">“{source.claim}”</div> : null}
