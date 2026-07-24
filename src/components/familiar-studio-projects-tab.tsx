@@ -9,6 +9,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SettingsGroup } from "@/components/ui/settings-group";
 import { Segmented } from "@/components/ui/settings-controls";
+import { ProjectSettingsModal } from "@/components/project-settings-modal";
+import { useAddProjectFlow } from "@/components/project-picker";
+import { useProjects } from "@/lib/use-projects";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import {
@@ -133,6 +136,45 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // ── Registry CRUD (add · rename · relink · remove) ─────────────────────────
+  // The grant matrix above manages *access*; these manage the registry itself.
+  // useProjects supplies full CaveProject rows (with repoUrl) + the mutations;
+  // every write refreshes the tab's own grant snapshot so the list stays honest.
+  const {
+    projects: registryProjects,
+    createProject,
+    renameProject,
+    deleteProject,
+    updateRepoUrl,
+  } = useProjects({ familiarId: familiar.id });
+  const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null);
+  const settingsProject = useMemo(
+    () => registryProjects.find((project) => project.id === settingsProjectId) ?? null,
+    [registryProjects, settingsProjectId],
+  );
+  const addFlow = useAddProjectFlow({
+    familiarId: familiar.id,
+    createProject,
+    projects: registryProjects,
+    onAdded: () => void load(),
+  });
+  const renameRegistryProject = useCallback(
+    async (id: string, name: string) => {
+      const ok = await renameProject(id, name);
+      if (ok) void load();
+      return ok;
+    },
+    [renameProject, load],
+  );
+  const removeRegistryProject = useCallback(
+    async (id: string) => {
+      const ok = await deleteProject(id);
+      if (ok) void load();
+      return ok;
+    },
+    [deleteProject, load],
+  );
 
   const toggle = useCallback(
     async (projectId: string, next: boolean, access: ProjectAccessLevel = "write") => {
@@ -305,7 +347,12 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
         <EmptyState
           icon="ph:folder"
           headline="No projects yet"
-          subtitle="Add a project in the Code workspace, then grant it here."
+          subtitle="Register a project folder to grant this familiar access to it."
+          actions={
+            <Button variant="primary" size="sm" leadingIcon="ph:plus-bold" onClick={addFlow.beginAddProject}>
+              Add project
+            </Button>
+          }
           compact
         />
       ) : (
@@ -313,6 +360,11 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
           label="Project access"
           description={`${grantedCount} of ${projects.length} granted`}
         >
+          <div className="flex justify-end border-b border-[var(--border-hairline)] px-4 py-2">
+            <Button variant="secondary" size="sm" leadingIcon="ph:plus-bold" onClick={addFlow.beginAddProject}>
+              Add project
+            </Button>
+          </div>
           {projects.length > 6 ? (
             <div className="border-b border-[var(--border-hairline)] px-4 py-2">
               <label className="flex items-center gap-2">
@@ -398,6 +450,13 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2.5">
+                  <IconButton
+                    icon="ph:gear-six"
+                    size="xs"
+                    aria-label={`Project settings for ${project.name}`}
+                    title="Rename, link a repository, or remove this project"
+                    onClick={() => setSettingsProjectId(project.id)}
+                  />
                   {on && (
                     <div className={busy ? "pointer-events-none opacity-60" : ""}>
                       <Segmented
@@ -592,6 +651,15 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
           ) : null}
         </SettingsGroup>
       )}
+
+      <ProjectSettingsModal
+        project={settingsProject}
+        onClose={() => setSettingsProjectId(null)}
+        onSaveRepoUrl={updateRepoUrl}
+        onRename={renameRegistryProject}
+        onDelete={removeRegistryProject}
+      />
+      {addFlow.addProjectModal}
     </div>
   );
 }
