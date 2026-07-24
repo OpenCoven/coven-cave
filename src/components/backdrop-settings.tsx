@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { Segmented } from "@/components/ui/settings-controls";
 import {
   prepareBackdropImage,
   readBackdropImage,
@@ -10,7 +11,14 @@ import {
   writeBackdropImage,
   writeBackdropPrefs,
 } from "@/lib/cave-backdrop";
+import { BACKDROP_STYLES, type CaveBackdropStyle } from "@/lib/preferences-schema";
 import { useArmedConfirm } from "@/lib/use-armed-confirm";
+
+const STYLE_LABELS: Record<CaveBackdropStyle, string> = { image: "Image", blaze: "Blaze" };
+const STYLE_TITLES: Record<CaveBackdropStyle, string> = {
+  image: "A picture you choose shows behind Home and Chat",
+  blaze: "Animated embers and smoke, tinted to your theme accent",
+};
 
 /**
  * Settings → Appearance → Backdrop: pick an image that shows behind Home and
@@ -88,54 +96,85 @@ export function BackdropSettings() {
     }
   }
 
+  function setStyle(style: CaveBackdropStyle) {
+    if (style === prefs.style) return;
+    if (style === "blaze") {
+      writeBackdropPrefs({ style, enabled: true });
+      announce("Backdrop set to Blaze — embers and smoke follow your theme accent.");
+      return;
+    }
+    writeBackdropPrefs({ style, enabled: previewUrl !== null });
+    announce(
+      previewUrl
+        ? "Backdrop set to your image."
+        : "Backdrop style set to Image — choose an image to turn it on.",
+    );
+  }
+
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          disabled={busy}
-          aria-label={previewUrl ? "Replace backdrop image" : "Choose backdrop image"}
-          className="focus-ring grid h-20 w-32 shrink-0 place-items-center overflow-hidden rounded-[var(--radius-card)] border border-dashed border-[var(--border-strong)] bg-[var(--bg-base)]/40 text-[length:var(--text-xs)] text-[var(--text-muted)] hover:border-[var(--accent-presence)]/60"
-        >
-          {previewUrl ? (
-            <img src={previewUrl} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <span>{busy ? "Reading…" : "Choose image"}</span>
-          )}
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0] ?? null;
-            if (file) void pickImage(file);
-            e.target.value = "";
-          }}
-        />
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
         <div className="min-w-0 flex-1">
           <p className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">Backdrop</p>
           <p className="text-[length:var(--text-xs)] leading-relaxed text-[var(--text-muted)]">
-            Shows behind Home and Chat. The accent tints to the image’s dominant color, kept
-            readable against your theme.
+            Shows behind Home and Chat — a picture of yours, or animated Blaze embers tinted to
+            your theme.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {previewUrl ? (
-            <Button
-              size="xs"
-              variant="ghost"
-              leadingIcon="ph:x"
-              onClick={() => clearConfirm.trigger(() => void clearBackdrop())}
-              disabled={busy}
-            >
-              {clearConfirm.armed ? "Really clear?" : "Clear"}
-            </Button>
-          ) : null}
-        </div>
+        <Segmented
+          ariaLabel="Backdrop style"
+          options={BACKDROP_STYLES}
+          value={prefs.style}
+          onChange={setStyle}
+          getLabel={(option) => STYLE_LABELS[option]}
+          getTitle={(option) => STYLE_TITLES[option]}
+        />
       </div>
+
+      {prefs.style === "image" ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+            aria-label={previewUrl ? "Replace backdrop image" : "Choose backdrop image"}
+            className="focus-ring grid h-20 w-32 shrink-0 place-items-center overflow-hidden rounded-[var(--radius-card)] border border-dashed border-[var(--border-strong)] bg-[var(--bg-base)]/40 text-[length:var(--text-xs)] text-[var(--text-muted)] hover:border-[var(--accent-presence)]/60"
+          >
+            {previewUrl ? (
+              <img src={previewUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span>{busy ? "Reading…" : "Choose image"}</span>
+            )}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0] ?? null;
+              if (file) void pickImage(file);
+              e.target.value = "";
+            }}
+          />
+          <p className="min-w-0 flex-1 text-[length:var(--text-xs)] leading-relaxed text-[var(--text-muted)]">
+            The accent tints to the image's dominant color, kept readable against your theme.
+          </p>
+          <div className="flex items-center gap-2">
+            {previewUrl ? (
+              <Button
+                size="xs"
+                variant="ghost"
+                leadingIcon="ph:x"
+                onClick={() => clearConfirm.trigger(() => void clearBackdrop())}
+                disabled={busy}
+              >
+                {clearConfirm.armed ? "Really clear?" : "Clear"}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {prefs.enabled ? (
         <div className="flex flex-col gap-3 border-l border-[var(--border-hairline)] pl-3">
@@ -154,23 +193,25 @@ export function BackdropSettings() {
               {prefs.intensity}
             </span>
           </label>
-          <label className="flex items-center justify-between gap-3 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
-            <span>Match accent to the image</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={prefs.matchAccent}
-              aria-label="Match accent to the image"
-              onClick={() => writeBackdropPrefs({ matchAccent: !prefs.matchAccent })}
-              className={`focus-ring rounded-[var(--radius-control)] border px-3 py-1 text-[length:var(--text-sm)] transition-colors ${
-                prefs.matchAccent
-                  ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
-                  : "border-[var(--border-hairline)] text-[var(--text-secondary)]"
-              }`}
-            >
-              {prefs.matchAccent ? "On" : "Off"}
-            </button>
-          </label>
+          {prefs.style === "image" ? (
+            <label className="flex items-center justify-between gap-3 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+              <span>Match accent to the image</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={prefs.matchAccent}
+                aria-label="Match accent to the image"
+                onClick={() => writeBackdropPrefs({ matchAccent: !prefs.matchAccent })}
+                className={`focus-ring rounded-[var(--radius-control)] border px-3 py-1 text-[length:var(--text-sm)] transition-colors ${
+                  prefs.matchAccent
+                    ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
+                    : "border-[var(--border-hairline)] text-[var(--text-secondary)]"
+                }`}
+              >
+                {prefs.matchAccent ? "On" : "Off"}
+              </button>
+            </label>
+          ) : null}
         </div>
       ) : null}
     </div>

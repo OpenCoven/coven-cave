@@ -116,4 +116,23 @@ assert.match(
   "reduced motion hides the animated style entirely (no frozen fire frame)",
 );
 
+// ── Settings: the style picker and its enablement rules ──────────────────────
+const settings = readFileSync(new URL("../components/backdrop-settings.tsx", import.meta.url), "utf8");
+assert.match(settings, /ariaLabel="Backdrop style"/, "the style picker is a labeled segmented control");
+assert.match(
+  settings,
+  /writeBackdropPrefs\(\{ style, enabled: true \}\);/,
+  "choosing Blaze turns the backdrop on without needing an image",
+);
+assert.match(
+  settings,
+  /writeBackdropPrefs\(\{ style, enabled: previewUrl !== null \}\);/,
+  "switching to Image stays on only when a stored image exists",
+);
+assert.match(
+  settings,
+  /\{prefs\.style === "image" \? \(/,
+  "the image chooser and accent-match rows are image-style-only",
+);
+
 console.log("cave-backdrop-blaze.test.ts: ok");
