@@ -131,6 +131,7 @@ export const SUITES = {
     "src/lib/stage-model.test.ts",
     "src/lib/skill-blocks.test.ts",
     "src/lib/github-blocks.test.ts",
+    "src/lib/coven-marker-directive.test.ts",
     "src/lib/github-item-url.test.ts",
     "src/lib/github-sub-tags.test.ts",
     "src/lib/github-subscriptions.test.ts",
