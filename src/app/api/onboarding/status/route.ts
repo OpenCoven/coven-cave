@@ -288,6 +288,24 @@ async function checkBinding(
   };
 }
 
+/**
+ * A Git project is mandatory for the Queue. An otherwise-valid repository
+ * without Beads is ready for the explicit Generate action on the Queue page,
+ * so it satisfies project selection during onboarding.
+ *
+ * The daemon-less e2e harness (COVEN_CAVE_E2E=1, see playwright.config.ts)
+ * has no selected Queue project by design; report the step satisfied there
+ * so a stored dismissal keeps the wizard closed, exactly like the daemon
+ * short-circuit. Specs that exercise project readiness mock this route.
+ */
+async function checkQueueProject(): Promise<Step> {
+  if (process.env.COVEN_CAVE_E2E === "1") {
+    return { ok: true, detail: "e2e harness stub — no Queue project in daemon-less runs" };
+  }
+  const readiness = await cachedQueueProjectReadiness();
+  return { ok: readiness.ok || readiness.canGenerate, detail: readiness.message };
+}
+
 export async function GET() {
   const openclawAgentCount = await countOpenClawAgents();
   const [openCovenTools, covenHome, git, daemon, familiarsRes, queueProject] = await Promise.all([
@@ -296,7 +314,7 @@ export async function GET() {
     checkGit(),
     checkDaemon(),
     checkFamiliars(),
-    cachedQueueProjectReadiness(),
+    checkQueueProject(),
   ]);
   const covenCli = checkCovenCli(
     openCovenTools.find((tool) => tool.id === "coven-cli"),
@@ -312,13 +330,7 @@ export async function GET() {
   const steps: Record<string, Step> = {
     covenCli,
     covenHome,
-    // A Git project is mandatory for the Queue. An otherwise-valid repository
-    // without Beads is ready for the explicit Generate action on the Queue
-    // page, so it satisfies project selection during onboarding.
-    project: {
-      ok: queueProject.ok || queueProject.canGenerate,
-      detail: queueProject.message,
-    },
+    project: queueProject,
     git,
     adapters: adapters.step,
     daemon,
