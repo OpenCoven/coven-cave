@@ -10,6 +10,7 @@ import {
   openCodeSchemaBundleSigningPayload,
   redactedOpenCodeEventFingerprint,
   resolveOpenCodeCompatibility,
+  selectOpenCodeSchema,
 } from "./opencode-compatibility.ts";
 
 const now = Date.parse("2026-07-24T12:00:00.000Z");
@@ -73,6 +74,18 @@ assert.equal(structured.schema?.id, "opencode-run-json-v1", "new schemas are cho
 const missingSession = await resolveOpenCodeCompatibility({ version: "1.2.3", json: true, model: true, session: false });
 assert.equal(missingSession.mode, "structured");
 assert.equal(missingSession.schema?.id, "opencode-run-json-legacy", "older compatible schemas coexist without client version gates");
+
+const broadSchema = { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], id: "broad", requires: { json: true as const } };
+assert.equal(
+  selectOpenCodeSchema([broadSchema, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]], { version: "current", json: true, model: false, session: true })?.id,
+  "opencode-run-json-v1",
+  "the most specific schema wins independently of registry ordering",
+);
+assert.equal(
+  selectOpenCodeSchema([broadSchema, { ...broadSchema, id: "broad-duplicate" }], { version: "current", json: true, model: false, session: true }),
+  null,
+  "equally-specific overlapping schemas fail closed instead of depending on array order",
+);
 
 const secretShape = redactedOpenCodeEventFingerprint({
   type: "future.event",

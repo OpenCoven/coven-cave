@@ -77,6 +77,16 @@ assert.match(
 );
 assert.match(
   route,
+  /openCodeDirect && openCodeCompatibility\?\.mode === "plain" && !sessionId[\s\S]*?announceSession\(crypto\.randomUUID\(\)\)/,
+  "plain OpenCode output receives a Cave-owned stable session id so its first transcript persists",
+);
+assert.match(
+  route,
+  /openCodeCompatibility\?\.mode === "plain"[\s\S]*?\? undefined[\s\S]*?: sessionId/,
+  "a Cave-owned plain-mode id is never mistaken for a native OpenCode resume token",
+);
+assert.match(
+  route,
   /ev\.kind === "tool_start"[\s\S]*?envelopeToolUse[\s\S]*?ev\.kind === "tool_end"[\s\S]*?envelopeToolResult/,
   "split tool lifecycle frames preserve the stable bubble id across progress and result",
 );
@@ -84,6 +94,11 @@ assert.match(
   route,
   /opencode-compatibility[\s\S]*?unrecognized tool event[\s\S]*?redactedOpenCodeEventFingerprint\(rawEvent\)/,
   "unknown future event shapes surface a safe visible diagnostic",
+);
+assert.match(
+  route,
+  /const handleOpenCodeLine[\s\S]*?catch \{[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)/,
+  "malformed structured OpenCode events never copy their raw payload into diagnostics",
 );
 assert.match(
   capabilities,

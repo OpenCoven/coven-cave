@@ -141,12 +141,42 @@ function schemaMatches(schema: OpenCodeEventSchema, capabilities: OpenCodeRunCap
   return true;
 }
 
+function schemaSpecificity(schema: OpenCodeEventSchema): number {
+  return Number(schema.requires.session !== undefined) + Number(schema.requires.model !== undefined);
+}
+
+/**
+ * Select the most specific matching schema rather than trusting registry
+ * order. A same-specificity tie means two schemas claim the identical observed
+ * capability surface, so the caller must fail closed instead of guessing.
+ */
+export function selectOpenCodeSchema(
+  schemas: OpenCodeEventSchema[],
+  capabilities: OpenCodeRunCapabilities,
+): OpenCodeEventSchema | null {
+  const matches = schemas.filter((schema) => schemaMatches(schema, capabilities));
+  if (!matches.length) return null;
+  const specificity = Math.max(...matches.map(schemaSpecificity));
+  const mostSpecific = matches.filter((schema) => schemaSpecificity(schema) === specificity);
+  return mostSpecific.length === 1 ? mostSpecific[0] : null;
+}
+
 export function isOpenCodeSchemaBundle(value: unknown, now = Date.now()): value is OpenCodeSchemaBundle {
   if (!isRecord(value) || value.format !== 1 || value.runtime !== "opencode") return false;
   if (typeof value.sequence !== "number" || !Number.isSafeInteger(value.sequence) || value.sequence < 1 || !Array.isArray(value.schemas) || !value.schemas.every(isEventSchema)) return false;
   const issuedAt = Date.parse(String(value.issuedAt));
   const expiresAt = Date.parse(String(value.expiresAt));
-  return Number.isFinite(issuedAt) && Number.isFinite(expiresAt) && issuedAt <= now && expiresAt > now;
+  if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) || issuedAt > now || expiresAt <= now) return false;
+  // A duplicated requirement profile would be an ambiguous same-specificity
+  // selection for the corresponding client capabilities. Reject it at the
+  // signed-bundle boundary, before it can affect a chat turn.
+  const profiles = new Set<string>();
+  for (const schema of value.schemas) {
+    const profile = JSON.stringify(schema.requires);
+    if (profiles.has(profile)) return false;
+    profiles.add(profile);
+  }
+  return true;
 }
 
 function stableJson(value: unknown): string {
@@ -331,7 +361,7 @@ export async function resolveOpenCodeCompatibility(
       diagnostic: "json-format-unavailable",
     };
   }
-  const schema = loaded.bundle.schemas.find((candidate) => schemaMatches(candidate, capabilities));
+  const schema = selectOpenCodeSchema(loaded.bundle.schemas, capabilities);
   if (!schema) {
     return {
       mode: "plain",

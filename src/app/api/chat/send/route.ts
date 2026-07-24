@@ -1412,7 +1412,10 @@ export async function POST(req: Request) {
   // at Cave's saved session id. Start a fresh native session with recent
   // transcript context instead; the in-stream notice makes this explicit.
   const openCodeFreshSessionForCompatibility = Boolean(
-    openCodeDirect && resumeTarget && !openCodeCompatibility?.capabilities.session,
+    openCodeDirect && resumeTarget && (
+      openCodeCompatibility?.mode !== "structured" ||
+      !openCodeCompatibility.capabilities.session
+    ),
   );
   const openCodeCompatibilityRetry = openCodeFreshSessionForCompatibility
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
@@ -1615,6 +1618,14 @@ export async function POST(req: Request) {
         ).catch(() => undefined);
       };
 
+      // Formatted OpenCode output carries no native session id. Cave still
+      // needs a stable conversation identity so a plain-mode first response
+      // is persisted and visible after reload; native resume remains disabled
+      // below and falls back to recent-context replay.
+      if (openCodeDirect && openCodeCompatibility?.mode === "plain" && !sessionId) {
+        announceSession(crypto.randomUUID());
+      }
+
       // Hermes's `-Q` mode reserves stdout for the reply and writes the
       // resumable id to stderr as `session_id: <id>`. Buffer stderr because
       // Node can split that short line across data events.
@@ -1765,20 +1776,9 @@ export async function POST(req: Request) {
               return;
           }
         } catch {
-          // Structured-mode stdout can contain a malformed future event with
-          // arbitrary tool payloads. Do not feed that raw line into the
-          // persisted error tail or any user-visible diagnostic.
-          recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
-          if (!openCodeCompatibilityNoticeSent) {
-            openCodeCompatibilityNoticeSent = true;
-            pushProgress(
-              "opencode-compatibility",
-              "OpenCode sent a malformed event; continuing with assistant text",
-              "error",
-              "malformed-json-event",
-            );
-          }
+          /* not valid JSON after all — fall through to the error tail */
         }
+        recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
       };
 
       const handleOpenCodeLine = (line: string) => {
@@ -1856,7 +1856,19 @@ export async function POST(req: Request) {
             );
           }
         } catch {
-          recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+          // Structured-mode stdout can contain a malformed future event with
+          // arbitrary tool payloads. Do not feed that raw line into the
+          // persisted error tail or any user-visible diagnostic.
+          recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
+          if (!openCodeCompatibilityNoticeSent) {
+            openCodeCompatibilityNoticeSent = true;
+            pushProgress(
+              "opencode-compatibility",
+              "OpenCode sent a malformed event; continuing with assistant text",
+              "error",
+              "malformed-json-event",
+            );
+          }
         }
       };
 
@@ -2421,7 +2433,11 @@ export async function POST(req: Request) {
       // do not overwrite the previous native id (or record a changed sandbox
       // profile) and accidentally let a later read turn resume the old full
       // access session.
-      const harnessSessionId = grokDirect ? grokSessionId : sessionId;
+      const harnessSessionId = grokDirect
+        ? grokSessionId
+        : openCodeDirect && openCodeCompatibility?.mode === "plain"
+          ? undefined
+          : sessionId;
       // OpenCode's JSON event protocol does not echo the selected model. Its
       // direct argv proves the selection was forwarded, while a successful
       // exit is the only confirmation it was applied. Preserve an explicit
