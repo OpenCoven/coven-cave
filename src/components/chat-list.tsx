@@ -1181,6 +1181,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           onFocus={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
                           onBlur={cancelHoverPrefetch}
                           onKeyDown={(e) => {
+                            // Nested controls (drag handle, quick actions) own
+                            // their keys — dnd-kit's Space/Enter lift prevents
+                            // default but does not stop propagation.
+                            if (e.target !== e.currentTarget) return;
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
                               if (selectMode) { toggleSelect(s.id); return; }
