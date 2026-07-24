@@ -291,6 +291,17 @@ export function findRunningSpeechModelDownload(modelId: string): SpeechModelDown
   return null;
 }
 
+function cancelSpeechModelDownloads(modelId: string): boolean {
+  let cancelled = false;
+  for (const job of jobs.values()) {
+    if (job.modelId !== modelId || (job.status !== "running" && job.ready !== true)) continue;
+    cancelledDownloadJobs.add(job.id);
+    putJob({ ...job, status: "cancelled", ready: false });
+    cancelled = true;
+  }
+  return cancelled;
+}
+
 async function writeResponseToFile(
   res: Response,
   filePath: string,
@@ -379,7 +390,9 @@ export async function runSpeechModelDownload(
   job: SpeechModelDownloadJob,
   fetchImpl: typeof fetch = fetch,
   root = speechModelsRoot(),
+  dependencies: { onPublished?: () => void | Promise<void> } = {},
 ): Promise<void> {
+  putJob(job);
   const dest = speechModelPath(model, root);
   const dir = path.dirname(dest);
   const stagingDir = path.join(
@@ -427,6 +440,10 @@ export async function runSpeechModelDownload(
     // The ONNX weights are never visible without the Piper config beside them.
     if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
     await publishVerifiedModelDirectory(stagingDir, dir, job);
+    await dependencies.onPublished?.();
+    // There is no await between this final cancellation check and putJob, so a
+    // concurrent removal cannot overwrite its cancelled state with ready:true.
+    if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
     putJob({
       ...job,
       status: "done",
@@ -490,11 +507,7 @@ export async function startSpeechModelDownload(
 export async function removeSpeechModel(modelId: string, root = speechModelsRoot()): Promise<"removed" | "missing" | "unknown_model"> {
   const model = speechModelById(modelId);
   if (!model) return "unknown_model";
-  const running = findRunningSpeechModelDownload(modelId);
-  if (running) {
-    cancelledDownloadJobs.add(running.id);
-    putJob({ ...running, status: "cancelled", ready: false });
-  }
+  const cancelled = cancelSpeechModelDownloads(modelId);
   const modelPath = speechModelPath(model, root);
   const modelDir = path.dirname(modelPath);
   try {
@@ -502,7 +515,7 @@ export async function removeSpeechModel(modelId: string, root = speechModelsRoot
     return "removed";
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return running ? "removed" : "missing";
+      return cancelled ? "removed" : "missing";
     }
     throw error;
   }

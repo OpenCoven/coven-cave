@@ -314,3 +314,41 @@ test("removing a running download cancels it before it can publish", async () =>
   await assert.rejects(stat(speechModelPath(model, root)), /ENOENT/);
   await rm(root, { recursive: true, force: true });
 });
+
+test("removing a model after publication cannot leave its download ready", async () => {
+  const root = testRoot("remove-after-publish");
+  await rm(root, { recursive: true, force: true });
+  const body = "downloaded model";
+  const registered = SPEECH_MODEL_REGISTRY[0];
+  const model: SpeechModelRegistryEntry = {
+    ...registered,
+    url: "https://example.invalid/model.bin",
+    sha256: sha256(body),
+    sizeBytes: Buffer.byteLength(body),
+  };
+  const now = new Date().toISOString();
+  const job = {
+    id: "job-remove-after-publish",
+    modelId: model.id,
+    status: "running" as const,
+    receivedBytes: 0,
+    totalBytes: model.sizeBytes,
+    startedAt: now,
+    updatedAt: now,
+  };
+  const fetchImpl = async () => new Response(body, {
+    headers: { "content-length": String(model.sizeBytes) },
+  });
+
+  await runSpeechModelDownload(model, job, fetchImpl as typeof fetch, root, {
+    onPublished: async () => {
+      await removeSpeechModel(model.id, root);
+    },
+  });
+
+  const cancelled = getSpeechModelDownloadJob(job.id);
+  assert.equal(cancelled?.status, "cancelled");
+  assert.equal(cancelled?.ready, false);
+  await assert.rejects(stat(speechModelPath(model, root)), /ENOENT/);
+  await rm(root, { recursive: true, force: true });
+});
