@@ -96,6 +96,10 @@ assert.match(
   /run_sidecar_daemon_if_requested\(\)[\s\S]*tauri::Builder::default/,
   "the background entrypoint must exit before constructing a GUI",
 );
+assert.ok(
+  setup.indexOf("check_app_translocation();") < setup.indexOf("prepare_gui_reachability(app.handle())?;"),
+  "AppTranslocation must be rejected before reachability can install a LaunchAgent",
+);
 assert.match(
   setup,
   /sidecar_stopped[\s\S]*state\.stop\(\)[\s\S]*if sidecar_stopped \{[\s\S]*sidecar_reachability_stopped[\s\S]*handoff_to_background_daemon/,

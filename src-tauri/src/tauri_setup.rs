@@ -297,6 +297,10 @@ pub fn run() {
                 )?;
             }
 
+            // A translocated app exits here, before it can persist a
+            // LaunchAgent that points at the temporary DMG/quarantine path.
+            check_app_translocation();
+
             app.handle().plugin(tauri_plugin_notification::init())?;
             prepare_gui_reachability(app.handle())?;
 
@@ -317,8 +321,6 @@ pub fn run() {
             };
             app.handle().plugin(updater_builder.build())?;
             app.handle().plugin(tauri_plugin_process::init())?;
-
-            check_app_translocation();
 
             // Dev builds: when the configured dev server (tauri.conf.json
             // `build.devUrl` — `pnpm dev`) is live, point the main webview
