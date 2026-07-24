@@ -90,4 +90,17 @@ assert.match(
   "image bytes are not fetched while the Blaze style is selected",
 );
 
+// The store's own write-path applies raw prefs synchronously (before the layer
+// effect re-applies suppressed ones). Guarding the accent branch on the image
+// style keeps a leftover image accentSeed from flashing document-wide between
+// those two applies while Blaze is selected.
+{
+  const src = readFileSync(new URL("./cave-backdrop.ts", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /if \(active && prefs\.style === "image" && prefs\.matchAccent && prefs\.accentSeed\) \{/,
+    "an image-sampled accent never drives the document while Blaze is selected",
+  );
+}
+
 console.log("cave-backdrop-blaze.test.ts: ok");

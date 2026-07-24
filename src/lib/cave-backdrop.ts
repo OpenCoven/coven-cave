@@ -411,7 +411,7 @@ export function applyBackdropToDocument(prefs: BackdropPrefs, imageUrl?: string 
     if (imageUrl && active) root.style.setProperty("--cave-backdrop-image", `url("${imageUrl}")`);
     else root.style.removeProperty("--cave-backdrop-image");
   }
-  if (active && prefs.matchAccent && prefs.accentSeed) {
+  if (active && prefs.style === "image" && prefs.matchAccent && prefs.accentSeed) {
     const bg = getComputedStyle(root).getPropertyValue("--bg-base").trim() || "oklch(0.13 0.022 293)";
     root.style.setProperty("--accent-presence", fitAccentToBackground(prefs.accentSeed, bg));
   } else {
