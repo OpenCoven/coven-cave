@@ -1,15 +1,15 @@
-/* New-chat dashboard — launcher direction 3a ("work-led dashboard"),
- * relocated from Home to the brand-new chat view (Home went back to the quiet
- * hearth). A left context rail (project · quick start · task · pick up) beside
- * a scrolling work board (greeting + filter tabs · open work · recent
- * threads). ChatView supplies the chrome above and the real composer below, so
- * only the body ships. Everything is token-driven so the themes × dark/light
- * and the Appearance corner-radius setting all apply. */
+/* New-chat dashboard — the work board that greets a brand-new chat, slimmed
+ * to a single pane: no context rail (the composer's footer band owns project ·
+ * model · linked-work) and no filter tabs. Content is capped in the component
+ * (WORK_CAP / RECENT_CAP + "+N more in Tasks") so the board fits the pane
+ * without scrolling. ChatView supplies the chrome above and the real composer
+ * below, so only the body ships. Everything is token-driven so the themes ×
+ * dark/light and the Appearance corner-radius setting all apply. */
 
 /* ── Embedded shell — fills the empty transcript ────────────────────────── */
 /* The dashboard renders inside the chat transcript (role="log") as the empty
    state of a brand-new chat. The transcript flexes so the embed stretches to
-   the pane's height; rail and board keep their own internal scroll. The
+   the pane's height; the capped content means nothing inside scrolls. The
    thread's centered reading measure is released — the board wants the pane. */
 .cave-chat-transcript:has(.home-dash--embed) {
   display: flex;
@@ -29,7 +29,7 @@
   overflow: hidden;
 }
 
-/* ── Body: rail + board ─────────────────────────────────────────────────── */
+/* ── Body: single work board ────────────────────────────────────────────── */
 .home-dash__body {
   flex: 1;
   min-height: 0;
@@ -37,159 +37,11 @@
   align-items: stretch;
 }
 
-/* ── Context rail ───────────────────────────────────────────────────────── */
-.home-dash__rail {
-  width: 320px;
-  flex-shrink: 0;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--border-hairline);
-  padding: var(--space-5) 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  overflow-y: auto;
-}
-.home-dash__rail-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.home-dash__rail-label {
-  font: 600 10px var(--font-jetbrains-mono), monospace;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.home-dash__divider {
-  height: 1px;
-  background: var(--border-hairline);
-}
-
-/* Project group — the picker itself is the shared ProjectPicker control;
-   only the path + readiness meta lines are dashboard-specific. */
-.home-dash__project-path {
-  font-family: var(--font-jetbrains-mono), monospace;
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  line-height: 1.5;
-  word-break: break-all;
-}
-.home-dash__project-ready {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: var(--space-1) 9px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--color-success) 12%, transparent);
-  border: 1px solid color-mix(in oklch, var(--color-success) 32%, var(--border-hairline));
-  font-size: var(--text-2xs);
-  color: var(--color-success);
-}
-.home-dash__project-ready::before {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: var(--radius-pill);
-  background: currentColor;
-}
-
-/* Quick start rows */
-.home-dash__quick {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.home-dash__quick-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: var(--space-2) 10px;
-  border-radius: var(--radius-control);
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  transition: background var(--duration-fast, 120ms) var(--ease-standard, ease);
-}
-.home-dash__quick-row:hover {
-  background: var(--bg-hover);
-}
-.home-dash__quick-icon {
-  display: inline-flex;
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-.home-dash__quick-icon--accent {
-  color: var(--accent-presence);
-}
-.home-dash__quick-label {
-  flex: 1;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-}
-.home-dash__quick-go {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-/* Pick-up cards */
-.home-dash__pick {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.home-dash__pick-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  transition: border-color var(--duration-fast, 120ms), transform var(--duration-fast, 120ms);
-}
-.home-dash__pick-card:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-1px);
-}
-.home-dash__pick-glyph {
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
-  color: var(--accent-presence);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.home-dash__pick-body {
-  min-width: 0;
-  flex: 1;
-}
-.home-dash__pick-title {
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.home-dash__pick-time {
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-/* ── Work board ─────────────────────────────────────────────────────────── */
+/* ── Work board — non-scrolling; the component caps its content ─────────── */
 .home-dash__board {
   flex: 1;
   min-width: 0;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 26px var(--space-8) var(--space-6);
 }
 .home-dash__board-inner {
@@ -197,7 +49,7 @@
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: var(--space-6);
 }
 .home-dash__board-head {
   display: flex;
@@ -275,54 +127,25 @@
   margin-right: var(--space-2);
 }
 
-/* Filter tabs */
-.home-dash__filters {
-  display: inline-flex;
-  padding: 3px;
-  gap: 2px;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-}
-.home-dash__filter {
-  padding: 5px 13px;
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  white-space: nowrap;
-  transition: color var(--duration-fast, 120ms), background var(--duration-fast, 120ms);
-}
-.home-dash__filter:hover {
-  color: var(--text-secondary);
-}
-.home-dash__filter.is-active {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-}
-.home-dash__filter-count {
-  color: var(--text-muted);
-  margin-left: 5px;
-  font-family: var(--font-jetbrains-mono), monospace;
-  font-size: var(--text-2xs);
-}
-.home-dash__filter.is-active .home-dash__filter-count {
-  color: var(--text-secondary);
-}
-
-/* Section scaffold (Open work / Recent threads) */
+/* Section scaffold (Open work / Recent threads) — rigid: sections keep their
+   natural height so a short pane clips at the board edge instead of letting
+   later sections compress and overlap earlier ones. */
 .home-dash__section {
   display: flex;
   flex-direction: column;
   gap: 11px;
+  flex-shrink: 0;
 }
 .home-dash__section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.home-dash__section-label {
+  font: 600 10px var(--font-jetbrains-mono), monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 .home-dash__section-link {
   font-size: var(--text-xs);
@@ -421,6 +244,12 @@
   border-color: var(--border-strong);
   color: var(--text-primary);
 }
+/* Overflow deferral — the rows are capped; the rest lives in Tasks. */
+.home-dash__work-more {
+  padding-left: 2px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
 .home-dash__work-empty {
   padding: 22px 15px;
   border: 1px dashed var(--border-hairline);
@@ -464,27 +293,4 @@
   font-size: var(--text-xs);
   color: var(--text-muted);
   flex-shrink: 0;
-}
-
-/* ── Responsive: fold the rail under a narrow surface ───────────────────── */
-@media (max-width: 900px) {
-  .home-dash__body {
-    flex-direction: column;
-    overflow-y: auto;
-  }
-  .home-dash__rail {
-    width: 100%;
-    border-right: 0;
-    border-bottom: 1px solid var(--border-hairline);
-    flex-direction: row;
-    flex-wrap: wrap;
-    overflow: visible;
-  }
-  .home-dash__rail-group {
-    flex: 1;
-    min-width: 220px;
-  }
-  .home-dash__board {
-    overflow-y: visible;
-  }
 }

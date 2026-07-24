@@ -2,12 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Verifies the chat surface landing: opening chat (home-first boot means via
 // ?mode=chat) paints the brand-new-chat dashboard (ChatNewDashboard — the
-// work-led rail + open-work board relocated off Home — over ChatView's real
+// slimmed single-pane work board relocated off Home — over ChatView's real
 // composer) without waiting for /api/sessions/list — the fetch that used to
 // gate the boot-compose effect and left users on the ChatList skeleton wall
 // for its full duration. Also pins the landing affordances: the live board's
-// open-work rows, quick-start rows that seed (never send) the composer, and
-// the hidden-not-disabled pre-session Voice button.
+// open-work rows and the hidden-not-disabled pre-session Voice button.
 //
 // Desktop only (compose-first boot is a desktop affordance — mobile keeps
 // the thread list as the chat home). /api/familiars, /api/sessions/list and
@@ -128,7 +127,7 @@ test.describe("chat boot landing", () => {
     await expect(takeover).toHaveCount(0, { timeout: 15_000 });
   });
 
-  test("landing surfaces board work, quick-start seeds the composer, voice call from turn zero", async ({ page }) => {
+  test("landing surfaces board work, voice call from turn zero", async ({ page }) => {
     await seed(page);
     let voiceConversationCreateCalls = 0;
     await page.route("**/api/sessions/list**", (route) =>
@@ -160,11 +159,10 @@ test.describe("chat boot landing", () => {
     // …and the headline counts it.
     await expect(dash.locator(".home-dash__headline")).toContainText("1 thread open.");
 
-    // Quick start seeds the composer, never auto-sends.
-    await dash.locator(".home-dash__quick-row", { hasText: "Summarise today" }).click();
-    const composer = page.getByPlaceholder(/Message Nova/);
-    await expect(composer).toHaveValue(/Summarise everything that happened today\./);
-    await expect(dash).toBeVisible();
+    // The slimmed board ships no context rail and no filter tabs — the
+    // composer's footer band owns project/model context.
+    await expect(dash.locator(".home-dash__rail")).toHaveCount(0);
+    await expect(dash.getByRole("tablist")).toHaveCount(0);
 
     // Voice no longer needs a session: the call action is a direct button from
     // turn zero, while the overflow has moved to the dedicated Chat options trigger.

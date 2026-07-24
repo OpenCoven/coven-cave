@@ -1,26 +1,15 @@
-// Pure derivations for the Home dashboard's "Open work" board (launcher 3a):
-// map board cards to display rows, order them, bucket them for the filter
-// tabs, and format the running-card timeout badge. Kept side-effect-free and
-// clock-injected (nowMs) so it unit-tests exactly. The component owns the
-// fetch (use-dashboard-board) and the click handlers.
+// Pure derivations for the new-chat dashboard's "Open work" board: map board
+// cards to display rows, order them, and format the running-card timeout
+// badge. Kept side-effect-free and clock-injected (nowMs) so it unit-tests
+// exactly. The component owns the fetch (use-dashboard-board), the click
+// handlers, and the row cap (the board renders a fixed number of rows and
+// defers the rest to Tasks — no filter tabs).
 
 import type { CardPriority, CardStatus } from "@/lib/cave-board-types";
 import type { DashboardCard } from "@/components/home/use-dashboard-board";
 
 /** Row kinds the board renders (board columns minus "done", which is not open work). */
 export type OpenWorkKind = "running" | "blocked" | "inbox" | "review" | "backlog";
-
-/** The filter tabs. Mirrors the mock: All · Running · Blocked · Inbox. */
-export type OpenWorkFilter = "all" | "running" | "blocked" | "inbox";
-
-export const OPEN_WORK_FILTERS: OpenWorkFilter[] = ["all", "running", "blocked", "inbox"];
-
-export const OPEN_WORK_FILTER_LABEL: Record<OpenWorkFilter, string> = {
-  all: "All",
-  running: "Running",
-  blocked: "Blocked",
-  inbox: "Inbox",
-};
 
 export type OpenWorkRow = {
   id: string;
@@ -78,24 +67,6 @@ export function openWorkRows(cards: DashboardCard[]): OpenWorkRow[] {
     return 0;
   });
   return rows;
-}
-
-/** Which rows a given filter tab shows. "all" is everything; the others match
- *  their kind one-to-one with the chip on the row. Generic so callers that
- *  attach their own fields (e.g. an onOpen handler) keep the richer row type. */
-export function filterOpenWork<T extends OpenWorkRow>(rows: T[], filter: OpenWorkFilter): T[] {
-  if (filter === "all") return rows;
-  return rows.filter((r) => r.kind === filter);
-}
-
-/** Per-tab counts for the filter pills. */
-export function openWorkCounts(rows: OpenWorkRow[]): Record<OpenWorkFilter, number> {
-  return {
-    all: rows.length,
-    running: rows.filter((r) => r.kind === "running").length,
-    blocked: rows.filter((r) => r.kind === "blocked").length,
-    inbox: rows.filter((r) => r.kind === "inbox").length,
-  };
 }
 
 /** Only high/urgent priorities earn a colored label on the row (mock parity —
