@@ -18,7 +18,7 @@ function stageVisual(stage: SkillStage | "invoked"): { label: string; cls: strin
     case "done":
       return { label: "done", cls: "text-[var(--color-success)]" };
     case "error":
-      return { label: "error", cls: "text-[var(--color-warning)]" };
+      return { label: "error", cls: "text-[var(--color-danger)]" };
     case "running":
       return { label: "running", cls: "text-[var(--accent-presence)]" };
     case "loaded":
