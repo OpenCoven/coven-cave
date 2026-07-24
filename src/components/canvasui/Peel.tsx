@@ -10,8 +10,11 @@
 // upstream's inline style objects (wrapped in `native ? … : undefined` so the
 // design gates skip them) because createPeel mutates element.style at runtime
 // (visibility reveal, pointer-events curl blocking) and `!` utility classes
-// would win the cascade over those inline writes. After re-vendoring: re-run
-// the codemod, then restore this exception on those two nodes.
+// would win the cascade over those inline writes. Second exception (accepted
+// PR-review hardening, #3827): the create effect early-returns when `native`
+// is false instead of only gating setFailed — semantically equivalent since
+// the fallback path attaches no refs, but restore it after re-vendoring.
+// After re-vendoring: re-run the codemod, then restore these exceptions.
 
 "use client";
 
