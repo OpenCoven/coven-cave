@@ -254,7 +254,7 @@ assert.match(source, /\$visible\.Count -eq 1/);
 assert.match(source, /\$visible\.Count -eq 0/);
 assert.match(source, /\$scaleX = \$MainWebView\.width \/ \[double\]\$Box\.innerWidth/);
 assert.match(source, /\$scaleY = \$MainWebView\.height \/ \[double\]\$Box\.innerHeight/);
-assert.match(source, /\[ValidateRange\(1\.0, 4\.0\)\]\s*\[double\]\$MinimumDevicePixelRatio = 1\.0/);
+assert.match(source, /\[ValidateRange\(1\.0, 4\.0\)\]\s*\[double\]\$MinimumDevicePixelRatio = 1\.25/);
 assert.match(source, /devicePixelRatio: window\.devicePixelRatio/);
 assert.match(source, /function Assert-MainRendererPhysicalScale \{[\s\S]*\$dpr -ge \$MinimumDevicePixelRatio[\s\S]*\$Dom\.innerWidth \* \$dpr[\s\S]*Main renderer WRY dimensions do not match the observed DOM DPR/);
 assert.match(source, /Assert-MainRendererPhysicalScale \(Get-MainDomState \$MainTarget\) \$mainWry/);

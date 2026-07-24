@@ -17,7 +17,8 @@ direct WRY_WEBVIEW children of the main HWND.
 
 .EXAMPLE
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-browser-regression.ps1 `
-  -Executable C:\candidate\app.exe -Cycles 12 -ExpectPackagedSidecar
+  -Executable C:\candidate\app.exe -Cycles 12 -ExpectPackagedSidecar `
+  -MinimumDevicePixelRatio 1.25
 
 .EXAMPLE
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-browser-regression.ps1 `
@@ -73,7 +74,7 @@ param(
     [int]$ClientContainmentTolerancePx = 1,
 
     [ValidateRange(1.0, 4.0)]
-    [double]$MinimumDevicePixelRatio = 1.0,
+    [double]$MinimumDevicePixelRatio = 1.25,
 
     [switch]$ExpectPackagedSidecar,
     [switch]$ExpectPtyDescendant,
