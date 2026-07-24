@@ -501,6 +501,22 @@ describe("FamiliarAnalyticsView", () => {
     assert.ok(sessionsIndex >= 0 && sessionsIndex < contractIndex, "contract compliance closes the grid after the sessions pair");
   });
 
+  it("stretches grid rows and centers empty states so short empty cards don't leave holes", () => {
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    const grid = faCss.match(/\.fa-grid\s*\{[^}]*\}/);
+    assert.ok(grid, ".fa-grid rule should exist");
+    assert.doesNotMatch(
+      grid![0],
+      /align-items:\s*start/,
+      "grid rows stretch (the default), so an empty card fills its row instead of floating over a blank gap",
+    );
+    assert.match(
+      faCss,
+      /\.fa-section > \.ui-empty-state,\s*\.fa-section > \.fa-thread-empty\s*\{[^}]*margin-block:\s*auto/,
+      "empty states center vertically inside a stretched card",
+    );
+  });
+
   it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {
     const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     const block = faCss.match(/\.fa-page\s*\{[^}]*\}/);
