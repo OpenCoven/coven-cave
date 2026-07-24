@@ -87,12 +87,6 @@ struct TasksView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $query, prompt: "Search tasks")
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { showReminders = true } label: {
-                            Image(systemName: "bell")
-                        }
-                        .accessibilityLabel("Reminders")
-                    }
                     ToolbarItem(placement: .topBarTrailing) { filterMenu }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
@@ -127,14 +121,9 @@ struct TasksView: View {
                     Button("Delete", role: .destructive) { Task { await app.deleteTask(card) } }
                     Button("Cancel", role: .cancel) {}
                 } message: { card in Text(card.title) }
-                .sheet(isPresented: $showReminders) { RemindersView() }
                 .sheet(item: $boardDetail) { card in
                     NavigationStack { TaskDetailView(card: card) }
                 }
-                // A widget deep link (covencave://reminders) lands on this tab;
-                // open the reminders sheet, then clear the pending link.
-                .onChange(of: app.deepLink) { _, link in consumeDeepLink(link) }
-                .onAppear { consumeDeepLink(app.deepLink) }
                 .sidebarColumn()
         } detail: {
             if let selection {
@@ -242,11 +231,6 @@ struct TasksView: View {
         app.cardToOpen = nil
     }
 
-    private func consumeDeepLink(_ link: AppModel.DeepLink?) {
-        guard let link else { return }
-        if link == .reminders { showReminders = true }
-        app.deepLink = nil
-    }
 
     private var groupBar: some View {
         Picker("Group by", selection: $groupByRaw) {
@@ -358,7 +342,7 @@ struct TasksView: View {
                                 .contextMenu { taskMenu(card) }
                             // Trailing = destructive (delete); leading = the
                             // positive quick-action (done/reopen), full-swipe to
-                            // complete — matching RemindersView + iOS convention.
+                            // complete — matching standard iOS selection behavior.
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) { pendingDelete = card } label: {
                                     Label("Delete", systemImage: "trash")

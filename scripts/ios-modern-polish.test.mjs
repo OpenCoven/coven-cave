@@ -17,7 +17,6 @@ const chatView = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift")
 const bubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
 const theme = await read("apps/ios/CovenCave/CovenCave/Theme/Theme.swift");
 const chrome = await read("apps/ios/CovenCave/CovenCave/Theme/ChatChrome.swift");
-const drawer = await read("apps/ios/CovenCave/CovenCave/Views/ChatDrawer.swift");
 
 // ── 1. Haptics: cached generators, kept prepared ─────────────────────────────
 assert.match(
@@ -146,11 +145,6 @@ for (const [component, pattern] of [
 ]) {
   assert.match(chrome, pattern, `${component} should answer touches with the press style`);
 }
-assert.match(
-  drawer,
-  /struct NavRow: View[\s\S]{0,1600}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/,
-  "NavRow should answer touches with the press style",
-);
 assert.match(
   bubble,
   /struct SuggestionPills: View[\s\S]*?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/,

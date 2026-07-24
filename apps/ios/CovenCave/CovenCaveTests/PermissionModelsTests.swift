@@ -163,19 +163,4 @@ final class PermissionModelsTests: XCTestCase {
         XCTAssertNil(PermissionModels.parseISO("not-a-date"))
     }
 
-    // MARK: - Save-error mapping (Code tab)
-
-    func testPermissionSaveErrorsBecomeActionableGuidance() {
-        let mapped = CodeEditorView.saveErrorMessage(
-            CaveError.transport("missing familiarId for project access"))
-        XCTAssertTrue(mapped.contains("Allow file edits from phone"))
-
-        let writeLevel = CodeEditorView.saveErrorMessage(
-            CaveError.transport("file-write requires write access"))
-        XCTAssertTrue(writeLevel.contains("desktop Settings"))
-
-        // Unrelated failures pass through untouched.
-        let other = CodeEditorView.saveErrorMessage(CaveError.transport("disk full"))
-        XCTAssertEqual(other, "disk full")
-    }
 }

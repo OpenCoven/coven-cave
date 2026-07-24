@@ -23,7 +23,6 @@ struct ChatView: View {
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var thread: ChatThread
-    @AppStorage("cave.dev.section") private var devSectionRaw = DevSection.code.rawValue
     @State private var draft: String = ""
     /// The message being quoted in the next send, if any (swipe-to-reply).
     @State private var replyingTo: DisplayMessage?
@@ -981,16 +980,10 @@ struct ChatView: View {
         case .openBoard:
             app.selectedTab = .tasks
             app.showToast("Opened Tasks", systemImage: "checklist", style: .info)
-        case .openCalendar:
-            app.selectedTab = .calendar
-            app.showToast("Opened Rituals", systemImage: "calendar", style: .info)
-        case .openDeveloper(let section):
-            devSectionRaw = section
-            app.selectedTab = .dev
+        case .openTerminal:
+            app.selectedTab = .terminal
             dismiss()
-            app.showToast(section == "terminal" ? "Opened Terminal" : "Opened Code",
-                          systemImage: section == "terminal" ? "terminal" : "folder",
-                          style: .info)
+            app.showToast("Opened Terminal", systemImage: "terminal", style: .info)
         case .sendAsPrompt:
             sendPrompt(args, command: command)
         case .daemonStatus:

@@ -8,7 +8,6 @@ const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "u
 const exists = (relativePath) => fs.existsSync(path.join(root, relativePath));
 
 const client = read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
-const developerView = read("apps/ios/CovenCave/CovenCave/Views/DeveloperView.swift");
 const slashCommand = read("apps/ios/CovenCave/CovenCave/Models/SlashCommand.swift");
 const runner = read("scripts/run-tests.mjs");
 
@@ -27,11 +26,6 @@ assert.doesNotMatch(
   client,
   /api\/library|func routeLink\(|func libraryReading\(|func libraryBookmarks\(|RouteLinkBody|RouteLinkResult|LibraryItem/,
   "integrated CaveClient should not expose Library API calls",
-);
-assert.doesNotMatch(
-  developerView,
-  /LibraryView|case \.library|Library"/,
-  "Development tabs should not expose native Library while it lives on feature/library",
 );
 assert.doesNotMatch(
   slashCommand,

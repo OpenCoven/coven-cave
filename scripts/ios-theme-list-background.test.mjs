@@ -24,7 +24,6 @@ assert.match(
 for (const view of [
   "ChatsHomeView.swift",
   "FamiliarThreadsView.swift",
-  "RemindersView.swift",
 ]) {
   const src = await read(`Views/${view}`);
   assert.match(
@@ -36,7 +35,7 @@ for (const view of [
 
 // Inset-grouped surfaces adopt the same modifier (the themed bgBase floor shows
 // behind the cards), applied after .listStyle(.insetGrouped).
-for (const view of ["TasksView.swift", "GitHubView.swift", "CodeBrowserView.swift"]) {
+for (const view of ["TasksView.swift"]) {
   const src = await read(`Views/${view}`);
   assert.match(
     src,

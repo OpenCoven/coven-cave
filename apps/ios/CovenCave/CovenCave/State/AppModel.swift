@@ -5,19 +5,11 @@ import WidgetKit
 
 /// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String, CaseIterable { case chats, tasks, terminal, settings, canvas, search, calendar, dev }
+enum AppTab: String, CaseIterable { case chats, tasks, terminal, settings }
 
 extension AppTab {
-    /// Tabs pinned to the tab bar. Search is separate — it's declared with
-    /// `role: .search` so the system gives it the trailing search treatment.
     static let barTabs: [AppTab] = [.chats, .tasks, .terminal, .settings]
-    /// Occasional surfaces grouped under "More": shown in the sidebar on iPad
-    /// (`.sidebarAdaptable`), hidden from the iPhone tab bar. Still reachable
-    /// there via the chat drawer, the avatar button (Settings), ⌘ shortcuts,
-    /// slash commands, and deep links — hidden tabs remain selectable.
-    static let moreTabs: [AppTab] = [.canvas, .search, .calendar, .dev]
-    /// ⌘1–N keyboard-shortcut order: visible tabs, then sidebar-only surfaces.
-    static let shortcutOrder: [AppTab] = barTabs + moreTabs
+    static let shortcutOrder: [AppTab] = barTabs
 }
 
 /// A transient confirmation banner shown over the chat after a command runs.
@@ -102,19 +94,9 @@ final class AppModel {
     /// the thread, and clears it back to nil (one-shot navigation intent).
     var threadToOpen: ChatThread?
 
-    /// A familiar selected from global Search. `ChatsHomeView` consumes this
-    /// one-shot intent and opens the existing thread-list destination.
-    var familiarToOpen: Familiar?
-
     /// A task the user asked to open from a chat. `TasksView` observes this,
     /// pushes the card, and clears it (mirrors `threadToOpen`).
     var cardToOpen: BoardCard?
-
-    /// The Diary (Pencil-handwriting experiment) is presented from `RootView`,
-    /// ABOVE the connectionState switch — a transient flap to `.checking`
-    /// swaps `MainTabView` out and would destroy any cover presented from
-    /// within it, dismissing the diary mid-reply and aborting its stream.
-    var diaryPresented = false
 
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
@@ -137,11 +119,6 @@ final class AppModel {
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
         threadToOpen = thread
-    }
-
-    func requestOpenFamiliar(_ familiar: Familiar) {
-        selectedTab = .chats
-        familiarToOpen = familiar
     }
 
     /// Ask the Tasks tab to open a card's detail (switches to Tasks first).
@@ -179,10 +156,6 @@ final class AppModel {
     var reminders: [Reminder] = []
     var remindersError: String?
     var remindersLoaded = false
-
-    var journalDays: [JournalDay] = []
-    var journalError: String?
-    var journalLoaded = false
 
     // MARK: - Developer tab
 
@@ -279,21 +252,6 @@ final class AppModel {
         }
         return true
     }
-
-    // MARK: - Canvas (generated UI artifacts)
-
-    var canvasArtifacts: [CanvasArtifact] = []
-    var canvasError: String?
-    var canvasLoaded = false
-    /// Desktop opt-in ("Allow canvas edits from phone"). Fails closed: the
-    /// Canvas tab is view mode until the desktop says otherwise — the server
-    /// enforces the same gate on every canvas write, so this flag only shapes
-    /// the UI (composer/refine/delete affordances), never grants authority.
-    var canvasWritesAllowed = false
-    /// True while a generate/refine stream is in flight.
-    var isGeneratingCanvas = false
-    /// The familiar's reply text as it streams in (for the "sketching…" preview).
-    var canvasStreamText = ""
 
     var client: CaveClient? {
         guard let connection else { return nil }
@@ -539,16 +497,11 @@ final class AppModel {
         await ReminderNotifications.sync(reminders)
     }
 
-    /// Publish a compact snapshot to the shared App Group so the home-screen
-    /// "Up Next" widget renders the next reminder + task counts without its own
-    /// network access. Cheap; called whenever reminders/tasks load or change.
+    /// Publish a compact snapshot to the shared App Group so widgets/controls can
+    /// render task counts without their own network access. Cheap; called whenever
+    /// reminders/tasks load or change.
     func publishWidgetSnapshot() {
         let now = Date()
-        let next = reminders
-            .filter { $0.status == "pending" || $0.status == "fired" }
-            .compactMap { r -> (Reminder, Date)? in caveParseISO(r.whenISO).map { (r, $0) } }
-            .filter { $0.1 >= now }
-            .min { $0.1 < $1.1 }
         let cal = Calendar.current
         let endOfToday = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)) ?? now
         let due = tasks.filter { $0.status != .done }.filter { card in
@@ -557,12 +510,8 @@ final class AppModel {
         }.count
         let running = tasks.filter { $0.status == .running }.count
         WidgetSnapshotStore.write(WidgetSnapshot(
-            nextReminderId: next?.0.id,
-            nextReminderTitle: next?.0.title,
-            nextReminderDate: next?.1,
             dueTaskCount: due,
             runningTaskCount: running,
-            apiBaseURL: connection?.baseURL?.absoluteString,
             updatedAt: now
         ))
         WidgetCenter.shared.reloadAllTimelines()
@@ -570,10 +519,9 @@ final class AppModel {
 
     // MARK: - Deep links (home-screen widget)
 
-    /// Surface a widget tap targets. The widget body deep-links to `.reminders`
-    /// (tap the reminder) / `.tasks` (tap the counts) via the `covencave://` URL
-    /// scheme; `TasksView` opens the reminders sheet when it sees `.reminders`.
-    enum DeepLink: String { case tasks, reminders, calendar, search }
+    /// Surface a widget/control tap targets via the `covencave://` URL scheme.
+    /// Task-related entry points deep-link to `.tasks`.
+    enum DeepLink: String { case tasks, reminders }
 
     var deepLink: DeepLink?
 
@@ -596,24 +544,10 @@ final class AppModel {
             return
         }
         guard let target = DeepLink(rawValue: url.host ?? "") else { return }
-        switch target {
-        case .tasks, .reminders: selectedTab = .tasks
-        case .calendar: selectedTab = .calendar
-        case .search: selectedTab = .search
-        }
+        selectedTab = .tasks
         deepLink = target
     }
 
-    func loadJournal() async {
-        guard let client else { return }
-        do {
-            journalDays = try await client.journalDays()
-            journalError = nil
-        } catch {
-            journalError = handleSurfaceError(error)
-        }
-        journalLoaded = true
-    }
 
     /// Optimistically remove reminders, then DELETE each; reverts on failure.
     func deleteReminders(_ ids: Set<String>) async {
@@ -694,264 +628,6 @@ final class AppModel {
         var r = reminders[idx]; mutate(&r); reminders[idx] = r
     }
 
-    // MARK: - Canvas actions
-
-    func loadCanvas() async {
-        guard let client else { return }
-        // The write opt-in rides along with every gallery load so the tab's
-        // mode tracks the desktop toggle without its own refresh path. A
-        // failed permissions read keeps the last known value — the server
-        // gate stays authoritative either way.
-        async let permissionsCall = try? client.mobilePermissions()
-        do {
-            canvasArtifacts = sortedArtifacts(try await client.canvasArtifacts())
-            canvasError = nil
-        } catch {
-            // Shared surface-error path: an auth failure routes to pairing
-            // guidance, and a failure while "connected" schedules the auto
-            // recover — whose surface reload includes canvas (below), so a
-            // transient first-load error heals instead of leaving the gallery
-            // permanently empty behind the view's one-shot load guard.
-            canvasError = handleSurfaceError(error)
-        }
-        if let permissions = await permissionsCall {
-            canvasWritesAllowed = permissions.canvasWrites
-        }
-        canvasLoaded = true
-    }
-
-    /// Generate a new artifact from `prompt` via `familiarId`'s chat bridge,
-    /// extract the renderable document, persist it, and return it. Cancellation
-    /// (the caller cancelling its Task) aborts the stream and returns nil.
-    func generateArtifact(prompt: String, familiarId: String) async -> CanvasArtifact? {
-        guard let client else { return nil }
-        let userPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !userPrompt.isEmpty else { return nil }
-
-        isGeneratingCanvas = true
-        canvasStreamText = ""
-        canvasError = nil
-        defer { isGeneratingCanvas = false }
-
-        do {
-            let text = try await streamText(
-                CanvasArtifact.buildSketchPrompt(userPrompt),
-                familiarId: familiarId, client: client
-            )
-            guard !Task.isCancelled else { return nil }
-            guard let extracted = CanvasArtifact.extractArtifact(text) else {
-                canvasError = "The familiar didn’t return a renderable UI. Try rephrasing."
-                return nil
-            }
-            let now = CanvasArtifact.nowISO()
-            let artifact = CanvasArtifact(
-                id: UUID().uuidString,
-                title: CanvasArtifact.titleFromPrompt(userPrompt),
-                prompt: userPrompt,
-                code: CanvasArtifact.clampCode(extracted.code),
-                kind: extracted.kind,
-                createdAt: now, updatedAt: now
-            )
-            let saved = try await client.saveCanvasArtifact(artifact, expectedAbsent: true)
-            canvasArtifacts = sortedArtifacts(saved.artifacts)
-            return saved.artifact
-        } catch is CancellationError {
-            return nil
-        } catch {
-            canvasError = error.localizedDescription
-            return nil
-        }
-    }
-
-    /// Re-generate an existing artifact with a change request, keeping its id.
-    func refineArtifact(_ artifact: CanvasArtifact, changeRequest: String,
-                        familiarId: String) async -> CanvasArtifact? {
-        guard let client else { return nil }
-        let ask = changeRequest.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !ask.isEmpty else { return nil }
-
-        isGeneratingCanvas = true
-        canvasStreamText = ""
-        canvasError = nil
-        defer { isGeneratingCanvas = false }
-
-        do {
-            let text = try await streamText(
-                CanvasArtifact.buildRefinePrompt(
-                    currentCode: artifact.code, changeRequest: ask, kind: artifact.kind
-                ),
-                familiarId: familiarId, client: client
-            )
-            guard !Task.isCancelled else { return nil }
-            guard let extracted = CanvasArtifact.extractArtifact(text) else {
-                canvasError = "The familiar didn’t return an updated UI. Try rephrasing."
-                return nil
-            }
-            var updated = artifact
-            updated.code = CanvasArtifact.clampCode(extracted.code)
-            updated.kind = extracted.kind
-            updated.updatedAt = CanvasArtifact.nowISO()
-            let saved = try await client.saveCanvasArtifact(
-                updated, expectedUpdatedAt: artifact.updatedAt
-            )
-            canvasArtifacts = sortedArtifacts(saved.artifacts)
-            return saved.artifact
-        } catch is CancellationError {
-            return nil
-        } catch {
-            canvasError = error.localizedDescription
-            return nil
-        }
-    }
-
-    /// Remove an artifact, optimistically; restore on failure.
-    func deleteArtifact(_ artifact: CanvasArtifact) async {
-        guard let client else { return }
-        let previous = canvasArtifacts
-        canvasArtifacts.removeAll { $0.id == artifact.id }
-        do {
-            try await client.deleteCanvasArtifact(id: artifact.id)
-        } catch {
-            canvasArtifacts = previous
-            canvasError = error.localizedDescription
-        }
-    }
-
-    func saveCanvasComment(on artifact: CanvasArtifact, target: CanvasComponentTarget,
-                           note: String) async -> CanvasArtifact? {
-        guard let client else { return nil }
-        let trimmed = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4_000))
-        guard !trimmed.isEmpty else { return nil }
-        let now = CanvasArtifact.nowISO()
-        let existing = artifact.annotations?.first { $0.target.selector == target.selector }
-        let annotation = CanvasAnnotation(
-            id: existing?.id ?? UUID().uuidString,
-            target: target,
-            note: trimmed,
-            createdAt: existing?.createdAt ?? now,
-            updatedAt: now
-        )
-        do {
-            let saved = try await client.saveCanvasAnnotation(
-                artifactId: artifact.id,
-                annotation: annotation,
-                expectedUpdatedAt: existing?.updatedAt
-            )
-            canvasArtifacts = sortedArtifacts(saved.artifacts)
-            return saved.artifact
-        } catch {
-            canvasError = error.localizedDescription
-            return nil
-        }
-    }
-
-    func applyCanvasComments(_ artifact: CanvasArtifact, familiarId: String) async -> CanvasArtifact? {
-        let annotations = artifact.annotations ?? []
-        let prompt = CanvasArtifact.buildCommentsPrompt(annotations)
-        guard !prompt.isEmpty else { return nil }
-        guard let client else { return nil }
-
-        isGeneratingCanvas = true
-        canvasStreamText = ""
-        canvasError = nil
-        defer { isGeneratingCanvas = false }
-        do {
-            let text = try await streamText(
-                CanvasArtifact.buildRefinePrompt(
-                    currentCode: artifact.code,
-                    changeRequest: prompt,
-                    kind: artifact.kind
-                ),
-                familiarId: familiarId,
-                client: client
-            )
-            guard let extracted = CanvasArtifact.extractArtifact(text) else {
-                canvasError = "The familiar didn’t return an updated UI. Try again."
-                return nil
-            }
-            var updated = artifact
-            updated.code = CanvasArtifact.clampCode(extracted.code)
-            updated.kind = extracted.kind
-            updated.updatedAt = CanvasArtifact.nowISO()
-            let tokens = annotations
-                .filter { !$0.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                .map {
-                CaveClient.CanvasResolutionToken(id: $0.id, updatedAt: $0.updatedAt)
-            }
-            let saved = try await client.saveCanvasArtifact(
-                updated,
-                expectedUpdatedAt: artifact.updatedAt,
-                resolvedAnnotations: tokens
-            )
-            canvasArtifacts = sortedArtifacts(saved.artifacts)
-            return saved.artifact
-        } catch {
-            canvasError = error.localizedDescription
-            return nil
-        }
-    }
-
-    /// Consume the chat SSE stream for `prompt`, accumulating assistant text into
-    /// `canvasStreamText`. Throws on a stream `error` event with no text yet.
-    private func streamText(_ prompt: String, familiarId: String,
-                            client: CaveClient) async throws -> String {
-        var text = ""
-        let runId = UUID().uuidString
-        let body = CaveClient.SendBody(
-            familiarId: familiarId, prompt: prompt, sessionId: nil, runId: runId
-        )
-        var stream = client.sendStream(body)
-        var cursor = 0
-        var completed = false
-        var resumeAttempts = 0
-        var reportedError: Error?
-
-        while !completed {
-            do {
-                for try await frame in stream {
-                    try Task.checkCancellation()
-                    if let id = frame.id { cursor = max(cursor, id) }
-                    switch frame.event {
-                    case .assistantChunk(let chunk):
-                        text += chunk
-                        canvasStreamText = text
-                    case .done(let isError, _):
-                        completed = true
-                        if isError && text.isEmpty {
-                            reportedError = CaveError.transport("The familiar reported an error.")
-                        }
-                    case .error(let message):
-                        if text.isEmpty {
-                            reportedError = CaveError.transport(message)
-                            completed = true
-                        }
-                    default:
-                        break
-                    }
-                }
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                guard resumeAttempts < 3 else { throw error }
-            }
-            guard !completed else { break }
-            guard resumeAttempts < 3 else {
-                throw CaveError.transport("The Canvas generation connection ended before completion.")
-            }
-            resumeAttempts += 1
-            try await Task.sleep(for: .milliseconds(350 * resumeAttempts))
-            stream = client.resumeStream(runId: runId, cursor: cursor)
-        }
-        if let reportedError { throw reportedError }
-        return text
-    }
-
-    /// Newest-updated first; the canvas gallery's stable order.
-    private func sortedArtifacts(_ artifacts: [CanvasArtifact]) -> [CanvasArtifact] {
-        artifacts.sorted {
-            ($0.updatedDate ?? .distantPast) > ($1.updatedDate ?? .distantPast)
-        }
-    }
 
     // MARK: - Connection lifecycle
 
@@ -995,12 +671,6 @@ final class AppModel {
         projects = []
         projectsError = nil
         projectsLoaded = false
-        canvasArtifacts = []
-        canvasError = nil
-        canvasLoaded = false
-        journalDays = []
-        journalError = nil
-        journalLoaded = false
         chrome = .fallback
         publishedThemeId = nil
         publishedMode = nil
@@ -1043,7 +713,7 @@ final class AppModel {
     /// through a connection drop (RootView shows the reconnect pill over it
     /// instead of tearing down to the Connect screen).
     var hasLoadedSurfaces: Bool {
-        !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded || journalLoaded || canvasLoaded
+        !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded
     }
 
     private var shouldReloadLoadedSurfaces: Bool { hasLoadedSurfaces }
@@ -1133,8 +803,6 @@ final class AppModel {
             if tasksLoaded { group.addTask { await self.loadTasks() } }
             if remindersLoaded { group.addTask { await self.loadReminders() } }
             if projectsLoaded { group.addTask { await self.loadProjects() } }
-            if journalLoaded { group.addTask { await self.loadJournal() } }
-            if canvasLoaded { group.addTask { await self.loadCanvas() } }
         }
     }
 

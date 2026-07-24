@@ -62,11 +62,11 @@ assert.doesNotMatch(
   "no 60s resource cap may return — it killed replies that streamed past a minute",
 );
 
-// --- Dev-tab requests carry the paired credential ---------------------------
+// --- Shared Projects request carries the paired credential ------------------
 assert.match(
   devClient,
-  /devRequest[\s\S]*?if let token = CaveConnection\.accessToken \{\s*\n\s*req\.setValue\("Bearer \\\(token\)", forHTTPHeaderField: "Authorization"\)/,
-  "dev-tab requests must send the Bearer token — without it the Developer tab 401s on a paired desktop",
+  /func projects[\s\S]*?if let token = CaveConnection\.accessToken \{\s*\n\s*request\.setValue\("Bearer \\\(token\)", forHTTPHeaderField: "Authorization"\)/,
+  "project requests must send the Bearer token for Terminal and chat project access",
 );
 
 // --- Discovery: credential-safe probes, ordered adjudication, 401 terminal -

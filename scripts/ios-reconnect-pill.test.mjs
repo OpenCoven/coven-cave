@@ -78,7 +78,7 @@ assert.match(
 );
 assert.match(
   model,
-  /var hasLoadedSurfaces: Bool \{\s*\n\s*!familiars\.isEmpty \|\| sessionsLoaded \|\| tasksLoaded \|\| remindersLoaded \|\| projectsLoaded \|\| journalLoaded \|\| canvasLoaded/,
+  /var hasLoadedSurfaces: Bool \{\s*\n\s*!familiars\.isEmpty \|\| sessionsLoaded \|\| tasksLoaded \|\| remindersLoaded \|\| projectsLoaded/,
   "hasLoadedSurfaces is the single gate for 'the tab tree holds real data'",
 );
 
