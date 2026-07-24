@@ -316,8 +316,37 @@ test("directions are stored verbatim but never steer the extracted content", asy
 
 // ── typed failures ───────────────────────────────────────────────────────────
 
-test("a mission without a markdown artifact fails typed (route maps to 409)", async () => {
-  await seedMission("mission-bare", "nova", [], {});
+test("a mission whose markdown artifacts are all rejected fails typed (route maps to 409)", async () => {
+  await seedMission(
+    "mission-bare",
+    "nova",
+    [
+      artifactRef({
+        key: "findings",
+        kind: "findings",
+        title: "Findings",
+        relativePath: "artifacts/findings.md",
+        state: "rejected",
+        rejectionReason: "too sparse to publish",
+      }),
+      artifactRef({
+        key: "source-ledger",
+        kind: "source-ledger",
+        title: "Source ledger",
+        relativePath: "artifacts/sources.json",
+        state: "working",
+      }),
+      artifactRef({
+        key: "research-log",
+        kind: "research-log",
+        title: "Research log",
+        relativePath: "artifacts/research-log.md",
+        state: "rejected",
+        rejectionReason: "incomplete",
+      }),
+    ],
+    {},
+  );
   const result = await createResearchGenerationFromMission({
     familiarId: "nova",
     kind: "blog",
@@ -328,6 +357,7 @@ test("a mission without a markdown artifact fails typed (route maps to 409)", as
   assert.equal(result.code, "no-artifact");
   assert.match(result.error, /no markdown artifact/);
 });
+
 
 test("unknown missions and other familiars' missions read as not found", async () => {
   const missing = await createResearchGenerationFromMission({
