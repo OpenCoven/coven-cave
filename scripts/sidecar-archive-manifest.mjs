@@ -21,6 +21,7 @@ const NORMALIZED_DIRECTORY_MODE = 0o755;
 const NORMALIZED_FILE_MODE = 0o644;
 const COMPLETION_MARKER_PATH = ".complete.json";
 const PUBLICATION_LOCK_WAIT_MS = 30_000;
+const MALFORMED_PUBLICATION_LOCK_STALE_MS = 5_000;
 
 // Windows runners expose different tar implementations over time. Keep this
 // small writer in-process so ordering and metadata are part of our format,
@@ -437,6 +438,12 @@ async function acquirePublicationLock(archivePath) {
               await removeFileWithRetries(lockPath);
               continue;
             }
+          }
+        } else {
+          const metadata = await stat(lockPath);
+          if (Date.now() - metadata.mtimeMs >= MALFORMED_PUBLICATION_LOCK_STALE_MS) {
+            await removeFileWithRetries(lockPath);
+            continue;
           }
         }
       } catch (lockError) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -341,6 +341,25 @@ try {
     "must survive first publish failure\n",
   );
   assert.ok(await missing(`${noPriorArchive}.publish.lock`), "a stale publication lock must be reclaimed");
+
+  const malformedLockArchive = path.join(fixture, "malformed-lock", "server.tar.zst");
+  const malformedLockManifest = path.join(fixture, "malformed-lock", "manifest.json");
+  const malformedLockTemporaryArchive = path.join(fixture, "malformed-lock", ".server.tar.zst.tmp");
+  const malformedLockPath = `${malformedLockArchive}.publish.lock`;
+  await mkdir(path.dirname(malformedLockArchive), { recursive: true });
+  await writeFile(malformedLockPath, "");
+  await utimes(malformedLockPath, 1, 1);
+  await assert.rejects(
+    publishSidecarArchive(
+      path.join(fixture, "missing-runtime"),
+      malformedLockTemporaryArchive,
+      malformedLockArchive,
+      malformedLockManifest,
+    ),
+    /ENOENT/,
+    "a malformed stale publication lock must not block recovery",
+  );
+  assert.ok(await missing(malformedLockPath), "a malformed stale publication lock must be reclaimed");
 
   const orphanArchive = path.join(fixture, "orphan", "server.tar.zst");
   const orphanManifest = path.join(fixture, "orphan", "manifest.json");
