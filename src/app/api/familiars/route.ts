@@ -97,6 +97,7 @@ export async function GET(req: Request) {
       ...f,
       display_name: binding.display_name ?? f.display_name,
       role: binding.role ?? f.role,
+      familiarType: binding.familiarType,
       pronouns: binding.pronouns ?? f.pronouns,
       description: binding.description ?? f.description,
       color: binding.color,

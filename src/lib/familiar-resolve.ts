@@ -52,6 +52,7 @@ export function resolveFamiliar(base: Familiar, ctx: ResolveContext): ResolvedFa
     ...base,
     display_name: ov.display_name ?? base.display_name,
     role: ov.role ?? base.role,
+    familiarType: ov.familiarType ?? base.familiarType,
     pronouns: ov.pronouns ?? base.pronouns,
     description: ov.description ?? base.description,
     color: ov.color ?? base.color ?? "var(--accent-presence)",

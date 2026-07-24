@@ -17,6 +17,7 @@
 import type { ReactNode } from "react";
 import type { Familiar, SessionRow } from "./types";
 import type { IconName } from "./icon";
+import { familiarTypeRoleIds } from "./familiar-types.ts";
 
 export type RoleSurfaceId = string;
 
@@ -80,6 +81,10 @@ export interface RoleSurfaceContext {
   openUrl(url: string): void;
   /** Jump to a session in the chat surface. */
   openSession(sessionId: string, familiarId?: string): void;
+  /** Spotlight a Board card (opens the Board focused on it). */
+  focusCard(cardId: string): void;
+  /** Ask the shell to refresh its GitHub/task feeds. */
+  refreshTasks(): void;
 }
 
 // ── Contributions ────────────────────────────────────────────────────────────
@@ -210,11 +215,14 @@ export function normalizeRoleId(value: string): string {
 /**
  * The normalized role-id set assigned to a familiar:
  *  - its `role` label (whole normalized string plus individual word tokens,
- *    so "Research Analyst" grants both "research-analyst" and "analyst"), and
+ *    so "Research Analyst" grants both "research-analyst" and "analyst"),
+ *  - its explicit `familiarType` (familiar-types.ts) — the type id plus the
+ *    role token it grants, so the Studio's Type picker unlocks rooms without
+ *    touching the free-text label (types add, never subtract), and
  *  - the id + name of every ACTIVE role manifest belonging to it.
  */
 export function familiarRoleIds(
-  familiar: Pick<Familiar, "id" | "role">,
+  familiar: Pick<Familiar, "id" | "role" | "familiarType">,
   manifests: readonly FamiliarRoleManifest[] = [],
 ): Set<string> {
   const ids = new Set<string>();
@@ -222,6 +230,7 @@ export function familiarRoleIds(
   const whole = normalizeRoleId(label);
   if (whole) ids.add(whole);
   for (const token of whole.split("-")) if (token) ids.add(token);
+  for (const id of familiarTypeRoleIds(familiar.familiarType)) ids.add(id);
   for (const manifest of manifests) {
     if (!manifest.active || manifest.familiar !== familiar.id) continue;
     const byId = normalizeRoleId(manifest.id);

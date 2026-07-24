@@ -79,8 +79,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /VISIBLE_MODES\.map\(\(fm, i\) =>/,
-  "Sidebar renders the visible folder modes (navHidden surfaces filtered out)",
+  /props\.hideGithubRow \? VISIBLE_MODES\.filter\(\(fm\) => fm\.id !== "github"\) : VISIBLE_MODES/,
+  "Sidebar renders the visible folder modes, dropping the GitHub row while the Code room already carries a GitHub tab (cave-cc5r)",
 );
 assert.match(
   source,
@@ -292,8 +292,13 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "code", label: "Code", iconName: "ph:code"/,
-  "Code is visible by default (GitHub lives on its GitHub tab, cave-m6ys)",
+  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"/,
+  "The standalone GitHub row is back (cave-cc5r): Code lives in the Coding familiar's room",
+);
+assert.doesNotMatch(
+  source,
+  /\{ id: "code", label: "Code"/,
+  "Code is no longer a static folder row — the Coding familiar's room row arrives via roleSurfaces (cave-cc5r)",
 );
 
 // Recent Activity items must navigate: RecentActivityRollup's onClick calls
@@ -452,8 +457,8 @@ assert.match(
 );
 assert.match(
   source,
-  /quietLead=\{Boolean\(fm\.quiet\) && !VISIBLE_MODES\[i - 1\]\?\.quiet\}/,
-  "the first quiet row opens the spacing gap (indexed on the VISIBLE list)",
+  /quietLead=\{Boolean\(fm\.quiet\) && !rows\[i - 1\]\?\.quiet\}/,
+  "the first quiet row opens the spacing gap (indexed on the RENDERED list, which may drop the GitHub row)",
 );
 assert.match(
   styles,

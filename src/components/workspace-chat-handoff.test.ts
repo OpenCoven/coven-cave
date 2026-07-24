@@ -12,6 +12,7 @@ const codeWorkbench = await readFile(new URL("./code-workbench.tsx", import.meta
 const codeWorkbenchFiles = await readFile(new URL("./code-workbench-files.tsx", import.meta.url), "utf8");
 const workspaceRail = await readFile(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
 const railFilesPanel = await readFile(new URL("./rail-files-panel.tsx", import.meta.url), "utf8");
+const codeRoom = await readFile(new URL("./role-surfaces/code-room.tsx", import.meta.url), "utf8");
 
 assert.match(
   pendingChatActionLib,
@@ -132,8 +133,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /import type \{ PendingCodeOpen \} from "@\/lib\/pending-code-open"/,
-  "Workspace should import the shared pending code open type",
+  /import \{ enqueuePendingCodeOpen, type PendingCodeOpen \} from "@\/lib\/pending-code-open"/,
+  "Workspace should import the shared pending code open store",
 );
 assert.doesNotMatch(
   chatSurface,
@@ -141,9 +142,9 @@ assert.doesNotMatch(
   "ChatSurface no longer participates in file/diff open routing (cave-ohcj)",
 );
 assert.match(
-  workspace,
-  /const \[pendingCodeOpen, setPendingCodeOpen\] = useState<PendingCodeOpen \| null>\(null\)/,
-  "Workspace should retain file/diff open detail across the mode switch into code",
+  pendingCodeOpenLib,
+  /export function enqueuePendingCodeOpen[\s\S]*export function clearPendingCodeOpen[\s\S]*export function subscribePendingCodeOpen/,
+  "the module store retains file/diff open detail across the mode switch into the room (cave-cc5r)",
 );
 assert.match(
   workspace,
@@ -152,13 +153,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const sessionId = activeChatSessionIdRef\.current \?\? undefined;[\s\S]*setPendingCodeOpen\([\s\S]*kind === "files"[\s\S]*path: detail\.path[\s\S]*line: detail\.line[\s\S]*sessionId[\s\S]*path: detail\.path[\s\S]*sessionId[\s\S]*nonce: Date\.now\(\)[\s\S]*\);[\s\S]*setMode\("code"\)/,
+  /const sessionId = activeChatSessionIdRef\.current \?\? undefined;[\s\S]*enqueuePendingCodeOpen\([\s\S]*kind === "files"[\s\S]*path: detail\.path[\s\S]*line: detail\.line[\s\S]*sessionId[\s\S]*path: detail\.path[\s\S]*sessionId[\s\S]*nonce: Date\.now\(\)[\s\S]*\);[\s\S]*setMode\("code"\)/,
   "Workspace should attach the raising chat session and switch into code mode",
 );
 assert.match(
-  workspace,
-  /pendingOpen=\{pendingCodeOpen\}[\s\S]*onPendingOpenHandled=\{\(\) => setPendingCodeOpen\(null\)\}/,
-  "Workspace should pass pending file/diff opens into CodeView and clear them after consumption",
+  codeRoom,
+  /pendingOpen=\{pendingOpen\}[\s\S]*onPendingOpenHandled=\{clearPendingCodeOpen\}/,
+  "the Code room should pass pending file/diff opens into CodeView and clear them after consumption",
 );
 assert.match(
   railController,
@@ -222,7 +223,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /onBrowseProjectFiles = \(e: Event\) => \{[\s\S]*if \(!detail\?\.root\) return;[\s\S]*setPendingCodeOpen\(\{ kind: "files", root: detail\.root, nonce: Date\.now\(\) \}\)[\s\S]*setMode\("code"\)/,
+  /onBrowseProjectFiles = \(e: Event\) => \{[\s\S]*if \(!detail\?\.root\) return;[\s\S]*enqueuePendingCodeOpen\(\{ kind: "files", root: detail\.root, nonce: Date\.now\(\) \}\)[\s\S]*setMode\("code"\)/,
   "Workspace preserves the browse root and switches to code",
 );
 assert.match(

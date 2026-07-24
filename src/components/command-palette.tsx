@@ -53,7 +53,7 @@ type PaletteIntent =
   | { kind: "open-tui-session"; sessionId: string }
   | { kind: "open-board" }
   | { kind: "set-board-view"; view: "kanban" | "table" | "gantt" }
-  | { kind: "go-to-surface"; mode: FolderMode }
+  | { kind: "go-to-surface"; mode: FolderMode | `surface:${string}` }
   | { kind: "open-project"; root: string }
   | { kind: "focus-card"; cardId: string }
   | { kind: "create-task"; title: string }
@@ -98,6 +98,10 @@ type Props = {
   familiars: Familiar[];
   sessions: SessionRow[];
   activeFamiliarId: string | null;
+  /** Role Surface rooms visible for the active familiar — appended to the
+   *  "Go to" launcher rows so ⌘K reaches rooms exactly like sidebar surfaces
+   *  (cave-cc5r). Registry-driven; empty/omitted adds nothing. */
+  roleSurfaces?: readonly { mode: `surface:${string}`; label: string; description: string }[];
   initialQuery?: string;
   onQueryChange?: (query: string) => void;
   onIntent: (intent: PaletteIntent) => void;
@@ -160,6 +164,7 @@ export function CommandPalette({
   familiars,
   sessions,
   activeFamiliarId,
+  roleSurfaces,
   initialQuery = "",
   onQueryChange,
   onIntent,
@@ -478,10 +483,12 @@ export function CommandPalette({
 
     // "Go to <surface>" rows make ⌘K a launcher for the visible sidebar
     // surfaces. Hidden while typing a slash command or a familiar scope (where
-    // surface nav would be noise).
+    // surface nav would be noise). Role Surface rooms (cave-cc5r) append with
+    // the same treatment so "Go to Code Workshop" works like any surface.
     const surfaceRows: Row[] = (scoped || slashToken)
       ? []
-      : rank(FOLDER_MODES
+      : [
+          ...rank(FOLDER_MODES
           // Fuzzy on the short label/id; substring-only on the long description
           // (subsequence-matching prose surfaces irrelevant items).
           .filter((fm) => !q || fz(fm.label) || fz(fm.id) || fm.description.toLowerCase().includes(q)),
@@ -491,8 +498,21 @@ export function CommandPalette({
             kind: "command" as const,
             name: `Go to ${fm.label}`,
             hint: fm.kbd ? `${fm.description} · ${fm.kbd}` : fm.description,
-            intent: { kind: "go-to-surface", mode: fm.id },
-          }));
+            intent: { kind: "go-to-surface", mode: fm.id } as PaletteIntent,
+          })),
+          ...rank(
+            (roleSurfaces ?? []).filter(
+              (room) => !q || fz(room.label) || room.description.toLowerCase().includes(q),
+            ),
+            (room) => [room.label],
+          ).map((room) => ({
+            id: `room:${room.mode}`,
+            kind: "command" as const,
+            name: `Go to ${room.label}`,
+            hint: room.description,
+            intent: { kind: "go-to-surface", mode: room.mode } as PaletteIntent,
+          })),
+        ];
 
     // "Open project <name>" rows jump into a project's chats (the Projects tab,
     // expanded + scrolled to that project). Hidden while scoped or typing slash.
@@ -584,7 +604,7 @@ export function CommandPalette({
     // Salem row is still rows[0], so unmatched queries keep their one-Enter
     // AI path.
     return [...localRows, ...salemRows];
-  }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects]);
+  }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects, roleSurfaces]);
 
   const counts = useMemo(() => paletteResultCounts(allRows), [allRows]);
   const rows = useMemo(

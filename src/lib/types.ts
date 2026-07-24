@@ -29,6 +29,12 @@ export type Familiar = {
   avatarUrl?: string;
   // CovenCave-side enrichment from cave-config.json
   harness?: string;
+  /**
+   * Explicit familiar Type (FamiliarTypeId from familiar-types.ts): the
+   * user-modifiable vocation that unlocks Role Surface rooms alongside the
+   * free-text `role` label. Absent = "general".
+   */
+  familiarType?: string;
   defaultHarness?: string;
   harnessOverride?: string | null;
   model?: string;

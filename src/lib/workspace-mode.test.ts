@@ -12,11 +12,12 @@ import {
 // mode lands (issue #3283, cave-m4ih.3). These tests pin its invariants;
 // workspace-alias-modes.test.ts pins the Workspace wiring to it.
 
-test("every alias resolves to a canonical mode, never to another alias", () => {
+test("every alias resolves to a canonical mode or a Role Surface room, never another alias", () => {
   for (const [alias, target] of Object.entries(MODE_ALIASES)) {
     assert.ok(
-      (CANONICAL_WORKSPACE_MODES as readonly string[]).includes(target),
-      `alias "${alias}" must land on a canonical surface, got "${target}"`,
+      (CANONICAL_WORKSPACE_MODES as readonly string[]).includes(target) ||
+        target.startsWith("surface:"),
+      `alias "${alias}" must land on a canonical surface or a room, got "${target}"`,
     );
     assert.ok(!isAliasWorkspaceMode(target), `alias "${alias}" must not chain to another alias`);
   }
@@ -60,6 +61,13 @@ test("the documented alias landings hold", () => {
   assert.equal(MODE_ALIASES["familiar-work-queue"], "board", "the Queue is a Tasks tab");
   assert.equal(MODE_ALIASES.roles, "marketplace", "Roles is a Marketplace hub section");
   assert.equal(MODE_ALIASES.capabilities, "marketplace", "Capabilities is a Marketplace hub section");
+  assert.equal(MODE_ALIASES.code, "surface:code", "Code is the Coding familiar's room (cave-cc5r)");
+});
+
+test("github is a canonical standalone surface again (cave-cc5r)", () => {
+  assert.ok((CANONICAL_WORKSPACE_MODES as readonly string[]).includes("github"));
+  assert.ok(!isAliasWorkspaceMode("github"), "github must not be remapped through MODE_ALIASES");
+  assert.equal(resolveWorkspaceModeAlias("github"), "github");
 });
 
 test("salem is a canonical standalone surface, not an alias", () => {

@@ -62,11 +62,21 @@ assert.match(
   "the roles/capabilities aliases render the Marketplace hub on their sections (keyed remount)",
 );
 
-assert.equal(MODE_ALIASES.github, "code");
+assert.equal(MODE_ALIASES.code, "surface:code");
 assert.match(
   workspace,
-  /mode === "code" \|\| mode === "github"[\s\S]{0,500}?<CodeView\s+key=\{mode\}[\s\S]{0,200}?initialTopTab=\{mode === "github" \? "github" : undefined\}/,
-  "the github alias renders the Code surface on its GitHub tab (keyed remount, cave-m6ys)",
+  /if \(next === "code"\) \{[\s\S]{0,700}?setModeRaw\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
+  'setMode\'s "code" branch must land on the Coding familiar\'s room (MODE_ALIASES.code = "surface:code", cave-cc5r)',
+);
+assert.match(
+  workspace,
+  /mode === "github" \?[\s\S]{0,500}?<GitHubView[\s\S]{0,300}?initialTarget=\{githubTarget\}/,
+  "the canonical github mode renders the standalone GitHub surface with its deep-link target (cave-cc5r)",
+);
+assert.doesNotMatch(
+  workspace,
+  /mode === "code" \|\| mode === "github"/,
+  "the old combined Code/GitHub render branch is gone — Code renders inside the Role Surface room",
 );
 
 // ── Every mode-string entry point validates/routes through the shared

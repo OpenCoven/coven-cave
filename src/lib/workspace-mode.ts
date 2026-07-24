@@ -17,7 +17,7 @@ export type CanonicalWorkspaceMode =
   | "board"
   | "inbox"
   | "browser"
-  | "code"
+  | "github"
   | "marketplace"
   | "submissions"
   | "grimoire"
@@ -31,9 +31,13 @@ export type AliasWorkspaceMode =
   | "familiar-work-queue"
   | "roles"
   | "capabilities"
-  | "github";
+  | "code";
 
 export type WorkspaceMode = CanonicalWorkspaceMode | AliasWorkspaceMode;
+
+/** A Role Surface room mode ("surface:<id>") — the shape produced by
+ *  roleSurfaceMode() in role-surfaces.ts. Alias remaps may target a room. */
+type RoleSurfaceModeString = `surface:${string}`;
 
 export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
   "agents",
@@ -42,10 +46,10 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
   "board",
   "inbox",
   "browser",
-  // Code — the Codex-style multi-session coding surface (cave-k0ua). Reverses
-  // the earlier Code-mode retirement; default-on since phase 2 (cave-m6ys),
-  // with GitHub absorbed as its GitHub tab ("github" is now an alias below).
-  "code",
+  // GitHub — the standalone assigned-work surface. Restored to canonical when
+  // Code moved into the Coding familiar's Role Surface room (cave-cc5r): every
+  // familiar keeps GitHub; the Code workbench is the coder's room.
+  "github",
   "marketplace",
   "submissions",
   "grimoire",
@@ -60,14 +64,15 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
  *
  * - Rewritten in Workspace.setMode, so `mode` state never holds them:
  *   `groupchat` opens Chat's Group tab, `journal` opens Memories' Journal
- *   tab, `flow` (retired surface) lands on Rituals.
+ *   tab, `flow` (retired surface) lands on Rituals, and `code` opens the
+ *   Coding familiar's Code Workshop room (cave-cc5r) — old `?mode=code` deep
+ *   links and persisted last-surface strings keep landing on the workbench,
+ *   now behind the room's role gate.
  * - Kept in `mode` state as tab/section selectors: the render branch mounts
  *   the canonical surface on the matching tab, keyed by the alias so deep
  *   links remount onto it — `calendar` (Rituals' Calendar tab),
  *   `familiar-work-queue` (Tasks' Queue tab), `roles` / `capabilities`
- *   (Marketplace hub sections), `github` (Code's GitHub tab — the standalone
- *   surface was absorbed in cave-m6ys; old deep links and persisted
- *   last-surface strings keep landing on the same content).
+ *   (Marketplace hub sections).
  *
  * workspace-alias-modes.test.ts pins Workspace's branches to this table;
  * sidebar-nav-state derives row highlighting from it.
@@ -80,8 +85,8 @@ export const MODE_ALIASES = {
   "familiar-work-queue": "board",
   roles: "marketplace",
   capabilities: "marketplace",
-  github: "code",
-} as const satisfies Record<AliasWorkspaceMode, CanonicalWorkspaceMode>;
+  code: "surface:code",
+} as const satisfies Record<AliasWorkspaceMode, CanonicalWorkspaceMode | RoleSurfaceModeString>;
 
 export function isAliasWorkspaceMode(mode: string): mode is AliasWorkspaceMode {
   return Object.prototype.hasOwnProperty.call(MODE_ALIASES, mode);
@@ -94,8 +99,11 @@ export function isWorkspaceMode(mode: string): mode is WorkspaceMode {
   );
 }
 
-/** The canonical surface a mode renders on: aliases resolve through
- *  MODE_ALIASES, canonical modes return themselves. */
-export function resolveWorkspaceModeAlias(mode: WorkspaceMode): CanonicalWorkspaceMode {
+/** The surface a mode renders on: aliases resolve through MODE_ALIASES
+ *  (possibly onto a Role Surface room mode), canonical modes return
+ *  themselves. */
+export function resolveWorkspaceModeAlias(
+  mode: WorkspaceMode,
+): CanonicalWorkspaceMode | RoleSurfaceModeString {
   return isAliasWorkspaceMode(mode) ? MODE_ALIASES[mode] : mode;
 }

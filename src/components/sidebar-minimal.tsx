@@ -73,6 +73,10 @@ export type SidebarMinimalProps = {
   boardOpenCount?: number;
   scheduleNeedsCount?: number;
   githubAssignedCount?: number;
+  /** Hide the standalone GitHub row while the Code room is visible for the
+   *  active familiar (cave-cc5r) — the room carries its own GitHub tab, so
+   *  both rows at once would double-list the same content. */
+  hideGithubRow?: boolean;
 };
 
 // Format a count as a compact nav badge; 0/undefined yields no badge.
@@ -131,11 +135,12 @@ const FOLDER_MODES: Array<FolderModeRow> = [
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
   //
-  // Code (cave-k0ua, default-on since cave-m6ys): the Codex-style coding
-  // surface owns this quiet slot; GitHub is a tab inside it (the row keeps
-  // carrying the assigned-work badge). The standalone GitHub row is gone —
-  // mode "github" is a tab alias that lands on Code's GitHub tab.
-  { id: "code", label: "Code", iconName: "ph:code", description: "Multi-session coding — diffs, files, branches, worktrees, and GitHub", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
+  // GitHub — the standalone assigned-work surface, restored when the Code
+  // workbench moved into the Coding familiar's room (cave-cc5r). Every
+  // familiar keeps this row (with the assigned-work badge) EXCEPT while the
+  // Code room is visible for the active familiar — the room carries its own
+  // GitHub tab, so the workspace passes hideGithubRow to avoid double-listing.
+  { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Assigned PRs, issues, and review requests across your repos", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
 ];
 
 // Rows actually rendered in the sidebar — everything except on-demand surfaces
@@ -287,7 +292,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       </div>
 
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
-        {VISIBLE_MODES.map((fm, i) => (
+        {(props.hideGithubRow ? VISIBLE_MODES.filter((fm) => fm.id !== "github") : VISIBLE_MODES).map((fm, i, rows) => (
           <FolderRow
             key={fm.id}
             id={fm.id}
@@ -301,9 +306,9 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             kbd={fm.kbd}
             description={fm.description}
             quiet={fm.quiet}
-            // Index the VISIBLE list, not FOLDER_MODES — a navHidden entry between
-            // quiet rows must not throw off the "first quiet row" gap.
-            quietLead={Boolean(fm.quiet) && !VISIBLE_MODES[i - 1]?.quiet}
+            // Index the RENDERED list — a navHidden or hidden-GitHub entry
+            // between quiet rows must not throw off the "first quiet row" gap.
+            quietLead={Boolean(fm.quiet) && !rows[i - 1]?.quiet}
             onClick={() => handleModeSelect(fm.id)}
           />
         ))}

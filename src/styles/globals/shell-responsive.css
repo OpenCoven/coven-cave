@@ -789,6 +789,30 @@
   transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
 }
 .familiar-studio-identity__input:focus { outline: none; border-color: var(--accent-presence); box-shadow: 0 0 0 3px var(--ring-focus-soft); }
+/* Explicit familiar Type chips (cave-cc5r) — picks a vocation from the static
+   FAMILIAR_TYPES table; the active chip uses the filled accent pair. */
+.familiar-studio-identity__types { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.familiar-studio-type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
+}
+.familiar-studio-type-chip:hover { border-color: var(--accent-presence); color: var(--text-primary); }
+.familiar-studio-type-chip--active {
+  background: var(--accent-presence);
+  border-color: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+}
+.familiar-studio-identity__hint { margin: 0; font-size: var(--text-2xs); color: var(--text-muted); }
 
 .familiar-studio-look { display: flex; flex-direction: column; gap: 18px; }
 .familiar-studio-look__section { display: flex; flex-direction: column; gap: 8px; }

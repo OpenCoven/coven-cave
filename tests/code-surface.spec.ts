@@ -1,9 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // The dedicated Code surface (cave-k0ua): a Codex-style multi-session coding
-// tab — session rail grouped by project, per-session workbench
+// workbench — session rail grouped by project, per-session workbench
 // (Diff | Files | Terminal | PR), inspector column, and a GitHub top tab.
-// Default-on since phase 2 (cave-m6ys) — no flag env needed.
+// Default-on since phase 2 (cave-m6ys); since cave-cc5r it lives as the
+// Coding familiar's Role Surface room (`?mode=code` aliases onto
+// `surface:code`), so the mocked familiar carries the explicit
+// familiarType "coding" that unlocks the room.
 //
 // Daemon-less — onboarding dismissed, every endpoint mocked via page.route.
 
@@ -44,8 +47,9 @@ async function base(page: Page, sessions: unknown[] = [NEWEST, OLDER]) {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
   await page.route("**/api/familiars**", (route) =>
-    route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
+    route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", familiarType: "coding", status: "active", icon: "ph:sparkle-fill" }] } }),
   );
+  await page.route("**/api/roles**", (route) => route.fulfill({ json: { ok: true, roles: [] } }));
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions } }),
   );
@@ -81,7 +85,7 @@ async function base(page: Page, sessions: unknown[] = [NEWEST, OLDER]) {
   );
 }
 
-test.describe("code surface (flag on)", () => {
+test.describe("code surface (Coding familiar's room)", () => {
   test("landing: rail groups sessions, newest auto-selected, attribution chips in the header", async ({ page, isMobile }) => {
     test.skip(!!isMobile, "desktop-only (mobile drill-in covered in tests/mobile/)");
     await base(page);
