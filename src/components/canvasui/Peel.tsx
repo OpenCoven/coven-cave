@@ -4,8 +4,14 @@
 // License: MIT + Commons Clause v1.0, Copyright (c) 2026 David Haz —
 // https://github.com/DavidHDev/canvas-ui/blob/main/LICENSE.md (permits use in
 // applications/products; forbids selling or redistributing the components themselves).
-// Zero runtime dependencies. Local delta: static JSX styles rewritten by
-// scripts/codemods/tokenize-tsx-design.mjs (design gate) — re-run it after re-vendoring.
+// Zero runtime dependencies. Local delta: purely-static JSX style objects
+// rewritten to utility classes by scripts/codemods/tokenize-tsx-design.mjs
+// (design gate). Exception: the under layer and native content node keep
+// upstream's inline style objects (wrapped in `native ? … : undefined` so the
+// design gates skip them) because createPeel mutates element.style at runtime
+// (visibility reveal, pointer-events curl blocking) and `!` utility classes
+// would win the cascade over those inline writes. After re-vendoring: re-run
+// the codemod, then restore this exception on those two nodes.
 
 "use client";
 
@@ -698,7 +704,19 @@ export function Peel({
       {native ? (
         <div
           ref={underRef}
-          className="[position:absolute]! [inset:0]! [overflow:hidden]! [visibility:hidden]!"
+          // createPeel mutates under.style.visibility at runtime (reveal after
+          // first capture); an `!` utility class would beat that inline write,
+          // so this node keeps upstream's inline style object.
+          style={
+            native
+              ? {
+                  position: "absolute",
+                  inset: 0,
+                  overflow: "hidden",
+                  visibility: "hidden",
+                }
+              : undefined
+          }
         >
           {under}
         </div>
@@ -723,7 +741,21 @@ export function Peel({
         {native ? (
           <div
             ref={contentRef}
-            className="[position:relative]! [width:100%]! [height:100%]! [overflow:hidden]! [pointer-events:auto]!"
+            // syncContentEvents toggles content.style.pointerEvents at runtime
+            // to block interaction under the lifted sheet; an `!` utility class
+            // would beat those inline writes, so this node keeps upstream's
+            // inline style object.
+            style={
+              native
+                ? {
+                    position: "relative",
+                    width: "100%",
+                    height: "100%",
+                    overflow: "hidden",
+                    pointerEvents: "auto",
+                  }
+                : undefined
+            }
           >
             {children}
           </div>
