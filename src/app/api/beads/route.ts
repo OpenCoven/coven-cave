@@ -39,7 +39,11 @@ function jsonFromStdout(stdout: string): unknown {
 }
 
 async function resolveProjectRoot(projectRoot: string | null) {
-  const root = await resolveRepoRoot(projectRoot || process.cwd());
+  // This adapter mutates user workspaces. A packaged Cave runtime has no
+  // meaningful workspace cwd, so every caller must name the project it means
+  // to inspect or change rather than silently falling back to process.cwd().
+  if (!projectRoot) return { ok: false as const, status: 400, error: "projectRoot is required" };
+  const root = await resolveRepoRoot(projectRoot);
   if (!root.ok) return root;
   const beadsDir = path.join(root.repoRoot, ".beads");
   try {

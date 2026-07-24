@@ -29,6 +29,8 @@ type Props = {
   /** Scope the strip to one agent: shows only the Asana tasks that familiar is
    *  assigned to work with, and hides entirely when the agent is opted out. */
   familiarId?: string | null;
+  /** The Queue's explicitly selected repository for filing Beads. */
+  projectRoot?: string;
 };
 
 /**
@@ -39,7 +41,7 @@ type Props = {
  * task can be opened in Asana, added to the board, or filed as a bead (entering
  * the ready queue via --external-ref).
  */
-export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId }: Props) {
+export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId, projectRoot }: Props) {
   const { announce } = useAnnouncer();
   const [items, setItems] = useState<AsanaItem[]>([]);
   const [configured, setConfigured] = useState(false);
@@ -111,7 +113,7 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId }: Props) {
     async (item: AsanaItem) => {
       setBusyGid(item.gid);
       try {
-        const res = await fileAsanaItemAsBead(item);
+        const res = await fileAsanaItemAsBead(item, projectRoot);
         if (res.ok) {
           setFiled((prev) => new Set(prev).add(item.gid));
           announce(res.beadId ? `Filed ${res.beadId} from "${item.title}".` : `Filed a bead from "${item.title}".`);
@@ -123,7 +125,7 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId }: Props) {
         setBusyGid(null);
       }
     },
-    [announce, onFiledBead],
+    [announce, onFiledBead, projectRoot],
   );
 
   if (patInvalid) {

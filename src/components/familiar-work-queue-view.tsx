@@ -178,6 +178,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const { announce } = useAnnouncer();
   const [queue, setQueue] = useState<WorkQueue | null>(null);
   const [readiness, setReadiness] = useState<QueueReadiness | null>(null);
+  const [readinessFailure, setReadinessFailure] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -213,6 +214,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   // then a refresh failure (keep the richer on-screen picture + inline retry
   // banner) rather than a degradation (which would silently drop PR lanes).
   const hadPrDataRef = useRef(false);
+  const activeProjectRootRef = useRef<string | null>(null);
   // Re-render ~once a minute so the header freshness and per-card ages stay
   // truthful between polls (the equality guard below keeps queue state stable,
   // so nothing else would tick them).
@@ -239,6 +241,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    let readinessResolved = false;
     try {
       const readinessResponse = await fetch("/api/queue/readiness", { cache: "no-store", signal: ctrl.signal });
       const readinessJson = (await readinessResponse.json()) as { ok?: boolean; readiness?: QueueReadiness; error?: string };
@@ -247,6 +250,21 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         throw new Error(readinessJson.error || "Couldn't check the Queue project");
       }
       if (seq !== loadSeq.current) return;
+      setReadinessFailure(null);
+      readinessResolved = true;
+      const nextRoot = nextReadiness.project?.root ?? null;
+      if (activeProjectRootRef.current !== nextRoot) {
+        // A selected repository is an isolation boundary. Do not retain cards,
+        // failure state, detail selection, or evidence from the prior project.
+        activeProjectRootRef.current = nextRoot;
+        hadPrDataRef.current = false;
+        setQueue(null);
+        setBeadsDegraded(false);
+        setPrsDegraded(null);
+        setLastUpdated(null);
+        setDetailId(null);
+        setEvidenceAdded(new Set());
+      }
       setReadiness(nextReadiness);
       if (!nextReadiness.ok || !nextReadiness.project) {
         setQueue(null);
@@ -273,6 +291,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       // Keep whatever data is on screen — the render picks between the
       // full-surface empty state (no data yet) and the inline refresh banner.
       setError(err instanceof Error ? err.message : "Failed to load the queue");
+      if (!readinessResolved) setReadinessFailure(err instanceof Error ? err.message : "Couldn't check the Queue project");
     } finally {
       if (seq === loadSeq.current) setHasLoaded(true);
     }
@@ -285,7 +304,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       const response = await fetch("/api/queue/readiness", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "generate" }),
+        body: JSON.stringify({ action: "generate", projectId: readiness?.project?.id }),
       });
       const json = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (!response.ok || !json?.ok) throw new Error(json?.error || "Couldn't generate the Queue workspace");
@@ -295,11 +314,17 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     } finally {
       setGenerating(false);
     }
-  }, [generating, load]);
+  }, [generating, load, readiness?.project?.id]);
 
   useEffect(() => {
     void load();
     return () => abortRef.current?.abort();
+  }, [load]);
+
+  useEffect(() => {
+    const onProjectSelected = () => { void load(true); };
+    window.addEventListener("cave:queue-project-selected", onProjectSelected);
+    return () => window.removeEventListener("cave:queue-project-selected", onProjectSelected);
   }, [load]);
 
   // Announce the actionable count once the first load settles.
@@ -328,10 +353,11 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const runAction = useCallback(
     async (item: WorkQueueItem, action: "claim" | "close") => {
       const id = item.bead?.id;
-      if (!id) return;
+      const projectRoot = readiness?.project?.root;
+      if (!id || !projectRoot) return;
       setBusyId(item.key);
       try {
-        const body: Record<string, string> = { action, id };
+        const body: Record<string, string> = { action, id, projectRoot };
         if (action === "close") body.reason = item.merged ? `Merged in PR #${item.merged.number}` : "Completed";
         const res = await fetch("/api/beads", {
           method: "POST",
@@ -348,7 +374,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         setBusyId(null);
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // Handoff note: appends a comment to the bead (the recorded verification
@@ -358,13 +384,14 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     async (item: WorkQueueItem, text: string): Promise<boolean> => {
       const id = item.bead?.id;
       const comment = text.trim();
-      if (!id || !comment) return false;
+      const projectRoot = readiness?.project?.root;
+      if (!id || !comment || !projectRoot) return false;
       setBusyId(item.key);
       try {
         const res = await fetch("/api/beads", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "comment", id, comment }),
+          body: JSON.stringify({ action: "comment", id, comment, projectRoot }),
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "comment failed");
@@ -379,7 +406,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         setBusyId(null);
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // Claim-for-familiar: same claim action, but the bead lands on the picked
@@ -388,13 +415,14 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const runClaimFor = useCallback(
     async (item: WorkQueueItem, familiar: ResolvedFamiliar) => {
       const id = item.bead?.id;
-      if (!id) return;
+      const projectRoot = readiness?.project?.root;
+      if (!id || !projectRoot) return;
       setBusyId(item.key);
       try {
         const res = await fetch("/api/beads", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "claim", id, assignee: familiar.id }),
+          body: JSON.stringify({ action: "claim", id, assignee: familiar.id, projectRoot }),
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "claim failed");
@@ -406,7 +434,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         setBusyId(null);
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // File a bead for an unlinked attention-strip PR: bd create with the PR's
@@ -416,6 +444,8 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   // can drop its busy state truthfully (cave-p63a).
   const runFileBead = useCallback(
     async (pr: PullRequestSummary): Promise<boolean> => {
+      const projectRoot = readiness?.project?.root;
+      if (!projectRoot) return false;
       try {
         const res = await fetch("/api/beads", {
           method: "POST",
@@ -426,6 +456,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
             description: `Filed from unlinked PR #${pr.number} — ${pr.url}`,
             externalRef: `gh-${pr.number}`,
             labels: ["from-pr"],
+            projectRoot,
           }),
         });
         const json = await res.json();
@@ -442,7 +473,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         return false;
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // Search matches title, bead id, and PR number; priority bands map P2+
@@ -516,16 +547,17 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
 
   if (error && !queue) {
     const canGenerate = readiness?.canGenerate === true;
+    const readinessUnavailable = readinessFailure !== null;
     return (
       <div className="fwq">
         <div className="fwq-body">
           <EmptyState
             icon="ph:warning-circle"
-            headline={canGenerate ? "Generate your Queue" : "Queue needs a project"}
-            subtitle={error}
+            headline={readinessUnavailable ? "Queue check unavailable" : canGenerate ? "Generate your Queue" : "Queue needs a project"}
+            subtitle={readinessUnavailable ? readinessFailure : error}
             actions={
               <div className="flex flex-wrap justify-center gap-2">
-                {canGenerate ? (
+                {readinessUnavailable ? null : canGenerate ? (
                   <Button variant="primary" leadingIcon="ph:magic-wand-fill" loading={generating} onClick={() => void generateQueue()}>
                     Generate
                   </Button>
@@ -710,7 +742,12 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} onFileBead={runFileBead} />
       ) : null}
 
-      <AsanaQueueStrip onOpenUrl={onOpenUrl} onFiledBead={() => void load(true)} familiarId={activeFamiliarId} />
+      <AsanaQueueStrip
+        onOpenUrl={onOpenUrl}
+        onFiledBead={() => void load(true)}
+        familiarId={activeFamiliarId}
+        projectRoot={readiness?.project?.root}
+      />
 
       <div className="fwq-body">
         {q.total === 0 ? (
@@ -825,6 +862,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       {detailId ? (
         <BeadDetailModal
           id={detailId}
+          projectRoot={readiness?.project?.root ?? ""}
           onClose={() => setDetailId(null)}
           onClaim={() => {
             const item = q.lanes.flatMap((l) => l.items).find((i) => i.bead?.id === detailId);

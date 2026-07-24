@@ -90,8 +90,8 @@ assert.match(
 
 // ── Bead inspector (cave-u2p1) ───────────────────────────────────────────────
 // Bead titles open a focus-trapped dialog over the existing show contract.
-assert.match(view, /className="fwq-row-name fwq-row-name--link focus-ring-inset"/);
-assert.match(view, /\/api\/beads\?mode=show&id=\$\{encodeURIComponent\(id\)\}/, "drawer reads bd show --json");
+assert.match(view, /className="fwq-card-name fwq-card-name--link focus-ring-inset"/);
+assert.match(view, /\/api\/beads\?mode=show&id=\$\{encodeURIComponent\(id\)\}&projectRoot=\$\{encodeURIComponent\(projectRoot\)\}/, "drawer reads the selected project's bead");
 assert.match(view, /import \{ Modal \} from "@\/components\/ui\/modal"/, "reuses the focus-trapped house dialog");
 assert.match(view, /breadcrumb=\{\["Queue", id\]\}/);
 assert.match(view, /import\("@\/lib\/clipboard"\)/, "copy-id uses the shared clipboard helper");
@@ -149,7 +149,11 @@ assert.match(view, /await load\(true\)/, "queue mutations reload the explicitly 
 // absent. It must not warm anonymous Queue requests in the background.
 assert.match(view, /fetch\("\/api\/queue\/readiness"/, "Queue checks readiness before reading work");
 assert.match(view, /projectRoot=\$\{encodeURIComponent\(projectRoot\)\}/, "both Queue sources receive the selected root");
-assert.match(view, /headline=\{canGenerate \? "Generate your Queue" : "Queue needs a project"\}/);
+assert.match(view, /action, id, projectRoot/, "claim and close mutations receive the selected root");
+assert.match(view, /action: "comment", id, comment, projectRoot/, "handoff comments receive the selected root");
+assert.match(view, /action: "claim", id, assignee: familiar\.id, projectRoot/, "claim-for receives the selected root");
+assert.match(view, /projectRoot=\{readiness\?\.project\?\.root\}/, "Asana filing receives the selected root");
+assert.match(view, /headline=\{readinessUnavailable \? "Queue check unavailable" : canGenerate \? "Generate your Queue" : "Queue needs a project"\}/);
 assert.match(view, />\s*Generate\s*<\/Button>/, "empty Queue state offers Generate");
 assert.doesNotMatch(view, /readSurfaceResource\("tasks:queue"/, "Queue no longer consumes an unscoped warm cache");
 
@@ -167,6 +171,7 @@ assert.match(css, /\.fwq-forward-menu \{/, "the picker menu has real styles");
 // Claim stays the default (connected user); the menu claims for a familiar.
 assert.match(view, /className="fwq-act fwq-act--claim"/, "Claim is the redesigned row action");
 assert.match(view, /\{familiars\.length > 0 \? \(\s*<ForwardMenu/, "the menu renders only with familiars present");
+assert.match(view, /action: "claim", id, assignee: familiar\.id, projectRoot/, "forward-to-familiar keeps the selected project root");
 
 // The /api/beads claim action honors the optional assignee: bare claim keeps
 // `--claim`; an assignee becomes explicit --assignee/--status flags (both
