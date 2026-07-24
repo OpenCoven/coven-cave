@@ -6,6 +6,7 @@ import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import {
   LocalTtsSynthesisError,
+  piperExecutable,
   piperSpawnEnv,
   runPiperWithDependencies,
 } from "./local-tts-server.ts";
@@ -74,4 +75,12 @@ test("Piper inherits only required runtime variables", () => {
     COVEN_CAVE_TOKEN: "must-not-leak",
   });
   assert.deepEqual(env, { PATH: "safe-path" });
+});
+
+test("packaged builds require the managed Piper resource instead of PATH", () => {
+  assert.equal(
+    piperExecutable({ COVEN_CAVE_BUNDLE: "1", PATH: "untrusted-path" }),
+    null,
+  );
+  assert.equal(piperExecutable({ PATH: "development-path" }), "piper");
 });

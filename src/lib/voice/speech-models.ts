@@ -333,6 +333,47 @@ async function writeResponseToFile(
   }
 }
 
+export async function publishVerifiedModelDirectory(
+  stagingDir: string,
+  modelDir: string,
+  job: SpeechModelDownloadJob,
+  dependencies: { renameImpl?: typeof rename } = {},
+): Promise<void> {
+  const renameImpl = dependencies.renameImpl ?? rename;
+  const backupDir = path.join(
+    /* turbopackIgnore: true */ path.dirname(modelDir),
+    `.${path.basename(modelDir)}.${job.id}.previous`,
+  );
+  let movedPrevious = false;
+  let published = false;
+  await rm(/* turbopackIgnore: true */ backupDir, { recursive: true, force: true });
+  try {
+    try {
+      await stat(/* turbopackIgnore: true */ modelDir);
+      await renameImpl(/* turbopackIgnore: true */ modelDir, backupDir);
+      movedPrevious = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
+    await renameImpl(/* turbopackIgnore: true */ stagingDir, modelDir);
+    published = true;
+    if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
+    await rm(/* turbopackIgnore: true */ backupDir, { recursive: true, force: true });
+  } catch (error) {
+    if (cancelledDownloadJobs.has(job.id)) {
+      if (published) {
+        await rm(/* turbopackIgnore: true */ modelDir, { recursive: true, force: true });
+      }
+      await rm(/* turbopackIgnore: true */ backupDir, { recursive: true, force: true });
+    } else if (movedPrevious) {
+      await rm(/* turbopackIgnore: true */ modelDir, { recursive: true, force: true });
+      await renameImpl(/* turbopackIgnore: true */ backupDir, modelDir);
+    }
+    throw error;
+  }
+}
+
 export async function runSpeechModelDownload(
   model: SpeechModelRegistryEntry,
   job: SpeechModelDownloadJob,
@@ -385,9 +426,7 @@ export async function runSpeechModelDownload(
     // Publish the complete directory only after every required asset verifies.
     // The ONNX weights are never visible without the Piper config beside them.
     if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
-    await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
-    if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
-    await rename(/* turbopackIgnore: true */ stagingDir, dir);
+    await publishVerifiedModelDirectory(stagingDir, dir, job);
     putJob({
       ...job,
       status: "done",

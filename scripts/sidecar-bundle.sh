@@ -29,12 +29,70 @@ WINDOWS_ARCHIVE_MANIFEST="$WINDOWS_ARCHIVE_DIR/manifest.json"
 WINDOWS_ARCHIVE_TEMP="$WINDOWS_ARCHIVE_DIR/.server.tar.zst.$$.tmp"
 WINDOWS_ARCHIVE_MANIFEST_TEMP="$WINDOWS_ARCHIVE_DIR/.manifest.json.$$.tmp"
 BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
+PIPER_RUNTIME_DIR="$ROOT/src-tauri/resources/piper"
 PNPM_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/coven-cave-sidecar-pnpm.XXXXXX")"
 cleanup_staging() {
   rm -rf "$PNPM_STAGE"
   rm -f "$WINDOWS_ARCHIVE_TEMP" "$WINDOWS_ARCHIVE_MANIFEST_TEMP"
 }
 trap cleanup_staging EXIT
+
+bundle_piper_runtime() {
+  local platform asset expected_sha archive extract_root executable runtime_root actual_sha
+  platform="$(node -p 'process.platform')"
+  case "$platform/$(node -p 'process.arch')" in
+    win32/x64)
+      asset="piper_windows_amd64.zip"
+      expected_sha="f3c58906402b24f3a96d92145f58acba6d86c9b5db896d207f78dc80811efcea"
+      executable="piper.exe"
+      ;;
+    darwin/arm64)
+      asset="piper_macos_aarch64.tar.gz"
+      expected_sha="6b1eb03b3735946cb35216e063e7eebcc33a6bbf5dd96ec0217959bf1cdcb0cc"
+      executable="piper"
+      ;;
+    darwin/x64)
+      asset="piper_macos_x64.tar.gz"
+      expected_sha="ced85c0a3df13945b1e623b878a48fdc2854d5c485b4b67f62857cf551deaf8b"
+      executable="piper"
+      ;;
+    *)
+      echo "ERROR: no managed Piper runtime for $platform/$(node -p 'process.arch')" >&2
+      exit 1
+      ;;
+  esac
+
+  archive="$PNPM_STAGE/$asset"
+  extract_root="$PNPM_STAGE/piper-runtime"
+  echo "==> downloading pinned Piper runtime $asset"
+  curl --fail --location --retry 3 --silent --show-error \
+    "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/$asset" \
+    --output "$archive"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
+  else
+    actual_sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
+  fi
+  if [ "$actual_sha" != "$expected_sha" ]; then
+    echo "ERROR: Piper runtime checksum mismatch for $asset" >&2
+    exit 1
+  fi
+
+  rm -rf "$extract_root" "$PIPER_RUNTIME_DIR"
+  mkdir -p "$extract_root" "$PIPER_RUNTIME_DIR"
+  case "$asset" in
+    *.zip) unzip -q "$archive" -d "$extract_root" ;;
+    *.tar.gz) tar -xzf "$archive" -C "$extract_root" ;;
+  esac
+  runtime_root="$(dirname "$(find "$extract_root" -type f -name "$executable" -print -quit)")"
+  if [ -z "$runtime_root" ] || [ ! -f "$runtime_root/$executable" ]; then
+    echo "ERROR: Piper archive does not contain $executable" >&2
+    exit 1
+  fi
+  cp -a "$runtime_root/." "$PIPER_RUNTIME_DIR/"
+  chmod +x "$PIPER_RUNTIME_DIR/$executable" 2>/dev/null || true
+  printf "generated at release build time\n" > "$PIPER_RUNTIME_DIR/placeholder.txt"
+}
 
 fix_node_pty_spawn_helpers() {
   local base="$1"
@@ -245,6 +303,8 @@ write_windows_sidecar_archive() {
   mkdir -p "$DEST"
   printf "generated at release build time\n" > "$DEST/placeholder.txt"
 }
+
+bundle_piper_runtime
 
 echo "==> next build"
 (cd "$ROOT" && pnpm build) >&2

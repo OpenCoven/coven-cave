@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   isPathInsideRoot,
   removeSpeechModel,
+  publishVerifiedModelDirectory,
   runSpeechModelDownload,
   type SpeechModelRegistryEntry,
   speechEnginesReadiness,
@@ -88,6 +89,38 @@ test("readiness requires both expected size and verified sha256", async () => {
   assert.equal(good.ready, true);
   assert.equal(good.verified, true);
   assert.equal(good.diskSizeBytes, model.sizeBytes);
+  await rm(root, { recursive: true, force: true });
+});
+
+test("failed replacement keeps the previously verified model available", async () => {
+  const root = testRoot("replace-rollback");
+  const modelDir = path.join(root, "tts", "piper", "fixture-model");
+  const stagingDir = path.join(root, "tts", "piper", ".fixture-model-new.download");
+  await mkdir(modelDir, { recursive: true });
+  await mkdir(stagingDir, { recursive: true });
+  await writeFile(path.join(modelDir, "model.bin"), "verified-old");
+  await writeFile(path.join(stagingDir, "model.bin"), "replacement");
+  const job = {
+    id: "replace-test",
+    modelId: "fixture-model",
+    status: "running" as const,
+    receivedBytes: 0,
+    totalBytes: 0,
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await assert.rejects(
+    () => publishVerifiedModelDirectory(stagingDir, modelDir, job, {
+      renameImpl: async (from, to) => {
+        if (from === stagingDir && to === modelDir) throw new Error("rename failed");
+        const { rename } = await import("node:fs/promises");
+        await rename(from, to);
+      },
+    }),
+    /rename failed/,
+  );
+  assert.equal(await readFile(path.join(modelDir, "model.bin"), "utf8"), "verified-old");
   await rm(root, { recursive: true, force: true });
 });
 

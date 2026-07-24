@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -62,13 +63,31 @@ export type PiperRuntimeAvailability = {
 
 let piperAvailability: { checkedAt: number; value: PiperRuntimeAvailability } | null = null;
 
+/**
+ * Desktop releases set COVEN_PIPER_BIN to the signed app resource before the
+ * Node sidecar starts. Development may explicitly set it too; PATH is only a
+ * development fallback so a packaged app never executes an arbitrary binary.
+ */
+export function piperExecutable(env: NodeJS.ProcessEnv = process.env): string | null {
+  const configured = env.COVEN_PIPER_BIN?.trim();
+  if (configured) return existsSync(configured) ? configured : null;
+  return env.COVEN_CAVE_BUNDLE === "1" ? null : "piper";
+}
+
 /** Probe the controlled, minimal environment used for synthesis. */
 export async function piperRuntimeAvailability(): Promise<PiperRuntimeAvailability> {
   if (piperAvailability && Date.now() - piperAvailability.checkedAt < PIPER_PROBE_TIMEOUT_MS) {
     return piperAvailability.value;
   }
+  const executable = piperExecutable();
+  if (!executable) {
+    return {
+      available: false,
+      hint: "The bundled Piper runtime is missing. Reinstall CovenCave before selecting a Piper voice.",
+    };
+  }
   const value = await new Promise<PiperRuntimeAvailability>((resolve) => {
-    const child = spawn("piper", ["--help"], {
+    const child = spawn(executable, ["--help"], {
       env: piperSpawnEnv(),
       stdio: "ignore",
       windowsHide: true,
@@ -98,16 +117,23 @@ export async function runPiperWithDependencies(
   modelPath: string,
   text: string,
   signal?: AbortSignal,
-  dependencies: { spawnImpl?: PiperSpawn } = {},
+  dependencies: { spawnImpl?: PiperSpawn; executable?: string | null } = {},
 ): Promise<Uint8Array> {
   const spawnImpl = dependencies.spawnImpl ?? spawn;
+  const executable = dependencies.executable ?? piperExecutable();
+  if (!executable) {
+    throw new LocalTtsSynthesisError(
+      "local_tts_engine_unavailable",
+      "The bundled Piper runtime is missing. Reinstall CovenCave before selecting a Piper voice.",
+    );
+  }
   const outputPath = path.join(
     /* turbopackIgnore: true */ os.tmpdir(),
     `coven-piper-${process.pid}-${randomUUID()}.wav`,
   );
   try {
     await new Promise<void>((resolve, reject) => {
-      const child: ChildProcess = spawnImpl("piper", ["-m", modelPath, "-f", outputPath], {
+      const child: ChildProcess = spawnImpl(executable, ["-m", modelPath, "-f", outputPath], {
         env: piperSpawnEnv(),
         stdio: ["pipe", "ignore", "pipe"],
         windowsHide: true,
@@ -190,8 +216,8 @@ export async function runPiperWithDependencies(
 }
 
 /**
- * Run Piper as a local child of the Node sidecar. The executable resolves
- * through PATH, keeping the packaged route's file trace deterministic.
+ * Run Piper as a local child of the Node sidecar. Packaged builds use the
+ * signed resource path injected by the desktop launcher.
  */
 export const runPiper: PiperRunner = async (modelPath, text, signal) => {
   return runPiperWithDependencies(modelPath, text, signal);

@@ -140,6 +140,14 @@ pub(super) fn start_sidecar_runtime(
         )
     })?;
     log::info!("[cave] using node at {}", node.display());
+    let piper = bundled_piper_path(&resource_dir);
+    if !piper.exists() {
+        return Err(SidecarStartError::Failed(format!(
+            "bundled Piper runtime not found at {}",
+            piper.display()
+        )));
+    }
+    log::info!("[cave] using bundled Piper at {}", piper.display());
     let whisper_cli = find_bundled_whisper_cli(&resource_dir).ok_or_else(|| {
         SidecarStartError::Failed(
             "Could not find the bundled local Whisper runtime. Reinstall CovenCave or contact support."
@@ -248,6 +256,7 @@ pub(super) fn start_sidecar_runtime(
         .env("NODE_ENV", "production")
         .env("COVEN_CAVE_BUNDLE", "1")
         .env("COVEN_WHISPER_CPP_BIN", &whisper_cli)
+        .env("COVEN_PIPER_BIN", node_arg_path(&piper))
         .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
         .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token);
 
