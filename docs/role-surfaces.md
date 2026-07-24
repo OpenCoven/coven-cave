@@ -41,9 +41,19 @@ Analyst"` → `research-analyst` + `research` + `analyst`):
 - an **active** role manifest (`/api/roles` entry) with that id or name.
 
 A surface may also declare `aliases` — synonym roles matched exactly like its
-primary `role`. The Chart Room serves `navigator` + `planner`; the Writing
-Desk serves `scribe` + `editor`/`writer`; the Review Deck serves `reviewer` +
-`review`; The Archive serves `indexer` + `archivist`.
+primary `role`. The Chart Room serves `navigator` + `planner`/`planning`; the
+Writing Desk serves `scribe` + `editor`/`writer`/`writing`; the Review Deck
+serves `reviewer` + `review`; The Archive serves `indexer` +
+`archivist`/`indexing`; the Watchtower serves `sentinel` + `watch`/`guardian`.
+
+Familiars can also carry an explicit **Type** (Familiar Studio → Identity;
+`FAMILIAR_TYPES` in `src/lib/familiar-types.ts`) that grants its room's role
+token on top of the role label. The Type vocabulary is a deliberately small
+core — General, Coding, Research, Review, Comms. Four earlier types (`watch`,
+`planning`, `writing`, `indexing`) were retired in the 2026-07-24 vocabulary
+reduction (cave-lgcb): stored values still resolve safely through
+`RETIRED_FAMILIAR_TYPE_SUCCESSORS`, and their rooms stay reachable because
+the registry carries the retired words as aliases (above).
 
 ## Adding a new role surface
 
