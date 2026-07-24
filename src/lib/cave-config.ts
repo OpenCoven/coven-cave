@@ -165,7 +165,8 @@ export type FamiliarBinding = {
   model: string;
   display_name?: string;
   role?: string;
-  /** Explicit familiar Type id (familiar-types.ts). Absent = "general". */
+  /** Explicit familiar Type id(s) (familiar-types.ts). May be a single id or
+   *  comma-separated list of ids for multi-type selection. Absent/empty = "general". */
   familiarType?: string;
   pronouns?: string;
   description?: string;

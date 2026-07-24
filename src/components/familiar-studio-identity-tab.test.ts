@@ -14,5 +14,7 @@ assert.match(source, /pronouns/);
 assert.match(source, /description/);
 assert.match(source, /setFamiliarOverride/);
 assert.match(source, /clearFamiliarOverrideField/);
+assert.match(source, /role="checkbox"/);
+assert.match(source, /parseFamiliarTypeIds/);
 
 console.log("familiar-studio-identity-tab.test.ts: ok");

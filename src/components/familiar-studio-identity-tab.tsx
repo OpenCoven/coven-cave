@@ -8,7 +8,7 @@ import {
   useFamiliarOverrides,
   type FamiliarOverride,
 } from "@/lib/cave-familiar-overrides";
-import { FAMILIAR_TYPES, resolveFamiliarType } from "@/lib/familiar-types";
+import { FAMILIAR_TYPES, parseFamiliarTypeIds } from "@/lib/familiar-types";
 import { Icon } from "@/lib/icon";
 import { FamiliarStudioLookTab } from "@/components/familiar-studio-look-tab";
 import { FamiliarLifecycleSection } from "@/components/familiar-lifecycle-section";
@@ -69,42 +69,58 @@ export function FamiliarStudioIdentityTab({
 }
 
 /**
- * The explicit familiar Type picker (cave-cc5r): a chip radio-row over the
- * static FAMILIAR_TYPES table. The choice is stored as a Cave override
- * (`familiarType`) and synced to cave-config like every other identity field;
- * it ADDS the type's role token to the familiar's Role Surface grants, so the
- * free-text Role label below keeps working exactly as before. Picking General
- * (the default) clears the override.
+ * The explicit familiar Type picker (cave-cc5r / cave-gud8): a chip
+ * checkbox-row over the static FAMILIAR_TYPES table. Multiple types may be
+ * selected; the choice is stored comma-separated in the same `familiarType`
+ * Cave override and synced to cave-config like every other identity field.
+ * Each selected type ADDS its role token to the familiar's Role Surface
+ * grants; the free-text Role label below keeps working exactly as before.
+ * General is the empty state — it is checked when nothing is selected, and
+ * clicking it clears all selections.
  */
 function FamiliarTypePicker({ familiar }: { familiar: ResolvedFamiliar }) {
-  const selected = resolveFamiliarType(familiar.familiarType);
+  const selectedIds = parseFamiliarTypeIds(familiar.familiarType);
   const labelId = `familiar-type-label-${familiar.id}`;
   return (
     <div className="familiar-studio-identity__row">
       <span className="familiar-studio-identity__label" id={labelId}>
         Type
       </span>
-      <div role="radiogroup" aria-labelledby={labelId} className="familiar-studio-identity__types">
-        {FAMILIAR_TYPES.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="radio"
-            aria-checked={selected.id === t.id}
-            title={t.description}
-            className={`focus-ring familiar-studio-type-chip${selected.id === t.id ? " familiar-studio-type-chip--active" : ""}`}
-            onClick={() =>
-              setFamiliarOverride(familiar.id, {
-                familiarType: t.id === "general" ? "" : t.id,
-              })
-            }
-          >
-            <Icon name={t.iconName} width={12} height={12} aria-hidden />
-            {t.label}
-          </button>
-        ))}
+      <div role="group" aria-labelledby={labelId} className="familiar-studio-identity__types">
+        {FAMILIAR_TYPES.map((t) => {
+          const isChecked = t.id === "general" ? selectedIds.length === 0 : selectedIds.includes(t.id);
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="checkbox"
+              aria-checked={isChecked}
+              title={t.description}
+              className={`focus-ring familiar-studio-type-chip${isChecked ? " familiar-studio-type-chip--active" : ""}`}
+              onClick={() => {
+                if (t.id === "general") {
+                  setFamiliarOverride(familiar.id, { familiarType: "" });
+                } else {
+                  const next = new Set(selectedIds);
+                  if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
+                  const value = FAMILIAR_TYPES.filter((s) => next.has(s.id)).map((s) => s.id).join(",");
+                  setFamiliarOverride(familiar.id, { familiarType: value });
+                }
+              }}
+            >
+              <Icon name={t.iconName} width={12} height={12} aria-hidden />
+              {t.label}
+            </button>
+          );
+        })}
       </div>
-      <p className="familiar-studio-identity__hint">{selected.description}</p>
+      {selectedIds.length === 0 ? (
+        <p className="familiar-studio-identity__hint">{FAMILIAR_TYPES[0].description}</p>
+      ) : (
+        FAMILIAR_TYPES.filter((s) => selectedIds.includes(s.id)).map((s) => (
+          <p key={s.id} className="familiar-studio-identity__hint">{s.description}</p>
+        ))
+      )}
     </div>
   );
 }
