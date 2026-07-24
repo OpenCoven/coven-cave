@@ -171,6 +171,11 @@ test("empty states are honest with a real next step", () => {
   assert.doesNotMatch(tab, /is being assembled|coming soon/i);
 });
 
+test("library offers view/download for unpublished artifacts without publish", () => {
+  assert.match(tab, /ResearchArtifactActions/);
+  assert.doesNotMatch(tab, /onPublish=/, "library never offers publishing");
+});
+
 test("library styles ride the desk container and coven tokens", () => {
   assert.match(css, /@container research-desk \(max-width: 900px\)/);
   assert.match(css, /@container research-desk \(max-width: 560px\)/);
