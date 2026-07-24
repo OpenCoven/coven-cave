@@ -918,14 +918,14 @@ export function OnboardingOverlay({
       },
       {
         key: "git",
-        title: "Find Git (recommended)",
-        optional: true,
-        // Advisory: absence never blocks setup; treat "not reported" as fine.
-        ok: s?.git ? s.git.ok : true,
+        title: "Find Git",
+        // Queue project selection (on the Tasks page's Queue tab) is a
+        // required Git-repository boundary.
+        ok: !!s?.git?.ok,
         detail:
           s?.git?.detail ??
           s?.git?.hint ??
-          "Powers the changes panel, project files, and checkpoints.",
+          "Git is required to select and use a Queue project.",
         icon: "ph:git-branch-bold",
       },
     ];
@@ -1460,8 +1460,10 @@ export function OnboardingOverlay({
                         ) : step.key === "git" ? (
                           <div className="flex flex-col gap-2">
                             <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
-                              Chat works without Git, but the changes panel,
-                              project file tree, and checkpoints all use it.
+                              Git is required before choosing a Queue project on
+                              the Tasks page. Chat can work without Git, but the
+                              Queue, the changes panel, project file tree, and
+                              checkpoints all use it.
                             </p>
                             <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-muted)]">
                               {status?.steps.git?.hint ??

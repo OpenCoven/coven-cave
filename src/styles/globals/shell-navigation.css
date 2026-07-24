@@ -114,7 +114,6 @@
   gap: var(--space-1);
   background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
   backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
   overflow-y: auto;
 }
 
@@ -137,7 +136,6 @@
      @supports / reduced-transparency blocks below. */
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-right: 1px solid var(--border-hairline);
   box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
   animation: shellNavPeekIn 0.13s ease;
@@ -456,7 +454,6 @@
   min-height: 40px;
   padding: var(--space-1) 6px var(--space-1) var(--space-2);
   background: color-mix(in oklch, var(--bg-raised) 96%, var(--foreground) 4%);
-  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   color: var(--text-secondary);
   transition: color var(--duration-fast) var(--ease-standard);

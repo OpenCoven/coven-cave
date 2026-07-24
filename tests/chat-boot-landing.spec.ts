@@ -1,13 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Verifies the chat surface landing (cave-qvwu): opening chat (home-first
-// boot means via ?mode=chat) paints the
-// zero-turn compose view (ChatEmptyState + composer) without waiting for
-// /api/sessions/list — the fetch that used to gate the boot-compose effect
-// and left users on the ChatList skeleton wall for its full duration. Also
-// pins the landing polish that rode along: board-aware "Continue the task"
-// pills, the hidden-not-disabled pre-session Voice button, and the dosed
-// "/ for commands" discoverability hint.
+// Verifies the chat surface landing: opening chat (home-first boot means via
+// ?mode=chat) paints the brand-new-chat dashboard (ChatNewDashboard — the
+// work-led rail + open-work board relocated off Home — over ChatView's real
+// composer) without waiting for /api/sessions/list — the fetch that used to
+// gate the boot-compose effect and left users on the ChatList skeleton wall
+// for its full duration. Also pins the landing affordances: the live board's
+// open-work rows, quick-start rows that seed (never send) the composer, and
+// the hidden-not-disabled pre-session Voice button.
 //
 // Desktop only (compose-first boot is a desktop affordance — mobile keeps
 // the thread list as the chat home). /api/familiars, /api/sessions/list and
@@ -71,6 +71,15 @@ async function seed(page: Page) {
 }
 
 test.describe("chat boot landing", () => {
+  test("dismissed E2E baseline keeps onboarding closed with the seeded Queue project", async ({ page }) => {
+    await seed(page);
+    await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+
+    await page.goto("/?mode=chat");
+    await expect(page.getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
   test("compose view paints before the sessions list resolves", async ({ page }) => {
     await seed(page);
     // Hold the sessions fetch hostage until the landing has painted — this
@@ -88,12 +97,12 @@ test.describe("chat boot landing", () => {
     });
 
     await page.goto("/?mode=chat");
-    await expect(page.locator(".cave-chat-empty")).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
     expect(sessionsFulfilled).toBe(false);
 
     // Unblock the fetch and confirm the settled landing is intact.
     releaseSessions();
-    await expect(page.locator(".cave-chat-empty-greeting")).toBeVisible();
+    await expect(page.locator(".home-dash__eyebrow")).toBeVisible();
   });
 
   test("a #chat deep link still shows the Opening-chat takeover until sessions settle", async ({ page }) => {
@@ -112,18 +121,21 @@ test.describe("chat boot landing", () => {
     // loosened compose gate must not flash a compose view over it.
     const takeover = page.getByRole("status").filter({ hasText: "Opening chat…" });
     await expect(takeover).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByTestId("chat-new-dashboard")).toHaveCount(0);
     await expect(page.locator(".cave-chat-empty")).toHaveCount(0);
 
     releaseSessions();
     await expect(takeover).toHaveCount(0, { timeout: 15_000 });
   });
 
-  test("landing offers a task-resume pill, voice call from turn zero, and hints at / commands", async ({ page }) => {
+  test("landing surfaces board work, quick-start seeds the composer, voice call from turn zero", async ({ page }) => {
     await seed(page);
     let voiceConversationCreateCalls = 0;
     await page.route("**/api/sessions/list**", (route) =>
       route.fulfill({ json: { ok: true, sessions: [] } }),
     );
+    // Deterministic needs-you tier: the dashboard also reads the inbox.
+    await page.route("**/api/inbox", (route) => route.fulfill({ json: { ok: true, items: [] } }));
     await page.route("**/api/chat/conversation", (route) => {
       if (route.request().method() !== "POST") return route.continue();
       voiceConversationCreateCalls += 1;
@@ -137,19 +149,22 @@ test.describe("chat boot landing", () => {
     });
 
     await page.goto("/?mode=chat");
-    const empty = page.locator(".cave-chat-empty");
-    await expect(empty).toBeVisible({ timeout: 45_000 });
+    const dash = page.getByTestId("chat-new-dashboard");
+    await expect(dash).toBeVisible({ timeout: 45_000 });
 
-    // Board-aware pill: the unassigned inbox card surfaces as a task pill…
-    const pill = empty.getByRole("button", { name: /Continue the task: Fix login flow/ });
-    await expect(pill).toBeVisible();
-    await expect(pill).toHaveClass(/cave-chat-empty-prompt--task/);
+    // The live board's inbox card surfaces as an open-work row with the
+    // visual Resume CTA…
+    const workRow = dash.locator(".home-dash__work-row", { hasText: "Fix login flow" });
+    await expect(workRow).toBeVisible();
+    await expect(workRow).toContainText("Resume");
+    // …and the headline counts it.
+    await expect(dash.locator(".home-dash__headline")).toContainText("1 thread open.");
 
-    // …that inserts into the composer, never auto-sends.
-    await pill.click();
+    // Quick start seeds the composer, never auto-sends.
+    await dash.locator(".home-dash__quick-row", { hasText: "Summarise today" }).click();
     const composer = page.getByPlaceholder(/Message Nova/);
-    await expect(composer).toHaveValue(/Continue the task: Fix login flow/);
-    await expect(empty).toBeVisible();
+    await expect(composer).toHaveValue(/Summarise everything that happened today\./);
+    await expect(dash).toBeVisible();
 
     // Voice no longer needs a session: the call action is a direct button from
     // turn zero, while the overflow has moved to the dedicated Chat options trigger.
@@ -171,8 +186,5 @@ test.describe("chat boot landing", () => {
     // The unified + menu folds the old Improve section into enhance rows.
     await expect(page.getByRole("menuitem", { name: "Enhance prompt" })).toBeVisible();
     await page.keyboard.press("Escape");
-
-    // Dosed discoverability: the ready line mentions the slash entry point.
-    await expect(empty.getByText("/ for commands", { exact: false })).toBeVisible();
   });
 });

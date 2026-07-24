@@ -1,6 +1,6 @@
 import type { rename, symlink } from "node:fs/promises";
 
-export type ReconciliationStrategy = "inbox" | "state" | "preferences" | "directory" | "manual";
+export type ReconciliationStrategy = "inbox" | "state" | "preferences" | "board" | "directory" | "manual";
 
 export type CaveHomeReconciliationEntry = {
   legacy: string;

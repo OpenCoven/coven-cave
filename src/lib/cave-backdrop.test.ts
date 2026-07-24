@@ -427,4 +427,14 @@ assert.match(
   "an undecodable HEIC gets an actionable announce, not the engine's decode error",
 );
 
+// ── Backdrop style plumbing (cave-99s9) ──────────────────────────────────────
+// The client store mirrors the central style choice; the default stays the
+// image so existing setups don't change visuals on upgrade.
+{
+  const src = await readFile(new URL("./cave-backdrop.ts", import.meta.url), "utf8");
+  assert.match(src, /style: CaveBackdropStyle;/, "BackdropPrefs carries the style choice");
+  assert.match(src, /style: "image",\n  familiars: \{\},/, "the default style is the image");
+  assert.match(src, /style: central\.style,/, "readBackdropPrefs mirrors the central style");
+}
+
 console.log("cave-backdrop.test.ts: ok");

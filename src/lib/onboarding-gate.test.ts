@@ -42,6 +42,13 @@ assert.equal(
   false,
   "server complete → no auto-open",
 );
+assert.equal(
+  shouldAutoOpenOnboarding(
+    payload({ complete: false, steps: { ...allStepsOk, project: { ok: false }, daemon: { ok: false } } }),
+  ),
+  false,
+  "a Queue project is not a setup step — selection lives on the Tasks page's Queue tab, so it never reopens the wizard",
+);
 
 // ── Coven Code is not a setup requirement (the cave-219 AND-gate is gone) ────
 // A payload may still carry a tools[] array (the status route reports every

@@ -381,7 +381,7 @@ function NavRow({
         <span className="min-w-0 flex-1 truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">{title}</span>
         {badge}
       </span>
-      <span className="mt-0.5 flex items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+      <span className="mt-0.5 flex items-center gap-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
         {subtitle ? <span className="min-w-0 truncate font-mono">{subtitle}</span> : null}
         {meta ? <span className="shrink-0">{meta}</span> : null}
       </span>
@@ -601,7 +601,7 @@ function GrimoireDocLinks({
     if (!loaded || markdown.trim().length === 0) return null;
     return (
       <div className="grimoire-doc-links shrink-0 border-t border-[var(--border-hairline)] px-3 py-2">
-        <p className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+        <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
           Tip: type <code className="rounded bg-[var(--bg-elevated)] px-1">[[a doc&apos;s title]]</code> anywhere in
           the text to link documents — links show up here and weave the graph.
         </p>
@@ -649,7 +649,7 @@ function GrimoireDocLinks({
       ) : null}
       {unresolvedHint ? (
         <div className="space-y-1" role="status">
-          <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+          <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
             “{unresolvedHint}” has no matching doc yet — create a stitch with that title to
             link it.
           </p>
@@ -1746,7 +1746,7 @@ export function GrimoireView({
               <span className="text-[length:var(--text-xs)] text-[var(--text-secondary)] @min-[880px]/grimoire:hidden">Documents</span>
               <span className="min-w-0 flex-1" />
               {deleteError ? (
-                <span role="alert" className="min-w-0 truncate text-[length:var(--text-2xs)] text-[var(--color-warning)]">
+                <span role="alert" className="min-w-0 truncate text-[length:var(--text-sm)] text-[var(--color-warning)]">
                   {deleteError}
                 </span>
               ) : null}
@@ -1755,7 +1755,7 @@ export function GrimoireView({
                   type="button"
                   onClick={() => void deleteSelection()}
                   disabled={deleting}
-                  className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] text-[var(--text-secondary)] enabled:hover:border-[var(--color-danger)]/40 enabled:hover:bg-[var(--color-danger)]/10 enabled:hover:text-[var(--color-danger)] disabled:opacity-50"
+                  className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] enabled:hover:border-[var(--color-danger)]/40 enabled:hover:bg-[var(--color-danger)]/10 enabled:hover:text-[var(--color-danger)] disabled:opacity-50"
                 >
                   <Icon name="ph:trash" width={11} aria-hidden />
                   {deleting

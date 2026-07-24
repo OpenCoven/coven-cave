@@ -415,18 +415,21 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /className=\{`fa-kpi\$\{kpi\.tone/, "KPI tiles tint by tone");
   });
 
-  it("synthesizes a plain-language insight banner above the KPIs", () => {
+  it("synthesizes a plain-language needs-attention banner above the KPIs", () => {
     assert.match(source, /import \{ deriveAnalyticsInsight \} from "@\/lib\/familiar-analytics-insight"/, "view uses the insight helper");
-    assert.match(source, /<AnalyticsInsightBanner model=\{model\} healRequestCount=\{healRequests\.length\}/, "banner is rendered with the model");
+    assert.match(source, /<AnalyticsInsightBanner[\s\S]*model=\{model\}[\s\S]*healRequestCount=\{healRequests\.length\}/, "banner is rendered with the model");
     assert.match(source, /deriveAnalyticsInsight\(model, healRequestCount\)/, "banner derives the insight from the model");
     assert.match(source, /fa-insight--\$\{insight\.tone\}/, "banner is tinted by tone");
+    // The modernized banner carries state chips + a prioritized action list.
+    assert.match(source, /function deriveNextActions/, "the banner derives its prioritized actions from the heal requests");
+    assert.match(source, /className="fa-attention__stats"/, "the banner renders the at-a-glance state chips");
   });
 
-  it("renders progression between the insight banner and KPI row with intentional copy", () => {
+  it("folds progression into the hero header, above the attention banner, with intentional copy", () => {
     assert.match(
       source,
-      /<AnalyticsInsightBanner[\s\S]*<ProgressionBand progression=\{model\.progression\} \/>[\s\S]*<FamiliarKpis/,
-      "progression is placed between the insight and KPI summary",
+      /<ProgressionBand progression=\{model\.progression\} \/>[\s\S]*<\/header>[\s\S]*<AnalyticsInsightBanner/,
+      "progression is folded into the header, ahead of the attention banner and KPI summary",
     );
     assert.match(source, /"Top of the ladder"/, "top-tier accessible copy remains explicit");
     assert.match(source, /"a session today starts a streak"/, "zero streaks use invitational copy");
@@ -474,14 +477,16 @@ describe("FamiliarAnalyticsView", () => {
   });
 
   it("lays sections out in a container-responsive grid (inspector-pane safe)", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    // The .fa-* surface CSS is component-imported (not in the global bundle) per
+    // #3264, so these rules live in src/styles/familiar-analytics.css.
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     assert.match(source, /className="fa-grid"/, "sections are wrapped in the grid");
-    assert.match(globals, /\.fa-grid\s*\{/, ".fa-grid rule exists");
-    assert.match(globals, /container-name: fa/, ".fa-page is a size container");
-    assert.match(globals, /@container fa \(max-width: 880px\)/, "grid collapses by pane width, not viewport");
+    assert.match(faCss, /\.fa-grid\s*\{/, ".fa-grid rule exists");
+    assert.match(faCss, /container-name: fa/, ".fa-page is a size container");
+    assert.match(faCss, /@container fa \(max-width: 880px\)/, "grid collapses by pane width, not viewport");
   });
 
-  it("gives contract compliance both columns after the sessions and self-heal row", () => {
+  it("leads the grid with the full-width self-heal queue and closes with wide contract compliance", () => {
     assert.match(
       source,
       /id="fa-contract"\s+title="Contract compliance"\s+wide/,
@@ -489,35 +494,38 @@ describe("FamiliarAnalyticsView", () => {
     );
 
     const grid = source.slice(source.indexOf('<div className="fa-grid">'), source.indexOf("{traceTarget ?"));
-    const sessionsIndex = grid.indexOf('id="fa-sessions"');
     const healIndex = grid.indexOf('id="fa-heal"');
+    const sessionsIndex = grid.indexOf('id="fa-sessions"');
     const contractIndex = grid.indexOf("<ContractCompliance");
-    assert.ok(sessionsIndex >= 0 && sessionsIndex < healIndex, "recent sessions starts the paired row");
-    assert.ok(healIndex < contractIndex, "self-heal completes the row before the wide contract panel");
+    assert.ok(healIndex >= 0 && healIndex < sessionsIndex, "the actionable self-heal queue leads the grid full-width");
+    assert.ok(sessionsIndex >= 0 && sessionsIndex < contractIndex, "contract compliance closes the grid after the sessions pair");
   });
 
   it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-    const block = globals.match(/\.fa-page\s*\{[^}]*\}/);
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    const block = faCss.match(/\.fa-page\s*\{[^}]*\}/);
     assert.ok(block, ".fa-page rule should exist");
     assert.match(block![0], /overflow-y:\s*auto/, ".fa-page must scroll its own content on the full-page route");
     assert.doesNotMatch(block![0], /min-height:\s*100%/, ".fa-page should fill (height:100%), not just min-height, so overflow can trigger");
   });
 
   it("modernized chrome: sticky freshness topbar, drill flashes, actionable insight (cave UX audit)", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    // All .fa-* surface rules — including the reduced-motion and phone-width
+    // overrides — are component-imported (#3264), so they live in the
+    // familiar-analytics sheet, not the global facade.
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
 
     // Truthful freshness stamp + visible refresh progress in a sticky topbar.
     assert.match(source, /setUpdatedAt\(new Date\(\)\.toISOString\(\)\)/, "updatedAt is stamped by the load that actually landed");
     assert.match(source, /Updated <RelativeTime iso=\{updatedAt\} \/>/, "topbar renders the freshness stamp");
     assert.match(source, /refreshing \? " is-refreshing" : ""/, "refresh button carries a refreshing state class");
-    assert.match(globals, /\.fa-topbar\s*\{[^}]*position:\s*sticky/, "breadcrumb topbar is sticky");
-    assert.match(globals, /fa-refresh-spin/, "refresh spins while a quiet reload is in flight");
+    assert.match(faCss, /\.fa-topbar\s*\{[^}]*position:\s*sticky/, "breadcrumb topbar is sticky");
+    assert.match(faCss, /fa-refresh-spin/, "refresh spins while a quiet reload is in flight");
 
     // Drill-throughs glide and flash their landing section.
-    assert.match(globals, /\.fa-page\s*\{[^}]*scroll-behavior:\s*smooth/, "in-page drills scroll smoothly");
-    assert.match(globals, /\.fa-section\s*\{[^}]*scroll-margin-top/, "sections land clear of the sticky bar");
-    assert.match(globals, /\.fa-section:target\s*\{/, "the landing section flashes for orientation");
+    assert.match(faCss, /\.fa-page\s*\{[^}]*scroll-behavior:\s*smooth/, "in-page drills scroll smoothly");
+    assert.match(faCss, /\.fa-section\s*\{[^}]*scroll-margin-top/, "sections land clear of the sticky bar");
+    assert.match(faCss, /\.fa-section:target\s*\{/, "the landing section flashes for orientation");
 
     // KPI tiles carry a reveal-on-hover drill cue.
     assert.match(source, /className="fa-kpi__go"/, "KPI tiles render the drill chevron");
@@ -527,13 +535,13 @@ describe("FamiliarAnalyticsView", () => {
 
     // All decorative motion holds still under prefers-reduced-motion.
     assert.match(
-      globals,
+      faCss,
       /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.fa-page\s*\{\s*scroll-behavior:\s*auto/,
       "smooth scrolling is disabled under reduced motion",
     );
 
     // Narrow-pane tier exists (inspector tab / phones).
-    assert.match(globals, /@container fa \(max-width: 420px\)/, "a phone-width container tier hardens the narrowest panes");
+    assert.match(faCss, /@container fa \(max-width: 420px\)/, "a phone-width container tier hardens the narrowest panes");
   });
 });
 
@@ -560,7 +568,8 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
     );
     assert.match(source, /onTrace\(\{ id: session\.id, title: session\.title \}\)/, "each row can open the trace overlay");
     assert.match(source, /<SessionTraceOverlay target=\{traceTarget\}/, "the overlay is rendered from page state");
-    assert.match(source, /Showing \{shown\.length\} of \{filtered\.length\} sessions\./, "truncation is stated, never silent");
+    assert.match(source, /className="fa-pager"/, "history is walked with a pager rather than silently truncated");
+    assert.match(source, /aria-label="Next page of sessions"/, "the pager exposes an accessible next-page control");
   });
 
   it("makes the hero pulse interactive — a clicked day filters the sessions list", () => {
@@ -621,11 +630,11 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(source, /<Sparkline points=\{points\} color=\{trendTokenFor\(overall\.direction\)\}/, "the trend sparkline reuses ui/sparkline");
     assert.match(source, /value: bucket\.score/, "sparkline points come from bucket scores (nulls = honest gaps)");
     assert.match(source, /Trends appear once reports land on two different/, "sparse data explains itself");
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-    assert.match(globals, /\.fa-trend-verdict--improving \{ color: var\(--accent-presence\); \}/, "verdict improving tint is tokenized");
-    assert.match(globals, /\.fa-trend-verdict--regressing \{ color: var\(--color-warning\); \}/, "verdict regressing tint is tokenized");
-    assert.match(globals, /\.fa-trend-chip--improving \{ color: var\(--accent-presence\); \}/, "chip improving tint is tokenized");
-    assert.match(globals, /\.fa-trend-chip--regressing \{ color: var\(--color-warning\); \}/, "chip regressing tint is tokenized");
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    assert.match(faCss, /\.fa-trend-verdict--improving \{ color: var\(--accent-presence\); \}/, "verdict improving tint is tokenized");
+    assert.match(faCss, /\.fa-trend-verdict--regressing \{ color: var\(--color-warning\); \}/, "verdict regressing tint is tokenized");
+    assert.match(faCss, /\.fa-trend-chip--improving \{ color: var\(--accent-presence\); \}/, "chip improving tint is tokenized");
+    assert.match(faCss, /\.fa-trend-chip--regressing \{ color: var\(--color-warning\); \}/, "chip regressing tint is tokenized");
   });
 
   it("annotates each metric bar with a delta chip against the previous period", () => {
@@ -641,15 +650,15 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(source, /confidence\.hasData \? confidenceTier\(confidence\.label\) : "none"/, "no reports → neutral ring, never a fake Low");
     assert.match(source, /Thread confidence not measured yet/, "the unmeasured ring says so to AT");
     assert.match(source, /from \$\{reportPhrase\}/, "the measured ring cites its report count");
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-    assert.match(globals, /\.fa-ring--none\s*\{[^}]*--fa-ring-color:\s*var\(--border-strong\)/, "the unmeasured tier stays neutral (tokens only)");
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    assert.match(faCss, /\.fa-ring--none\s*\{[^}]*--fa-ring-color:\s*var\(--border-strong\)/, "the unmeasured tier stays neutral (tokens only)");
   });
 
   it("keeps shared metric-unit styling for 0–100 scores", () => {
-    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
     assert.match(source, /className="fa-metric-unit"/, "0–100 scores carry a muted unit suffix");
-    assert.match(globals, /\.fa-metric-unit\s*\{/, "the metric-unit style exists");
-    assert.match(globals, /\.fa-factor-bar\s*\{[\s\S]*?min-width:\s*44px/, "the metric bar keeps a min-width floor in narrow cells");
-    assert.match(globals, /\.fa-thread-analysis\s*\{/, "the thread-analysis panel has its own layout block");
+    assert.match(faCss, /\.fa-metric-unit\s*\{/, "the metric-unit style exists");
+    assert.match(faCss, /\.fa-factor-bar\s*\{[\s\S]*?min-width:\s*44px/, "the metric bar keeps a min-width floor in narrow cells");
+    assert.match(faCss, /\.fa-thread-analysis\s*\{/, "the thread-analysis panel has its own layout block");
   });
 });

@@ -49,12 +49,17 @@
   border-radius:var(--radius-pill);
   font-size:var(--text-xs);
   font-weight:600;
-  color:#fff;
+  /* GitHub brand: the merged badge keeps github.com's violet (fixed in both
+     modes, white ink as on github.com). Open/closed fills are theme status
+     colors, so they pair with the semantic foregrounds instead of a hardcoded
+     #fff — which fell to ~2:1 on the pastel dark-mode fills. */
+  --gh-merged: #a371f7;
+  --gh-merged-ink: #fff;
 }
 .gh-issue-state-dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
-.gh-issue-state--open   { background:color-mix(in oklab,var(--color-success) 88%,#000 4%); }
-.gh-issue-state--closed { background:color-mix(in oklab,var(--color-danger) 88%,#000 4%); }
-.gh-issue-state--merged { background:color-mix(in oklab,#a371f7 90%,#000); }
+.gh-issue-state--open   { background:color-mix(in oklab,var(--color-success) 88%,black 4%); color:var(--color-success-foreground); }
+.gh-issue-state--closed { background:color-mix(in oklab,var(--color-danger) 88%,black 4%); color:var(--color-danger-foreground); }
+.gh-issue-state--merged { background:color-mix(in oklab,var(--gh-merged) 90%,black); color:var(--gh-merged-ink); }
 
 .gh-issue-opened {
   display:flex;
@@ -413,7 +418,6 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
   border-radius:14px;
   background:var(--glass-elevated);
   backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow:0 16px 44px rgba(0,0,0,0.34);
   display:flex;
   flex-direction:column;

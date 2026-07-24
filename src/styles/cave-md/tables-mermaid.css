@@ -38,7 +38,6 @@
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--bg-elevated) 88%, transparent);
-  -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   color: var(--text-muted);
   font-size: var(--text-2xs);
@@ -78,7 +77,6 @@
   justify-content: center;
   padding: clamp(12px, 4vw, 48px);
   background: color-mix(in oklch, var(--bg-base) 72%, transparent);
-  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   animation: cave-table-lightbox-in var(--duration-fast) var(--ease-standard);
 }
@@ -95,7 +93,6 @@
   border-radius: var(--radius-panel);
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: 0 24px 70px color-mix(in oklch, black 45%, transparent);
   overflow: hidden;
 }
@@ -258,7 +255,6 @@
   border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--bg-panel) 78%, transparent);
   backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 .cm-mermaid-viewer__btn {

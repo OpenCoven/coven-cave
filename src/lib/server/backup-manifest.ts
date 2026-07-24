@@ -42,6 +42,7 @@ const CAVE_FILES = [
   "inbox-prefs.json",
   "canvas.json",
   "projects.json",
+  "queue-project.json",
   "project-permissions.json",
   "permission-config.json",
   "removed-familiars.json",

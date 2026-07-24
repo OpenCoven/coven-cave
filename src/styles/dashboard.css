@@ -109,7 +109,6 @@
       color-mix(in oklch, var(--bg-base) 44%, transparent)
     );
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-app-region: drag;
 }
 
@@ -128,12 +127,10 @@
     background:
       linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
   .spark-tip {
     background: var(--bg-elevated);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 
@@ -181,13 +178,16 @@
 }
 
 .settings-overview__mark {
+  /* Fixed near-black glyph ink: the tile behind it is accent-tinted inline
+     (meta.accent) and light enough for this ink in both modes. */
+  --mark-ink: #111;
   display: grid;
   place-items: center;
   width: 42px;
   height: 42px;
   flex-shrink: 0;
   border-radius: var(--radius-card);
-  color: #111;
+  color: var(--mark-ink);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, white 38%, transparent);
 }
 
@@ -454,7 +454,6 @@
   padding: 3px 7px; border-radius: 6px; font-size: 10.5px; line-height: 1.2;
   color: var(--text-primary); background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
   font-variant-numeric: tabular-nums; }
 .spark-tip b { font-weight: 700; }

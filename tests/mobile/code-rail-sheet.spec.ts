@@ -40,6 +40,13 @@ async function base(page: Page) {
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
   );
+  // Dismissed onboarding still probes startup status on every boot. Left
+  // unmocked, the real handler's cold compile + probes race the lazy
+  // code-rail chunk on the slowest mobile project and the sheet renders
+  // empty past the expect window. Mock it like the queue specs do.
+  await page.route("**/api/onboarding/status**", (route) =>
+    route.fulfill({ json: { ok: true, complete: true, steps: {}, tools: [] } }),
+  );
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions: [REPO_SESSION] } }),
   );

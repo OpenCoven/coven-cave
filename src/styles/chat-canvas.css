@@ -136,7 +136,7 @@
   position: relative;
   display: block;
   height: 156px;
-  background: #fff;
+  background: var(--surface-paper);
   border-bottom: 1px solid var(--border-hairline);
   overflow: hidden;
 }

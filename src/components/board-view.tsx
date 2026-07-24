@@ -270,7 +270,7 @@ export function BoardView({
   // External create paths dispatch `cave:board:reload` after POST so the board
   // picks up the new card without a full surface remount.
   useEffect(() => {
-  const onReload = () => { invalidateSurfaceResources("board:cards", "tasks:queue"); void load(); };
+  const onReload = () => { invalidateSurfaceResources("board:cards"); void load(); };
     window.addEventListener("cave:board:reload", onReload);
     return () => window.removeEventListener("cave:board:reload", onReload);
   }, [load]);
@@ -521,7 +521,7 @@ export function BoardView({
         setActionError(json.error ? `Couldn't save changes — ${json.error}` : "Couldn't save changes — reverted to the server copy.");
         reloadWhenPatchesSettleRef.current = true;
       } else {
-        invalidateSurfaceResources("board:cards", "tasks:queue");
+        invalidateSurfaceResources("board:cards");
         saved = true;
         setActionError(null);
         if (json.card) setCards((prev) => prev.map((c) => (c.id === id ? (json.card as Card) : c)));
@@ -572,7 +572,7 @@ export function BoardView({
       // silently dropping the failure).
       const json = await res.json().catch(() => ({ ok: false, error: "the server returned an unreadable response" }));
       if (!json.ok) throw new Error(json.error ?? "create failed");
-      invalidateSurfaceResources("board:cards", "tasks:queue");
+      invalidateSurfaceResources("board:cards");
       setActionError(null);
       announce(`Created task '${draft.title.trim()}'.`);
       await load();
@@ -629,7 +629,7 @@ export function BoardView({
       async () => {
         // Commit: drop from local state, then fire the DELETEs. Both the unhide
         // (pending → null) and this removal batch, so the cards never flash back.
-        invalidateSurfaceResources("board:cards", "tasks:queue");
+        invalidateSurfaceResources("board:cards");
         setCards((prev) => prev.filter((c) => !idSet.has(c.id)));
         const results = await Promise.all(
           toRemove.map(async (c) => {
@@ -739,7 +739,7 @@ export function BoardView({
     setClearConfirm(false);
     if (snapshot.length === 0) return;
     const ids = new Set(snapshot.map((c) => c.id));
-    invalidateSurfaceResources("board:cards", "tasks:queue");
+    invalidateSurfaceResources("board:cards");
     // Optimistic remove + drop selection if it pointed at a cleared card.
     setCards((prev) => prev.filter((c) => !ids.has(c.id)));
     if (selectedCardId && ids.has(selectedCardId)) setSelectedCardId(null);
@@ -809,7 +809,7 @@ export function BoardView({
     } catch {
       setActionError("Couldn't restore all cleared tasks — reload to check.");
     }
-    invalidateSurfaceResources("board:cards", "tasks:queue");
+    invalidateSurfaceResources("board:cards");
     await load({ force: true });
   };
 

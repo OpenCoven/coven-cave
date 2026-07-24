@@ -331,7 +331,7 @@ function stateGlyph(
       return { icon: "ph:check-circle", color: "var(--color-success)", label: "Workflow run succeeded" };
     }
     if (run && isFailConclusion(run.conclusion)) {
-      return { icon: "ph:x-circle-fill", color: "var(--color-warning)", label: "Workflow run failed" };
+      return { icon: "ph:x-circle-fill", color: "var(--color-danger)", label: "Workflow run failed" };
     }
     if (run && run.status !== "completed") {
       return { icon: "ph:circle-notch-bold", color: "var(--text-secondary)", label: "Workflow run in progress" };
@@ -602,7 +602,7 @@ function ChecksStrip({ data }: { data: ChecksData }) {
   if (!counts.total) return null;
   const tint =
     rollup === "failing"
-      ? "var(--color-warning)"
+      ? "var(--color-danger)"
       : rollup === "passing"
         ? "var(--color-success)"
         : "var(--text-secondary)";
@@ -623,7 +623,7 @@ function ChecksStrip({ data }: { data: ChecksData }) {
 function checkRunGlyph(run: CheckRunDetail): { icon: IconName; color: string } {
   if (run.status !== "completed") return { icon: "ph:circle-notch-bold", color: "var(--text-secondary)" };
   if (run.conclusion === "success") return { icon: "ph:check-circle", color: "var(--color-success)" };
-  if (isFailConclusion(run.conclusion)) return { icon: "ph:x-circle-fill", color: "var(--color-warning)" };
+  if (isFailConclusion(run.conclusion)) return { icon: "ph:x-circle-fill", color: "var(--color-danger)" };
   return { icon: "ph:minus-circle", color: "var(--text-secondary)" };
 }
 

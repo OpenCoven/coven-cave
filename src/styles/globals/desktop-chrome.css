@@ -127,7 +127,6 @@ button:active > .edge-rail-chip {
 :root[data-tauri-titlebar] .shell-top {
   background: color-mix(in oklch, var(--bg-base) 46%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root[data-tauri-titlebar] .shell-top { background: transparent; }
@@ -136,7 +135,6 @@ button:active > .edge-rail-chip {
   :root[data-tauri-titlebar] .shell-top {
     background: transparent;
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 
@@ -1221,7 +1219,6 @@ button:active > .edge-rail-chip {
   border: 1px solid var(--border-hairline);
   background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: var(--shadow-popover, 0 8px 28px rgb(0 0 0 / 0.28));
   overflow: hidden;
 }
@@ -1829,11 +1826,15 @@ button:active > .edge-rail-chip {
 }
 
 .mobile-handoff-qr {
+  /* QR scanability: fixed paper ground, near-black modules, muted placeholder
+     ink — identical in both modes so cameras always read it. */
+  --qr-ink: #111;
+  --qr-muted: #444;
   width: 272px;
   aspect-ratio: 1;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-panel);
-  background: #fff;
+  background: var(--surface-paper);
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -1842,7 +1843,7 @@ button:active > .edge-rail-chip {
 .mobile-handoff-qr__svg {
   width: 256px;
   height: 256px;
-  color: #111;
+  color: var(--qr-ink);
 }
 
 .mobile-handoff-qr__svg svg {
@@ -1856,7 +1857,7 @@ button:active > .edge-rail-chip {
   height: 256px;
   display: grid;
   place-items: center;
-  color: #444;
+  color: var(--qr-muted);
   font-size: var(--text-sm);
 }
 

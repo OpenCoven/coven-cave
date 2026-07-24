@@ -396,7 +396,6 @@
   flex-direction: column;
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-left: 1px solid var(--border-hairline);
   box-shadow: -8px 0 24px color-mix(in oklch, var(--text-primary) 10%, transparent);
   z-index: 10;
@@ -452,7 +451,6 @@
   grid-template-columns: max-content 1fr;
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-left: 1px solid var(--border-hairline);
   box-shadow: -12px 0 40px color-mix(in oklch, var(--text-primary) 16%, transparent);
   z-index: 45;
@@ -473,7 +471,20 @@
    overlay fades in on hover/focus to signal it's interactive. */
 .familiar-studio__avatar-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
 .familiar-studio__avatar-btn { position: relative; display: grid; place-items: center; padding: 0; border: none; background: none; cursor: pointer; border-radius: var(--radius-md); }
-.familiar-studio__avatar-overlay { position: absolute; inset: 0; display: grid; place-items: center; border-radius: inherit; color: #fff; background: color-mix(in oklch, #000 52%, transparent); opacity: 0; transition: opacity var(--duration-fast) var(--ease-standard); }
+.familiar-studio__avatar-overlay {
+  /* Fixed photo overlay: white camera glyph on a black scrim over the avatar
+     image — not a themed surface, so it's identical in both modes. */
+  --avatar-overlay-ink: #fff;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  color: var(--avatar-overlay-ink);
+  background: color-mix(in oklch, black 52%, transparent);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
 .familiar-studio__avatar-btn:hover .familiar-studio__avatar-overlay,
 .familiar-studio__avatar-btn:focus-visible .familiar-studio__avatar-overlay { opacity: 1; }
 .familiar-studio__avatar-toast { position: absolute; top: calc(100% + 4px); left: 0; white-space: nowrap; font-size: var(--text-xs); color: var(--text-muted); }
@@ -630,7 +641,6 @@
   max-width: calc(100vw - 16px);
   background: var(--bg-elevated);
   backdrop-filter: none;
-  -webkit-backdrop-filter: none;
   overflow-x: hidden;
   padding: 0;
 }
@@ -1386,7 +1396,6 @@
     linear-gradient(to top, color-mix(in oklch, var(--bg-base) 92%, transparent), color-mix(in oklch, var(--bg-raised) 88%, transparent)),
     color-mix(in oklch, var(--bg-raised) 92%, transparent);
   backdrop-filter: blur(18px) saturate(145%);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
   border-top: 1px solid color-mix(in oklch, var(--border-hairline) 88%, transparent);
   box-shadow: 0 -14px 32px color-mix(in oklch, black 18%, transparent);
 }

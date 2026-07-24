@@ -138,6 +138,14 @@ test("chat-list: Enter and Space both open the focused row", () => {
     /if \(e\.key === "Enter" \|\| e\.key === " "\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*if \(selectMode\) \{ toggleSelect\(s\.id\); return; \}\s*\n\s*setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\);/,
     "keyboard activation mirrors the click: select in select mode, open otherwise",
   );
+  // dnd-kit's Space/Enter drag activation prevents default but does NOT stop
+  // propagation — without this guard, activating keyboard reorder on the drag
+  // handle bubbles to the row and navigates away, destroying the drag.
+  assert.match(
+    chatList,
+    /if \(e\.target !== e\.currentTarget\) return;\s*\n\s*if \(e\.key === "Enter" \|\| e\.key === " "\)/,
+    "the row keydown ignores events from nested controls (drag handle keeps keyboard reorder)",
+  );
 });
 
 test("chat-list: Escape in search clears the query", () => {

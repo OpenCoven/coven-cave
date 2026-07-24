@@ -103,7 +103,7 @@
   background: linear-gradient(
     100deg,
     transparent 20%,
-    color-mix(in oklch, #fff 38%, transparent) 50%,
+    color-mix(in oklch, white 38%, transparent) 50%,
     transparent 80%
   );
   transform: translateX(-100%);
@@ -424,7 +424,6 @@
   color: var(--text-primary);
   background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, var(--border-strong));
   border-radius: var(--radius-card);
   box-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.6);
@@ -443,7 +442,6 @@
   .journal-notice {
     background: var(--bg-elevated, var(--bg-raised));
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 @keyframes journal-notice-in {

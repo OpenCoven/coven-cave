@@ -1421,10 +1421,6 @@ export function Workspace() {
     let cancelled = false;
     const skipped =
       typeof window !== "undefined" && window.localStorage.getItem("cave:onboarding:dismissed") === "1";
-    if (skipped) {
-      setOnboardingResolved(true);
-      return;
-    }
     void (async () => {
       try {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
@@ -1435,7 +1431,8 @@ export function Workspace() {
             status: json,
             cancelled,
             manuallyOpened: manualOnboardingOpenedRef.current,
-          })
+          }) &&
+          !skipped
         ) {
           setAutoFinishOnboarding(true);
           setOnboardingOpen(true);

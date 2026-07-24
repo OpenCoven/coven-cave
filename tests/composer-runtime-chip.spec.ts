@@ -7,8 +7,8 @@ import { expect, test, type Page } from "@playwright/test";
 // through /api/config — flipping the chip, re-listing the Model group in the
 // still-open menu (the pick isn't complete until a model is chosen),
 // refetching the familiar roster (cave:familiars-refresh), and catching the
-// empty-state identity line up without a reload. A model pick then closes
-// the menu.
+// new-chat landing's identity line up without a reload. A model pick then
+// closes the menu.
 //
 // Desktop only (the chip lives in the chat composer). All APIs are mocked;
 // the config mock is stateful so the roster refetch observably changes what
@@ -118,8 +118,8 @@ test.describe("composer runtime picker (context chips)", () => {
     const pill = page.getByRole("button", { name: /change model/ });
     await expect(pill).toBeVisible({ timeout: 45_000 });
     await expect(pill).toContainText("GPT-5.5", { timeout: 15_000 });
-    // The empty-state identity line reads the roster's familiar.harness.
-    await expect(page.locator(".cave-chat-empty-meta")).toContainText("codex");
+    // The landing identity line reads the roster's familiar.harness.
+    await expect(page.locator(".home-dash__meta")).toContainText("codex");
     const servedBefore = state.familiarsServed;
     const modelStateGetsBefore = state.modelStateServed;
 
@@ -148,7 +148,7 @@ test.describe("composer runtime picker (context chips)", () => {
     // cave:familiars-refresh refetched the roster…
     await expect(() => expect(state.familiarsServed).toBeGreaterThan(servedBefore)).toPass({ timeout: 10_000 });
     // …so the identity line catches up without a reload.
-    await expect(page.locator(".cave-chat-empty-meta")).toContainText("claude", { timeout: 10_000 });
+    await expect(page.locator(".home-dash__meta")).toContainText("claude", { timeout: 10_000 });
 
     // Let the runtime pick's reconciling model-state refetch land before the
     // model pick, so a stale in-flight GET can't overwrite the model PATCH.

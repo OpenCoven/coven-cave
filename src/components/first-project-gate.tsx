@@ -302,7 +302,7 @@ export function FirstProjectGate({
                       size="sm"
                       onClick={() => void handleBrowse()}
                       disabled={Boolean(registeredProject) || submitting}
-                      className="h-10 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                      className="!h-10 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                       leadingIcon="ph:folder-open"
                     >
                       Browse
@@ -321,7 +321,7 @@ export function FirstProjectGate({
                     size="sm"
                     loading={submitting}
                     disabled={submitting || loadingProjects || Boolean(projectsError) || !canSubmit}
-                    className="h-10 rounded-[var(--radius-control)] px-4 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
+                    className="!h-10 rounded-[var(--radius-control)] px-4 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
                   >
                     {registeredProject ? "Retry access" : "Create"}
                   </Button>

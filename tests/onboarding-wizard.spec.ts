@@ -43,6 +43,21 @@ const DAEMON_DOWN_VETERAN_STATUS = {
   tools: [],
 };
 
+const GIT_REQUIRED_STATUS = {
+  ok: true,
+  complete: false,
+  steps: {
+    covenCli: { ok: true, detail: "0.0.60" },
+    covenHome: { ok: true, detail: "~/.coven" },
+    adapters: { ok: true, detail: "Codex" },
+    daemon: { ok: true, detail: "running" },
+    git: { ok: false, detail: "Git is required to select and use a Queue project.", hint: "Install Git from https://git-scm.com, then re-check." },
+    familiars: { ok: false, optional: true, detail: "no familiars" },
+    binding: { ok: false, optional: true, detail: "no binding configured" },
+  },
+  tools: [],
+};
+
 // Every step healthy but the roster empty — the state the finish CTA's
 // "summon your familiar" promise is about. Server `complete` alone drives the
 // wizard's finish state: Coven Code is an optional runtime adapter, so it is
@@ -132,6 +147,15 @@ test.describe("onboarding wizard", () => {
     await expect(current.first()).toContainText("Install the Coven CLI");
   });
 
+  test("surfaces Git remediation naming the Tasks-page Queue prerequisite", async ({ page }) => {
+    await gotoApp(page, GIT_REQUIRED_STATUS);
+    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
+    const current = wizard(page).locator('li[aria-current="step"]');
+    await expect(current).toContainText("Find Git");
+    await expect(current).toContainText("Git is required before choosing a Queue project on the Tasks page.");
+    await expect(current).toContainText("Install Git from https://git-scm.com");
+  });
+
   test("Escape closes for the session without permanently skipping", async ({ page }) => {
     await gotoApp(page, FRESH_STATUS);
     await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
@@ -143,7 +167,10 @@ test.describe("onboarding wizard", () => {
   });
 
   test("stays hidden once dismissed", async ({ page }) => {
-    await gotoApp(page, FRESH_STATUS, { dismissed: true });
+    // A stored dismissal keeps the wizard closed on a set-up machine. Use a
+    // genuinely complete setup so this exercises the dismissal path rather
+    // than masking a prerequisite regression.
+    await gotoApp(page, COMPLETE_NO_FAMILIARS_STATUS, { dismissed: true });
     await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
     await page.waitForTimeout(1_000);
     await expect(wizard(page)).toHaveCount(0);

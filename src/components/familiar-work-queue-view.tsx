@@ -10,9 +10,10 @@ import { SearchInput } from "@/components/ui/search-input";
 import { Modal } from "@/components/ui/modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { relativeTime } from "@/lib/relative-time";
+import { subscribeToQueueProjectSelection, type QueueProjectSelection } from "@/lib/queue-project-selection";
+import { QueueProjectSetup } from "@/components/queue-project-setup";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   buildWorkQueue,
@@ -109,15 +110,33 @@ type FetchedQueue = {
 };
 
 type QueueSource = { ok?: boolean; data?: ReadyBead[]; open?: PullRequestSummary[]; merged?: MergedPrRef[]; error?: string };
+type QueueReadiness = {
+  ok: boolean;
+  code?: string;
+  message: string;
+  canGenerate: boolean;
+  project: { id: string; name: string; root: string } | null;
+};
 
 // Either source alone still renders a useful queue, so a single failing
 // adapter DEGRADES the surface (with a truthful banner) instead of failing the
 // whole load: beads-only when the gh PR bridge is down, PRs-only when the
 // beads adapter is down. Only both failing rejects — then there is genuinely
 // nothing to show.
-async function fetchQueue(signal: AbortSignal, force = false): Promise<FetchedQueue> {
+async function fetchQueue(projectRoot: string, signal: AbortSignal): Promise<FetchedQueue> {
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-  const { data } = await readSurfaceResource<PromiseSettledResult<QueueSource>[]>("tasks:queue", force);
+  const query = `projectRoot=${encodeURIComponent(projectRoot)}`;
+  const readJson = async (url: string): Promise<QueueSource> => {
+    const response = await fetch(url, { cache: "no-store", signal });
+    return response.json() as Promise<QueueSource>;
+  };
+  // The Queue always supplies its explicitly selected project. In particular,
+  // do not let a packaged desktop sidecar substitute its application-resource
+  // cwd for the user's repository.
+  const data = await Promise.allSettled([
+    readJson(`/api/beads?mode=ready&${query}`),
+    readJson(`/api/beads/prs?${query}`),
+  ]);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const [beadsSettled, prsSettled] = data;
 
@@ -161,6 +180,9 @@ function sameQueue(a: WorkQueue, b: WorkQueue): boolean {
 export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = false, activeFamiliarId }: Props) {
   const { announce } = useAnnouncer();
   const [queue, setQueue] = useState<WorkQueue | null>(null);
+  const [readiness, setReadiness] = useState<QueueReadiness | null>(null);
+  const [readinessFailure, setReadinessFailure] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [beadsDegraded, setBeadsDegraded] = useState(false);
@@ -191,10 +213,36 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const [evidenceAdded, setEvidenceAdded] = useState<Set<string>>(() => new Set());
   const loadSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const queueSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const restoreQueueFocusRef = useRef(false);
+  const announcedRef = useRef(false);
   // True once a load has landed WITH PR-bridge data. A later bridge failure is
   // then a refresh failure (keep the richer on-screen picture + inline retry
   // banner) rather than a degradation (which would silently drop PR lanes).
   const hadPrDataRef = useRef(false);
+  const activeProjectRootRef = useRef<string | null>(null);
+
+  const resetForProject = useCallback((project: QueueProjectSelection | null) => {
+    const surface = queueSurfaceRef.current;
+    const focusedQueueControl = surface?.contains(document.activeElement) ?? false;
+    activeProjectRootRef.current = project?.root ?? null;
+    hadPrDataRef.current = false;
+    announcedRef.current = false;
+    setQueue(null);
+    setReadiness(null);
+    setReadinessFailure(null);
+    setError(null);
+    setBeadsDegraded(false);
+    setPrsDegraded(null);
+    setLastUpdated(null);
+    setBusyId(null);
+    setDetailId(null);
+    setEvidenceAdded(new Set());
+    if (focusedQueueControl) {
+      restoreQueueFocusRef.current = true;
+      surface?.focus({ preventScroll: true });
+    }
+  }, []);
   // Re-render ~once a minute so the header freshness and per-card ages stay
   // truthful between polls (the equality guard below keeps queue state stable,
   // so nothing else would tick them).
@@ -221,8 +269,30 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    let readinessResolved = false;
     try {
-      const { queue: next, beadsOk, prsOk, prsError } = await fetchQueue(ctrl.signal, force);
+      const readinessResponse = await fetch("/api/queue/readiness", { cache: "no-store", signal: ctrl.signal });
+      const readinessJson = (await readinessResponse.json()) as { ok?: boolean; readiness?: QueueReadiness; error?: string };
+      const nextReadiness = readinessJson.readiness;
+      if (!readinessResponse.ok || !readinessJson.ok || !nextReadiness) {
+        throw new Error(readinessJson.error || "Couldn't check the Queue project");
+      }
+      if (seq !== loadSeq.current) return;
+      setReadinessFailure(null);
+      readinessResolved = true;
+      const nextRoot = nextReadiness.project?.root ?? null;
+      if (activeProjectRootRef.current !== nextRoot) {
+        // A selected repository is an isolation boundary. Do not retain cards,
+        // failure state, detail selection, or evidence from the prior project.
+        resetForProject(nextReadiness.project);
+      }
+      setReadiness(nextReadiness);
+      if (!nextReadiness.ok || !nextReadiness.project) {
+        setQueue(null);
+        setError(nextReadiness.message);
+        return;
+      }
+      const { queue: next, beadsOk, prsOk, prsError } = await fetchQueue(nextReadiness.project.root, ctrl.signal);
       if (seq !== loadSeq.current) return; // a newer load won
       if (!prsOk && hadPrDataRef.current) {
         // The bridge worked before and just failed — keep earlier data on
@@ -242,18 +312,60 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       // Keep whatever data is on screen — the render picks between the
       // full-surface empty state (no data yet) and the inline refresh banner.
       setError(err instanceof Error ? err.message : "Failed to load the queue");
+      if (!readinessResolved) setReadinessFailure(err instanceof Error ? err.message : "Couldn't check the Queue project");
     } finally {
       if (seq === loadSeq.current) setHasLoaded(true);
     }
-  }, []);
+  }, [resetForProject]);
+
+  const generateQueue = useCallback(async () => {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      const response = await fetch("/api/queue/readiness", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "generate", projectId: readiness?.project?.id }),
+      });
+      const json = (await response.json().catch(() => null)) as { ok?: boolean; error?: string; readiness?: QueueReadiness } | null;
+      if (!response.ok || !json?.ok) {
+        // Another Cave window can change the persisted selection while this
+        // Generate request is in flight. The route returns that newer
+        // readiness on 409: adopt it immediately so a retry targets B, not
+        // the stale A button the user originally pressed.
+        if (response.status === 409 && json?.readiness) {
+          resetForProject(json.readiness.project);
+          setReadiness(json.readiness);
+          setError(json.error || json.readiness.message);
+          void load(true);
+          return;
+        }
+        throw new Error(json?.error || "Couldn't generate the Queue workspace");
+      }
+      await load(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't generate the Queue workspace");
+    } finally {
+      setGenerating(false);
+    }
+  }, [generating, load, readiness?.project?.id, resetForProject]);
 
   useEffect(() => {
     void load();
     return () => abortRef.current?.abort();
   }, [load]);
 
+  useEffect(() => {
+    return subscribeToQueueProjectSelection((project) => {
+      // Selection is an isolation boundary even if its readiness request is
+      // unavailable. Clear all prior-project controls synchronously so a
+      // transient B failure cannot leave actionable cards from A on screen.
+      resetForProject(project);
+      void load(true);
+    });
+  }, [load, resetForProject]);
+
   // Announce the actionable count once the first load settles.
-  const announcedRef = useRef(false);
   useEffect(() => {
     if (!hasLoaded || announcedRef.current || !queue) return;
     announcedRef.current = true;
@@ -263,6 +375,15 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         : `Queue loaded: ${queue.actionable} actionable of ${queue.total}.`,
     );
   }, [hasLoaded, queue, announce]);
+
+  // The selected project can replace the focused row action with a loading
+  // state. Keep keyboard focus on the Queue surface, then restore it there
+  // after the new project settles instead of dropping users onto document body.
+  useEffect(() => {
+    if (!restoreQueueFocusRef.current || !hasLoaded || (!queue && !error)) return;
+    restoreQueueFocusRef.current = false;
+    queueSurfaceRef.current?.focus({ preventScroll: true });
+  }, [hasLoaded, queue, error]);
 
   usePausablePoll(() => void load(true), 30_000, { pauseWhileInputActive: true });
 
@@ -278,10 +399,11 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const runAction = useCallback(
     async (item: WorkQueueItem, action: "claim" | "close") => {
       const id = item.bead?.id;
-      if (!id) return;
+      const projectRoot = readiness?.project?.root;
+      if (!id || !projectRoot) return;
       setBusyId(item.key);
       try {
-        const body: Record<string, string> = { action, id };
+        const body: Record<string, string> = { action, id, projectRoot };
         if (action === "close") body.reason = item.merged ? `Merged in PR #${item.merged.number}` : "Completed";
         const res = await fetch("/api/beads", {
           method: "POST",
@@ -291,7 +413,6 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || `${action} failed`);
         announce(action === "claim" ? `Claimed ${id}.` : `Closed ${id}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not ${action} ${id}`, "assertive");
@@ -299,7 +420,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         setBusyId(null);
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // Handoff note: appends a comment to the bead (the recorded verification
@@ -309,19 +430,23 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     async (item: WorkQueueItem, text: string): Promise<boolean> => {
       const id = item.bead?.id;
       const comment = text.trim();
-      if (!id || !comment) return false;
+      const projectRoot = readiness?.project?.root;
+      if (!id || !comment || !projectRoot) return false;
       setBusyId(item.key);
       try {
         const res = await fetch("/api/beads", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "comment", id, comment }),
+          body: JSON.stringify({ action: "comment", id, comment, projectRoot }),
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "comment failed");
+        // A comment can complete after the user selects a different Queue
+        // project. Its evidence belongs only to the root that initiated it;
+        // otherwise an equal bead id in the new project could unlock Close.
+        if (activeProjectRootRef.current !== projectRoot) return false;
         setEvidenceAdded((prev) => new Set(prev).add(id.toLowerCase()));
         announce(`Handoff note added to ${id}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
         return true;
       } catch (err) {
@@ -331,7 +456,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         setBusyId(null);
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // Claim-for-familiar: same claim action, but the bead lands on the picked
@@ -340,18 +465,18 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const runClaimFor = useCallback(
     async (item: WorkQueueItem, familiar: ResolvedFamiliar) => {
       const id = item.bead?.id;
-      if (!id) return;
+      const projectRoot = readiness?.project?.root;
+      if (!id || !projectRoot) return;
       setBusyId(item.key);
       try {
         const res = await fetch("/api/beads", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "claim", id, assignee: familiar.id }),
+          body: JSON.stringify({ action: "claim", id, assignee: familiar.id, projectRoot }),
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "claim failed");
         announce(`Claimed ${id} for ${familiar.display_name}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not claim ${id}`, "assertive");
@@ -359,7 +484,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         setBusyId(null);
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // File a bead for an unlinked attention-strip PR: bd create with the PR's
@@ -369,6 +494,8 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   // can drop its busy state truthfully (cave-p63a).
   const runFileBead = useCallback(
     async (pr: PullRequestSummary): Promise<boolean> => {
+      const projectRoot = readiness?.project?.root;
+      if (!projectRoot) return false;
       try {
         const res = await fetch("/api/beads", {
           method: "POST",
@@ -379,13 +506,13 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
             description: `Filed from unlinked PR #${pr.number} — ${pr.url}`,
             externalRef: `gh-${pr.number}`,
             labels: ["from-pr"],
+            projectRoot,
           }),
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "create failed");
         const beadId = (json.data as { id?: string } | null)?.id;
         announce(beadId ? `Filed ${beadId} for PR #${pr.number}.` : `Filed a bead for PR #${pr.number}.`);
-        invalidateSurfaceResources("tasks:queue");
         await load(true);
         return true;
       } catch (err) {
@@ -396,7 +523,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         return false;
       }
     },
-    [announce, load],
+    [announce, load, readiness?.project?.root],
   );
 
   // Search matches title, bead id, and PR number; priority bands map P2+
@@ -455,13 +582,17 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     return { all: queue.total, unassigned };
   }, [queue]);
 
-  if (!hasLoaded) {
+  // A project-selection event intentionally clears the prior Queue before the
+  // next readiness response arrives. Render a short loading state during that
+  // gap rather than dereferencing the removed Queue or retaining its controls.
+  if (!hasLoaded || (!queue && !error)) {
     return (
-      <div className="fwq" aria-busy>
+      <div ref={queueSurfaceRef} className="fwq" tabIndex={-1} aria-busy>
         <header className="surface-compact-header">
           {embedded ? null : <h1 className="surface-compact-title">Queue</h1>}
         </header>
         <div className="fwq-body">
+          <p role="status" aria-live="polite" className="sr-only">Loading the selected Queue project…</p>
           <SkeletonRows count={6} />
         </div>
       </div>
@@ -469,17 +600,39 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   }
 
   if (error && !queue) {
+    const canGenerate = readiness?.canGenerate === true;
+    const readinessUnavailable = readinessFailure !== null;
+    const sourcesUnavailable = !readinessUnavailable && readiness?.ok === true && readiness.project !== null;
+    const selectionRemediable = readiness?.code === "no-project"
+      || readiness?.code === "project-missing"
+      || readiness?.code === "project-not-allowed"
+      || readiness?.code === "not-git-repository"
+      || readiness?.code === "project-not-git-root"
+      || readiness?.code === "project-storage-error";
+    const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && !canGenerate && !selectionRemediable && readiness?.project !== null;
     return (
-      <div className="fwq">
+      <div ref={queueSurfaceRef} className="fwq" tabIndex={-1}>
         <div className="fwq-body">
           <EmptyState
             icon="ph:warning-circle"
-            headline="Couldn't load the queue"
-            subtitle={error}
+            headline={readinessUnavailable ? "Queue check unavailable" : sourcesUnavailable ? "Queue sources unavailable" : canGenerate ? "Generate your Queue" : projectUnavailable ? "Queue project needs attention" : "Queue needs a project"}
+            subtitle={readinessUnavailable ? readinessFailure : error}
             actions={
-              <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load(true)}>
-                Retry
-              </Button>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {readinessUnavailable || sourcesUnavailable || projectUnavailable ? null : canGenerate ? (
+                  <Button variant="primary" leadingIcon="ph:magic-wand-fill" loading={generating} onClick={() => void generateQueue()}>
+                    Generate
+                  </Button>
+                ) : (
+                  // Queue setup happens here, on the tab itself — selection
+                  // publishes, the subscription resets state, and load(true)
+                  // re-reads readiness for the newly chosen repository.
+                  <QueueProjectSetup selectedProjectId={readiness?.project?.id ?? null} />
+                )}
+                <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load(true)}>
+                  Retry
+                </Button>
+              </div>
             }
           />
         </div>
@@ -490,7 +643,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const q = queue!;
 
   return (
-    <div className="fwq">
+    <div ref={queueSurfaceRef} className="fwq" tabIndex={-1}>
       {/* Meta row (queue redesign) — the live summary with a truthful
           "updated Xm ago" readout, Refresh on the right. The surface title +
           Tasks/Queue tabs live in the hosting board header (embedded). */}
@@ -652,7 +805,12 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} onFileBead={runFileBead} />
       ) : null}
 
-      <AsanaQueueStrip onOpenUrl={onOpenUrl} onFiledBead={() => void load(true)} familiarId={activeFamiliarId} />
+      <AsanaQueueStrip
+        onOpenUrl={onOpenUrl}
+        onFiledBead={() => void load(true)}
+        familiarId={activeFamiliarId}
+        projectRoot={readiness?.project?.root}
+      />
 
       <div className="fwq-body">
         {q.total === 0 ? (
@@ -767,6 +925,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       {detailId ? (
         <BeadDetailModal
           id={detailId}
+          projectRoot={readiness?.project?.root ?? ""}
           onClose={() => setDetailId(null)}
           onClaim={() => {
             const item = q.lanes.flatMap((l) => l.items).find((i) => i.bead?.id === detailId);

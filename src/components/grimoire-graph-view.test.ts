@@ -80,4 +80,23 @@ assert.match(
   "wheel zoom registers non-passive so the page doesn't scroll",
 );
 
+// ── Legibility floor (cave-zhk6) ─────────────────────────────────────────────
+// Prose notices in the filter card read at 12px (--text-sm); the status pill
+// at 11px. 10px stays reserved for uppercase eyebrows and count chips.
+assert.match(
+  view,
+  /text-\[length:var\(--text-sm\)\] leading-snug text-\[var\(--text-muted\)\]">\s*\n\s*Scanned the/,
+  "the memory-truncation notice reads at --text-sm, not 10px",
+);
+assert.match(
+  view,
+  /text-\[length:var\(--text-sm\)\] leading-snug text-\[var\(--color-warning\)\]">\s*\n\s*Full scan unavailable/,
+  "the scan-error warning reads at --text-sm, not 10px",
+);
+assert.match(
+  view,
+  /pointer-events-none absolute bottom-2 left-2[^"]*text-\[length:var\(--text-xs\)\]/,
+  "the graph status pill reads at --text-xs, not 10px",
+);
+
 console.log("grimoire-graph-view.test.ts: ok");

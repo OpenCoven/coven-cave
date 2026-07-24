@@ -52,10 +52,10 @@ for (const key of stepOrder) {
   assert.ok(at > -1, `guided step ${key} present and in order`);
   cursor = at;
 }
-for (const gone of ['key: "binding",', 'key: "familiars",']) {
+for (const gone of ['key: "binding",', 'key: "familiars",', 'key: "project",']) {
   assert.ok(
     !source.includes(gone),
-    `retired wizard step ${gone} must not return — creation lives in the summoning circle`,
+    `retired wizard step ${gone} must not return — creation lives in the summoning circle and Queue setup on the Tasks page's Queue tab`,
   );
 }
 
@@ -117,6 +117,15 @@ assert.match(
   source,
   /NodeSetupNotice/,
   "Node.js setup instructions render inline when npm is missing",
+);
+
+// Queue project selection retired from the wizard: its picker (and the
+// request-generation race guard) live in queue-project-setup.tsx on the
+// Tasks page's Queue tab, pinned by familiar-work-queue-view.test.ts.
+assert.doesNotMatch(
+  source,
+  /QueueProjectSetup|requestGeneration/,
+  "the wizard no longer embeds the Queue project picker",
 );
 
 // ── Cross-platform instructions ─────────────────────────────────────────────

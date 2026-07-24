@@ -39,17 +39,17 @@ function gitInstallHint(): string {
 }
 
 /**
- * Advisory: Cave boots and chats without git (Node ships inside the app
- * bundle), but the changes panel, project file tree, and checkpoints all
- * shell out to it. Missing git never blocks onboarding completion.
+ * Queue project selection lives on the Tasks page's Queue tab now, not in
+ * onboarding — but it remains a Git-repository boundary. Cave can render some
+ * surfaces without Git, yet it cannot safely initialize or load a selected
+ * Queue project until Git is available.
  */
 async function checkGit(): Promise<Step> {
   const found = await commandPath("git");
-  if (found) return { ok: true, optional: true, detail: found };
+  if (found) return { ok: true, detail: found };
   return {
     ok: false,
-    optional: true,
-    hint: `Chat works without it, but the changes panel, project files, and checkpoints need Git. ${gitInstallHint()}`,
+    hint: `Git is required to select and use a Queue project. ${gitInstallHint()}`,
   };
 }
 
@@ -308,7 +308,7 @@ export async function GET() {
     openclawAgentCount,
   );
 
-  const steps = {
+  const steps: Record<string, Step> = {
     covenCli,
     covenHome,
     git,
@@ -320,9 +320,9 @@ export async function GET() {
     // detail stays informative for the checklist and diagnostics only.
     binding: { ...binding, optional: true },
   };
-  // Optional steps (git, familiars, binding) surface in the checklist but
-  // never gate completion — `complete` means the INFRASTRUCTURE is ready
-  // (CLI, home, runtime, daemon); the first familiar is summoned in-app.
+  // Optional familiar and binding steps surface in the checklist but never
+  // gate completion. Git remains a required boundary; the Queue project is
+  // chosen on the Tasks page's Queue tab, not during onboarding.
   const complete = Object.values(steps).every((s) => s.ok || s.optional);
 
   return NextResponse.json({ ok: true, complete, steps, tools: openCovenTools });

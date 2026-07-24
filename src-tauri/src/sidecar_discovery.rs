@@ -154,7 +154,16 @@ pub(super) fn find_coven() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         let home = std::env::var("USERPROFILE").unwrap_or_default();
+        // npm global installs land in %APPDATA%\\npm as a .cmd shim (not .exe),
+        // which is the most common way users install the Coven CLI. A GUI-launched
+        // Tauri app frequently does not inherit that dir on PATH, so we must probe
+        // it explicitly or `where.exe` below will miss it. Fall back to
+        // %USERPROFILE%\\AppData\\Roaming\\npm when APPDATA is unset.
+        let appdata = std::env::var("APPDATA")
+            .unwrap_or_else(|_| format!("{}\\AppData\\Roaming", home));
         let candidates = [
+            PathBuf::from(format!("{}\\npm\\coven.cmd", appdata)),
+            PathBuf::from(format!("{}\\npm\\coven.exe", appdata)),
             PathBuf::from(format!("{}\\.volta\\bin\\coven.exe", home)),
             PathBuf::from(format!("{}\\.bun\\bin\\coven.exe", home)),
             PathBuf::from(format!("{}\\.cargo\\bin\\coven.exe", home)),

@@ -6,6 +6,7 @@
 // unreadable over scrolling content).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { cssFilesInScope } from "../../scripts/codemods/tokenize-css.mjs";
 
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const palette = readFileSync(new URL("./command-palette.tsx", import.meta.url), "utf8");
@@ -59,10 +60,30 @@ assert.match(
   "the OS reduced-transparency setting restores opaque, blur-free chrome",
 );
 
-// Every glass consumer keeps -webkit-backdrop-filter for WebKit (the Tauri
-// webview on macOS is WebKit — the native platform this vibe is for).
-const webkitPairs = css.match(/backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);\s*\n\s*-webkit-backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/g) ?? [];
-assert.ok(webkitPairs.length >= 2, "glass consumers carry the -webkit- prefix pair");
+// ── Author the STANDARD backdrop-filter only — never a hand-written -webkit- pair ──
+// The Tauri macOS webview is WebKit and DOES need -webkit-backdrop-filter, but
+// Tailwind v4's lightningcss ADDS it automatically. Critically, when BOTH the
+// standard and the -webkit- property are hand-authored, lightningcss DROPS the
+// standard one from the compiled output — so the blur then works only in WebKit
+// and silently no-ops in Chromium / Windows WebView2 (they ignore the lone
+// -webkit- alias). Guard app-wide against reintroducing the manual prefix.
+const manualWebkitDecls = [];
+for (const rel of cssFilesInScope()) {
+  const sheet = readFileSync(rel, "utf8");
+  // A `-webkit-backdrop-filter:` declaration — on any line EXCEPT an
+  // `@supports not (… or (-webkit-backdrop-filter: blur(1px)))` feature query,
+  // where the token legitimately appears inside the condition parens.
+  const hits = sheet
+    .split("\n")
+    .filter((line) => /-webkit-backdrop-filter:/.test(line) && !/@supports/.test(line));
+  if (hits.length) manualWebkitDecls.push(`${rel} (${hits.length})`);
+}
+assert.deepEqual(
+  manualWebkitDecls,
+  [],
+  "no hand-authored -webkit-backdrop-filter declarations — lightningcss auto-prefixes; " +
+    "manual pairing makes it drop the standard property and the blur breaks in Chromium/WebView2",
+);
 
 // ── Component-class surfaces ride the shared utility ─────────────────────────
 assert.match(palette, /className="glass-overlay mt-\[12vh\]/, "the command palette dialog is glass");
@@ -74,7 +95,7 @@ assert.match(bell, /notification-bell__popover glass-overlay/, "the notification
 // translucent glass fill with backdrop blur, and every one of them appears in
 // BOTH opaque-fallback blocks (@supports-not and reduced-transparency), so
 // nothing goes see-through where the blur can't render.
-const GLASS_RE = String.raw`background: var\(--glass-(?:elevated|raised)\);\s*\n\s*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);\s*\n\s*-webkit-backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);`;
+const GLASS_RE = String.raw`background: var\(--glass-(?:elevated|raised)\);\s*\n\s*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);`;
 const frostedGlobals = [
   String.raw`\.shell-nav-panel > \.shell-nav--peek`,
   String.raw`\.ui-dock-chat`,
