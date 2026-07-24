@@ -6,6 +6,7 @@ import {
   normalizeResearchArtifact,
   normalizeResearchSource,
   parseResearchControl,
+  renderSourceLedgerMarkdown,
   researchKnowledgeEntry,
   researchProvenanceHeader,
   validateResearchArtifactContent,
@@ -139,4 +140,37 @@ test("Knowledge payload keeps provenance and familiar scope", () => {
   ]);
   assert.match(entry.body, /mission: cave-research-1/);
   assert.match(entry.body, /# Answer\n$/);
+});
+
+test("renderSourceLedgerMarkdown renders an empty ledger honestly", () => {
+  const markdown = renderSourceLedgerMarkdown([]);
+  assert.match(markdown, /^# Source ledger\n/);
+  assert.match(markdown, /No sources were recorded for this mission\./);
+});
+
+test("renderSourceLedgerMarkdown renders every source with status and evidence fields", () => {
+  const markdown = renderSourceLedgerMarkdown([
+    {
+      id: "s1",
+      title: "SQLite WAL docs",
+      url: "https://sqlite.org/wal.html",
+      publisher: "SQLite",
+      publishedAt: "2025-01-01",
+      sourceType: "web",
+      claim: "WAL allows concurrent readers",
+      note: "verified locally",
+      confidence: 0.9,
+      status: "used",
+    },
+    { id: "s2", title: "Old blog post", sourceType: "web", status: "rejected" },
+  ]);
+  assert.match(markdown, /2 sources recorded for this mission\./);
+  assert.match(markdown, /1\. \*\*SQLite WAL docs\*\* — used · web/);
+  assert.match(markdown, /- URL: https:\/\/sqlite\.org\/wal\.html/);
+  assert.match(markdown, /- Publisher: SQLite \(2025-01-01\)/);
+  assert.match(markdown, /- Claim: WAL allows concurrent readers/);
+  assert.match(markdown, /- Note: verified locally/);
+  assert.match(markdown, /- Confidence: 0\.9/);
+  assert.match(markdown, /2\. \*\*Old blog post\*\* — rejected · web/);
+  assert.ok(markdown.endsWith("\n"));
 });
