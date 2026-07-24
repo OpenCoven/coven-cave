@@ -66,8 +66,11 @@ export type CaveBackdropImageMetadata = {
   updatedAt: string;
 };
 
-/** Backdrop style option set — grows as animated styles land (cave-99s9). */
-export const BACKDROP_STYLES = ["image", "blaze"] as const;
+/** Backdrop style option set — grows as animated styles land (cave-99s9).
+ *  "off" is the explicit no-backdrop choice (cave-kbh1): it always pairs with
+ *  enabled:false (normalize coerces), while keeping the stored image and
+ *  accent seed intact so switching back restores the previous look. */
+export const BACKDROP_STYLES = ["off", "image", "blaze"] as const;
 export type CaveBackdropStyle = (typeof BACKDROP_STYLES)[number];
 
 export type CaveBackdropPreferences = {
@@ -401,7 +404,10 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
         : [],
       cornerRadius: oneOf(appearance.cornerRadius, CORNER_RADII, "default"),
       backdrop: {
-        enabled: backdrop.enabled === true,
+        // The explicit "off" style always reads back disabled — a stale or
+        // hand-edited {style:"off", enabled:true} would otherwise paint an
+        // empty scrim (no image fetch, no Blaze) over every surface.
+        enabled: backdrop.enabled === true && oneOf(backdrop.style, BACKDROP_STYLES, "image") !== "off",
         intensity: typeof backdrop.intensity === "number" && Number.isFinite(backdrop.intensity)
           ? Math.min(100, Math.max(0, backdrop.intensity)) : 50,
         matchAccent: backdrop.matchAccent !== false,

@@ -193,7 +193,7 @@
       intensity: typeof backdrop.intensity === "number" ? backdrop.intensity : 50,
       matchAccent: backdrop.matchAccent !== false,
       accentSeed: backdrop.accentSeed || null,
-      style: backdrop.style === "blaze" ? "blaze" : "image"
+      style: backdrop.style === "blaze" ? "blaze" : backdrop.style === "off" ? "off" : "image"
     }));
     safeSet("cave:home-news-enabled", general.newsHeadlines === false ? "false" : "true");
     safeSet("cave:mobile-mode-enabled", phone.mobileMode === false ? "false" : "true");

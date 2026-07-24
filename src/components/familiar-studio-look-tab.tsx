@@ -435,7 +435,7 @@ function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
             ? "Shows in chat while this familiar is active — this image overrides the app backdrop."
             : prefs.style === "blaze"
               ? "No image uploaded — the animated Blaze backdrop shows."
-              : appImagePresent
+              : prefs.style === "image" && appImagePresent
                 ? "No image uploaded — the app backdrop image is used."
                 : "No image uploaded — only the backdrop tint shows until an image is set here or in Settings → Appearance."
           : "Off — the app backdrop (Settings → Appearance) applies as usual."}

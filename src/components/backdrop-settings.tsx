@@ -15,8 +15,9 @@ import {
 import { BACKDROP_STYLES, type CaveBackdropStyle } from "@/lib/preferences-schema";
 import { useArmedConfirm } from "@/lib/use-armed-confirm";
 
-const STYLE_LABELS: Record<CaveBackdropStyle, string> = { image: "Image", blaze: "Blaze" };
+const STYLE_LABELS: Record<CaveBackdropStyle, string> = { off: "Off", image: "Image", blaze: "Blaze" };
 const STYLE_TITLES: Record<CaveBackdropStyle, string> = {
+  off: "No backdrop — Home and Chat stay solid",
   image: "A picture you choose shows behind Home and Chat",
   blaze: "Animated embers and smoke, tinted to your theme accent",
 };
@@ -98,6 +99,14 @@ export function BackdropSettings() {
   }
 
   function setStyle(style: CaveBackdropStyle) {
+    if (style === "off") {
+      // Explicit off (cave-kbh1): non-destructive — the stored image and
+      // accent seed survive, so Image/Blaze restore the previous look.
+      if (prefs.style === "off" && !prefs.enabled) return;
+      writeBackdropPrefs({ style, enabled: false });
+      announce("Backdrop off.");
+      return;
+    }
     if (style === "blaze") {
       // No early return on prefs.style: re-clicking the active segment
       // re-asserts enablement, healing a stomped enabled:false (e.g. a
