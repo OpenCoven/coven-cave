@@ -16,6 +16,7 @@ import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
+import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { useIsMobile } from "@/lib/use-viewport";
 import { isMacDesktopShell } from "@/lib/tauri-platform";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
@@ -954,31 +955,10 @@ function ShellInner({
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
     </button>
   ) : null;
-  // Codex-style history controls beside the nav toggle: browser Back/Forward
-  // drive the app's own history entries (chat hashes and surface deep links
-  // already push state and handle popstate in workspace.tsx).
-  const historyNav = !isMobile ? (
-    <div className="shell-top-history" role="group" aria-label="History">
-      <button
-        type="button"
-        className="shell-top-toggle focus-ring"
-        aria-label="Go back"
-        title="Back"
-        onClick={() => window.history.back()}
-      >
-        <Icon name="ph:caret-left" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
-      </button>
-      <button
-        type="button"
-        className="shell-top-toggle focus-ring"
-        aria-label="Go forward"
-        title="Forward"
-        onClick={() => window.history.forward()}
-      >
-        <Icon name="ph:caret-right" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
-      </button>
-    </div>
-  ) : null;
+  // Codex-style history controls beside the nav toggle are shared with
+  // standalone destinations, keeping browser Back/Forward consistent across
+  // every main page.
+  const historyNav = !isMobile ? <DesktopHistoryNav /> : null;
 
   return (
     <div

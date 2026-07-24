@@ -4,9 +4,20 @@
 
 .aps {
   display: flex;
-  min-height: 100vh;
-  min-height: 100dvh;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
   background: var(--bg-base);
+}
+
+.aps-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.aps-top {
+  width: 100%;
 }
 
 .aps-rail {
@@ -19,14 +30,9 @@
   padding: 10px 0 var(--space-3);
   border-right: 1px solid var(--border-hairline);
   background: var(--bg-elevated);
-  /* Sticks to the viewport so the rail is always in reach as analytics scrolls. */
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
-  height: 100vh;
-  height: 100dvh;
-  /* Clear the native/Tauri title bar so the brand mark isn't under the traffic
-     lights on desktop; harmless (0) on web. */
+  height: auto;
+  /* The standalone desktop title bar owns the Tauri traffic-light reserve.
+     Mobile keeps the rail at the window edge, including its safe-area inset. */
   padding-top: max(10px, env(safe-area-inset-top));
 }
 
@@ -87,7 +93,20 @@
 .aps-main {
   flex: 1 1 auto;
   min-width: 0;
-  height: 100vh;
-  height: 100dvh;
+  min-height: 0;
   overflow-y: auto;
+}
+
+/* Settings previously filled the full route viewport. Within the standalone
+   shell it fills the remaining pane beneath the shared desktop title bar. */
+.aps-main > .settings-shell {
+  height: 100%;
+}
+
+/* The history controls are mounted after hydration on mobile; hide the
+   SSR-safe first render at the same breakpoint so mobile keeps its own chrome. */
+@media (max-width: 1023px) {
+  .aps-top {
+    display: none;
+  }
 }
