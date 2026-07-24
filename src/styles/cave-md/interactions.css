@@ -109,7 +109,6 @@
   .cave-table-lightbox__panel {
     background: var(--bg-panel);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 

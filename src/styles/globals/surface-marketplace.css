@@ -1374,7 +1374,6 @@
   border: 1px solid var(--border-strong);
   background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: 0 4px 24px rgb(0 0 0 / 35%);
   overflow: hidden;
   animation: ui-undo-toast-enter 0.18s var(--ease-decelerate, ease-out);

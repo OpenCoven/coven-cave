@@ -178,7 +178,7 @@
 
 .board-drawer-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.30); z-index:300; animation:board-backdrop-in .18s ease; }
 @keyframes board-backdrop-in { from{opacity:0} to{opacity:1} }
-.board-drawer { position:fixed; top:0; right:0; bottom:0; width:480px; max-width:100vw; background:var(--glass-raised); backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); border-left:1px solid var(--border-strong); z-index:301; display:flex; flex-direction:column; overflow:hidden; box-shadow:-8px 0 32px rgba(0,0,0,.20); animation:board-drawer-in .22s ease-out; }
+.board-drawer { position:fixed; top:0; right:0; bottom:0; width:480px; max-width:100vw; background:var(--glass-raised); backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); border-left:1px solid var(--border-strong); z-index:301; display:flex; flex-direction:column; overflow:hidden; box-shadow:-8px 0 32px rgba(0,0,0,.20); animation:board-drawer-in .22s ease-out; }
 @keyframes board-drawer-in { from{transform:translateX(100%)} to{transform:translateX(0)} }
 .board-drawer--closing { animation:board-drawer-out .18s ease-in forwards; }
 @keyframes board-drawer-out { from{transform:translateX(0)} to{transform:translateX(100%)} }

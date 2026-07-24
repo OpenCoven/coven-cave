@@ -127,7 +127,6 @@ button:active > .edge-rail-chip {
 :root[data-tauri-titlebar] .shell-top {
   background: color-mix(in oklch, var(--bg-base) 46%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root[data-tauri-titlebar] .shell-top { background: transparent; }
@@ -136,7 +135,6 @@ button:active > .edge-rail-chip {
   :root[data-tauri-titlebar] .shell-top {
     background: transparent;
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 
@@ -1221,7 +1219,6 @@ button:active > .edge-rail-chip {
   border: 1px solid var(--border-hairline);
   background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: var(--shadow-popover, 0 8px 28px rgb(0 0 0 / 0.28));
   overflow: hidden;
 }

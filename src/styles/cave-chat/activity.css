@@ -838,7 +838,6 @@ details[open] > .cave-tool-summary::before {
   border-radius: var(--radius-control);
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   color: var(--text-primary);
   box-shadow: 0 24px 80px color-mix(in oklch, var(--bg-base) 76%, transparent);
 }
