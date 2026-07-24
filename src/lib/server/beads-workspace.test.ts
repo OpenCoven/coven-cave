@@ -1,10 +1,12 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const temp = await mkdtemp(path.join(os.tmpdir(), "cave-beads-workspace-"));
+// realpath: macOS tmpdir lives behind a /var → /private/var symlink, and the
+// resolver's contract compares canonical paths against the given repo root.
+const temp = await realpath(await mkdtemp(path.join(os.tmpdir(), "cave-beads-workspace-")));
 const projectA = path.join(temp, "project-a");
 const projectB = path.join(temp, "project-b");
 

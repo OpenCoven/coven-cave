@@ -10,6 +10,7 @@ import { caveHome } from "@/lib/coven-paths";
 import { caveToolSpawnEnv } from "@/lib/coven-bin";
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { runBdCommand, type BdResult } from "@/lib/server/beads-cli";
+import { resolveSafeBeadsWorkspace } from "@/lib/server/beads-workspace";
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
@@ -169,14 +170,7 @@ function beadsUnavailable(result: BdResult): boolean {
 async function beadsWorkspaceStatus(repoRoot: string, probe: BeadsProbe): Promise<BeadsWorkspaceStatus> {
   const beadsDir = path.join(/* turbopackIgnore: true */ repoRoot, ".beads");
   try {
-    const entry = await lstat(/* turbopackIgnore: true */ beadsDir);
-    if (!entry.isDirectory() || entry.isSymbolicLink()) {
-      return { kind: "error", message: "The Queue Beads workspace is invalid. Repair it before loading Queue work." };
-    }
-    const canonicalBeads = await realpath(/* turbopackIgnore: true */ beadsDir);
-    if (canonicalBeads !== beadsDir && !canonicalBeads.startsWith(repoRoot + path.sep)) {
-      return { kind: "error", message: "The Queue Beads workspace points outside the selected project. Repair it before loading Queue work." };
-    }
+    await lstat(/* turbopackIgnore: true */ beadsDir);
   } catch (cause) {
     const error = cause as NodeJS.ErrnoException;
     if (error.code === "ENOENT") {
@@ -192,6 +186,12 @@ async function beadsWorkspaceStatus(repoRoot: string, probe: BeadsProbe): Promis
       return { kind: "missing" };
     }
     return { kind: "error", message: "Cave could not inspect the Queue Beads workspace. Check project permissions and try again." };
+  }
+  // Readiness and the /api/beads mutation adapter must agree on what a safe
+  // workspace is: delegate to the shared resolver so "ready" here can never
+  // describe a workspace /api/beads would reject as unsafe (422).
+  if (!resolveSafeBeadsWorkspace(repoRoot).ok) {
+    return { kind: "error", message: "The Queue Beads workspace is invalid or points outside the selected project. Repair it before loading Queue work." };
   }
   // Directory presence alone is not a workspace: a failed bd init can leave an
   // empty .beads behind. A read-only probe keeps Generate available to repair it.

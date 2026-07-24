@@ -1,11 +1,13 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const tempDir = await mkdtemp(path.join(os.tmpdir(), "cave-queue-project-"));
+// realpath: readiness canonicalizes the Git toplevel, so a symlinked tmpdir
+// (macOS /var → /private/var) must not skew root-equality assertions.
+const tempDir = await realpath(await mkdtemp(path.join(os.tmpdir(), "cave-queue-project-")));
 const projectRoot = path.join(tempDir, "project");
 const nonGitRoot = path.join(tempDir, "not-a-git-project");
 const projectsPath = path.join(tempDir, "projects.json");
@@ -93,6 +95,21 @@ try {
   });
   assert.equal(ready.code, "ready");
   assert.equal(ready.ok, true);
+
+  // Readiness shares resolveSafeBeadsWorkspace with /api/beads: a swapped
+  // .beads symlink — even one contained inside the repository — must read as
+  // an error here exactly like the mutation adapter's 422, never as ready.
+  await rm(path.join(projectRoot, ".beads"), { recursive: true, force: true });
+  await mkdir(path.join(projectRoot, "beads-elsewhere"));
+  await symlink(path.join(projectRoot, "beads-elsewhere"), path.join(projectRoot, ".beads"), "dir");
+  const swapped = await queueProjectReadiness({
+    beadsProbe: async () => ({ ok: true, stdout: "[]", stderr: "" }),
+  });
+  assert.equal(swapped.code, "beads-error", "an in-repo .beads symlink is unsafe for readiness exactly as it is for /api/beads");
+  assert.equal(swapped.canGenerate, false);
+  assert.match(swapped.message, /Repair it before loading Queue work/);
+  await rm(path.join(projectRoot, ".beads"), { recursive: true, force: true });
+  await mkdir(path.join(projectRoot, ".beads"));
 
   let probeCalls = 0;
   const cachedProbe = async () => {
