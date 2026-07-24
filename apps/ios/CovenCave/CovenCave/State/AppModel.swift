@@ -497,9 +497,9 @@ final class AppModel {
         await ReminderNotifications.sync(reminders)
     }
 
-    /// Publish a compact snapshot to the shared App Group so the home-screen
-    /// "Up Next" widget renders the next reminder + task counts without its own
-    /// network access. Cheap; called whenever reminders/tasks load or change.
+    /// Publish a compact snapshot to the shared App Group so widgets/controls can
+    /// render task counts without their own network access. Cheap; called whenever
+    /// reminders/tasks load or change.
     func publishWidgetSnapshot() {
         let now = Date()
         let cal = Calendar.current
@@ -519,9 +519,8 @@ final class AppModel {
 
     // MARK: - Deep links (home-screen widget)
 
-    /// Surface a widget tap targets. The widget body deep-links to `.reminders`
-    /// (tap the reminder) / `.tasks` (tap the counts) via the `covencave://` URL
-    /// scheme; `TasksView` opens the reminders sheet when it sees `.reminders`.
+    /// Surface a widget/control tap targets via the `covencave://` URL scheme.
+    /// Task-related entry points deep-link to `.tasks`.
     enum DeepLink: String { case tasks, reminders }
 
     var deepLink: DeepLink?

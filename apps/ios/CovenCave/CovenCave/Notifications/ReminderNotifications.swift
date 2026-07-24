@@ -52,7 +52,7 @@ enum ReminderNotifications {
             content.title = "Reminder"
             content.body = reminder.title
             content.sound = .default
-            // Tapping routes to the reminders list via the app's deep-link handler.
+            // Tapping routes to Tasks via the app's deep-link handler.
             // TODO: add a needs-attention Tasks filter when one is available.
             content.userInfo = ["deepLink": "covencave://tasks"]
             let comps = Calendar.current.dateComponents(
@@ -86,7 +86,7 @@ final class CaveNotificationDelegate: NSObject, UNUserNotificationCenterDelegate
         [.banner, .sound]
     }
 
-    /// A tapped reminder opens the reminders list.
+    /// A tapped reminder opens Tasks.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
