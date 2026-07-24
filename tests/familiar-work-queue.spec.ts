@@ -163,6 +163,9 @@ test.describe("familiar work queue (PR control tower)", () => {
     await fwq.getByRole("region", { name: "No open PR" }).getByRole("button", { name: "iOS profile avatar" }).click();
     await expect(page.getByRole("dialog", { name: "Queue cave-bb2" })).toBeVisible();
     await expect.poll(() => readUrls.some((url) => new URL(url).searchParams.get("mode") === "show")).toBe(true);
+    const detailUrl = readUrls.find((url) => new URL(url).searchParams.get("mode") === "show");
+    expect(detailUrl).toBeDefined();
+    expect(new URL(detailUrl!).searchParams.get("projectRoot")).toBe(QUEUE_PROJECT.root);
   });
 
   test("clears A before a newly selected project's readiness check fails", async ({ page }) => {
