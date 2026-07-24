@@ -148,6 +148,21 @@ test("renderSourceLedgerMarkdown renders an empty ledger honestly", () => {
   assert.match(markdown, /No sources were recorded for this mission\./);
 });
 
+test("renderSourceLedgerMarkdown keeps sub-bullets attached beyond nine sources", () => {
+  const sources = Array.from({ length: 10 }, (_, index) => ({
+    id: `s${index + 1}`,
+    title: `Source ${index + 1}`,
+    localPath: `/notes/source-${index + 1}.md`,
+    publishedAt: "2025-02-02",
+    sourceType: "file",
+    status: "used" as const,
+  }));
+  const markdown = renderSourceLedgerMarkdown(sources);
+  assert.match(markdown, /\n9\. \*\*Source 9\*\*[^\n]*\n {3}- Local path: \/notes\/source-9\.md/);
+  assert.match(markdown, /\n10\. \*\*Source 10\*\*[^\n]*\n {4}- Local path: \/notes\/source-10\.md/);
+  assert.match(markdown, / {4}- Published: 2025-02-02/);
+});
+
 test("renderSourceLedgerMarkdown renders every source with status and evidence fields", () => {
   const markdown = renderSourceLedgerMarkdown([
     {

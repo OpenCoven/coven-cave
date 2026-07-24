@@ -241,17 +241,18 @@ export function renderSourceLedgerMarkdown(sources: ResearchSourceRef[]): string
   }
   lines.push(`${sources.length} source${sources.length === 1 ? "" : "s"} recorded for this mission.`, "");
   sources.forEach((source, index) => {
+    const indent = " ".repeat(String(index + 1).length + 2);
     lines.push(`${index + 1}. **${source.title}** — ${source.status} · ${source.sourceType}`);
-    if (source.url) lines.push(`   - URL: ${source.url}`);
-    if (source.localPath) lines.push(`   - Local path: ${source.localPath}`);
+    if (source.url) lines.push(`${indent}- URL: ${source.url}`);
+    if (source.localPath) lines.push(`${indent}- Local path: ${source.localPath}`);
     if (source.publisher) {
-      lines.push(`   - Publisher: ${source.publisher}${source.publishedAt ? ` (${source.publishedAt})` : ""}`);
+      lines.push(`${indent}- Publisher: ${source.publisher}${source.publishedAt ? ` (${source.publishedAt})` : ""}`);
     } else if (source.publishedAt) {
-      lines.push(`   - Published: ${source.publishedAt}`);
+      lines.push(`${indent}- Published: ${source.publishedAt}`);
     }
-    if (source.claim) lines.push(`   - Claim: ${source.claim}`);
-    if (source.note) lines.push(`   - Note: ${source.note}`);
-    if (source.confidence !== undefined) lines.push(`   - Confidence: ${source.confidence}`);
+    if (source.claim) lines.push(`${indent}- Claim: ${source.claim}`);
+    if (source.note) lines.push(`${indent}- Note: ${source.note}`);
+    if (source.confidence !== undefined) lines.push(`${indent}- Confidence: ${source.confidence}`);
   });
   return `${lines.join("\n")}\n`;
 }
