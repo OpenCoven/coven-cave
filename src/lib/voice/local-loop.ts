@@ -26,6 +26,10 @@ import type {
 import { VoiceConnectError } from "./types.ts";
 import { connectSpeechLoop } from "./speech-loop.ts";
 import { resolvePreferredEars } from "./native-stt.ts";
+import {
+  createLocalTtsMouth,
+  isLocalTtsVoiceName,
+} from "./local-tts.ts";
 
 export const DEFAULT_LOCAL_LLM_BASE = "http://127.0.0.1:11434";
 export const DEFAULT_LOCAL_MODEL = "llama3.2";
@@ -135,10 +139,16 @@ async function connect(
   // rejects with stt_on_device_unsupported instead of ever reaching Apple's
   // dictation service.
   const preferredEars = await resolvePreferredEars({ requireOnDevice: true });
+  const localVoice = isLocalTtsVoiceName(connection.voice)
+    ? connection.voice
+    : null;
 
   return connectSpeechLoop({
     mic,
-    voiceName: connection.voice,
+    voiceName: localVoice ? undefined : connection.voice,
+    mouth: localVoice
+      ? createLocalTtsMouth({ voiceName: localVoice })
+      : undefined,
     ears: preferredEars?.factory,
     earsEngine: preferredEars?.engine,
     callbacks,

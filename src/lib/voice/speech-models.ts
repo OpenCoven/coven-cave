@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, open, rename, rm, stat, unlink } from "node:fs/promises";
+import { mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import path from "node:path";
 import { covenHome } from "../coven-paths.ts";
@@ -17,6 +17,12 @@ export type SpeechModelRegistryEntry = {
   sizeBytes: number;
   license: string;
   fileName: string;
+  companion?: {
+    url: string;
+    sha256: string;
+    sizeBytes: number;
+    fileName: string;
+  };
 };
 
 export type SpeechModelReadiness = SpeechModelRegistryEntry & {
@@ -24,6 +30,7 @@ export type SpeechModelReadiness = SpeechModelRegistryEntry & {
   verified: boolean;
   diskSizeBytes: number;
   path: string;
+  companionPath?: string;
   missingReason?: "missing" | "size_mismatch" | "checksum_mismatch" | "unreadable";
 };
 
@@ -86,13 +93,22 @@ export const SPEECH_MODEL_REGISTRY: readonly SpeechModelRegistryEntry[] = [
     sizeBytes: 63_201_294,
     license: "CC0-1.0",
     fileName: "en_US-amy-medium.onnx",
+    // Piper requires the voice config beside the ONNX weights. Treat both as
+    // one verified model so /api/voice/engines never advertises an unusable
+    // voice as ready.
+    companion: {
+      url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json",
+      sha256: "95a23eb4d42909d38df73bb9ac7f45f597dbfcde2d1bf9526fdeaf5466977d77",
+      sizeBytes: 4_882,
+      fileName: "en_US-amy-medium.onnx.json",
+    },
   },
 ] as const;
 
 const jobs = new Map<string, SpeechModelDownloadJob>();
 
 export function speechModelsRoot(): string {
-  return path.join(covenHome(), "voice-models");
+  return path.join(/* turbopackIgnore: true */ covenHome(), "voice-models");
 }
 
 export function isPathInsideRoot(resolved: string, root: string): boolean {
@@ -104,11 +120,34 @@ export function speechModelById(modelId: string): SpeechModelRegistryEntry | nul
 }
 
 export function speechModelPath(model: SpeechModelRegistryEntry, root = speechModelsRoot()): string {
-  if (basename(model.fileName) !== model.fileName || dirname(model.fileName) !== ".") {
+  return speechModelAssetPath(model, model.fileName, root);
+}
+
+export function speechModelCompanionPath(
+  model: SpeechModelRegistryEntry,
+  root = speechModelsRoot(),
+): string | null {
+  return model.companion
+    ? speechModelAssetPath(model, model.companion.fileName, root)
+    : null;
+}
+
+function speechModelAssetPath(
+  model: SpeechModelRegistryEntry,
+  fileName: string,
+  root: string,
+): string {
+  if (basename(fileName) !== fileName || dirname(fileName) !== ".") {
     throw new Error("invalid_registry_filename");
   }
-  const resolvedRoot = path.resolve(root);
-  const resolved = path.resolve(resolvedRoot, model.kind, model.engine, model.id, model.fileName);
+  const resolvedRoot = path.resolve(/* turbopackIgnore: true */ root);
+  const resolved = path.resolve(
+    /* turbopackIgnore: true */ resolvedRoot,
+    model.kind,
+    model.engine,
+    model.id,
+    fileName,
+  );
   if (!isPathInsideRoot(resolved, resolvedRoot)) throw new Error("model path not allowed");
   return resolved;
 }
@@ -129,32 +168,76 @@ export async function speechModelReadiness(
   root = speechModelsRoot(),
 ): Promise<SpeechModelReadiness> {
   const modelPath = speechModelPath(model, root);
+  const companionPath = speechModelCompanionPath(model, root);
+  const assets = [
+    { path: modelPath, sizeBytes: model.sizeBytes, sha256: model.sha256 },
+    ...(model.companion && companionPath
+      ? [{
+          path: companionPath,
+          sizeBytes: model.companion.sizeBytes,
+          sha256: model.companion.sha256,
+        }]
+      : []),
+  ];
   let diskSizeBytes = 0;
-  try {
-    const info = await stat(modelPath);
-    diskSizeBytes = info.size;
-    if (!info.isFile()) {
-      return { ...model, ready: false, verified: false, diskSizeBytes, path: modelPath, missingReason: "unreadable" };
+  for (const asset of assets) {
+    try {
+      const info = await stat(/* turbopackIgnore: true */ asset.path);
+      diskSizeBytes += info.size;
+      if (!info.isFile()) {
+        return {
+          ...model,
+          ready: false,
+          verified: false,
+          diskSizeBytes,
+          path: modelPath,
+          ...(companionPath ? { companionPath } : {}),
+          missingReason: "unreadable",
+        };
+      }
+      if (info.size !== asset.sizeBytes) {
+        return {
+          ...model,
+          ready: false,
+          verified: false,
+          diskSizeBytes,
+          path: modelPath,
+          ...(companionPath ? { companionPath } : {}),
+          missingReason: "size_mismatch",
+        };
+      }
+      if (await sha256File(asset.path) !== asset.sha256) {
+        return {
+          ...model,
+          ready: false,
+          verified: false,
+          diskSizeBytes,
+          path: modelPath,
+          ...(companionPath ? { companionPath } : {}),
+          missingReason: "checksum_mismatch",
+        };
+      }
+    } catch (error) {
+      return {
+        ...model,
+        ready: false,
+        verified: false,
+        diskSizeBytes,
+        path: modelPath,
+        ...(companionPath ? { companionPath } : {}),
+        missingReason:
+          (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable",
+      };
     }
-    if (info.size !== model.sizeBytes) {
-      return { ...model, ready: false, verified: false, diskSizeBytes, path: modelPath, missingReason: "size_mismatch" };
-    }
-    const digest = await sha256File(modelPath);
-    const verified = digest === model.sha256;
-    return {
-      ...model,
-      ready: verified,
-      verified,
-      diskSizeBytes,
-      path: modelPath,
-      ...(verified ? {} : { missingReason: "checksum_mismatch" as const }),
-    };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { ...model, ready: false, verified: false, diskSizeBytes: 0, path: modelPath, missingReason: "missing" };
-    }
-    return { ...model, ready: false, verified: false, diskSizeBytes, path: modelPath, missingReason: "unreadable" };
   }
+  return {
+    ...model,
+    ready: true,
+    verified: true,
+    diskSizeBytes,
+    path: modelPath,
+    ...(companionPath ? { companionPath } : {}),
+  };
 }
 
 export async function speechEnginesReadiness(root = speechModelsRoot()): Promise<SpeechEnginesReadiness> {
@@ -162,7 +245,7 @@ export async function speechEnginesReadiness(root = speechModelsRoot()): Promise
   const diskSizeBytes = models.reduce((sum, model) => sum + model.diskSizeBytes, 0);
   return {
     ok: true,
-    root: path.resolve(root),
+    root: path.resolve(/* turbopackIgnore: true */ root),
     diskSizeBytes,
     management: {
       surface: "settings",
@@ -213,14 +296,14 @@ async function writeResponseToFile(
   job: SpeechModelDownloadJob,
 ): Promise<string> {
   const hash = createHash("sha256");
-  const handle = await open(filePath, "w", 0o600);
+  const handle = await open(/* turbopackIgnore: true */ filePath, "w", 0o600);
   try {
     if (!res.body) {
       const bytes = new Uint8Array(await res.arrayBuffer());
       if (job.totalBytes > 0 && bytes.byteLength > job.totalBytes) throw new Error("size_mismatch");
       hash.update(bytes);
       await handle.writeFile(bytes);
-      job.receivedBytes = bytes.byteLength;
+      job.receivedBytes += bytes.byteLength;
       putJob(job);
       return hash.digest("hex");
     }
@@ -252,26 +335,58 @@ export async function runSpeechModelDownload(
 ): Promise<void> {
   const dest = speechModelPath(model, root);
   const dir = path.dirname(dest);
-  const temp = path.join(dir, `.${model.fileName}.${job.id}.download`);
+  const stagingDir = path.join(
+    /* turbopackIgnore: true */ path.dirname(dir),
+    `.${model.id}.${job.id}.download`,
+  );
+  const totalBytes = model.sizeBytes + (model.companion?.sizeBytes ?? 0);
+  const assets = [
+    {
+      url: model.url,
+      sha256: model.sha256,
+      sizeBytes: model.sizeBytes,
+      fileName: model.fileName,
+    },
+    ...(model.companion ? [model.companion] : []),
+  ];
   try {
-    await mkdir(dir, { recursive: true });
-    await unlink(temp).catch(() => undefined);
-    const res = await fetchImpl(model.url, { signal: AbortSignal.timeout(30 * 60_000) });
-    if (!res.ok) throw new Error(`download_http_${res.status}`);
-    const headerSize = Number(res.headers.get("content-length"));
-    if (Number.isFinite(headerSize) && headerSize > 0) {
-      if (headerSize !== model.sizeBytes) throw new Error("size_mismatch");
-      job.totalBytes = headerSize;
-      putJob(job);
+    await mkdir(/* turbopackIgnore: true */ path.dirname(dir), { recursive: true });
+    await rm(/* turbopackIgnore: true */ stagingDir, { recursive: true, force: true });
+    await mkdir(/* turbopackIgnore: true */ stagingDir, { recursive: true });
+    job.totalBytes = totalBytes;
+    putJob(job);
+    for (const asset of assets) {
+      const temp = path.join(/* turbopackIgnore: true */ stagingDir, asset.fileName);
+      const res = await fetchImpl(asset.url, {
+        signal: AbortSignal.timeout(30 * 60_000),
+      });
+      if (!res.ok) throw new Error(`download_http_${res.status}`);
+      const headerSize = Number(res.headers.get("content-length"));
+      if (
+        Number.isFinite(headerSize) &&
+        headerSize > 0 &&
+        headerSize !== asset.sizeBytes
+      ) {
+        throw new Error("size_mismatch");
+      }
+      const digest = await writeResponseToFile(res, temp, job);
+      const info = await stat(/* turbopackIgnore: true */ temp);
+      if (info.size !== asset.sizeBytes) throw new Error("size_mismatch");
+      if (digest !== asset.sha256) throw new Error("checksum_mismatch");
     }
-    const digest = await writeResponseToFile(res, temp, job);
-    const info = await stat(temp);
-    if (info.size !== model.sizeBytes) throw new Error("size_mismatch");
-    if (digest !== model.sha256) throw new Error("checksum_mismatch");
-    await rename(temp, dest);
-    putJob({ ...job, status: "done", receivedBytes: info.size, totalBytes: model.sizeBytes, ready: true });
+    // Publish the complete directory only after every required asset verifies.
+    // The ONNX weights are never visible without the Piper config beside them.
+    await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
+    await rename(/* turbopackIgnore: true */ stagingDir, dir);
+    putJob({
+      ...job,
+      status: "done",
+      receivedBytes: totalBytes,
+      totalBytes,
+      ready: true,
+    });
   } catch (error) {
-    await unlink(temp).catch(() => undefined);
+    await rm(/* turbopackIgnore: true */ stagingDir, { recursive: true, force: true });
     putJob({
       ...job,
       status: "failed",
@@ -296,7 +411,7 @@ export async function startSpeechModelDownload(
       modelId: model.id,
       status: "done",
       receivedBytes: ready.diskSizeBytes,
-      totalBytes: model.sizeBytes,
+      totalBytes: model.sizeBytes + (model.companion?.sizeBytes ?? 0),
       startedAt: now,
       updatedAt: now,
       ready: true,
@@ -311,7 +426,7 @@ export async function startSpeechModelDownload(
     modelId: model.id,
     status: "running",
     receivedBytes: 0,
-    totalBytes: model.sizeBytes,
+    totalBytes: model.sizeBytes + (model.companion?.sizeBytes ?? 0),
     startedAt: now,
     updatedAt: now,
   });
@@ -325,7 +440,7 @@ export async function removeSpeechModel(modelId: string, root = speechModelsRoot
   const modelPath = speechModelPath(model, root);
   const modelDir = path.dirname(modelPath);
   try {
-    await rm(modelDir, { recursive: true, force: false });
+    await rm(/* turbopackIgnore: true */ modelDir, { recursive: true, force: false });
     return "removed";
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";

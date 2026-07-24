@@ -9,6 +9,7 @@ import {
   runSpeechModelDownload,
   type SpeechModelRegistryEntry,
   speechEnginesReadiness,
+  speechModelCompanionPath,
   speechModelPath,
   speechModelReadiness,
   SPEECH_MODEL_REGISTRY,
@@ -46,6 +47,11 @@ test("speech registry is static, reviewed, and grouped for readiness consumers",
     assert.match(model.sha256, /^[a-f0-9]{64}$/);
     assert.ok(model.sizeBytes > 0);
     assert.ok(model.license.length > 0);
+    if (model.companion) {
+      assert.match(model.companion.url, /^https:\/\//);
+      assert.match(model.companion.sha256, /^[a-f0-9]{64}$/);
+      assert.ok(model.companion.sizeBytes > 0);
+    }
   }
   const root = testRoot("empty");
   await rm(root, { recursive: true, force: true });
@@ -82,6 +88,44 @@ test("readiness requires both expected size and verified sha256", async () => {
   assert.equal(good.ready, true);
   assert.equal(good.verified, true);
   assert.equal(good.diskSizeBytes, model.sizeBytes);
+  await rm(root, { recursive: true, force: true });
+});
+
+test("Piper readiness requires its verified config companion", async () => {
+  const root = testRoot("companion");
+  await rm(root, { recursive: true, force: true });
+  const modelBody = "voice weights";
+  const configBody = '{"audio":{"sample_rate":22050}}';
+  const model: SpeechModelRegistryEntry = {
+    ...fixtureModel(modelBody),
+    id: "piper-fixture",
+    engine: "piper",
+    kind: "tts",
+    fileName: "voice.onnx",
+    companion: {
+      url: "https://example.invalid/voice.onnx.json",
+      sha256: sha256(configBody),
+      sizeBytes: Buffer.byteLength(configBody),
+      fileName: "voice.onnx.json",
+    },
+  };
+  const modelPath = speechModelPath(model, root);
+  const companionPath = speechModelCompanionPath(model, root);
+  assert.ok(companionPath);
+  await mkdir(path.dirname(modelPath), { recursive: true });
+  await writeFile(modelPath, modelBody);
+  const missingConfig = await speechModelReadiness(model, root);
+  assert.equal(missingConfig.ready, false);
+  assert.equal(missingConfig.missingReason, "missing");
+
+  await writeFile(companionPath, configBody);
+  const ready = await speechModelReadiness(model, root);
+  assert.equal(ready.ready, true);
+  assert.equal(ready.companionPath, companionPath);
+  assert.equal(
+    ready.diskSizeBytes,
+    Buffer.byteLength(modelBody) + Buffer.byteLength(configBody),
+  );
   await rm(root, { recursive: true, force: true });
 });
 
@@ -131,6 +175,52 @@ test("failed checksum downloads leave no ready model behind", async () => {
 
   assert.equal((await speechModelReadiness(model, root)).ready, false);
   await assert.rejects(readFile(speechModelPath(model, root)), /ENOENT/);
+  await rm(root, { recursive: true, force: true });
+});
+
+test("download publishes Piper weights and config as one ready directory", async () => {
+  const root = testRoot("download-companion");
+  await rm(root, { recursive: true, force: true });
+  const modelBody = "voice weights";
+  const configBody = '{"audio":{"sample_rate":22050}}';
+  const model: SpeechModelRegistryEntry = {
+    ...fixtureModel(modelBody),
+    id: "piper-download-fixture",
+    engine: "piper",
+    kind: "tts",
+    fileName: "voice.onnx",
+    companion: {
+      url: "https://example.invalid/voice.onnx.json",
+      sha256: sha256(configBody),
+      sizeBytes: Buffer.byteLength(configBody),
+      fileName: "voice.onnx.json",
+    },
+  };
+  const now = new Date().toISOString();
+  const job = {
+    id: "job-companion",
+    modelId: model.id,
+    status: "running" as const,
+    receivedBytes: 0,
+    totalBytes: model.sizeBytes + model.companion!.sizeBytes,
+    startedAt: now,
+    updatedAt: now,
+  };
+  const fetchImpl = async (url: string | URL) => {
+    const body = String(url).endsWith(".json") ? configBody : modelBody;
+    return new Response(body, {
+      headers: { "content-length": String(Buffer.byteLength(body)) },
+    });
+  };
+
+  await runSpeechModelDownload(model, job, fetchImpl as typeof fetch, root);
+
+  assert.equal(await readFile(speechModelPath(model, root), "utf8"), modelBody);
+  assert.equal(
+    await readFile(speechModelCompanionPath(model, root)!, "utf8"),
+    configBody,
+  );
+  assert.equal((await speechModelReadiness(model, root)).ready, true);
   await rm(root, { recursive: true, force: true });
 });
 

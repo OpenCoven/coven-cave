@@ -238,6 +238,7 @@ const contracts: RouteContract[] = [
   { route: "/voice/engines/models", methods: ["DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/voice/engines/whisper", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/voice/local/chat", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/voice/local/tts", methods: ["POST"], kind: "stream", readsJson: true, invalidJson: "guarded" },
   { route: "/voice/preview", methods: ["GET"], kind: "stream" },
   { route: "/voice/session", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/voice/transcript", methods: ["POST"], kind: "json", readsJson: true },
