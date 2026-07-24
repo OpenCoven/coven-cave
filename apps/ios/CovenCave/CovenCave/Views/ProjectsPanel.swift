@@ -8,6 +8,11 @@ struct ProjectsPanel: View {
     let dismiss: () -> Void
 
     var body: some View {
+        let taskCounts = app.tasks.reduce(into: [String: Int]()) { counts, task in
+            if let projectId = task.projectId {
+                counts[projectId, default: 0] += 1
+            }
+        }
         NavigationStack {
             List(app.projects) { project in
                 HStack(spacing: 13) {
@@ -17,7 +22,7 @@ struct ProjectsPanel: View {
                         .background(chrome.bgRaised, in: RoundedRectangle(cornerRadius: 10))
                     VStack(alignment: .leading, spacing: 3) {
                         Text(project.name).font(.headline)
-                        if let summary = summary(for: project) {
+                        if let summary = summary(for: project, taskCounts: taskCounts) {
                             Text(summary).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
@@ -53,8 +58,8 @@ struct ProjectsPanel: View {
         .themedSheetBackground()
     }
 
-    private func summary(for project: ProjectInfo) -> String? {
-        let tasks = app.tasks.filter { $0.projectId == project.id }.count
+    private func summary(for project: ProjectInfo, taskCounts: [String: Int]) -> String? {
+        let tasks = taskCounts[project.id, default: 0]
         guard tasks > 0 else { return nil }
         return tasks == 1 ? "1 task" : "\(tasks) tasks"
     }

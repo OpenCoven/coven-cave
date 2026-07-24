@@ -8,7 +8,7 @@ struct PluginsPanel: View {
     @Environment(\.chrome) private var chrome
     @State private var query = ""
     @State private var selected: PluginCatalogItem?
-    @State private var added: Set<String> = []
+    @State private var added: Set<String> = Set(Self.installed.map(\.id))
     let tryInChat: () -> Void
 
     var body: some View {
@@ -30,30 +30,28 @@ struct PluginsPanel: View {
                     }
                     sectionLabel(query.isEmpty ? "Featured" : "Results")
                     ForEach(filtered) { plugin in
-                        Button { selected = plugin } label: {
-                            HStack(spacing: 13) {
-                                pluginTile(plugin, size: 46)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(plugin.name).font(.headline).foregroundStyle(.primary)
-                                    Text(plugin.summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                                Spacer()
-                                Button {
-                                    if added.contains(plugin.id) { added.remove(plugin.id) }
-                                    else { added.insert(plugin.id) }
-                                } label: {
-                                    Image(systemName: added.contains(plugin.id) ? "checkmark" : "plus")
-                                        .frame(width: 34, height: 34)
-                                        .background(added.contains(plugin.id) ? chrome.accent : chrome.bgRaised,
-                                                    in: Circle())
-                                        .foregroundStyle(added.contains(plugin.id) ? chrome.accentForeground : chrome.textPrimary)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(added.contains(plugin.id) ? "Remove \(plugin.name)" : "Add \(plugin.name)")
+                        HStack(spacing: 13) {
+                            pluginTile(plugin, size: 46)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(plugin.name).font(.headline).foregroundStyle(.primary)
+                                Text(plugin.summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                             }
-                            .contentShape(Rectangle())
+                            Spacer()
+                            Button {
+                                if added.contains(plugin.id) { added.remove(plugin.id) }
+                                else { added.insert(plugin.id) }
+                            } label: {
+                                Image(systemName: added.contains(plugin.id) ? "checkmark" : "plus")
+                                    .frame(width: 34, height: 34)
+                                    .background(added.contains(plugin.id) ? chrome.accent : chrome.bgRaised,
+                                                in: Circle())
+                                    .foregroundStyle(added.contains(plugin.id) ? chrome.accentForeground : chrome.textPrimary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(added.contains(plugin.id) ? "Remove \(plugin.name)" : "Add \(plugin.name)")
                         }
-                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selected = plugin }
                     }
                 }
                 .padding(16)

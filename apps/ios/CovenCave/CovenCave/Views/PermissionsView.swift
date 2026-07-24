@@ -183,7 +183,7 @@ struct PermissionsView: View {
     ) {
         guard mutationsAllowed else { return }
         Haptics.tap()
-        switch effective.direct ?? effective.level {
+        switch effective.direct {
         case nil:
             mutate(key: key) {
                 try await app.client?.grantProject(

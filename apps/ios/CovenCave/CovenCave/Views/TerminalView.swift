@@ -106,7 +106,7 @@ struct TerminalView: View {
             HStack(spacing: 8) {
                 cwdMenu
                 keyButton("esc", "Escape") { terminal.sendInput("\u{1B}") }
-                ForEach(["git status", "pwd", "clear"], id: \.self) { command in
+                ForEach(["git status", "pwd"], id: \.self) { command in
                     keyButton(command, command) { terminal.sendInput(command + "\n") }
                 }
                 ForEach(shorthands, id: \.self) { command in
@@ -192,13 +192,19 @@ struct TerminalView: View {
     }
 
     private var shorthands: [String] {
-        storedShorthands.split(separator: "|").map(String.init).filter { !$0.isEmpty }
+        if let data = storedShorthands.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([String].self, from: data) {
+            return decoded
+        }
+        return storedShorthands.split(separator: "|").map(String.init).filter { !$0.isEmpty }
     }
 
     private func addShorthand() {
         let value = newShorthand.trimmingCharacters(in: .whitespacesAndNewlines)
         defer { newShorthand = "" }
         guard !value.isEmpty, !shorthands.contains(value) else { return }
-        storedShorthands = (shorthands + [value]).joined(separator: "|")
+        guard let data = try? JSONEncoder().encode(shorthands + [value]),
+              let encoded = String(data: data, encoding: .utf8) else { return }
+        storedShorthands = encoded
     }
 }
