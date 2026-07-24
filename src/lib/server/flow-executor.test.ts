@@ -41,6 +41,11 @@ assert.match(
   /const hubAuthority = config\.multiHost\?\.mode === "hub";[\s\S]*binding\.harness === "copilot" && !sshBound && !hubAuthority/,
   "direct copilot flow spawn must not bypass configured hub authority",
 );
+assert.match(
+  source,
+  /Promise\.all\(\[\s*probeCopilotCapability\(\),\s*resolveRuntimeCompatibility\("copilot"\),[\s\S]*copilotStreamSpec\(\s*capability\.version,/,
+  "direct Copilot flow runs must select an event protocol from the installed client version and verified runtime catalog",
+);
 
 // Flow prompts direct familiars to write memory/self-reports into their own
 // workspace, but the spawn cwd is the project root and a non-interactive run

@@ -29,8 +29,171 @@
 
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
 
+/**
+ * A versioned description of a runtime event protocol.  Launch configuration
+ * belongs to the accepted runtime manifest; this separate, deliberately
+ * narrow contract describes how that runtime's JSONL becomes Cave's stable
+ * internal tool lifecycle.  Future registry entries can supply a newer
+ * schema without changing the chat route.
+ */
+export type RuntimeEventProtocolSchema = {
+  id: string;
+  runtime: "copilot";
+  /** Inclusive semver lower bound for this client protocol. */
+  minClientVersion: string;
+  /** Exclusive semver upper bound, or null for the current open-ended schema. */
+  maxClientVersionExclusive: string | null;
+  eventTypes: {
+    textDelta: string[];
+    message: string[];
+    toolStart: string[];
+    toolEnd: string[];
+    result: string[];
+  };
+  /** Frames deliberately ignored by this schema (for example partial output). */
+  ignoredEventTypes: string[];
+  /** Aliases are data-envelope keys, never user content or tool payloads. */
+  fields: {
+    data: string[];
+    messageId: string[];
+    deltaContent: string[];
+    content: string[];
+    model: string[];
+    toolRequests: string[];
+    toolCallId: string[];
+    toolName: string[];
+    arguments: string[];
+    success: string[];
+    result: string[];
+    resultContent: string[];
+    sessionId: string[];
+    exitCode: string[];
+    usage: string[];
+    durationMs: string[];
+  };
+};
+
+/**
+ * The documented JSONL protocol shipped by Copilot CLI 1.x.  The resolver is
+ * intentionally data-driven: a registry refresh can add a later schema with
+ * its own range and aliases, while older installed clients keep this one.
+ */
+export const COPILOT_EVENT_PROTOCOL_SCHEMAS: RuntimeEventProtocolSchema[] = [
+  {
+    id: "copilot-jsonl-v1",
+    runtime: "copilot",
+    minClientVersion: "1.0.0",
+    // A future major must opt in with a separately reviewed registry schema.
+    // Never guess that an incompatible 2.x frame still has the 1.x shape.
+    maxClientVersionExclusive: "2.0.0",
+    eventTypes: {
+      textDelta: ["assistant.message_delta"],
+      message: ["assistant.message"],
+      toolStart: ["tool.execution_start"],
+      toolEnd: ["tool.execution_complete"],
+      result: ["result"],
+    },
+    ignoredEventTypes: [
+      "session.mcp_servers_loaded",
+      "user.message",
+      "assistant.turn_start",
+      "assistant.turn_end",
+      "assistant.idle",
+      "assistant.message_start",
+      "assistant.tool_call_delta",
+      "tool.execution_partial_result",
+    ],
+    fields: {
+      data: ["data"],
+      messageId: ["messageId"],
+      deltaContent: ["deltaContent"],
+      content: ["content"],
+      model: ["model"],
+      toolRequests: ["toolRequests"],
+      toolCallId: ["toolCallId"],
+      toolName: ["toolName", "name"],
+      arguments: ["arguments", "input"],
+      success: ["success"],
+      result: ["result"],
+      resultContent: ["content"],
+      sessionId: ["sessionId"],
+      exitCode: ["exitCode"],
+      usage: ["usage"],
+      durationMs: ["sessionDurationMs"],
+    },
+  },
+];
+
+type Semver = { major: number; minor: number; patch: number; prerelease: string | null };
+
+/** Parse the first semver-looking value from a CLI's `--version` output. */
+export function parseRuntimeClientVersion(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const match = raw.match(/(?:^|[^0-9])(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?/);
+  if (!match) return null;
+  return `${match[1]}.${match[2]}.${match[3] ?? "0"}${match[4] ? `-${match[4]}` : ""}`;
+}
+
+function semver(value: string): Semver | null {
+  const match = value.match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/);
+  if (!match) return null;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    prerelease: match[4] ?? null,
+  };
+}
+
+/** Positive when `a` is newer than `b`; release versions sort after prereleases. */
+export function compareRuntimeClientVersions(a: string, b: string): number | null {
+  const pa = semver(a);
+  const pb = semver(b);
+  if (!pa || !pb) return null;
+  for (const key of ["major", "minor", "patch"] as const) {
+    if (pa[key] !== pb[key]) return pa[key] - pb[key];
+  }
+  if (pa.prerelease === pb.prerelease) return 0;
+  if (!pa.prerelease) return 1;
+  if (!pb.prerelease) return -1;
+  return pa.prerelease.localeCompare(pb.prerelease, undefined, { numeric: true });
+}
+
+/**
+ * Select the highest compatible protocol schema for an installed runtime.
+ * A missing/unparseable version is deliberately unsupported: callers must
+ * retain plain chat rather than silently parsing a potentially changed stream.
+ */
+export function selectRuntimeEventProtocol(
+  clientVersion: string | null | undefined,
+  schemas: RuntimeEventProtocolSchema[] = COPILOT_EVENT_PROTOCOL_SCHEMAS,
+): RuntimeEventProtocolSchema | null {
+  const normalized = parseRuntimeClientVersion(clientVersion);
+  if (!normalized) return null;
+  const candidates = schemas.filter((schema) => {
+    if (schema.runtime !== "copilot") return false;
+    const lower = compareRuntimeClientVersions(normalized, schema.minClientVersion);
+    if (lower === null || lower < 0) return false;
+    if (!schema.maxClientVersionExclusive) return true;
+    const upper = compareRuntimeClientVersions(normalized, schema.maxClientVersionExclusive);
+    return upper !== null && upper < 0;
+  });
+  return candidates.sort((a, b) => {
+    const compared = compareRuntimeClientVersions(a.minClientVersion, b.minClientVersion);
+    return compared === null ? 0 : -compared;
+  })[0] ?? null;
+}
+
+/** A redacted, user-safe diagnostic for a changed tool-event protocol. */
+export type RuntimeProtocolDiagnostic = {
+  code: "unsupported-client-version" | "unsupported-tool-event" | "malformed-tool-event";
+  message: string;
+};
+
 export type CopilotStreamSpec = {
   executable: string;
+  /** Selected, versioned JSONL event contract for this local CLI. */
+  protocol: RuntimeEventProtocolSchema;
   /** JSONL stream launch args; ends with the prompt flag (`-p`). */
   prefixArgs: string[];
   /** Pre-assign a fresh session id (`--session-id`). */
@@ -67,6 +230,53 @@ function stringArray(value: unknown): string[] | null {
   return value as string[];
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+const EVENT_TYPE_KEYS = ["textDelta", "message", "toolStart", "toolEnd", "result"] as const;
+const FIELD_KEYS = ["data", "messageId", "deltaContent", "content", "model", "toolRequests", "toolCallId", "toolName", "arguments", "success", "result", "resultContent", "sessionId", "exitCode", "usage", "durationMs"] as const;
+
+/** Validate registry data before allowing it to select a parser. */
+function runtimeEventProtocolSchema(value: unknown): RuntimeEventProtocolSchema | null {
+  const candidate = record(value);
+  if (!candidate || candidate.runtime !== "copilot" || typeof candidate.id !== "string") return null;
+  const minClientVersion = typeof candidate.minClientVersion === "string" ? candidate.minClientVersion : "";
+  const maxClientVersionExclusive = candidate.maxClientVersionExclusive;
+  if (!semver(minClientVersion)) return null;
+  if (maxClientVersionExclusive !== null && typeof maxClientVersionExclusive !== "string") return null;
+  if (typeof maxClientVersionExclusive === "string") {
+    const order = compareRuntimeClientVersions(maxClientVersionExclusive, minClientVersion);
+    if (order === null || order <= 0) return null;
+  }
+  const eventTypes = record(candidate.eventTypes);
+  const fields = record(candidate.fields);
+  if (!eventTypes || !fields) return null;
+  const normalizedEventTypes = {} as RuntimeEventProtocolSchema["eventTypes"];
+  for (const key of EVENT_TYPE_KEYS) {
+    const aliases = stringArray(eventTypes[key]);
+    if (!aliases?.length || aliases.some((alias) => !alias)) return null;
+    normalizedEventTypes[key] = aliases;
+  }
+  const normalizedFields = {} as RuntimeEventProtocolSchema["fields"];
+  for (const key of FIELD_KEYS) {
+    const aliases = stringArray(fields[key]);
+    if (!aliases?.length || aliases.some((alias) => !alias)) return null;
+    normalizedFields[key] = aliases;
+  }
+  const ignoredEventTypes = stringArray(candidate.ignoredEventTypes);
+  if (!ignoredEventTypes) return null;
+  return { id: candidate.id, runtime: "copilot", minClientVersion, maxClientVersionExclusive, eventTypes: normalizedEventTypes, ignoredEventTypes, fields: normalizedFields };
+}
+
+/** Extract every safe Copilot protocol from an untrusted registry field. */
+export function runtimeEventProtocolSchemas(value: unknown): RuntimeEventProtocolSchema[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(runtimeEventProtocolSchema).filter((schema): schema is RuntimeEventProtocolSchema => schema !== null);
+}
+
 /**
  * Stream-launch material for the copilot adapter, sourced from the synced
  * coven-runtimes registry (the same conformance-tested document Cave
@@ -74,10 +284,13 @@ function stringArray(value: unknown): string[] | null {
  * registry entry stops declaring a stream mode — the chat route then falls
  * back to the `coven run` passthrough path instead of failing.
  */
-export function copilotStreamSpec(): CopilotStreamSpec | null {
+export function copilotStreamSpec(
+  clientVersion?: string | null,
+  compatibleAdapterManifest?: unknown,
+): CopilotStreamSpec | null {
   const runtime = REGISTRY_RUNTIMES.find((entry) => entry.id === "copilot");
   if (!runtime || !runtime.capabilities.stream) return null;
-  const manifest = runtime.adapterManifest as {
+  const manifest = (compatibleAdapterManifest ?? runtime.adapterManifest) as {
     adapters?: Array<{
       id?: unknown;
       executable?: unknown;
@@ -88,15 +301,32 @@ export function copilotStreamSpec(): CopilotStreamSpec | null {
         prefix_args?: unknown;
         session_id_flag?: unknown;
         resume_flag?: unknown;
+        event_protocols?: unknown;
       };
+      event_protocols?: unknown;
     }>;
   } | null;
   const adapter = manifest?.adapters?.find((entry) => entry?.id === "copilot");
   if (!adapter || typeof adapter.executable !== "string") return null;
   const prefixArgs = stringArray(adapter.stream_args?.prefix_args);
   if (!prefixArgs || prefixArgs.length === 0) return null;
+  // Existing callers that cannot yet probe a local version retain the
+  // registry-pinned compatibility baseline. Callers that *have* a version
+  // must select a matching schema; an unknown version then falls back to the
+  // generic plain-chat route instead of guessing at tool frames.
+  const availableProtocols = [
+    ...runtimeEventProtocolSchemas(adapter.event_protocols),
+    ...runtimeEventProtocolSchemas(adapter.stream_args?.event_protocols),
+    ...COPILOT_EVENT_PROTOCOL_SCHEMAS,
+  ];
+  const protocol =
+    clientVersion === undefined
+      ? availableProtocols[0]!
+      : selectRuntimeEventProtocol(clientVersion, availableProtocols);
+  if (!protocol) return null;
   return {
     executable: adapter.executable,
+    protocol,
     prefixArgs,
     sessionIdFlag:
       typeof adapter.stream_args?.session_id_flag === "string"
@@ -236,109 +466,141 @@ function asModel(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined;
 }
 
+function field(source: Record<string, unknown> | null, aliases: string[]): unknown {
+  if (!source) return undefined;
+  for (const alias of aliases) {
+    if (alias in source) return source[alias];
+  }
+  return undefined;
+}
+
+function textField(source: Record<string, unknown> | null, aliases: string[]): string | undefined {
+  const value = field(source, aliases);
+  return typeof value === "string" && value ? value : undefined;
+}
+
+function typeIs(type: string, aliases: string[]): boolean {
+  return aliases.includes(type);
+}
+
+/**
+ * Return a safe diagnostic only for frames that claim to describe a tool or
+ * assistant event but cannot be understood by the selected schema.  Normal
+ * session/turn noise remains intentionally silent.  The raw event and its
+ * payload are never returned, logged, or shown to the user.
+ */
+export function copilotProtocolDiagnostic(
+  raw: unknown,
+  protocol: RuntimeEventProtocolSchema,
+): RuntimeProtocolDiagnostic | null {
+  const ev = record(raw);
+  const type = typeof ev?.type === "string" ? ev.type : null;
+  if (!type) return null;
+  const allKnown = Object.values(protocol.eventTypes).flat();
+  if (protocol.ignoredEventTypes.includes(type)) return null;
+  if (allKnown.includes(type) && parseCopilotChatEvent(raw, protocol) === null) {
+    return {
+      code: "malformed-tool-event",
+      message: "Copilot CLI emitted a malformed tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",
+    };
+  }
+  if (/^tool\./.test(type) && !allKnown.includes(type)) {
+    return {
+      code: "unsupported-tool-event",
+      message: "Copilot CLI emitted an unsupported tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",
+    };
+  }
+  return null;
+}
+
 /**
  * Map one parsed copilot JSONL frame to a chat-relevant event; returns null
  * for the stream's noise frames (session.*, turn markers, tool-input deltas,
  * partial tool output) so the route drops them without touching the bubble.
  */
-export function parseCopilotChatEvent(raw: unknown): CopilotChatEvent | null {
-  if (!raw || typeof raw !== "object") return null;
-  const ev = raw as {
-    type?: unknown;
-    sessionId?: unknown;
-    exitCode?: unknown;
-    usage?: { sessionDurationMs?: unknown };
-    data?: {
-      messageId?: unknown;
-      deltaContent?: unknown;
-      content?: unknown;
-      model?: unknown;
-      toolRequests?: unknown;
-      toolCallId?: unknown;
-      toolName?: unknown;
-      arguments?: unknown;
-      success?: unknown;
-      result?: { content?: unknown };
+export function parseCopilotChatEvent(
+  raw: unknown,
+  protocol: RuntimeEventProtocolSchema = COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+): CopilotChatEvent | null {
+  const ev = record(raw);
+  const type = typeof ev?.type === "string" ? ev.type : null;
+  if (!type) return null;
+  const data = record(field(ev, protocol.fields.data));
+  if (typeIs(type, protocol.eventTypes.textDelta)) {
+    const messageId = textField(data, protocol.fields.messageId);
+    const text = textField(data, protocol.fields.deltaContent);
+    if (!messageId || text === undefined) return null;
+    return {
+      kind: "text_delta",
+      messageId,
+      text,
+      model: asModel(field(data, protocol.fields.model)),
     };
-  };
-  if (typeof ev.type !== "string") return null;
-  const data = ev.data;
-  switch (ev.type) {
-    case "assistant.message_delta": {
-      if (typeof data?.messageId !== "string" || typeof data.deltaContent !== "string") {
-        return null;
-      }
-      return {
-        kind: "text_delta",
-        messageId: data.messageId,
-        text: data.deltaContent,
-        model: asModel(data.model),
-      };
-    }
-    case "assistant.message": {
-      if (typeof data?.messageId !== "string") return null;
+  }
+  if (typeIs(type, protocol.eventTypes.message)) {
+      const messageId = textField(data, protocol.fields.messageId);
+      if (!messageId) return null;
       const toolRequests: CopilotToolRequest[] = [];
-      if (Array.isArray(data.toolRequests)) {
-        for (const req of data.toolRequests) {
-          const r = req as { toolCallId?: unknown; name?: unknown; arguments?: unknown };
-          if (typeof r?.toolCallId === "string" && typeof r.name === "string") {
+      const requests = field(data, protocol.fields.toolRequests);
+      if (Array.isArray(requests)) {
+        for (const req of requests) {
+          const r = record(req);
+          const toolCallId = textField(r, protocol.fields.toolCallId);
+          const name = textField(r, protocol.fields.toolName);
+          if (toolCallId && name) {
             toolRequests.push({
-              toolCallId: r.toolCallId,
-              name: r.name,
-              input: r.arguments,
+              toolCallId,
+              name,
+              input: field(r, protocol.fields.arguments),
             });
           }
         }
       }
       return {
         kind: "message",
-        messageId: data.messageId,
-        content: typeof data.content === "string" ? data.content : "",
+        messageId,
+        content: textField(data, protocol.fields.content) ?? "",
         toolRequests,
-        model: asModel(data.model),
+        model: asModel(field(data, protocol.fields.model)),
       };
-    }
-    case "tool.execution_start": {
-      if (typeof data?.toolCallId !== "string" || typeof data.toolName !== "string") {
-        return null;
-      }
+  }
+  if (typeIs(type, protocol.eventTypes.toolStart)) {
+      const toolCallId = textField(data, protocol.fields.toolCallId);
+      const toolName = textField(data, protocol.fields.toolName);
+      if (!toolCallId || !toolName) return null;
       return {
         kind: "tool_start",
-        toolCallId: data.toolCallId,
-        toolName: data.toolName,
-        input: data.arguments,
-        model: asModel(data.model),
+        toolCallId,
+        toolName,
+        input: field(data, protocol.fields.arguments),
+        model: asModel(field(data, protocol.fields.model)),
       };
-    }
-    case "tool.execution_complete": {
-      if (typeof data?.toolCallId !== "string") return null;
-      const output =
-        typeof data.result?.content === "string" && data.result.content
-          ? data.result.content
-          : undefined;
+  }
+  if (typeIs(type, protocol.eventTypes.toolEnd)) {
+      const toolCallId = textField(data, protocol.fields.toolCallId);
+      if (!toolCallId) return null;
+      const result = record(field(data, protocol.fields.result));
+      const output = textField(result, protocol.fields.resultContent);
       return {
         kind: "tool_end",
-        toolCallId: data.toolCallId,
+        toolCallId,
         output,
-        isError: data.success === false,
-        model: asModel(data.model),
+        isError: field(data, protocol.fields.success) === false,
+        model: asModel(field(data, protocol.fields.model)),
       };
-    }
-    case "result": {
-      const durationMs =
-        typeof ev.usage?.sessionDurationMs === "number"
-          ? ev.usage.sessionDurationMs
-          : undefined;
+  }
+  if (typeIs(type, protocol.eventTypes.result)) {
+      const usage = record(field(ev, protocol.fields.usage));
+      const duration = field(usage, protocol.fields.durationMs);
+      const durationMs = typeof duration === "number" ? duration : undefined;
       return {
         kind: "result",
-        sessionId: typeof ev.sessionId === "string" ? ev.sessionId : undefined,
-        isError: typeof ev.exitCode === "number" && ev.exitCode !== 0,
+        sessionId: textField(ev, protocol.fields.sessionId),
+        isError: typeof field(ev, protocol.fields.exitCode) === "number" && field(ev, protocol.fields.exitCode) !== 0,
         durationMs,
       };
-    }
-    default:
-      return null;
   }
+  return null;
 }
 
 /**

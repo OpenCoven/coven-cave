@@ -117,8 +117,23 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const copilotStream =\s*\n?\s*!sshRuntime && binding\.harness === "copilot" \? copilotStreamSpec\(\) : null;/,
-  "The copilot stream path is gated to local copilot chats and falls back to passthrough when the manifest stops declaring stream mode",
+  /const copilotCapability =\s*\n?\s*!sshRuntime && binding\.harness === "copilot" \? await probeCopilotCapability\(\) : null;/,
+  "The local Copilot client version must be probed before Cave selects a JSONL protocol",
+);
+assert.match(
+  chatRoute,
+  /const copilotCompatibility =[\s\S]*?resolveRuntimeCompatibility\("copilot"\)[\s\S]*?copilotStreamSpec\(\s*copilotCapability\?\.version \?\? null,\s*copilotCompatibility \? \{ adapters: \[copilotCompatibility\.adapter\] \} : undefined,/,
+  "The direct stream path must select a schema from the installed client version and verified runtime catalog, otherwise falling back to plain chat",
+);
+assert.match(
+  chatRoute,
+  /Copilot tool activity needs an update/,
+  "unsupported client versions must surface a visible, safe compatibility diagnostic",
+);
+assert.match(
+  chatRoute,
+  /copilotProtocolDiagnostic\(raw, protocol\)/,
+  "unknown tool-event shapes must become a redacted compatibility diagnostic instead of being silently dropped",
 );
 
 assert.match(

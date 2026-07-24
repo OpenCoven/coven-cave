@@ -114,7 +114,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     if (!trimmed.startsWith("{")) return;
     let raw: unknown;
     try { raw = JSON.parse(trimmed); } catch { return; }
-    const event = parseCopilotChatEvent(raw);
+    const event = parseCopilotChatEvent(raw, launch.spec.protocol);
     if (!event) return;
     if (event.kind === "text_delta") {
       deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + event.text);

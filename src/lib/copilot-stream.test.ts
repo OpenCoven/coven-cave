@@ -6,12 +6,19 @@
 // shell tool call and a follow-up text reply.
 
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   buildCopilotStreamArgs,
+  compareRuntimeClientVersions,
   copilotIdentityPreamble,
+  copilotProtocolDiagnostic,
   copilotStreamSpec,
   CopilotTextAssembler,
+  COPILOT_EVENT_PROTOCOL_SCHEMAS,
+  parseRuntimeClientVersion,
   parseCopilotChatEvent,
+  runtimeEventProtocolSchemas,
+  selectRuntimeEventProtocol,
 } from "./copilot-stream.ts";
 import {
   formatToolInputValue,
@@ -23,6 +30,7 @@ import {
 
 const spec = copilotStreamSpec();
 assert.ok(spec, "registry manifest declares copilot stream mode");
+assert.equal(spec.protocol.id, "copilot-jsonl-v1", "legacy callers use the verified registry baseline");
 assert.equal(spec.executable, "copilot");
 assert.deepEqual(
   spec.prefixArgs,
@@ -44,6 +52,115 @@ assert.deepEqual(spec.sandboxReadOnlyArgs, [
   "--deny-tool",
   "shell",
 ]);
+
+// ── versioned protocol selection and redacted diagnostics ───────────────────
+
+assert.equal(parseRuntimeClientVersion("copilot version 1.0.70"), "1.0.70");
+assert.equal(parseRuntimeClientVersion("Copilot CLI v2.4"), "2.4.0");
+assert.equal(parseRuntimeClientVersion("warning only"), null);
+assert.equal(compareRuntimeClientVersions("1.0.70", "1.0.9"), 61);
+assert.equal(compareRuntimeClientVersions("1.0.0-rc.1", "1.0.0"), -1);
+assert.equal(selectRuntimeEventProtocol("0.9.9"), null, "pre-protocol clients fail closed");
+assert.equal(selectRuntimeEventProtocol("1.0.70")?.id, "copilot-jsonl-v1");
+assert.equal(selectRuntimeEventProtocol("2.0.0"), null, "an unknown future major fails closed");
+assert.equal(selectRuntimeEventProtocol("not-a-version"), null, "unparseable clients fail closed");
+assert.equal(
+  copilotStreamSpec("0.9.9"),
+  null,
+  "a caller that has an incompatible client version must retain the generic plain-chat path",
+);
+
+const V2_SCHEMA = {
+  ...COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  id: "copilot-jsonl-v2-fixture",
+  minClientVersion: "2.0.0",
+  maxClientVersionExclusive: null,
+  eventTypes: {
+    textDelta: ["assistant.delta"],
+    message: ["assistant.complete"],
+    toolStart: ["tool.started"],
+    toolEnd: ["tool.finished"],
+    result: ["run.finished"],
+  },
+  fields: {
+    ...COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!.fields,
+    data: ["payload"],
+    messageId: ["message_id"],
+    deltaContent: ["delta"],
+    toolCallId: ["call_id"],
+    toolName: ["tool"],
+    arguments: ["input"],
+    resultContent: ["text"],
+    sessionId: ["session_id"],
+    exitCode: ["exit_code"],
+    durationMs: ["duration_ms"],
+  },
+};
+assert.deepEqual(
+  runtimeEventProtocolSchemas([V2_SCHEMA]).map((schema) => schema.id),
+  ["copilot-jsonl-v2-fixture"],
+  "a validated registry schema can extend support without a new normalized event implementation",
+);
+assert.deepEqual(
+  runtimeEventProtocolSchemas([{ ...V2_SCHEMA, fields: { data: ["payload"] } }]),
+  [],
+  "a partial or malformed registry schema cannot select the event parser",
+);
+assert.equal(
+  selectRuntimeEventProtocol("2.0.1", [COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!, V2_SCHEMA])?.id,
+  "copilot-jsonl-v2-fixture",
+  "newer registry schemas win without changing the normalized chat contract",
+);
+assert.equal(
+  copilotStreamSpec("2.0.1", {
+    adapters: [{
+      id: "copilot",
+      executable: "copilot",
+      stream_args: { prefix_args: ["--output-format", "json", "--stream", "on", "-p"] },
+      event_protocols: [V2_SCHEMA],
+    }],
+  })?.protocol.id,
+  "copilot-jsonl-v2-fixture",
+  "a refreshed registry adapter activates its compatible protocol without a Cave UI release",
+);
+assert.deepEqual(
+  parseCopilotChatEvent(
+    {
+      type: "tool.finished",
+      payload: { call_id: "new-tool", success: false, result: { text: "denied" } },
+    },
+    V2_SCHEMA,
+  ),
+  { kind: "tool_end", toolCallId: "new-tool", output: "denied", isError: true, model: undefined },
+  "schema aliases normalize a changed event envelope into the same tool lifecycle",
+);
+const unknownDiagnostic = copilotProtocolDiagnostic(
+  { type: "tool.execution_progress", data: { toolCallId: "secret-id", output: "/private/path" } },
+  COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+);
+assert.equal(unknownDiagnostic?.code, "unsupported-tool-event");
+assert.doesNotMatch(JSON.stringify(unknownDiagnostic), /secret-id|private\/path/);
+assert.equal(
+  copilotProtocolDiagnostic(
+    { type: "tool.execution_partial_result", data: { toolCallId: "t1", partialOutput: "safe" } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  null,
+  "known partial-result noise is deliberately ignored rather than shown as an error",
+);
+
+const v1Fixture = await readFile(
+  new URL("./fixtures/copilot/1.0.70-tool-lifecycle.jsonl", import.meta.url),
+  "utf8",
+);
+const v1Events = v1Fixture.trim().split(/\r?\n/).map((line) =>
+  parseCopilotChatEvent(JSON.parse(line), COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!),
+);
+assert.deepEqual(
+  v1Events.map((event) => event?.kind),
+  ["text_delta", "message", "tool_start", "tool_end", "result"],
+  "the recorded 1.0.70 lifecycle fixture covers every normalised bubble state",
+);
 
 // ── argv builder ──────────────────────────────────────────────────────────────
 

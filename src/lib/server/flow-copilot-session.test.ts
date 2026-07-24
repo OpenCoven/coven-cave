@@ -28,8 +28,12 @@ console.log(JSON.stringify({ type: "assistant.message", data: { messageId: "m1",
 chmodSync(FAKE, 0o755);
 
 const { startCopilotFlowRun } = await import("./flow-copilot-session.ts");
+const { copilotStreamSpec } = await import("../copilot-stream.ts");
+const protocol = copilotStreamSpec()?.protocol;
+assert.ok(protocol, "the registered Copilot flow fixture uses a validated event protocol");
 
 const SPEC = {
+  protocol,
   executable: FAKE,
   prefixArgs: ["--output-format", "json", "--stream", "on", "-p"],
   sessionIdFlag: "--session-id",

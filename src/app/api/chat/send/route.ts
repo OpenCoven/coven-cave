@@ -49,6 +49,7 @@ import {
 import {
   buildCopilotStreamArgs,
   copilotIdentityPreamble,
+  copilotProtocolDiagnostic,
   copilotStreamSpec,
   CopilotTextAssembler,
   parseCopilotChatEvent,
@@ -80,6 +81,8 @@ import {
 import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
+import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
+import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { loadProjects } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
@@ -1263,8 +1266,26 @@ export async function POST(req: Request) {
   // parse its event stream instead. Local runtimes only — SSH runtimes go
   // through `coven run` on the remote host. Null keeps the passthrough
   // fallback (and every other adapter keeps it unconditionally).
+  const copilotCapability =
+    !sshRuntime && binding.harness === "copilot" ? await probeCopilotCapability() : null;
+  const copilotCompatibility =
+    !sshRuntime && binding.harness === "copilot"
+      ? await resolveRuntimeCompatibility("copilot")
+      : null;
   const copilotStream =
-    !sshRuntime && binding.harness === "copilot" ? copilotStreamSpec() : null;
+    !sshRuntime && binding.harness === "copilot"
+      ? copilotStreamSpec(
+          copilotCapability?.version ?? null,
+          copilotCompatibility ? { adapters: [copilotCompatibility.adapter] } : undefined,
+        )
+      : null;
+  // A direct Copilot JSONL parser is only safe when a locally probed version
+  // selected a known protocol schema. Keep plain chat available for an
+  // unknown client, but make the reduced tool visibility explicit.
+  const copilotCompatibilityDiagnostic =
+    !sshRuntime && binding.harness === "copilot" && !copilotStream
+      ? "This Copilot CLI version is not yet compatible with Cave tool activity. Chat continues without live tool details; update the Copilot runtime schema or CLI."
+      : null;
   // Hermes has a documented one-shot API (`hermes chat -Q -q <prompt>`), but
   // its Coven adapter convention requires a POSIX shell shim to translate the
   // positional prompt that `coven run` appends. The shim cannot be installed
@@ -1468,6 +1489,14 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
+      if (copilotCompatibilityDiagnostic) {
+        pushProgress(
+          "copilot-client-compatibility",
+          "Copilot tool activity needs an update",
+          "error",
+          copilotCompatibilityDiagnostic,
+        );
+      }
       if (grokFreshSessionForSandbox) {
         pushProgress(
           "grok-sandbox-restart",
@@ -1551,6 +1580,11 @@ export async function POST(req: Request) {
       // Dedups copilot's streamed text deltas against the full-content
       // assistant.message frame that follows them.
       const copilotText = new CopilotTextAssembler();
+      // A changed Copilot tool event must be visible, but diagnostics must
+      // remain bounded and never include the event payload (which can contain
+      // prompts, paths, or tool output). One status row per safe code avoids
+      // flooding the transcript when a newer CLI repeats the frame.
+      const copilotProtocolDiagnosticCodes = new Set<string>();
 
       const announceSession = (id: string) => {
         sessionId = id;
@@ -1625,8 +1659,24 @@ export async function POST(req: Request) {
       const handleCopilotLine = (line: string, isJson: boolean) => {
         if (isJson) {
           try {
-            const ev = parseCopilotChatEvent(JSON.parse(line));
-            if (!ev) return;
+            const raw = JSON.parse(line);
+            const protocol = copilotStream?.protocol;
+            if (!protocol) return;
+            const ev = parseCopilotChatEvent(raw, protocol);
+            if (!ev) {
+              const diagnostic = copilotProtocolDiagnostic(raw, protocol);
+              if (diagnostic && !copilotProtocolDiagnosticCodes.has(diagnostic.code)) {
+                copilotProtocolDiagnosticCodes.add(diagnostic.code);
+                push({
+                  kind: "progress",
+                  id: `copilot-protocol-${diagnostic.code}`,
+                  label: "Copilot tool activity needs an update",
+                  detail: diagnostic.message,
+                  status: "error",
+                });
+              }
+              return;
+            }
             if (!confirmedModel && ev.kind !== "result") {
               const echoed = cleanModelId(ev.model);
               if (echoed) confirmedModel = echoed;

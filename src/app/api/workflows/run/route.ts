@@ -11,6 +11,8 @@ import { copilotStreamSpec } from "@/lib/copilot-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
+import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
+import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
@@ -262,7 +264,14 @@ async function runViaSession(body: RunBody) {
   const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
   const hubAuthority = config.multiHost?.mode === "hub";
   if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
-    const spec = copilotStreamSpec();
+    const [capability, compatibility] = await Promise.all([
+      probeCopilotCapability(),
+      resolveRuntimeCompatibility("copilot"),
+    ]);
+    const spec = copilotStreamSpec(
+      capability.version,
+      compatibility ? { adapters: [compatibility.adapter] } : undefined,
+    );
     if (spec) {
       const { sessionId } = startCopilotFlowRun({
         spec,

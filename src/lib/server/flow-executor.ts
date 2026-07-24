@@ -28,6 +28,8 @@ import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
+import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
+import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { copilotStreamSpec } from "@/lib/copilot-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
@@ -256,7 +258,14 @@ export async function startFlowSession(
   const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
   const hubAuthority = config.multiHost?.mode === "hub";
   if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
-    const spec = copilotStreamSpec();
+    const [capability, compatibility] = await Promise.all([
+      probeCopilotCapability(),
+      resolveRuntimeCompatibility("copilot"),
+    ]);
+    const spec = copilotStreamSpec(
+      capability.version,
+      compatibility ? { adapters: [compatibility.adapter] } : undefined,
+    );
     if (spec) {
       const { sessionId } = startCopilotFlowRun({
         spec,

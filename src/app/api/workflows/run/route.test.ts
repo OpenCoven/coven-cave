@@ -59,8 +59,13 @@ assert.match(
 // flows. SSH/hub copilot stays on the daemon.
 assert.match(
   source,
-  /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]{0,160}startCopilotFlowRun\(/,
+  /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]{0,500}startCopilotFlowRun\(/,
   "a local copilot workflow spawns the CLI directly instead of an orphaned daemon TUI",
+);
+assert.match(
+  source,
+  /Promise\.all\(\[\s*probeCopilotCapability\(\),\s*resolveRuntimeCompatibility\("copilot"\),[\s\S]*copilotStreamSpec\(\s*capability\.version,/,
+  "direct Copilot workflows select a parser from a locally probed version and verified runtime catalog rather than assuming a stream shape",
 );
 
 console.log("workflow run route.test.ts: ok");
