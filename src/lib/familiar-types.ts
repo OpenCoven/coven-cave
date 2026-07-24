@@ -81,9 +81,10 @@ export function resolveFamiliarTypes(value: string | undefined | null): Familiar
   return parseFamiliarTypeIds(value).map((id) => FAMILIAR_TYPES.find((t) => t.id === id)!);
 }
 
-/** Stored value → table entry; unknown/absent values (including multi-value
- *  strings where the first token is valid) resolve to the first valid type, or
- *  General so a stale config never hides the picker or crashes matching. */
+/** Stored value → table entry: the first valid type found among the
+ *  comma-separated tokens (skipping "general" and unknown/stale ids), or
+ *  General when none are valid or the value is absent — so a stale config
+ *  never hides the picker or crashes matching. */
 export function resolveFamiliarType(value: string | undefined | null): FamiliarTypeSpec {
   return resolveFamiliarTypes(value)[0] ?? FAMILIAR_TYPES[0];
 }

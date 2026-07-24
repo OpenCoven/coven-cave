@@ -84,6 +84,14 @@ test("parseFamiliarTypeIds dedupes repeated ids (first-occurrence order)", () =>
   assert.deepEqual(parseFamiliarTypeIds("coding,coding,research"), ["coding", "research"]);
 });
 
+test("parseFamiliarTypeIds preserves parse order, not table order", () => {
+  assert.deepEqual(parseFamiliarTypeIds("research,coding,research"), ["research", "coding"]);
+});
+
+test("parseFamiliarTypeIds dedupes case-varied duplicates", () => {
+  assert.deepEqual(parseFamiliarTypeIds("CODING,coding"), ["coding"]);
+});
+
 test("parseFamiliarTypeIds silently drops unknown ids", () => {
   assert.deepEqual(parseFamiliarTypeIds("coding,retired-type,research"), ["coding", "research"]);
 });
@@ -114,6 +122,10 @@ test("familiarTypeRoleIds unions grants across multiple types", () => {
 
 test("resolveFamiliarType on a multi-value string returns the first parsed type", () => {
   assert.equal(resolveFamiliarType("coding,research").id, "coding");
+});
+
+test("resolveFamiliarType on out-of-table-order input returns the first parsed type", () => {
+  assert.equal(resolveFamiliarType("research,coding").id, "research");
 });
 
 // ── Integration with the Role Surface matcher ────────────────────────────────
