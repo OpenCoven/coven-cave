@@ -145,4 +145,28 @@ assert.match(
   "the image chooser and accent-match rows are image-style-only",
 );
 
+// ── Boot script: pre-paint parity with the hydrated runtime ──────────────────
+const boot = readFileSync(new URL("../../public/scripts/theme-init.js", import.meta.url), "utf8");
+assert.match(
+  boot,
+  /backdropEnabled && backdropStyle === "image" && backdropPrefs\.matchAccent !== false/,
+  "the pre-paint sampled-accent branch is image-style-only, matching applyBackdropToDocument's guard",
+);
+assert.match(
+  boot,
+  /style: backdrop\.style === "blaze" \? "blaze" : "image"/,
+  "the boot legacy-mirror write carries style, so it round-trips instead of being stomped every boot",
+);
+
+// ── Familiar Look tab: fallback copy knows about the Blaze style ─────────────
+const lookTab = readFileSync(
+  new URL("../components/familiar-studio-look-tab.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  lookTab,
+  /the animated Blaze backdrop shows/,
+  "the no-familiar-image fallback note describes Blaze when that style is selected",
+);
+
 console.log("cave-backdrop-blaze.test.ts: ok");
