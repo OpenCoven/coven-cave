@@ -35,8 +35,21 @@ import {
   imageGenSizesForModel,
   isImageGenProvider,
 } from "@/lib/image-generation";
+import { isTauri } from "@/lib/tauri-platform";
+import { loadNativeSttBridge, nativeSttAvailability } from "@/lib/voice/native-stt";
 
 type Props = { familiar: ResolvedFamiliar };
+
+/**
+ * Recognition-engine readiness for the Local (on-device) provider, probed at
+ * configuration time (cave-qfyx) so "your Mac can't run this strictly
+ * on-device" surfaces here — not as stt_on_device_unsupported when a call
+ * finally connects. Desktop-gated: web builds never probe and render nothing.
+ */
+type LocalSttReadiness =
+  | { kind: "on-device"; locale: string | null }
+  | { kind: "no-on-device"; locale: string | null }
+  | { kind: "unsupported" };
 
 type HarnessReport = {
   id: string;
@@ -78,6 +91,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     familiar.omnigent?.workspace ?? "",
   );
   const [draftVoiceProvider, setDraftVoiceProvider] = useState(familiar.voiceProvider ?? "");
+  const [localSttReadiness, setLocalSttReadiness] = useState<LocalSttReadiness | null>(null);
   const [draftVoiceModel, setDraftVoiceModel] = useState(familiar.voiceModel ?? "");
   const [draftVoiceName, setDraftVoiceName] = useState(familiar.voiceName ?? "");
   const [draftImageProvider, setDraftImageProvider] = useState(familiar.imageProvider ?? "");
@@ -422,6 +436,37 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     })();
     return () => { cancelled = true; };
   }, [draftVoiceProvider, elevenCatalog.status]);
+
+  // Probe the native speech engine when Local (on-device) is picked, so a
+  // missing dictation model is discovered here instead of at call connect,
+  // where local-loop's requireOnDevice contract rejects the session. Probe
+  // failures and web builds stay silent — no hint rather than a wrong one.
+  useEffect(() => {
+    if (draftVoiceProvider !== "local" || !isTauri()) {
+      setLocalSttReadiness(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const bridge = await loadNativeSttBridge();
+        if (!bridge || cancelled) return;
+        const availability = await nativeSttAvailability(bridge, navigator.language);
+        if (cancelled || !availability) return;
+        const locale = availability.locale ?? navigator.language ?? null;
+        if (availability.supported !== true) {
+          setLocalSttReadiness({ kind: "unsupported" });
+        } else if (availability.onDevice === true) {
+          setLocalSttReadiness({ kind: "on-device", locale });
+        } else {
+          setLocalSttReadiness({ kind: "no-on-device", locale });
+        }
+      } catch {
+        // Silent: readiness is advisory; the call path still enforces it.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [draftVoiceProvider]);
 
   // Dropdown options for the ElevenLabs pickers. A saved id that's no longer
   // in the account library stays selectable so rendering never clears it.
@@ -807,6 +852,27 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
 
             {draftVoiceProvider === "elevenlabs" && elevenCatalog.status === "error" && elevenCatalog.note && (
               <p className="familiar-studio-brain__hint" role="status">{elevenCatalog.note}</p>
+            )}
+
+            {draftVoiceProvider === "local" && localSttReadiness?.kind === "on-device" && (
+              <p className="familiar-studio-brain__hint" role="status">
+                Ready — speech recognition runs fully on-device
+                {localSttReadiness.locale ? ` for ${localSttReadiness.locale}` : ""}.
+              </p>
+            )}
+
+            {draftVoiceProvider === "local" && localSttReadiness?.kind === "no-on-device" && (
+              <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                No on-device dictation model
+                {localSttReadiness.locale ? ` for ${localSttReadiness.locale}` : ""} — calls
+                will refuse to start. Download it under System Settings → Keyboard → Dictation.
+              </p>
+            )}
+
+            {draftVoiceProvider === "local" && localSttReadiness?.kind === "unsupported" && (
+              <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                This device has no native speech engine — Local calls can&apos;t listen here.
+              </p>
             )}
 
             {(draftVoiceProvider === "openai" || draftVoiceProvider === "local" || draftVoiceProvider === "familiar" || draftVoiceProvider === "elevenlabs") && (
