@@ -9,6 +9,27 @@ export function isLocalTtsVoiceName(
   return /^(?:piper|kokoro)-[a-z0-9][a-z0-9-]*$/.test(voiceName ?? "");
 }
 
+export function splitLocalTtsText(text: string): string[] {
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > LOCAL_TTS_MAX_CHARS) {
+    const window = remaining.slice(0, LOCAL_TTS_MAX_CHARS);
+    const splitAt = Math.max(
+      window.lastIndexOf(". "),
+      window.lastIndexOf("! "),
+      window.lastIndexOf("? "),
+      window.lastIndexOf(" "),
+    );
+    const end = splitAt > 0 ? splitAt + 1 : LOCAL_TTS_MAX_CHARS;
+    chunks.push(remaining.slice(0, end));
+    remaining = remaining.slice(end);
+  }
+
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
 /**
  * Local neural-TTS mouth. Each sentence-sized utterance already queued by
  * speech-loop.ts is synthesized through the authenticated Node sidecar and
@@ -42,86 +63,86 @@ export function createLocalTtsMouth(options: {
     currentUrl = null;
   };
 
+  const speakChunk = async (text: string) => {
+    if (cancelled) return;
+    const controller = new AbortController();
+    currentAbort = controller;
+
+    let response: Response;
+    try {
+      response = await fetchImpl("/api/voice/local/tts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, voiceName: options.voiceName }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (cancelled || controller.signal.aborted) return;
+      throw new VoiceConnectError(
+        "local_tts_failed",
+        `Couldn't reach the local speech engine (${error instanceof Error ? error.message : "fetch failed"}).`,
+      );
+    } finally {
+      if (currentAbort === controller) currentAbort = null;
+    }
+
+    if (!response.ok) {
+      let code = "local_tts_failed";
+      let hint: string | undefined;
+      try {
+        const json = (await response.json()) as {
+          error?: string;
+          hint?: string;
+        };
+        if (json.error) code = json.error;
+        hint = json.hint;
+      } catch {
+        // Keep the stable fallback when the sidecar did not return JSON.
+      }
+      throw new VoiceConnectError(code, hint);
+    }
+
+    const blob = await response.blob();
+    if (cancelled) return;
+    currentUrl = createObjectUrl(blob);
+    await new Promise<void>((resolve, reject) => {
+      const audio = createAudio();
+      currentAudio = audio;
+      let settled = false;
+      const finish = (error?: VoiceConnectError) => {
+        if (settled) return;
+        settled = true;
+        releaseCurrent();
+        if (error) reject(error);
+        else resolve();
+      };
+      settlePlayback = () => finish();
+      audio.onended = () => finish();
+      audio.onerror = () =>
+        finish(
+          new VoiceConnectError(
+            "local_tts_playback_failed",
+            "The local speech engine returned audio this device couldn't play.",
+          ),
+        );
+      audio.src = currentUrl!;
+      void audio.play().catch(() => {
+        finish(
+          new VoiceConnectError(
+            "local_tts_playback_failed",
+            "The local voice preview couldn't start playback.",
+          ),
+        );
+      });
+    });
+  };
+
   return {
     async speak(text: string) {
-      if (cancelled) return;
-      const clamped =
-        text.length > LOCAL_TTS_MAX_CHARS
-          ? `${text.slice(0, LOCAL_TTS_MAX_CHARS - 1)}…`
-          : text;
-      const controller = new AbortController();
-      currentAbort = controller;
-
-      let response: Response;
-      try {
-        response = await fetchImpl("/api/voice/local/tts", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            text: clamped,
-            voiceName: options.voiceName,
-          }),
-          signal: controller.signal,
-        });
-      } catch (error) {
-        if (cancelled || controller.signal.aborted) return;
-        throw new VoiceConnectError(
-          "local_tts_failed",
-          `Couldn't reach the local speech engine (${error instanceof Error ? error.message : "fetch failed"}).`,
-        );
-      } finally {
-        if (currentAbort === controller) currentAbort = null;
+      for (const chunk of splitLocalTtsText(text)) {
+        if (cancelled) return;
+        await speakChunk(chunk);
       }
-
-      if (!response.ok) {
-        let code = "local_tts_failed";
-        let hint: string | undefined;
-        try {
-          const json = (await response.json()) as {
-            error?: string;
-            hint?: string;
-          };
-          if (json.error) code = json.error;
-          hint = json.hint;
-        } catch {
-          // Keep the stable fallback when the sidecar did not return JSON.
-        }
-        throw new VoiceConnectError(code, hint);
-      }
-
-      const blob = await response.blob();
-      if (cancelled) return;
-      currentUrl = createObjectUrl(blob);
-      await new Promise<void>((resolve, reject) => {
-        const audio = createAudio();
-        currentAudio = audio;
-        let settled = false;
-        const finish = (error?: VoiceConnectError) => {
-          if (settled) return;
-          settled = true;
-          releaseCurrent();
-          if (error) reject(error);
-          else resolve();
-        };
-        settlePlayback = () => finish();
-        audio.onended = () => finish();
-        audio.onerror = () =>
-          finish(
-            new VoiceConnectError(
-              "local_tts_playback_failed",
-              "The local speech engine returned audio this device couldn't play.",
-            ),
-          );
-        audio.src = currentUrl!;
-        void audio.play().catch(() => {
-          finish(
-            new VoiceConnectError(
-              "local_tts_playback_failed",
-              "The local voice preview couldn't start playback.",
-            ),
-          );
-        });
-      });
     },
     cancel() {
       cancelled = true;

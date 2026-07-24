@@ -61,6 +61,11 @@ type LocalTtsVoice = {
   verified: boolean;
 };
 
+type PiperRuntime = {
+  available?: boolean;
+  hint?: string;
+};
+
 type HarnessReport = {
   id: string;
   label: string;
@@ -134,6 +139,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [localVoiceCatalogAttempt, setLocalVoiceCatalogAttempt] = useState(0);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const previewAbortRef = useRef<AbortController | null>(null);
   // Generation counter: bumping it invalidates any preview fetch still in
   // flight, so a stop click (or voice switch) can't be overtaken by late audio.
   const previewGenRef = useRef(0);
@@ -391,6 +397,8 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
 
   const stopVoicePreview = useCallback(() => {
     previewGenRef.current++;
+    previewAbortRef.current?.abort();
+    previewAbortRef.current = null;
     const audio = previewAudioRef.current;
     previewAudioRef.current = null;
     if (audio) {
@@ -457,18 +465,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   // verified-ready models become selectable; a saved id stays intact while a
   // download is incomplete or the readiness request is unavailable.
   useEffect(() => {
-    if (
-      (draftVoiceProvider !== "local" &&
-        draftVoiceProvider !== "familiar") ||
-      localVoiceCatalog.status !== "idle"
-    ) {
+    const selected =
+      draftVoiceProvider === "local" || draftVoiceProvider === "familiar";
+    if (!selected) {
+      setLocalVoiceCatalog({ status: "idle", voices: [] });
       return;
     }
     let cancelled = false;
-    setLocalVoiceCatalog((catalog) => ({
-      ...catalog,
-      status: "loading",
-    }));
+    setLocalVoiceCatalog((catalog) => ({ ...catalog, status: "loading" }));
     (async () => {
       try {
         const res = await fetch("/api/voice/engines");
@@ -483,14 +487,21 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           });
           return;
         }
+        const piper = json.runtimes?.piper as PiperRuntime | undefined;
+        const piperUnavailable = piper?.available === false;
+        const verifiedVoices = json.tts.filter(
+          (voice: LocalTtsVoice) =>
+            voice?.ready === true &&
+            voice?.verified === true &&
+            (voice.engine === "piper" || voice.engine === "kokoro") &&
+            (voice.engine !== "piper" || !piperUnavailable),
+        );
         setLocalVoiceCatalog({
           status: "ready",
-          voices: json.tts.filter(
-            (voice: LocalTtsVoice) =>
-              voice?.ready === true &&
-              voice?.verified === true &&
-              (voice.engine === "piper" || voice.engine === "kokoro"),
-          ),
+          voices: verifiedVoices,
+          note: piperUnavailable
+            ? piper?.hint ?? "The local Piper runtime isn't available on this device."
+            : undefined,
         });
       } catch {
         if (!cancelled) {
@@ -575,7 +586,12 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const elevenCatalogReady = elevenCatalog.status === "ready";
   const localVoiceOptions = useMemo(() => {
     const known = new Set(localVoiceCatalog.voices.map((voice) => voice.id));
-    const options = [
+    const options: Array<{
+      value: string;
+      label: string;
+      detail: string;
+      disabled?: boolean;
+    }> = [
       {
         value: "",
         label: "System default",
@@ -583,12 +599,16 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       },
     ];
     if (draftVoiceName && !known.has(draftVoiceName)) {
+      const staleLocalVoice = isLocalTtsVoiceName(draftVoiceName);
       options.push({
         value: draftVoiceName,
-        label: isLocalTtsVoiceName(draftVoiceName)
+        label: staleLocalVoice
           ? "Saved local voice"
           : "Saved system voice",
-        detail: draftVoiceName,
+        detail: staleLocalVoice
+          ? `${draftVoiceName} (unavailable)`
+          : draftVoiceName,
+        disabled: staleLocalVoice,
       });
     }
     for (const voice of localVoiceCatalog.voices) {
@@ -605,6 +625,10 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     draftVoiceProvider === "local" || draftVoiceProvider === "familiar";
   const localNeuralVoiceSelected =
     localProviderSelected && isLocalTtsVoiceName(draftVoiceName);
+  const savedLocalVoiceUnavailable =
+    localProviderSelected &&
+    isLocalTtsVoiceName(draftVoiceName) &&
+    !localVoiceCatalog.voices.some((voice) => voice.id === draftVoiceName);
 
   async function playVoicePreview() {
     if (previewStatus !== "idle") {
@@ -645,6 +669,10 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     const gen = ++previewGenRef.current;
     setPreviewStatus("loading");
     const voiceId = draftVoiceName || DEFAULT_OPENAI_VOICE_ID;
+    const localPreviewAbort = localNeuralVoiceSelected
+      ? new AbortController()
+      : null;
+    if (localPreviewAbort) previewAbortRef.current = localPreviewAbort;
     try {
       const res = localNeuralVoiceSelected
         ? await fetch("/api/voice/local/tts", {
@@ -654,6 +682,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               text: "Hey — this is how your familiar will sound.",
               voiceName: draftVoiceName,
             }),
+            signal: localPreviewAbort?.signal,
           })
         : draftVoiceProvider === "elevenlabs"
           ? await fetch("/api/voice/elevenlabs/tts", {
@@ -698,6 +727,10 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       if (gen !== previewGenRef.current) return;
       stopVoicePreview();
       setPreviewNote("Couldn't load the voice preview.");
+    } finally {
+      if (previewAbortRef.current === localPreviewAbort) {
+        previewAbortRef.current = null;
+      }
     }
   }
 
@@ -999,6 +1032,28 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                 No local voices downloaded — open Settings to add one, or use the system default.
               </p>
             )}
+
+            {localProviderSelected && localCatalogReady && localVoiceCatalog.note ? (
+              <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                {localVoiceCatalog.note}
+              </p>
+            ) : null}
+
+            {savedLocalVoiceUnavailable ? (
+              <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                The saved local voice is unavailable. Download it again or choose another voice.
+              </p>
+            ) : null}
+
+            {localProviderSelected && localCatalogReady ? (
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => setLocalVoiceCatalogAttempt((attempt) => attempt + 1)}
+              >
+                Refresh local voices
+              </Button>
+            ) : null}
 
             {draftVoiceProvider === "local" && localSttReadiness?.kind === "on-device" && (
               <p className="familiar-studio-brain__hint" role="status">

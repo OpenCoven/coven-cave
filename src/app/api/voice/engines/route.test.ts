@@ -37,6 +37,7 @@ test("GET /api/voice/engines advertises readonly readiness and management endpoi
     assert.ok(body.root.endsWith("voice-models"));
     assert.ok(body.stt.some((model: any) => model.engine === "whisper" && model.ready === false));
     assert.ok(body.tts.some((model: any) => model.engine === "piper" && model.verified === false));
+    assert.equal(typeof body.runtimes?.piper?.available, "boolean");
   });
 });
 

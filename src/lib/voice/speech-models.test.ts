@@ -91,6 +91,19 @@ test("readiness requires both expected size and verified sha256", async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+test("Piper Amy registry metadata matches the reviewed pinned artifact", () => {
+  const amy = SPEECH_MODEL_REGISTRY.find(
+    (model) => model.id === "piper-amy-medium-en-us",
+  );
+  assert.deepEqual(
+    amy && { sizeBytes: amy.sizeBytes, sha256: amy.sha256 },
+    {
+      sizeBytes: 63_201_294,
+      sha256: "b3a6e47b57b8c7fbe6a0ce2518161a50f59a9cdd8a50835c02cb02bdd6206c18",
+    },
+  );
+});
+
 test("Piper readiness requires its verified config companion", async () => {
   const root = testRoot("companion");
   await rm(root, { recursive: true, force: true });

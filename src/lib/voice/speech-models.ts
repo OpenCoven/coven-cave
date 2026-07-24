@@ -51,7 +51,7 @@ export type SpeechEnginesReadiness = {
 export type SpeechModelDownloadJob = {
   id: string;
   modelId: string;
-  status: "running" | "done" | "failed";
+  status: "running" | "done" | "failed" | "cancelled";
   receivedBytes: number;
   totalBytes: number;
   startedAt: string;
@@ -89,7 +89,7 @@ export const SPEECH_MODEL_REGISTRY: readonly SpeechModelRegistryEntry[] = [
     engine: "piper",
     kind: "tts",
     url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx",
-    sha256: "2b0a534800d3208ad2735ea1feda9d3b36947554f24816bf0e922bf8c09a9255",
+    sha256: "b3a6e47b57b8c7fbe6a0ce2518161a50f59a9cdd8a50835c02cb02bdd6206c18",
     sizeBytes: 63_201_294,
     license: "CC0-1.0",
     fileName: "en_US-amy-medium.onnx",
@@ -106,6 +106,7 @@ export const SPEECH_MODEL_REGISTRY: readonly SpeechModelRegistryEntry[] = [
 ] as const;
 
 const jobs = new Map<string, SpeechModelDownloadJob>();
+const cancelledDownloadJobs = new Set<string>();
 
 export function speechModelsRoot(): string {
   return path.join(/* turbopackIgnore: true */ covenHome(), "voice-models");
@@ -299,6 +300,7 @@ async function writeResponseToFile(
   const handle = await open(/* turbopackIgnore: true */ filePath, "w", 0o600);
   try {
     if (!res.body) {
+      if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
       const bytes = new Uint8Array(await res.arrayBuffer());
       if (job.totalBytes > 0 && bytes.byteLength > job.totalBytes) throw new Error("size_mismatch");
       hash.update(bytes);
@@ -309,6 +311,10 @@ async function writeResponseToFile(
     }
     const reader = res.body.getReader();
     for (;;) {
+      if (cancelledDownloadJobs.has(job.id)) {
+        await reader.cancel();
+        throw new Error("download_cancelled");
+      }
       const { done, value } = await reader.read();
       if (done) break;
       hash.update(value);
@@ -350,12 +356,14 @@ export async function runSpeechModelDownload(
     ...(model.companion ? [model.companion] : []),
   ];
   try {
+    if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
     await mkdir(/* turbopackIgnore: true */ path.dirname(dir), { recursive: true });
     await rm(/* turbopackIgnore: true */ stagingDir, { recursive: true, force: true });
     await mkdir(/* turbopackIgnore: true */ stagingDir, { recursive: true });
     job.totalBytes = totalBytes;
     putJob(job);
     for (const asset of assets) {
+      if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
       const temp = path.join(/* turbopackIgnore: true */ stagingDir, asset.fileName);
       const res = await fetchImpl(asset.url, {
         signal: AbortSignal.timeout(30 * 60_000),
@@ -376,7 +384,9 @@ export async function runSpeechModelDownload(
     }
     // Publish the complete directory only after every required asset verifies.
     // The ONNX weights are never visible without the Piper config beside them.
+    if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
     await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
+    if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
     await rename(/* turbopackIgnore: true */ stagingDir, dir);
     putJob({
       ...job,
@@ -389,10 +399,14 @@ export async function runSpeechModelDownload(
     await rm(/* turbopackIgnore: true */ stagingDir, { recursive: true, force: true });
     putJob({
       ...job,
-      status: "failed",
+      status: cancelledDownloadJobs.has(job.id) ? "cancelled" : "failed",
       ready: false,
-      error: error instanceof Error ? error.message : String(error),
+      ...(cancelledDownloadJobs.has(job.id)
+        ? {}
+        : { error: error instanceof Error ? error.message : String(error) }),
     });
+  } finally {
+    cancelledDownloadJobs.delete(job.id);
   }
 }
 
@@ -437,13 +451,20 @@ export async function startSpeechModelDownload(
 export async function removeSpeechModel(modelId: string, root = speechModelsRoot()): Promise<"removed" | "missing" | "unknown_model"> {
   const model = speechModelById(modelId);
   if (!model) return "unknown_model";
+  const running = findRunningSpeechModelDownload(modelId);
+  if (running) {
+    cancelledDownloadJobs.add(running.id);
+    putJob({ ...running, status: "cancelled", ready: false });
+  }
   const modelPath = speechModelPath(model, root);
   const modelDir = path.dirname(modelPath);
   try {
     await rm(/* turbopackIgnore: true */ modelDir, { recursive: true, force: false });
     return "removed";
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return running ? "removed" : "missing";
+    }
     throw error;
   }
 }

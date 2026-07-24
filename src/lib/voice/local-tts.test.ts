@@ -5,6 +5,7 @@ import {
   createLocalTtsMouth,
   isLocalTtsVoiceName,
   LOCAL_TTS_MAX_CHARS,
+  splitLocalTtsText,
 } from "./local-tts.ts";
 
 class FakeAudio {
@@ -62,22 +63,33 @@ test("local mouth posts a sentence chunk and plays/revokes returned audio", asyn
   assert.deepEqual(revoked, ["blob:local-voice"]);
 });
 
-test("local mouth clamps direct callers to the route limit", async () => {
-  let sentText = "";
+test("local mouth splits direct callers at the route limit without dropping text", async () => {
+  const sentText = [];
   const mouth = createLocalTtsMouth({
     voiceName: "piper-amy-medium-en-us",
     fetchImpl: async (_url, init) => {
-      sentText = JSON.parse(init.body).text;
+      sentText.push(JSON.parse(init.body).text);
       return new Response(new Blob(["wav"], { type: "audio/wav" }));
     },
     createAudio: () => new FakeAudio(),
-    createObjectUrl: () => "blob:clamped",
+    createObjectUrl: () => "blob:split",
     revokeObjectUrl: () => undefined,
   });
 
   await mouth.speak("x".repeat(LOCAL_TTS_MAX_CHARS + 50));
-  assert.equal(sentText.length, LOCAL_TTS_MAX_CHARS);
-  assert.ok(sentText.endsWith("…"));
+  assert.deepEqual(sentText.map((chunk) => chunk.length), [
+    LOCAL_TTS_MAX_CHARS,
+    50,
+  ]);
+  assert.equal(sentText.join(""), "x".repeat(LOCAL_TTS_MAX_CHARS + 50));
+});
+
+test("local TTS chunking prefers a sentence boundary", () => {
+  const first = `${"x".repeat(LOCAL_TTS_MAX_CHARS - 4)}. `;
+  assert.deepEqual(splitLocalTtsText(`${first}Next sentence.`), [
+    first,
+    "Next sentence.",
+  ]);
 });
 
 test("local mouth surfaces sidecar errors with their actionable hint", async () => {

@@ -9,6 +9,7 @@ import {
   runPiper,
   type PiperRunner,
 } from "../../../../../lib/voice/local-tts-server.ts";
+import { stat } from "node:fs/promises";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,18 +21,50 @@ type LocalTtsRouteDependencies = {
   piper?: PiperRunner;
 };
 
+type CachedReadiness = {
+  fingerprint: string;
+  readiness: SpeechModelReadiness;
+};
+
+const readinessCache = new Map<string, CachedReadiness>();
+
+async function readinessFingerprint(readiness: SpeechModelReadiness): Promise<string | null> {
+  try {
+    const assets = [readiness.path, readiness.companionPath].filter(Boolean) as string[];
+    return (await Promise.all(assets.map(async (asset) => {
+      const info = await stat(asset);
+      return `${asset}:${info.size}:${info.mtimeMs}`;
+    }))).join("|");
+  } catch {
+    return null;
+  }
+}
+
 async function defaultReadiness(
   voiceName: string,
 ): Promise<SpeechModelReadiness | null> {
   const model = speechModelById(voiceName);
-  return model ? speechModelReadiness(model) : null;
+  if (!model) return null;
+  const cached = readinessCache.get(model.id);
+  if (cached) {
+    const fingerprint = await readinessFingerprint(cached.readiness);
+    if (fingerprint === cached.fingerprint) return cached.readiness;
+  }
+  const readiness = await speechModelReadiness(model);
+  if (readiness.ready && readiness.verified) {
+    const fingerprint = await readinessFingerprint(readiness);
+    if (fingerprint) readinessCache.set(model.id, { fingerprint, readiness });
+  } else {
+    readinessCache.delete(model.id);
+  }
+  return readiness;
 }
 
 export async function handleLocalTtsPost(
   req: Request,
   dependencies: LocalTtsRouteDependencies = {},
 ): Promise<Response> {
-  let body: { text?: string; voiceName?: string };
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
@@ -43,9 +76,16 @@ export async function handleLocalTtsPost(
     );
   }
 
-  const text = typeof body.text === "string" ? body.text.trim() : "";
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json(
+      { ok: false, error: "invalid_json" },
+      { status: 400 },
+    );
+  }
+  const requestBody = body as { text?: unknown; voiceName?: unknown };
+  const text = typeof requestBody.text === "string" ? requestBody.text.trim() : "";
   const voiceName =
-    typeof body.voiceName === "string" ? body.voiceName.trim() : "";
+    typeof requestBody.voiceName === "string" ? requestBody.voiceName.trim() : "";
   if (!text) {
     return NextResponse.json(
       { ok: false, error: "missing_text" },
@@ -70,8 +110,12 @@ export async function handleLocalTtsPost(
   );
   if (!readiness || readiness.kind !== "tts") {
     return NextResponse.json(
-      { ok: false, error: "unknown_voice" },
-      { status: 404 },
+      {
+        ok: false,
+        error: "local_voice_not_ready",
+        hint: "The selected local voice is no longer available. Download it again in Settings or choose another voice.",
+      },
+      { status: 409 },
     );
   }
   if (!readiness.ready || !readiness.verified) {

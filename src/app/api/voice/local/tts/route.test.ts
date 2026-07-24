@@ -34,6 +34,8 @@ function request(body, signal) {
 
 test("POST local TTS validates JSON, text, and local voice ids", async () => {
   assert.equal((await handleLocalTtsPost(request("{"))).status, 400);
+  assert.equal((await handleLocalTtsPost(request("null"))).status, 400);
+  assert.equal((await handleLocalTtsPost(request("[]"))).status, 400);
   assert.equal(
     (await handleLocalTtsPost(request({ voiceName: readyVoice.id }))).status,
     400,
@@ -98,7 +100,8 @@ test("POST local TTS rejects unknown, unready, and unsupported-engine voices", a
     request({ text: "hello", voiceName: readyVoice.id }),
     { readiness: async () => null },
   );
-  assert.equal(unknown.status, 404);
+  assert.equal(unknown.status, 409);
+  assert.equal((await unknown.json()).error, "local_voice_not_ready");
 
   const unready = await handleLocalTtsPost(
     request({ text: "hello", voiceName: readyVoice.id }),
