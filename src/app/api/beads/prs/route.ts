@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { scrubSidecarInternalEnv } from "@/lib/coven-bin";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { resolveRepoRoot } from "@/lib/server/issue-worktree-provision";

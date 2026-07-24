@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { runBdCommand } from "@/lib/server/beads-cli";
 import { MAX_SESSION_JSON_BYTES } from "@/lib/server/session-security";
