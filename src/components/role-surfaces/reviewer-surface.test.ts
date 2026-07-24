@@ -201,3 +201,17 @@ test("parseDiffLines classifies headers, hunks, and edits", () => {
   const ctx = lines.find((l) => l.kind === "ctx");
   assert.equal(ctx?.text, "const a = 1;"); // leading context space stripped
 });
+
+test("parseDiffLines handles empties, CRLF, and the no-newline marker", () => {
+  assert.deepEqual(parseDiffLines(""), []);
+  // CRLF endings are normalized away so Windows diffs render clean.
+  const crlf = parseDiffLines("@@ -1 +1 @@\r\n+added\r\n");
+  assert.deepEqual(
+    crlf.map((l) => l.text),
+    ["@@ -1 +1 @@", "added"],
+  );
+  // Git's "\ No newline at end of file" marker is context, not an edit.
+  const marker = parseDiffLines("+last line\n\\ No newline at end of file");
+  assert.equal(marker[0].kind, "add");
+  assert.equal(marker[1].kind, "ctx");
+});

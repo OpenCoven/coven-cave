@@ -179,7 +179,8 @@ export type DiffLine = { kind: DiffLineKind; mark: string; text: string };
  * `mark` so the body can render the sign in its own gutter.
  */
 export function parseDiffLines(diff: string): DiffLine[] {
-  const lines = diff.split("\n");
+  if (diff === "") return [];
+  const lines = diff.split("\n").map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
   // A trailing newline yields a final empty element that isn't a real line.
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   return lines.map((raw) => {

@@ -20,7 +20,7 @@
  */
 
 import "@/styles/review-deck.css";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
@@ -127,6 +127,14 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   const projectRoot = selected?.session.project_root ?? null;
   const selectedVerdict = selected ? verdicts[selected.session.id] ?? null : null;
 
+  // The reviewer's note and any dispatch error are scoped to the selected
+  // session — reset them on any selection change so a note typed for one
+  // workload can never ride along on a verdict dispatched to another's PR.
+  useEffect(() => {
+    setNote("");
+    setActionError(null);
+  }, [state.selectedSessionId]);
+
   // ── Working-tree changes for the selected session's project root ──────────
   const [changes, setChanges] = useState<ChangesWire | null>(null);
   const [changesError, setChangesError] = useState<string | null>(null);
@@ -152,11 +160,17 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   const [openFile, setOpenFile] = useState<string | null>(null);
   const [diff, setDiff] = useState<{ text: string; truncated: boolean } | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState<string | null>(null);
+  // Monotonic request id — a fast A→B tab switch must not let A's slower
+  // response overwrite B's diff. Only the latest request may commit state.
+  const diffReq = useRef(0);
   const showDiff = useCallback(
     async (relPath: string) => {
       if (!projectRoot) return;
+      const req = ++diffReq.current;
       setOpenFile(relPath);
       setDiff(null);
+      setDiffError(null);
       setDiffLoading(true);
       try {
         const res = await fetch(
@@ -166,13 +180,15 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         const json = res.ok
           ? ((await res.json()) as { ok?: boolean; diff?: string; truncated?: boolean })
           : null;
+        if (req !== diffReq.current) return; // a newer file was opened — drop this stale result
         if (!json?.ok || typeof json.diff !== "string") throw new Error("bad response");
         setDiff({ text: json.diff, truncated: json.truncated === true });
       } catch {
-        setDiff({ text: "", truncated: false });
-        setChangesError(`Couldn't load the diff for ${relPath}.`);
+        if (req !== diffReq.current) return;
+        setDiff(null);
+        setDiffError(`Couldn't load the diff for ${relPath}.`);
       } finally {
-        setDiffLoading(false);
+        if (req === diffReq.current) setDiffLoading(false);
       }
     },
     [projectRoot],
@@ -184,6 +200,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   useEffect(() => {
     setOpenFile(null);
     setDiff(null);
+    setDiffError(null);
   }, [projectRoot]);
   useEffect(() => {
     if (openFile == null && repoFiles.length > 0) void showDiff(repoFiles[0].path);
@@ -219,7 +236,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
 
   const dispatchVerdict = useCallback(
     async (verdict: Verdict) => {
-      if (!selected || !selectedPr?.number) return;
+      if (!selected || !selectedPr?.number || dispatching) return;
       setActionError(null);
       setDispatching(verdict);
       try {
@@ -254,7 +271,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         setDispatching(null);
       }
     },
-    [selected, selectedPr, note],
+    [selected, selectedPr, note, dispatching],
   );
 
   // ── Derived view models ────────────────────────────────────────────────────
@@ -476,6 +493,17 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
               <div className="rd-diff-path">{openFile ?? ""}</div>
               {diffLoading ? (
                 <SurfaceEmpty title="Loading diff…" />
+              ) : diffError ? (
+                <p className="rd-diff-path rd-error" role="alert">
+                  {diffError}{" "}
+                  <button
+                    type="button"
+                    className="role-surface-chip focus-ring"
+                    onClick={() => openFile && void showDiff(openFile)}
+                  >
+                    Try again
+                  </button>
+                </p>
               ) : diff && diff.text ? (
                 <>
                   {diff.truncated && (
@@ -519,7 +547,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
             <span className="rd-spacer" />
             <button
               type="button"
-              className="rd-btn rd-btn--changes"
+              className="rd-btn rd-btn--changes focus-ring"
               disabled={!canDispatch || dispatching != null}
               title={canDispatch ? "Send back to the familiar with notes" : "Needs a linked pull request"}
               onClick={() => void dispatchVerdict("changes")}
@@ -529,7 +557,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
             </button>
             <button
               type="button"
-              className="rd-btn rd-btn--approve"
+              className="rd-btn rd-btn--approve focus-ring"
               disabled={!canDispatch || dispatching != null}
               title={canDispatch ? "Approve — clears the change to merge" : "Needs a linked pull request"}
               onClick={() => void dispatchVerdict("approved")}
@@ -539,13 +567,13 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
             </button>
             <button
               type="button"
-              className="rd-btn rd-btn--merge"
+              className="rd-btn rd-btn--merge focus-ring"
               disabled={!canDispatch || dispatching != null}
-              title={canDispatch ? "Squash-merge and prune the branch" : "Needs a linked pull request"}
+              title={canDispatch ? "Squash-merge this pull request" : "Needs a linked pull request"}
               onClick={() => void dispatchVerdict("merged")}
             >
               <Icon name="ph:git-merge" width={14} height={14} aria-hidden />
-              Merge &amp; clean up
+              Squash &amp; merge
             </button>
           </div>
         </section>
@@ -690,8 +718,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
                     </button>
                   </div>
                   <p className="rd-hint">
-                    The deck reads real git state. It never edits the working tree — verdicts and merges are dispatched
-                    to the familiar.
+                    The deck reads real git state. It never edits the working tree — verdicts and merges go to GitHub.
                   </p>
                 </section>
 
