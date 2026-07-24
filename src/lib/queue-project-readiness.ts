@@ -47,7 +47,8 @@ const READY_PROBE_TTL_MS = 2_000;
 const readyProbeCache = new Map<string, { expiresAt: number; result: BdResult }>();
 const ONBOARDING_READINESS_TTL_MS = 5_000;
 let cachedOnboardingReadiness: { expiresAt: number; readiness: QueueProjectReadiness; probe?: BeadsProbe } | null = null;
-let onboardingReadinessInFlight: { probe?: BeadsProbe; pending: Promise<QueueProjectReadiness> } | null = null;
+let onboardingReadinessInFlight: { probe?: BeadsProbe; generation: number; pending: Promise<QueueProjectReadiness> } | null = null;
+let onboardingReadinessGeneration = 0;
 
 export class QueueProjectStorageError extends Error {
   constructor(message = "Cave could not read or save the Queue project selection.") {
@@ -149,8 +150,13 @@ async function gitTopLevel(root: string): Promise<GitTopLevel> {
 type BeadsWorkspaceStatus =
   | { kind: "missing" }
   | { kind: "ready" }
+  | { kind: "repairable"; message: string }
   | { kind: "unavailable"; message: string }
   | { kind: "error"; message: string };
+
+function beadsUnavailable(result: BdResult): boolean {
+  return !result.ok && (result.status === 503 || /\bbd unavailable\b/i.test(result.error));
+}
 
 async function beadsWorkspaceStatus(repoRoot: string, probe: BeadsProbe): Promise<BeadsWorkspaceStatus> {
   const beadsDir = path.join(/* turbopackIgnore: true */ repoRoot, ".beads");
@@ -165,7 +171,18 @@ async function beadsWorkspaceStatus(repoRoot: string, probe: BeadsProbe): Promis
     }
   } catch (cause) {
     const error = cause as NodeJS.ErrnoException;
-    if (error.code === "ENOENT") return { kind: "missing" };
+    if (error.code === "ENOENT") {
+      // Generate needs the same CLI as Queue reads. Check it before promising
+      // an initialization action that cannot possibly run.
+      const cli = await probe(repoRoot, beadsDir, ["--version"]);
+      if (beadsUnavailable(cli)) {
+        return { kind: "unavailable", message: "Beads is required to generate this Queue project. Install or repair the bd CLI, then retry." };
+      }
+      if (!cli.ok) {
+        return { kind: "error", message: `Cave could not verify the bd CLI: ${cli.error || "bd --version failed"}. Repair Beads, then retry.` };
+      }
+      return { kind: "missing" };
+    }
     return { kind: "error", message: "Cave could not inspect the Queue Beads workspace. Check project permissions and try again." };
   }
   // Directory presence alone is not a workspace: a failed bd init can leave an
@@ -175,10 +192,13 @@ async function beadsWorkspaceStatus(repoRoot: string, probe: BeadsProbe): Promis
     readyProbeCache.set(repoRoot, { expiresAt: Date.now() + READY_PROBE_TTL_MS, result });
     return { kind: "ready" };
   }
-  if (result.status === 503 || /\bbd unavailable\b/i.test(result.error)) {
+  if (beadsUnavailable(result)) {
     return { kind: "unavailable", message: "Beads is required to use the Queue project. Install or repair the bd CLI, then retry." };
   }
-  return { kind: "error", message: `Cave could not verify the Queue Beads workspace: ${result.error || "bd ready failed"}. Repair Beads, then retry.` };
+  // `bd init` can leave a local directory before it has completed. It remains
+  // contained by this project and the CLI is available, so a serialized
+  // Generate retry is safe and is the intended repair route.
+  return { kind: "repairable", message: `Queue needs a Beads repair in ${repoRoot}. Generate will retry initialization.` };
 }
 
 /** Let the immediately-following Queue list read reuse its verified bd ready output. */
@@ -194,8 +214,8 @@ export function takeQueueReadyProbe(repoRoot: string): BdResult | null {
 
 /** Clear the short onboarding cache whenever selection or generation changes it. */
 export function invalidateQueueProjectReadinessCache(): void {
+  onboardingReadinessGeneration += 1;
   cachedOnboardingReadiness = null;
-  onboardingReadinessInFlight = null;
 }
 
 /**
@@ -206,15 +226,20 @@ export async function cachedQueueProjectReadiness(options: QueueProjectReadiness
   if (cachedOnboardingReadiness && cachedOnboardingReadiness.probe === options.beadsProbe && cachedOnboardingReadiness.expiresAt > Date.now()) {
     return cachedOnboardingReadiness.readiness;
   }
+  const generation = onboardingReadinessGeneration;
   const inFlight = onboardingReadinessInFlight;
-  if (inFlight && inFlight.probe === options.beadsProbe) return inFlight.pending;
+  if (inFlight && inFlight.generation === generation && inFlight.probe === options.beadsProbe) return inFlight.pending;
   const pending = queueProjectReadiness(options).then((readiness) => {
-    cachedOnboardingReadiness = { expiresAt: Date.now() + ONBOARDING_READINESS_TTL_MS, readiness, probe: options.beadsProbe };
+    if (generation === onboardingReadinessGeneration) {
+      cachedOnboardingReadiness = { expiresAt: Date.now() + ONBOARDING_READINESS_TTL_MS, readiness, probe: options.beadsProbe };
+    }
     return readiness;
   }).finally(() => {
-    if (onboardingReadinessInFlight?.pending === pending) onboardingReadinessInFlight = null;
+    if (onboardingReadinessInFlight?.pending === pending && onboardingReadinessInFlight.generation === generation) {
+      onboardingReadinessInFlight = null;
+    }
   });
-  onboardingReadinessInFlight = { probe: options.beadsProbe, pending };
+  onboardingReadinessInFlight = { probe: options.beadsProbe, generation, pending };
   return pending;
 }
 
@@ -314,11 +339,13 @@ export async function queueProjectReadiness(options: QueueProjectReadinessOption
   }
 
   const beads = await beadsWorkspaceStatus(gitRoot.root, options.beadsProbe ?? runBdCommand);
-  if (beads.kind === "missing") {
+  if (beads.kind === "missing" || beads.kind === "repairable") {
     return {
       ok: false,
       code: "needs-beads",
-      message: `Queue is ready to generate in ${gitRoot.root}. Generate will initialize or repair its local Beads workspace.`,
+      message: beads.kind === "repairable"
+        ? beads.message
+        : `Queue is ready to generate in ${gitRoot.root}. Generate will initialize its local Beads workspace.`,
       project: { ...selected, root: gitRoot.root },
       canGenerate: true,
     };

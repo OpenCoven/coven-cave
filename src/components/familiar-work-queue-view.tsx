@@ -110,6 +110,7 @@ type FetchedQueue = {
 type QueueSource = { ok?: boolean; data?: ReadyBead[]; open?: PullRequestSummary[]; merged?: MergedPrRef[]; error?: string };
 type QueueReadiness = {
   ok: boolean;
+  code?: string;
   message: string;
   canGenerate: boolean;
   project: { id: string; name: string; root: string } | null;
@@ -549,13 +550,19 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     const canGenerate = readiness?.canGenerate === true;
     const readinessUnavailable = readinessFailure !== null;
     const sourcesUnavailable = !readinessUnavailable && readiness?.ok === true && readiness.project !== null;
-    const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && readiness?.project !== null;
+    const selectionRemediable = readiness?.code === "no-project"
+      || readiness?.code === "project-missing"
+      || readiness?.code === "project-not-allowed"
+      || readiness?.code === "not-git-repository"
+      || readiness?.code === "project-not-git-root"
+      || readiness?.code === "project-storage-error";
+    const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && !canGenerate && !selectionRemediable && readiness?.project !== null;
     return (
       <div className="fwq">
         <div className="fwq-body">
           <EmptyState
             icon="ph:warning-circle"
-            headline={readinessUnavailable ? "Queue check unavailable" : sourcesUnavailable ? "Queue sources unavailable" : projectUnavailable ? "Queue project needs attention" : canGenerate ? "Generate your Queue" : "Queue needs a project"}
+            headline={readinessUnavailable ? "Queue check unavailable" : sourcesUnavailable ? "Queue sources unavailable" : canGenerate ? "Generate your Queue" : projectUnavailable ? "Queue project needs attention" : "Queue needs a project"}
             subtitle={readinessUnavailable ? readinessFailure : error}
             actions={
               <div className="flex flex-wrap justify-center gap-2">

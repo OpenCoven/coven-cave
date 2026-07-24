@@ -154,9 +154,11 @@ assert.match(view, /action: "comment", id, comment, projectRoot/, "handoff comme
 assert.match(view, /action: "claim", id, assignee: familiar\.id, projectRoot/, "claim-for receives the selected root");
 assert.match(view, /projectRoot=\{readiness\?\.project\?\.root\}/, "Asana filing receives the selected root");
 assert.match(view, /const sourcesUnavailable = !readinessUnavailable && readiness\?\.ok === true && readiness\.project !== null/, "a ready project with failing adapters is not treated as unselected");
-assert.match(view, /const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && readiness\?\.project !== null/, "a selected but unusable Beads project has its own remediation state");
-assert.match(view, /headline=\{readinessUnavailable \? "Queue check unavailable" : sourcesUnavailable \? "Queue sources unavailable" : projectUnavailable \? "Queue project needs attention" : canGenerate \? "Generate your Queue" : "Queue needs a project"\}/);
-assert.match(view, /readinessUnavailable \|\| sourcesUnavailable \|\| projectUnavailable \? null/, "adapter and Beads failures offer Retry rather than project selection");
+assert.match(view, /code\?: string/, "Queue preserves readiness remediation codes from the server");
+assert.match(view, /const selectionRemediable = readiness\?\.code === "no-project"/, "stale and invalid selections retain a Choose-project recovery");
+assert.match(view, /const projectUnavailable = !readinessUnavailable && !sourcesUnavailable && !canGenerate && !selectionRemediable && readiness\?\.project !== null/, "only non-repairable selected projects suppress Generate");
+assert.match(view, /headline=\{readinessUnavailable \? "Queue check unavailable" : sourcesUnavailable \? "Queue sources unavailable" : canGenerate \? "Generate your Queue" : projectUnavailable \? "Queue project needs attention" : "Queue needs a project"\}/);
+assert.match(view, /readinessUnavailable \|\| sourcesUnavailable \|\| projectUnavailable \? null : canGenerate \? \(/, "Generate wins before a selected-project warning and stale roots offer Choose project");
 assert.match(view, />\s*Generate\s*<\/Button>/, "empty Queue state offers Generate");
 assert.doesNotMatch(view, /readSurfaceResource\("tasks:queue"/, "Queue no longer consumes an unscoped warm cache");
 

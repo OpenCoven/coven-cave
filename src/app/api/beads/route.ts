@@ -1,10 +1,9 @@
-import fs from "node:fs";
-import path from "node:path";
 import { NextResponse } from "next/server";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { runBdCommand } from "@/lib/server/beads-cli";
 import { MAX_SESSION_JSON_BYTES } from "@/lib/server/session-security";
 import { resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
+import { resolveSafeBeadsWorkspace } from "@/lib/server/beads-workspace";
 import { takeQueueReadyProbe } from "@/lib/queue-project-readiness";
 
 export const dynamic = "force-dynamic";
@@ -46,15 +45,9 @@ async function resolveProjectRoot(projectRoot: string | null) {
   if (!projectRoot) return { ok: false as const, status: 400, error: "projectRoot is required" };
   const root = await resolveRepoRoot(projectRoot);
   if (!root.ok) return root;
-  const beadsDir = path.join(root.repoRoot, ".beads");
-  try {
-    if (!fs.statSync(beadsDir).isDirectory()) {
-      return { ok: false as const, status: 422, error: "not a Beads workspace" };
-    }
-  } catch {
-    return { ok: false as const, status: 422, error: "not a Beads workspace" };
-  }
-  return { ok: true as const, repoRoot: root.repoRoot, beadsDir };
+  const workspace = resolveSafeBeadsWorkspace(root.repoRoot);
+  if (!workspace.ok) return { ok: false as const, status: 422, error: workspace.error };
+  return { ok: true as const, repoRoot: root.repoRoot, beadsDir: workspace.beadsDir };
 }
 
 function projectRootErrorResponse(root: { status: number; error: string }) {

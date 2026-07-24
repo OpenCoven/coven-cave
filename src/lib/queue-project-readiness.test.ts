@@ -42,7 +42,15 @@ try {
   assert.equal((await queueProjectReadiness()).code, "no-project", "Queue never falls back to the app cwd");
   assert.equal((await selectQueueProject("queue-project"))?.root, projectRoot, "selection persists a registered project");
 
-  const needsBeads = await queueProjectReadiness();
+  const unavailableWithoutWorkspace = await queueProjectReadiness({
+    beadsProbe: async () => ({ ok: false, status: 503, error: "bd unavailable", stdout: "", stderr: "" }),
+  });
+  assert.equal(unavailableWithoutWorkspace.code, "beads-unavailable", "missing .beads does not promise Generate when bd is unavailable");
+  assert.equal(unavailableWithoutWorkspace.canGenerate, false);
+
+  const needsBeads = await queueProjectReadiness({
+    beadsProbe: async () => ({ ok: true, stdout: "bd 0.1.0", stderr: "" }),
+  });
   assert.equal(needsBeads.code, "needs-beads");
   assert.equal(needsBeads.canGenerate, true, "only a selected Git repository can offer Generate");
   assert.equal(needsBeads.project?.root, projectRoot, "the selected repository remains the command root");
@@ -54,6 +62,12 @@ try {
   assert.equal(unavailable.code, "beads-unavailable", "an unavailable bd CLI is not presented as a generatable workspace");
   assert.equal(unavailable.canGenerate, false);
   assert.match(unavailable.message, /Install or repair the bd CLI/);
+
+  const partial = await queueProjectReadiness({
+    beadsProbe: async () => ({ ok: false, status: 502, error: "workspace incomplete", stdout: "", stderr: "" }),
+  });
+  assert.equal(partial.code, "needs-beads", "a partial workspace remains repairable through Generate");
+  assert.equal(partial.canGenerate, true);
   await rm(path.join(projectRoot, ".beads"), { recursive: true, force: true });
   await mkdir(path.join(projectRoot, ".beads"));
   const ready = await queueProjectReadiness({
@@ -77,6 +91,29 @@ try {
   invalidateQueueProjectReadinessCache();
   await cachedQueueProjectReadiness({ beadsProbe: cachedProbe });
   assert.equal(probeCalls, 2, "selection or Generate invalidation refreshes readiness immediately");
+
+  let releaseOldProbe!: (result: { ok: true; stdout: string; stderr: string }) => void;
+  const oldProbe = new Promise<{ ok: true; stdout: string; stderr: string }>((resolve) => { releaseOldProbe = resolve; });
+  invalidateQueueProjectReadinessCache();
+  const staleA = cachedQueueProjectReadiness({ beadsProbe: async () => oldProbe });
+  await writeFile(
+    projectsPath,
+    JSON.stringify({
+      version: 1,
+      projects: [
+        { id: "queue-project", name: "Queue project", root: projectRoot, createdAt: "2026-07-23T00:00:00.000Z", updatedAt: "2026-07-23T00:00:00.000Z" },
+        { id: "invalid-project", name: "Invalid project", root: path.join(tempDir, "missing"), createdAt: "2026-07-23T00:00:00.000Z", updatedAt: "2026-07-23T00:00:00.000Z" },
+      ],
+    }),
+  );
+  await selectQueueProject("invalid-project");
+  releaseOldProbe({ ok: true, stdout: "[]", stderr: "" });
+  await staleA;
+  assert.equal(
+    (await cachedQueueProjectReadiness({ beadsProbe: async () => ({ ok: true, stdout: "[]", stderr: "" }) })).code,
+    "project-missing",
+    "a superseded readiness probe cannot repopulate the cache for a new selection",
+  );
 
   const nestedRoot = path.join(projectRoot, "nested");
   await mkdir(nestedRoot);
