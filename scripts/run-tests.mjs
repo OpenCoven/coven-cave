@@ -649,6 +649,7 @@ export const SUITES = {
     "src/components/chat-send-routes-links.test.ts",
     "src/components/chat-surface-polish.test.ts",
     "src/components/project-picker.test.ts",
+    "src/components/project-setup-modal.test.ts",
     "src/components/directory-picker.test.ts",
     "src/components/first-project-gate.test.ts",
     "src/components/chat-view.test.ts",
