@@ -60,7 +60,12 @@ export async function sidecarWhisperAvailable(fetchImpl: typeof fetch = fetch): 
  * on-device engine. */
 async function hasLocalDesktopSidecar(): Promise<boolean> {
   if (typeof window === "undefined") return false;
-  if (!(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__) return true;
+  if (!(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__) {
+    // A hosted Cave can proxy the same API shape, but posting microphone audio
+    // there is not local STT. Browser support is intentionally loopback-only.
+    const host = window.location.hostname;
+    return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+  }
   try {
     const { platform } = await import("@tauri-apps/plugin-os");
     const value = platform();

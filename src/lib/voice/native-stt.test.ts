@@ -339,7 +339,7 @@ test("engine selection: on-device wins, strict refuses dictation, fallback is la
 test("a ready sidecar Whisper model outranks the native bridge", async () => {
   const priorWindow = globalThis.window;
   const priorFetch = globalThis.fetch;
-  globalThis.window = {};
+  globalThis.window = { location: { hostname: "localhost" } };
   globalThis.fetch = async () => new Response(JSON.stringify({
     ok: true,
     runtimes: { whisper: { available: true } },

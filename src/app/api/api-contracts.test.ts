@@ -236,7 +236,7 @@ const contracts: RouteContract[] = [
   { route: "/voice/engines/downloads", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/voice/engines/downloads/[jobId]", methods: ["GET"], kind: "json" },
   { route: "/voice/engines/models", methods: ["DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/voice/engines/whisper", methods: ["POST"], kind: "json" },
+  { route: "/voice/engines/whisper", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/voice/local/chat", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/voice/preview", methods: ["GET"], kind: "stream" },
   { route: "/voice/session", methods: ["POST"], kind: "json", readsJson: true },

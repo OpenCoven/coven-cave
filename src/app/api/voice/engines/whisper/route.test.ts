@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { POST } from "./route.ts";
 
-function request(form: FormData) {
-  return new Request("http://localhost/api/voice/engines/whisper", {
+function request(form: FormData, host = "localhost") {
+  return new Request(`http://${host}/api/voice/engines/whisper`, {
     method: "POST",
-    headers: { host: "localhost" },
+    headers: { host },
     body: form,
   });
 }
@@ -27,4 +27,12 @@ test("Whisper endpoint requires a numbered PCM WAV utterance", async () => {
   const bad = await POST(request(wrongType));
   assert.equal(bad.status, 400);
   assert.equal((await bad.json()).error, "invalid_audio");
+});
+
+test("Whisper endpoint rejects remote and mobile-proxy origins before parsing audio", async () => {
+  const form = new FormData();
+  form.set("session", "1");
+  form.set("kind", "final");
+  form.set("audio", new Blob(["wav"], { type: "audio/wav" }), "utterance.wav");
+  assert.equal((await POST(request(form, "cave.example.com"))).status, 403);
 });
