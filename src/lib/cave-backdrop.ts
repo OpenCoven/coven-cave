@@ -27,7 +27,11 @@ import {
   createBackdropImageState,
   type BackdropMigrationResult,
 } from "@/lib/backdrop-image-state";
-import { MAX_FAMILIAR_BACKDROPS, type CaveMode } from "@/lib/preferences-schema";
+import {
+  MAX_FAMILIAR_BACKDROPS,
+  type CaveBackdropStyle,
+  type CaveMode,
+} from "@/lib/preferences-schema";
 import { activeCustomThemeVariables } from "@/lib/theme-runtime";
 
 const PREFS_KEY = "cave:backdrop:v1";
@@ -51,6 +55,8 @@ export type BackdropPrefs = {
    *  image is effectively monochrome. Lightness is re-fit against the live
    *  background at apply time, so one seed serves dark and light modes. */
   accentSeed: BackdropAccentSeed | null;
+  /** Which visual fills the layer: the stored image or the Blaze effect. */
+  style: CaveBackdropStyle;
   /** Explicit per-familiar enablement (cave-kf8p). Absent id ⇒ default rule:
    *  on iff that familiar has an uploaded backdrop image. */
   familiars: Record<string, boolean>;
@@ -61,6 +67,7 @@ const DEFAULT_PREFS: BackdropPrefs = {
   intensity: 50,
   matchAccent: true,
   accentSeed: null,
+  style: "image",
   familiars: {},
 };
 
@@ -81,6 +88,7 @@ export function readBackdropPrefs(): BackdropPrefs {
     intensity: clamp(central.intensity, 0, 100),
     matchAccent: central.matchAccent,
     accentSeed: central.accentSeed ? { ...central.accentSeed } : null,
+    style: central.style,
     familiars: { ...central.familiars },
   };
   return cachedPrefs;
