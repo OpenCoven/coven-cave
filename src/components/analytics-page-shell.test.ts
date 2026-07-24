@@ -54,5 +54,6 @@ assert.match(css, /\.aps-rail\s*\{/, "the rail has base styles");
 assert.doesNotMatch(css, /\.aps-rail[^{]*\{[^}]*display:\s*none/, "the rail is never display:none");
 assert.doesNotMatch(css, /@media[^{]*\{[^}]*\.aps-rail[^}]*display:\s*none/, "no media query hides the rail on small screens");
 assert.match(css, /@media \(max-width: 1023px\) \{[\s\S]*?\.aps-top\s*\{[\s\S]*?display:\s*none/, "mobile hides only the desktop title bar");
+assert.match(css, /\.aps-main > \.dr-page\s*\{[\s\S]*?min-height:\s*100%;[\s\S]*?height:\s*100%;/, "reporting pages stay within the pane below desktop chrome instead of adding a second page scrollbar");
 
 console.log("analytics-page-shell guard passed");
