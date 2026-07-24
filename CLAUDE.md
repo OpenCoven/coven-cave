@@ -1,7 +1,9 @@
 # Coven Cave — Claude Code project notes
 
 > **Primary agent guide: [`AGENTS.md`](AGENTS.md).** Start there for the branch/PR
-> workflow, worktree conventions, Beads protocol, and contributor attribution.
+> workflow, worktree conventions, Beads protocol, contributor attribution, and
+> the design-system contract for UI work (tokens, primitives, and the lint /
+> codemod / drift-ratchet gates that enforce it).
 > This file adds Claude-specific depth on branch protection and CI gotchas.
 
 ## Branch protection on `main` — all changes go through a PR
