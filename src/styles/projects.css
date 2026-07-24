@@ -17,8 +17,7 @@
 }
 
 .projects-access-inner {
-  max-width: 920px;
-  margin: 0 auto;
+  /* Full-width (2026-07-23): the access map spans the pane (was 920px). */
   padding: clamp(20px, 4vh, 44px) clamp(16px, 4vw, 40px) calc(var(--space-8) * 2);
   display: flex;
   flex-direction: column;
