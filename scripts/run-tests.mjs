@@ -651,8 +651,6 @@ export const SUITES = {
     "src/lib/task-asana.test.ts",
     "src/components/github-action-popover-chat-launch.test.ts",
     "src/components/github-card-wiring.test.ts",
-    "src/components/chat-stage-header-wiring.test.ts",
-    "src/components/workspace-rail-checks-badge.test.ts",
     "src/components/skill-stage-card-wiring.test.ts",
     "src/components/github-view-polish.test.ts",
     "src/components/github-advanced.test.ts",

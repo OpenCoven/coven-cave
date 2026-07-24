@@ -288,16 +288,13 @@ export function TaskWorkCockpit({
       && !railController.paneNarrow ? (
         <button
           type="button"
-          aria-label={railController.reopenChecksFailing ? "Show code rail — PR checks failing" : "Show code rail"}
-          title={railController.reopenChecksFailing ? "PR checks failing" : "Show code rail"}
+          aria-label="Show code rail"
+          title="Show code rail"
           className="workspace-rail-reopen focus-ring"
           onClick={railController.rail.reopen}
         >
           <Icon name="ph:sidebar-simple" width={15} aria-hidden />
           <span className="workspace-rail-reopen__label">Code</span>
-          {railController.reopenChecksFailing ? (
-            <span className="workspace-rail__badge workspace-rail__badge--alert" aria-hidden />
-          ) : null}
         </button>
       ) : null}
       <WorkspaceRailSheet controller={railController} familiar={familiar} sessionId={railSession?.id ?? null} />

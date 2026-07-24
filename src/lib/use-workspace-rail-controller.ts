@@ -5,7 +5,6 @@ import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { useCodeRail } from "@/lib/use-code-rail";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { useStageChecksBadge } from "@/lib/use-stage-checks-badge";
 import { useIsMobile } from "@/lib/use-viewport";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 
@@ -55,7 +54,6 @@ export function useWorkspaceRailController({
 
   const [browseRootOverride, setBrowseRootOverride] = useState<string | null>(null);
   const effectiveProjectRoot = browseRootOverride ?? projectRoot;
-  const reopenChecksFailing = useStageChecksBadge(projectRoot);
   const [changeCount, setChangeCount] = useState<number | null>(null);
   const changeCountRootRef = useRef<string | null>(null);
 
@@ -193,7 +191,6 @@ export function useWorkspaceRailController({
     changeCount,
     effectiveProjectRoot,
     focus,
-    reopenChecksFailing,
     isMobile,
     paneNarrow,
     showInline,
