@@ -102,8 +102,8 @@ const OPTS = { cwd: CWD, prompt: "ping", sinceMs: Date.parse("2026-07-12T07:53:0
   );
   assert.match(
     route,
-    /const turnSpawnStartMs = Date\.now\(\);\s*await runAttempt\(args\);/,
-    "turn window anchor is captured immediately before the first attempt",
+    /const turnSpawnStartMs = Date\.now\(\);[\s\S]{0,1000}?await runAttempt\(args\);/,
+    "turn window anchor is captured before any optional pre-launch compatibility notice and the first attempt",
   );
 }
 
