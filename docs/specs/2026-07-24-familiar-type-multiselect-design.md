@@ -18,8 +18,10 @@ picker is an artificial cap.
 
 The stored value stays a single string — `familiarType?: string` — now
 encoded as comma-separated type ids, e.g. `"coding,research"`. A single
-selection keeps its exact current encoding (`"coding"`), and General stays the
-empty string / absent field.
+selection keeps its exact current encoding (`"coding"`). An absent/empty
+field still means General; an *explicit* return to General stores the
+literal `"general"` sentinel (see UI section — an empty string would merely
+clear the override and let a daemon-provided base type resurface).
 
 Why: the field flows through five layers (`FamiliarOverride` →
 `ConfigPatch` (`string | null`) → cave-config → daemon → `Familiar` /
@@ -70,12 +72,19 @@ change** — it already spreads this list into the grant set.
   `--active` classes — no CSS changes.
 - Clicking a type chip **toggles** it in the selection. The stored value is
   the selected ids comma-joined in `FAMILIAR_TYPES` table order (stable,
-  canonical); an empty selection stores `""` (which
-  `configPatchForOverridePatch` already maps to a clearing `null`).
+  canonical); an empty selection stores the `"general"` sentinel.
 - **General chip = empty state**: `aria-checked` only when no types are
-  selected; clicking it clears the selection (`familiarType: ""`).
-  Deselecting the last type likewise returns to General. General and real
-  types are mutually exclusive by construction.
+  selected; clicking it stores `familiarType: "general"`. Deselecting the
+  last type likewise stores the sentinel. The sentinel — rather than `""` —
+  is required because `configPatchForOverridePatch` maps empty strings to a
+  clearing `null`, which only deletes the override and lets a
+  daemon-provided base type win again on resolve
+  (`ov.familiarType ?? base.familiarType`); the parser already treats
+  `"general"` as the empty selection. General and real types are mutually
+  exclusive by construction.
+- Every chip click announces the resulting selection via `useAnnouncer()`
+  ("Type set to General" / "Type set to <labels>"), since toggling a type
+  also flips `aria-checked` on the non-focused General chip.
 - **Hint text (stacked)**: with types selected, render one
   `<p className="familiar-studio-identity__hint">` per selected type, each
   showing that type's unlock description (table order). Empty selection
@@ -98,6 +107,7 @@ change** — it already spreads this list into the grant set.
 - `src/lib/role-surfaces.test.ts`: multi-type familiar gets both rooms'
   grant ids.
 - `src/components/familiar-studio-identity-tab.test.ts`: source pins for
-  `role="checkbox"` and `parseFamiliarTypeIds` usage.
+  `role="checkbox"`, `parseFamiliarTypeIds` usage, and the
+  `familiarType: "general"` sentinel store.
 
 All three run in the app suite (`node scripts/run-tests.mjs app`).
