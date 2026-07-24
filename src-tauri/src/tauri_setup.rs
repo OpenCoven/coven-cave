@@ -21,8 +21,31 @@ mod updater_argument_tests {
     use super::msi_verbose_log_installer_args;
     use std::{ffi::OsStr, path::Path};
 
+    const UPDATER_JOIN_CONTRACT_VERSION: &str = "2.10.1";
+
+    fn locked_updater_package_entry() -> &'static str {
+        let mut entries = include_str!("../Cargo.lock")
+            .split("[[package]]")
+            .filter(|entry| entry.contains("name = \"tauri-plugin-updater\""));
+        let entry = entries
+            .next()
+            .expect("Cargo.lock must contain tauri-plugin-updater");
+        assert!(
+            entries.next().is_none(),
+            "the updater join-contract test must be revisited when multiple updater versions are locked"
+        );
+        entry
+    }
+
     #[test]
     fn msi_verbose_log_path_is_quoted_once_in_shell_execute_parameters() {
+        assert!(
+            locked_updater_package_entry().contains(&format!(
+                "version = \"{UPDATER_JOIN_CONTRACT_VERSION}\""
+            )),
+            "tauri-plugin-updater changed; revalidate its MSI ShellExecuteW argument construction before updating this contract"
+        );
+
         let log_path = Path::new(
             r"C:\Users\A Coven\AppData\Local\Coven Cave\logs\msi-upgrade-from-0.1.6-123.log",
         );
@@ -37,8 +60,8 @@ mod updater_argument_tests {
         );
 
         // This mirrors tauri-plugin-updater 2.10.1's `ShellExecuteW`
-        // parameter construction. A second pair of quotes would be passed
-        // literally to msiexec; no quotes would split this spaced path.
+        // parameter construction. No quotes would split this spaced path, and
+        // a second pair would end quote mode and split it as well.
         let parameters = installer_args.join(OsStr::new(" "));
         assert_eq!(
             parameters,
