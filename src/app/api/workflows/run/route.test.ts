@@ -53,5 +53,14 @@ assert.match(
   /binding\.harness === "copilot" \? \{\} : \{ launchMode: "nonInteractive" \}/,
   "non-copilot workflow sessions launch non-interactively (no immortal TUI)",
 );
+// cave-aikv follow-up: a local copilot workflow spawns the CLI directly (its
+// daemon launch is either an immortal TUI or a mangled prompt), whose transcript
+// persists as the Cave conversation the run's chat surface opens — mirroring
+// flows. SSH/hub copilot stays on the daemon.
+assert.match(
+  source,
+  /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]{0,160}startCopilotFlowRun\(/,
+  "a local copilot workflow spawns the CLI directly instead of an orphaned daemon TUI",
+);
 
 console.log("workflow run route.test.ts: ok");
