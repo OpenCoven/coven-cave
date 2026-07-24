@@ -73,19 +73,19 @@ test("filled action buttons pair the fill with its semantic foreground", async (
 
 test("priority pills darken their text in light mode (WCAG contrast)", async () => {
   const board = await readFile(new URL("../styles/board.css", import.meta.url), "utf8");
-  // The pill text is lightened toward #fff for dark mode; light mode needs the
-  // opposite (mix toward #000) or it fails AA on the faint tint (~2:1).
+  // The pill text is lightened toward white for dark mode; light mode needs the
+  // opposite (mix toward black) or it fails AA on the faint tint (~2:1).
   for (const variant of ["urgent", "high", "medium"]) {
     assert.match(
       board,
-      new RegExp(`\\[data-mode="light"\\] \\.board-kanban-priority-pill--${variant}\\s*\\{[^}]*color:color-mix\\(in oklch,var\\(--[a-z-]+\\) 76%,#000\\)`),
+      new RegExp(`\\[data-mode="light"\\] \\.board-kanban-priority-pill--${variant}\\s*\\{[^}]*color:color-mix\\(in oklch,var\\(--[a-z-]+\\) 76%,black\\)`),
       `kanban ${variant} pill must darken text in light mode`,
     );
   }
   for (const variant of ["urgent", "high"]) {
     assert.match(
       board,
-      new RegExp(`\\[data-mode="light"\\] \\.board-card-stack__priority-pill--${variant}\\s*\\{[^}]*#000`),
+      new RegExp(`\\[data-mode="light"\\] \\.board-card-stack__priority-pill--${variant}\\s*\\{[^}]*black`),
       `card-stack ${variant} pill must darken text in light mode`,
     );
   }
