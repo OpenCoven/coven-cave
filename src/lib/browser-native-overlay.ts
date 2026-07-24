@@ -13,6 +13,35 @@ type BrowserReconcileMetrics = {
   startedAt: number;
 };
 
+export type NativeBrowserBounds = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+/**
+ * Translate CSS-pixel DOM geometry into the physical coordinate space used by
+ * Tauri child WebViews. A child WebView is a sibling native surface, so it
+ * does not inherit the main renderer's CSS pixel conversion on Windows or
+ * Linux HiDPI displays.
+ */
+export function nativeBrowserBounds(
+  rect: Pick<DOMRect, "left" | "top" | "width" | "height">,
+  offscreen = false,
+  devicePixelRatio = window.devicePixelRatio,
+): NativeBrowserBounds {
+  const scale = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0
+    ? devicePixelRatio
+    : 1;
+  return {
+    x: offscreen ? WEBVIEW_OFFSCREEN : Math.round(rect.left * scale),
+    y: offscreen ? WEBVIEW_OFFSCREEN : Math.round(rect.top * scale),
+    w: Math.round(rect.width * scale),
+    h: Math.round(rect.height * scale),
+  };
+}
+
 /** Native webviews paint above DOM: yield whenever a dialog or real overlay covers the target. */
 export function surfaceIsCovered(surface: HTMLElement, rect: DOMRect, documentRef: Document = document): boolean {
   const overlays = documentRef.querySelectorAll(NATIVE_WEBVIEW_COVER_SELECTOR);

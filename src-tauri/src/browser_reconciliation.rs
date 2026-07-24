@@ -62,12 +62,9 @@ fn ensure_browser(
     let main = app
         .get_window("main")
         .ok_or_else(|| "main window missing".to_string())?;
-    let scale = main.scale_factor().map_err(|e| e.to_string())?;
-    let client = main
-        .inner_size()
-        .map_err(|e| e.to_string())?
-        .to_logical::<f64>(scale);
-    let (w, h) = offscreen_browser_creation_bounds(client.width, client.height, w, h)?;
+    let client = main.inner_size().map_err(|e| e.to_string())?;
+    let (w, h) =
+        offscreen_browser_creation_bounds(f64::from(client.width), f64::from(client.height), w, h)?;
 
     let parsed_url = Url::parse(url).map_err(|e| e.to_string())?;
     let read_only_target = read_only_url.and_then(|raw| Url::parse(raw).ok());
@@ -296,8 +293,8 @@ fn ensure_browser(
 
     main.add_child(
         builder,
-        LogicalPosition::new(OFFSCREEN_X, OFFSCREEN_Y),
-        LogicalSize::new(w, h),
+        PhysicalPosition::new(OFFSCREEN_X, OFFSCREEN_Y),
+        PhysicalSize::new(w, h),
     )
     .map_err(|e| e.to_string())?;
 
