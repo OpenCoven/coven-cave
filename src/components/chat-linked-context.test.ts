@@ -140,7 +140,7 @@ assert.match(
 // stranded the user on the chat list instead of the task's board inspector.
 assert.match(
   workspace,
-  /modeRef\.current === "chat" && !window\.location\.hash\) showFamiliarChatList\(\)/,
+  /modeRef\.current === "chat" && !window\.location\.hash\) \{\s*showFamiliarChatList\(\)/,
   "Workspace popstate must only show the chat list on an empty hash, so the task chip's #card- navigation isn't hijacked back to the list",
 );
 
