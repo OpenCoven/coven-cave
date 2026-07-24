@@ -28,6 +28,7 @@
 // ignores. The final `result` frame is top-level (no `data` envelope).
 
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+import type { RuntimeToolAdapter, ToolAction } from "./runtime-tool-adapter.ts";
 
 export type CopilotStreamSpec = {
   executable: string;
@@ -340,6 +341,37 @@ export function parseCopilotChatEvent(raw: unknown): CopilotChatEvent | null {
       return null;
   }
 }
+
+/**
+ * Map a parsed copilot chat event to neutral tool actions (runtime adapter
+ * seam). Copilot announces calls via `message.toolRequests[]` and/or
+ * `tool_start`, and settles them via `tool_end`. The tracker links a later
+ * `tool_start` onto the same id an earlier `toolRequests[]` opened, so emitting
+ * both is safe — the second is deduped. Non-tool events return [].
+ */
+export function copilotToolActions(ev: CopilotChatEvent): ToolAction[] {
+  switch (ev.kind) {
+    case "message":
+      return ev.toolRequests.map((req) => ({
+        op: "use" as const,
+        id: req.toolCallId,
+        name: req.name,
+        input: req.input,
+      }));
+    case "tool_start":
+      return [{ op: "use", id: ev.toolCallId, name: ev.toolName, input: ev.input }];
+    case "tool_end":
+      return [{ op: "result", id: ev.toolCallId, output: ev.output, isError: ev.isError }];
+    default:
+      return [];
+  }
+}
+
+/** Runtime tool adapter for the copilot JSONL stream. */
+export const copilotToolAdapter: RuntimeToolAdapter<CopilotChatEvent> = {
+  id: "copilot",
+  toolActions: copilotToolActions,
+};
 
 /**
  * Assembles assistant text from copilot's dual sources without duplication:
