@@ -155,6 +155,12 @@ export function MarketplaceViewSurface({
   // catalog's install state is separate from the plugin `busyIds` set.
   const [skillInstalled, setSkillInstalled] = useState<Record<string, boolean>>({});
   const [skillBusyIds, setSkillBusyIds] = useState<ReadonlySet<string>>(new Set());
+  // Synchronous in-flight guard for skill install/remove. `skillBusyIds` drives
+  // the button's disabled state, but that only applies after a re-render — a
+  // fast double-click can fire two toggles in the same frame, reading a stale
+  // `installedNow` and dispatching two conflicting requests. A ref updates
+  // immediately, so it closes that window before the state ever lands.
+  const skillInFlight = useRef<Set<string>>(new Set());
   // Each loader keeps its in-flight controller so a newer load (or unmount)
   // aborts the previous one — a slow response can't land after a fresher one
   // and clobber the list (the useProjects hygiene pattern). A superseded load
@@ -630,6 +636,8 @@ export function MarketplaceViewSurface({
   // Install / remove a registry skill from an Explore card or the drawer.
   // Optimistic, with revert on failure — mirrors the plugin add/remove flow.
   const toggleSkill = useCallback(async (s: SkillBrowserEntry) => {
+    if (skillInFlight.current.has(s.id)) return;
+    skillInFlight.current.add(s.id);
     const installedNow = skillInstalled[s.id] ?? Boolean(s.installed ?? s.local?.installed);
     setSkillBusyIds((prev) => new Set(prev).add(s.id));
     setSkillInstalled((prev) => ({ ...prev, [s.id]: !installedNow }));
@@ -654,6 +662,7 @@ export function MarketplaceViewSurface({
       setSkillInstalled((prev) => ({ ...prev, [s.id]: installedNow }));
       announce(err instanceof Error ? err.message : "action failed", "assertive");
     } finally {
+      skillInFlight.current.delete(s.id);
       setSkillBusyIds((prev) => {
         const next = new Set(prev);
         next.delete(s.id);
