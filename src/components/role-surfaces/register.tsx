@@ -205,6 +205,10 @@ registerRoleSurface({
 registerRoleSurface({
   id: SENTINEL_SURFACE_ID,
   role: "sentinel",
+  // "watch" was a familiar Type until the vocabulary reduction (cave-lgcb);
+  // these aliases keep the Watchtower reachable from Role labels like
+  // "guardian-watch" now that the type no longer grants it.
+  aliases: ["watch", "guardian"],
   title: "Watchtower",
   iconName: "ph:binoculars",
   description: "Alerts, session watch, and perimeter reachability",
@@ -267,7 +271,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: SCRIBE_SURFACE_ID,
   role: "scribe",
-  aliases: ["editor", "writer"],
+  aliases: ["editor", "writer", "writing"],
   title: "Writing Desk",
   iconName: "ph:feather",
   description: "Drafts, source material, and publishing into the Knowledge Vault",
@@ -323,7 +327,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: NAVIGATOR_SURFACE_ID,
   role: "navigator",
-  aliases: ["planner"],
+  aliases: ["planner", "planning"],
   title: "Chart Room",
   iconName: "ph:compass",
   description: "Course lanes, scheduled legs, and real board moves",
@@ -449,7 +453,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: INDEXER_SURFACE_ID,
   role: "indexer",
-  aliases: ["archivist"],
+  aliases: ["archivist", "indexing"],
   title: "The Archive",
   iconName: "ph:tree-structure",
   description: "Long-term knowledge, memory, indexes, and provenance",
