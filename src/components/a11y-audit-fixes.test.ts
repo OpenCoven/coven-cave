@@ -44,17 +44,20 @@ test("nav count badge uses a solid accent fill (WCAG contrast)", async () => {
   );
 });
 
-test("accent-filled buttons pair the accent with its semantic foreground", async () => {
-  // White / --text-primary on --accent-presence failed AA (~2.8:1 dark). The
-  // accent's paired --accent-presence-foreground adapts per mode, so route to it.
+test("filled action buttons pair the fill with its semantic foreground", async () => {
+  // White / --text-primary on --accent-presence failed AA (~2.8:1 dark), so
+  // filled buttons must route to the fill's paired foreground token, which
+  // adapts per mode. The Tasks redesign makes New task a --primary CTA (Coven
+  // design language: accent is presence, not the CTA colour) — --primary-
+  // foreground is its designed contrast pair, so the AA guarantee is preserved.
   const board = await readFile(new URL("../styles/board.css", import.meta.url), "utf8");
   assert.match(
     board,
-    /\.board-new-card-btn\s*\{[^}]*background:var\(--accent-presence\)[^}]*color:var\(--accent-presence-foreground\)/,
+    /\.board-new-card-btn\s*\{[^}]*background:var\(--primary\)[^}]*color:var\(--primary-foreground\)/,
   );
   assert.doesNotMatch(
     board,
-    /\.board-new-card-btn\s*\{[^}]*background:var\(--accent-presence\)[^}]*color:var\(--text-primary\)/,
+    /\.board-new-card-btn\s*\{[^}]*color:var\(--text-primary\)/,
   );
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   // Both salem accent action states use the paired foreground, not hardcoded #fff.
