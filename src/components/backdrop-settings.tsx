@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Segmented } from "@/components/ui/settings-controls";
+import { readAppPreferences } from "@/lib/app-preferences";
 import {
   prepareBackdropImage,
   readBackdropImage,
@@ -97,15 +98,22 @@ export function BackdropSettings() {
   }
 
   function setStyle(style: CaveBackdropStyle) {
-    if (style === prefs.style) return;
     if (style === "blaze") {
+      // No early return on prefs.style: re-clicking the active segment
+      // re-asserts enablement, healing a stomped enabled:false (e.g. a
+      // clear-in-flight that finished after a switch to Blaze).
+      if (prefs.style === "blaze" && prefs.enabled) return;
       writeBackdropPrefs({ style, enabled: true });
       announce("Backdrop set to Blaze — embers and smoke follow your theme accent.");
       return;
     }
-    writeBackdropPrefs({ style, enabled: previewUrl !== null });
+    // Store truth, not the async-hydrating thumbnail: previewUrl can lag the
+    // stored image (cold cache) and would wrongly disable a present backdrop.
+    const imagePresent = readAppPreferences().appearance.backdrop.image.present;
+    if (prefs.style === "image" && prefs.enabled === imagePresent) return;
+    writeBackdropPrefs({ style, enabled: imagePresent });
     announce(
-      previewUrl
+      imagePresent
         ? "Backdrop set to your image."
         : "Backdrop style set to Image — choose an image to turn it on.",
     );
@@ -158,7 +166,7 @@ export function BackdropSettings() {
             }}
           />
           <p className="min-w-0 flex-1 text-[length:var(--text-xs)] leading-relaxed text-[var(--text-muted)]">
-            The accent tints to the image's dominant color, kept readable against your theme.
+            The accent tints to the image’s dominant color, kept readable against your theme.
           </p>
           <div className="flex items-center gap-2">
             {previewUrl ? (

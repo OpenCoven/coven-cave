@@ -126,7 +126,17 @@ assert.match(
 );
 assert.match(
   settings,
-  /writeBackdropPrefs\(\{ style, enabled: previewUrl !== null \}\);/,
+  /if \(prefs\.style === "blaze" && prefs\.enabled\) return;/,
+  "re-clicking Blaze re-asserts enablement (heals a stomped enabled:false, e.g. a clear that raced the switch)",
+);
+assert.match(
+  settings,
+  /const imagePresent = readAppPreferences\(\)\.appearance\.backdrop\.image\.present;/,
+  "image-style enablement reads the store's synchronous truth, not the async-hydrating thumbnail",
+);
+assert.match(
+  settings,
+  /writeBackdropPrefs\(\{ style, enabled: imagePresent \}\);/,
   "switching to Image stays on only when a stored image exists",
 );
 assert.match(
