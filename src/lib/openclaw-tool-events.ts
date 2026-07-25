@@ -14,7 +14,10 @@ import { writeFileAtomic } from "./server/atomic-write.ts";
 export const OPENCLAW_TOOL_PROTOCOL_ADAPTERS = [
   {
     protocol: 4,
-    requiredMethods: ["sessions.subscribe", "sessions.messages.subscribe"],
+    // `sessions.messages.subscribe` is the scoped Gateway API. Do not require
+    // the older broad `sessions.subscribe` surface: it is neither needed to
+    // observe this turn nor present in every otherwise-compatible Gateway.
+    requiredMethods: ["sessions.messages.subscribe"],
     requiredEvents: ["session.tool"],
     // `features.capabilities` is a Gateway server-capability list; tool-events
     // is instead a client capability negotiated in connect.params.caps.
@@ -502,8 +505,6 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
   let disconnected = false;
   let connectRequested = false;
   let handshakeAccepted = false;
-  let sessionEventsSubscriptionRequested = false;
-  let sessionEventsSubscriptionId = "";
   let messageSubscriptionRequested = false;
   let messageSubscriptionId = "";
   let maxInboundFrameBytes = MAX_PREAUTH_FRAME_BYTES;
@@ -668,32 +669,6 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
             observedAt,
             expiresAt: observedAt + CACHE_TTL_MS,
           }).catch(() => undefined);
-        }
-        sessionEventsSubscriptionId = "cave-openclaw-session-events-subscribe";
-        sessionEventsSubscriptionRequested = true;
-        const subscriptionRequest = JSON.stringify({
-          type: "req",
-          id: sessionEventsSubscriptionId,
-          method: "sessions.subscribe",
-          params: {},
-        });
-        if (
-          Buffer.byteLength(subscriptionRequest, "utf8") > maxInboundFrameBytes ||
-          socket.bufferedAmount + Buffer.byteLength(subscriptionRequest, "utf8") > maxBufferedBytes
-        ) {
-          close();
-          finish(fallback("gateway_policy_exceeded", compatibility));
-          return;
-        }
-        socket.send(subscriptionRequest);
-        return;
-      }
-      if (frame.type === "res" && frame.id === sessionEventsSubscriptionId) {
-        if (closed || !sessionEventsSubscriptionRequested || !sessionEventsSubscriptionId || messageSubscriptionRequested) return;
-        if (frame.ok !== true) {
-          close();
-          finish(fallback("gateway_session_events_subscription_rejected"));
-          return;
         }
         messageSubscriptionId = "cave-openclaw-session-messages-subscribe";
         messageSubscriptionRequested = true;

@@ -588,6 +588,10 @@ function openClawChatResponse(args: {
       // unavailable Gateway. A late subscription is closed below if the CLI
       // already reached a terminal lifecycle state.
       let cliLifecycleFinished = false;
+      // Node can emit both `error` and `close` for a failed spawn. Only the
+      // first terminal notification may save/close this turn; a second pass
+      // would duplicate transcript writes and terminal SSE events.
+      let cliTerminalHandled = false;
       // Stop accepting events as soon as this turn has been terminated. The
       // Gateway can race the CLI's SIGTERM/close lifecycle, so waiting for the
       // child exit here could attach late tool frames to a cancelled turn.
@@ -737,6 +741,8 @@ function openClawChatResponse(args: {
         stderr += stripAnsi(data.toString("utf8"));
       });
       child.on("error", (err: NodeJS.ErrnoException) => {
+        if (cliTerminalHandled) return;
+        cliTerminalHandled = true;
         cliLifecycleFinished = true;
         gatewayToolSubscription?.close();
         // A spawn failure can race a previously observed Gateway start frame.
@@ -762,6 +768,8 @@ function openClawChatResponse(args: {
         close();
       });
       child.on("close", async (code) => {
+        if (cliTerminalHandled) return;
+        cliTerminalHandled = true;
         cliLifecycleFinished = true;
         gatewayToolSubscription?.close();
         args.req.signal.removeEventListener("abort", onAbort);
