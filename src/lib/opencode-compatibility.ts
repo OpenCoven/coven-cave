@@ -62,6 +62,12 @@ export type OpenCodeEventSchema = {
     toolEnvelope?: OpenCodeEnvelopePath[];
     /** Envelope(s) that carry the stable tool-call id; defaults to payload/root. */
     idEnvelope?: OpenCodeEnvelopePath[];
+    /** Declares the payload's own kind discriminator before it may render. */
+    payloadKind: {
+      field: string;
+      text: string[];
+      tool: string[];
+    };
     sessionId: string[];
     id: string[];
     name: string[];
@@ -216,6 +222,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
         discriminator: { envelope: "root", field: "type" },
         textEnvelope: ["part", "data"],
         toolEnvelope: ["part"],
+        payloadKind: { field: "type", text: ["text"], tool: ["tool"] },
         sessionId: ["sessionID", "sessionId", "session_id"],
         id: ["id", "callID", "callId", "toolCallId", "tool_call_id"],
         name: ["tool", "name"], text: ["text", "content"], state: ["state"], input: ["input"], output: ["output"], error: ["error"], status: ["status"],
@@ -247,6 +254,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
         discriminator: { envelope: "root", field: "type" },
         textEnvelope: ["part", "data"],
         toolEnvelope: ["data", "root"],
+        payloadKind: { field: "type", text: ["text"], tool: ["tool"] },
         sessionId: ["sessionID", "sessionId", "session_id"],
         id: ["id", "callID", "callId", "toolCallId", "tool_call_id"],
         name: ["tool", "name"], text: ["text", "content"], state: ["state"], input: ["input"], output: ["output"], error: ["error"], status: ["status"],
@@ -284,7 +292,7 @@ function hasValidShape(value: unknown): boolean {
     && fields.length > 0
     && fields.length <= 4
     && fields.every(hasValidEnvelopePath);
-  if (!Object.keys(value).every((key) => key === "envelope" || key === "textEnvelope" || key === "toolEnvelope" || key === "idEnvelope" || key === "discriminator" || aliasKeys.includes(key))) return false;
+  if (!Object.keys(value).every((key) => key === "envelope" || key === "textEnvelope" || key === "toolEnvelope" || key === "idEnvelope" || key === "payloadKind" || key === "discriminator" || aliasKeys.includes(key))) return false;
   if (!envelopeFields(value.envelope)
     || (value.textEnvelope !== undefined && !envelopeFields(value.textEnvelope))
     || (value.toolEnvelope !== undefined && !envelopeFields(value.toolEnvelope))
@@ -294,6 +302,15 @@ function hasValidShape(value: unknown): boolean {
     || !hasValidEnvelopePath(value.discriminator.envelope)
     || typeof value.discriminator.field !== "string"
     || !/^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(value.discriminator.field)) return false;
+  if (!isRecord(value.payloadKind)) return false;
+  const payloadKind = value.payloadKind;
+  if (!Object.keys(payloadKind).every((key) => key === "field" || key === "text" || key === "tool")
+    || typeof payloadKind.field !== "string"
+    || !/^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(payloadKind.field)) return false;
+  const textKinds = payloadKind.text;
+  const toolKinds = payloadKind.tool;
+  if (!hasBoundedAliases(textKinds) || !hasBoundedAliases(toolKinds)) return false;
+  if (textKinds.some((kind) => toolKinds.includes(kind))) return false;
   return aliasKeys.every((key) => hasBoundedAliases(value[key]));
 }
 

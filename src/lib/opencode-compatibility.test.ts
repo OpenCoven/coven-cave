@@ -363,6 +363,20 @@ assert.equal(
     ...unsigned,
     schemas: [{
       ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+      shape: {
+        ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].shape,
+        payloadKind: { field: "type", text: ["text"], tool: ["text"] },
+      },
+    }],
+  }, now),
+  false,
+  "a signed schema must distinguish text and tool payload kinds before rendering either",
+);
+assert.equal(
+  isOpenCodeSchemaBundle({
+    ...unsigned,
+    schemas: [{
+      ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
       id: "nested-discriminator",
       shape: {
         ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].shape,

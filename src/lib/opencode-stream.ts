@@ -33,7 +33,7 @@ function stringAt(recordValue: Record<string, unknown> | null, ...keys: string[]
   return undefined;
 }
 
-type ShapeAlias = Exclude<keyof NonNullable<OpenCodeEventSchema["shape"]>, "envelope" | "textEnvelope" | "toolEnvelope" | "idEnvelope" | "discriminator">;
+type ShapeAlias = Exclude<keyof NonNullable<OpenCodeEventSchema["shape"]>, "envelope" | "textEnvelope" | "toolEnvelope" | "idEnvelope" | "payloadKind" | "discriminator">;
 
 function shapeAliases(schema: OpenCodeEventSchema | undefined, key: ShapeAlias, defaults: string[]): string[] {
   const aliases = schema?.shape?.[key];
@@ -76,6 +76,20 @@ function eventTypes(schema: OpenCodeEventSchema | undefined, kind: keyof OpenCod
   // registry deliberately retired. Defaults are only for legacy callers with
   // no schema.
   return schema?.eventTypes[kind] ?? defaults;
+}
+
+function hasExpectedPayloadKind(
+  payload: Record<string, unknown> | null,
+  schema: OpenCodeEventSchema | undefined,
+  expected: "text" | "tool",
+): boolean {
+  // No schema means the legacy helper is used by a caller that has not opted
+  // into structured compatibility. Every selected profile must declare a
+  // payload discriminator, so a familiar root event label alone can never
+  // promote an evolved tool/unknown payload into rendered chat content.
+  if (!schema) return true;
+  const payloadKind = schema.shape.payloadKind;
+  return payloadKind[expected].includes(stringAt(payload, payloadKind.field) ?? "");
 }
 
 function toolId(event: Record<string, unknown>, part: Record<string, unknown> | null, schema?: OpenCodeEventSchema): string | null {
@@ -144,7 +158,7 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   // which event labels are trusted; this only reads either observed shape.
   const textAliases = shapeAliases(schema, "text", ["text", "content"]);
   const text = stringAt(textEnvelope(event, schema), ...textAliases);
-  if (eventTypes(schema, "text", ["text"]).includes(eventType) && text !== undefined) {
+  if (eventTypes(schema, "text", ["text"]).includes(eventType) && text !== undefined && hasExpectedPayloadKind(textEnvelope(event, schema), schema, "text")) {
     return { kind: "text", sessionId, text };
   }
   // Tool payloads are stricter than errors/session metadata: v1 only trusts
@@ -158,19 +172,19 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   const toolProgressTypes = eventTypes(schema, "toolProgress", []);
   const toolEndTypes = eventTypes(schema, "toolEnd", ["tool_result"]);
   const toolCompleteTypes = eventTypes(schema, "toolComplete", ["tool_use"]);
-  if (toolStartTypes.includes(eventType) && id && toolPart && !terminalToolState(state, toolPart, schema)) {
+  if (toolStartTypes.includes(eventType) && id && toolPart && hasExpectedPayloadKind(toolPart, schema, "tool") && !terminalToolState(state, toolPart, schema)) {
     return { kind: "tool_start", sessionId, id, name: stringAt(toolPart, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(toolPart, shapeAliases(schema, "input", ["input"])) ?? {} };
   }
-  if (toolProgressTypes.includes(eventType) && id && toolPart && !terminalToolState(state, toolPart, schema)) {
+  if (toolProgressTypes.includes(eventType) && id && toolPart && hasExpectedPayloadKind(toolPart, schema, "tool") && !terminalToolState(state, toolPart, schema)) {
     const output = shapeAliases(schema, "output", ["output"]);
     return { kind: "tool_progress", sessionId, id, output: valueAt(state, output) ?? valueAt(toolPart, output) ?? "" };
   }
-  if (toolEndTypes.includes(eventType) && id && toolPart) {
+  if (toolEndTypes.includes(eventType) && id && toolPart && hasExpectedPayloadKind(toolPart, schema, "tool")) {
     const output = shapeAliases(schema, "output", ["output"]);
     const error = shapeAliases(schema, "error", ["error"]);
     return { kind: "tool_end", sessionId, id, output: valueAt(state, output) ?? valueAt(state, error) ?? valueAt(toolPart, output) ?? valueAt(toolPart, error) ?? "", isError: toolStateIsError(state, toolPart, schema) };
   }
-  if (toolCompleteTypes.includes(eventType) && id && toolPart) {
+  if (toolCompleteTypes.includes(eventType) && id && toolPart && hasExpectedPayloadKind(toolPart, schema, "tool")) {
     // Legacy `tool_use` frames were terminal snapshots and some omit a
     // status entirely. Their output/error is the durable terminal signal.
     const output = shapeAliases(schema, "output", ["output"]);

@@ -13,12 +13,12 @@ assert.deepEqual(
   const toolIds: string[] = [];
   const diagnostics: string[] = [];
   handleOpenCodeJsonLine(
-    JSON.stringify({ type: "text", sessionID: "ses_live", part: { text: "live reply" } }),
+    JSON.stringify({ type: "text", sessionID: "ses_live", part: { type: "text", text: "live reply" } }),
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
     { onSession: (id) => sessions.push(id), onText: (event) => text.push(event.text), onTool: (event) => toolIds.push(event.id), onOther: (event) => diagnostics.push(event.diagnostic ?? "other") },
   );
   handleOpenCodeJsonLine(
-    JSON.stringify({ type: "tool_use", sessionID: "ses_live", part: { id: "tool_live", tool: "Read", state: { output: "ok" } } }),
+    JSON.stringify({ type: "tool_use", sessionID: "ses_live", part: { type: "tool", id: "tool_live", tool: "Read", state: { output: "ok" } } }),
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
     { onSession: (id) => sessions.push(id), onText: (event) => text.push(event.text), onTool: (event) => toolIds.push(event.id), onOther: (event) => diagnostics.push(event.diagnostic ?? "other") },
   );
@@ -39,6 +39,14 @@ assert.deepEqual(
   ),
   { kind: "other", sessionId: "ses_123", diagnostic: "malformed-event" },
   "a text label cannot promote root payload fields unless its signed profile explicitly authorizes a root text envelope",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "text", sessionID: "ses_123", part: { type: "tool", text: "provider-controlled tool output", id: "prt_hostile" } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "other", sessionId: "ses_123", diagnostic: "malformed-event" },
+  "a known root text label cannot render a payload whose signed kind is tool",
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
@@ -66,7 +74,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
-    { session: "ses_mapped", payload: { event: "reply", body: "A registry-mapped reply" } },
+    { session: "ses_mapped", payload: { event: "reply", type: "text", body: "A registry-mapped reply" } },
     {
       ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
       id: "mapped-envelope",
@@ -95,6 +103,14 @@ assert.deepEqual(
   ),
   { kind: "other", sessionId: "ses_123", diagnostic: "malformed-event" },
   "the current v1 profile requires the documented part envelope for tool activity",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool_use", sessionID: "ses_123", part: { type: "text", id: "prt_hostile", tool: "bash", state: { output: "provider-controlled output" } } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "other", sessionId: "ses_123", diagnostic: "malformed-event" },
+  "a known root tool label cannot render a payload whose signed kind is text",
 );
 assert.deepEqual(
   parseOpenCodeRunEvent({ type: "text" }),
@@ -136,7 +152,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
-    { type: "tool_use", sessionID: "ses_123", part: { id: "prt_failed", tool: "bash", state: { input: { command: "false" }, error: "permission denied", status: "error" } } },
+    { type: "tool_use", sessionID: "ses_123", part: { type: "tool", id: "prt_failed", tool: "bash", state: { input: { command: "false" }, error: "permission denied", status: "error" } } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),
   { kind: "tool", sessionId: "ses_123", id: "prt_failed", name: "bash", input: { command: "false" }, output: "permission denied", isError: true },
@@ -164,7 +180,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
-    { type: "assistant_text", session_id: "ses_legacy", data: { content: "Older client reply" } },
+    { type: "assistant_text", session_id: "ses_legacy", data: { type: "text", content: "Older client reply" } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[1],
   ),
   { kind: "text", sessionId: "ses_legacy", text: "Older client reply" },
@@ -172,7 +188,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
-    { type: "tool_call", sessionId: "ses_legacy", data: { toolCallId: "legacy_1", name: "Read", input: { path: "README.md" }, state: { status: "running" } } },
+    { type: "tool_call", sessionId: "ses_legacy", data: { type: "tool", toolCallId: "legacy_1", name: "Read", input: { path: "README.md" }, state: { status: "running" } } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[1],
   ),
   { kind: "tool_start", sessionId: "ses_legacy", id: "legacy_1", name: "Read", input: { path: "README.md" } },
@@ -188,7 +204,7 @@ const progressSchema = {
 };
 assert.deepEqual(
   parseOpenCodeRunEvent(
-    { type: "tool_progress", sessionId: "ses_progress", data: { toolCallId: "progress_1", state: { output: "read 50%" } } },
+    { type: "tool_progress", sessionId: "ses_progress", data: { type: "tool", toolCallId: "progress_1", state: { output: "read 50%" } } },
     progressSchema,
   ),
   { kind: "tool_progress", sessionId: "ses_progress", id: "progress_1", output: "read 50%" },
@@ -197,7 +213,7 @@ assert.deepEqual(
 {
   const progress: string[] = [];
   handleOpenCodeJsonLine(
-    JSON.stringify({ type: "tool_progress", data: { toolCallId: "progress_dispatch", state: { output: "working" } } }),
+    JSON.stringify({ type: "tool_progress", data: { type: "tool", toolCallId: "progress_dispatch", state: { output: "working" } } }),
     progressSchema,
     { onToolProgress: (event) => progress.push(`${event.id}:${String(event.output)}`) },
   );
@@ -213,6 +229,7 @@ const shapedSchema = {
   shape: {
     envelope: [["event", "payload"]],
     discriminator: { envelope: ["event", "payload"], field: "event" },
+    payloadKind: { field: "kind", text: ["text"], tool: ["tool"] },
     sessionId: ["session"],
     id: ["call_id"],
     name: ["tool_name"],
@@ -227,7 +244,7 @@ const shapedSchema = {
 };
 assert.deepEqual(
   parseOpenCodeRunEvent(
-    { event: { payload: { event: "tool", session: "ses_v2", call_id: "call_v2", tool_name: "Read", phase: { state: "done", arguments: { path: "README.md" }, result: "ok" } } } },
+    { event: { payload: { event: "tool", kind: "tool", session: "ses_v2", call_id: "call_v2", tool_name: "Read", phase: { state: "done", arguments: { path: "README.md" }, result: "ok" } } } },
     shapedSchema,
   ),
   { kind: "tool", sessionId: "ses_v2", id: "call_v2", name: "Read", input: { path: "README.md" }, output: "ok", isError: false },
@@ -248,7 +265,7 @@ const rootIdSchema = {
 };
 assert.deepEqual(
   parseOpenCodeRunEvent(
-    { type: "tool", callID: "root_call_1", part: { tool: "Read", state: { input: { path: "README.md" }, output: "ok", status: "completed" } } },
+    { type: "tool", callID: "root_call_1", part: { type: "tool", tool: "Read", state: { input: { path: "README.md" }, output: "ok", status: "completed" } } },
     rootIdSchema,
   ),
   { kind: "tool", sessionId: undefined, id: "root_call_1", name: "Read", input: { path: "README.md" }, output: "ok", isError: false },
