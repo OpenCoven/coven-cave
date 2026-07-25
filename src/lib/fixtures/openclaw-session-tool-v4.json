@@ -1,14 +1,16 @@
 {
-  "schema": "openclaw.session-tool.v1",
   "protocol": 4,
   "hello": {
     "type": "hello-ok",
     "protocol": 4,
-    "server": { "version": "2026.7.24" },
+    "server": { "version": "2026.7.24", "connId": "conn-fixture" },
     "features": {
       "methods": ["sessions.messages.subscribe", "chat.send"],
       "events": ["session.tool", "chat"]
-    }
+    },
+    "snapshot": {},
+    "auth": { "role": "operator", "scopes": ["operator.read"] },
+    "policy": { "maxPayload": 1000000, "maxBufferedBytes": 1000000, "tickIntervalMs": 60000 }
   },
   "frames": [
     {
@@ -16,6 +18,7 @@
       "event": "session.tool",
       "payload": {
         "sessionKey": "cave-session",
+        "agentId": "nova",
         "runId": "run-1",
         "seq": 1,
         "ts": 1000,
@@ -33,6 +36,7 @@
       "event": "session.tool",
       "payload": {
         "sessionKey": "cave-session",
+        "agentId": "nova",
         "runId": "run-1",
         "seq": 2,
         "ts": 1050,
@@ -50,6 +54,7 @@
       "event": "session.tool",
       "payload": {
         "sessionKey": "cave-session",
+        "agentId": "nova",
         "runId": "run-1",
         "seq": 3,
         "ts": 1100,

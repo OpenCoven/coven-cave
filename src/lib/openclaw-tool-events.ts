@@ -22,6 +22,10 @@ export const OPENCLAW_TOOL_PROTOCOL_ADAPTERS = [
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 8;
+const CACHE_MAX_BYTES = 16 * 1024;
+const MAX_GATEWAY_FRAME_BYTES = 1024 * 1024;
+const MAX_TOOL_IDENTIFIER_LENGTH = 512;
+const MAX_TOOL_TEXT_LENGTH = 64 * 1024;
 
 export type OpenClawToolCompatibility = {
   protocol: number;
@@ -34,12 +38,20 @@ export type OpenClawToolCompatibility = {
 type GatewayHello = {
   type?: unknown;
   protocol?: unknown;
-  server?: { version?: unknown };
-  features?: { methods?: unknown; events?: unknown };
+  server?: { version?: unknown; connId?: unknown };
+  features?: { methods?: unknown; events?: unknown; capabilities?: unknown };
+  snapshot?: unknown;
+  auth?: { role?: unknown; scopes?: unknown };
+  policy?: { maxPayload?: unknown; maxBufferedBytes?: unknown; tickIntervalMs?: unknown };
 };
 
 function strings(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : null;
+}
+
+function boundedToolText(value: unknown, formatter: (raw: unknown) => string | undefined): string | undefined {
+  const text = formatter(value);
+  return text && text.length <= MAX_TOOL_TEXT_LENGTH ? text : undefined;
 }
 
 /** Validate negotiated metadata before an adapter may process live events. */
@@ -52,7 +64,15 @@ export function resolveOpenClawToolCompatibility(value: unknown): OpenClawToolCo
     !Number.isInteger(hello.protocol) ||
     !hello.server ||
     typeof hello.server.version !== "string" ||
+    !hello.server.version.trim() ||
+    typeof hello.server.connId !== "string" ||
+    !hello.server.connId.trim() ||
     !hello.features
+    || !hello.snapshot || typeof hello.snapshot !== "object" || Array.isArray(hello.snapshot)
+    || !hello.auth || hello.auth.role !== "operator" || !strings(hello.auth.scopes)?.includes("operator.read")
+    || !hello.policy || !Number.isSafeInteger(hello.policy.maxPayload) || hello.policy.maxPayload < 1
+    || !Number.isSafeInteger(hello.policy.maxBufferedBytes) || hello.policy.maxBufferedBytes < 1
+    || !Number.isSafeInteger(hello.policy.tickIntervalMs) || hello.policy.tickIntervalMs < 1
   ) {
     return { protocol: -1, serverVersion: "unknown", schema: "none", supported: false, reason: "invalid_hello" };
   }
@@ -85,6 +105,7 @@ export function resolveOpenClawToolCompatibility(value: unknown): OpenClawToolCo
 type GatewayToolPayload = {
   runId?: unknown;
   sessionKey?: unknown;
+  agentId?: unknown;
   seq?: unknown;
   ts?: unknown;
   stream?: unknown;
@@ -118,6 +139,7 @@ export type OpenClawGatewayToolEvent = {
 export function normalizeOpenClawGatewayToolEvent(
   frame: unknown,
   expectedSessionKey: string,
+  expectedAgentId: string,
 ): OpenClawGatewayToolEvent | null {
   const envelope = frame as { type?: unknown; event?: unknown; payload?: GatewayToolPayload };
   const payload = envelope?.payload;
@@ -126,32 +148,37 @@ export function normalizeOpenClawGatewayToolEvent(
     envelope?.type !== "event" ||
     envelope.event !== "session.tool" ||
     !payload ||
+    typeof payload.runId !== "string" ||
+    !payload.runId.trim() ||
     payload.sessionKey !== expectedSessionKey ||
+    payload.agentId !== expectedAgentId ||
     payload.stream !== "tool" ||
     !data ||
     typeof data.toolCallId !== "string" ||
     !data.toolCallId.trim() ||
+    data.toolCallId.length > MAX_TOOL_IDENTIFIER_LENGTH ||
     typeof data.name !== "string" ||
     !data.name.trim() ||
+    data.name.length > MAX_TOOL_IDENTIFIER_LENGTH ||
     (data.phase !== "start" && data.phase !== "update" && data.phase !== "result")
   ) {
     return null;
   }
   const output =
     data.phase === "update"
-      ? flattenToolResultContent(data.partialResult)
+      ? boundedToolText(data.partialResult, flattenToolResultContent)
       : data.phase === "result"
-        ? flattenToolResultContent(data.result)
+        ? boundedToolText(data.result, flattenToolResultContent)
         : undefined;
   return {
     id: data.toolCallId,
     name: data.name,
     phase: data.phase,
-    ...(data.phase === "start" ? { input: formatToolInputValue(data.args) } : {}),
+    ...(data.phase === "start" ? { input: boundedToolText(data.args, formatToolInputValue) } : {}),
     ...(output ? { output } : {}),
     isError: data.isError === true,
-    ...(typeof payload.seq === "number" ? { seq: payload.seq } : {}),
-    ...(typeof payload.ts === "number" ? { timestamp: payload.ts } : {}),
+    ...(Number.isSafeInteger(payload.seq) && payload.seq >= 0 ? { seq: payload.seq } : {}),
+    ...(Number.isSafeInteger(payload.ts) && payload.ts >= 0 ? { timestamp: payload.ts } : {}),
   };
 }
 
@@ -241,17 +268,28 @@ export function readVerifiedOpenClawCapabilityCache(
   now = Date.now(),
 ): OpenClawCapabilityCacheEntry[] {
   try {
+    if (raw.length > CACHE_MAX_BYTES) return [];
     const parsed = JSON.parse(raw) as CapabilityCache;
-    if (!parsed || !Array.isArray(parsed.entries) || parsed.integrity !== cacheIntegrity(parsed.entries)) return [];
+    if (
+      !parsed ||
+      !Array.isArray(parsed.entries) ||
+      parsed.entries.length > CACHE_MAX_ENTRIES ||
+      parsed.integrity !== cacheIntegrity(parsed.entries)
+    ) return [];
     return parsed.entries.filter(
       (entry): entry is OpenClawCapabilityCacheEntry =>
-        typeof entry?.runtimeKey === "string" &&
-        typeof entry.protocol === "number" &&
+        typeof entry?.runtimeKey === "string" && /^[a-f0-9]{24}$/.test(entry.runtimeKey) &&
+        Number.isSafeInteger(entry.protocol) &&
         typeof entry.serverVersion === "string" &&
-        typeof entry.schema === "string" &&
-        typeof entry.supported === "boolean" &&
-        typeof entry.observedAt === "number" &&
-        typeof entry.expiresAt === "number" &&
+        entry.serverVersion.length <= MAX_TOOL_IDENTIFIER_LENGTH &&
+        OPENCLAW_TOOL_PROTOCOL_ADAPTERS.some(
+          (adapter) => entry.protocol === adapter.protocol && entry.schema === adapter.schema,
+        ) &&
+        entry.supported === true &&
+        Number.isSafeInteger(entry.observedAt) &&
+        Number.isSafeInteger(entry.expiresAt) &&
+        entry.observedAt <= entry.expiresAt &&
+        entry.expiresAt <= entry.observedAt + CACHE_TTL_MS &&
         entry.expiresAt > now,
     );
   } catch {
@@ -293,15 +331,21 @@ function runtimeKey(url: string): string {
 
 function gatewayConfigFromEnv(): { url: string; token?: string } | null {
   const url = process.env.OPENCLAW_GATEWAY_URL?.trim();
-  if (!url) return null;
+  const token = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
+  if (!url || !token) return null;
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") return null;
+    if (
+      (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash
+    ) return null;
   } catch {
     return null;
   }
-  const token = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
-  return { url, ...(token ? { token } : {}) };
+  return { url, token };
 }
 
 export type OpenClawGatewayToolSubscription = {
@@ -337,9 +381,15 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
         (entry) => entry.runtimeKey === runtimeKey(config.url) && entry.supported,
       );
   const timeoutMs = options.timeoutMs ?? 4_000;
-  const socket = new WebSocket(config.url);
+  let socket: WebSocket;
+  try {
+    socket = new WebSocket(config.url, { maxPayload: MAX_GATEWAY_FRAME_BYTES });
+  } catch {
+    return { active: false, fallbackReason: "gateway_unavailable", close() {} };
+  }
   let closed = false;
   let connected = false;
+  let finished = false;
   let subscriptionId = "";
   let negotiatedCompatibility: OpenClawToolCompatibility | undefined;
   const close = () => {
@@ -373,15 +423,20 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
       if (!connected) {
         options.onDiagnostic?.({ code: "gateway_handshake_timeout" });
         close();
-        resolve(fallback("gateway_handshake_timeout"));
+        finish(fallback("gateway_handshake_timeout"));
       }
     }, timeoutMs);
     const finish = (value: OpenClawGatewayToolSubscription) => {
+      if (finished) return;
+      finished = true;
       clearTimeout(timer);
       resolve(value);
     };
     socket.on("error", () => {
-      if (!connected) finish(fallback("gateway_unavailable"));
+      if (!connected) {
+        close();
+        finish(fallback("gateway_unavailable"));
+      }
     });
     socket.on("close", () => {
       if (!connected) finish(fallback("gateway_closed"));
@@ -403,13 +458,16 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
             params: {
               minProtocol: 4,
               maxProtocol: 4,
-              client: { id: "coven-cave", version: process.env.npm_package_version ?? "unknown", platform: process.platform, mode: "operator" },
+              // These are the Gateway v4 registered identity values. Never
+              // invent a product id or mode: the server validates both before
+              // authentication, so an unknown value must fall back to CLI.
+              client: { id: "gateway-client", version: process.env.npm_package_version ?? "unknown", platform: process.platform, mode: "backend" },
               role: "operator",
               scopes: ["operator.read"],
               caps: ["tool-events"],
               commands: [],
               permissions: {},
-              ...(config.token ? { auth: { token: config.token } } : {}),
+              auth: { token: config.token },
             },
           }),
         );
@@ -431,7 +489,7 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
             runtimeKey: runtimeKey(config.url),
             observedAt,
             expiresAt: observedAt + CACHE_TTL_MS,
-          });
+          }).catch(() => undefined);
         }
         subscriptionId = "cave-openclaw-subscribe";
         socket.send(
@@ -454,7 +512,11 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
         finish({ active: true, compatibility: negotiatedCompatibility, close });
         return;
       }
-      const toolEvent = normalizeOpenClawGatewayToolEvent(frame, options.sessionKey);
+      // Do not render an event until the authenticated connect response and
+      // the scoped subscription acknowledgement have both completed. A peer
+      // can legally send arbitrary event envelopes before then.
+      if (!connected) return;
+      const toolEvent = normalizeOpenClawGatewayToolEvent(frame, options.sessionKey, options.agentId);
       if (toolEvent) options.onToolEvent(toolEvent);
     });
   });
