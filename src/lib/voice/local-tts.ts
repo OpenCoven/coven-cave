@@ -68,16 +68,70 @@ export function createLocalTtsMouth(options: {
     const controller = new AbortController();
     currentAbort = controller;
 
-    let response: Response;
     try {
-      response = await fetchImpl("/api/voice/local/tts", {
+      const response = await fetchImpl("/api/voice/local/tts", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text, voiceName: options.voiceName }),
         signal: controller.signal,
       });
+
+      if (!response.ok) {
+        let code = "local_tts_failed";
+        let hint: string | undefined;
+        try {
+          const json = (await response.json()) as {
+            error?: string;
+            hint?: string;
+          };
+          if (json.error) code = json.error;
+          hint = json.hint;
+        } catch {
+          // Keep the stable fallback when the sidecar did not return JSON.
+        }
+        throw new VoiceConnectError(code, hint);
+      }
+
+      // Keep the fetch controller live while the browser consumes the WAV
+      // body. Fetch resolves as soon as headers arrive, so clearing it above
+      // would let cancellation continue buffering up to the route's 32 MiB
+      // audio response before the speech loop can stop.
+      const blob = await response.blob();
+      if (cancelled) return;
+      currentUrl = createObjectUrl(blob);
+      await new Promise<void>((resolve, reject) => {
+        const audio = createAudio();
+        currentAudio = audio;
+        let settled = false;
+        const finish = (error?: VoiceConnectError) => {
+          if (settled) return;
+          settled = true;
+          releaseCurrent();
+          if (error) reject(error);
+          else resolve();
+        };
+        settlePlayback = () => finish();
+        audio.onended = () => finish();
+        audio.onerror = () =>
+          finish(
+            new VoiceConnectError(
+              "local_tts_playback_failed",
+              "The local speech engine returned audio this device couldn't play.",
+            ),
+          );
+        audio.src = currentUrl!;
+        void audio.play().catch(() => {
+          finish(
+            new VoiceConnectError(
+              "local_tts_playback_failed",
+              "The local voice preview couldn't start playback.",
+            ),
+          );
+        });
+      });
     } catch (error) {
       if (cancelled || controller.signal.aborted) return;
+      if (error instanceof VoiceConnectError) throw error;
       throw new VoiceConnectError(
         "local_tts_failed",
         `Couldn't reach the local speech engine (${error instanceof Error ? error.message : "fetch failed"}).`,
@@ -85,56 +139,6 @@ export function createLocalTtsMouth(options: {
     } finally {
       if (currentAbort === controller) currentAbort = null;
     }
-
-    if (!response.ok) {
-      let code = "local_tts_failed";
-      let hint: string | undefined;
-      try {
-        const json = (await response.json()) as {
-          error?: string;
-          hint?: string;
-        };
-        if (json.error) code = json.error;
-        hint = json.hint;
-      } catch {
-        // Keep the stable fallback when the sidecar did not return JSON.
-      }
-      throw new VoiceConnectError(code, hint);
-    }
-
-    const blob = await response.blob();
-    if (cancelled) return;
-    currentUrl = createObjectUrl(blob);
-    await new Promise<void>((resolve, reject) => {
-      const audio = createAudio();
-      currentAudio = audio;
-      let settled = false;
-      const finish = (error?: VoiceConnectError) => {
-        if (settled) return;
-        settled = true;
-        releaseCurrent();
-        if (error) reject(error);
-        else resolve();
-      };
-      settlePlayback = () => finish();
-      audio.onended = () => finish();
-      audio.onerror = () =>
-        finish(
-          new VoiceConnectError(
-            "local_tts_playback_failed",
-            "The local speech engine returned audio this device couldn't play.",
-          ),
-        );
-      audio.src = currentUrl!;
-      void audio.play().catch(() => {
-        finish(
-          new VoiceConnectError(
-            "local_tts_playback_failed",
-            "The local voice preview couldn't start playback.",
-          ),
-        );
-      });
-    });
   };
 
   return {

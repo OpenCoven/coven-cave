@@ -137,6 +137,35 @@ test("cancel aborts in-flight synthesis without reporting a call error", async (
   assert.equal(aborted, true);
 });
 
+test("cancel aborts a WAV body that starts streaming after fetch resolves", async () => {
+  let aborted = false;
+  const mouth = createLocalTtsMouth({
+    voiceName: "piper-amy-medium-en-us",
+    fetchImpl: async (_url, init) =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            init.signal.addEventListener(
+              "abort",
+              () => {
+                aborted = true;
+                controller.error(new DOMException("Aborted", "AbortError"));
+              },
+              { once: true },
+            );
+          },
+        }),
+        { headers: { "content-type": "audio/wav" } },
+      ),
+  });
+
+  const speaking = mouth.speak("Cancel after Piper starts streaming audio.");
+  await Promise.resolve();
+  mouth.cancel();
+  await speaking;
+  assert.equal(aborted, true);
+});
+
 test("playback rejection becomes a stable local TTS error", async () => {
   const audio = new FakeAudio();
   audio.playError = true;
