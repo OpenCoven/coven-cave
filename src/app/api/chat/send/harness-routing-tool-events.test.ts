@@ -168,6 +168,24 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /pushProgress\("harness-start", "Starting Hermes API", "running"\);/,
+  "Hermes API progress must not disclose the configured endpoint",
+);
+
+assert.doesNotMatch(
+  chatRoute,
+  /Starting Hermes API", "running", hermesApi\.baseUrl/,
+  "Hermes API URLs may contain reverse-proxy credentials and must never reach the stream",
+);
+
+assert.match(
+  chatRoute,
+  /envelopeToolUse\(event\.id, event\.name, input, assistantText\.length\)[\s\S]*?envelopeToolInput\(event\.id, input\)/,
+  "a canonical duplicate Hermes tool start must refresh the existing bubble input",
+);
+
+assert.match(
+  chatRoute,
   /\.\.\.\(persistedTools \? \{ tools: persistedTools \} : \{\}\)/,
   "tools persist on the assistant turn alongside usage and cost",
 );
@@ -213,6 +231,24 @@ assert.match(
   assert.deepEqual(partial, { id: "call-args", name: "shell", input: '{"command":', status: "running" });
   const complete = tracker.envelopeToolInput("call-args", '{"command":"pwd"}');
   assert.deepEqual(complete, { id: "call-args", name: "shell", input: '{"command":"pwd"}', status: "running" });
+  assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}');
+}
+
+// Hermes progress may announce the native id before the canonical Responses
+// item supplies final arguments. The route's duplicate-start update preserves
+// the one stable bubble while replacing that incomplete input.
+{
+  const tracker = new ToolCallTracker();
+  tracker.envelopeToolUse("call-progress", "shell");
+  assert.equal(
+    tracker.envelopeToolUse("call-progress", "shell", '{"command":"pwd"}'),
+    null,
+    "the canonical duplicate start keeps the existing stable id",
+  );
+  const refreshed = tracker.envelopeToolInput("call-progress", '{"command":"pwd"}');
+  assert.deepEqual(refreshed, {
+    id: "call-progress", name: "shell", input: '{"command":"pwd"}', status: "running",
+  });
   assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}');
 }
 

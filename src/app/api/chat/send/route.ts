@@ -2044,7 +2044,9 @@ export async function POST(req: Request) {
             push({ kind: "tool_use", ...toolEv });
           }
         };
-        pushProgress("harness-start", "Starting Hermes API", "running", hermesApi.baseUrl);
+        // Endpoint paths can carry reverse-proxy credentials; never put a
+        // configured URL in browser-visible progress or run-replay events.
+        pushProgress("harness-start", "Starting Hermes API", "running");
         const onAbort = () => {
           // Transport loss is resumable, not a user Stop: keep consuming until
           // the shared detach deadline, exactly like a child-process attempt.
@@ -2115,6 +2117,13 @@ export async function POST(req: Request) {
                 boundarySentinel?.observe(event.name, input ?? "");
                 const toolEv = toolTracker.envelopeToolUse(event.id, event.name, input, assistantText.length);
                 if (toolEv) push({ kind: "tool_use", ...toolEv });
+                else if (input !== undefined) {
+                  // Hermes progress can announce a call before the canonical
+                  // Responses item. Keep the same bubble id but replace its
+                  // preliminary input when the canonical item is complete.
+                  const updated = toolTracker.envelopeToolInput(event.id, input);
+                  if (updated) push({ kind: "tool_use", ...updated });
+                }
                 return false;
               }
               case "tool_input": {

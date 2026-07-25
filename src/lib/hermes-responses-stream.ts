@@ -166,42 +166,61 @@ export class HermesSseDecoder {
   private eventName = "";
   private data: string[] = [];
 
-  push(chunk: string): Array<{ event: string; data: string }> {
-    // Keep CRLF normalization at the line boundary: a `\r` may arrive at the
-    // end of one network chunk and its `\n` in the next.
-    this.buffer += chunk;
-    const frames: Array<{ event: string; data: string }> = [];
-    let next: number;
-    while ((next = this.buffer.indexOf("\n")) >= 0) {
-      const rawLine = this.buffer.slice(0, next);
-      this.buffer = this.buffer.slice(next + 1);
-      const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-      if (!line) {
-        if (this.data.length) {
-          frames.push({ event: this.eventName, data: this.data.join("\n") });
-        }
-        this.eventName = "";
-        this.data = [];
-      } else if (line.startsWith("event:")) {
-        this.eventName = line.slice("event:".length).trim();
-      } else if (line.startsWith("data:")) {
-        this.data.push(line.slice("data:".length).replace(/^ /, ""));
+  private consumeLine(line: string, frames: Array<{ event: string; data: string }>) {
+    if (!line) {
+      if (this.data.length) {
+        frames.push({ event: this.eventName, data: this.data.join("\n") });
       }
+      this.eventName = "";
+      this.data = [];
+    } else if (line.startsWith("event:")) {
+      this.eventName = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      this.data.push(line.slice("data:".length).replace(/^ /, ""));
     }
+  }
+
+  /** Drain complete lines. A trailing CR remains buffered until the next chunk
+   * proves whether it begins CRLF; at end-of-stream a lone CR is final. */
+  private drain(final: boolean): Array<{ event: string; data: string }> {
+    const frames: Array<{ event: string; data: string }> = [];
+    let cursor = 0;
+    while (cursor < this.buffer.length) {
+      const lf = this.buffer.indexOf("\n", cursor);
+      const cr = this.buffer.indexOf("\r", cursor);
+      const next = lf < 0 ? cr : cr < 0 ? lf : Math.min(lf, cr);
+      if (next < 0) break;
+      const terminator = this.buffer[next];
+      // CR at a chunk edge might still pair with a following LF.
+      if (terminator === "\r" && next === this.buffer.length - 1 && !final) break;
+      const line = this.buffer.slice(cursor, next);
+      cursor = next + 1;
+      if (terminator === "\r" && this.buffer[cursor] === "\n") cursor += 1;
+      this.consumeLine(line, frames);
+    }
+    this.buffer = this.buffer.slice(cursor);
     return frames;
   }
 
+  push(chunk: string): Array<{ event: string; data: string }> {
+    this.buffer += chunk;
+    return this.drain(false);
+  }
+
   finish(): Array<{ event: string; data: string }> {
+    const frames = this.drain(true);
     // SSE servers normally terminate frames with a blank line. Treat a final
     // unterminated data line as a frame too, because proxies sometimes omit it.
-    const tail = this.buffer.endsWith("\r") ? this.buffer.slice(0, -1) : this.buffer;
-    if (tail.startsWith("data:")) this.data.push(tail.slice(5).replace(/^ /, ""));
-    this.buffer = "";
-    if (!this.data.length) return [];
-    const frame = { event: this.eventName, data: this.data.join("\n") };
-    this.eventName = "";
-    this.data = [];
-    return [frame];
+    if (this.buffer) {
+      this.consumeLine(this.buffer, frames);
+      this.buffer = "";
+    }
+    if (this.data.length) {
+      frames.push({ event: this.eventName, data: this.data.join("\n") });
+      this.eventName = "";
+      this.data = [];
+    }
+    return frames;
   }
 }
 

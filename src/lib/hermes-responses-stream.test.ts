@@ -78,6 +78,13 @@ test("SSE decoder handles arbitrary chunk boundaries and multi-line data", () =>
     { event: "one", data: "1" },
     { event: "two", data: "2" },
   ]);
+
+  const crOnly = new HermesSseDecoder();
+  assert.deepEqual(crOnly.push("event: one\rdata: 1\r\r"), []);
+  assert.deepEqual(crOnly.push("event: two\rdata: 2\r\r"), [
+    { event: "one", data: "1" },
+  ]);
+  assert.deepEqual(crOnly.finish(), [{ event: "two", data: "2" }]);
 });
 
 test("structured transport is opt-in and refuses non-HTTP endpoint values", () => {
