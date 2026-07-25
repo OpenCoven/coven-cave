@@ -354,6 +354,30 @@ test("a ready sidecar Whisper model outranks the native bridge", async () => {
   }
 });
 
+test("English-only sidecar Whisper does not satisfy Local voice for a non-English locale", async () => {
+  const priorWindow = globalThis.window;
+  const priorFetch = globalThis.fetch;
+  const priorNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  globalThis.window = { location: { hostname: "localhost" } };
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { language: "fr-FR" } });
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    ok: true,
+    runtimes: { whisper: { available: true } },
+    stt: [{ id: "whisper-tiny-en", engine: "whisper", ready: true }],
+  }));
+  try {
+    await assert.rejects(
+      () => resolvePreferredEars({ requireOnDevice: true }),
+      (error) => error?.name === "VoiceConnectError" && error.message === "stt_on_device_unavailable",
+    );
+  } finally {
+    globalThis.window = priorWindow;
+    globalThis.fetch = priorFetch;
+    if (priorNavigator) Object.defineProperty(globalThis, "navigator", priorNavigator);
+    else delete globalThis.navigator;
+  }
+});
+
 test("strict Local voice rejects when neither sidecar nor native STT is available", async () => {
   const priorWindow = globalThis.window;
   const priorFetch = globalThis.fetch;

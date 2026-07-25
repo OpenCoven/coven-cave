@@ -17,7 +17,7 @@ export const WHISPER_PARTIAL_MS = 600;
 
 type EnginesPayload = {
   ok?: boolean;
-  stt?: Array<{ engine?: string; ready?: boolean }>;
+  stt?: Array<{ id?: string; engine?: string; ready?: boolean }>;
   runtimes?: { whisper?: { available?: boolean } };
 };
 
@@ -41,14 +41,23 @@ type TimerOptions = {
 
 type AudioContextConstructor = new () => AudioContext;
 
-/** True only for a verified downloaded Whisper model advertised by the sidecar. */
-export async function sidecarWhisperAvailable(fetchImpl: typeof fetch = fetch): Promise<boolean> {
+/** English-only Whisper models must not displace a recognizer that supports
+ * the user's non-English locale. Multilingual models may auto-detect it. */
+export function whisperModelSupportsLocale(modelId: string | undefined, locale?: string): boolean {
+  const language = locale?.trim().split("-")[0]?.toLowerCase();
+  if (!language || language === "en") return true;
+  return Boolean(modelId) && !/(?:[-_.]en)$/i.test(modelId);
+}
+
+/** True only for a verified downloaded Whisper model advertised by the sidecar
+ * that can transcribe the requested locale. */
+export async function sidecarWhisperAvailable(fetchImpl: typeof fetch = fetch, locale?: string): Promise<boolean> {
   try {
     const res = await fetchImpl("/api/voice/engines", { cache: "no-store" });
     if (!res.ok) return false;
     const payload = await res.json() as EnginesPayload;
     return payload.ok === true && payload.runtimes?.whisper?.available === true && payload.stt?.some(
-      (model) => model.engine === "whisper" && model.ready === true,
+      (model) => model.engine === "whisper" && model.ready === true && whisperModelSupportsLocale(model.id, locale),
     ) === true;
   } catch {
     return false;
@@ -77,8 +86,8 @@ async function hasLocalDesktopSidecar(): Promise<boolean> {
   }
 }
 
-export async function localSidecarWhisperAvailable(fetchImpl: typeof fetch = fetch): Promise<boolean> {
-  return (await hasLocalDesktopSidecar()) && sidecarWhisperAvailable(fetchImpl);
+export async function localSidecarWhisperAvailable(fetchImpl: typeof fetch = fetch, locale?: string): Promise<boolean> {
+  return (await hasLocalDesktopSidecar()) && sidecarWhisperAvailable(fetchImpl, locale);
 }
 
 /** Encode mono float PCM into the 16-bit WAV accepted directly by whisper.cpp. */
@@ -371,11 +380,13 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
       processor.onaudioprocess = (event) => {
         if (closed || current !== session) return;
         const input = event.inputBuffer.getChannelData(0);
-        const chunk = input.slice();
         if (rms(input) < threshold) {
-          chunks.push(chunk);
+          // Initial silence is discarded by finish() and never needs a PCM
+          // copy. Once speech starts, retain trailing silence for endpointing.
+          if (hasSpeech) chunks.push(input.slice());
           return;
         }
+        const chunk = input.slice();
         if (!hasSpeech) {
           hasSpeech = true;
           // The initial-silence timer may have retained PCM while waiting for

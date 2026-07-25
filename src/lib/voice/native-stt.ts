@@ -265,11 +265,12 @@ export function selectNativeEarsEngine(
 export async function resolvePreferredEars(
   opts: { requireOnDevice?: boolean; allowSidecar?: boolean } = {},
 ): Promise<PreferredEars | undefined> {
+  const lang = typeof navigator !== "undefined" ? navigator.language || undefined : undefined;
   // A verified sidecar model is fully local on every supported platform, and
-  // deliberately outranks the Apple-specific recognizer for consistent voice
-  // behavior. Do not probe this during SSR: the browser's authenticated fetch
-  // is what reaches a packaged sidecar.
-  if (opts.allowSidecar !== false && typeof window !== "undefined" && await localSidecarWhisperAvailable()) {
+  // deliberately outranks the Apple-specific recognizer only when it supports
+  // the current locale. Do not probe this during SSR: the browser's
+  // authenticated fetch is what reaches a packaged sidecar.
+  if (opts.allowSidecar !== false && typeof window !== "undefined" && await localSidecarWhisperAvailable(fetch, lang)) {
     return { factory: createSidecarWhisperEars(), engine: "sidecar-whisper" };
   }
   const bridge = await loadNativeSttBridge();
@@ -282,7 +283,6 @@ export async function resolvePreferredEars(
     }
     return undefined;
   }
-  const lang = typeof navigator !== "undefined" ? navigator.language || undefined : undefined;
   const availability = await nativeSttAvailability(bridge, lang);
   if (availability?.supported !== true) {
     if (opts.requireOnDevice) {
