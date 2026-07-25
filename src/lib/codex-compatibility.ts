@@ -791,13 +791,14 @@ export class CodexJsonlDecoder {
         const reservedProtocolType = !!rawType && (
           /^(?:thread|turn|item|response)\./.test(rawType)
           || rawType === "error"
-          // After the stream's thread preamble has established Codex JSONL
-          // ownership, a dotted `type` is a protocol envelope even when the
-          // currently selected schema does not know that event family yet.
+          // Once Codex's own marker has established JSONL ownership (or a
+          // trusted thread preamble has done so), a dotted `type` is a
+          // protocol envelope even when the currently selected schema does
+          // not know that event family yet.
           // Plain JSON examples such as `{ "type": "example" }` remain
           // passthrough, while future frames such as `rate_limits.updated`
           // cannot leak runtime metadata or tool payloads into the transcript.
-          || (this.protocolActive && rawType.includes("."))
+          || ((this.protocolArmed || this.protocolActive || this.options.trustThreadPreamble === true) && rawType.includes("."))
         );
         const thread = record(frame?.thread);
         const sessionId = typeof frame?.thread_id === "string"
@@ -806,9 +807,15 @@ export class CodexJsonlDecoder {
             ? thread.id
             : null;
         const validThreadPreamble = rawType === "thread.started" && !!sessionId;
+        // The `codex` marker is an unambiguous transport boundary. Consume
+        // malformed first frames after it as shape-only diagnostics instead
+        // of passing their tool/control payload through as assistant prose.
+        // The Windows captured-pipe transport marks its bytes as trusted at
+        // construction, so it receives the same protection even if its first
+        // thread.started frame is malformed. Decoders without either transport
+        // proof still leave ordinary JSON/code examples untouched.
         const protocolFrame = (this.protocolArmed || this.options.trustThreadPreamble === true)
-          && (protocolType || (this.protocolActive && reservedProtocolType))
-          && (this.protocolActive || validThreadPreamble);
+          && (protocolType || reservedProtocolType);
         if (protocolFrame) {
           if (validThreadPreamble) this.protocolActive = true;
           const event = parseCodexStreamEvent(parsed, schema) ?? { kind: "unknown" as const, fingerprint: "unmapped-frame" };

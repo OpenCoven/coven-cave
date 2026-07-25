@@ -98,6 +98,10 @@ const controls = protectedFrames.push('{"type":"turn.completed","secret":"never 
 assert.equal(controls.passthrough, "", "control and malformed protocol frames never reach assistant passthrough");
 assert.equal(controls.events.filter((event) => event.kind === "unknown").length, 5, "malformed, error, and future protocol frames surface only shape-only diagnostics");
 assert.doesNotMatch(JSON.stringify(controls.events), /never render/, "unknown protocol payloads never reach diagnostics");
+const malformedFirstFrame = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"thread.started","thread_id":42,"secret":"never render"}\n{"type":"item.started","item":{"arguments":"never render"}}\n{"type":"rate_limits.updated","secret":"never render"}\n', selected.schema);
+assert.equal(malformedFirstFrame.passthrough, "", "a malformed first captured-pipe protocol frame never leaks into assistant prose");
+assert.equal(malformedFirstFrame.events.filter((event) => event.kind === "unknown").length, 3, "trusted malformed and future frames are retained only as shape diagnostics");
+assert.doesNotMatch(JSON.stringify(malformedFirstFrame.events), /never render/, "a malformed preamble never includes protocol payloads in diagnostics");
 const registrySchema = { ...selected.schema, eventTypes: [...selected.schema.eventTypes, "response.started"] };
 const registryFrames = new CodexJsonlDecoder().push('codex\n{"type":"thread.started","thread":{"id":"thread-nested"}}\n{"type":"response.started","secret":"never render"}\n', registrySchema);
 assert.deepEqual(registryFrames.events.map((event) => event.kind), ["session", "unknown"], "nested thread ids and registry-only event names are consumed by the selected schema");
