@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { ToolCallTracker, toPersistedTools } from "./chat-tool-events.ts";
+import { ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
 
 const tracker = new ToolCallTracker(() => 1_000);
 assert.equal(tracker.envelopeToolResult("call_1", "late terminal output", false), null);
@@ -27,5 +27,9 @@ const largeStart = oversized.envelopeToolUse("call_large", "read");
 assert.ok(largeStart, "a bounded deferred result still reconciles once its start arrives");
 const largeEnd = oversized.consumePendingEnvelopeResult("call_large");
 assert.ok((largeEnd?.output.length ?? 0) <= 16_100, "reordered results are capped before tracker and SSE retention");
+assert.ok(
+  new TextEncoder().encode(capLiveToolPayload("😀".repeat(10_000), 16_000) ?? "").byteLength <= 16_000,
+  "unicode tool payloads respect byte rather than UTF-16 code-unit caps",
+);
 
 console.log("chat-tool-events.test.ts: ok");
