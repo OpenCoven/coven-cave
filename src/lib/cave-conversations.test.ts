@@ -5,8 +5,10 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 
 const previousHome = process.env.HOME;
+const previousCovenHome = process.env.COVEN_HOME;
 const home = await mkdtemp(path.join(tmpdir(), "cave-conversations-"));
 process.env.HOME = home;
+process.env.COVEN_HOME = path.join(home, ".coven");
 
 const {
   deleteConversation,
@@ -509,6 +511,11 @@ if (previousHome === undefined) {
   delete process.env.HOME;
 } else {
   process.env.HOME = previousHome;
+}
+if (previousCovenHome === undefined) {
+  delete process.env.COVEN_HOME;
+} else {
+  process.env.COVEN_HOME = previousCovenHome;
 }
 await rm(home, { recursive: true, force: true });
 

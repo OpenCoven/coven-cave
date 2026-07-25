@@ -1289,6 +1289,7 @@ const STRIP_TYPES_MJS = new Set([
 const ALIAS_LOADER = new Set([
   "src/lib/opencode-compatibility.test.ts",
   "src/lib/opencode-stream.test.ts",
+  "src/lib/cave-conversations.test.ts",
   "src/app/api/chat/send/chat-send-capabilities.test.ts",
   "src/app/api/chat/send/route-opencode.integration.test.ts",
   "src/lib/familiar-workspace-sessions.test.ts",
