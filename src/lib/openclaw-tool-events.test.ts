@@ -91,13 +91,27 @@ assert.equal(
   null,
   "unknown event families must not become fabricated activity",
 );
+assert.deepEqual(
+  normalizeOpenClawGatewayToolEvent(terminalFrame, gatewaySessionKey, "nova"),
+  {
+    runId: "run-1",
+    id: "call-1",
+    name: "exec",
+    phase: "result",
+    output: '{\n  "output": "ok"\n}',
+    isError: false,
+    seq: 3,
+    timestamp: 1_100,
+  },
+  "the documented result phase settles a successful tool even when optional isError is omitted",
+);
 assert.equal(
   normalizeOpenClawGatewayToolEvent({
     ...terminalFrame,
-    payload: { ...terminalFrame.payload, data: { ...terminalFrame.payload.data, isError: undefined } },
+    payload: { ...terminalFrame.payload, data: { ...terminalFrame.payload.data, isError: "no" } },
   }, gatewaySessionKey, "nova"),
   null,
-  "a terminal frame without an explicit outcome must not be rendered as success",
+  "malformed terminal outcome metadata must fail closed",
 );
 
 const ledger = new OpenClawToolEventLedger();

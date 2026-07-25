@@ -189,8 +189,6 @@ export function normalizeOpenClawGatewayToolEvent(
     data.name.length > MAX_TOOL_IDENTIFIER_LENGTH ||
     (phase !== "start" && phase !== "update" && phase !== "result") ||
     (data.isError !== undefined && typeof data.isError !== "boolean") ||
-    // A terminal frame without an explicit outcome must not fabricate success.
-    (phase === "result" && typeof data.isError !== "boolean") ||
     !nonNegativeSafeInteger(seq) ||
     !nonNegativeSafeInteger(timestamp)
   ) {
@@ -209,6 +207,10 @@ export function normalizeOpenClawGatewayToolEvent(
     phase,
     ...(phase === "start" ? { input: boundedToolText(data.args, formatToolInputValue) } : {}),
     ...(output ? { output } : {}),
+    // Gateway's documented tool terminal is `phase: "result"`; `isError` is
+    // optional metadata on that terminal frame. Treating its absence as an
+    // unsupported frame leaves every ordinary successful tool card running
+    // until the CLI closes, then incorrectly settles it as an error.
     isError: data.isError === true,
     seq,
     timestamp,

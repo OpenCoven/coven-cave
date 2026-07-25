@@ -63,8 +63,7 @@
           "phase": "result",
           "toolCallId": "call-1",
           "name": "exec",
-          "result": { "output": "ok" },
-          "isError": false
+          "result": { "output": "ok" }
         }
       }
     }
