@@ -63,6 +63,7 @@ assert.equal(
 
 const [startFrame, updateFrame, terminalFrame] = fixture.frames;
 assert.deepEqual(normalizeOpenClawGatewayToolEvent(startFrame, "cave-session", "nova"), {
+  runId: "run-1",
   id: "call-1",
   name: "exec",
   phase: "start",
@@ -104,7 +105,7 @@ assert.equal(
 const start = normalizeOpenClawGatewayToolEvent(startFrame, "cave-session", "nova");
 assert.ok(start);
 assert.deepEqual(ledger.accept(start, 1_000), {
-  id: "call-1",
+  id: "run-1:call-1",
   name: "exec",
   input: '{\n  "command": "pwd"\n}',
   status: "running",
@@ -116,7 +117,7 @@ const update = normalizeOpenClawGatewayToolEvent(
 );
 assert.ok(update);
 assert.deepEqual(ledger.accept(update, 1_100), {
-  id: "call-1",
+  id: "run-1:call-1",
   name: "exec",
   input: '{\n  "command": "pwd"\n}',
   output: "still running",
@@ -129,7 +130,7 @@ const terminal = normalizeOpenClawGatewayToolEvent(
 );
 assert.ok(terminal);
 assert.deepEqual(ledger.accept(terminal, 1_200), {
-  id: "call-1",
+  id: "run-1:call-1",
   name: "exec",
   input: '{\n  "command": "pwd"\n}',
   output: '{\n  "output": "ok"\n}',
@@ -139,15 +140,15 @@ assert.deepEqual(ledger.accept(terminal, 1_200), {
 assert.equal(ledger.accept(terminal, 1_300), null, "replayed frames must not duplicate a bubble");
 assert.equal(ledger.accept(start, 1_400), null, "late start frames must not downgrade terminal state");
 assert.deepEqual(
-  ledger.accept({ id: "call-error", name: "exec", phase: "result", output: "cancelled", isError: true }, 1_500),
-  { id: "call-error", name: "exec", output: "cancelled", status: "error" },
+  ledger.accept({ runId: "run-error", id: "call-error", name: "exec", phase: "result", output: "cancelled", isError: true }, 1_500),
+  { id: "run-error:call-error", name: "exec", output: "cancelled", status: "error" },
   "terminal error/cancel results must never appear successful",
 );
 const unfinished = new OpenClawToolEventLedger();
 unfinished.accept(start, 1_000);
 assert.deepEqual(unfinished.finalizeUnsettled("cancelled", 1_120), [
   {
-    id: "call-1",
+    id: "run-1:call-1",
     name: "exec",
     input: '{\n  "command": "pwd"\n}',
     output: "cancelled",
@@ -158,24 +159,31 @@ assert.deepEqual(unfinished.finalizeUnsettled("cancelled", 1_120), [
 
 const outOfOrder = new OpenClawToolEventLedger();
 assert.deepEqual(
-  outOfOrder.accept({ id: "call-2", name: "read", phase: "result", output: "done", isError: false }, 2_000),
-  { id: "call-2", name: "read", output: "done", status: "ok" },
+  outOfOrder.accept({ runId: "run-2", id: "call-2", name: "read", phase: "result", output: "done", isError: false }, 2_000),
+  { id: "run-2:call-2", name: "read", output: "done", status: "ok" },
   "a factual terminal event may render without inventing a missing start event",
 );
 const concurrent = new OpenClawToolEventLedger();
-concurrent.accept({ id: "call-a", name: "exec", phase: "start", input: "a", isError: false }, 2_000);
-concurrent.accept({ id: "call-b", name: "exec", phase: "start", input: "b", isError: false }, 2_001);
+concurrent.accept({ runId: "run-concurrent", id: "call-a", name: "exec", phase: "start", input: "a", isError: false }, 2_000);
+concurrent.accept({ runId: "run-concurrent", id: "call-b", name: "exec", phase: "start", input: "b", isError: false }, 2_001);
 assert.deepEqual(
-  concurrent.accept({ id: "call-b", name: "exec", phase: "result", output: "B", isError: false }, 2_010),
-  { id: "call-b", name: "exec", input: "b", output: "B", status: "ok", durationMs: 9 },
+  concurrent.accept({ runId: "run-concurrent", id: "call-b", name: "exec", phase: "result", output: "B", isError: false }, 2_010),
+  { id: "run-concurrent:call-b", name: "exec", input: "b", output: "B", status: "ok", durationMs: 9 },
   "concurrent same-name calls remain keyed by their Gateway toolCallId",
 );
 const ordered = new OpenClawToolEventLedger();
-ordered.accept({ id: "call-ordered", name: "exec", phase: "start", input: "a", isError: false, seq: 10 });
+ordered.accept({ runId: "run-ordered", id: "call-ordered", name: "exec", phase: "start", input: "a", isError: false, seq: 10 });
 assert.equal(
-  ordered.accept({ id: "call-ordered", name: "exec", phase: "update", output: "stale", isError: false, seq: 9 }),
+  ordered.accept({ runId: "run-ordered", id: "call-ordered", name: "exec", phase: "update", output: "stale", isError: false, seq: 9 }),
   null,
   "out-of-order updates must not overwrite newer output while a call is running",
+);
+const reusedToolCallId = new OpenClawToolEventLedger();
+reusedToolCallId.accept({ runId: "run-first", id: "call-reused", name: "exec", phase: "result", output: "first", isError: false, seq: 1 }, 3_000);
+assert.deepEqual(
+  reusedToolCallId.accept({ runId: "run-second", id: "call-reused", name: "exec", phase: "start", input: "second", isError: false, seq: 1 }, 3_001),
+  { id: "run-second:call-reused", name: "exec", input: "second", status: "running" },
+  "toolCallId reuse in another Gateway run must not suppress or merge a new tool card",
 );
 
 const entry = {
@@ -189,6 +197,12 @@ const entry = {
 };
 const validCache = createOpenClawCapabilityCache([entry]);
 assert.deepEqual(readVerifiedOpenClawCapabilityCache(JSON.stringify(validCache), 500), [entry]);
+const cacheWithUnexpectedField = createOpenClawCapabilityCache([{ ...entry, token: "must-not-survive" }]);
+assert.deepEqual(
+  readVerifiedOpenClawCapabilityCache(JSON.stringify(cacheWithUnexpectedField), 500),
+  [entry],
+  "verified cache reads must strip unrecognized fields before a later rewrite can retain them",
+);
 assert.deepEqual(
   readVerifiedOpenClawCapabilityCache(JSON.stringify({ ...validCache, integrity: "tampered" }), 500),
   [],
@@ -205,15 +219,19 @@ const address = gateway.address();
 assert.ok(address && typeof address !== "string");
 const receivedFrames = [];
 let gatewaySocket;
+let connectRequests = 0;
+let subscriptionRequests = 0;
 gateway.on("connection", (socket) => {
   gatewaySocket = socket;
   // A pre-auth event must never be rendered, even if it happens to look like
   // the selected session's tool frame.
   socket.send(JSON.stringify(startFrame));
   socket.send(JSON.stringify({ type: "event", event: "connect.challenge", payload: { nonce: "fixture" } }));
+  socket.send(JSON.stringify({ type: "event", event: "connect.challenge", payload: { nonce: "replayed-fixture" } }));
   socket.on("message", (raw) => {
     const request = JSON.parse(raw.toString());
     if (request.method === "connect") {
+      connectRequests += 1;
       assert.deepEqual(request.params.caps, ["tool-events"]);
       assert.deepEqual(request.params.scopes, ["operator.read"]);
       assert.deepEqual(request.params.auth, { token: "fixture-token" });
@@ -226,6 +244,7 @@ gateway.on("connection", (socket) => {
       socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: hello }));
     }
     if (request.method === "sessions.messages.subscribe") {
+      subscriptionRequests += 1;
       assert.deepEqual(request.params, { key: "cave-session", agentId: "nova" });
       socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: {} }));
       socket.send(JSON.stringify(startFrame));
@@ -263,12 +282,15 @@ try {
     },
   });
   assert.equal(subscription.active, true);
+  assert.equal(connectRequests, 1, "a replayed challenge must not repeat the authenticated connect request");
+  assert.equal(subscriptionRequests, 1, "a replayed handshake must not duplicate the session subscription");
   await Promise.race([
     eventsReceived,
     new Promise((_, reject) => setTimeout(() => reject(new Error("Gateway tool lifecycle was not observed")), 1_000)),
   ]);
   assert.deepEqual(receivedFrames, [
     {
+      runId: "run-1",
       id: "call-1",
       name: "exec",
       phase: "start",
@@ -278,6 +300,7 @@ try {
       timestamp: 1_000,
     },
     {
+      runId: "run-1",
       id: "call-1",
       name: "exec",
       phase: "update",
@@ -287,6 +310,7 @@ try {
       timestamp: 1_050,
     },
     {
+      runId: "run-1",
       id: "call-1",
       name: "exec",
       phase: "result",

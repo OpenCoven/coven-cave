@@ -127,23 +127,28 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /gatewayToolSubscriptionPromise\.then\([\s\S]*?if \(cliLifecycleFinished\) \{\s*subscription\.close\(\);/,
-  "A late Gateway handshake must close itself after the CLI turn has finished",
+  /gatewayToolSubscriptionPromise\.then\([\s\S]*?if \(cliLifecycleFinished \|\| toolActivityClosed\) \{\s*subscription\.close\(\);/,
+  "A late Gateway handshake must close itself after the CLI turn has finished or stopped",
 );
 assert.match(
   chatRoute,
-  /onToolEvent: \(event\) => \{\s*if \(cliLifecycleFinished\) return;/,
-  "Late Gateway frames must not modify a completed CLI turn",
+  /onToolEvent: \(event\) => \{\s*if \(cliLifecycleFinished \|\| toolActivityClosed\) return;/,
+  "Late Gateway frames must not modify a completed or stopped CLI turn",
 );
 assert.match(
   chatRoute,
-  /child\.on\("error"[\s\S]*?openClawTools\.finalizeUnsettled\([\s\S]*?kind: "tool_use"/,
+  /child\.on\("error"[\s\S]*?settleOpenClawTools\(/,
   "a CLI spawn failure must explicitly settle observed Gateway tool cards",
 );
 assert.match(
   chatRoute,
-  /openClawTools\.finalizeUnsettled\(unsettledToolMessage\)[\s\S]*?toPersistedTools\(openClawTools\.snapshot\(\), 0\)[\s\S]*?persistedOpenClawTools \? \{ tools: persistedOpenClawTools \} : \{\}/,
+  /settleOpenClawTools\(unsettledToolMessage\)[\s\S]*?toPersistedTools\(openClawTools\.snapshot\(\), 0\)[\s\S]*?persistedOpenClawTools \? \{ tools: persistedOpenClawTools \} : \{\}/,
   "OpenClaw tool cards must survive reload through the saved assistant turn",
+);
+assert.match(
+  chatRoute,
+  /const killChild = \(\) => \{\s*toolActivityClosed = true;\s*gatewayToolSubscription\?\.close\(\);\s*settleOpenClawTools\(/,
+  "Stop and detach termination must close the Gateway and settle cards before the CLI exit races in",
 );
 
 // Behavioral: per-name FIFO queue gives overlapping same-name calls distinct

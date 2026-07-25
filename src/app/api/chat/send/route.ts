@@ -581,12 +581,21 @@ function openClawChatResponse(args: {
       // unavailable Gateway. A late subscription is closed below if the CLI
       // already reached a terminal lifecycle state.
       let cliLifecycleFinished = false;
+      // Stop accepting events as soon as this turn has been terminated. The
+      // Gateway can race the CLI's SIGTERM/close lifecycle, so waiting for the
+      // child exit here could attach late tool frames to a cancelled turn.
+      let toolActivityClosed = false;
       let gatewayToolSubscription: { close(): void } | undefined;
+      const settleOpenClawTools = (message: string) => {
+        for (const tool of openClawTools.finalizeUnsettled(message)) {
+          push({ kind: "tool_use", ...tool });
+        }
+      };
       const gatewayToolSubscriptionPromise = subscribeOpenClawGatewayToolEvents({
         sessionKey: openClawSessionKey(conversationId),
         agentId,
         onToolEvent: (event) => {
-          if (cliLifecycleFinished) return;
+          if (cliLifecycleFinished || toolActivityClosed) return;
           const tool = openClawTools.accept(event);
           if (tool) push({ kind: "tool_use", ...tool });
         },
@@ -594,18 +603,14 @@ function openClawChatResponse(args: {
         // observed cards now, and leave the established CLI response path to
         // complete the plain-chat turn.
         onDisconnect: () => {
-          if (cliLifecycleFinished) return;
+          if (cliLifecycleFinished || toolActivityClosed) return;
           pushProgress(
             "openclaw-tool-activity",
             "Live OpenClaw tool activity disconnected",
             "error",
             "Showing the completed OpenClaw response; unfinished tools were settled.",
           );
-          for (const tool of openClawTools.finalizeUnsettled(
-            "OpenClaw tool activity disconnected before the tool settled.",
-          )) {
-            push({ kind: "tool_use", ...tool });
-          }
+          settleOpenClawTools("OpenClaw tool activity disconnected before the tool settled.");
         },
       });
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
@@ -620,7 +625,7 @@ function openClawChatResponse(args: {
 
       void gatewayToolSubscriptionPromise.then((subscription) => {
         gatewayToolSubscription = subscription;
-        if (cliLifecycleFinished) {
+        if (cliLifecycleFinished || toolActivityClosed) {
           subscription.close();
           return;
         }
@@ -656,6 +661,9 @@ function openClawChatResponse(args: {
       let stdout = "";
       let stderr = "";
       const killChild = () => {
+        toolActivityClosed = true;
+        gatewayToolSubscription?.close();
+        settleOpenClawTools("OpenClaw tool stopped before it settled.");
         try {
           child.kill("SIGTERM");
         } catch {
@@ -726,11 +734,7 @@ function openClawChatResponse(args: {
         // A spawn failure can race a previously observed Gateway start frame.
         // Settle it before ending the SSE stream so no live tool card remains
         // running when the authoritative CLI path could not start.
-        for (const tool of openClawTools.finalizeUnsettled(
-          "OpenClaw tool did not settle because the bridge failed to start.",
-        )) {
-          push({ kind: "tool_use", ...tool });
-        }
+        settleOpenClawTools("OpenClaw tool did not settle because the bridge failed to start.");
         const message =
           err.code === "ENOENT"
             ? "openclaw CLI not found on PATH. Open Setup to install it, then try again."
@@ -822,9 +826,7 @@ function openClawChatResponse(args: {
         const unsettledToolMessage = cancelledByUser
           ? "OpenClaw tool cancelled before it settled."
           : "OpenClaw tool did not settle before the turn ended.";
-        for (const tool of openClawTools.finalizeUnsettled(unsettledToolMessage)) {
-          push({ kind: "tool_use", ...tool });
-        }
+        settleOpenClawTools(unsettledToolMessage);
         const persistedOpenClawTools = toPersistedTools(openClawTools.snapshot(), 0);
 
         if (sessionId) push({ kind: "session", sessionId });

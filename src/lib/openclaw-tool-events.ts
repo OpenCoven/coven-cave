@@ -138,6 +138,8 @@ type GatewayToolPayload = {
 };
 
 export type OpenClawGatewayToolEvent = {
+  /** `toolCallId` is only guaranteed within its Gateway run. */
+  runId: string;
   id: string;
   name: string;
   phase: "start" | "update" | "result";
@@ -170,6 +172,7 @@ export function normalizeOpenClawGatewayToolEvent(
     !payload ||
     typeof payload.runId !== "string" ||
     !payload.runId.trim() ||
+    payload.runId.length > MAX_TOOL_IDENTIFIER_LENGTH ||
     payload.sessionKey !== expectedSessionKey ||
     payload.agentId !== expectedAgentId ||
     payload.stream !== "tool" ||
@@ -194,6 +197,7 @@ export function normalizeOpenClawGatewayToolEvent(
         ? boundedToolText(data.result, flattenToolResultContent)
         : undefined;
   return {
+    runId: payload.runId,
     id: data.toolCallId,
     name: data.name,
     phase,
@@ -209,39 +213,53 @@ export function normalizeOpenClawGatewayToolEvent(
 export class OpenClawToolEventLedger {
   private readonly tools = new Map<string, RecordedToolEvent>();
   private readonly startedAt = new Map<string, number>();
-  private readonly seenSequences = new Set<number>();
+  private readonly seenSequences = new Set<string>();
   private readonly lastSequenceByTool = new Map<string, number>();
 
+  /**
+   * Gateway sessions can contain consecutive or queued runs. Keep the
+   * transport id stable while namespacing it for Cave's per-turn tool model;
+   * the protocol does not promise that two different runs cannot reuse a
+   * toolCallId.
+   */
+  private toolKey(event: OpenClawGatewayToolEvent): string {
+    return `${event.runId}:${event.id}`;
+  }
+
   accept(event: OpenClawGatewayToolEvent, receivedAt = Date.now()): ToolStreamEvent | null {
-    const existing = this.tools.get(event.id);
+    const key = this.toolKey(event);
+    const existing = this.tools.get(key);
     if (!existing && this.tools.size >= MAX_TRACKED_TOOL_CALLS) return null;
     if (event.seq !== undefined) {
-      const lastSequence = this.lastSequenceByTool.get(event.id);
+      const lastSequence = this.lastSequenceByTool.get(key);
       if (lastSequence !== undefined && event.seq <= lastSequence) return null;
-      if (this.seenSequences.has(event.seq)) return null;
-      this.seenSequences.add(event.seq);
+      // Gateway sequence counters are scoped to a run, not this observer's
+      // entire long-lived session. A new run commonly starts again at 1.
+      const sequenceKey = `${event.runId}:${event.seq}`;
+      if (this.seenSequences.has(sequenceKey)) return null;
+      this.seenSequences.add(sequenceKey);
       // A bounded replay guard is enough for one live turn and prevents an
       // untrusted runtime from growing this set indefinitely.
       if (this.seenSequences.size > 4096) this.seenSequences.clear();
-      this.lastSequenceByTool.set(event.id, event.seq);
+      this.lastSequenceByTool.set(key, event.seq);
     }
     if (existing && existing.status !== "running") return null;
     const status: ToolStreamEvent["status"] =
       event.phase === "result" ? (event.isError ? "error" : "ok") : "running";
-    const startedAt = this.startedAt.get(event.id) ?? event.timestamp ?? receivedAt;
-    if (event.phase === "start") this.startedAt.set(event.id, event.timestamp ?? receivedAt);
+    const startedAt = this.startedAt.get(key) ?? event.timestamp ?? receivedAt;
+    if (event.phase === "start") this.startedAt.set(key, event.timestamp ?? receivedAt);
     const next: RecordedToolEvent = {
-      id: event.id,
+      id: key,
       name: existing?.name ?? event.name,
       ...(existing?.input ?? event.input ? { input: existing?.input ?? event.input } : {}),
       ...(event.output ?? existing?.output ? { output: event.output ?? existing?.output } : {}),
       status,
-      ...(status !== "running" && this.startedAt.has(event.id)
+      ...(status !== "running" && this.startedAt.has(key)
         ? { durationMs: Math.max(0, receivedAt - startedAt) }
         : {}),
     };
-    this.tools.set(event.id, next);
-    if (status !== "running") this.startedAt.delete(event.id);
+    this.tools.set(key, next);
+    if (status !== "running") this.startedAt.delete(key);
     return next;
   }
 
@@ -304,12 +322,11 @@ export function readVerifiedOpenClawCapabilityCache(
       parsed.entries.length > CACHE_MAX_ENTRIES ||
       parsed.integrity !== cacheIntegrity(parsed.entries)
     ) return [];
-    return parsed.entries.filter(
-      (entry): entry is OpenClawCapabilityCacheEntry =>
+    return parsed.entries.flatMap((entry) => {
+      const valid =
         typeof entry?.runtimeKey === "string" && /^[a-f0-9]{24}$/.test(entry.runtimeKey) &&
         Number.isSafeInteger(entry.protocol) &&
-        typeof entry.serverVersion === "string" &&
-        entry.serverVersion.length <= MAX_TOOL_IDENTIFIER_LENGTH &&
+        safeServerVersion(entry.serverVersion) &&
         OPENCLAW_TOOL_PROTOCOL_ADAPTERS.some(
           (adapter) => entry.protocol === adapter.protocol && entry.schema === adapter.schema,
         ) &&
@@ -318,8 +335,23 @@ export function readVerifiedOpenClawCapabilityCache(
         Number.isSafeInteger(entry.expiresAt) &&
         entry.observedAt <= entry.expiresAt &&
         entry.expiresAt <= entry.observedAt + CACHE_TTL_MS &&
-        entry.expiresAt > now,
-    );
+        entry.expiresAt > now;
+      // Return a fresh, closed projection rather than the parsed record. This
+      // keeps future or tampered cache fields (including credentials) from
+      // surviving a later atomic rewrite even though cache data never grants
+      // permission to stream.
+      return valid
+        ? [{
+            runtimeKey: entry.runtimeKey,
+            protocol: entry.protocol,
+            serverVersion: entry.serverVersion,
+            schema: entry.schema,
+            supported: true,
+            observedAt: entry.observedAt,
+            expiresAt: entry.expiresAt,
+          }]
+        : [];
+    });
   } catch {
     return [];
   }
@@ -422,6 +454,9 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
   let connected = false;
   let finished = false;
   let disconnected = false;
+  let connectRequested = false;
+  let handshakeAccepted = false;
+  let subscriptionRequested = false;
   let subscriptionId = "";
   let maxInboundFrameBytes = MAX_PREAUTH_FRAME_BYTES;
   let maxBufferedBytes = MAX_GATEWAY_FRAME_BYTES;
@@ -483,6 +518,7 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
       resolve(value);
     };
     socket.on("error", () => {
+      if (closed) return;
       if (!connected) {
         close();
         finish(fallback("gateway_unavailable"));
@@ -492,8 +528,13 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
       }
     });
     socket.on("close", () => {
-      if (!connected) finish(fallback("gateway_closed"));
-      else notifyDisconnect();
+      if (!connected) {
+        finish(fallback("gateway_closed"));
+      } else if (!closed) {
+        notifyDisconnect();
+      }
+      if (tickWatchdog) clearTimeout(tickWatchdog);
+      closed = true;
     });
     socket.on("message", (raw) => {
       let frame: GatewayResponse & { event?: unknown };
@@ -513,6 +554,10 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
       }
       armTickWatchdog();
       if (frame.type === "event" && frame.event === "connect.challenge") {
+        // Challenges and responses are transport frames too: ignore replays so
+        // a duplicate challenge cannot send credentials or subscriptions twice.
+        if (closed || connected || connectRequested) return;
+        connectRequested = true;
         socket.send(
           JSON.stringify({
             type: "req",
@@ -537,6 +582,7 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
         return;
       }
       if (frame.type === "res" && frame.id === "cave-openclaw-connect") {
+        if (closed || !connectRequested || handshakeAccepted) return;
         const compatibility = frame.ok === true ? resolveOpenClawToolCompatibility(frame.payload) : undefined;
         if (!compatibility?.supported) {
           options.onDiagnostic?.({ code: "gateway_incompatible", protocol: compatibility?.protocol, schema: compatibility?.schema });
@@ -544,6 +590,7 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
           finish(fallback(compatibility?.reason ?? "gateway_connect_rejected", compatibility));
           return;
         }
+        handshakeAccepted = true;
         negotiatedCompatibility = compatibility;
         const policy = (frame.payload as GatewayHello).policy;
         if (
@@ -571,6 +618,7 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
           }).catch(() => undefined);
         }
         subscriptionId = "cave-openclaw-subscribe";
+        subscriptionRequested = true;
         const subscriptionRequest = JSON.stringify({
           type: "req",
           id: subscriptionId,
@@ -589,6 +637,7 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
         return;
       }
       if (frame.type === "res" && frame.id === subscriptionId) {
+        if (closed || !subscriptionRequested || connected) return;
         if (frame.ok !== true) {
           close();
           finish(fallback("gateway_subscription_rejected"));
