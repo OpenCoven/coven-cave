@@ -276,6 +276,7 @@ export function openClawAgentArgs(
   harnessPrompt: string,
   agentId: string,
   conversationId: string,
+  runId?: string,
 ): string[] {
   return [
     "agent",
@@ -286,5 +287,6 @@ export function openClawAgentArgs(
     "--json",
     "--session-id",
     openClawSessionKey(conversationId),
+    ...(runId ? ["--run-id", runId] : []),
   ];
 }

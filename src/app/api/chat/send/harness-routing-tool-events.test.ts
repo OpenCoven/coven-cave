@@ -107,6 +107,11 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /const gatewayRunId = crypto\.randomUUID\(\);[\s\S]*?openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, gatewayRunId\)[\s\S]*?expectedRunId: gatewayRunId,/,
+  "the Gateway subscription must filter by the exact run id passed to the OpenClaw CLI dispatch",
+);
+assert.match(
+  chatRoute,
   /const gatewayToolSubscriptionPromise = subscribeOpenClawGatewayToolEvents\([\s\S]*?const child = spawn\([\s\S]*?gatewayToolSubscriptionPromise\.then\(/,
   "Optional Gateway negotiation must not delay spawning or registering the authoritative CLI turn",
 );

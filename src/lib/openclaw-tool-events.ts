@@ -236,22 +236,41 @@ export class OpenClawToolEventLedger {
     const key = this.toolKey(event);
     const existing = this.tools.get(key);
     if (!existing && this.tools.size >= MAX_TRACKED_TOOL_CALLS) return null;
+    // Session replay can deliver an update/result before the matching start.
+    // Admit that later start only to fill immutable metadata; it must never
+    // change an already-observed status or overwrite newer output.
+    const lateStartBackfill =
+      event.phase === "start" &&
+      existing !== undefined &&
+      existing.input === undefined &&
+      event.input !== undefined;
     if (event.seq !== undefined) {
       const lastSequence = this.lastSequenceByTool.get(key);
-      if (lastSequence !== undefined && event.seq <= lastSequence) return null;
+      if (lastSequence !== undefined && event.seq <= lastSequence && !lateStartBackfill) return null;
       // Gateway sequence counters are scoped to a run, not this observer's
       // entire long-lived session. A new run commonly starts again at 1.
       const sequenceKey = `${event.runId}:${event.seq}`;
-      if (this.seenSequences.has(sequenceKey)) return null;
+      if (this.seenSequences.has(sequenceKey) && !lateStartBackfill) return null;
       this.seenSequences.add(sequenceKey);
       // A bounded replay guard is enough for one live turn and prevents an
       // untrusted runtime from growing this set indefinitely.
       if (this.seenSequences.size > 4096) this.seenSequences.clear();
-      this.lastSequenceByTool.set(key, event.seq);
+      if (lastSequence === undefined || event.seq > lastSequence) {
+        this.lastSequenceByTool.set(key, event.seq);
+      }
     }
-    if (existing && existing.status !== "running") return null;
+    if (existing && existing.status !== "running") {
+      if (!lateStartBackfill) return null;
+      const next = { ...existing, input: event.input };
+      this.tools.set(key, next);
+      return next;
+    }
     const status: ToolStreamEvent["status"] =
-      event.phase === "result" ? (event.isError ? "error" : "ok") : "running";
+      event.phase === "start" && existing
+        ? existing.status
+        : event.phase === "result"
+          ? (event.isError ? "error" : "ok")
+          : "running";
     const startedAt = this.startedAt.get(key) ?? event.timestamp ?? receivedAt;
     if (event.phase === "start") this.startedAt.set(key, event.timestamp ?? receivedAt);
     const next: RecordedToolEvent = {

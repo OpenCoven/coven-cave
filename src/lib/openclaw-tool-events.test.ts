@@ -172,6 +172,14 @@ assert.deepEqual(
   { id: "run-2:call-2", name: "read", output: "done", status: "ok" },
   "a factual terminal event may render without inventing a missing start event",
 );
+assert.deepEqual(
+  outOfOrder.accept(
+    { runId: "run-2", id: "call-2", name: "read", phase: "start", input: "{\"path\":\"README.md\"}", isError: false, seq: 1 },
+    2_001,
+  ),
+  { id: "run-2:call-2", name: "read", input: "{\"path\":\"README.md\"}", output: "done", status: "ok" },
+  "a late start backfills its input without regressing a terminal result",
+);
 const concurrent = new OpenClawToolEventLedger();
 concurrent.accept({ runId: "run-concurrent", id: "call-a", name: "exec", phase: "start", input: "a", isError: false }, 2_000);
 concurrent.accept({ runId: "run-concurrent", id: "call-b", name: "exec", phase: "start", input: "b", isError: false }, 2_001);

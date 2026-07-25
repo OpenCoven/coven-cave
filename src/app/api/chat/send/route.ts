@@ -510,7 +510,11 @@ function openClawChatResponse(args: {
       }
       const agentId = agentBinding.openclawAgentId;
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
-      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
+      // OpenClaw's documented --run-id is forwarded unchanged to Gateway
+      // dispatch. Generate it before either the CLI or event subscriber starts
+      // so a session-wide event can be proven to belong to this Cave turn.
+      const gatewayRunId = crypto.randomUUID();
+      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, gatewayRunId);
       const openclawLaunch = openClawLaunchCommand();
       if (openclawLaunch.unresolvedWindowsShim) {
         pushProgress(
@@ -595,11 +599,7 @@ function openClawChatResponse(args: {
       const gatewayToolSubscriptionPromise = subscribeOpenClawGatewayToolEvents({
         sessionKey: openClawGatewaySessionKey(agentId, conversationId),
         agentId,
-        // The current one-shot CLI reports the Gateway run id only in its
-        // terminal JSON. Until a direct Gateway dispatch supplies it before
-        // streaming starts, the bridge must retain the visible plain-chat
-        // fallback rather than attaching another run's session.tool frames.
-        expectedRunId: undefined,
+        expectedRunId: gatewayRunId,
         onToolEvent: (event) => {
           if (cliLifecycleFinished || toolActivityClosed) return;
           const tool = openClawTools.accept(event);

@@ -166,6 +166,18 @@ assert.equal(
   true,
   "OpenClaw bridge must pass the stable Cave-owned id through --session-id",
 );
+assert.deepEqual(openClawAgentArgs("hi", "nova", "ABC_123", "run-123"), [
+  "agent",
+  "--agent",
+  "nova",
+  "--message",
+  "hi",
+  "--json",
+  "--session-id",
+  "cave-abc-123",
+  "--run-id",
+  "run-123",
+]);
 
 assert.equal(
   extractOpenClawText({
