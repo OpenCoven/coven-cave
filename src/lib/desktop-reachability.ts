@@ -31,6 +31,13 @@ const UNSUPPORTED: DesktopReachabilityStatus = {
 
 async function tauriInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T | null> {
   if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return null;
+  try {
+    const { platform } = await import("@tauri-apps/plugin-os");
+    const os = platform();
+    if (os === "ios" || os === "android") return null;
+  } catch {
+    // Older desktop builds or minimal shells may not have the OS plugin; assume desktop.
+  }
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<T>(command, args);
 }

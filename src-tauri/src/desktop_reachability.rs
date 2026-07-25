@@ -2,6 +2,8 @@
 
 use super::*;
 
+#[cfg(all(desktop, target_os = "macos"))]
+use fs2::FileExt;
 #[cfg(desktop)]
 use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
@@ -15,6 +17,8 @@ const REACHABILITY_CONFIG_FILE: &str = "desktop-reachability.json";
 const GUI_ACTIVE_FILE: &str = "desktop-gui-active.json";
 #[cfg(desktop)]
 const DAEMON_STATE_FILE: &str = "desktop-daemon-state.json";
+#[cfg(all(desktop, target_os = "macos"))]
+const OWNERSHIP_LOCK_FILE: &str = "desktop-reachability-ownership.lock";
 #[cfg(desktop)]
 const LAUNCH_AGENT_LABEL: &str = "ai.opencoven.cave";
 #[cfg(desktop)]
@@ -82,6 +86,21 @@ struct DaemonSidecarState {
     #[serde(flatten)]
     lease: ProcessLease,
     port: u16,
+}
+
+/// An advisory lock shared by GUI startup and the launchd daemon. Holding it
+/// from the last GUI-marker check through daemon-state persistence prevents an
+/// unrecorded daemon child from racing a newly-started GUI sidecar.
+#[cfg(all(desktop, target_os = "macos"))]
+struct ReachabilityOwnershipLease {
+    file: std::fs::File,
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+impl Drop for ReachabilityOwnershipLease {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.file);
+    }
 }
 
 #[cfg(desktop)]
@@ -289,6 +308,28 @@ fn write_private_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String
         .map_err(|error| format!("could not replace {}: {error}", path.display()))
 }
 
+#[cfg(all(desktop, target_os = "macos"))]
+fn acquire_reachability_ownership_lease(
+    app_data_dir: &Path,
+) -> Result<ReachabilityOwnershipLease, String> {
+    std::fs::create_dir_all(app_data_dir)
+        .map_err(|error| format!("could not create {}: {error}", app_data_dir.display()))?;
+    let path = app_data_dir.join(OWNERSHIP_LOCK_FILE);
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options
+        .open(&path)
+        .map_err(|error| format!("could not open {}: {error}", path.display()))?;
+    file.lock_exclusive()
+        .map_err(|error| format!("could not acquire reachability ownership: {error}"))?;
+    Ok(ReachabilityOwnershipLease { file })
+}
+
 #[cfg(desktop)]
 fn mobile_mode_enabled() -> bool {
     let path = cave_home_path().join("preferences.json");
@@ -491,11 +532,6 @@ fn launch_agent_domain() -> Result<String, String> {
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
-fn launch_agent_service() -> Result<String, String> {
-    Ok(format!("{}/{}", launch_agent_domain()?, LAUNCH_AGENT_LABEL))
-}
-
-#[cfg(all(desktop, target_os = "macos"))]
 fn run_launchctl(args: &[&str]) -> Result<(), String> {
     let output = Command::new("/bin/launchctl")
         .args(args)
@@ -509,8 +545,10 @@ fn run_launchctl(args: &[&str]) -> Result<(), String> {
 
 #[cfg(all(desktop, target_os = "macos"))]
 fn bootout_launch_agent() -> Result<(), String> {
-    let service = launch_agent_service()?;
-    match run_launchctl(&["bootout", &service]) {
+    let domain = launch_agent_domain()?;
+    let plist_path = launch_agent_path()?;
+    let plist_arg = plist_path.to_string_lossy().into_owned();
+    match run_launchctl(&["bootout", &domain, &plist_arg]) {
         Ok(()) => Ok(()),
         // A missing service is normal on first install and after a clean
         // handoff. All other launchd failures are ownership failures: do not
@@ -518,6 +556,7 @@ fn bootout_launch_agent() -> Result<(), String> {
         Err(error)
             if error.contains("Could not find service")
                 || error.contains("No such process")
+                || error.contains("No such file")
                 || error.contains("not found") =>
         {
             Ok(())
@@ -630,6 +669,7 @@ pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<(), Str
         .path()
         .app_data_dir()
         .map_err(|error| format!("could not resolve app data: {error}"))?;
+    let _ownership = acquire_reachability_ownership_lease(&app_data_dir)?;
     let marker = app_data_dir.join(GUI_ACTIVE_FILE);
     write_private_json(&marker, &current_process_lease()?)?;
 
@@ -661,6 +701,10 @@ pub(super) fn prepare_gui_reachability(_app: &tauri::AppHandle) -> Result<(), St
 #[cfg(all(desktop, target_os = "macos"))]
 pub(super) fn handoff_to_background_daemon(app: &tauri::AppHandle) {
     let Ok(app_data_dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let Ok(_ownership) = acquire_reachability_ownership_lease(&app_data_dir) else {
+        log::warn!("[cave] could not acquire reachability ownership for daemon handoff");
         return;
     };
     let config = read_reachability_config(&app_data_dir.join(REACHABILITY_CONFIG_FILE));
@@ -1099,34 +1143,21 @@ fn run_sidecar_daemon() -> Result<i32, String> {
         .stdin(Stdio::null());
     command.stdout(Stdio::from(stdout));
     command.stderr(Stdio::from(stderr));
+    // Take the same lease as GUI startup immediately before creating the
+    // child. A GUI that wins this lease writes its marker first; a daemon that
+    // wins records its child before releasing it, so the GUI can stop it
+    // during takeover instead of leaving an untracked fallback-port server.
+    let ownership = acquire_reachability_ownership_lease(&app_data_dir)?;
+    if gui_is_active(&app_data_dir)
+        || daemon_shutdown_requested()
+        || !read_reachability_config(&config_path).daemon_mode
+    {
+        return Ok(0);
+    }
     let mut child = command
         .spawn()
         .map_err(|error| format!("could not start background sidecar: {error}"))?;
     let child_pid = child.id();
-    match wait_for_sidecar_ready(port, &server_log, Duration::from_secs(30), || {
-        gui_is_active(&app_data_dir) || daemon_shutdown_requested()
-    }) {
-        PortWaitResult::Ready => {}
-        PortWaitResult::Cancelled => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Ok(0);
-        }
-        PortWaitResult::TimedOut => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!(
-                "background sidecar did not become ready on port {port}"
-            ));
-        }
-    }
-
-    if daemon_shutdown_requested() {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Ok(0);
-    }
-
     let identity = match process_identity(child_pid) {
         Some(identity) => identity,
         None => {
@@ -1140,11 +1171,41 @@ fn run_sidecar_daemon() -> Result<i32, String> {
         identity,
     };
     let state = DaemonSidecarState { lease, port };
-    if let Err(error) = write_private_json(&app_data_dir.join(DAEMON_STATE_FILE), &state) {
+    let state_path = app_data_dir.join(DAEMON_STATE_FILE);
+    if let Err(error) = write_private_json(&state_path, &state) {
         let _ = child.kill();
         let _ = child.wait();
         return Err(error);
     }
+    drop(ownership);
+
+    match wait_for_sidecar_ready(port, &server_log, Duration::from_secs(30), || {
+        gui_is_active(&app_data_dir) || daemon_shutdown_requested()
+    }) {
+        PortWaitResult::Ready => {}
+        PortWaitResult::Cancelled => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_file(&state_path);
+            return Ok(0);
+        }
+        PortWaitResult::TimedOut => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_file(&state_path);
+            return Err(format!(
+                "background sidecar did not become ready on port {port}"
+            ));
+        }
+    }
+
+    if daemon_shutdown_requested() {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_file(&state_path);
+        return Ok(0);
+    }
+
     repair_tailscale_serve_for_port(port);
 
     let mut assertion: Option<PowerAssertion> = None;

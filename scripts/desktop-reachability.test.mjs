@@ -78,6 +78,16 @@ assert.match(
 );
 assert.match(
   reachability,
+  /acquire_reachability_ownership_lease[\s\S]*file\.lock_exclusive\(\)/,
+  "GUI and daemon ownership must serialize through an exclusive lease",
+);
+assert.match(
+  reachability,
+  /let ownership = acquire_reachability_ownership_lease\(&app_data_dir\)\?[\s\S]*gui_is_active\(&app_data_dir\)[\s\S]*let mut child[\s\S]*write_private_json\(&state_path, &state\)[\s\S]*drop\(ownership\)/,
+  "a daemon must recheck GUI ownership and persist its child before releasing the handoff lease",
+);
+assert.match(
+  reachability,
   /owned_sidecar_is_live[\s\S]*is_live_with_pid/,
   "sleep assertions must require a live, retained sidecar process",
 );
@@ -135,6 +145,11 @@ assert.match(
   bridge,
   /desktop_reachability_configure/,
   "the Settings controls must persist through the native macOS authority",
+);
+assert.match(
+  bridge,
+  /!\("__TAURI_INTERNALS__" in window\)/,
+  "the Tauri runtime guard must remain type-safe in browser builds",
 );
 
 const unload = uninstall.indexOf('forget_launch_agent "$APP_ID"');
