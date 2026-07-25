@@ -2092,6 +2092,7 @@ export async function POST(req: Request) {
           const utf8 = new TextDecoder();
           const decoder = new HermesSseDecoder();
           const hermesCallIdsByItemId = new Map<string, string>();
+          const hermesCallNamesById = new Map<string, string>();
           const hermesArgumentBuffers = new Map<string, string>();
           const consume = (frame: { event: string; data: string }): boolean => {
             if (frame.data === "[DONE]") return true;
@@ -2116,6 +2117,7 @@ export async function POST(req: Request) {
               case "tool_start": {
                 const input = formatToolInputValue(event.input);
                 if (event.itemId) hermesCallIdsByItemId.set(event.itemId, event.id);
+                hermesCallNamesById.set(event.id, event.name);
                 if (input !== undefined) hermesArgumentBuffers.set(event.id, input);
                 boundarySentinel?.observe(event.name, input ?? "");
                 const toolEv = toolTracker.envelopeToolUse(event.id, event.name, input, assistantText.length);
@@ -2136,6 +2138,14 @@ export async function POST(req: Request) {
                   ? event.input
                   : `${hermesArgumentBuffers.get(id) ?? ""}${event.input}`;
                 hermesArgumentBuffers.set(id, next);
+                // Standard Responses calls often arrive with empty arguments
+                // and stream their actual path-bearing input afterward. Check
+                // the assembled final value at the same runtime boundary as
+                // the initial tool announcement.
+                if (event.isFinal) {
+                  const name = hermesCallNamesById.get(id);
+                  if (name) boundarySentinel?.observe(name, next);
+                }
                 const toolEv = toolTracker.envelopeToolInput(id, formatToolInputValue(next));
                 if (toolEv) push({ kind: "tool_use", ...toolEv });
                 return false;
