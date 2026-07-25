@@ -335,8 +335,10 @@ function gatewayConfigFromEnv(): { url: string; token?: string } | null {
   if (!url || !token) return null;
   try {
     const parsed = new URL(url);
+    const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "::1" || parsed.hostname === "localhost";
     if (
       (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") ||
+      (parsed.protocol === "ws:" && !loopback) ||
       parsed.username ||
       parsed.password ||
       parsed.search ||

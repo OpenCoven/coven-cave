@@ -213,6 +213,17 @@ try {
     },
   ]);
   subscription.close();
+  process.env.OPENCLAW_GATEWAY_URL = "ws://gateway.example.test";
+  assert.equal(
+    (await subscribeOpenClawGatewayToolEvents({
+      sessionKey: "cave-session",
+      agentId: "nova",
+      persistCapabilityCache: false,
+      onToolEvent: () => assert.fail("a plaintext remote Gateway must not be contacted"),
+    })).active,
+    false,
+  );
+  process.env.OPENCLAW_GATEWAY_URL = `ws://127.0.0.1:${address.port}`;
   // A URL alone is never enough to turn on Gateway streaming: the token must
   // be present so the normal path always performs an authenticated handshake.
   delete process.env.OPENCLAW_GATEWAY_TOKEN;
