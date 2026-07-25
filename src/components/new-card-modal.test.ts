@@ -11,8 +11,33 @@ assert.doesNotMatch(modal, /<button\b/, "new-card modal should not hand-roll but
 assert.doesNotMatch(modal, /<select\b|<option\b/, "new-card modal should not use native select controls");
 assert.doesNotMatch(modal, /rounded-md/, "new-card modal should use control radius tokens instead of hard-coded rounded-md");
 
-// The Project is chosen first. Its server-filtered familiar list must not offer
-// stale options while a project access lookup is in flight.
+// When a New Task opens with a familiar already selected, its project list is
+// server-filtered. The Project-first path still filters familiars afterward.
+assert.match(
+  modal,
+  /useProjects\(\{ familiarId, enabled: open \}\)/,
+  "new-card modal fetches only projects accessible to its preselected familiar",
+);
+assert.match(
+  modal,
+  /loadedSuccessfully: projectsLoaded/,
+  "new-card modal reads the project scope readiness signal",
+);
+assert.match(
+  modal,
+  /const opening = open && !wasOpenRef\.current;[\s\S]{0,1800}useLayoutEffect\(\(\) => \{[\s\S]{0,240}setFamiliarId\(defaultFamiliarId\)/,
+  "new-card modal applies a reopened modal's default familiar before paint",
+);
+assert.match(
+  modal,
+  /const projectPickerReady = isProjectPickerReady\(\{[\s\S]{0,200}opening,[\s\S]{0,200}loadedSuccessfully: projectsLoaded,[\s\S]{0,200}loading: projectsLoading/,
+  "new-card modal does not enable a project picker until the current scope succeeds after opening",
+);
+assert.match(
+  modal,
+  /value=\{projectPickerReady \? projectId \?\? "" : ""\}[\s\S]{0,1200}disabled=\{!projectPickerReady\}/,
+  "new-card modal suppresses retained prior-scope project options during a familiar transition",
+);
 assert.match(
   modal,
   /useProjectFamiliars\(\{ projectId, enabled: open \}\)/,
