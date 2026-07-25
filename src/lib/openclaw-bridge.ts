@@ -262,16 +262,6 @@ export function openClawSessionKey(conversationId: string): string {
   return `cave-${conversationId.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`;
 }
 
-/**
- * Gateway events use the canonical, agent-scoped key rather than the raw
- * `--session-id` value accepted by the CLI. Keep this translation at the
- * bridge boundary: subscribing to the raw id can acknowledge successfully
- * before the CLI has created its session, then never receive its events.
- */
-export function openClawGatewaySessionKey(agentId: string, conversationId: string): string {
-  return `agent:${agentId}:explicit:${openClawSessionKey(conversationId)}`;
-}
-
 export function openClawAgentArgs(
   harnessPrompt: string,
   agentId: string,

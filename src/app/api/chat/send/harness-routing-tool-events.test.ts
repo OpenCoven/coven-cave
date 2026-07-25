@@ -100,67 +100,6 @@ assert.match(
   "tools persist on the assistant turn alongside usage and cost",
 );
 
-assert.match(
-  chatRoute,
-  /subscribeOpenClawGatewayToolEvents\([\s\S]*?sessionKey: openClawGatewaySessionKey\(agentId, conversationId\)[\s\S]*?agentId,[\s\S]*?onToolEvent:/,
-  "OpenClaw should subscribe by its canonical agent-scoped Gateway key alongside the CLI turn",
-);
-assert.doesNotMatch(
-  openclawBridge,
-  /--run-id/,
-  "the released OpenClaw CLI has no documented --run-id option; forwarding it breaks plain chat",
-);
-assert.match(
-  chatRoute,
-  /const gatewayToolSubscriptionPromise = subscribeOpenClawGatewayToolEvents\([\s\S]*?const child = spawn\([\s\S]*?gatewayToolSubscriptionPromise\.then\(/,
-  "Optional Gateway negotiation must not delay spawning or registering the authoritative CLI turn",
-);
-assert.doesNotMatch(
-  chatRoute,
-  /await subscribeOpenClawGatewayToolEvents\(/,
-  "An unavailable Gateway must not block the existing OpenClaw CLI fallback",
-);
-assert.match(
-  chatRoute,
-  /const openClawTools = new OpenClawToolEventLedger\(\);[\s\S]*?openClawTools\.accept\(event\)[\s\S]*?kind: "tool_use"/,
-  "validated OpenClaw lifecycle frames should feed stable SSE tool events",
-);
-assert.match(
-  chatRoute,
-  /gatewayToolSubscription\?\.close\(\);[\s\S]*?gatewayToolSubscription\?\.close\(\);/,
-  "Gateway subscriptions must close on both process error and terminal close",
-);
-assert.match(
-  chatRoute,
-  /gatewayToolSubscriptionPromise\.then\([\s\S]*?if \(cliLifecycleFinished \|\| toolActivityClosed\) \{\s*subscription\.close\(\);/,
-  "A late Gateway handshake must close itself after the CLI turn has finished or stopped",
-);
-assert.match(
-  chatRoute,
-  /onToolEvent: \(event\) => \{\s*if \(cliLifecycleFinished \|\| toolActivityClosed\) return;/,
-  "Late Gateway frames must not modify a completed or stopped CLI turn",
-);
-assert.match(
-  chatRoute,
-  /child\.on\("error"[\s\S]*?settleOpenClawTools\(/,
-  "a CLI spawn failure must explicitly settle observed Gateway tool cards",
-);
-assert.match(
-  chatRoute,
-  /child\.on\("error"[\s\S]*?if \(cliTerminalHandled\) return;[\s\S]*?cliTerminalHandled = true;[\s\S]*?child\.on\("close"[\s\S]*?if \(cliTerminalHandled\) return;/,
-  "a spawn error followed by close must have one terminal owner, avoiding duplicate transcript writes and done events",
-);
-assert.match(
-  chatRoute,
-  /settleOpenClawTools\(unsettledToolMessage\)[\s\S]*?toPersistedTools\(openClawTools\.snapshot\(\), 0\)[\s\S]*?persistedOpenClawTools \? \{ tools: persistedOpenClawTools \} : \{\}/,
-  "OpenClaw tool cards must survive reload through the saved assistant turn",
-);
-assert.match(
-  chatRoute,
-  /const killChild = \(\) => \{\s*toolActivityClosed = true;\s*gatewayToolSubscription\?\.close\(\);\s*settleOpenClawTools\(/,
-  "Stop and detach termination must close the Gateway and settle cards before the CLI exit races in",
-);
-
 // Behavioral: per-name FIFO queue gives overlapping same-name calls distinct
 // ids and pairs each post with the oldest open pre (correct durations).
 {

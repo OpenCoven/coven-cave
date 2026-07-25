@@ -9,7 +9,6 @@ import {
   extractOpenClawText,
   openClawBridgeCapabilities,
   openClawAgentArgs,
-  openClawGatewaySessionKey,
   openClawSessionKey,
   readTomlString,
   resolveOpenClawAgentBindingFromSources,
@@ -146,11 +145,6 @@ try {
 }
 
 assert.equal(openClawSessionKey("ABC_123:Weird"), "cave-abc-123-weird");
-assert.equal(
-  openClawGatewaySessionKey("nova", "ABC_123:Weird"),
-  "agent:nova:explicit:cave-abc-123-weird",
-  "the Gateway subscription must use OpenClaw's canonical agent-scoped key, not the CLI session-id",
-);
 assert.deepEqual(openClawAgentArgs("hi", "nova", "ABC_123"), [
   "agent",
   "--agent",
@@ -166,6 +160,7 @@ assert.equal(
   true,
   "OpenClaw bridge must pass the stable Cave-owned id through --session-id",
 );
+
 assert.equal(
   extractOpenClawText({
     result: {
