@@ -184,11 +184,14 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       finalized = true;
       clearTimeout(timeout);
       ACTIVE_RUNS.delete(sessionId);
-      const rawAssistantText = [...deltaByMessage.values()].join("\n");
-      assistantText = rawAssistantText.trim();
+      for (const pending of textAssembler.flushUnconfirmed()) {
+        deltaByMessage.set(pending.messageId, pending.text);
+      }
+      const reconciledAssistantText = [...deltaByMessage.values()].join("\n");
+      assistantText = reconciledAssistantText.trim();
       const persistedTools = toPersistedTools(
         toolTracker.snapshot(),
-        rawAssistantText.length - rawAssistantText.trimStart().length,
+        reconciledAssistantText.length - reconciledAssistantText.trimStart().length,
       );
       // Any non-zero (or missing) exit code is an error — even with partial
       // output, the run didn't finish cleanly and the diagnostics must not

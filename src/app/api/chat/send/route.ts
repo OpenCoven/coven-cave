@@ -2168,7 +2168,7 @@ export async function POST(req: Request) {
             // OpenCode normally emits a JSON error envelope, but older CLI
             // builds can exit non-zero with only stderr. Do not mistake that
             // failed invocation for a successful model application below.
-            if (openCodeDirect && code !== 0) {
+            if ((openCodeDirect || copilotStream) && code !== 0) {
               result = { ...result, is_error: true };
             }
             pushProgress(
@@ -2179,6 +2179,12 @@ export async function POST(req: Request) {
               Date.now() - attemptStartedAt,
             );
             if (jsonBuf) handleLine(jsonBuf);
+            if (copilotStream) {
+              for (const pending of copilotText.flushUnconfirmed()) {
+                assistantText += pending.text;
+                push({ kind: "assistant_chunk", text: pending.text });
+              }
+            }
             const tail = assistantFilter.flush();
             if (tail) {
               assistantText += tail;

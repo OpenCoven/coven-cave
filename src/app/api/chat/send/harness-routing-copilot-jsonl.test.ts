@@ -171,6 +171,16 @@ assert.match(
   /copilotText\.reset\(\);/,
   "The resume retry must clear per-attempt copilot text-dedup state alongside the tracker",
 );
+assert.match(
+  chatRoute,
+  /\(openCodeDirect \|\| copilotStream\) && code !== 0[\s\S]*?is_error: true/,
+  "a nonzero direct Copilot process exit persists the turn as an error even without a final result frame",
+);
+assert.match(
+  chatRoute,
+  /copilotText\.flushUnconfirmed\(\)/,
+  "direct Copilot preserves buffered partial text only when the process exits before a full message frame",
+);
 
 assert.match(
   chatRoute,

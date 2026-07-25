@@ -676,8 +676,10 @@ export function parseCopilotChatEvent(
  * Assembles assistant text from copilot's dual sources without duplication:
  * `assistant.message_delta` frames stream live text, and the follow-up
  * `assistant.message` frame repeats the full content (and is the ONLY text
- * source when the CLI skips deltas, e.g. tool-request-only messages). Both
- * feed through here; the return value is exactly the new text to append.
+ * source when the CLI skips deltas, e.g. tool-request-only messages). To keep
+ * the full frame authoritative under transport reordering, deltas stay
+ * buffered until that full frame arrives; interrupted streams can explicitly
+ * flush their unconfirmed buffered text at process close.
  */
 export class CopilotTextAssembler {
   private messages = new Map<string, { deltaText: string; fullText: string | null; seenFrameIds: Set<string> }>();
@@ -691,7 +693,7 @@ export class CopilotTextAssembler {
     if (frameId) state.seenFrameIds.add(frameId);
     state.deltaText += text;
     this.messages.set(messageId, state);
-    return text;
+    return "";
   }
 
   message(messageId: string, content: string): string {
@@ -699,20 +701,14 @@ export class CopilotTextAssembler {
     if (state.fullText !== null) return "";
     state.fullText = content;
     this.messages.set(messageId, state);
-    if (content.startsWith(state.deltaText)) return content.slice(state.deltaText.length);
-    // A full frame is authoritative, but append-only consumers cannot retract
-    // text already streamed. Append only its longest unseen suffix/prefix
-    // overlap so a reordered or stale delta never duplicates the entire frame.
-    const overlapLimit = Math.min(state.deltaText.length, content.length);
-    let overlap = 0;
-    while (overlap < overlapLimit && state.deltaText[overlap] === content[overlap]) overlap += 1;
-    for (let size = overlapLimit; size > overlap; size -= 1) {
-      if (state.deltaText.endsWith(content.slice(0, size))) {
-        overlap = size;
-        break;
-      }
-    }
-    return content.slice(overlap);
+    return content;
+  }
+
+  /** Preserve partial text only when the CLI exits before its full message. */
+  flushUnconfirmed(): Array<{ messageId: string; text: string }> {
+    return Array.from(this.messages, ([messageId, state]) => ({ messageId, state }))
+      .filter(({ state }) => state.fullText === null && state.deltaText)
+      .map(({ messageId, state }) => ({ messageId, text: state.deltaText }));
   }
 
   reset(): void {
