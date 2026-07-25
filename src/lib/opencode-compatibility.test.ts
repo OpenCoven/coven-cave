@@ -222,6 +222,27 @@ const equalSequenceConflict = await loadOpenCodeSchemaBundle({
 });
 assert.equal(equalSequenceConflict.source, "built-in", "conflicting equal-sequence cache records fail closed while offline");
 assert.equal(equalSequenceConflict.diagnostic, "schema-registry-refresh-rejected");
+const equalSequenceConflictRemote = await loadOpenCodeSchemaBundle({
+  cacheFile: equalSequenceConflictFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now + 60_001,
+  // This is one of the conflicting payloads. It remains unsafe because the
+  // alternate, same-sequence local payload is still validly signed.
+  fetch: async () => new Response(JSON.stringify(signed), { status: 200 }),
+});
+assert.equal(equalSequenceConflictRemote.source, "built-in", "a remote response cannot resolve conflicting equal-sequence cache records");
+assert.equal(equalSequenceConflictRemote.diagnostic, "schema-registry-refresh-rejected");
+assert.equal(
+  openCodeSchemaBundleSigningPayload((JSON.parse(await readFile(equalSequenceConflictFile, "utf8")) as { bundle: typeof signed }).bundle),
+  openCodeSchemaBundleSigningPayload(signed),
+  "a rejected remote rewrite does not overwrite the primary conflict record",
+);
+assert.equal(
+  openCodeSchemaBundleSigningPayload((JSON.parse(await readFile(`${equalSequenceConflictFile}.trust`, "utf8")) as { bundle: typeof signedEqualSequenceRewrite }).bundle),
+  openCodeSchemaBundleSigningPayload(signedEqualSequenceRewrite),
+  "a rejected remote rewrite preserves the conflicting trust sidecar for investigation",
+);
 
 const offline = await loadOpenCodeSchemaBundle({
   cacheFile,

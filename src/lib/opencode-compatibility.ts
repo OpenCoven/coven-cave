@@ -168,6 +168,13 @@ const CACHE_LOCK_WAIT_MS = 500;
 const CACHE_LOCK_POLL_MS = 20;
 const REFRESH_FAILURE_BACKOFF_MS = 60_000;
 class CacheWriterPendingError extends Error {}
+/**
+ * Two locally persisted records at one sequence must name exactly one signed
+ * payload.  Treat a disagreement as a durable trust failure: returning
+ * `null` would make a subsequent remote response appear to be first use and
+ * allow either side of the rewrite to win.
+ */
+class CacheTrustConflictError extends Error {}
 const refreshFlights = new Map<string, Promise<LoadedOpenCodeSchemaBundle>>();
 const refreshRetryAt = new Map<string, number>();
 // A selected schema that emits an unknown or malformed frame is unsafe for
@@ -748,9 +755,12 @@ async function readCachedTrustState(
   const highestSequence = Math.max(...trusted.map((cached) => cached.bundle.sequence));
   const highest = trusted.filter((cached) => cached.bundle.sequence === highestSequence);
   // A same-sequence mutation is not made trustworthy by duplicating it into
-  // another local record. Keep the parser boundary closed until a signed
-  // remote refresh resolves the conflict.
-  if (new Set(highest.map((cached) => openCodeSchemaBundleSigningPayload(cached.bundle))).size !== 1) return null;
+  // another local record. A remote response cannot resolve this: it might be
+  // either conflicting payload (or a third rewrite), so fail closed before it
+  // is considered for this turn or written over the forensic evidence.
+  if (new Set(highest.map((cached) => openCodeSchemaBundleSigningPayload(cached.bundle))).size !== 1) {
+    throw new CacheTrustConflictError("conflicting schema cache records");
+  }
   return highest[0];
 }
 
@@ -1043,14 +1053,28 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
     return { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "schema-registry-refresh-rejected" };
   }
 
-  const cached = await readVerifiedCache(file, publicKeys, now, checkpoint, trustAnchorFile);
-  // An expired signed cache cannot parse a turn, but it records that this
-  // client previously trusted a newer registry contract. Do not silently
-  // regress to the compiled parser if refresh fails; a first offline launch
-  // without any cache can still use that source-trusted baseline.
-  const cacheTrust = cached ?? await readCachedTrustState(file, publicKeys, now, checkpoint, trustAnchorFile);
+  let cached: CachedBundle | null;
+  let cacheTrust: CachedBundle | null;
+  try {
+    cached = await readVerifiedCache(file, publicKeys, now, checkpoint, trustAnchorFile);
+    // An expired signed cache cannot parse a turn, but it records that this
+    // client previously trusted a newer registry contract. Do not silently
+    // regress to the compiled parser if refresh fails; a first offline launch
+    // without any cache can still use that source-trusted baseline.
+    cacheTrust = cached ?? await readCachedTrustState(file, publicKeys, now, checkpoint, trustAnchorFile);
+  } catch (error) {
+    if (error instanceof CacheTrustConflictError) {
+      return {
+        bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE,
+        source: "built-in",
+        diagnostic: "schema-registry-refresh-rejected",
+        remoteSchemaRequired: true,
+      };
+    }
+    throw error;
+  }
   const cacheFresh = cached && now - cached.checkedAt < CACHE_TTL_MS;
-  if (cacheFresh) return { bundle: cached.bundle, source: "cache" };
+  if (cacheFresh && cached) return { bundle: cached.bundle, source: "cache" };
   const key = schemaRefreshKey(file, trustAnchorFile, url, publicKeys, checkpoint);
   if ((refreshRetryAt.get(key) ?? 0) > now) {
     return cached
@@ -1067,7 +1091,7 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   try {
     return await refresh;
   } catch (error) {
-    if (error instanceof CacheWriterPendingError) {
+    if (error instanceof CacheWriterPendingError || error instanceof CacheTrustConflictError) {
       return {
         bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE,
         source: "built-in",
