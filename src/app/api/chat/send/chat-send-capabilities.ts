@@ -10,18 +10,6 @@ import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import type { OpenCodeRunCapabilities } from "@/lib/opencode-compatibility";
 
-type ExecutableFs = Pick<typeof import("node:fs/promises"), "stat">;
-
-// PATH entries are machine-local runtime state, not standalone assets. Resolve
-// this Node builtin lazily so Turbopack cannot trace an installed CLI tree.
-const executableFs = (process as typeof process & {
-  getBuiltinModule?: (id: "node:fs/promises") => ExecutableFs | undefined;
-}).getBuiltinModule?.("node:fs/promises");
-
-function requireExecutableFs(): ExecutableFs | null {
-  return executableFs ?? null;
-}
-
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
@@ -32,6 +20,7 @@ const OPENCODE_CAPABILITY_PROBE_TTL_MS = 60_000;
 const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 2_500;
 const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
 const OPENCODE_PROBE_CLEANUP_GRACE_MS = 1_000;
+const OPENCODE_IDENTITY_PROBE_TIMEOUT_MS = 750;
 
 /** PowerShell/npm shims can be delayed by cold start or Defender scanning. */
 export function openCodeCapabilityProbeTimeoutMs(platform: NodeJS.Platform = process.platform): number {
@@ -47,6 +36,10 @@ export function openCodeProbeCleanupGraceMs(): number {
  * Do not reuse their help-derived argv evidence between turns. */
 export function openCodeCapabilityProbeCacheable(platform: NodeJS.Platform = process.platform): boolean {
   return platform !== "win32";
+}
+
+export function openCodeExecutableIdentityLookupTimeoutMs(): number {
+  return OPENCODE_IDENTITY_PROBE_TIMEOUT_MS;
 }
 
 /** `taskkill /T` is required because killing the PowerShell launcher alone
@@ -132,7 +125,13 @@ function probeHelp(
 
 type ProbeOutput = { output: string; complete: boolean };
 
-function probeOutput(command: string, args: string[], env = harnessSpawnEnv(), input?: string): Promise<ProbeOutput> {
+function probeOutput(
+  command: string,
+  args: string[],
+  env = harnessSpawnEnv(),
+  input?: string,
+  timeoutMs = openCodeCapabilityProbeTimeoutMs(),
+): Promise<ProbeOutput> {
   return new Promise<ProbeOutput>((resolve) => {
     let output = "";
     const MAX_PROBE_OUTPUT = 64 * 1024;
@@ -188,7 +187,7 @@ function probeOutput(command: string, args: string[], env = harnessSpawnEnv(), i
             done(false);
           });
         });
-      }, openCodeCapabilityProbeTimeoutMs());
+      }, timeoutMs);
     } catch {
       done(false);
     }
@@ -327,6 +326,19 @@ export function openCodeCapabilityIdentity(help: string, version: string): strin
 
 type OpenCodeRunContractProbe = { helpProbe: ProbeOutput; versionProbe: ProbeOutput };
 
+type OpenCodeVersionProbe = (env: NodeJS.ProcessEnv) => Promise<ProbeOutput>;
+
+function probeOpenCodeVersion(env: NodeJS.ProcessEnv): Promise<ProbeOutput> {
+  const launch = openCodeLaunch(["--version"]);
+  return probeOutput(
+    launch.command,
+    launch.args,
+    env,
+    launch.input,
+    OPENCODE_IDENTITY_PROBE_TIMEOUT_MS,
+  );
+}
+
 async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCodeRunContractProbe> {
   const helpLaunch = openCodeLaunch(["run", "--help"]);
   const versionLaunch = openCodeLaunch(["--version"]);
@@ -338,39 +350,25 @@ async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCod
 }
 
 /**
- * Resolve only executable metadata before consulting the capability cache.
- * `stat` is bounded by PATH entries and deliberately marked opaque to
- * Turbopack: this is per-machine runtime state, not a standalone asset.
+ * A short `--version` launch establishes the runtime identity before the
+ * cache is consulted. It avoids filesystem PATH traversal, which TurboPack
+ * would otherwise trace into the packaged standalone server.
  */
 export async function openCodeExecutableIdentity(
   env = openCodeSpawnEnv(),
-  platform: NodeJS.Platform = process.platform,
+  _platform: NodeJS.Platform = process.platform,
+  versionProbe: OpenCodeVersionProbe = probeOpenCodeVersion,
 ): Promise<string> {
-  const fs = requireExecutableFs();
-  if (!fs) return `unresolved:${Date.now()}`;
-  const pathValue = env.PATH ?? env.Path ?? "";
-  const names = platform === "win32"
-    ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
-      .split(";")
-      .map((extension) => extension.trim())
-      .filter((extension) => /^\.[A-Za-z0-9]+$/.test(extension))
-      .map((extension) => `opencode${extension.toLowerCase()}`)
-    : ["opencode"];
-  const pathSeparator = platform === "win32" ? ";" : ":";
-  const directorySeparator = platform === "win32" ? "\\" : "/";
-  for (const directory of pathValue.split(pathSeparator).filter(Boolean)) {
-    for (const name of names) {
-      const candidate = `${directory.replace(/[\\/]+$/, "")}${directorySeparator}${name}`;
-      try {
-        const info = await fs.stat(candidate);
-        if (info.isFile()) return `${candidate}\0${info.size}\0${info.mtimeMs}`;
-      } catch {
-        // Keep looking: the launched binary may be later in PATH.
-      }
-    }
+  void _platform;
+  const result = await versionProbe(env);
+  if (result.complete && result.output.trim()) {
+    return openCodeCapabilityIdentity(
+      `${env.PATH ?? env.Path ?? ""}\0${env.PATHEXT ?? ""}`,
+      result.output.trim(),
+    );
   }
-  // An unresolved command is never retained across turns: installation or a
-  // PATH update must immediately become visible.
+  // An unresolved version is never retained across turns: installation or a
+  // PATH update becomes visible immediately without keeping failed evidence.
   return `unresolved:${Date.now()}`;
 }
 
