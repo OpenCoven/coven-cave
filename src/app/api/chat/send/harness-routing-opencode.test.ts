@@ -12,8 +12,8 @@ assert.match(
 );
 assert.match(
   route,
-  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?const launch = openCodeCompatibility\.schema!\.launch;[\s\S]*?a\.push\(launch\.structuredOutput\.option, launch\.structuredOutput\.value, \.\.\.launch\.requiredFlags\);[\s\S]*?launch\.sessionOption[\s\S]*?if \(forwardModel\)/,
-  "OpenCode uses the selected schema's discovered structured-output and session argv contract rather than a version threshold",
+  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?const launch = openCodeCompatibility\.schema!\.launch;[\s\S]*?a\.push\(launch\.structuredOutput\.option, launch\.structuredOutput\.value, \.\.\.launch\.requiredFlags\);[\s\S]*?launch\.sessionOption[\s\S]*?options\.includes\("--session"\)[\s\S]*?options\.includes\("--resume"\)[\s\S]*?if \(forwardModel\)/,
+  "OpenCode uses selected structured syntax and only a help-confirmed plain-mode resume option rather than a version threshold",
 );
 assert.match(
   route,
@@ -102,13 +102,18 @@ assert.match(
 );
 assert.match(
   route,
-  /openCodeDirect && body\.sessionId && existingConversation && \([\s\S]*?openCodeCompatibility\?\.mode !== "structured"[\s\S]*?\|\| !openCodeCompatibility\?\.capabilities\.session[\s\S]*?\|\| !existingConversation\.harnessSessionId[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
-  "plain-mode follow-ups replay Cave context instead of guessing a native resume flag",
+  /openCodeDirect && body\.sessionId && existingConversation && \([\s\S]*?!openCodeCompatibility\?\.capabilities\.session[\s\S]*?\|\| !existingConversation\.harnessSessionId[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  "OpenCode replays Cave context only when a native resume option or token is unavailable",
 );
 assert.match(
   route,
   /onToolStart: \(ev\) => \{[\s\S]*?envelopeToolUse[\s\S]*?onToolEnd: \(ev\) => \{[\s\S]*?envelopeToolResult/,
   "split tool lifecycle frames preserve the stable bubble id across progress and result",
+);
+assert.match(
+  route,
+  /onTool: \(ev\) => \{[\s\S]*?envelopeToolUse[\s\S]*?consumePendingEnvelopeResult\(ev\.id\)[\s\S]*?return;[\s\S]*?envelopeToolResult/,
+  "a reordered split result settles a combined terminal tool frame with the first terminal outcome",
 );
 assert.match(
   route,

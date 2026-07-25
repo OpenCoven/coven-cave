@@ -36,6 +36,11 @@ export type OpenCodeEventSchema = {
    */
   shape: {
     envelope: Array<"part" | "data" | "payload" | "root">;
+    /** The bounded location and alias that identifies the event kind. */
+    discriminator: {
+      envelope: "part" | "data" | "payload" | "root";
+      field: string;
+    };
     /** Envelope(s) explicitly trusted to carry assistant text. */
     textEnvelope?: Array<"part" | "data" | "payload" | "root">;
     sessionId: string[];
@@ -150,6 +155,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
       },
       shape: {
         envelope: ["part", "data", "root"],
+        discriminator: { envelope: "root", field: "type" },
         textEnvelope: ["part", "data"],
         sessionId: ["sessionID", "sessionId", "session_id"],
         id: ["id", "callID", "callId", "toolCallId", "tool_call_id"],
@@ -174,6 +180,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
       },
       shape: {
         envelope: ["part", "data", "root"],
+        discriminator: { envelope: "root", field: "type" },
         textEnvelope: ["part", "data"],
         sessionId: ["sessionID", "sessionId", "session_id"],
         id: ["id", "callID", "callId", "toolCallId", "tool_call_id"],
@@ -206,8 +213,13 @@ function hasValidShape(value: unknown): boolean {
     && fields.length <= 4
     && (!requireRoot || fields.includes("root"))
     && fields.every((field) => field === "part" || field === "data" || field === "payload" || field === "root");
-  if (!Object.keys(value).every((key) => key === "envelope" || key === "textEnvelope" || aliasKeys.includes(key))) return false;
-  if (!envelopeFields(value.envelope, true) || (value.textEnvelope !== undefined && !envelopeFields(value.textEnvelope, false))) return false;
+  if (!Object.keys(value).every((key) => key === "envelope" || key === "textEnvelope" || key === "discriminator" || aliasKeys.includes(key))) return false;
+  if (!envelopeFields(value.envelope, false) || (value.textEnvelope !== undefined && !envelopeFields(value.textEnvelope, false))) return false;
+  if (!isRecord(value.discriminator)
+    || !Object.keys(value.discriminator).every((key) => key === "envelope" || key === "field")
+    || (value.discriminator.envelope !== "part" && value.discriminator.envelope !== "data" && value.discriminator.envelope !== "payload" && value.discriminator.envelope !== "root")
+    || typeof value.discriminator.field !== "string"
+    || !/^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(value.discriminator.field)) return false;
   return aliasKeys.every((key) => hasBoundedAliases(value[key]));
 }
 

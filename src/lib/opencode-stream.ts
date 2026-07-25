@@ -31,7 +31,7 @@ function stringAt(recordValue: Record<string, unknown> | null, ...keys: string[]
   return undefined;
 }
 
-type ShapeAlias = Exclude<keyof NonNullable<OpenCodeEventSchema["shape"]>, "envelope" | "textEnvelope">;
+type ShapeAlias = Exclude<keyof NonNullable<OpenCodeEventSchema["shape"]>, "envelope" | "textEnvelope" | "discriminator">;
 
 function shapeAliases(schema: OpenCodeEventSchema | undefined, key: ShapeAlias, defaults: string[]): string[] {
   const aliases = schema?.shape?.[key];
@@ -98,7 +98,7 @@ function toolStateIsError(state: Record<string, unknown> | null, part: Record<st
 /** Decode OpenCode's `run --format json` envelope without trusting its fields. */
 export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSchema): OpenCodeRunEvent {
   const event = record(value);
-  if (!event || typeof event.type !== "string") {
+  if (!event) {
     return { kind: "other", diagnostic: "malformed-event" };
   }
   const part = envelope(event, schema?.shape?.envelope ?? ["part", "data", "root"]);
@@ -106,19 +106,23 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   // Protocol revisions may keep the native session on the declared payload.
   // Prefer that envelope, then preserve the legacy root-level fallback.
   const sessionId = stringAt(part, ...sessionAliases) ?? stringAt(event, ...sessionAliases);
-  if (eventTypes(schema, "ignored", ["step_start", "step_finish"]).includes(event.type)) {
+  const discriminator = schema?.shape?.discriminator ?? { envelope: "root" as const, field: "type" };
+  const eventType = stringAt(envelope(event, [discriminator.envelope]), discriminator.field);
+  if (!eventType) return { kind: "other", sessionId, diagnostic: "malformed-event" };
+  if (eventTypes(schema, "ignored", ["step_start", "step_finish"]).includes(eventType)) {
     return { kind: "ignore", sessionId };
   }
-  if (eventTypes(schema, "error", ["error"]).includes(event.type)) {
-    const error = record(event.error);
+  if (eventTypes(schema, "error", ["error"]).includes(eventType)) {
+    const errorValue = valueAt(part, shapeAliases(schema, "error", ["error"])) ?? event.error;
+    const error = record(errorValue);
     const errorData = record(error?.data);
     const message =
       typeof error?.message === "string"
         ? error.message
         : typeof errorData?.message === "string"
           ? errorData.message
-          : typeof event.error === "string"
-            ? event.error
+          : typeof errorValue === "string"
+            ? errorValue
             : "OpenCode failed";
     return { kind: "error", sessionId, message };
   }
@@ -127,7 +131,7 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   // which event labels are trusted; this only reads either observed shape.
   const textAliases = shapeAliases(schema, "text", ["text", "content"]);
   const text = stringAt(textEnvelope(event, schema), ...textAliases);
-  if (eventTypes(schema, "text", ["text"]).includes(event.type) && text !== undefined) {
+  if (eventTypes(schema, "text", ["text"]).includes(eventType) && text !== undefined) {
     return { kind: "text", sessionId, text };
   }
   const stateAliases = shapeAliases(schema, "state", ["state"]);
@@ -136,15 +140,15 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   const toolStartTypes = eventTypes(schema, "toolStart", ["tool_start"]);
   const toolEndTypes = eventTypes(schema, "toolEnd", ["tool_result"]);
   const toolCompleteTypes = eventTypes(schema, "toolComplete", ["tool_use"]);
-  if (toolStartTypes.includes(event.type) && id && !terminalToolState(state, part, schema)) {
+  if (toolStartTypes.includes(eventType) && id && !terminalToolState(state, part, schema)) {
     return { kind: "tool_start", sessionId, id, name: stringAt(part, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(part, shapeAliases(schema, "input", ["input"])) ?? {} };
   }
-  if (toolEndTypes.includes(event.type) && id) {
+  if (toolEndTypes.includes(eventType) && id) {
     const output = shapeAliases(schema, "output", ["output"]);
     const error = shapeAliases(schema, "error", ["error"]);
     return { kind: "tool_end", sessionId, id, output: valueAt(state, output) ?? valueAt(state, error) ?? valueAt(part, output) ?? valueAt(part, error) ?? "", isError: toolStateIsError(state, part, schema) };
   }
-  if (toolCompleteTypes.includes(event.type) && id && part) {
+  if (toolCompleteTypes.includes(eventType) && id && part) {
     // Legacy `tool_use` frames were terminal snapshots and some omit a
     // status entirely. Their output/error is the durable terminal signal.
     const output = shapeAliases(schema, "output", ["output"]);
@@ -169,7 +173,7 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
     ...toolEndTypes,
     ...toolCompleteTypes,
     ...eventTypes(schema, "error", ["error"]),
-  ].includes(event.type);
+  ].includes(eventType);
   return {
     kind: "other",
     sessionId,

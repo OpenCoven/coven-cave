@@ -66,7 +66,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
-    { type: "reply", session: "ses_mapped", payload: { body: "A registry-mapped reply" } },
+    { session: "ses_mapped", payload: { event: "reply", body: "A registry-mapped reply" } },
     {
       ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
       id: "mapped-envelope",
@@ -74,6 +74,7 @@ assert.deepEqual(
       shape: {
         ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].shape,
         envelope: ["payload"],
+        discriminator: { envelope: "payload", field: "event" },
         textEnvelope: ["payload"],
         sessionId: ["session"],
         text: ["body"],
@@ -208,6 +209,7 @@ const shapedSchema = {
   id: "opencode-run-json-shaped-v2",
   shape: {
     envelope: ["payload"],
+    discriminator: { envelope: "payload", field: "event" },
     sessionId: ["session"],
     id: ["call_id"],
     name: ["tool_name"],
@@ -222,7 +224,7 @@ const shapedSchema = {
 };
 assert.deepEqual(
   parseOpenCodeRunEvent(
-    { type: "tool", payload: { session: "ses_v2", call_id: "call_v2", tool_name: "Read", phase: { state: "done", arguments: { path: "README.md" }, result: "ok" } } },
+    { payload: { event: "tool", session: "ses_v2", call_id: "call_v2", tool_name: "Read", phase: { state: "done", arguments: { path: "README.md" }, result: "ok" } } },
     shapedSchema,
   ),
   { kind: "tool", sessionId: "ses_v2", id: "call_v2", name: "Read", input: { path: "README.md" }, output: "ok", isError: false },

@@ -141,6 +141,22 @@ assert.equal(
   "a selected schema must declare its parseable envelope and field aliases",
 );
 assert.equal(
+  isOpenCodeSchemaBundle({
+    ...unsigned,
+    schemas: [{
+      ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+      id: "nested-discriminator",
+      shape: {
+        ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].shape,
+        envelope: ["payload"],
+        discriminator: { envelope: "payload", field: "event" },
+      },
+    }],
+  }, now),
+  true,
+  "a signed schema can relocate the event discriminator into its declared envelope",
+);
+assert.equal(
   isOpenCodeSchemaBundle({ ...unsigned, issuedAt: 0 }, now),
   false,
   "signed schema timestamps must be strings rather than coercible values",

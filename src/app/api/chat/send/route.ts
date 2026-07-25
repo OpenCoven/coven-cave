@@ -1369,6 +1369,16 @@ export async function POST(req: Request) {
         const launch = openCodeCompatibility.schema!.launch;
         a.push(launch.structuredOutput.option, launch.structuredOutput.value, ...launch.requiredFlags);
         if (resumeSessionId && launch.sessionOption) a.push(launch.sessionOption, resumeSessionId);
+      } else if (resumeSessionId) {
+        // Plain output can still resume a native session. Forward only the
+        // exact option confirmed by `run --help`; never guess `--session`.
+        const options = openCodeCompatibility?.capabilities.options ?? [];
+        const sessionOption = options.includes("--session")
+          ? "--session"
+          : options.includes("--resume")
+            ? "--resume"
+            : null;
+        if (sessionOption) a.push(sessionOption, resumeSessionId);
       }
       if (forwardModel) a.push("--model", forwardModel);
       a.push(prompt);
@@ -1414,14 +1424,13 @@ export async function POST(req: Request) {
   const grokSandboxRetry = grokFreshSessionForSandbox
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
-  // A client which no longer advertises `--session`, or a prior plain-mode
+  // A client which no longer advertises a native resume option, or a prior
   // turn which never received a native OpenCode id, must start fresh with
-  // bounded Cave transcript replay. Otherwise a follow-up silently loses its
-  // earlier conversation context.
+  // bounded Cave transcript replay. Plain output can still safely resume when
+  // its exact option was confirmed by the capability probe.
   const openCodeFreshSessionForCompatibility = Boolean(
     openCodeDirect && body.sessionId && existingConversation && (
-      openCodeCompatibility?.mode !== "structured"
-      || !openCodeCompatibility?.capabilities.session
+      !openCodeCompatibility?.capabilities.session
       || !existingConversation.harnessSessionId
     ),
   );
@@ -1831,6 +1840,13 @@ export async function POST(req: Request) {
               assistantText.length,
             );
             if (started) push({ kind: "tool_use", ...started });
+            // A split terminal result can arrive before this combined
+            // terminal snapshot. Preserve the first terminal outcome.
+            const reorderedEnd = toolTracker.consumePendingEnvelopeResult(ev.id);
+            if (reorderedEnd) {
+              push({ kind: "tool_use", ...reorderedEnd });
+              return;
+            }
             const ended = toolTracker.envelopeToolResult(
               ev.id,
               typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
