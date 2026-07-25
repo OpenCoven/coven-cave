@@ -1299,6 +1299,13 @@ fn run_sidecar_daemon() -> Result<i32, String> {
     }
     let node = find_node(&resource_dir)
         .ok_or_else(|| "packaged Node.js runtime is unavailable".to_string())?;
+    let piper = bundled_piper_path(&resource_dir);
+    if !piper.is_file() {
+        return Err(format!(
+            "bundled Piper runtime is unavailable at {}",
+            piper.display()
+        ));
+    }
     let port = daemon_port()?;
     let auth_token = sidecar_auth_token();
     let mobile_access_token =
@@ -1326,6 +1333,7 @@ fn run_sidecar_daemon() -> Result<i32, String> {
         .env("HOSTNAME", "127.0.0.1")
         .env("NODE_ENV", "production")
         .env("COVEN_CAVE_BUNDLE", "1")
+        .env("COVEN_PIPER_BIN", &piper)
         .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
         .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token)
         .stdin(Stdio::null());

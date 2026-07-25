@@ -222,6 +222,21 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   );
 });
 
+test("macOS reachability daemon uses the managed Piper runtime", async () => {
+  const daemon = await readNativeHost("desktop_reachability.rs");
+
+  assert.match(
+    daemon,
+    /let piper = bundled_piper_path\(&resource_dir\);[\s\S]{0,240}if !piper\.is_file\(\)/,
+    "the background sidecar must reject a missing managed Piper resource",
+  );
+  assert.match(
+    daemon,
+    /\.env\("COVEN_PIPER_BIN", &piper\)/,
+    "the background sidecar must pass its managed Piper path to local TTS",
+  );
+});
+
 test("clean release runners have resource glob placeholders", async () => {
   const gitignore = await readFile(new URL("../.gitignore", import.meta.url), "utf8");
 

@@ -478,7 +478,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       () => controller.abort(),
       LOCAL_VOICE_CATALOG_TIMEOUT_MS,
     );
-    setLocalVoiceCatalog((catalog) => ({ ...catalog, status: "loading" }));
+    setLocalVoiceCatalog({ status: "loading", voices: [] });
     (async () => {
       try {
         const res = await fetch("/api/voice/engines", { signal: controller.signal });

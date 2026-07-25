@@ -270,6 +270,11 @@ assert.match(
   /setLocalVoiceCatalog\(\(catalog\) => \(\{[\s\S]{0,100}status: "idle"[\s\S]{0,200}setLocalVoiceCatalogAttempt[\s\S]{0,300}Refresh local voices/,
   "refresh invalidates a ready local catalog before triggering a new readiness request",
 );
+assert.match(
+  source,
+  /setLocalVoiceCatalog\(\{ status: "loading", voices: \[\] \}\)/,
+  "a pending catalog probe must not leave a stale local voice selectable",
+);
 
 console.log("familiar-studio-brain-tab.test.ts: ok");
 
