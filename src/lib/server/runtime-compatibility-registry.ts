@@ -9,8 +9,8 @@
  * a native launch path that Cave has not implemented.
  */
 
-import { createHash } from "node:crypto";
-import { mkdir, open, readFile, rm, stat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
@@ -57,7 +57,13 @@ function versionParts(value: string): Semver | null {
 
 function compareNumericIdentifier(left: string, right: string): number {
   if (left.length !== right.length) return left.length - right.length;
-  return left.localeCompare(right);
+  return compareAscii(left, right);
+}
+
+/** SemVer identifiers are ASCII; locale collation is not SemVer ordering. */
+function compareAscii(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
 }
 
 function compareVersions(left: string, right: string): number | null {
@@ -78,7 +84,7 @@ function compareVersions(left: string, right: string): number | null {
     const rightNumeric = /^\d+$/.test(rightId);
     if (leftNumeric && rightNumeric) return compareNumericIdentifier(leftId, rightId);
     if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
-    return leftId.localeCompare(rightId);
+    return compareAscii(leftId, rightId);
   }
   return a.prerelease.length - b.prerelease.length;
 }
@@ -224,7 +230,13 @@ async function reclaimStaleCacheLock(lockPath: string): Promise<boolean> {
   try {
     const info = await stat(/* turbopackIgnore: true */ lockPath);
     if (Date.now() - info.mtimeMs < CACHE_LOCK_STALE_MS) return false;
-    await rm(/* turbopackIgnore: true */ lockPath, { force: true });
+    // Rename, rather than unlinking, so a reclaimer never deletes a lock
+    // acquired by another process between its stale check and cleanup.
+    const quarantine = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
+    const beforeRename = await stat(/* turbopackIgnore: true */ lockPath);
+    if (beforeRename.ino !== info.ino || beforeRename.mtimeMs !== info.mtimeMs) return false;
+    await rename(/* turbopackIgnore: true */ lockPath, quarantine);
+    await rm(/* turbopackIgnore: true */ quarantine, { force: true }).catch(() => {});
     return true;
   } catch (error) {
     // A concurrent owner may have released the lock between the failed open

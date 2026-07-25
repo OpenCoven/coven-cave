@@ -1685,7 +1685,7 @@ export async function POST(req: Request) {
             if (!sessionId && copilotSessionHint) announceSession(copilotSessionHint);
             switch (ev.kind) {
               case "text_delta": {
-                const text = copilotText.delta(ev.messageId, ev.text);
+                const text = copilotText.delta(ev.messageId, ev.text, ev.frameId);
                 if (text) {
                   assistantText += text;
                   push({ kind: "assistant_chunk", text });

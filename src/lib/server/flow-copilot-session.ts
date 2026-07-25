@@ -125,7 +125,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       return;
     }
     if (event.kind === "text_delta") {
-      const append = textAssembler.delta(event.messageId, event.text);
+      const append = textAssembler.delta(event.messageId, event.text, event.frameId);
       if (append) deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + append);
     } else if (event.kind === "message") {
       // The final frame carries the complete content — prefer it over deltas.

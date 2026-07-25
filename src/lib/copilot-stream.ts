@@ -52,9 +52,11 @@ export type RuntimeEventProtocolSchema = {
   };
   /** Frames deliberately ignored by this schema (for example partial output). */
   ignoredEventTypes: string[];
-  /** Aliases are data-envelope keys, never user content or tool payloads. */
+  /** Aliases are frame/data-envelope keys, never user content or tool payloads. */
   fields: {
     data: string[];
+    /** Stable event identity used to ignore replayed transport frames. */
+    frameId: string[];
     messageId: string[];
     deltaContent: string[];
     content: string[];
@@ -105,6 +107,7 @@ export const COPILOT_EVENT_PROTOCOL_SCHEMAS: RuntimeEventProtocolSchema[] = [
     ],
     fields: {
       data: ["data"],
+      frameId: ["id"],
       messageId: ["messageId"],
       deltaContent: ["deltaContent"],
       content: ["content"],
@@ -152,7 +155,13 @@ function semver(value: string): Semver | null {
 
 function compareNumericSemverIdentifier(a: string, b: string): number {
   if (a.length !== b.length) return a.length - b.length;
-  return a.localeCompare(b);
+  return compareAscii(a, b);
+}
+
+/** SemVer identifiers are ASCII; locale collation is not SemVer ordering. */
+function compareAscii(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 }
 
 /** Positive when `a` is newer than `b`; release versions sort after prereleases. */
@@ -177,7 +186,7 @@ export function compareRuntimeClientVersions(a: string, b: string): number | nul
     const numericB = /^\d+$/.test(b);
     if (numericA && numericB) return compareNumericSemverIdentifier(a, b);
     if (numericA !== numericB) return numericA ? -1 : 1;
-    return a.localeCompare(b);
+    return compareAscii(a, b);
   }
   return aIds.length - bIds.length;
 }
@@ -265,7 +274,7 @@ function record(value: unknown): Record<string, unknown> | null {
 }
 
 const EVENT_TYPE_KEYS = ["textDelta", "message", "toolStart", "toolEnd", "result"] as const;
-const FIELD_KEYS = ["data", "messageId", "deltaContent", "content", "model", "toolRequests", "toolCallId", "toolName", "arguments", "success", "result", "resultContent", "sessionId", "exitCode", "usage", "durationMs"] as const;
+const FIELD_KEYS = ["data", "frameId", "messageId", "deltaContent", "content", "model", "toolRequests", "toolCallId", "toolName", "arguments", "success", "result", "resultContent", "sessionId", "exitCode", "usage", "durationMs"] as const;
 
 /** Validate registry data before allowing it to select a parser. */
 function runtimeEventProtocolSchema(value: unknown): RuntimeEventProtocolSchema | null {
@@ -438,7 +447,10 @@ export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
     const bare = launch.model.includes("/")
       ? launch.model.slice(launch.model.lastIndexOf("/") + 1)
       : launch.model;
-    if (bare) args.push(spec.modelFlag, bare);
+    // The provider-qualified id was already validated by the request path,
+    // but stripping its namespace can expose a flag-shaped bare value such
+    // as `openai/--allow-all-tools`. Validate the argv value itself.
+    if (/^[A-Za-z0-9][A-Za-z0-9._:@+-]*$/.test(bare)) args.push(spec.modelFlag, bare);
   }
   // Trust each granted root at the harness level; repeatable native flag.
   // Emitted for read AND full turns so the grant list stays the declared
@@ -467,7 +479,7 @@ export type CopilotToolRequest = {
 };
 
 export type CopilotChatEvent =
-  | { kind: "text_delta"; messageId: string; text: string; model?: string }
+  | { kind: "text_delta"; messageId: string; text: string; frameId?: string; model?: string }
   | {
       kind: "message";
       messageId: string;
@@ -559,10 +571,12 @@ export function parseCopilotChatEvent(
     const messageId = textField(data, protocol.fields.messageId);
     const text = textField(data, protocol.fields.deltaContent);
     if (!messageId || text === undefined) return null;
+    const frameId = textField(ev, protocol.fields.frameId) ?? textField(data, protocol.fields.frameId);
     return {
       kind: "text_delta",
       messageId,
       text,
+      ...(frameId ? { frameId } : {}),
       model: asModel(field(data, protocol.fields.model)),
     };
   }
@@ -641,21 +655,22 @@ export function parseCopilotChatEvent(
  * feed through here; the return value is exactly the new text to append.
  */
 export class CopilotTextAssembler {
-  private messages = new Map<string, { deltaText: string; fullText: string | null }>();
+  private messages = new Map<string, { deltaText: string; fullText: string | null; seenFrameIds: Set<string> }>();
 
-  delta(messageId: string, text: string): string {
-    const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null };
+  delta(messageId: string, text: string, frameId?: string): string {
+    const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null, seenFrameIds: new Set<string>() };
     if (state.fullText !== null || !text) return "";
-    // Deltas are incremental chunks; equal neighboring chunks are legitimate
-    // text. Without a schema-declared frame id we must preserve each one and
-    // reconcile only against the authoritative full message.
+    // Deltas are incremental chunks, so equal neighboring chunks are valid
+    // text. Only a stable frame id proves that a chunk is a transport replay.
+    if (frameId && state.seenFrameIds.has(frameId)) return "";
+    if (frameId) state.seenFrameIds.add(frameId);
     state.deltaText += text;
     this.messages.set(messageId, state);
     return text;
   }
 
   message(messageId: string, content: string): string {
-    const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null };
+    const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null, seenFrameIds: new Set<string>() };
     if (state.fullText !== null) return "";
     state.fullText = content;
     this.messages.set(messageId, state);

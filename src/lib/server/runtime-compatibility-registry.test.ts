@@ -14,10 +14,14 @@ const cachePath = path.join(root, "copilot.json");
 const at = new Date("2026-07-24T12:00:00.000Z");
 
 function index(version: string, eventProtocols: unknown[] = []) {
+  return indexEntries([{ version, eventProtocols }]);
+}
+
+function indexEntries(entries: Array<{ version: string; eventProtocols?: unknown[] }>) {
   return JSON.stringify({
     format: "1",
     runtimes: {
-      copilot: [{
+      copilot: entries.map(({ version, eventProtocols = [] }) => ({
         version,
         adapter: {
           id: "copilot",
@@ -26,7 +30,7 @@ function index(version: string, eventProtocols: unknown[] = []) {
           stream_args: { prefix_args: ["--allow-all"] },
           event_protocols: eventProtocols,
         },
-      }],
+      })),
     },
   });
 }
@@ -91,17 +95,32 @@ try {
   assert.ok(higher?.runtimeVersion === "3.0.0" || lower?.runtimeVersion === "3.0.0");
   assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "3.0.0", "concurrent refreshes cannot downgrade LKG");
 
+  const semverCachePath = path.join(root, "semver-order.json");
+  const semverOrder = await refreshRuntimeCompatibility("copilot", {
+    cachePath: semverCachePath,
+    now: new Date(at.getTime() + 3_250),
+    fetchImpl: async () => response(indexEntries([{ version: "1.0.0-a" }, { version: "1.0.0-B" }])),
+  });
+  assert.equal(semverOrder?.runtimeVersion, "1.0.0-a", "ASCII SemVer ordering selects a above B regardless of locale");
+
   const staleLockPath = `${cachePath}.lock`;
   await writeFile(staleLockPath, "interrupted refresh", "utf8");
   const staleAt = new Date(Date.now() - 31_000);
   await utimes(staleLockPath, staleAt, staleAt);
-  const reclaimed = await refreshRuntimeCompatibility("copilot", {
-    cachePath,
-    now: new Date(at.getTime() + 3_500),
-    fetchImpl: async () => response(index("4.0.0")),
-  });
-  assert.equal(reclaimed?.runtimeVersion, "4.0.0", "a crashed process's stale cache lock is reclaimed before refresh");
-  assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "4.0.0");
+  const [reclaimedLower, reclaimedHigher] = await Promise.all([
+    refreshRuntimeCompatibility("copilot", {
+      cachePath,
+      now: new Date(at.getTime() + 3_500),
+      fetchImpl: async () => response(index("4.0.0")),
+    }),
+    refreshRuntimeCompatibility("copilot", {
+      cachePath,
+      now: new Date(at.getTime() + 3_500),
+      fetchImpl: async () => response(index("5.0.0")),
+    }),
+  ]);
+  assert.ok(reclaimedLower?.runtimeVersion === "5.0.0" || reclaimedHigher?.runtimeVersion === "5.0.0", "a stale lock is reclaimed by exactly one owner");
+  assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "5.0.0", "concurrent stale-lock recovery preserves monotonic cache updates");
 
   const corrupt = await refreshRuntimeCompatibility("copilot", {
     cachePath,
@@ -109,7 +128,7 @@ try {
     fetchImpl: async () => response(index("3.0.0"), "0".repeat(40)),
   });
   assert.equal(corrupt, null, "a mismatched Git blob hash is rejected before parsing");
-  assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "4.0.0", "failed refresh preserves last-known-good data");
+  assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "5.0.0", "failed refresh preserves last-known-good data");
 
   const expired = await resolveRuntimeCompatibility("copilot", {
     cachePath,

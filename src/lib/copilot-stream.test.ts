@@ -64,6 +64,18 @@ assert.equal(parseRuntimeClientVersion("dependency version 1.0.70\ncopilot versi
 assert.ok((compareRuntimeClientVersions("1.0.70", "1.0.9") ?? 0) > 0);
 assert.equal(compareRuntimeClientVersions("9007199254740993.0.0", "9007199254740992.0.0"), 1, "large SemVer identifiers retain exact precedence");
 assert.equal(compareRuntimeClientVersions("1.0.0-rc.1", "1.0.0"), -1);
+const prereleaseBoundarySchema = {
+  ...COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  id: "copilot-prerelease-boundary-fixture",
+  minClientVersion: "1.0.0-a",
+  maxClientVersionExclusive: null,
+};
+assert.equal(
+  selectRuntimeEventProtocol("1.0.0-B", [prereleaseBoundarySchema]),
+  null,
+  "ASCII SemVer ordering keeps B below a instead of locale-sorting it above",
+);
+assert.equal(selectRuntimeEventProtocol("1.0.0-b", [prereleaseBoundarySchema])?.id, prereleaseBoundarySchema.id);
 assert.equal(selectRuntimeEventProtocol("0.9.9"), null, "pre-protocol clients fail closed");
 assert.equal(selectRuntimeEventProtocol("1.0.70")?.id, "copilot-jsonl-v1");
 assert.equal(selectRuntimeEventProtocol("2.0.0"), null, "an unknown future major fails closed");
@@ -106,6 +118,18 @@ assert.deepEqual(
   ["copilot-jsonl-v2-fixture"],
   "a validated registry schema can extend support without a new normalized event implementation",
 );
+
+const flagShapedModelArgs = buildCopilotStreamArgs({
+  spec,
+  prompt: "safe prompt",
+  resumeSessionId: null,
+  newSessionId: null,
+  model: "openai/--allow-all-tools",
+  permissionMode: "read",
+  addDirs: [],
+});
+assert.ok(!flagShapedModelArgs.includes("--model"), "a provider prefix cannot turn a model value into a Copilot flag");
+assert.ok(!flagShapedModelArgs.includes("--allow-all-tools"), "stripped flag-shaped model values never reach spawn argv");
 assert.deepEqual(
   runtimeEventProtocolSchemas([{ ...V2_SCHEMA, fields: { data: ["payload"] } }]),
   [],
@@ -333,6 +357,12 @@ assert.equal(
 assert.equal(parseCopilotChatEvent("not an object"), null);
 assert.equal(parseCopilotChatEvent({ type: 42 }), null);
 
+assert.deepEqual(
+  parseCopilotChatEvent(JSON.parse(FIXTURE[10])),
+  { kind: "text_delta", messageId: "m2", text: "The command ", frameId: "e11", model: undefined },
+  "the parser preserves the schema-declared frame identity for replay suppression",
+);
+
 const resultEv = parseCopilotChatEvent(JSON.parse(FIXTURE[14]));
 assert.deepEqual(resultEv, {
   kind: "result",
@@ -361,7 +391,7 @@ assert.deepEqual(
     if (ev.kind !== "result" && ev.model && !model) model = ev.model;
     switch (ev.kind) {
       case "text_delta": {
-        assistantText += text.delta(ev.messageId, ev.text);
+        assistantText += text.delta(ev.messageId, ev.text, ev.frameId);
         break;
       }
       case "message": {
@@ -474,6 +504,11 @@ assert.deepEqual(
   assert.equal(text.delta("repeat", "ha"), "ha");
   assert.equal(text.delta("repeat", "ha"), "ha", "equal neighboring deltas are valid assistant text, not replays");
   assert.equal(text.message("repeat", "haha"), "", "the full message reconciles repeated streamed chunks without duplication");
+
+  assert.equal(text.delta("replay", "Hello ", "frame-1"), "Hello ");
+  assert.equal(text.delta("replay", "Hello ", "frame-1"), "", "a repeated JSONL frame id is ignored as a replay");
+  assert.equal(text.delta("replay", "Hello ", "frame-2"), "Hello ", "different frame ids preserve identical adjacent chunks");
+  assert.equal(text.message("replay", "Hello Hello "), "", "the final frame confirms the replay-safe streamed content");
 
   text.reset();
   assert.equal(text.message("m", "fresh"), "fresh", "reset clears per-attempt state");
