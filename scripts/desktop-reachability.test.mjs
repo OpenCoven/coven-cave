@@ -40,6 +40,11 @@ assert.match(
   /paired_phone_seen\(paired_path\)/,
   "prevent-sleep must be gated on evidence that a phone paired",
 );
+assert.match(
+  reachability,
+  /mobile_mode_enabled_from_preferences[\s\S]*unwrap_or\(true\)/,
+  "mobile mode must preserve its schema default until explicitly disabled",
+);
 
 assert.match(
   reachability,
@@ -130,6 +135,11 @@ assert.match(
   reachability,
   /format!\("http:\/\/127\.0\.0\.1:\{port\}"\)/,
   "Serve repair must use the actual selected loopback port",
+);
+assert.match(
+  reachability,
+  /serve_mode_from_status[\s\S]*TailscaleServeMode::Http[\s\S]*http_serve_arguments\(port, http_port\)/,
+  "Serve repair must preserve an active HTTP fallback while updating its loopback backend",
 );
 assert.match(
   reachability,

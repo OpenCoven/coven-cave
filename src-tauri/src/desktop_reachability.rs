@@ -6,6 +6,8 @@ use super::*;
 use fs2::FileExt;
 #[cfg(desktop)]
 use serde::{Deserialize, Serialize};
+#[cfg(all(desktop, target_os = "macos"))]
+use std::io::Read;
 #[cfg(desktop)]
 use std::io::Write;
 #[cfg(desktop)]
@@ -93,6 +95,13 @@ struct DaemonSidecarState {
     #[serde(flatten)]
     lease: ProcessLease,
     port: u16,
+}
+
+#[cfg(desktop)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TailscaleServeMode {
+    Https,
+    Http(u16),
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -347,16 +356,22 @@ fn acquire_reachability_ownership_lease(
 #[cfg(desktop)]
 fn mobile_mode_enabled() -> bool {
     let path = cave_home_path().join("preferences.json");
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+    let raw = std::fs::read_to_string(path).ok();
+    mobile_mode_enabled_from_preferences(raw.as_deref())
+}
+
+#[cfg(desktop)]
+fn mobile_mode_enabled_from_preferences(raw: Option<&str>) -> bool {
+    raw.and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
         .and_then(|value| {
             value
                 .get("phone")
                 .and_then(|phone| phone.get("mobileMode"))
                 .and_then(serde_json::Value::as_bool)
         })
-        .unwrap_or(false)
+        // Match the preference schema: mobile mode is enabled until the user
+        // explicitly persists it as false.
+        .unwrap_or(true)
 }
 
 #[cfg(desktop)]
@@ -385,6 +400,45 @@ fn serve_arguments(port: u16) -> [String; 3] {
         "--bg".to_string(),
         format!("http://127.0.0.1:{port}"),
     ]
+}
+
+#[cfg(desktop)]
+fn http_serve_arguments(port: u16, http_port: u16) -> [String; 4] {
+    [
+        "serve".to_string(),
+        "--bg".to_string(),
+        format!("--http={http_port}"),
+        format!("http://127.0.0.1:{port}"),
+    ]
+}
+
+#[cfg(desktop)]
+fn serve_mode_from_status(status: &serde_json::Value) -> Option<TailscaleServeMode> {
+    let web = status.get("Web")?.as_object()?;
+    if web.is_empty() {
+        return None;
+    }
+    let http_port = status
+        .get("TCP")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|tcp| {
+            tcp.iter().find_map(|(port, config)| {
+                (config.get("HTTP").and_then(serde_json::Value::as_bool) == Some(true))
+                    .then(|| port.parse::<u16>().ok())
+                    .flatten()
+            })
+        })
+        .or_else(|| {
+            web.keys().find_map(|host| {
+                host.rsplit_once(':')
+                    .and_then(|(_, port)| port.parse::<u16>().ok())
+                    .filter(|port| *port != 443)
+            })
+        });
+    Some(match http_port {
+        Some(port) => TailscaleServeMode::Http(port),
+        None => TailscaleServeMode::Https,
+    })
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -456,50 +510,107 @@ fn run_queued_tailscale_serve_repairs() {
 
 #[cfg(all(desktop, target_os = "macos"))]
 fn run_tailscale_serve_repair(port: u16) {
-    let args = serve_arguments(port);
-    let mut child = match Command::new(tailscale_binary())
-        .args(&args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(child) => child,
+    let status_args = [
+        "serve".to_string(),
+        "status".to_string(),
+        "--json".to_string(),
+    ];
+    let mode = match run_tailscale_command(&status_args) {
+        Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout)
+            .ok()
+            .and_then(|status| serve_mode_from_status(&status)),
+        Ok(output) => {
+            log::warn!(
+                "[cave] could not inspect Tailscale Serve before repairing port {port}: exited with {}",
+                output.status
+            );
+            None
+        }
         Err(error) => {
-            log::warn!("[cave] could not launch Tailscale Serve repair for port {port}: {error}");
-            return;
+            log::warn!(
+                "[cave] could not inspect Tailscale Serve before repairing port {port}: {error}"
+            );
+            None
         }
     };
+    let Some(mode) = mode else {
+        // There is no paired Serve route to repair. Avoid creating an HTTPS
+        // listener that could overwrite an unavailable or managed fallback.
+        return;
+    };
+    let args = match mode {
+        TailscaleServeMode::Https => serve_arguments(port).to_vec(),
+        TailscaleServeMode::Http(http_port) => http_serve_arguments(port, http_port).to_vec(),
+    };
+    match run_tailscale_command(&args) {
+        Ok(output) if output.status.success() => {
+            log::info!("[cave] Tailscale Serve points at 127.0.0.1:{port}");
+        }
+        Ok(output) => {
+            log::warn!(
+                "[cave] could not repair Tailscale Serve for port {port}: exited with {}",
+                output.status
+            );
+        }
+        Err(error) => {
+            log::warn!("[cave] could not repair Tailscale Serve for port {port}: {error}");
+        }
+    }
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+struct TailscaleCommandOutput {
+    status: std::process::ExitStatus,
+    stdout: Vec<u8>,
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn run_tailscale_command(args: &[String]) -> Result<TailscaleCommandOutput, String> {
+    let command_name = args.join(" ");
+    let mut child = Command::new(tailscale_binary())
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("could not launch Tailscale {command_name}: {error}"))?;
+    let stdout = child.stdout.take().map(|mut stdout| {
+        thread::spawn(move || {
+            let mut output = Vec::new();
+            let _ = stdout.read_to_end(&mut output);
+            output
+        })
+    });
     let deadline = Instant::now() + SERVE_REPAIR_TIMEOUT;
     loop {
         match child.try_wait() {
-            Ok(Some(status)) if status.success() => {
-                log::info!("[cave] Tailscale Serve points at 127.0.0.1:{port}");
-                return;
-            }
             Ok(Some(status)) => {
-                log::warn!(
-                    "[cave] could not repair Tailscale Serve for port {port}: exited with {status}"
-                );
-                return;
+                let stdout = stdout
+                    .and_then(|reader| reader.join().ok())
+                    .unwrap_or_default();
+                return Ok(TailscaleCommandOutput { status, stdout });
             }
             Ok(None) if Instant::now() >= deadline => {
                 let _ = child.kill();
                 let _ = child.wait();
-                log::warn!(
-                    "[cave] Tailscale Serve repair for port {port} timed out after {}s",
+                if let Some(reader) = stdout {
+                    let _ = reader.join();
+                }
+                return Err(format!(
+                    "Tailscale {command_name} timed out after {}s",
                     SERVE_REPAIR_TIMEOUT.as_secs()
-                );
-                return;
+                ));
             }
             Ok(None) => thread::sleep(Duration::from_millis(100)),
             Err(error) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                log::warn!(
-                    "[cave] could not wait for Tailscale Serve repair for port {port}: {error}"
-                );
-                return;
+                if let Some(reader) = stdout {
+                    let _ = reader.join();
+                }
+                return Err(format!(
+                    "could not wait for Tailscale {command_name}: {error}"
+                ));
             }
         }
     }
@@ -1422,6 +1533,46 @@ mod tests {
                 "http://127.0.0.1:3007".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn mobile_mode_uses_the_schema_default_until_explicitly_disabled() {
+        assert!(mobile_mode_enabled_from_preferences(None));
+        assert!(mobile_mode_enabled_from_preferences(Some("{}")));
+        assert!(!mobile_mode_enabled_from_preferences(Some(
+            r#"{"phone":{"mobileMode":false}}"#
+        )));
+    }
+
+    #[test]
+    fn serve_repair_preserves_the_existing_http_fallback_port() {
+        let http_status = serde_json::json!({
+            "TCP": { "3000": { "HTTP": true } },
+            "Web": { "100.101.102.103:3000": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3000" } } } }
+        });
+        assert_eq!(
+            serve_mode_from_status(&http_status),
+            Some(TailscaleServeMode::Http(3000))
+        );
+        assert_eq!(
+            http_serve_arguments(3007, 3000),
+            [
+                "serve".to_string(),
+                "--bg".to_string(),
+                "--http=3000".to_string(),
+                "http://127.0.0.1:3007".to_string(),
+            ]
+        );
+
+        let https_status = serde_json::json!({
+            "TCP": { "443": { "HTTPS": true } },
+            "Web": { "cave.tailnet.ts.net:443": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3000" } } } }
+        });
+        assert_eq!(
+            serve_mode_from_status(&https_status),
+            Some(TailscaleServeMode::Https)
+        );
+        assert_eq!(serve_mode_from_status(&serde_json::json!({})), None);
     }
 
     #[test]
