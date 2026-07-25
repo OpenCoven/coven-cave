@@ -83,7 +83,7 @@ async function openCrafts(page: Page, plugin = craftPlugin()) {
   await page.route(`**/api/marketplace/crafts/plan?id=${CRAFT_ID}`, (route) => route.fulfill({ json: { ok: true, plan } }));
   await page.addInitScript(() => window.localStorage.setItem("cave:onboarding:dismissed", "1"));
   await page.goto("/?mode=marketplace");
-  await expect(page.getByRole("heading", { name: "Marketplace" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Marketplace" }).first()).toBeVisible({ timeout: 30_000 });
   await page.locator("#marketplace-tab-crafts").click();
   await expect(page.locator("#marketplace-panel-crafts")).toBeVisible();
 }
@@ -93,6 +93,7 @@ test.describe("Craft Marketplace transactions", () => {
     let equipped = false;
     const roleWrites: Array<{ attach: boolean }> = [];
     let installCalls = 0;
+    let releaseInstall: (() => void) | null = null;
     let uninstallCalls = 0;
 
     await page.route("**/api/roles/crafts", async (route) => {
@@ -115,7 +116,7 @@ test.describe("Craft Marketplace transactions", () => {
     }));
     await page.route("**/api/marketplace/crafts/install", async (route) => {
       installCalls += 1;
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise<void>((resolve) => { releaseInstall = resolve; });
       await route.fulfill({
         json: {
           ok: true,
@@ -144,7 +145,9 @@ test.describe("Craft Marketplace transactions", () => {
 
     const install = dialog.getByRole("button", { name: "Install Craft" });
     await install.click();
+    await expect.poll(() => installCalls).toBe(1);
     await expect(install).toHaveAttribute("aria-busy", "true");
+    releaseInstall?.();
     await expect(dialog.getByText("Installed and verified")).toBeVisible();
     expect(installCalls).toBe(1);
 
