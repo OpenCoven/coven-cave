@@ -10,7 +10,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, open, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
@@ -29,7 +29,8 @@ export type RuntimeCompatibilitySnapshot = {
   source: { repo: typeof REGISTRY_REPO; blobSha: string };
   fetchedAt: string;
   expiresAt: string;
-  adapter: unknown;
+  /** Data-only event protocol declarations; never launch configuration. */
+  eventProtocols: unknown[];
   /** SHA-256 over the data-only cache payload, excluding this property. */
   contentHash: string;
 };
@@ -42,16 +43,35 @@ export type RuntimeCompatibilityOptions = {
   ttlMs?: number;
 };
 
-function versionParts(value: string): [number, number, number] | null {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/.exec(value);
-  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+type Semver = { major: number; minor: number; patch: number; prerelease: string[] | null };
+
+function versionParts(value: string): Semver | null {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(value);
+  if (!match) return null;
+  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]), prerelease: match[4]?.split(".") ?? null };
 }
 
 function compareVersions(left: string, right: string): number | null {
   const a = versionParts(left);
   const b = versionParts(right);
   if (!a || !b) return null;
-  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  for (const key of ["major", "minor", "patch"] as const) {
+    if (a[key] !== b[key]) return a[key] - b[key];
+  }
+  if (a.prerelease === null && b.prerelease === null) return 0;
+  if (a.prerelease === null) return 1;
+  if (b.prerelease === null) return -1;
+  for (let index = 0; index < Math.min(a.prerelease.length, b.prerelease.length); index += 1) {
+    const leftId = a.prerelease[index]!;
+    const rightId = b.prerelease[index]!;
+    if (leftId === rightId) continue;
+    const leftNumeric = /^\d+$/.test(leftId);
+    const rightNumeric = /^\d+$/.test(rightId);
+    if (leftNumeric && rightNumeric) return Number(leftId) - Number(rightId);
+    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+    return leftId.localeCompare(rightId);
+  }
+  return a.prerelease.length - b.prerelease.length;
 }
 
 function cachePayload(snapshot: Omit<RuntimeCompatibilitySnapshot, "contentHash">): string {
@@ -65,13 +85,18 @@ export function runtimeCompatibilityContentHash(
 }
 
 function cacheFile(runtimeId: string): string {
-  return path.join(caveHome(), "runtime-compatibility", `${runtimeId}.json`);
+  return path.join(/* turbopackIgnore: true */ caveHome(), "runtime-compatibility", `${runtimeId}.json`);
 }
 
-function validAdapter(runtimeId: string, adapter: unknown): boolean {
-  if (!adapter || typeof adapter !== "object" || Array.isArray(adapter)) return false;
+function eventProtocolsForAdapter(runtimeId: string, adapter: unknown): unknown[] | null {
+  if (!adapter || typeof adapter !== "object" || Array.isArray(adapter)) return null;
   const value = adapter as Record<string, unknown>;
-  return value.id === runtimeId && typeof value.executable === "string" && value.executable.length > 0;
+  if (value.id !== runtimeId) return null;
+  const streamArgs = value.stream_args && typeof value.stream_args === "object" && !Array.isArray(value.stream_args)
+    ? value.stream_args as Record<string, unknown>
+    : null;
+  const protocols = value.event_protocols ?? streamArgs?.event_protocols ?? [];
+  return Array.isArray(protocols) ? protocols : null;
 }
 
 export function validateRuntimeCompatibilitySnapshot(
@@ -87,7 +112,7 @@ export function validateRuntimeCompatibilitySnapshot(
     !versionParts(snapshot.runtimeVersion ?? "") ||
     snapshot.source?.repo !== REGISTRY_REPO ||
     !/^[a-f0-9]{40}$/i.test(snapshot.source.blobSha ?? "") ||
-    !validAdapter(snapshot.runtimeId, snapshot.adapter) ||
+    !Array.isArray(snapshot.eventProtocols) ||
     !/^[a-f0-9]{64}$/i.test(snapshot.contentHash ?? "")
   ) return null;
   const fetchedAt = Date.parse(snapshot.fetchedAt);
@@ -105,7 +130,7 @@ async function readSnapshot(
   allowExpired = false,
 ): Promise<RuntimeCompatibilitySnapshot | null> {
   try {
-    const parsed = JSON.parse(await readFile(options.cachePath ?? cacheFile(runtimeId), "utf8"));
+    const parsed = JSON.parse(await readFile(/* turbopackIgnore: true */ options.cachePath ?? cacheFile(runtimeId), "utf8"));
     const snapshot = validateRuntimeCompatibilitySnapshot(parsed, options.now ?? new Date(), allowExpired);
     return snapshot?.runtimeId === runtimeId ? snapshot : null;
   } catch {
@@ -117,24 +142,25 @@ function gitBlobSha(raw: string): string {
   return createHash("sha1").update(`blob ${Buffer.byteLength(raw)}\0`).update(raw).digest("hex");
 }
 
-function selectAdapter(index: unknown, runtimeId: string): { version: string; adapter: unknown } | null {
+function selectAdapter(index: unknown, runtimeId: string): { version: string; eventProtocols: unknown[] } | null {
   const canonical = index as Partial<CanonicalIndex>;
   if (canonical?.format !== "1" || !canonical.runtimes || typeof canonical.runtimes !== "object") return null;
   const candidates = canonical.runtimes[runtimeId];
   if (!Array.isArray(candidates)) return null;
-  let selected: { version: string; adapter: unknown } | null = null;
+  let selected: { version: string; eventProtocols: unknown[] } | null = null;
   for (const candidate of candidates) {
-    if (!candidate || candidate.yanked || !versionParts(candidate.version) || !validAdapter(runtimeId, candidate.adapter)) continue;
+    const eventProtocols = candidate && !candidate.yanked ? eventProtocolsForAdapter(runtimeId, candidate.adapter) : null;
+    if (!candidate || !versionParts(candidate.version) || eventProtocols === null) continue;
     if (!selected || (compareVersions(candidate.version, selected.version) ?? -1) > 0) {
-      selected = { version: candidate.version, adapter: candidate.adapter };
+      selected = { version: candidate.version, eventProtocols };
     }
   }
   return selected;
 }
 
 /**
- * Fetch and commit a newer accepted adapter. A malformed, expired, unavailable,
- * or lower-version response retains the cache unchanged. The content endpoint's
+ * Fetch and commit newer protocol metadata. A malformed, expired, unavailable,
+ * equal-but-different, or lower-version response retains the cache unchanged. The content endpoint's
  * blob SHA is recomputed from the response bytes before any JSON is trusted.
  */
 export async function refreshRuntimeCompatibility(
@@ -156,8 +182,6 @@ export async function refreshRuntimeCompatibility(
     if (gitBlobSha(raw) !== doc.sha) return null;
     const selected = selectAdapter(JSON.parse(raw), runtimeId);
     if (!selected) return null;
-    const current = await readSnapshot(runtimeId, { ...options, now }, true);
-    if (current && (compareVersions(selected.version, current.runtimeVersion) ?? -1) < 0) return null;
     const payload = {
       format: 1 as const,
       runtimeId,
@@ -165,15 +189,47 @@ export async function refreshRuntimeCompatibility(
       source: { repo: REGISTRY_REPO, blobSha: doc.sha },
       fetchedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + (options.ttlMs ?? CACHE_TTL_MS)).toISOString(),
-      adapter: selected.adapter,
+      eventProtocols: selected.eventProtocols,
     };
     const snapshot: RuntimeCompatibilitySnapshot = { ...payload, contentHash: runtimeCompatibilityContentHash(payload) };
     const target = options.cachePath ?? cacheFile(runtimeId);
-    await mkdir(path.dirname(target), { recursive: true });
-    await writeJsonAtomic(target, snapshot);
-    return snapshot;
+    await mkdir(/* turbopackIgnore: true */ path.dirname(target), { recursive: true });
+    return await withCacheLock(target, async () => {
+      const current = await readSnapshot(runtimeId, { ...options, now }, true);
+      if (current) {
+        const comparison = compareVersions(selected.version, current.runtimeVersion);
+        // Only a strictly newer runtime revision can replace LKG. Revisions
+        // with the same version but different content need a new immutable
+        // registry version; the same blob can safely renew its expiry.
+        if (comparison === null || comparison < 0 || (comparison === 0 && current.source.blobSha !== doc.sha)) return null;
+      }
+      await writeJsonAtomic(/* turbopackIgnore: true */ target, snapshot);
+      return snapshot;
+    });
   } catch {
     return null;
+  }
+}
+
+/** A small cross-process lock: failure to acquire it retains LKG, never races a downgrade. */
+async function withCacheLock<T>(target: string, action: () => Promise<T>): Promise<T | null> {
+  const lockPath = `${target}.lock`;
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      handle = await open(/* turbopackIgnore: true */ lockPath, "wx", 0o600);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  if (!handle) return null;
+  try {
+    return await action();
+  } finally {
+    await handle.close().catch(() => {});
+    await rm(/* turbopackIgnore: true */ lockPath, { force: true }).catch(() => {});
   }
 }
 

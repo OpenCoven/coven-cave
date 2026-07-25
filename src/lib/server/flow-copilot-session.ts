@@ -20,6 +20,8 @@ import { saveConversation } from "../cave-conversations.ts";
 import {
   buildCopilotStreamArgs,
   copilotIdentityPreamble,
+  copilotProtocolDiagnostic,
+  CopilotTextAssembler,
   parseCopilotChatEvent,
   type CopilotStreamSpec,
 } from "../copilot-stream.ts";
@@ -106,6 +108,8 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
   const startedAt = new Date().toISOString();
   let assistantText = "";
   const deltaByMessage = new Map<string, string>();
+  const textAssembler = new CopilotTextAssembler();
+  const compatibilityDiagnostics = new Map<string, string>();
   let stderrTail = "";
 
   const rl = createInterface({ input: child.stdout });
@@ -115,12 +119,18 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     let raw: unknown;
     try { raw = JSON.parse(trimmed); } catch { return; }
     const event = parseCopilotChatEvent(raw, launch.spec.protocol);
-    if (!event) return;
+    if (!event) {
+      const diagnostic = copilotProtocolDiagnostic(raw, launch.spec.protocol);
+      if (diagnostic) compatibilityDiagnostics.set(diagnostic.code, diagnostic.message);
+      return;
+    }
     if (event.kind === "text_delta") {
-      deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + event.text);
+      const append = textAssembler.delta(event.messageId, event.text);
+      if (append) deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + append);
     } else if (event.kind === "message") {
       // The final frame carries the complete content — prefer it over deltas.
-      deltaByMessage.set(event.messageId, event.content);
+      const append = textAssembler.message(event.messageId, event.content);
+      if (append) deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + append);
     }
   });
 
@@ -153,7 +163,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
         ? `copilot exited with code ${code ?? "?"}${stderrTail.trim() ? `:\n${stderrTail.trim()}` : ""}`
         : "";
       const finishedAt = new Date().toISOString();
-      const text = [assistantText, exitNote].filter(Boolean).join("\n\n");
+      const text = [assistantText, ...compatibilityDiagnostics.values(), exitNote].filter(Boolean).join("\n\n");
       void (async () => {
         try {
           const userTurnId = randomUUID();

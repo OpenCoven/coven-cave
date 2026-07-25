@@ -117,13 +117,13 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const copilotCapability =\s*\n?\s*!sshRuntime && binding\.harness === "copilot" \? await probeCopilotCapability\(\) : null;/,
-  "The local Copilot client version must be probed before Cave selects a JSONL protocol",
+  /Promise\.all\(\[probeCopilotCapability\(\), resolveRuntimeCompatibility\("copilot"\)\]\)/,
+  "The local Copilot probe and bounded registry refresh run concurrently",
 );
 assert.match(
   chatRoute,
-  /const copilotCompatibility =[\s\S]*?resolveRuntimeCompatibility\("copilot"\)[\s\S]*?copilotStreamSpec\(\s*copilotCapability\?\.version \?\? null,\s*copilotCompatibility \? \{ adapters: \[copilotCompatibility\.adapter\] \} : undefined,/,
-  "The direct stream path must select a schema from the installed client version and verified runtime catalog, otherwise falling back to plain chat",
+  /copilotStreamSpec\(\s*copilotCapability\?\.version \?\? null,\s*copilotCompatibility\?\.eventProtocols,/,
+  "The direct stream path receives only refreshed protocol metadata, never remote launch configuration",
 );
 assert.match(
   chatRoute,

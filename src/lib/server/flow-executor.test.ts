@@ -43,8 +43,13 @@ assert.match(
 );
 assert.match(
   source,
-  /Promise\.all\(\[\s*probeCopilotCapability\(\),\s*resolveRuntimeCompatibility\("copilot"\),[\s\S]*copilotStreamSpec\(\s*capability\.version,/,
-  "direct Copilot flow runs must select an event protocol from the installed client version and verified runtime catalog",
+  /Promise\.all\(\[\s*probeCopilotCapability\(\),\s*resolveRuntimeCompatibility\("copilot"\),[\s\S]*copilotStreamSpec\(\s*capability\.version,\s*compatibility\?\.eventProtocols,/,
+  "direct Copilot flow runs consume versioned protocol metadata without allowing it to alter argv",
+);
+assert.match(
+  source,
+  /if \(binding\.harness === "copilot" && !sshBound && !hubAuthority\)[\s\S]*?if \(spec\)[\s\S]*?return \{\s*ok: false,\s*status: 409,/,
+  "an unsupported local Copilot flow fails explicitly instead of falling through to the known prompt-mangling daemon path",
 );
 
 // Flow prompts direct familiars to write memory/self-reports into their own

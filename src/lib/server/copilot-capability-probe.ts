@@ -26,7 +26,7 @@ export async function probeCopilotCapability(
   if (cached && cached.expiresAt > now()) return cached.value;
   const childSpawn = options.spawnImpl ?? spawn;
   const value = await new Promise<CopilotCapabilityProbe>((resolve) => {
-    let output = "";
+    let stdout = "";
     let settled = false;
     const settle = (result: CopilotCapabilityProbe) => {
       if (settled) return;
@@ -43,27 +43,37 @@ export async function probeCopilotCapability(
       settle({ version: null, diagnostic: "version-unavailable" });
       return;
     }
+    let forceKill: ReturnType<typeof setTimeout> | null = null;
     const timer = setTimeout(() => {
       try {
         child.kill("SIGTERM");
       } catch {
         // Best effort; the result is still fail-closed.
       }
+      forceKill = setTimeout(() => {
+        try { child.kill("SIGKILL"); } catch { /* already gone */ }
+      }, 250);
+      forceKill.unref?.();
       settle({ version: null, diagnostic: "probe-timeout" });
     }, TIMEOUT_MS);
     child.stdout?.on("data", (chunk: Buffer | string) => {
-      if (output.length < 4_096) output += String(chunk).slice(0, 4_096 - output.length);
+      if (stdout.length < 4_096) stdout += String(chunk).slice(0, 4_096 - stdout.length);
     });
-    child.stderr?.on("data", (chunk: Buffer | string) => {
-      if (output.length < 4_096) output += String(chunk).slice(0, 4_096 - output.length);
-    });
+    // Drain stderr so a broken launcher cannot block on a full pipe; it is
+    // deliberately never parsed as a version or surfaced to the user.
+    child.stderr?.resume();
     child.once("error", () => {
       clearTimeout(timer);
       settle({ version: null, diagnostic: "version-unavailable" });
     });
-    child.once("close", () => {
+    child.once("close", (code) => {
       clearTimeout(timer);
-      const version = parseRuntimeClientVersion(output);
+      if (forceKill) clearTimeout(forceKill);
+      if (code !== 0) {
+        settle({ version: null, diagnostic: "version-unavailable" });
+        return;
+      }
+      const version = parseRuntimeClientVersion(stdout);
       settle(version ? { version } : { version: null, diagnostic: "version-unparseable" });
     });
   });

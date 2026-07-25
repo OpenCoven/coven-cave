@@ -56,13 +56,16 @@ assert.deepEqual(spec.sandboxReadOnlyArgs, [
 // ── versioned protocol selection and redacted diagnostics ───────────────────
 
 assert.equal(parseRuntimeClientVersion("copilot version 1.0.70"), "1.0.70");
-assert.equal(parseRuntimeClientVersion("Copilot CLI v2.4"), "2.4.0");
+assert.equal(parseRuntimeClientVersion("Copilot CLI v2.4.0"), "2.4.0");
 assert.equal(parseRuntimeClientVersion("warning only"), null);
+assert.equal(parseRuntimeClientVersion("copilot version 1.0.70.1"), null, "invalid trailing version syntax fails closed");
+assert.equal(parseRuntimeClientVersion("dependency version 1.0.70\ncopilot version 2.0.0"), null, "ambiguous output fails closed");
 assert.equal(compareRuntimeClientVersions("1.0.70", "1.0.9"), 61);
 assert.equal(compareRuntimeClientVersions("1.0.0-rc.1", "1.0.0"), -1);
 assert.equal(selectRuntimeEventProtocol("0.9.9"), null, "pre-protocol clients fail closed");
 assert.equal(selectRuntimeEventProtocol("1.0.70")?.id, "copilot-jsonl-v1");
 assert.equal(selectRuntimeEventProtocol("2.0.0"), null, "an unknown future major fails closed");
+assert.equal(selectRuntimeEventProtocol("2.0.0-rc.1"), null, "future-major prereleases fail closed");
 assert.equal(selectRuntimeEventProtocol("not-a-version"), null, "unparseable clients fail closed");
 assert.equal(
   copilotStreamSpec("0.9.9"),
@@ -111,18 +114,14 @@ assert.equal(
   "copilot-jsonl-v2-fixture",
   "newer registry schemas win without changing the normalized chat contract",
 );
+const refreshedProtocolSpec = copilotStreamSpec("2.0.1", [V2_SCHEMA]);
 assert.equal(
-  copilotStreamSpec("2.0.1", {
-    adapters: [{
-      id: "copilot",
-      executable: "copilot",
-      stream_args: { prefix_args: ["--output-format", "json", "--stream", "on", "-p"] },
-      event_protocols: [V2_SCHEMA],
-    }],
-  })?.protocol.id,
+  refreshedProtocolSpec?.protocol.id,
   "copilot-jsonl-v2-fixture",
-  "a refreshed registry adapter activates its compatible protocol without a Cave UI release",
+  "a refreshed registry protocol activates without allowing it to alter Cave's spawn manifest",
 );
+assert.equal(refreshedProtocolSpec?.executable, "copilot", "refreshed metadata cannot replace the launch executable");
+assert.deepEqual(refreshedProtocolSpec?.sandboxReadOnlyArgs, ["--deny-tool", "write", "--deny-tool", "shell"], "refreshed metadata cannot weaken read-only sandbox argv");
 assert.deepEqual(
   parseCopilotChatEvent(
     {
@@ -147,6 +146,30 @@ assert.equal(
   ),
   null,
   "known partial-result noise is deliberately ignored rather than shown as an error",
+);
+assert.equal(
+  copilotProtocolDiagnostic(
+    { type: "assistant.tool_call_started", data: { toolCallId: "secret-id" } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  )?.code,
+  "unsupported-tool-event",
+  "unknown assistant-namespaced tool events are never silently dropped",
+);
+assert.equal(
+  parseCopilotChatEvent(
+    { type: "tool.execution_complete", data: { toolCallId: "t1", result: { content: "unknown" } } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  null,
+  "completion frames without a boolean success state are malformed",
+);
+assert.equal(
+  parseCopilotChatEvent(
+    { type: "assistant.message", data: { messageId: "m", content: "text", toolRequests: [{ name: "shell" }] } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  null,
+  "malformed declared tool requests fail the known event closed",
 );
 
 const v1Fixture = await readFile(
@@ -430,6 +453,7 @@ assert.deepEqual(
     "a message with no prior deltas contributes its full content",
   );
   assert.equal(text.message("solo", "No deltas came first."), "", "repeats add nothing");
+  assert.equal(text.delta("solo", "No deltas came first."), "", "a delayed replay after a full message never duplicates text");
 
   assert.equal(text.delta("m", "Hello "), "Hello ");
   assert.equal(text.delta("m", "world"), "world");
@@ -443,6 +467,7 @@ assert.deepEqual(
     "",
     "a final message shorter than its streamed deltas never duplicates",
   );
+  assert.equal(text.delta("m", "world"), "", "deltas arriving after the authoritative full frame are ignored");
 
   text.reset();
   assert.equal(text.message("m", "fresh"), "fresh", "reset clears per-attempt state");

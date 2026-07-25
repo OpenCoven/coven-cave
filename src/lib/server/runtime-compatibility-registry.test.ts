@@ -13,7 +13,7 @@ const root = await mkdtemp(path.join(tmpdir(), "coven-runtime-compatibility-"));
 const cachePath = path.join(root, "copilot.json");
 const at = new Date("2026-07-24T12:00:00.000Z");
 
-function index(version: string) {
+function index(version: string, eventProtocols: unknown[] = []) {
   return JSON.stringify({
     format: "1",
     runtimes: {
@@ -21,9 +21,10 @@ function index(version: string) {
         version,
         adapter: {
           id: "copilot",
-          executable: "copilot",
-          stream_args: { prefix_args: ["--output-format", "json", "--stream", "on", "-p"] },
-          event_protocols: [],
+          // Launch fields are intentionally irrelevant to the cache contract.
+          executable: "malicious-launcher",
+          stream_args: { prefix_args: ["--allow-all"] },
+          event_protocols: eventProtocols,
         },
       }],
     },
@@ -42,7 +43,8 @@ try {
     ttlMs: 60_000,
     fetchImpl: async () => response(index("2.0.0")),
   });
-  assert.equal(first?.runtimeVersion, "2.0.0", "the canonical accepted adapter is cached");
+  assert.equal(first?.runtimeVersion, "2.0.0", "the canonical accepted protocol metadata is cached");
+  assert.deepEqual(first?.eventProtocols, [], "the cache excludes executable and argv launch configuration");
   assert.ok(first && validateRuntimeCompatibilitySnapshot(first, at), "cache has an integrity hash and expiry");
 
   const offline = await resolveRuntimeCompatibility("copilot", {
@@ -60,17 +62,46 @@ try {
   assert.equal(rollback, null, "a lower registry runtime version cannot roll back cached compatibility");
   assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "2.0.0");
 
+  const prerelease = await refreshRuntimeCompatibility("copilot", {
+    cachePath,
+    now: new Date(at.getTime() + 2_500),
+    fetchImpl: async () => response(index("2.0.0-rc.1")),
+  });
+  assert.equal(prerelease, null, "a prerelease cannot replace the corresponding stable cached version");
+
+  const sameVersionChanged = await refreshRuntimeCompatibility("copilot", {
+    cachePath,
+    now: new Date(at.getTime() + 2_750),
+    fetchImpl: async () => response(index("2.0.0", [{ id: "different-schema" }])),
+  });
+  assert.equal(sameVersionChanged, null, "different content at the same runtime version cannot replace LKG");
+
+  const [higher, lower] = await Promise.all([
+    refreshRuntimeCompatibility("copilot", {
+      cachePath,
+      now: new Date(at.getTime() + 3_000),
+      fetchImpl: async () => response(index("3.0.0")),
+    }),
+    refreshRuntimeCompatibility("copilot", {
+      cachePath,
+      now: new Date(at.getTime() + 3_000),
+      fetchImpl: async () => response(index("2.5.0")),
+    }),
+  ]);
+  assert.ok(higher?.runtimeVersion === "3.0.0" || lower?.runtimeVersion === "3.0.0");
+  assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "3.0.0", "concurrent refreshes cannot downgrade LKG");
+
   const corrupt = await refreshRuntimeCompatibility("copilot", {
     cachePath,
     now: new Date(at.getTime() + 3_000),
     fetchImpl: async () => response(index("3.0.0"), "0".repeat(40)),
   });
   assert.equal(corrupt, null, "a mismatched Git blob hash is rejected before parsing");
-  assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "2.0.0", "failed refresh preserves last-known-good data");
+  assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "3.0.0", "failed refresh preserves last-known-good data");
 
   const expired = await resolveRuntimeCompatibility("copilot", {
     cachePath,
-    now: new Date(at.getTime() + 61_000),
+    now: new Date(at.getTime() + 24 * 60 * 60_000 + 4_000),
     fetchImpl: async () => { throw new Error("offline"); },
   });
   assert.equal(expired, null, "expired cache is not selected when refresh is unavailable");

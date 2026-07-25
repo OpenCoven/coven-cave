@@ -270,7 +270,7 @@ async function runViaSession(body: RunBody) {
     ]);
     const spec = copilotStreamSpec(
       capability.version,
-      compatibility ? { adapters: [compatibility.adapter] } : undefined,
+      compatibility?.eventProtocols,
     );
     if (spec) {
       const { sessionId } = startCopilotFlowRun({
@@ -284,6 +284,10 @@ async function runViaSession(body: RunBody) {
       });
       return finishSession(sessionId);
     }
+    return NextResponse.json(
+      { ok: false, error: "This Copilot CLI version is not compatible with Cave workflow execution. Update the Copilot runtime schema or CLI." },
+      { status: 409 },
+    );
   }
 
   const res = await callDaemon<{ id: string; status: string }>({

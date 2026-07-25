@@ -126,16 +126,18 @@ export const COPILOT_EVENT_PROTOCOL_SCHEMAS: RuntimeEventProtocolSchema[] = [
 
 type Semver = { major: number; minor: number; patch: number; prerelease: string | null };
 
-/** Parse the first semver-looking value from a CLI's `--version` output. */
+/** Parse only a complete, documented Copilot version line. */
 export function parseRuntimeClientVersion(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  const match = raw.match(/(?:^|[^0-9])(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?/);
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length !== 1) return null;
+  const match = /^(?:copilot(?: cli)?(?: version)?\s+v?|v)?(\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$/i.exec(lines[0]!);
   if (!match) return null;
-  return `${match[1]}.${match[2]}.${match[3] ?? "0"}${match[4] ? `-${match[4]}` : ""}`;
+  return match[1]!;
 }
 
 function semver(value: string): Semver | null {
-  const match = value.match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/);
+  const match = value.match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);
   if (!match) return null;
   return {
     major: Number(match[1]),
@@ -156,7 +158,20 @@ export function compareRuntimeClientVersions(a: string, b: string): number | nul
   if (pa.prerelease === pb.prerelease) return 0;
   if (!pa.prerelease) return 1;
   if (!pb.prerelease) return -1;
-  return pa.prerelease.localeCompare(pb.prerelease, undefined, { numeric: true });
+  const identifiers = (value: string) => value.split(".");
+  const aIds = identifiers(pa.prerelease);
+  const bIds = identifiers(pb.prerelease);
+  for (let index = 0; index < Math.min(aIds.length, bIds.length); index += 1) {
+    const a = aIds[index]!;
+    const b = bIds[index]!;
+    if (a === b) continue;
+    const numericA = /^\d+$/.test(a);
+    const numericB = /^\d+$/.test(b);
+    if (numericA && numericB) return Number(a) - Number(b);
+    if (numericA !== numericB) return numericA ? -1 : 1;
+    return a.localeCompare(b);
+  }
+  return aIds.length - bIds.length;
 }
 
 /**
@@ -170,8 +185,13 @@ export function selectRuntimeEventProtocol(
 ): RuntimeEventProtocolSchema | null {
   const normalized = parseRuntimeClientVersion(clientVersion);
   if (!normalized) return null;
+  const parsedClient = semver(normalized);
+  if (!parsedClient) return null;
   const candidates = schemas.filter((schema) => {
     if (schema.runtime !== "copilot") return false;
+    // A release-bounded schema never guesses at prerelease behavior. A schema
+    // can explicitly opt in by declaring a prerelease lower bound.
+    if (parsedClient.prerelease && !semver(schema.minClientVersion)?.prerelease) return false;
     const lower = compareRuntimeClientVersions(normalized, schema.minClientVersion);
     if (lower === null || lower < 0) return false;
     if (!schema.maxClientVersionExclusive) return true;
@@ -286,11 +306,11 @@ export function runtimeEventProtocolSchemas(value: unknown): RuntimeEventProtoco
  */
 export function copilotStreamSpec(
   clientVersion?: string | null,
-  compatibleAdapterManifest?: unknown,
+  compatibleEventProtocols?: unknown,
 ): CopilotStreamSpec | null {
   const runtime = REGISTRY_RUNTIMES.find((entry) => entry.id === "copilot");
   if (!runtime || !runtime.capabilities.stream) return null;
-  const manifest = (compatibleAdapterManifest ?? runtime.adapterManifest) as {
+  const manifest = runtime.adapterManifest as {
     adapters?: Array<{
       id?: unknown;
       executable?: unknown;
@@ -315,6 +335,7 @@ export function copilotStreamSpec(
   // must select a matching schema; an unknown version then falls back to the
   // generic plain-chat route instead of guessing at tool frames.
   const availableProtocols = [
+    ...runtimeEventProtocolSchemas(compatibleEventProtocols),
     ...runtimeEventProtocolSchemas(adapter.event_protocols),
     ...runtimeEventProtocolSchemas(adapter.stream_args?.event_protocols),
     ...COPILOT_EVENT_PROTOCOL_SCHEMAS,
@@ -504,7 +525,7 @@ export function copilotProtocolDiagnostic(
       message: "Copilot CLI emitted a malformed tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",
     };
   }
-  if (/^tool\./.test(type) && !allKnown.includes(type)) {
+  if (/^(?:tool\.|assistant\.tool(?:[_\.]))/.test(type) && !allKnown.includes(type)) {
     return {
       code: "unsupported-tool-event",
       message: "Copilot CLI emitted an unsupported tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",
@@ -542,18 +563,18 @@ export function parseCopilotChatEvent(
       if (!messageId) return null;
       const toolRequests: CopilotToolRequest[] = [];
       const requests = field(data, protocol.fields.toolRequests);
+      if (requests !== undefined && !Array.isArray(requests)) return null;
       if (Array.isArray(requests)) {
         for (const req of requests) {
           const r = record(req);
           const toolCallId = textField(r, protocol.fields.toolCallId);
           const name = textField(r, protocol.fields.toolName);
-          if (toolCallId && name) {
-            toolRequests.push({
-              toolCallId,
-              name,
-              input: field(r, protocol.fields.arguments),
-            });
-          }
+          if (!toolCallId || !name) return null;
+          toolRequests.push({
+            toolCallId,
+            name,
+            input: field(r, protocol.fields.arguments),
+          });
         }
       }
       return {
@@ -578,14 +599,15 @@ export function parseCopilotChatEvent(
   }
   if (typeIs(type, protocol.eventTypes.toolEnd)) {
       const toolCallId = textField(data, protocol.fields.toolCallId);
-      if (!toolCallId) return null;
+      const success = field(data, protocol.fields.success);
+      if (!toolCallId || typeof success !== "boolean") return null;
       const result = record(field(data, protocol.fields.result));
       const output = textField(result, protocol.fields.resultContent);
       return {
         kind: "tool_end",
         toolCallId,
         output,
-        isError: field(data, protocol.fields.success) === false,
+        isError: success === false,
         model: asModel(field(data, protocol.fields.model)),
       };
   }
@@ -611,20 +633,28 @@ export function parseCopilotChatEvent(
  * feed through here; the return value is exactly the new text to append.
  */
 export class CopilotTextAssembler {
-  private seen = new Map<string, number>();
+  private messages = new Map<string, { deltaText: string; fullText: string | null }>();
 
   delta(messageId: string, text: string): string {
-    this.seen.set(messageId, (this.seen.get(messageId) ?? 0) + text.length);
-    return text;
+    const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null };
+    if (state.fullText !== null || !text) return "";
+    let append = text;
+    if (state.deltaText.endsWith(text) || state.deltaText.includes(text)) append = "";
+    else if (text.startsWith(state.deltaText)) append = text.slice(state.deltaText.length);
+    state.deltaText += append;
+    this.messages.set(messageId, state);
+    return append;
   }
 
   message(messageId: string, content: string): string {
-    const already = this.seen.get(messageId) ?? 0;
-    this.seen.set(messageId, Math.max(already, content.length));
-    return already >= content.length ? "" : content.slice(already);
+    const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null };
+    if (state.fullText !== null) return "";
+    state.fullText = content;
+    this.messages.set(messageId, state);
+    return content.startsWith(state.deltaText) ? content.slice(state.deltaText.length) : content;
   }
 
   reset(): void {
-    this.seen.clear();
+    this.messages.clear();
   }
 }

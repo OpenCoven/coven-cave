@@ -64,8 +64,13 @@ assert.match(
 );
 assert.match(
   source,
-  /Promise\.all\(\[\s*probeCopilotCapability\(\),\s*resolveRuntimeCompatibility\("copilot"\),[\s\S]*copilotStreamSpec\(\s*capability\.version,/,
-  "direct Copilot workflows select a parser from a locally probed version and verified runtime catalog rather than assuming a stream shape",
+  /Promise\.all\(\[\s*probeCopilotCapability\(\),\s*resolveRuntimeCompatibility\("copilot"\),[\s\S]*copilotStreamSpec\(\s*capability\.version,\s*compatibility\?\.eventProtocols,/,
+  "direct Copilot workflows select only event protocol data from a locally probed version and verified runtime catalog",
+);
+assert.match(
+  source,
+  /if \(binding\.harness === "copilot" && !sshBound && !hubAuthority\)[\s\S]*?if \(spec\)[\s\S]*?NextResponse\.json\([\s\S]*?status: 409/,
+  "an unsupported local Copilot workflow fails explicitly instead of starting the known unattached daemon TUI",
 );
 
 console.log("workflow run route.test.ts: ok");

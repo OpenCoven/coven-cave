@@ -1266,17 +1266,15 @@ export async function POST(req: Request) {
   // parse its event stream instead. Local runtimes only — SSH runtimes go
   // through `coven run` on the remote host. Null keeps the passthrough
   // fallback (and every other adapter keeps it unconditionally).
-  const copilotCapability =
-    !sshRuntime && binding.harness === "copilot" ? await probeCopilotCapability() : null;
-  const copilotCompatibility =
+  const [copilotCapability, copilotCompatibility] =
     !sshRuntime && binding.harness === "copilot"
-      ? await resolveRuntimeCompatibility("copilot")
-      : null;
+      ? await Promise.all([probeCopilotCapability(), resolveRuntimeCompatibility("copilot")])
+      : [null, null];
   const copilotStream =
     !sshRuntime && binding.harness === "copilot"
       ? copilotStreamSpec(
           copilotCapability?.version ?? null,
-          copilotCompatibility ? { adapters: [copilotCompatibility.adapter] } : undefined,
+          copilotCompatibility?.eventProtocols,
         )
       : null;
   // A direct Copilot JSONL parser is only safe when a locally probed version
