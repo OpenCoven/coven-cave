@@ -1960,6 +1960,7 @@ export async function POST(req: Request) {
             // rejection classification needed for response metadata; never
             // copy their message into a persisted/user-visible diagnostic.
             openCodeModelRejected ||= modelRejectionInError(ev.message);
+            resumeFailed ||= RESUME_ERR_RE.test(ev.message);
             recordStdoutErrorTail("OpenCode reported an error event", true);
             result = { ...result, is_error: true };
           },

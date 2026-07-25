@@ -30,6 +30,11 @@ assert.deepEqual(
   ["--no-color"],
   "an unbracketed positional token after a flag is ambiguous and cannot be launched without a value",
 );
+const proseOperand = parseOpenCodeRunCapabilitiesHelp(`
+  --format  Prints <json> output when enabled
+`, "3.1.0");
+assert.equal(proseOperand.json, false, "an operand-looking token in an option description never confirms a value-taking format flag");
+assert.deepEqual(proseOperand.valueOptions, [], "only the option syntax column can prove that OpenCode accepts an argv value");
 
 const toolEventsOutput = parseOpenCodeRunCapabilitiesHelp(`
   --format <format>             Output format: text, json

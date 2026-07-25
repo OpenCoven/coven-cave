@@ -117,10 +117,17 @@ function optionTakesExplicitValue(help: string, option: string): boolean {
   // Do not infer a value from prose such as "Emit JSON". We only forward an
   // argv value after the option synopsis itself declares one. Bare positional
   // words are deliberately ambiguous (for example `--event-stream MODE`).
-  const synopsis = optionStanza(help, option)
+  const line = optionStanza(help, option)
     .split(/\r?\n/)
     .find((line) => line.includes(option))
     ?? "";
+  const optionAt = line.indexOf(option);
+  const trailingSyntax = optionAt >= 0 ? line.slice(optionAt + option.length) : "";
+  // Help renderers conventionally start the description after two or more
+  // spaces. Inspect only the syntax column: prose such as "Prints <json>"
+  // must never be mistaken for a documented `--format <value>` argv form.
+  const descriptionAt = trailingSyntax.search(/\s{2,}/);
+  const synopsis = descriptionAt >= 0 ? trailingSyntax.slice(0, descriptionAt) : trailingSyntax;
   return /<[^>\n]+>|\[[^\]\n]+\]|=\S+/.test(synopsis);
 }
 
@@ -146,11 +153,15 @@ function advertisedStructuredOutputs(help: string): Array<{ option: string; valu
   return declaredRunOptions(help).flatMap((option) => {
     if (!optionTakesExplicitValue(help, option)) return [];
     const stanza = optionStanza(help, option);
+    const optionAt = stanza.indexOf(option);
+    const trailingSyntax = optionAt >= 0 ? stanza.slice(optionAt + option.length).split(/\r?\n/, 1)[0] : "";
+    const descriptionAt = trailingSyntax.search(/\s{2,}/);
+    const synopsis = descriptionAt >= 0 ? trailingSyntax.slice(0, descriptionAt) : trailingSyntax;
     // JSON in arbitrary prose is not an accepted option value. Restrict the
     // evidence to an explicit enum in the synopsis or to an option-local
     // `format:`/`values:`/`choices:` metadata list.
     const enumerations = [
-      ...bracketEnumerations(stanza),
+      ...bracketEnumerations(synopsis),
       ...[...stanza.matchAll(/\b(?:output\s+)?(?:format|values?|choices?)\s*:\s*([^\r\n]+)/gi)].map((match) => match[1]),
     ];
     const values = [...new Set(enumerations.flatMap((enumeration) => enumeration.match(/\bjson(?:[._-][a-z0-9]+)*\b/gi) ?? []).map((value) => value.toLowerCase()))];

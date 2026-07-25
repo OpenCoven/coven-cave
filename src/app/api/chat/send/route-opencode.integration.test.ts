@@ -33,7 +33,7 @@ const launcher = process.platform === "win32"
       "  echo   --session ^<id^>     Session to continue",
       "  exit /b 0",
       ")",
-      "echo {\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"text\":\"route reply\"}}",
+      "echo {\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"type\":\"text\",\"text\":\"route reply\"}}",
       "exit /b 0",
     ].join("\r\n")
   : [
@@ -43,7 +43,7 @@ const launcher = process.platform === "win32"
       "  printf '%s\\n' '  --format <format>  Output format: text, json' '  --session <id>     Session to continue'",
       "  exit 0",
       "fi",
-      "printf '%s\\n' '{\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"text\":\"route reply\"}}'",
+      "printf '%s\\n' '{\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"type\":\"text\",\"text\":\"route reply\"}}'",
     ].join("\n");
 await writeFile(path.join(bin, executable), launcher, { mode: 0o755 });
 

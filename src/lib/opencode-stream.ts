@@ -2,7 +2,7 @@ import type { OpenCodeEnvelopePath, OpenCodeEventSchema } from "@/lib/opencode-c
 
 export type OpenCodeRunEvent =
   | { kind: "ignore"; sessionId?: string }
-  | { kind: "text"; sessionId?: string; text: string }
+  | { kind: "text"; sessionId?: string; text: string; diagnostic?: "unknown-event" }
   | { kind: "tool_start"; sessionId?: string; id: string; name: string; input: unknown }
   | { kind: "tool_progress"; sessionId?: string; id: string; output: unknown }
   | { kind: "tool_end"; sessionId?: string; id: string; output: unknown; isError: boolean }
@@ -158,7 +158,8 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   // which event labels are trusted; this only reads either observed shape.
   const textAliases = shapeAliases(schema, "text", ["text", "content"]);
   const text = stringAt(textEnvelope(event, schema), ...textAliases);
-  if (eventTypes(schema, "text", ["text"]).includes(eventType) && text !== undefined && hasExpectedPayloadKind(textEnvelope(event, schema), schema, "text")) {
+  const trustedText = text !== undefined && hasExpectedPayloadKind(textEnvelope(event, schema), schema, "text");
+  if (eventTypes(schema, "text", ["text"]).includes(eventType) && trustedText) {
     return { kind: "text", sessionId, text };
   }
   // Tool payloads are stricter than errors/session metadata: v1 only trusts
@@ -211,6 +212,13 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
     ...toolCompleteTypes,
     ...eventTypes(schema, "error", ["error"]),
   ].includes(eventType);
+  // An evolved event label cannot authorize arbitrary provider payloads, but
+  // a text envelope and payload kind already authorized by the signed schema
+  // remain safe assistant content. Preserve that reply while the handler also
+  // emits one redacted compatibility warning and quarantines future turns.
+  if (!knownType && schema && trustedText) {
+    return { kind: "text", sessionId, text, diagnostic: "unknown-event" };
+  }
   return {
     kind: "other",
     sessionId,
@@ -237,7 +245,10 @@ export function handleOpenCodeJsonLine(
     if (event.kind !== "other" && event.sessionId) handlers.onSession?.(event.sessionId);
     switch (event.kind) {
       case "ignore": return;
-      case "text": handlers.onText?.(event); return;
+      case "text":
+        handlers.onText?.(event);
+        if (event.diagnostic) handlers.onOther?.({ kind: "other", sessionId: event.sessionId, diagnostic: event.diagnostic }, rawEvent);
+        return;
       case "tool": handlers.onTool?.(event); return;
       case "tool_start": handlers.onToolStart?.(event); return;
       case "tool_progress": handlers.onToolProgress?.(event); return;

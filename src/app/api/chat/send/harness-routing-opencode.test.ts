@@ -77,8 +77,8 @@ assert.match(
 );
 assert.match(
   route,
-  /onError: \(ev\) => \{[\s\S]*?openCodeModelRejected \|\|= modelRejectionInError\(ev\.message\);[\s\S]*?recordStdoutErrorTail\("OpenCode reported an error event", true\)/,
-  "structured OpenCode error payloads are classified but never copied into user-visible diagnostics",
+  /onError: \(ev\) => \{[\s\S]*?openCodeModelRejected \|\|= modelRejectionInError\(ev\.message\);[\s\S]*?resumeFailed \|\|= RESUME_ERR_RE\.test\(ev\.message\);[\s\S]*?recordStdoutErrorTail\("OpenCode reported an error event", true\)/,
+  "structured OpenCode errors retain only safe classifications while a missing native session triggers the fresh-session recovery",
 );
 assert.match(
   route,
