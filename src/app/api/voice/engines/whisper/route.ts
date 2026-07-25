@@ -24,6 +24,13 @@ function eventKind(value: FormDataEntryValue | null): "partial" | "final" | null
   return value === "partial" || value === "final" ? value : null;
 }
 
+/** Normalize browser BCP-47 tags before they become whisper.cpp CLI args. */
+export function normalizeWhisperLanguage(value: FormDataEntryValue | null): string {
+  if (typeof value !== "string") return "auto";
+  const language = value.trim().split(/[-_]/)[0]?.toLowerCase();
+  return language && /^[a-z]{2,3}$/.test(language) ? language : "auto";
+}
+
 /** Transcribe one browser-captured PCM WAV with the first verified local model. */
 export async function POST(req: Request) {
   if (!isLocalOrigin(req)) {
@@ -62,13 +69,12 @@ export async function POST(req: Request) {
       hint: "Download a Whisper model in Settings before using local voice.",
     }, { status: 409 });
   }
-  const lang = form.get("lang");
   try {
     const text = await transcribeSidecarWav(
       new Uint8Array(await audio.arrayBuffer()),
       model,
       {
-        lang: typeof lang === "string" && /^[A-Za-z]{2,3}(?:-[A-Za-z]{2})?$/.test(lang) ? lang : undefined,
+        lang: normalizeWhisperLanguage(form.get("lang")),
         signal: req.signal,
       },
     );
