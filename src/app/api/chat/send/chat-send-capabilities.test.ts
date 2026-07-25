@@ -54,6 +54,13 @@ assert.equal(currentYargsHelp.session, true, "current yargs string metadata conf
 assert.equal(currentYargsHelp.model, true, "current yargs string metadata confirms model forwarding support");
 assert.deepEqual(currentYargsHelp.valueOptions, ["--format", "--session", "--model", "--event-stream"], "wrapped yargs type annotations confirm value-taking options");
 assert.deepEqual(currentYargsHelp.noValueOptions, [], "a wrapped yargs value annotation never becomes evidence for a valueless launch flag");
+assert.equal(currentYargsHelp.endOfOptions, false, "a conventional delimiter is not assumed when current help does not document it");
+
+const documentedDelimiter = parseOpenCodeRunCapabilitiesHelp(`
+  --format <format>             Output format: text, json
+  --                            End of options
+`, "future");
+assert.equal(documentedDelimiter.endOfOptions, true, "only a dedicated documented delimiter row permits the route to insert --");
 
 const toolEventsOutput = parseOpenCodeRunCapabilitiesHelp(`
   --format <format>             Output format: text, json

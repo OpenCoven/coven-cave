@@ -22,6 +22,11 @@ assert.match(
 );
 assert.match(
   route,
+  /const openCodeEndOfOptionsSupported = Boolean\([\s\S]*?capabilities\.endOfOptions[\s\S]*?schema\?\.launch\.endOfOptions === true[\s\S]*?const openCodePromptNeedsDelimiter = openCodeDirect && harnessPrompt\.startsWith\("--"\);[\s\S]*?if \(openCodePromptNeedsDelimiter && !openCodeEndOfOptionsSupported\)[\s\S]*?status: 400[\s\S]*?if \(openCodeEndOfOptionsSupported\) a\.push\("--"\);/,
+  "OpenCode emits the end-of-options delimiter only when both the selected schema and help probe confirm it, refusing an unsafe flag-shaped prompt otherwise",
+);
+assert.match(
+  route,
   /const valueOptions = openCodeCompatibility\?\.capabilities\.valueOptions \?\? \[\];[\s\S]*?options\.includes\("--session"\) && valueOptions\.includes\("--session"\)[\s\S]*?options\.includes\("--resume"\) && valueOptions\.includes\("--resume"\)/,
   "plain-mode OpenCode resumes only through an explicitly argument-taking session option",
 );

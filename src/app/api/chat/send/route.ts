@@ -1222,6 +1222,21 @@ export async function POST(req: Request) {
   // back to the boundary block ("listed above") and only exists when the
   // conversation's previous turn strayed out of the granted roots.
   const harnessPrompt = buildPromptWithBoundaryReminder(scopedPrompt, body.sessionId);
+  // Do not assume every OpenCode release implements the conventional `--`
+  // delimiter. A selected schema must opt into it and this installed CLI must
+  // document it; ordinary prompts keep the compatible positional launch.
+  const openCodeEndOfOptionsSupported = Boolean(
+    openCodeDirect
+    && openCodeCompatibility?.capabilities.endOfOptions
+    && (openCodeCompatibility.mode === "plain" || openCodeCompatibility.schema?.launch.endOfOptions === true),
+  );
+  const openCodePromptNeedsDelimiter = openCodeDirect && harnessPrompt.startsWith("--");
+  if (openCodePromptNeedsDelimiter && !openCodeEndOfOptionsSupported) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "This OpenCode client does not document support for prompts that begin with '--'. Start the prompt with text or update OpenCode." }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
 
   if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
@@ -1400,9 +1415,10 @@ export async function POST(req: Request) {
         }
       }
       if (forwardModel) a.push("--model", forwardModel);
-      // Prompts are untrusted data. Keep a flag-shaped prompt from overriding
-      // the capability-confirmed OpenCode argv above (for example `--format`).
-      a.push("--", prompt);
+      // Prompts are untrusted data. Insert the delimiter only after both the
+      // selected launch schema and `run --help` confirmed it is supported.
+      if (openCodeEndOfOptionsSupported) a.push("--");
+      a.push(prompt);
       return a;
     }
     const a = ["run", binding.harness, "--stream-json"];

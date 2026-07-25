@@ -198,6 +198,13 @@ function declaredNoValueRunOptions(help: string, options: string[]): string[] {
   });
 }
 
+function documentsEndOfOptionsDelimiter(help: string): boolean {
+  // A prose mention of `--` is not argv evidence. Accept only a dedicated
+  // option-definition row that names the conventional delimiter and explains
+  // its semantics, so legacy clients retain their normal positional launch.
+  return /^\s*--\s{2,}(?:end(?:\s+of)?\s+(?:options|arguments)|stop\s+(?:option|argument)\s+parsing)\b/im.test(help);
+}
+
 function jsonProtocolForSwitch(option: string): string | null {
   const marker = option.slice(2).toLowerCase().split("-");
   const jsonAt = marker.findIndex((part) => part === "json");
@@ -295,6 +302,7 @@ export function parseOpenCodeRunCapabilitiesHelp(help: string, version: string |
     options,
     valueOptions,
     noValueOptions,
+    endOfOptions: documentsEndOfOptionsDelimiter(help),
     structuredSwitches,
     structuredOutputs,
   };
@@ -378,7 +386,7 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
     // Partial, timed-out, non-zero, or oversized help is never capability
     // evidence. Probe again after the short TTL instead of risking an argv
     // that the installed client does not accept.
-    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], structuredSwitches: [], structuredOutputs: [] };
+    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], endOfOptions: false, structuredSwitches: [], structuredOutputs: [] };
     return parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
   })();
   openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, identity, value };

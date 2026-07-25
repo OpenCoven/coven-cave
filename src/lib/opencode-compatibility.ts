@@ -17,6 +17,8 @@ export type OpenCodeRunCapabilities = {
   valueOptions?: string[];
   /** Declared run flags that take no value and are safe to forward verbatim. */
   noValueOptions?: string[];
+  /** Whether `run --help` explicitly documents `--` as an option delimiter. */
+  endOfOptions?: boolean;
   /** Declared valueless switches that explicitly request a JSON protocol. */
   structuredSwitches?: Array<{ option: string; protocols: string[] }>;
   structuredOutputs?: Array<{ option: string; values: string[] }>;
@@ -87,6 +89,8 @@ export type OpenCodeEventSchema = {
     structuredOutput: { option: string; value?: string };
     sessionOption?: "--session" | "--resume";
     requiredFlags: string[];
+    /** May use `--` only when the installed CLI documents the delimiter. */
+    endOfOptions?: true;
   };
 };
 
@@ -231,7 +235,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
         terminalStates: ["completed", "complete", "error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
         errorStates: ["error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
       },
-      launch: { structuredOutput: { option: "--format", value: "json" }, sessionOption: "--session", requiredFlags: [] },
+      launch: { structuredOutput: { option: "--format", value: "json" }, sessionOption: "--session", requiredFlags: [], endOfOptions: true },
     },
     {
       // Earlier and preview clients used generic tool envelopes. Their
@@ -263,7 +267,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
         terminalStates: ["completed", "complete", "error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
         errorStates: ["error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
       },
-      launch: { structuredOutput: { option: "--format", value: "json-legacy" }, requiredFlags: [] },
+      launch: { structuredOutput: { option: "--format", value: "json-legacy" }, requiredFlags: [], endOfOptions: true },
     },
   ],
 };
@@ -337,7 +341,7 @@ function safeStructuredLaunchOption(value: unknown): value is string {
 
 function hasValidLaunch(value: unknown, requires: Record<string, unknown>): boolean {
   if (!isRecord(value) || !Array.isArray(value.requiredFlags)) return false;
-  if (!Object.keys(value).every((key) => key === "structuredOutput" || key === "sessionOption" || key === "requiredFlags")) return false;
+  if (!Object.keys(value).every((key) => key === "structuredOutput" || key === "sessionOption" || key === "requiredFlags" || key === "endOfOptions")) return false;
   const structuredOutput = value.structuredOutput;
   if (!isRecord(structuredOutput)) return false;
   if (!Object.keys(structuredOutput).every((key) => key === "option" || key === "value")) return false;
@@ -349,6 +353,7 @@ function hasValidLaunch(value: unknown, requires: Record<string, unknown>): bool
   // into a structured-output request.
   if (structuredOutput.value === undefined && (typeof requires.protocol !== "string" || !structuredOutput.option.toLowerCase().includes("json"))) return false;
   if (value.sessionOption !== undefined && value.sessionOption !== "--session" && value.sessionOption !== "--resume") return false;
+  if (value.endOfOptions !== undefined && value.endOfOptions !== true) return false;
   if (requires.session === true && value.sessionOption === undefined) return false;
   return value.requiredFlags.length <= MAX_SAFE_STRUCTURED_REQUIRED_FLAGS
     && value.requiredFlags.every((flag) => typeof flag === "string" && SAFE_STRUCTURED_REQUIRED_FLAG.test(flag) && !UNSAFE_STRUCTURED_LAUNCH_OPTIONS.has(flag.toLowerCase()))
