@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  openCodeCapabilityIdentity,
   openCodeCapabilityProbeCacheable,
   openCodeCapabilityProbeTimeoutMs,
   openCodeProbeCleanupGraceMs,
@@ -13,6 +14,11 @@ assert.equal(openCodeCapabilityProbeTimeoutMs("win32"), 6_000, "Windows PowerShe
 assert.equal(openCodeProbeCleanupGraceMs(), 1_000, "timed-out probe cleanup has a short final deadline so chat can fall back");
 assert.equal(openCodeCapabilityProbeCacheable("linux"), true, "direct Unix executable identity supports a short capability cache");
 assert.equal(openCodeCapabilityProbeCacheable("win32"), false, "Windows launcher shims are reprobed rather than reusing stale downstream capability evidence");
+assert.notEqual(
+  openCodeCapabilityIdentity("--format [json]", "1.0.0"),
+  openCodeCapabilityIdentity("--format [json-v2]", "1.0.0"),
+  "a changed executable help contract invalidates cached capability evidence even when its version remains unchanged",
+);
 assert.deepEqual(
   openCodeProbeTreeKillCommand(4242, "win32"),
   { command: "taskkill.exe", args: ["/PID", "4242", "/T", "/F"] },

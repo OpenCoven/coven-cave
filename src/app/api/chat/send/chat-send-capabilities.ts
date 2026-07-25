@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createHash } from "node:crypto";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
@@ -303,6 +304,33 @@ function advertisedStructuredSwitches(options: string[], noValueOptions: string[
   });
 }
 
+/**
+ * Fingerprint the exact launch contract before using a cached capability
+ * result. This is more useful than a PATH filesystem identity: a replacement
+ * binary with different accepted flags changes its bounded help/version
+ * response even when it keeps the same pathname or timestamp.
+ */
+export function openCodeCapabilityIdentity(help: string, version: string): string {
+  return createHash("sha256")
+    .update(help)
+    .update("\0")
+    .update(version)
+    .digest("hex");
+}
+
+export async function openCodeExecutableIdentity(env = openCodeSpawnEnv()): Promise<string> {
+  const helpLaunch = openCodeLaunch(["run", "--help"]);
+  const versionLaunch = openCodeLaunch(["--version"]);
+  const [helpProbe, versionProbe] = await Promise.all([
+    probeOutput(helpLaunch.command, helpLaunch.args, env, helpLaunch.input),
+    probeOutput(versionLaunch.command, versionLaunch.args, env, versionLaunch.input),
+  ]);
+  // Never cache a transient failure: a just-installed or updating executable
+  // must be retried on the next turn rather than pinned for the TTL.
+  if (!helpProbe.complete || !versionProbe.complete) return `unverified:${Date.now()}`;
+  return openCodeCapabilityIdentity(helpProbe.output, versionProbe.output);
+}
+
 function advertisedFormatProtocols(
   outputs: Array<{ option: string; values: string[] }>,
   switches: Array<{ option: string; protocols: string[] }>,
@@ -409,13 +437,13 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
  * schema because vendors can backport or change protocol behavior.
  */
 export async function openCodeRunCapabilities(familiarId?: string): Promise<OpenCodeRunCapabilities> {
-  // The help/version probes use exactly the scoped environment that will
-  // execute the chat turn. A bounded TTL makes an in-place CLI upgrade or a
-  // PATH change visible without filesystem inspection that would pull a
-  // machine-local PATH tree into the standalone trace.
+  // The identity probes use exactly the scoped environment that will execute
+  // the chat turn. A changed help/version contract invalidates the TTL cache
+  // without filesystem inspection of machine-local PATH entries.
   const env = openCodeSpawnEnv(familiarId);
   const cacheable = openCodeCapabilityProbeCacheable();
-  const identity = familiarId ?? "default";
+  const executableIdentity = cacheable ? await openCodeExecutableIdentity(env) : "uncached-windows-launcher";
+  const identity = `${familiarId ?? "default"}\0${executableIdentity}`;
   if (cacheable && openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.identity === identity) {
     return openCodeCapabilitiesProbe.value;
   }

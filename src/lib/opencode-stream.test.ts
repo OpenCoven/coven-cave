@@ -53,7 +53,7 @@ assert.deepEqual(
     { type: "step_start", sessionID: "ses_123", part: { id: "step_1" } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),
-  { kind: "ignore", sessionId: "ses_123" },
+  { kind: "ignore" },
   "current OpenCode step-start frames are lifecycle metadata, not compatibility failures",
 );
 assert.deepEqual(
@@ -61,7 +61,7 @@ assert.deepEqual(
     { type: "step_finish", sessionID: "ses_123", part: { id: "step_1" } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),
-  { kind: "ignore", sessionId: "ses_123" },
+  { kind: "ignore" },
   "current OpenCode step-finish frames are lifecycle metadata, not compatibility failures",
 );
 assert.deepEqual(
@@ -69,9 +69,18 @@ assert.deepEqual(
     { type: "reasoning", sessionID: "ses_123", part: { text: "private chain of thought" } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),
-  { kind: "ignore", sessionId: "ses_123" },
+  { kind: "ignore" },
   "current OpenCode reasoning frames are lifecycle metadata and never leak as assistant text",
 );
+{
+  const sessions: string[] = [];
+  handleOpenCodeJsonLine(
+    JSON.stringify({ type: "step_start", sessionID: "ses_injected", part: { id: "step_1" } }),
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+    { onSession: (id) => sessions.push(id) },
+  );
+  assert.deepEqual(sessions, [], "ignored lifecycle frames cannot overwrite the persisted native resume token");
+}
 assert.deepEqual(
   parseOpenCodeRunEvent(
     { session: "ses_mapped", payload: { event: "reply", type: "text", body: "A registry-mapped reply" } },
