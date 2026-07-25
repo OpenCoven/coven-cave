@@ -303,8 +303,14 @@ const UNSAFE_STRUCTURED_LAUNCH_OPTIONS = new Set([
 ]);
 // A registry describes how to frame and parse a stream; it must never widen
 // what an OpenCode invocation is allowed to do. Keep the remotely supplied
-// companion flags to the small, audited set that only requests event framing.
-const SAFE_STRUCTURED_REQUIRED_FLAGS = new Set(["--event-stream"]);
+// companion flags to a versioned, locally audited set that only asks the CLI
+// to include structured output. Each one is still separately confirmed as a
+// declared valueless `run` option before its schema can be selected; a signed
+// registry never gets to introduce an arbitrary command switch.
+const SAFE_STRUCTURED_REQUIRED_FLAGS = new Set([
+  "--event-stream",
+  "--include-tool-events",
+]);
 
 function safeStructuredLaunchOption(value: unknown): value is string {
   return typeof value === "string"
@@ -408,7 +414,14 @@ function schemaMatches(schema: OpenCodeEventSchema, capabilities: OpenCodeRunCap
 }
 
 function schemaSpecificity(schema: OpenCodeEventSchema): number {
-  return Number(schema.requires.session === true) + Number(schema.requires.model === true) + Number(schema.requires.protocol !== undefined);
+  // A confirmed output-only flag is also a capability discriminator. This
+  // lets a remote schema safely supersede a baseline JSON parser only for a
+  // client that advertises the additional event stream it needs, while the
+  // baseline remains available to otherwise-compatible older clients.
+  return Number(schema.requires.session === true)
+    + Number(schema.requires.model === true)
+    + Number(schema.requires.protocol !== undefined)
+    + schema.launch.requiredFlags.length;
 }
 
 function schemaPriority(schema: OpenCodeEventSchema): number {

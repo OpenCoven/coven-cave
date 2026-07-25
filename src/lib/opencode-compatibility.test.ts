@@ -486,6 +486,53 @@ assert.equal(
   false,
   "a registry schema cannot add even a harmless-looking flag outside the audited framing allowlist",
 );
+const toolEventsSchema = {
+  ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  id: "json-with-tool-events",
+  priority: 1,
+  launch: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].launch, requiredFlags: ["--include-tool-events"] },
+};
+const toolEventsCapabilities = {
+  version: "future",
+  json: true,
+  model: false,
+  session: true,
+  protocols: ["json"],
+  options: ["--format", "--session", "--include-tool-events"],
+  valueOptions: ["--format", "--session"],
+  noValueOptions: ["--include-tool-events"],
+  structuredOutputs: [{ option: "--format", values: ["json"] }],
+};
+assert.equal(
+  isOpenCodeSchemaBundle({ ...unsigned, schemas: [BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], toolEventsSchema] }, now),
+  true,
+  "a versioned schema may require a locally audited output-only tool-event flag alongside the baseline",
+);
+assert.equal(
+  selectOpenCodeSchema([BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], toolEventsSchema], toolEventsCapabilities)?.id,
+  "json-with-tool-events",
+  "a help-confirmed tool-event flag makes its parser more specific than the plain JSON baseline",
+);
+assert.equal(
+  selectOpenCodeSchema([toolEventsSchema], {
+    ...toolEventsCapabilities,
+    options: ["--format", "--session"],
+    noValueOptions: [],
+  }),
+  null,
+  "a schema requiring tool-event output is never selected until that exact valueless flag is declared by run help",
+);
+assert.equal(
+  isOpenCodeSchemaBundle({
+    ...unsigned,
+    schemas: [{
+      ...toolEventsSchema,
+      launch: { ...toolEventsSchema.launch, requiredFlags: ["--include-tool-input"] },
+    }],
+  }, now),
+  false,
+  "a signed registry cannot treat arbitrary tool-data switches as output-only flags",
+);
 assert.equal(
   isOpenCodeSchemaBundle({ ...unsigned, issuedAt: 0 }, now),
   false,

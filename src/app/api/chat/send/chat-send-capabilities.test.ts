@@ -31,6 +31,16 @@ assert.deepEqual(
   "an unbracketed positional token after a flag is ambiguous and cannot be launched without a value",
 );
 
+const toolEventsOutput = parseOpenCodeRunCapabilitiesHelp(`
+  --format <format>             Output format: text, json
+  --include-tool-events         Include tool lifecycle frames in JSON output
+`, "3.1.1");
+assert.deepEqual(
+  toolEventsOutput.noValueOptions,
+  ["--include-tool-events"],
+  "a declared output-only tool-event switch can be independently confirmed before a signed schema forwards it",
+);
+
 const booleanJson = parseOpenCodeRunCapabilitiesHelp(`
   --json                         Emit JSON events
   --event-json-v2                Emit JSON v2 events
