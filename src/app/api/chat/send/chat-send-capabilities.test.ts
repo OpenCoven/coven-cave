@@ -54,20 +54,17 @@ assert.equal(proseOperand.json, false, "an operand-looking token in an option de
 assert.deepEqual(proseOperand.valueOptions, [], "only the option syntax column can prove that OpenCode accepts an argv value");
 
 const currentYargsHelp = parseOpenCodeRunCapabilitiesHelp(`
-  --format                       Select output format
-                                  [string] [choices: "default", "json"]
-  --session                      Resume a named session
-                                  [string]
-  --model                        Select a model
-                                  [string]
+  --format                       Select output format [string] [choices: "default", "json"]
+  -s, --session                  Resume a named session [string]
+  -m, --model                    Select a model [string]
   --event-stream                 Configure event framing
                                   [string]
 `, "1.18.5");
 assert.equal(currentYargsHelp.json, true, "current yargs choices confirm JSON output without treating prose as syntax");
-assert.equal(currentYargsHelp.session, true, "current yargs string metadata confirms native session support");
-assert.equal(currentYargsHelp.model, true, "current yargs string metadata confirms model forwarding support");
-assert.deepEqual(currentYargsHelp.valueOptions, ["--format", "--session", "--model", "--event-stream"], "wrapped yargs type annotations confirm value-taking options");
-assert.deepEqual(currentYargsHelp.noValueOptions, [], "a wrapped yargs value annotation never becomes evidence for a valueless launch flag");
+assert.equal(currentYargsHelp.session, true, "current yargs inline string metadata confirms native session support");
+assert.equal(currentYargsHelp.model, true, "current yargs inline string metadata confirms model forwarding support");
+assert.deepEqual(currentYargsHelp.valueOptions, ["--format", "--session", "--model", "--event-stream"], "inline and wrapped yargs type annotations confirm value-taking options");
+assert.deepEqual(currentYargsHelp.noValueOptions, [], "inline or wrapped yargs value annotations never become evidence for a valueless launch flag");
 assert.equal(currentYargsHelp.endOfOptions, false, "a conventional delimiter is not assumed when current help does not document it");
 
 const documentedDelimiter = parseOpenCodeRunCapabilitiesHelp(`

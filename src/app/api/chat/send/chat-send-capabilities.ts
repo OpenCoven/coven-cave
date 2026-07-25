@@ -192,14 +192,23 @@ function optionSyntax(help: string, option: string): OptionSyntax | null {
   if (!declarationLine) return null;
   const optionAt = declarationLine.indexOf(option);
   const trailing = optionAt >= 0 ? declarationLine.slice(optionAt + option.length) : "";
+  // Current yargs output may put its typed annotation after the description
+  // on the same row (`--session  Resume… [string]`), rather than wrapping it
+  // onto a continuation. Capture only the exact yargs grammar at line end;
+  // arbitrary bracketed prose remains outside the argv contract.
+  const inlineYargsAnnotation = trailing.match(/(?:^|\s)(\[(?:string|number|boolean|array|count)\](?:\s+\[(?:choices?|default):[^\]\r\n]*\])*)\s*$/i)?.[1];
+  const syntaxColumn = inlineYargsAnnotation
+    ? trailing.slice(0, trailing.lastIndexOf(inlineYargsAnnotation))
+    : trailing;
   // Help renderers conventionally begin the description in a second column.
   // Keep that prose out of argv capability evidence.
-  const descriptionAt = trailing.search(/\s{2,}/);
-  const declaration = (descriptionAt >= 0 ? trailing.slice(0, descriptionAt) : trailing).trim();
+  const descriptionAt = syntaxColumn.search(/\s{2,}/);
+  const declaration = (descriptionAt >= 0 ? syntaxColumn.slice(0, descriptionAt) : syntaxColumn).trim();
   // yargs wraps an option's type and choices onto an indented continuation,
   // for example: `[string] [choices: "text", "json"]`. Only that exact
   // annotation grammar is syntax; arbitrary wrapped prose remains ignored.
   const yargsAnnotations = lines.filter((line) => /^\s*\[(?:string|number|boolean|array|count)\](?:\s+\[(?:choices?|default):[^\]\r\n]*\])*\s*$/i.test(line));
+  if (inlineYargsAnnotation) yargsAnnotations.unshift(inlineYargsAnnotation);
   return { declaration, synopsis: [declaration, ...yargsAnnotations].join(" ") };
 }
 
