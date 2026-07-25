@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -311,6 +311,15 @@ try {
   assert.equal(await writeCodexSchemaCache(expiryCachePath, expiredNewerDocument, verify, new Date("2026-07-24T10:30:00.000Z")), true, "the newer document initially persists");
   assert.equal(await writeCodexSchemaCache(expiryCachePath, replayDocument, verify, new Date("2026-07-24T12:00:00.000Z")), false, "an expired newer document still blocks an older valid replay");
   assert.equal((await readCodexSchemaCache(expiryCachePath, verify, new Date("2026-07-24T12:00:00.000Z"))), null, "expired documents remain unselectable despite retaining their watermark");
+  const interruptedCachePath = path.join(cacheDir, "interrupted-cache.json");
+  assert.equal(await writeCodexSchemaCache(interruptedCachePath, document, verify, new Date("2026-07-24T12:00:00.000Z")), true);
+  await unlink(interruptedCachePath);
+  assert.equal(
+    await writeCodexSchemaCache(interruptedCachePath, document, verify, new Date("2026-07-24T12:00:00.000Z")),
+    true,
+    "an interrupted selectable-cache write is repaired by the same signed document without lowering its watermark",
+  );
+  assert.equal((await readCodexSchemaCache(interruptedCachePath, verify, new Date("2026-07-24T12:00:00.000Z")))?.contentHash, document.contentHash);
   const concurrentCachePath = path.join(cacheDir, "concurrent.json");
   await Promise.all([
     writeCodexSchemaCache(concurrentCachePath, newerDocument, verify, new Date("2026-07-24T12:00:00.000Z")),

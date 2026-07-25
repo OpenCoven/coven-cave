@@ -544,7 +544,15 @@ export async function writeCodexSchemaCache(
       const previous = !cached || (watermark && compareSchemaDocumentFreshness(watermark, cached) > 0)
         ? watermark
         : cached;
-      if (previous && compareSchemaDocumentFreshness(checked.value, previous) <= 0) return false;
+      const freshness = previous
+        ? compareSchemaDocumentFreshness(checked.value, previous)
+        : 1;
+      // The watermark is intentionally published before the selectable cache.
+      // A crash or transient I/O error between those writes leaves the exact
+      // same document as the authenticated high-water mark but no usable
+      // payload. Let that document repair the payload on a later refresh;
+      // lower or conflicting documents remain rejected as replays.
+      if (freshness < 0 || (freshness === 0 && cached?.contentHash === checked.value.contentHash)) return false;
       const serialized = JSON.stringify(checked.value);
       if (Buffer.byteLength(serialized, "utf8") > MAX_SCHEMA_DOCUMENT_BYTES) return false;
       // Publish the authenticated checkpoint first. If the selectable cache
