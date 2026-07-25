@@ -41,6 +41,8 @@ export type RuntimeEventProtocolSchema = {
   runtime: "copilot";
   /** Top-level aliases containing the event discriminator (for example `type`). */
   eventTypeFields: string[];
+  /** Prefixes whose unknown frames are surfaced as protocol-drift diagnostics. */
+  diagnosticEventPrefixes: string[];
   /** Inclusive semver lower bound for this client protocol. */
   minClientVersion: string;
   /** Exclusive semver upper bound, or null for the current open-ended schema. */
@@ -87,6 +89,7 @@ export const COPILOT_EVENT_PROTOCOL_SCHEMAS: RuntimeEventProtocolSchema[] = [
     id: "copilot-jsonl-v1",
     runtime: "copilot",
     eventTypeFields: ["type"],
+    diagnosticEventPrefixes: ["tool.", "assistant.tool"],
     minClientVersion: "1.0.0",
     // A future major must opt in with a separately reviewed registry schema.
     // Never guess that an incompatible 2.x frame still has the 1.x shape.
@@ -293,6 +296,8 @@ function runtimeEventProtocolSchema(value: unknown): RuntimeEventProtocolSchema 
   }
   const eventTypeFields = stringArray(candidate.eventTypeFields);
   if (!eventTypeFields?.length || eventTypeFields.some((alias) => !alias)) return null;
+  const diagnosticEventPrefixes = stringArray(candidate.diagnosticEventPrefixes);
+  if (!diagnosticEventPrefixes?.length || diagnosticEventPrefixes.some((prefix) => !prefix)) return null;
   const eventTypes = record(candidate.eventTypes);
   const fields = record(candidate.fields);
   if (!eventTypes || !fields) return null;
@@ -310,7 +315,7 @@ function runtimeEventProtocolSchema(value: unknown): RuntimeEventProtocolSchema 
   }
   const ignoredEventTypes = stringArray(candidate.ignoredEventTypes);
   if (!ignoredEventTypes) return null;
-  return { id: candidate.id, runtime: "copilot", eventTypeFields, minClientVersion, maxClientVersionExclusive, eventTypes: normalizedEventTypes, ignoredEventTypes, fields: normalizedFields };
+  return { id: candidate.id, runtime: "copilot", eventTypeFields, diagnosticEventPrefixes, minClientVersion, maxClientVersionExclusive, eventTypes: normalizedEventTypes, ignoredEventTypes, fields: normalizedFields };
 }
 
 /** Extract every safe Copilot protocol from an untrusted registry field. */
@@ -562,7 +567,7 @@ export function copilotProtocolDiagnostic(
       message: "Copilot CLI emitted a malformed tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",
     };
   }
-  if (/^(?:tool\.|assistant\.tool(?:[_\.]))/.test(type) && !allKnown.includes(type)) {
+  if (protocol.diagnosticEventPrefixes.some((prefix) => type.startsWith(prefix)) && !allKnown.includes(type)) {
     return {
       code: "unsupported-tool-event",
       message: "Copilot CLI emitted an unsupported tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",

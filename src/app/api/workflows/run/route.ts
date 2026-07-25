@@ -272,22 +272,24 @@ async function runViaSession(body: RunBody) {
       capability.version,
       compatibility?.eventProtocols,
     );
-    if (spec) {
-      const { sessionId } = startCopilotFlowRun({
-        spec,
-        prompt,
-        projectRoot,
-        familiarId,
-        familiarName: "display_name" in binding ? binding.display_name : undefined,
-        familiarRole: "role" in binding ? binding.role : undefined,
-        addDirs: await workflowFamiliarAddDirs(familiarId, projectRoot),
-      });
-      return finishSession(sessionId);
+    if (!spec) {
+      return NextResponse.json(
+        { ok: false, error: "This Copilot CLI version is not compatible with Cave workflow execution. Update the Copilot runtime schema or CLI." },
+        { status: 409 },
+      );
     }
-    return NextResponse.json(
-      { ok: false, error: "This Copilot CLI version is not compatible with Cave workflow execution. Update the Copilot runtime schema or CLI." },
-      { status: 409 },
-    );
+    // No workflow run exists until the compatibility gate has selected a
+    // direct launch contract and the session has actually been started.
+    const { sessionId } = startCopilotFlowRun({
+      spec,
+      prompt,
+      projectRoot,
+      familiarId,
+      familiarName: "display_name" in binding ? binding.display_name : undefined,
+      familiarRole: "role" in binding ? binding.role : undefined,
+      addDirs: await workflowFamiliarAddDirs(familiarId, projectRoot),
+    });
+    return finishSession(sessionId);
   }
 
   const res = await callDaemon<{ id: string; status: string }>({

@@ -51,6 +51,21 @@ try {
   assert.deepEqual(first?.eventProtocols, [], "the cache excludes executable and argv launch configuration");
   assert.ok(first && validateRuntimeCompatibilitySnapshot(first, at), "cache has an integrity hash and expiry");
 
+  const coalescedCachePath = path.join(root, "coalesced.json");
+  let refreshFetches = 0;
+  const sharedFetch = async () => {
+    refreshFetches += 1;
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    return response(index("2.0.0"));
+  };
+  const [coalescedFirst, coalescedSecond] = await Promise.all([
+    refreshRuntimeCompatibility("copilot", { cachePath: coalescedCachePath, now: at, fetchImpl: sharedFetch }),
+    refreshRuntimeCompatibility("copilot", { cachePath: coalescedCachePath, now: at, fetchImpl: sharedFetch }),
+  ]);
+  assert.equal(refreshFetches, 1, "concurrent refresh callers share one canonical registry request");
+  assert.equal(coalescedFirst?.runtimeVersion, "2.0.0");
+  assert.equal(coalescedSecond?.runtimeVersion, "2.0.0");
+
   const offline = await resolveRuntimeCompatibility("copilot", {
     cachePath,
     now: new Date(at.getTime() + 1_000),

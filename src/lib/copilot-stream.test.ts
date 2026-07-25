@@ -168,6 +168,14 @@ assert.deepEqual(
   { kind: "text_delta", messageId: "alternate", text: "schema-selected key", model: undefined },
   "a refreshed schema can select its own top-level event discriminator key",
 );
+assert.equal(
+  copilotProtocolDiagnostic(
+    { type: "operation.progress", payload: {} },
+    { ...V2_SCHEMA, diagnosticEventPrefixes: ["operation."] },
+  )?.code,
+  "unsupported-tool-event",
+  "a refreshed schema defines which unknown event namespaces signal protocol drift",
+);
 const unknownDiagnostic = copilotProtocolDiagnostic(
   { type: "tool.execution_progress", data: { toolCallId: "secret-id", output: "/private/path" } },
   COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,

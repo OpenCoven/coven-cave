@@ -23,9 +23,9 @@ const { writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 writeFileSync(join(process.cwd(), "argv.json"), JSON.stringify(process.argv.slice(2)));
 console.log(JSON.stringify({ type: "assistant.message_delta", data: { messageId: "m1", deltaContent: "@@research-control\\n" } }));
+console.log(JSON.stringify({ type: "tool.execution_complete", data: { toolCallId: "call-1", success: true, result: { content: "/workspace" } } }));
 console.log(JSON.stringify({ type: "assistant.message", data: { messageId: "m1", content: "done.\\n@@research-control\\n{\\"decision\\":\\"complete\\",\\"reason\\":\\"ok\\",\\"confidence\\":1}", toolRequests: [{ toolCallId: "call-1", name: "shell", arguments: { command: "pwd" } }] } }));
 console.log(JSON.stringify({ type: "tool.execution_start", data: { toolCallId: "call-1", toolName: "shell", arguments: { command: "pwd" } } }));
-console.log(JSON.stringify({ type: "tool.execution_complete", data: { toolCallId: "call-1", success: true, result: { content: "/workspace" } } }));
 `);
 chmodSync(FAKE, 0o755);
 
@@ -87,14 +87,21 @@ test("spawns with the prompt as one argv element and persists the transcript", a
   assert.match(conv.turns[1].text, /@@research-control/);
   assert.match(conv.turns[1].text, /"decision":"complete"/);
   assert.ok(!conv.turns[1].isError, "successful run is not an error turn");
-  assert.deepEqual(conv.turns[1].tools, [{
-    id: "call-1",
-    name: "shell",
-    input: '{\n  "command": "pwd"\n}',
-    output: "/workspace",
-    status: "ok",
-    textOffset: conv.turns[1].text.length,
-  }], "flow transcripts persist parsed Copilot tool lifecycle activity");
+  assert.equal(conv.turns[1].tools?.length, 1, "flow transcripts persist parsed Copilot tool lifecycle activity");
+  assert.deepEqual(
+    { ...conv.turns[1].tools[0], durationMs: undefined },
+    {
+      id: "call-1",
+      name: "shell",
+      input: '{\n  "command": "pwd"\n}',
+      output: "/workspace",
+      status: "ok",
+      textOffset: conv.turns[1].text.length,
+      durationMs: undefined,
+    },
+    "a completion received before its declaration settles the later tool record",
+  );
+  assert.ok(typeof conv.turns[1].tools[0].durationMs === "number", "the persisted tool duration is recorded when available");
 });
 
 test("addDirs ride as repeatable --add-dir trust flags ahead of the prompt", async () => {

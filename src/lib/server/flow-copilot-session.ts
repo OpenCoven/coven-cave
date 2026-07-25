@@ -111,6 +111,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
   const deltaByMessage = new Map<string, string>();
   const textAssembler = new CopilotTextAssembler();
   const toolTracker = new ToolCallTracker();
+  const pendingToolCompletions = new Map<string, { output: string | undefined; isError: boolean }>();
   const compatibilityDiagnostics = new Map<string, string>();
   let stderrTail = "";
 
@@ -140,6 +141,10 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
           formatToolInputValue(request.input),
           [...deltaByMessage.values()].join("\n").length,
         );
+        const completion = pendingToolCompletions.get(request.toolCallId);
+        if (completion && toolTracker.envelopeToolResult(request.toolCallId, completion.output, completion.isError)) {
+          pendingToolCompletions.delete(request.toolCallId);
+        }
       }
     } else if (event.kind === "tool_start") {
       toolTracker.envelopeToolUse(
@@ -148,8 +153,14 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
         formatToolInputValue(event.input),
         [...deltaByMessage.values()].join("\n").length,
       );
+      const completion = pendingToolCompletions.get(event.toolCallId);
+      if (completion && toolTracker.envelopeToolResult(event.toolCallId, completion.output, completion.isError)) {
+        pendingToolCompletions.delete(event.toolCallId);
+      }
     } else if (event.kind === "tool_end") {
-      toolTracker.envelopeToolResult(event.toolCallId, event.output, event.isError);
+      if (!toolTracker.envelopeToolResult(event.toolCallId, event.output, event.isError)) {
+        pendingToolCompletions.set(event.toolCallId, { output: event.output, isError: event.isError });
+      }
     }
   });
 

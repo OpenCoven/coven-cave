@@ -19,6 +19,9 @@ const REGISTRY_REPO = "OpenCoven/coven-runtimes" as const;
 const INDEX_PATH = "crates/coven-runtime-registry/canonical/index.json";
 const CACHE_TTL_MS = 24 * 60 * 60_000;
 const CACHE_LOCK_STALE_MS = 30_000;
+const IN_FLIGHT_REFRESHES = new Map<string, Promise<RuntimeCompatibilitySnapshot | null>>();
+const FETCH_IDENTITIES = new WeakMap<FetchLike, number>();
+let nextFetchIdentity = 1;
 
 type AdapterEntry = { version: string; yanked?: boolean; adapter: unknown };
 type CanonicalIndex = { format: string; runtimes: Record<string, AdapterEntry[]> };
@@ -179,6 +182,33 @@ function selectAdapter(index: unknown, runtimeId: string): { version: string; ev
  * blob SHA is recomputed from the response bytes before any JSON is trusted.
  */
 export async function refreshRuntimeCompatibility(
+  runtimeId: string,
+  options: RuntimeCompatibilityOptions = {},
+): Promise<RuntimeCompatibilitySnapshot | null> {
+  // Callers that share a target and fetch contract share one canonical fetch
+  // during a cold-start burst. Distinct injected fetches stay independent,
+  // preserving explicit caller/test contracts.
+  const target = options.cachePath ?? cacheFile(runtimeId);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let fetchIdentity = FETCH_IDENTITIES.get(fetchImpl);
+  if (!fetchIdentity) {
+    fetchIdentity = nextFetchIdentity;
+    nextFetchIdentity += 1;
+    FETCH_IDENTITIES.set(fetchImpl, fetchIdentity);
+  }
+  const refreshKey = `${target}\0${fetchIdentity}`;
+  const existing = IN_FLIGHT_REFRESHES.get(refreshKey);
+  if (existing) return existing;
+  const refresh = refreshRuntimeCompatibilityOnce(runtimeId, options);
+  IN_FLIGHT_REFRESHES.set(refreshKey, refresh);
+  try {
+    return await refresh;
+  } finally {
+    if (IN_FLIGHT_REFRESHES.get(refreshKey) === refresh) IN_FLIGHT_REFRESHES.delete(refreshKey);
+  }
+}
+
+async function refreshRuntimeCompatibilityOnce(
   runtimeId: string,
   options: RuntimeCompatibilityOptions = {},
 ): Promise<RuntimeCompatibilitySnapshot | null> {
