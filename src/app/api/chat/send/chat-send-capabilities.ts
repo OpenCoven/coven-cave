@@ -15,7 +15,7 @@ let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let hermesModelFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
-let openCodeCapabilitiesProbe: { until: number; executableIdentity: string; identity: string; value: Promise<OpenCodeRunCapabilities> } | null = null;
+let openCodeCapabilitiesProbe: { until: number; executableIdentity: string; scope: string; value: Promise<OpenCodeRunCapabilities> } | null = null;
 const OPENCODE_CAPABILITY_PROBE_TTL_MS = 60_000;
 const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 2_500;
 const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
@@ -36,6 +36,13 @@ export function openCodeProbeCleanupGraceMs(): number {
  * Do not reuse their help-derived argv evidence between turns. */
 export function openCodeCapabilityProbeCacheable(platform: NodeJS.Platform = process.platform): boolean {
   return platform !== "win32";
+}
+
+/** Capability output can be configured per familiar through its scoped
+ * environment. Never reuse one familiar's help-derived argv contract for
+ * another, even when both resolve the same launcher path and version. */
+export function openCodeCapabilityProbeScope(familiarId?: string): string {
+  return familiarId ?? "default";
 }
 
 /** POSIX probes need their own process group so a timed-out launcher cannot
@@ -508,7 +515,8 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
   const env = openCodeSpawnEnv(familiarId);
   const cacheable = openCodeCapabilityProbeCacheable();
   const executableIdentity = cacheable ? await openCodeExecutableIdentity(env) : "uncached-windows-launcher";
-  if (cacheable && openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.executableIdentity === executableIdentity) {
+  const scope = openCodeCapabilityProbeScope(familiarId);
+  if (cacheable && openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.executableIdentity === executableIdentity && openCodeCapabilitiesProbe.scope === scope) {
     return openCodeCapabilitiesProbe.value;
   }
   const value = (async () => {
@@ -532,7 +540,7 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
       openCodeCapabilitiesProbe = {
         until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS,
         executableIdentity,
-        identity: `${familiarId ?? "default"}\0${executableIdentity}\0${contractIdentity}`,
+        scope,
         value: Promise.resolve(capabilities),
       };
     }

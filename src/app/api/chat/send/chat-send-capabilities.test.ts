@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   openCodeCapabilityIdentity,
   openCodeCapabilityProbeCacheable,
+  openCodeCapabilityProbeScope,
   openCodeCapabilityProbeTimeoutMs,
   openCodeExecutableIdentityLookupTimeoutMs,
   openCodeProbeCleanupGraceMs,
@@ -17,6 +18,12 @@ assert.equal(openCodeCapabilityProbeTimeoutMs("win32"), 6_000, "Windows PowerShe
 assert.equal(openCodeProbeCleanupGraceMs(), 1_000, "timed-out probe cleanup has a short final deadline so chat can fall back");
 assert.equal(openCodeCapabilityProbeCacheable("linux"), true, "direct Unix executable identity supports a short capability cache");
 assert.equal(openCodeCapabilityProbeCacheable("win32"), false, "Windows launcher shims are reprobed rather than reusing stale downstream capability evidence");
+assert.notEqual(
+  openCodeCapabilityProbeScope("opal"),
+  openCodeCapabilityProbeScope("moss"),
+  "capability evidence from one familiar's scoped environment cannot be reused for another familiar",
+);
+assert.equal(openCodeCapabilityProbeScope(), "default", "the unscoped probe cache has a stable explicit scope");
 assert.deepEqual(openCodeProbeSpawnOptions("linux"), { detached: true }, "POSIX OpenCode probes create an isolated process group that timeout cleanup can terminate");
 assert.deepEqual(openCodeProbeSpawnOptions("win32"), { detached: false }, "Windows probes rely on taskkill's explicit process-tree cleanup rather than a detached process group");
 assert.notEqual(
