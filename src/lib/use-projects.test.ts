@@ -123,13 +123,13 @@ assert.match(
 
 assert.match(
   source,
-  /const \[loadedSuccessfully, setLoadedSuccessfully\] = useState\(false\);/,
-  "useProjects tracks whether the current scope has ever completed a successful load",
+  /const scopeKey = projectScopeKey\(familiarId\);[\s\S]*const \[loadedScopeKey, setLoadedScopeKey\] = useState<string \| null>\(null\);[\s\S]*const loadedSuccessfully = enabled && isCurrentProjectScope\(loadedScopeKey, familiarId\);/,
+  "useProjects reports success only when the response belongs to the current familiar scope",
 );
 assert.match(
   source,
-  /if \(data\.ok === false\) \{[\s\S]*setError\(data\.error \?\? "Failed to load projects"\);[\s\S]*\} else \{[\s\S]*setProjects\(sortProjectsAlphabetically\(Array\.isArray\(data\.projects\) \? data\.projects : \[\]\)\);[\s\S]*setLoadedSuccessfully\(true\);[\s\S]*\}/,
-  "loadedSuccessfully only flips true after a successful payload, not on error payloads",
+  /if \(data\.ok === false\) \{[\s\S]*setError\(data\.error \?\? "Failed to load projects"\);[\s\S]*\} else \{[\s\S]*setProjects\(sortProjectsAlphabetically\(Array\.isArray\(data\.projects\) \? data\.projects : \[\]\)\);[\s\S]*setLoadedScopeKey\(scopeKey\);[\s\S]*\}/,
+  "a scope becomes ready only after its own successful payload, not an error or another scope's payload",
 );
 assert.match(
   source,
