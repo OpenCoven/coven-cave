@@ -123,11 +123,13 @@ async function readNativeHost(...modules) {
 }
 
 test("release bundle includes and prefers bundled Node and Whisper runtimes", async () => {
-  const [tauriConfig, windowsConfig, bundleScript, whisperBundleScript, launcher] = await Promise.all([
+  const [tauriConfig, windowsConfig, bundleScript, whisperBundleScript, devWhisperEnv, devServerScript, launcher] = await Promise.all([
     readFile(new URL("./tauri.conf.json", import.meta.url), "utf8"),
     readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8"),
     readFile(new URL("../scripts/whisper-runtime-bundle.sh", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/whisper-runtime-dev-env.sh", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/dev-server-with-whisper.sh", import.meta.url), "utf8"),
     readNativeHost("sidecar_discovery.rs", "sidecar_startup.rs"),
   ]);
 
@@ -155,9 +157,12 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   );
   assert.match(
     tauriConfig,
-    /"beforeDevCommand": "bash scripts\/whisper-runtime-bundle\.sh && pnpm dev"/,
-    "direct Tauri development launches must stage the mandatory Whisper runtime",
+    /"beforeDevCommand": "bash scripts\/dev-server-with-whisper\.sh"/,
+    "direct Tauri development launches must stage and export the mandatory Whisper runtime",
   );
+  assert.match(devServerScript, /source scripts\/whisper-runtime-dev-env\.sh/, "direct Tauri development must load the Whisper environment");
+  assert.match(devWhisperEnv, /whisper-runtime-bundle\.sh/, "development must stage the bundled Whisper runtime");
+  assert.match(devWhisperEnv, /export COVEN_WHISPER_CPP_BIN=/, "development must export the bundled Whisper executable to Next");
   assert.match(
     bundleScript,
     /BUNDLED_NODE_DIR=/,

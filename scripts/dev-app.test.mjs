@@ -9,8 +9,8 @@ const source = readFileSync(
 
 assert.match(
   source,
-  /bash scripts\/whisper-runtime-bundle\.sh/,
-  "the development launcher must stage Whisper before starting Tauri",
+  /source scripts\/whisper-runtime-dev-env\.sh/,
+  "the development launcher must stage and export Whisper before starting Tauri",
 );
 
 assert.match(
