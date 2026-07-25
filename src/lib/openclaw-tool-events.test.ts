@@ -321,7 +321,7 @@ gateway.on("connection", (socket) => {
     if (request.method === "sessions.messages.subscribe") {
       messageSubscriptionRequests += 1;
       assert.deepEqual(request.params, { key: gatewaySessionKey, agentId: "nova" });
-      socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: {} }));
+      socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: { subscribed: true, key: gatewaySessionKey } }));
       // Session subscriptions carry every run. A valid frame belonging to a
       // concurrent turn must not leak into this invocation's event ledger.
       socket.send(JSON.stringify(foreignRunStartFrame));

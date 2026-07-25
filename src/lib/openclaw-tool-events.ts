@@ -809,7 +809,13 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
       }
       if (frame.type === "res" && frame.id === messageSubscriptionId) {
         if (closed || !messageSubscriptionRequested || !messageSubscriptionId || connected) return;
-        if (frame.ok !== true) {
+        const acknowledgement = frame.payload as { subscribed?: unknown; key?: unknown } | null;
+        if (
+          frame.ok !== true ||
+          !acknowledgement ||
+          acknowledgement.subscribed !== true ||
+          acknowledgement.key !== options.sessionKey
+        ) {
           close();
           finish(fallback("gateway_subscription_rejected"));
           return;
