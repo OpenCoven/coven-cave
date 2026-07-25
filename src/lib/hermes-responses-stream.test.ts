@@ -4,6 +4,7 @@ import {
   HermesSseDecoder,
   hermesApiConfig,
   hermesResponsesUrl,
+  isHermesInvalidPreviousResponseIdError,
   parseHermesResponsesEvent,
 } from "./hermes-responses-stream.ts";
 
@@ -30,6 +31,16 @@ test("Hermes Responses events normalise text, calls, output, session, and comple
   assert.deepEqual(
     parseHermesResponsesEvent("response.failed", { response: { error: { message: "invalid model" } } }),
     { kind: "done", isError: true, message: "invalid model" },
+  );
+  assert.deepEqual(
+    parseHermesResponsesEvent("response.failed", {
+      response: { error: { message: "Previous response does not exist", param: "previous_response_id" } },
+    }),
+    { kind: "done", isError: true, message: "Previous response does not exist", invalidPreviousResponseId: true },
+  );
+  assert.equal(
+    isHermesInvalidPreviousResponseIdError({ error: { code: "previous_response_not_found" } }),
+    true,
   );
   assert.deepEqual(
     parseHermesResponsesEvent("response.function_call_arguments.delta", {

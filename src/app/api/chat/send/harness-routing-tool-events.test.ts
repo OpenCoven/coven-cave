@@ -150,8 +150,20 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /previousResponseId && response\.status >= 400 && response\.status < 500[\s\S]*?resumeFailed = true/,
-  "an invalid stored Responses id must use the existing one-time fresh-session retry",
+  /isHermesInvalidPreviousResponseIdError\(apiError\)[\s\S]*?resumeFailed = true/,
+  "only a structured invalid previous Responses id may use the fresh-session retry",
+);
+
+assert.match(
+  chatRoute,
+  /event\.isError && previousResponseId && event\.invalidPreviousResponseId[\s\S]*?previousResponseId && event\.invalidPreviousResponseId/,
+  "streamed model and tool failures must not retry unless they explicitly reject the previous Responses id",
+);
+
+assert.match(
+  chatRoute,
+  /await runAttempt\(buildArgs\(null, retry\.prompt\), retry\.prompt\);/,
+  "the Responses fresh-session retry must receive replayed conversation context",
 );
 
 assert.match(

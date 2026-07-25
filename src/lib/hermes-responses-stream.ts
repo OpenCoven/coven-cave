@@ -15,8 +15,8 @@ export type HermesResponsesEvent =
   | { kind: "tool_input"; id?: string; itemId?: string; input: string; isFinal: boolean }
   | { kind: "tool_end"; id: string; output?: unknown; isError: boolean }
   | { kind: "session"; id: string }
-  | { kind: "done"; isError: boolean; message?: string }
-  | { kind: "error"; message: string }
+  | { kind: "done"; isError: boolean; message?: string; invalidPreviousResponseId?: boolean }
+  | { kind: "error"; message: string; invalidPreviousResponseId?: boolean }
   | { kind: "ignore" };
 
 type RecordValue = Record<string, unknown>;
@@ -59,6 +59,21 @@ function toolInput(value: RecordValue): unknown {
 function toolOutput(value: RecordValue): unknown {
   const item = record(value.item);
   return value.output ?? value.result ?? item?.output ?? item?.result;
+}
+
+/** A fresh retry is safe only when the API explicitly rejects the stored
+ * Responses continuation token. Textual error matching would retry genuine
+ * model/tool failures after users have already seen streamed side effects. */
+export function isHermesInvalidPreviousResponseIdError(payload: unknown): boolean {
+  const value = record(payload);
+  if (!value) return false;
+  const response = record(value.response);
+  const error = record(response?.error) ?? record(value.error) ?? value;
+  const param = string(error.param);
+  const code = string(error.code);
+  return param === "previous_response_id" ||
+    code === "invalid_previous_response_id" ||
+    code === "previous_response_not_found";
 }
 
 /** Parse one complete SSE frame. Unknown/future frame types are safely ignored. */
@@ -152,11 +167,20 @@ export function parseHermesResponsesEvent(eventName: string, payload: unknown): 
     const response = record(value.response);
     const error = record(response?.error) ?? record(value.error);
     const message = string(error?.message) ?? string(value.message);
-    return { kind: "done", isError: true, ...(message ? { message } : {}) };
+    return {
+      kind: "done",
+      isError: true,
+      ...(message ? { message } : {}),
+      ...(isHermesInvalidPreviousResponseIdError(value) ? { invalidPreviousResponseId: true } : {}),
+    };
   }
   if (type === "error") {
     const error = record(value.error);
-    return { kind: "error", message: string(error?.message) ?? string(value.message) ?? "Hermes API failed" };
+    return {
+      kind: "error",
+      message: string(error?.message) ?? string(value.message) ?? "Hermes API failed",
+      ...(isHermesInvalidPreviousResponseIdError(value) ? { invalidPreviousResponseId: true } : {}),
+    };
   }
   return { kind: "ignore" };
 }

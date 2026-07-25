@@ -68,6 +68,7 @@ import {
   HermesSseDecoder,
   hermesApiConfig,
   hermesResponsesUrl,
+  isHermesInvalidPreviousResponseIdError,
   parseHermesResponsesEvent,
 } from "@/lib/hermes-responses-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
@@ -2075,7 +2076,10 @@ export async function POST(req: Request) {
           });
           const contentType = response.headers.get("content-type") ?? "";
           if (!response.ok || !response.body || !/^text\/event-stream(?:\s*;|$)/i.test(contentType)) {
-            if (previousResponseId && response.status >= 400 && response.status < 500) {
+            const apiError = !response.ok && /\bapplication\/json\b/i.test(contentType)
+              ? await response.json().catch(() => undefined)
+              : undefined;
+            if (previousResponseId && isHermesInvalidPreviousResponseIdError(apiError)) {
               resumeFailed = true;
             }
             result = { ...result, is_error: true };
@@ -2159,11 +2163,11 @@ export async function POST(req: Request) {
               case "done":
                 result = { ...result, is_error: event.isError };
                 if (event.message) recordStdoutErrorTail(event.message, true);
-                if (event.isError && previousResponseId) resumeFailed = true;
+                if (event.isError && previousResponseId && event.invalidPreviousResponseId) resumeFailed = true;
                 return true;
               case "error":
                 result = { ...result, is_error: true };
-                if (previousResponseId) resumeFailed = true;
+                if (previousResponseId && event.invalidPreviousResponseId) resumeFailed = true;
                 recordStdoutErrorTail(event.message, true);
                 return true;
               case "ignore":
@@ -2475,7 +2479,7 @@ export async function POST(req: Request) {
             : "Fresh chat started",
           "done",
         );
-        await runAttempt(buildArgs(null, retry.prompt));
+        await runAttempt(buildArgs(null, retry.prompt), retry.prompt);
       }
 
       // User cancel (CHAT-D5-02): when the client stops the response
