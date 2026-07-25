@@ -109,6 +109,7 @@ export async function probePiperRuntime(
     let settled = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+    let terminating = false;
     const finish = (value: PiperRuntimeAvailability) => {
       if (settled) return;
       settled = true;
@@ -128,6 +129,7 @@ export async function probePiperRuntime(
       return;
     }
     timeout = setTimeout(() => {
+      terminating = true;
       try {
         child.kill();
       } catch {
@@ -146,12 +148,16 @@ export async function probePiperRuntime(
       }, terminationGraceMs);
     }, timeoutMs);
     child.once("error", () => {
-      finish({ available: false, hint: "Install the local Piper runtime before selecting a Piper voice." });
+      finish(terminating
+        ? { available: false, hint: "Piper did not respond. Install the supported local Piper runtime." }
+        : { available: false, hint: "Install the local Piper runtime before selecting a Piper voice." });
     });
     child.once("close", (code) => {
-      finish(code === 0
-        ? { available: true }
-        : { available: false, hint: "The local Piper runtime is unavailable. Check its installation." });
+      finish(terminating
+        ? { available: false, hint: "Piper did not respond. Install the supported local Piper runtime." }
+        : code === 0
+          ? { available: true }
+          : { available: false, hint: "The local Piper runtime is unavailable. Check its installation." });
     });
   });
 }

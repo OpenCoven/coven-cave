@@ -183,6 +183,26 @@ test("Piper runner force-kills a process that never closes after timeout", async
   assert.deepEqual(signals, [undefined, "SIGKILL"]);
 });
 
+test("Piper availability probe fails closed when a timed-out runtime exits cleanly", async () => {
+  const gracefulAfterTimeout = () => {
+    const child = new EventEmitter();
+    child.kill = () => {
+      queueMicrotask(() => child.emit("close", 0));
+      return true;
+    };
+    return child;
+  };
+
+  const availability = await probePiperRuntime("piper", {
+    spawnImpl: gracefulAfterTimeout,
+    timeoutMs: 5,
+    terminationGraceMs: 50,
+  });
+
+  assert.equal(availability.available, false);
+  assert.match(availability.hint, /did not respond/i);
+});
+
 test("Piper availability probe force-kills a runtime that ignores its timeout", async () => {
   const signals = [];
   const hangingProbe = () => {
