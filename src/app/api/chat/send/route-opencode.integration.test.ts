@@ -38,7 +38,7 @@ const launcher = process.platform === "win32"
       "  exit /b 0",
       ")",
       "if not \"%~1\"==\"run\" exit /b 9",
-      "if \"%OPENCODE_TEST_MODE%\"==\"plain\" (echo   const value = 1;& echo.& echo   return value;& exit /b 0)",
+      "if \"%OPENCODE_TEST_MODE%\"==\"plain\" (echo permission requested by a fictional assistant; auto-rejecting is only a phrase& echo   const value = 1;& echo.& echo   return value;& exit /b 0)",
       "if not \"%~2\"==\"--format\" exit /b 9",
       "if not \"%~3\"==\"json\" exit /b 9",
       "if \"%~4\"==\"--\" exit /b 9",
@@ -54,7 +54,7 @@ const launcher = process.platform === "win32"
       "  exit 0",
       "fi",
       "if [ \"$1\" != \"run\" ]; then exit 9; fi",
-      "if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf '  const value = 1;\\n\\n  return value;\\n'; exit 0; fi",
+      "if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf 'permission requested by a fictional assistant; auto-rejecting is only a phrase\\n  const value = 1;\\n\\n  return value;\\n'; exit 0; fi",
       "if [ \"$2\" != \"--format\" ] || [ \"$3\" != \"json\" ] || [ \"$4\" = \"--\" ]; then exit 9; fi",
       "printf '%s\\n' 'permission requested ... auto-rejecting'",
       "printf '%s' '{\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"type\":\"text\",\"text\":\"split '",
@@ -114,8 +114,8 @@ try {
   const plainBody = await plainResponse.text();
   assert.match(
     plainBody,
-    /"kind":"assistant_chunk","text":"  const value = 1;\\n"[\s\S]*?"kind":"assistant_chunk","text":"\\n"[\s\S]*?"kind":"assistant_chunk","text":"  return value;\\n"/,
-    "plain OpenCode fallback preserves leading whitespace and blank assistant lines",
+    /"kind":"assistant_chunk","text":"permission requested by a fictional assistant; auto-rejecting is only a phrase\\n"[\s\S]*?"kind":"assistant_chunk","text":"  const value = 1;\\n"[\s\S]*?"kind":"assistant_chunk","text":"\\n"[\s\S]*?"kind":"assistant_chunk","text":"  return value;\\n"/,
+    "plain OpenCode fallback preserves all assistant text, including lines that resemble the unframed control notice",
   );
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;

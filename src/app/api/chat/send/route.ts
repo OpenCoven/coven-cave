@@ -1904,17 +1904,22 @@ export async function POST(req: Request) {
       };
 
       const handleOpenCodeLine = (line: string) => {
-        // Current OpenCode writes this human-oriented permission control
-        // notice to stdout even in plain fallback mode. It is neither an
-        // event nor assistant output and must never enter the transcript.
+        // Current OpenCode can write a human-oriented permission control
+        // notice to stdout. Only structured mode has framing sufficient to
+        // recognize it without risking a valid assistant-text loss.
         const plainText = resolveBackspaces(stripAnsi(line));
-        if (/^permission requested\b[\s\S]*\bauto-rejecting\b/i.test(plainText.trim())) return;
         if (openCodeCompatibility?.mode === "plain") {
+          // Plain stdout has no framing that can distinguish OpenCode's control
+          // notice from an assistant reply that happens to contain the same
+          // words. Preserve every line rather than silently dropping valid text.
           const text = `${plainText}\n`;
           assistantText += text;
           push({ kind: "assistant_chunk", text });
           return;
         }
+        // Structured JSON supplies a protocol boundary, so this known CLI
+        // control line cannot be mistaken for assistant content.
+        if (/^permission requested\b[\s\S]*\bauto-rejecting\b/i.test(plainText.trim())) return;
         // Current OpenCode writes this human-oriented permission control
         // notice to stdout even in `--format json` mode before it rejects the
         // request. It is neither an event nor assistant output; parsing it as
