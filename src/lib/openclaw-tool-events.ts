@@ -234,7 +234,11 @@ export class OpenClawToolEventLedger {
    * toolCallId.
    */
   private toolKey(event: OpenClawGatewayToolEvent): string {
-    return `${event.runId}:${event.id}`;
+    // A delimiter is not a namespace: both Gateway identifiers are opaque
+    // protocol strings and may themselves contain colons. Keep the external
+    // card id stable but encode the tuple unambiguously so distinct runs can
+    // never merge inputs, outputs, or terminal state.
+    return JSON.stringify([event.runId, event.id]);
   }
 
   accept(event: OpenClawGatewayToolEvent, receivedAt = Date.now()): ToolStreamEvent | null {
@@ -817,6 +821,21 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
       if (!connected || closed) return;
       const toolEvent = normalizeOpenClawGatewayToolEvent(frame, options.sessionKey, options.agentId);
       if (toolEvent?.runId === expectedRunId) options.onToolEvent(toolEvent);
+      else if (
+        frame.type === "event" &&
+        frame.event === "session.tool" &&
+        (frame.payload as GatewayToolPayload | undefined)?.sessionKey === options.sessionKey &&
+        (frame.payload as GatewayToolPayload | undefined)?.agentId === options.agentId &&
+        (frame.payload as GatewayToolPayload | undefined)?.runId === expectedRunId
+      ) {
+        // A malformed frame for this exact run means the negotiated tool
+        // schema is no longer one this adapter understands. Do not keep a
+        // partially trusted observer alive: fall back to the authoritative
+        // CLI path and settle any cards it had already opened.
+        options.onDiagnostic?.({ code: "gateway_invalid_tool_event" });
+        notifyDisconnect();
+        close();
+      }
     });
   });
 }

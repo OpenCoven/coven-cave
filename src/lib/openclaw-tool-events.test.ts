@@ -129,7 +129,7 @@ assert.equal(
 const start = normalizeOpenClawGatewayToolEvent(startFrame, gatewaySessionKey, "nova");
 assert.ok(start);
 assert.deepEqual(ledger.accept(start, 1_000), {
-  id: "run-1:call-1",
+  id: '["run-1","call-1"]',
   name: "exec",
   input: '{\n  "command": "pwd"\n}',
   status: "running",
@@ -141,7 +141,7 @@ const update = normalizeOpenClawGatewayToolEvent(
 );
 assert.ok(update);
 assert.deepEqual(ledger.accept(update, 1_100), {
-  id: "run-1:call-1",
+  id: '["run-1","call-1"]',
   name: "exec",
   input: '{\n  "command": "pwd"\n}',
   output: "still running",
@@ -154,7 +154,7 @@ const terminal = normalizeOpenClawGatewayToolEvent(
 );
 assert.ok(terminal);
 assert.deepEqual(ledger.accept(terminal, 1_200), {
-  id: "run-1:call-1",
+  id: '["run-1","call-1"]',
   name: "exec",
   input: '{\n  "command": "pwd"\n}',
   output: '{\n  "output": "ok"\n}',
@@ -165,14 +165,14 @@ assert.equal(ledger.accept(terminal, 1_300), null, "replayed frames must not dup
 assert.equal(ledger.accept(start, 1_400), null, "late start frames must not downgrade terminal state");
 assert.deepEqual(
   ledger.accept({ runId: "run-error", id: "call-error", name: "exec", phase: "result", output: "cancelled", isError: true }, 1_500),
-  { id: "run-error:call-error", name: "exec", output: "cancelled", status: "error" },
+  { id: '["run-error","call-error"]', name: "exec", output: "cancelled", status: "error" },
   "terminal error/cancel results must never appear successful",
 );
 const unfinished = new OpenClawToolEventLedger();
 unfinished.accept(start, 1_000);
 assert.deepEqual(unfinished.finalizeUnsettled("cancelled", 1_120), [
   {
-    id: "run-1:call-1",
+    id: '["run-1","call-1"]',
     name: "exec",
     input: '{\n  "command": "pwd"\n}',
     output: "cancelled",
@@ -184,7 +184,7 @@ assert.deepEqual(unfinished.finalizeUnsettled("cancelled", 1_120), [
 const outOfOrder = new OpenClawToolEventLedger();
 assert.deepEqual(
   outOfOrder.accept({ runId: "run-2", id: "call-2", name: "read", phase: "result", output: "done", isError: false }, 2_000),
-  { id: "run-2:call-2", name: "read", output: "done", status: "ok" },
+  { id: '["run-2","call-2"]', name: "read", output: "done", status: "ok" },
   "a factual terminal event may render without inventing a missing start event",
 );
 assert.deepEqual(
@@ -192,7 +192,7 @@ assert.deepEqual(
     { runId: "run-2", id: "call-2", name: "read", phase: "start", input: "{\"path\":\"README.md\"}", isError: false, seq: 1 },
     2_001,
   ),
-  { id: "run-2:call-2", name: "read", input: "{\"path\":\"README.md\"}", output: "done", status: "ok" },
+  { id: '["run-2","call-2"]', name: "read", input: "{\"path\":\"README.md\"}", output: "done", status: "ok" },
   "a late start backfills its input without regressing a terminal result",
 );
 const concurrent = new OpenClawToolEventLedger();
@@ -200,7 +200,7 @@ concurrent.accept({ runId: "run-concurrent", id: "call-a", name: "exec", phase: 
 concurrent.accept({ runId: "run-concurrent", id: "call-b", name: "exec", phase: "start", input: "b", isError: false }, 2_001);
 assert.deepEqual(
   concurrent.accept({ runId: "run-concurrent", id: "call-b", name: "exec", phase: "result", output: "B", isError: false }, 2_010),
-  { id: "run-concurrent:call-b", name: "exec", input: "b", output: "B", status: "ok", durationMs: 9 },
+  { id: '["run-concurrent","call-b"]', name: "exec", input: "b", output: "B", status: "ok", durationMs: 9 },
   "concurrent same-name calls remain keyed by their Gateway toolCallId",
 );
 const ordered = new OpenClawToolEventLedger();
@@ -214,8 +214,16 @@ const reusedToolCallId = new OpenClawToolEventLedger();
 reusedToolCallId.accept({ runId: "run-first", id: "call-reused", name: "exec", phase: "result", output: "first", isError: false, seq: 1 }, 3_000);
 assert.deepEqual(
   reusedToolCallId.accept({ runId: "run-second", id: "call-reused", name: "exec", phase: "start", input: "second", isError: false, seq: 1 }, 3_001),
-  { id: "run-second:call-reused", name: "exec", input: "second", status: "running" },
+  { id: '["run-second","call-reused"]', name: "exec", input: "second", status: "running" },
   "toolCallId reuse in another Gateway run must not suppress or merge a new tool card",
+);
+const collisionLedger = new OpenClawToolEventLedger();
+assert.ok(collisionLedger.accept({ ...start, runId: "run:one", id: "two", seq: 1 }, 1_000));
+assert.ok(collisionLedger.accept({ ...start, runId: "run", id: "one:two", seq: 1 }, 1_000));
+assert.equal(
+  collisionLedger.snapshot().length,
+  2,
+  "opaque run and tool identifiers must not collide in the lifecycle ledger",
 );
 
 const entry = {
@@ -320,6 +328,19 @@ gateway.on("connection", (socket) => {
       socket.send(JSON.stringify(startFrame));
       socket.send(JSON.stringify(updateFrame));
       socket.send(JSON.stringify(terminalFrame));
+      socket.send(JSON.stringify({
+        type: "event",
+        event: "session.tool",
+        payload: {
+          sessionKey: gatewaySessionKey,
+          agentId: "nova",
+          runId: "run-1",
+          seq: 4,
+          ts: 1_150,
+          stream: "tool",
+          data: { phase: "future-phase" },
+        },
+      }));
       socket.send(JSON.stringify({ type: "event", event: "session.tool", payload: { data: {} } }));
       // JSON can parse successfully without being a protocol object. A null
       // frame must close this optional transport rather than throw from its
