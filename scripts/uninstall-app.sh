@@ -184,9 +184,58 @@ forget_launch_agent() {
   remove_path "$plist"
 }
 
+stop_recorded_reachability_sidecar() {
+  local home="$1"
+  local state_path="${home}/Library/Application Support/${APP_ID}/desktop-daemon-state.json"
+  [[ -f "$state_path" ]] || return 0
+
+  # launchd has already been booted out before this runs. Still require a
+  # matching process identity before signalling anything, so a stale PID can
+  # never target an unrelated CovenCave server during uninstall.
+  local sidecar_pid sidecar_identity
+  sidecar_pid="$(sed -nE 's/.*"pid"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$state_path" | head -n 1)"
+  sidecar_identity="$(sed -nE 's/.*"identity"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "$state_path" | head -n 1)"
+  [[ "$sidecar_pid" =~ ^[0-9]+$ ]] || return 0
+  [[ -n "$sidecar_identity" ]] || return 0
+
+  recorded_reachability_sidecar_matches() {
+    local current_identity
+    current_identity="$(ps -p "$sidecar_pid" -o lstart= -o comm= 2>/dev/null | sed 's/^[[:space:]]*//' || true)"
+    [[ "$current_identity" == "$sidecar_identity" ]]
+  }
+
+  recorded_reachability_sidecar_matches || return 0
+
+  log "Stopping recorded background CovenCave sidecar ${sidecar_pid} after unloading launchd..."
+  run kill -TERM "$sidecar_pid" || true
+
+  [[ "$EXECUTE" == "1" ]] || return 0
+  local attempt
+  for ((attempt = 0; attempt < 50; attempt += 1)); do
+    recorded_reachability_sidecar_matches || return 0
+    sleep 0.1
+  done
+  recorded_reachability_sidecar_matches || return 0
+  log "warning: background sidecar ${sidecar_pid} did not exit after TERM; sending KILL"
+  run kill -KILL "$sidecar_pid" || true
+  for ((attempt = 0; attempt < 10; attempt += 1)); do
+    recorded_reachability_sidecar_matches || return 0
+    sleep 0.1
+  done
+  log "warning: background sidecar ${sidecar_pid} is still present after KILL"
+}
+
 remove_macos_artifacts() {
   local home="$HOME"
   log "Uninstalling macOS CovenCave artifacts..."
+
+  # Unload launchd first so KeepAlive cannot replace the sidecar while it is
+  # being reaped. The daemon's SIGTERM handler performs its normal cleanup;
+  # the recorded-state cleanup below is the bounded orphan fallback.
+  forget_launch_agent "$APP_ID" "${home}/Library/LaunchAgents/${APP_ID}.plist"
+  stop_recorded_reachability_sidecar "$home"
+  forget_launch_agent "$LEGACY_APP_ID" "${home}/Library/LaunchAgents/${LEGACY_APP_ID}.plist"
+  forget_launch_agent "com.opencoven.CovenCave" "${home}/Library/LaunchAgents/com.opencoven.CovenCave.plist"
 
   local app_paths="${COVEN_CAVE_UNINSTALL_APP_PATHS:-/Applications/${APP_NAME}.app:${home}/Applications/${APP_NAME}.app}"
   local app_path
@@ -205,9 +254,6 @@ remove_macos_artifacts() {
   remove_path "${home}/Library/Preferences/${LEGACY_APP_ID}.plist"
   remove_path "${home}/Library/Logs/${APP_NAME}"
 
-  forget_launch_agent "$APP_ID" "${home}/Library/LaunchAgents/${APP_ID}.plist"
-  forget_launch_agent "$LEGACY_APP_ID" "${home}/Library/LaunchAgents/${LEGACY_APP_ID}.plist"
-  forget_launch_agent "com.opencoven.CovenCave" "${home}/Library/LaunchAgents/com.opencoven.CovenCave.plist"
 }
 
 remove_linux_artifacts() {

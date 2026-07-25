@@ -93,6 +93,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "signal-hook-registry",
  "tar",
  "tauri",
  "tauri-build",
