@@ -207,7 +207,7 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   assert.match(launcher, /LD_LIBRARY_PATH/, "Linux sidecars must load Whisper's bundled shared libraries");
   assert.match(
     launcher,
-    /if !cfg!\(debug_assertions\) && !piper\.exists\(\)/,
+    /if !cfg!\(debug_assertions\) && !piper\.is_file\(\)/,
     "only packaged builds may fail startup when the managed Piper runtime is missing",
   );
   assert.match(

@@ -141,13 +141,13 @@ pub(super) fn start_sidecar_runtime(
     })?;
     log::info!("[cave] using node at {}", node.display());
     let piper = bundled_piper_path(&resource_dir);
-    if !cfg!(debug_assertions) && !piper.exists() {
+    if !cfg!(debug_assertions) && !piper.is_file() {
         return Err(SidecarStartError::Failed(format!(
             "bundled Piper runtime not found at {}",
             piper.display()
         )));
     }
-    if piper.exists() {
+    if piper.is_file() {
         log::info!("[cave] using bundled Piper at {}", piper.display());
     } else {
         log::warn!(
@@ -271,7 +271,7 @@ pub(super) fn start_sidecar_runtime(
     } else {
         command.env("COVEN_CAVE_BUNDLE", "1");
     }
-    if piper.exists() {
+    if piper.is_file() {
         command.env("COVEN_PIPER_BIN", node_arg_path(&piper));
     }
 
