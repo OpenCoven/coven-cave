@@ -393,7 +393,31 @@ export async function readCodexSchemaCache(
   }
 }
 
-/** Atomic replace keeps a power loss or interrupted refresh from erasing LKG. */
+async function syncCacheFile(filePath: string): Promise<void> {
+  // Windows only permits fsync on a writable handle, even though the file is
+  // already closed and no longer needs modification.
+  const handle = await open(filePath, "r+");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function syncCacheDirectory(dir: string): Promise<void> {
+  // Windows does not permit opening a directory as a normal file handle. The
+  // rename is still atomic there; POSIX platforms additionally need the
+  // directory sync to make the rename survive a sudden power loss.
+  if (process.platform === "win32") return;
+  const handle = await open(dir, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Atomic, durable replace keeps a power loss or interrupted refresh from erasing LKG. */
 export async function writeCodexSchemaCache(
   cachePath: string,
   document: unknown,
@@ -418,7 +442,12 @@ export async function writeCodexSchemaCache(
       try {
         await mkdir(dir, { recursive: true });
         await writeFile(temp, serialized, { encoding: "utf8", mode: 0o600 });
+        // Do not publish a temp file that only exists in the kernel page
+        // cache. Once its bytes are stable, rename atomically and sync the
+        // parent directory so the new name is durable too.
+        await syncCacheFile(temp);
         await rename(temp, cachePath);
+        await syncCacheDirectory(dir);
         return true;
       } catch {
         try { await unlink(temp); } catch { /* best effort */ }
