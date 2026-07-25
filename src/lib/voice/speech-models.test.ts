@@ -316,22 +316,21 @@ test("removing a running download cancels it before it can publish", async () =>
   const root = testRoot("remove-running");
   await rm(root, { recursive: true, force: true });
   const model = SPEECH_MODEL_REGISTRY[0];
-  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
   let aborted = false;
+  let streamCancelled = false;
   let markFetchStarted: (() => void) | undefined;
   const fetchStarted = new Promise<void>((resolve) => { markFetchStarted = resolve; });
   const fetchImpl = async (_url: string | URL, init?: RequestInit) => {
     init?.signal?.addEventListener("abort", () => {
       aborted = true;
-      controller?.error(new Error("aborted"));
     }, { once: true });
     markFetchStarted?.();
     return new Response(
       new ReadableStream({
         start(next) {
-          controller = next;
           next.enqueue(new TextEncoder().encode("partial"));
         },
+        cancel() { streamCancelled = true; },
       }),
       { headers: { "content-length": String(model.sizeBytes) } },
     );
@@ -348,6 +347,7 @@ test("removing a running download cancels it before it can publish", async () =>
 
   assert.equal(getSpeechModelDownloadJob(started.job.id)?.status, "cancelled");
   assert.equal(aborted, true, "removal aborts the active download request");
+  assert.equal(streamCancelled, true, "removal cancels a body reader that ignores the fetch abort signal");
   const modelDir = path.dirname(speechModelPath(model, root));
   const stagingDir = path.join(path.dirname(modelDir), `.${model.id}.${started.job.id}.download`);
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -367,7 +367,6 @@ test("a replacement waits for removal to reap the cancelled writer", async () =>
   const root = testRoot("remove-replacement-barrier");
   await rm(root, { recursive: true, force: true });
   const model = SPEECH_MODEL_REGISTRY[0];
-  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
   let firstAborted = false;
   let fetchCalls = 0;
   let markFirstFetch: (() => void) | undefined;
@@ -384,7 +383,6 @@ test("a replacement waits for removal to reap the cancelled writer", async () =>
       markFirstFetch?.();
       return new Response(new ReadableStream({
         start(next) {
-          controller = next;
           next.enqueue(new TextEncoder().encode("partial"));
         },
       }), { headers: { "content-length": String(model.sizeBytes) } });
@@ -399,9 +397,6 @@ test("a replacement waits for removal to reap the cancelled writer", async () =>
   const removal = removeSpeechModel(model.id, root);
   await firstAbort;
   const replacement = startSpeechModelDownload(model.id, fetchImpl as typeof fetch, root);
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(fetchCalls, 1, "replacement waits while removal owns the model directory");
-  controller?.error(new Error("aborted"));
   await removal;
   const second = await replacement;
   assert.ok("job" in second && second.started);

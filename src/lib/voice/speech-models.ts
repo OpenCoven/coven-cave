@@ -367,12 +367,16 @@ async function writeResponseToFile(
   res: Response,
   filePath: string,
   job: SpeechModelDownloadJob,
+  signal?: AbortSignal,
 ): Promise<string> {
   const hash = createHash("sha256");
   const handle = await open(/* turbopackIgnore: true */ filePath, "w", 0o600);
+  let cancelReader: (() => void) | undefined;
   try {
     if (!res.body) {
-      if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
+      if (cancelledDownloadJobs.has(job.id) || signal?.aborted) {
+        throw new Error("download_cancelled");
+      }
       const bytes = new Uint8Array(await res.arrayBuffer());
       if (job.totalBytes > 0 && bytes.byteLength > job.totalBytes) throw new Error("size_mismatch");
       hash.update(bytes);
@@ -382,8 +386,15 @@ async function writeResponseToFile(
       return hash.digest("hex");
     }
     const reader = res.body.getReader();
+    // Fetch implementations normally propagate AbortSignal to an in-flight
+    // body read, but cancel the reader as well. This makes model removal
+    // release a stalled streamed response even when the transport has already
+    // produced headers and its reader does not observe the request signal.
+    cancelReader = () => { void reader.cancel().catch(() => undefined); };
+    if (signal?.aborted) cancelReader();
+    else signal?.addEventListener("abort", cancelReader, { once: true });
     for (;;) {
-      if (cancelledDownloadJobs.has(job.id)) {
+      if (cancelledDownloadJobs.has(job.id) || signal?.aborted) {
         await reader.cancel();
         throw new Error("download_cancelled");
       }
@@ -401,6 +412,7 @@ async function writeResponseToFile(
     }
     return hash.digest("hex");
   } finally {
+    if (cancelReader) signal?.removeEventListener("abort", cancelReader);
     await handle.close();
   }
 }
@@ -483,25 +495,29 @@ export async function runSpeechModelDownload(
       if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
       const temp = path.join(/* turbopackIgnore: true */ stagingDir, asset.fileName);
       const timeout = setTimeout(() => abortController.abort(), 30 * 60_000);
-      let res: Response;
       try {
-        res = await fetchImpl(asset.url, { signal: abortController.signal });
+        const res = await fetchImpl(asset.url, { signal: abortController.signal });
+        if (!res.ok) throw new Error(`download_http_${res.status}`);
+        const headerSize = Number(res.headers.get("content-length"));
+        if (
+          Number.isFinite(headerSize) &&
+          headerSize > 0 &&
+          headerSize !== asset.sizeBytes
+        ) {
+          throw new Error("size_mismatch");
+        }
+        const digest = await writeResponseToFile(
+          res,
+          temp,
+          job,
+          abortController.signal,
+        );
+        const info = await stat(/* turbopackIgnore: true */ temp);
+        if (info.size !== asset.sizeBytes) throw new Error("size_mismatch");
+        if (digest !== asset.sha256) throw new Error("checksum_mismatch");
       } finally {
         clearTimeout(timeout);
       }
-      if (!res.ok) throw new Error(`download_http_${res.status}`);
-      const headerSize = Number(res.headers.get("content-length"));
-      if (
-        Number.isFinite(headerSize) &&
-        headerSize > 0 &&
-        headerSize !== asset.sizeBytes
-      ) {
-        throw new Error("size_mismatch");
-      }
-      const digest = await writeResponseToFile(res, temp, job);
-      const info = await stat(/* turbopackIgnore: true */ temp);
-      if (info.size !== asset.sizeBytes) throw new Error("size_mismatch");
-      if (digest !== asset.sha256) throw new Error("checksum_mismatch");
     }
     // Publish the complete directory only after every required asset verifies.
     // The ONNX weights are never visible without the Piper config beside them.
