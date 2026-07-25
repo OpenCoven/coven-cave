@@ -1,5 +1,4 @@
 import type { ChildProcess } from "node:child_process";
-import { caveToolSpawnEnv } from "./coven-bin.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 
 /** OpenCode is installed as `opencode` on all supported desktop platforms. */
@@ -79,12 +78,9 @@ export function openCodeNeedsTmpRuntimeDir(
  */
 export function openCodeSpawnEnv(familiarId?: string | null): NodeJS.ProcessEnv {
   const env = harnessSpawnEnv(familiarId);
-  // OpenCode is a direct user-selected runtime, not the Coven launcher. Keep
-  // the familiar's secret scope from harnessSpawnEnv, but prefer the launch
-  // PATH so a freshly selected/updated npm shim is not shadowed by an older
-  // global candidate directory (especially on Windows).
-  const toolPath = caveToolSpawnEnv().PATH;
-  if (toolPath) env.PATH = toolPath;
+  // OpenCode is a direct user-selected runtime. Keep the familiar's scoped
+  // PATH rather than importing Coven's dynamic tool discovery, which would
+  // make standalone packaging trace machine-local filesystem state.
   if (openCodeNeedsTmpRuntimeDir(process.platform, env)) {
     env.XDG_RUNTIME_DIR = "/tmp";
   }
