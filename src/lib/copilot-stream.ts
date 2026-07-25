@@ -39,6 +39,8 @@ import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
 export type RuntimeEventProtocolSchema = {
   id: string;
   runtime: "copilot";
+  /** Top-level aliases containing the event discriminator (for example `type`). */
+  eventTypeFields: string[];
   /** Inclusive semver lower bound for this client protocol. */
   minClientVersion: string;
   /** Exclusive semver upper bound, or null for the current open-ended schema. */
@@ -84,6 +86,7 @@ export const COPILOT_EVENT_PROTOCOL_SCHEMAS: RuntimeEventProtocolSchema[] = [
   {
     id: "copilot-jsonl-v1",
     runtime: "copilot",
+    eventTypeFields: ["type"],
     minClientVersion: "1.0.0",
     // A future major must opt in with a separately reviewed registry schema.
     // Never guess that an incompatible 2.x frame still has the 1.x shape.
@@ -288,6 +291,8 @@ function runtimeEventProtocolSchema(value: unknown): RuntimeEventProtocolSchema 
     const order = compareRuntimeClientVersions(maxClientVersionExclusive, minClientVersion);
     if (order === null || order <= 0) return null;
   }
+  const eventTypeFields = stringArray(candidate.eventTypeFields);
+  if (!eventTypeFields?.length || eventTypeFields.some((alias) => !alias)) return null;
   const eventTypes = record(candidate.eventTypes);
   const fields = record(candidate.fields);
   if (!eventTypes || !fields) return null;
@@ -305,7 +310,7 @@ function runtimeEventProtocolSchema(value: unknown): RuntimeEventProtocolSchema 
   }
   const ignoredEventTypes = stringArray(candidate.ignoredEventTypes);
   if (!ignoredEventTypes) return null;
-  return { id: candidate.id, runtime: "copilot", minClientVersion, maxClientVersionExclusive, eventTypes: normalizedEventTypes, ignoredEventTypes, fields: normalizedFields };
+  return { id: candidate.id, runtime: "copilot", eventTypeFields, minClientVersion, maxClientVersionExclusive, eventTypes: normalizedEventTypes, ignoredEventTypes, fields: normalizedFields };
 }
 
 /** Extract every safe Copilot protocol from an untrusted registry field. */
@@ -524,6 +529,18 @@ function typeIs(type: string, aliases: string[]): boolean {
   return aliases.includes(type);
 }
 
+function eventType(source: Record<string, unknown> | null, protocol: RuntimeEventProtocolSchema): string | null {
+  const value = field(source, protocol.eventTypeFields);
+  return typeof value === "string" && value ? value : null;
+}
+
+/** Undefined is absent; null is present but malformed; an empty string is valid content. */
+function declaredTextField(source: Record<string, unknown> | null, aliases: string[]): string | null | undefined {
+  const value = field(source, aliases);
+  if (value === undefined) return undefined;
+  return typeof value === "string" ? value : null;
+}
+
 /**
  * Return a safe diagnostic only for frames that claim to describe a tool or
  * assistant event but cannot be understood by the selected schema.  Normal
@@ -535,7 +552,7 @@ export function copilotProtocolDiagnostic(
   protocol: RuntimeEventProtocolSchema,
 ): RuntimeProtocolDiagnostic | null {
   const ev = record(raw);
-  const type = typeof ev?.type === "string" ? ev.type : null;
+  const type = eventType(ev, protocol);
   if (!type) return null;
   const allKnown = Object.values(protocol.eventTypes).flat();
   if (protocol.ignoredEventTypes.includes(type)) return null;
@@ -564,7 +581,7 @@ export function parseCopilotChatEvent(
   protocol: RuntimeEventProtocolSchema = COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
 ): CopilotChatEvent | null {
   const ev = record(raw);
-  const type = typeof ev?.type === "string" ? ev.type : null;
+  const type = eventType(ev, protocol);
   if (!type) return null;
   const data = record(field(ev, protocol.fields.data));
   if (typeIs(type, protocol.eventTypes.textDelta)) {
@@ -583,6 +600,8 @@ export function parseCopilotChatEvent(
   if (typeIs(type, protocol.eventTypes.message)) {
       const messageId = textField(data, protocol.fields.messageId);
       if (!messageId) return null;
+      const content = declaredTextField(data, protocol.fields.content);
+      if (content === null) return null;
       const toolRequests: CopilotToolRequest[] = [];
       const requests = field(data, protocol.fields.toolRequests);
       if (requests !== undefined && !Array.isArray(requests)) return null;
@@ -602,7 +621,7 @@ export function parseCopilotChatEvent(
       return {
         kind: "message",
         messageId,
-        content: textField(data, protocol.fields.content) ?? "",
+        content: content ?? "",
         toolRequests,
         model: asModel(field(data, protocol.fields.model)),
       };
@@ -624,7 +643,8 @@ export function parseCopilotChatEvent(
       const success = field(data, protocol.fields.success);
       if (!toolCallId || typeof success !== "boolean") return null;
       const result = record(field(data, protocol.fields.result));
-      const output = textField(result, protocol.fields.resultContent);
+      const output = declaredTextField(result, protocol.fields.resultContent);
+      if (output === null) return null;
       return {
         kind: "tool_end",
         toolCallId,
@@ -674,7 +694,20 @@ export class CopilotTextAssembler {
     if (state.fullText !== null) return "";
     state.fullText = content;
     this.messages.set(messageId, state);
-    return content.startsWith(state.deltaText) ? content.slice(state.deltaText.length) : content;
+    if (content.startsWith(state.deltaText)) return content.slice(state.deltaText.length);
+    // A full frame is authoritative, but append-only consumers cannot retract
+    // text already streamed. Append only its longest unseen suffix/prefix
+    // overlap so a reordered or stale delta never duplicates the entire frame.
+    const overlapLimit = Math.min(state.deltaText.length, content.length);
+    let overlap = 0;
+    while (overlap < overlapLimit && state.deltaText[overlap] === content[overlap]) overlap += 1;
+    for (let size = overlapLimit; size > overlap; size -= 1) {
+      if (state.deltaText.endsWith(content.slice(0, size))) {
+        overlap = size;
+        break;
+      }
+    }
+    return content.slice(overlap);
   }
 
   reset(): void {

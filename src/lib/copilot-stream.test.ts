@@ -159,6 +159,15 @@ assert.deepEqual(
   { kind: "tool_end", toolCallId: "new-tool", output: "denied", isError: true, model: undefined },
   "schema aliases normalize a changed event envelope into the same tool lifecycle",
 );
+const alternateDiscriminatorSchema = { ...V2_SCHEMA, eventTypeFields: ["event"] };
+assert.deepEqual(
+  parseCopilotChatEvent(
+    { event: "assistant.delta", payload: { message_id: "alternate", delta: "schema-selected key" } },
+    alternateDiscriminatorSchema,
+  ),
+  { kind: "text_delta", messageId: "alternate", text: "schema-selected key", model: undefined },
+  "a refreshed schema can select its own top-level event discriminator key",
+);
 const unknownDiagnostic = copilotProtocolDiagnostic(
   { type: "tool.execution_progress", data: { toolCallId: "secret-id", output: "/private/path" } },
   COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
@@ -196,6 +205,22 @@ assert.equal(
   ),
   null,
   "malformed declared tool requests fail the known event closed",
+);
+assert.equal(
+  parseCopilotChatEvent(
+    { type: "assistant.message", data: { messageId: "m", content: { unexpected: true } } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  null,
+  "present non-string message content is malformed rather than silently emptied",
+);
+assert.equal(
+  parseCopilotChatEvent(
+    { type: "tool.execution_complete", data: { toolCallId: "t1", success: true, result: { content: [] } } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  null,
+  "present non-string tool result content is malformed rather than silently omitted",
 );
 
 const v1Fixture = await readFile(
@@ -509,6 +534,13 @@ assert.deepEqual(
   assert.equal(text.delta("replay", "Hello ", "frame-1"), "", "a repeated JSONL frame id is ignored as a replay");
   assert.equal(text.delta("replay", "Hello ", "frame-2"), "Hello ", "different frame ids preserve identical adjacent chunks");
   assert.equal(text.message("replay", "Hello Hello "), "", "the final frame confirms the replay-safe streamed content");
+
+  assert.equal(text.delta("diverged", "Hello old", "frame-old"), "Hello old");
+  assert.equal(
+    text.message("diverged", "Hello new"),
+    "new",
+    "a divergent authoritative frame appends only its non-overlapping suffix instead of duplicating the full message",
+  );
 
   text.reset();
   assert.equal(text.message("m", "fresh"), "fresh", "reset clears per-attempt state");

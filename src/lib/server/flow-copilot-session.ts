@@ -17,6 +17,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { saveConversation } from "../cave-conversations.ts";
+import { formatToolInputValue, toPersistedTools, ToolCallTracker } from "../chat-tool-events.ts";
 import {
   buildCopilotStreamArgs,
   copilotIdentityPreamble,
@@ -109,6 +110,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
   let assistantText = "";
   const deltaByMessage = new Map<string, string>();
   const textAssembler = new CopilotTextAssembler();
+  const toolTracker = new ToolCallTracker();
   const compatibilityDiagnostics = new Map<string, string>();
   let stderrTail = "";
 
@@ -129,8 +131,25 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       if (append) deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + append);
     } else if (event.kind === "message") {
       // The final frame carries the complete content — prefer it over deltas.
-      const append = textAssembler.message(event.messageId, event.content);
-      if (append) deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + append);
+      textAssembler.message(event.messageId, event.content);
+      deltaByMessage.set(event.messageId, event.content);
+      for (const request of event.toolRequests) {
+        toolTracker.envelopeToolUse(
+          request.toolCallId,
+          request.name,
+          formatToolInputValue(request.input),
+          [...deltaByMessage.values()].join("\n").length,
+        );
+      }
+    } else if (event.kind === "tool_start") {
+      toolTracker.envelopeToolUse(
+        event.toolCallId,
+        event.toolName,
+        formatToolInputValue(event.input),
+        [...deltaByMessage.values()].join("\n").length,
+      );
+    } else if (event.kind === "tool_end") {
+      toolTracker.envelopeToolResult(event.toolCallId, event.output, event.isError);
     }
   });
 
@@ -154,7 +173,12 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       finalized = true;
       clearTimeout(timeout);
       ACTIVE_RUNS.delete(sessionId);
-      assistantText = [...deltaByMessage.values()].join("\n").trim();
+      const rawAssistantText = [...deltaByMessage.values()].join("\n");
+      assistantText = rawAssistantText.trim();
+      const persistedTools = toPersistedTools(
+        toolTracker.snapshot(),
+        rawAssistantText.length - rawAssistantText.trimStart().length,
+      );
       // Any non-zero (or missing) exit code is an error — even with partial
       // output, the run didn't finish cleanly and the diagnostics must not
       // be dropped. Captured text is preserved ahead of the exit note.
@@ -183,6 +207,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
                 role: "assistant",
                 text,
                 createdAt: finishedAt,
+                ...(persistedTools ? { tools: persistedTools } : {}),
                 ...(failed ? { isError: true } : {}),
               },
             ],
