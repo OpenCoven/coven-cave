@@ -1510,6 +1510,12 @@ export async function POST(req: Request) {
       // Keep it separately so the next Grok turn resumes the actual CLI
       // session rather than Cave's conversation id.
       let grokSessionId: string | null = null;
+      // Responses API ids rotate per turn like other harness session ids, but
+      // Cave's `sessionId` remains the stable conversation identity. Preserve
+      // the latest response id separately so follow-ups send
+      // `previous_response_id` instead of accidentally resuming from Cave's
+      // UUID.
+      let hermesResponseId: string | null = null;
       // First-turn visibility (cave-0g2x): the id of the in-flight user turn,
       // minted up front so the announce-time stub conversation and the
       // end-of-stream authoritative save agree on the turn's identity.
@@ -2027,7 +2033,14 @@ export async function POST(req: Request) {
         const abort = new AbortController();
         currentHermesAbort = abort;
         pushProgress("harness-start", "Starting Hermes API", "running", hermesApi.baseUrl);
+        const onAbort = () => {
+          // Transport loss is resumable, not a user Stop: keep consuming until
+          // the shared detach deadline, exactly like a child-process attempt.
+          armDetachKill();
+        };
+        req.signal.addEventListener("abort", onAbort, { once: true });
         try {
+          const previousResponseId = existingConversation?.harnessSessionId;
           const response = await fetch(hermesResponsesUrl(hermesApi), {
             method: "POST",
             signal: abort.signal,
@@ -2036,41 +2049,68 @@ export async function POST(req: Request) {
               accept: "text/event-stream",
               ...(hermesApi.apiKey ? { authorization: `Bearer ${hermesApi.apiKey}` } : {}),
             },
-            body: JSON.stringify({ model: forwardModel ?? desiredModel, input: apiPrompt, stream: true }),
+            body: JSON.stringify({
+              model: forwardModel ?? desiredModel,
+              input: apiPrompt,
+              stream: true,
+              ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
+            }),
           });
-          if (!response.ok || !response.body) {
+          const contentType = response.headers.get("content-type") ?? "";
+          if (!response.ok || !response.body || !/^text\/event-stream(?:\s*;|$)/i.test(contentType)) {
             result = { ...result, is_error: true };
-            recordStdoutErrorTail(`Hermes API request failed (${response.status})`, true);
+            recordStdoutErrorTail(
+              !response.ok
+                ? `Hermes API request failed (${response.status})`
+                : `Hermes API protocol error: expected text/event-stream, received ${contentType || "no content type"}`,
+              true,
+            );
             return;
           }
           const reader = response.body.getReader();
           const utf8 = new TextDecoder();
           const decoder = new HermesSseDecoder();
-          const consume = (frame: { event: string; data: string }) => {
-            if (frame.data === "[DONE]") return;
+          const hermesCallIdsByItemId = new Map<string, string>();
+          const hermesArgumentBuffers = new Map<string, string>();
+          const consume = (frame: { event: string; data: string }): boolean => {
+            if (frame.data === "[DONE]") return true;
             let payload: unknown;
             try {
               payload = JSON.parse(frame.data);
             } catch {
               // Future/non-JSON frames cannot safely become a tool bubble.
               recordStdoutErrorTail(frame.data);
-              return;
+              return false;
             }
             const event = parseHermesResponsesEvent(frame.event, payload);
             switch (event.kind) {
               case "session":
+                hermesResponseId = event.id;
                 if (!sessionId) announceSession(event.id);
-                return;
+                return false;
               case "text":
                 assistantText += event.text;
                 push({ kind: "assistant_chunk", text: event.text });
-                return;
+                return false;
               case "tool_start": {
                 const input = formatToolInputValue(event.input);
+                if (event.itemId) hermesCallIdsByItemId.set(event.itemId, event.id);
+                if (input !== undefined) hermesArgumentBuffers.set(event.id, input);
                 boundarySentinel?.observe(event.name, input ?? "");
                 const toolEv = toolTracker.envelopeToolUse(event.id, event.name, input, assistantText.length);
                 if (toolEv) push({ kind: "tool_use", ...toolEv });
-                return;
+                return false;
+              }
+              case "tool_input": {
+                const id = event.id ?? (event.itemId ? hermesCallIdsByItemId.get(event.itemId) : undefined);
+                if (!id) return false;
+                const next = event.isFinal
+                  ? event.input
+                  : `${hermesArgumentBuffers.get(id) ?? ""}${event.input}`;
+                hermesArgumentBuffers.set(id, next);
+                const toolEv = toolTracker.envelopeToolInput(id, formatToolInputValue(next));
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                return false;
               }
               case "tool_end": {
                 const output = typeof event.output === "string"
@@ -2078,26 +2118,48 @@ export async function POST(req: Request) {
                   : formatToolInputValue(event.output);
                 const toolEv = toolTracker.envelopeToolResult(event.id, output, event.isError);
                 if (toolEv) push({ kind: "tool_use", ...toolEv });
-                return;
+                return false;
               }
               case "done":
                 result = { ...result, is_error: event.isError };
-                return;
+                return true;
               case "error":
                 result = { ...result, is_error: true };
                 recordStdoutErrorTail(event.message, true);
-                return;
+                return true;
               case "ignore":
-                return;
+                return false;
             }
           };
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            for (const frame of decoder.push(utf8.decode(value, { stream: true }))) consume(frame);
+          try {
+            let terminal = false;
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              for (const frame of decoder.push(utf8.decode(value, { stream: true }))) {
+                terminal = consume(frame) || terminal;
+                if (terminal) break;
+              }
+              if (terminal) {
+                await reader.cancel();
+                break;
+              }
+            }
+            if (!terminal) {
+              for (const frame of decoder.push(utf8.decode())) {
+                terminal = consume(frame) || terminal;
+                if (terminal) break;
+              }
+            }
+            if (!terminal) {
+              for (const frame of decoder.finish()) {
+                terminal = consume(frame) || terminal;
+                if (terminal) break;
+              }
+            }
+          } finally {
+            reader.releaseLock();
           }
-          for (const frame of decoder.push(utf8.decode())) consume(frame);
-          for (const frame of decoder.finish()) consume(frame);
         } catch (error) {
           if (!abort.signal.aborted) {
             result = { ...result, is_error: true };
@@ -2107,9 +2169,16 @@ export async function POST(req: Request) {
             );
           }
         } finally {
+          req.signal.removeEventListener("abort", onAbort);
           if (currentHermesAbort === abort) currentHermesAbort = null;
           result.duration_ms = Date.now() - attemptStartedAt;
-          pushProgress("harness-start", "Hermes API stream finished", "done", undefined, result.duration_ms);
+          pushProgress(
+            "harness-start",
+            result.is_error ? "Hermes API stream failed" : "Hermes API stream finished",
+            result.is_error ? "error" : "done",
+            undefined,
+            result.duration_ms,
+          );
         }
       };
 
@@ -2457,7 +2526,11 @@ export async function POST(req: Request) {
       // do not overwrite the previous native id (or record a changed sandbox
       // profile) and accidentally let a later read turn resume the old full
       // access session.
-      const harnessSessionId = grokDirect ? grokSessionId : sessionId;
+      const harnessSessionId = grokDirect
+        ? grokSessionId
+        : hermesDirect && hermesApi
+          ? hermesResponseId ?? sessionId
+          : sessionId;
       // OpenCode's JSON event protocol does not echo the selected model. Its
       // direct argv proves the selection was forwarded, while a successful
       // exit is the only confirmation it was applied. Preserve an explicit

@@ -248,6 +248,26 @@ export class ToolCallTracker {
   }
 
   /**
+   * Updates an already-announced native tool call as its input becomes
+   * available. Responses-style protocols may announce an empty function call
+   * and stream its arguments afterwards; keep the same UI/persistence id
+   * rather than creating a second bubble or retaining a partial payload.
+   */
+  envelopeToolInput(toolUseId: string, input: string | undefined): ToolStreamEvent | null {
+    if (input === undefined || this.settledEnvelopeIds.has(toolUseId)) return null;
+    const call = this.byEnvelopeId.get(toolUseId);
+    if (!call) return null;
+    const ev: ToolStreamEvent = { id: call.id, name: call.name, input, status: "running" };
+    const prev = this.recorded.get(call.id);
+    if (prev) {
+      this.recorded.set(call.id, { ...prev, ...ev, input });
+    } else {
+      this.record(ev);
+    }
+    return ev;
+  }
+
+  /**
    * stream-json `tool_result` block (from the follow-up user message).
    * Returns null when the matching call was already settled by a post hook
    * (hook output + duration win) or was never announced.

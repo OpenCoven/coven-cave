@@ -11,7 +11,8 @@
 
 export type HermesResponsesEvent =
   | { kind: "text"; text: string }
-  | { kind: "tool_start"; id: string; name: string; input?: unknown }
+  | { kind: "tool_start"; id: string; name: string; input?: unknown; itemId?: string }
+  | { kind: "tool_input"; id?: string; itemId?: string; input: string; isFinal: boolean }
   | { kind: "tool_end"; id: string; output?: unknown; isError: boolean }
   | { kind: "session"; id: string }
   | { kind: "done"; isError: boolean }
@@ -38,6 +39,11 @@ function responseId(value: unknown): string | undefined {
 function toolId(value: RecordValue): string | undefined {
   const item = record(value.item);
   return string(value.call_id) ?? string(value.tool_call_id) ?? string(item?.call_id) ?? string(item?.id);
+}
+
+function toolItemId(value: RecordValue): string | undefined {
+  const item = record(value.item);
+  return string(value.item_id) ?? string(item?.id);
 }
 
 function toolName(value: RecordValue): string | undefined {
@@ -74,18 +80,46 @@ export function parseHermesResponsesEvent(eventName: string, payload: unknown): 
   // A function-call item is the canonical Responses announcement. Hermes can
   // also emit its progress extension before the item is finalised; both map to
   // the same native call id and ToolCallTracker deduplicates them.
-  if (
-    type === "response.output_item.added" ||
-    type === "response.function_call_arguments.delta" ||
-    type === "hermes.tool.progress"
-  ) {
+  if (type === "response.function_call_arguments.delta") {
+    const delta = string(value.delta);
+    const id = string(value.call_id);
+    const itemId = toolItemId(value);
+    return delta
+      ? {
+          kind: "tool_input",
+          ...(id ? { id } : {}),
+          ...(itemId ? { itemId } : {}),
+          input: delta,
+          isFinal: false,
+        }
+      : { kind: "ignore" };
+  }
+
+  if (type === "response.function_call_arguments.done") {
+    const input = string(value.arguments) ?? string(value.delta);
+    const id = string(value.call_id);
+    const itemId = toolItemId(value);
+    return input
+      ? {
+          kind: "tool_input",
+          ...(id ? { id } : {}),
+          ...(itemId ? { itemId } : {}),
+          input,
+          isFinal: true,
+        }
+      : { kind: "ignore" };
+  }
+
+  if (type === "response.output_item.added" || type === "hermes.tool.progress") {
     const id = toolId(value);
     const name = toolName(value);
     const status = string(value.status);
     if (id && (status === "completed" || status === "complete" || status === "error" || status === "failed")) {
       return { kind: "tool_end", id, output: toolOutput(value), isError: status === "error" || status === "failed" };
     }
-    return id && name ? { kind: "tool_start", id, name, input: toolInput(value) } : { kind: "ignore" };
+    return id && name
+      ? { kind: "tool_start", id, name, input: toolInput(value), ...(toolItemId(value) ? { itemId: toolItemId(value) } : {}) }
+      : { kind: "ignore" };
   }
 
   if (
@@ -105,7 +139,9 @@ export function parseHermesResponsesEvent(eventName: string, payload: unknown): 
       toolOutput(value) === undefined
     ) {
       const name = toolName(value);
-      return name ? { kind: "tool_start", id, name, input: toolInput(value) } : { kind: "ignore" };
+      return name
+        ? { kind: "tool_start", id, name, input: toolInput(value), ...(toolItemId(value) ? { itemId: toolItemId(value) } : {}) }
+        : { kind: "ignore" };
     }
     const failed = value.error === true || string(value.status) === "error" || string(value.status) === "failed";
     return { kind: "tool_end", id, output: toolOutput(value), isError: failed };
@@ -131,12 +167,15 @@ export class HermesSseDecoder {
   private data: string[] = [];
 
   push(chunk: string): Array<{ event: string; data: string }> {
-    this.buffer += chunk.replace(/\r\n/g, "\n");
+    // Keep CRLF normalization at the line boundary: a `\r` may arrive at the
+    // end of one network chunk and its `\n` in the next.
+    this.buffer += chunk;
     const frames: Array<{ event: string; data: string }> = [];
     let next: number;
     while ((next = this.buffer.indexOf("\n")) >= 0) {
-      const line = this.buffer.slice(0, next);
+      const rawLine = this.buffer.slice(0, next);
       this.buffer = this.buffer.slice(next + 1);
+      const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
       if (!line) {
         if (this.data.length) {
           frames.push({ event: this.eventName, data: this.data.join("\n") });
@@ -155,7 +194,8 @@ export class HermesSseDecoder {
   finish(): Array<{ event: string; data: string }> {
     // SSE servers normally terminate frames with a blank line. Treat a final
     // unterminated data line as a frame too, because proxies sometimes omit it.
-    if (this.buffer.startsWith("data:")) this.data.push(this.buffer.slice(5).replace(/^ /, ""));
+    const tail = this.buffer.endsWith("\r") ? this.buffer.slice(0, -1) : this.buffer;
+    if (tail.startsWith("data:")) this.data.push(tail.slice(5).replace(/^ /, ""));
     this.buffer = "";
     if (!this.data.length) return [];
     const frame = { event: this.eventName, data: this.data.join("\n") };
@@ -180,7 +220,13 @@ export function hermesApiConfig(
   if (!raw) return null;
   try {
     const url = new URL(raw);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) return null;
     return {
       baseUrl: url.toString().replace(/\/$/, ""),
       ...(env.HERMES_API_KEY?.trim() ? { apiKey: env.HERMES_API_KEY.trim() } : {}),

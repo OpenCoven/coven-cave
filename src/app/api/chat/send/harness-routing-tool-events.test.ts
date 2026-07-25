@@ -120,6 +120,30 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /previous_response_id: previousResponseId/,
+  "Hermes API follow-ups must continue from the stored Responses id, not Cave's stable conversation id",
+);
+
+assert.match(
+  chatRoute,
+  /req\.signal\.addEventListener\("abort", onAbort, \{ once: true \}\)[\s\S]*?req\.signal\.removeEventListener\("abort", onAbort\)/,
+  "Hermes API attempts must arm and clean up the shared detached-stream deadline",
+);
+
+assert.match(
+  chatRoute,
+  /text\/event-stream[\s\S]*?Hermes API protocol error/,
+  "Hermes API attempts must reject successful non-SSE responses",
+);
+
+assert.match(
+  chatRoute,
+  /frame\.data === "\[DONE\]"\) return true[\s\S]*?await reader\.cancel\(\)/,
+  "the Responses DONE sentinel must stop a still-open SSE reader",
+);
+
+assert.match(
+  chatRoute,
   /\.\.\.\(persistedTools \? \{ tools: persistedTools \} : \{\}\)/,
   "tools persist on the assistant turn alongside usage and cost",
 );
@@ -152,6 +176,20 @@ assert.match(
   assert.equal(secondDone.id, second.id, "second post pairs with the remaining open call");
   assert.equal(secondDone.status, "error");
   assert.equal(secondDone.durationMs, 300, "duration measured from the second call's own start");
+}
+
+// Responses function calls are announced before their standard argument-delta
+// stream completes. Updating the same envelope id must replace the partial
+// input in both the live event and the persisted snapshot.
+{
+  const tracker = new ToolCallTracker();
+  const started = tracker.envelopeToolUse("call-args", "shell");
+  assert.ok(started);
+  const partial = tracker.envelopeToolInput("call-args", '{"command":');
+  assert.deepEqual(partial, { id: "call-args", name: "shell", input: '{"command":', status: "running" });
+  const complete = tracker.envelopeToolInput("call-args", '{"command":"pwd"}');
+  assert.deepEqual(complete, { id: "call-args", name: "shell", input: '{"command":"pwd"}', status: "running" });
+  assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}');
 }
 
 // Behavioral: a post with no open call still surfaces, under a fresh id.

@@ -27,6 +27,24 @@ test("Hermes Responses events normalise text, calls, output, session, and comple
     { kind: "tool_end", id: "call-1", output: "C:/repo", isError: false },
   );
   assert.deepEqual(parseHermesResponsesEvent("response.completed", {}), { kind: "done", isError: false });
+  assert.deepEqual(
+    parseHermesResponsesEvent("response.function_call_arguments.delta", {
+      item_id: "item-1", delta: '{"command":',
+    }),
+    { kind: "tool_input", itemId: "item-1", input: '{"command":', isFinal: false },
+  );
+  assert.deepEqual(
+    parseHermesResponsesEvent("response.function_call_arguments.done", {
+      item_id: "item-1", arguments: '{"command":"pwd"}',
+    }),
+    { kind: "tool_input", itemId: "item-1", input: '{"command":"pwd"}', isFinal: true },
+  );
+  assert.deepEqual(
+    parseHermesResponsesEvent("response.output_item.added", {
+      item: { id: "item-1", type: "function_call", call_id: "call-1", name: "shell", arguments: "" },
+    }),
+    { kind: "tool_start", id: "call-1", itemId: "item-1", name: "shell", input: "" },
+  );
 });
 
 test("Hermes extension and malformed/future events fail closed", () => {
@@ -53,11 +71,20 @@ test("SSE decoder handles arbitrary chunk boundaries and multi-line data", () =>
   assert.deepEqual(decoder.push("event: x\ndata: first\ndata: second\n\n"), [
     { event: "x", data: "first\nsecond" },
   ]);
+
+  const crlf = new HermesSseDecoder();
+  assert.deepEqual(crlf.push("event: one\r\ndata: 1\r"), []);
+  assert.deepEqual(crlf.push("\n\r\nevent: two\r\ndata: 2\r\n\r\n"), [
+    { event: "one", data: "1" },
+    { event: "two", data: "2" },
+  ]);
 });
 
 test("structured transport is opt-in and refuses non-HTTP endpoint values", () => {
   assert.equal(hermesApiConfig({}), null);
   assert.equal(hermesApiConfig({ HERMES_API_URL: "file:///tmp/hermes" }), null);
+  assert.equal(hermesApiConfig({ HERMES_API_URL: "https://user:token@example.test" }), null);
+  assert.equal(hermesApiConfig({ HERMES_API_URL: "https://example.test?api_key=token" }), null);
   assert.deepEqual(hermesApiConfig({ HERMES_API_URL: "http://127.0.0.1:8080/", HERMES_API_KEY: " scoped " }), {
     baseUrl: "http://127.0.0.1:8080",
     apiKey: "scoped",
