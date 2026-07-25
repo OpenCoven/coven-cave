@@ -93,6 +93,7 @@ export type OpenCodeCompatibility = {
 export type OpenCodeCompatibilityDiagnostic =
   | "json-format-unavailable"
   | "no-compatible-schema"
+  | "schema-quarantined"
   | "schema-registry-refresh-rejected"
   | "cached-schema-unavailable";
 
@@ -137,6 +138,21 @@ const CACHE_LOCK_STALE_MS = 30_000;
 const REFRESH_FAILURE_BACKOFF_MS = 60_000;
 const refreshFlights = new Map<string, Promise<LoadedOpenCodeSchemaBundle>>();
 const refreshRetryAt = new Map<string, number>();
+// A selected schema that emits an unknown or malformed frame is unsafe for
+// further structured launches in this process. Keep the bounded quarantine by
+// schema identity so a registry update with a new profile can recover without
+// replaying the incompatible turn (which may already have run tools).
+const quarantinedSchemaIds = new Set<string>();
+const MAX_QUARANTINED_SCHEMA_IDS = 64;
+
+export function quarantineOpenCodeSchema(schema: OpenCodeEventSchema | undefined): void {
+  if (!schema || quarantinedSchemaIds.has(schema.id)) return;
+  if (quarantinedSchemaIds.size >= MAX_QUARANTINED_SCHEMA_IDS) {
+    const oldest = quarantinedSchemaIds.values().next();
+    if (!oldest.done) quarantinedSchemaIds.delete(oldest.value);
+  }
+  quarantinedSchemaIds.add(schema.id);
+}
 
 /**
  * Shipped schemas remain usable offline. Selection is capability-based: a
@@ -833,6 +849,14 @@ export async function resolveOpenCodeCompatibility(
       capabilities,
       bundleSource: loaded.source,
       diagnostic: "no-compatible-schema",
+    };
+  }
+  if (quarantinedSchemaIds.has(schema.id)) {
+    return {
+      mode: "plain",
+      capabilities,
+      bundleSource: loaded.source,
+      diagnostic: "schema-quarantined",
     };
   }
   return {

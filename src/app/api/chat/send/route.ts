@@ -64,6 +64,7 @@ import {
 import { grokLaunchCommand } from "@/lib/grok-bin";
 import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import {
+  quarantineOpenCodeSchema,
   redactedOpenCodeEventFingerprint,
   resolveOpenCodeCompatibility,
 } from "@/lib/opencode-compatibility";
@@ -938,11 +939,6 @@ export async function POST(req: Request) {
   const openCodeCompatibility = openCodeDirect
     ? await resolveOpenCodeCompatibility(await openCodeRunCapabilities(body.familiarId))
     : null;
-  // A selected structured schema is quarantined for the remainder of this
-  // request after it observes an incompatible frame. The retry below launches
-  // without the structured-output switch; never reinterpret that frame as
-  // assistant text.
-  let openCodePlainFallback = false;
   const modelForwardingEnabled =
     hermesDirect
       ? await hermesChatSupportsModel()
@@ -1370,7 +1366,7 @@ export async function POST(req: Request) {
       // If JSON is unavailable, preserve plain chat instead of launching with
       // an unsupported flag and losing the whole reply.
       const a = ["run"];
-      if (openCodeCompatibility?.mode === "structured" && !openCodePlainFallback) {
+      if (openCodeCompatibility?.mode === "structured") {
         const launch = openCodeCompatibility.schema!.launch;
         a.push(launch.structuredOutput.option, launch.structuredOutput.value, ...launch.requiredFlags);
         if (resumeSessionId && launch.sessionOption) a.push(launch.sessionOption, resumeSessionId);
@@ -1621,11 +1617,6 @@ export async function POST(req: Request) {
       let adapterConflict: BuiltinAdapterConflict | null = null;
       let openCodeCompatibilityNoticeSent = false;
       let openCodeModelRejected = false;
-      // Unknown or malformed JSON proves that the selected schema no longer
-      // describes this stream. A fresh plain attempt is safe only if this
-      // attempt has not emitted any trusted assistant/tool/error activity.
-      let openCodeStructuredIncompatibility = false;
-      let openCodeStructuredTrustedActivity = false;
 
       // Model parity: the harness echoes its resolved model on the init/system
       // stream event. Capturing it lets the application state render honestly as
@@ -1851,16 +1842,7 @@ export async function POST(req: Request) {
       };
 
       const handleOpenCodeLine = (line: string) => {
-        if (openCodeCompatibility?.mode === "plain" || openCodePlainFallback) {
-          // The retry deliberately asks OpenCode for plain output. If it still
-          // sends a JSON-shaped envelope, do not promote provider-controlled
-          // fields to assistant text merely because structured parsing was
-          // quarantined.
-          if (openCodePlainFallback && line.startsWith("{") && line.endsWith("}")) {
-            recordStdoutErrorTail("OpenCode emitted JSON during plain compatibility fallback", true);
-            result = { ...result, is_error: true };
-            return;
-          }
+        if (openCodeCompatibility?.mode === "plain") {
           const text = `${resolveBackspaces(stripAnsi(line))}\n`;
           assistantText += text;
           push({ kind: "assistant_chunk", text });
@@ -1872,13 +1854,11 @@ export async function POST(req: Request) {
             if (!sessionId) announceSession(nativeSessionId);
           },
           onText: (ev) => {
-            openCodeStructuredTrustedActivity = true;
             const text = ev.text.endsWith("\n") ? ev.text : `${ev.text}\n`;
             assistantText += text;
             push({ kind: "assistant_chunk", text });
           },
           onTool: (ev) => {
-            openCodeStructuredTrustedActivity = true;
             boundarySentinel?.observe(ev.name, ev.input);
             const started = toolTracker.envelopeToolUse(
               ev.id,
@@ -1902,7 +1882,6 @@ export async function POST(req: Request) {
             if (ended) push({ kind: "tool_use", ...ended });
           },
           onToolStart: (ev) => {
-            openCodeStructuredTrustedActivity = true;
             boundarySentinel?.observe(ev.name, ev.input);
             const started = toolTracker.envelopeToolUse(
               ev.id,
@@ -1915,7 +1894,6 @@ export async function POST(req: Request) {
             if (reorderedEnd) push({ kind: "tool_use", ...reorderedEnd });
           },
           onToolEnd: (ev) => {
-            openCodeStructuredTrustedActivity = true;
             const ended = toolTracker.envelopeToolResult(
               ev.id,
               typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
@@ -1924,7 +1902,6 @@ export async function POST(req: Request) {
             if (ended) push({ kind: "tool_use", ...ended });
           },
           onError: (ev) => {
-            openCodeStructuredTrustedActivity = true;
             // This is an explicit error envelope, so retain its error state
             // even if its message does not match the generic stderr filter.
             // Error envelopes are provider-controlled and can repeat prompts,
@@ -1939,12 +1916,12 @@ export async function POST(req: Request) {
             // Do not treat arbitrary `text`/`content` on an unknown envelope
             // as assistant output: tool progress and provider errors often
             // carry those fields and may contain secrets or file contents.
-            openCodeStructuredIncompatibility = true;
+            quarantineOpenCodeSchema(openCodeCompatibility?.schema);
             if (!openCodeCompatibilityNoticeSent) {
               openCodeCompatibilityNoticeSent = true;
               pushProgress(
                 "opencode-compatibility",
-                "OpenCode sent an unrecognized event; compatible activity will continue, or Cave will safely retry in plain chat",
+                "OpenCode sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
                 "error",
                 `${ev.diagnostic ?? "unknown-event"}:${redactedOpenCodeEventFingerprint(rawEvent)}`,
               );
@@ -1955,12 +1932,12 @@ export async function POST(req: Request) {
           // arbitrary tool payloads. Do not feed that raw line into the
           // persisted error tail or any user-visible diagnostic.
             recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
-          openCodeStructuredIncompatibility = true;
+          quarantineOpenCodeSchema(openCodeCompatibility?.schema);
           if (!openCodeCompatibilityNoticeSent) {
             openCodeCompatibilityNoticeSent = true;
             pushProgress(
               "opencode-compatibility",
-              "OpenCode sent a malformed event; compatible activity will continue, or Cave will safely retry in plain chat",
+              "OpenCode sent a malformed event; future turns will use safe plain chat until a compatible schema is available",
               "error",
               "malformed-json-event",
             );
@@ -1981,6 +1958,8 @@ export async function POST(req: Request) {
             ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
             : openCodeCompatibility.diagnostic === "no-compatible-schema"
               ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
+              : openCodeCompatibility.diagnostic === "schema-quarantined"
+                ? "OpenCode's structured event protocol was quarantined; continuing without tool activity"
               : openCodeCompatibility.diagnostic === "cached-schema-unavailable"
                 ? "OpenCode's compatibility registry is unavailable; using the shipped compatible parser"
               : openCodeCompatibility.bundleSource === "built-in"
@@ -2343,6 +2322,8 @@ export async function POST(req: Request) {
           ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
           : openCodeCompatibility.diagnostic === "no-compatible-schema"
             ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
+            : openCodeCompatibility.diagnostic === "schema-quarantined"
+              ? "OpenCode's structured event protocol was quarantined; continuing without tool activity"
             : openCodeCompatibility.diagnostic === "cached-schema-unavailable"
               ? "OpenCode's compatibility registry is unavailable; using the shipped compatible parser"
             : openCodeCompatibility.bundleSource === "built-in"
@@ -2411,48 +2392,6 @@ export async function POST(req: Request) {
           conflict.manifestPath,
         );
         await runAttempt(args);
-      }
-
-      // A future client can retain the same documented launch surface while
-      // changing JSON event labels. Do not render unknown envelopes as text.
-      // When the failed structured attempt emitted no trusted activity, retry
-      // once as a fresh plain chat so the user still receives its reply.
-      if (
-        openCodeDirect
-        && openCodeStructuredIncompatibility
-        && !openCodeStructuredTrustedActivity
-        && !runHandle.stopRequested
-      ) {
-        const retry = buildResumeRetryPrompt(harnessPrompt, existingConversation);
-        pushProgress(
-          "opencode-compatibility",
-          retry.replayedHistory
-            ? "OpenCode's JSON protocol changed; replaying recent context in plain chat"
-            : "OpenCode's JSON protocol changed; restarting safely in plain chat",
-          "running",
-          "structured-stream-quarantined",
-        );
-        openCodePlainFallback = true;
-        if (!sessionId) announceSession(crypto.randomUUID());
-        assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
-        assistantText = "";
-        jsonBuf = "";
-        result = {};
-        toolTracker = new ToolCallTracker();
-        openCodeSessionId = null;
-        openCodeModelRejected = false;
-        stderrTail.length = 0;
-        stdoutErrTail.length = 0;
-        resumeFailed = false;
-        openCodeStructuredIncompatibility = false;
-        openCodeStructuredTrustedActivity = false;
-        pushProgress(
-          "opencode-compatibility",
-          "OpenCode restarted in plain chat",
-          "done",
-          "structured-stream-quarantined",
-        );
-        await runAttempt(buildArgs(null, retry.prompt));
       }
 
       // Transparent retry: if codex reported its rollout-resume failed and

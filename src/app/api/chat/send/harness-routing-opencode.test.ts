@@ -72,8 +72,13 @@ assert.match(
 );
 assert.match(
   route,
-  /let openCodePlainFallback = false;[\s\S]*?onOther: \(ev, rawEvent\) => \{[\s\S]*?openCodeStructuredIncompatibility = true;[\s\S]*?structured-stream-quarantined[\s\S]*?openCodePlainFallback = true;[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
-  "an unknown OpenCode envelope quarantines structured parsing and safely retries only a no-activity turn in plain chat",
+  /import \{[\s\S]*?quarantineOpenCodeSchema,[\s\S]*?onOther: \(ev, rawEvent\) => \{[\s\S]*?quarantineOpenCodeSchema\(openCodeCompatibility\?\.schema\)/,
+  "an unknown OpenCode envelope quarantines its schema for future turns without replaying the current tool-capable request",
+);
+assert.doesNotMatch(
+  route,
+  /openCodePlainFallback|openCodeStructuredIncompatibility|structured-stream-quarantined/,
+  "an incompatible structured request is never replayed as a plain retry",
 );
 assert.match(
   route,
@@ -142,8 +147,8 @@ assert.match(
 );
 assert.match(
   route,
-  /const handleOpenCodeLine[\s\S]*?openCodePlainFallback && line\.startsWith\("\{"\)[\s\S]*?onMalformedJson: \(\) => \{[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)[\s\S]*?openCodeStructuredIncompatibility = true;/,
-  "malformed structured OpenCode events quarantine parsing without copying raw JSON into assistant text or diagnostics",
+  /const handleOpenCodeLine[\s\S]*?onMalformedJson: \(\) => \{[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)[\s\S]*?quarantineOpenCodeSchema\(openCodeCompatibility\?\.schema\)/,
+  "malformed structured OpenCode events quarantine future structured launches without copying raw payloads into text or diagnostics",
 );
 assert.match(
   capabilities,

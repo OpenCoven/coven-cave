@@ -10,6 +10,7 @@ import {
   openCodeSchemaBundleSigningPayload,
   redactedOpenCodeEventFingerprint,
   resolveOpenCodeCompatibility,
+  quarantineOpenCodeSchema,
   selectOpenCodeSchema,
   isOpenCodeSchemaBundle,
 } from "./opencode-compatibility.ts";
@@ -535,5 +536,19 @@ const expiredRewrite = await loadOpenCodeSchemaBundle({
 assert.equal(expiredRewrite.source, "built-in", "an expired cache still anchors immutable sequence identity");
 assert.equal(expiredRewrite.diagnostic, "cached-schema-unavailable");
 assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { expiresAt: string } }).bundle.expiresAt, expiredSigned.expiresAt, "a same-sequence rewrite never replaces expired cache metadata");
+
+quarantineOpenCodeSchema(BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]);
+const quarantined = await resolveOpenCodeCompatibility(
+  { version: "current", json: true, model: false, session: true, protocols: ["json"] },
+  {
+    cacheFile: path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-quarantine-")), "bundle.json"),
+    publicKey: publicPem,
+    url: "https://registry.invalid/opencode.json",
+    now: () => now,
+    fetch: async () => { throw new Error("offline"); },
+  },
+);
+assert.equal(quarantined.mode, "plain", "an incompatible structured profile is never relaunched in structured mode");
+assert.equal(quarantined.diagnostic, "schema-quarantined", "the next turn receives a stable safe-fallback diagnostic");
 
 console.log("opencode-compatibility.test.ts: ok");
