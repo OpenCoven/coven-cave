@@ -150,6 +150,24 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /previousResponseId && response\.status >= 400 && response\.status < 500[\s\S]*?resumeFailed = true/,
+  "an invalid stored Responses id must use the existing one-time fresh-session retry",
+);
+
+assert.match(
+  chatRoute,
+  /await response\.body\?\.cancel\(\)\.catch\(\(\) => undefined\)/,
+  "rejected Hermes responses must cancel their body before returning the connection to the pool",
+);
+
+assert.match(
+  chatRoute,
+  /settleOpenHermesTools[\s\S]*?toolTracker\.failOpenCalls[\s\S]*?kind: "tool_use"/,
+  "every terminal Hermes attempt must emit interrupted updates for open tool calls",
+);
+
+assert.match(
+  chatRoute,
   /\.\.\.\(persistedTools \? \{ tools: persistedTools \} : \{\}\)/,
   "tools persist on the assistant turn alongside usage and cost",
 );
@@ -196,6 +214,25 @@ assert.match(
   const complete = tracker.envelopeToolInput("call-args", '{"command":"pwd"}');
   assert.deepEqual(complete, { id: "call-args", name: "shell", input: '{"command":"pwd"}', status: "running" });
   assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}');
+}
+
+// A terminal stream failure must settle the SAME live tool id, so the UI and
+// persisted turn agree instead of leaving a running bubble until refresh.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  const started = tracker.envelopeToolUse("call-interrupted", "shell", '{"command":"pwd"}');
+  assert.ok(started);
+  t = 250;
+  assert.deepEqual(tracker.failOpenCalls("[stream ended]"), [{
+    id: "call-interrupted",
+    name: "shell",
+    output: "[stream ended]",
+    status: "error",
+    durationMs: 250,
+  }]);
+  assert.deepEqual(tracker.failOpenCalls(), [], "settling open calls twice must not duplicate tool events");
+  assert.equal(tracker.snapshot()[0]?.status, "error");
 }
 
 // Behavioral: a post with no open call still surfaces, under a fresh id.

@@ -268,6 +268,29 @@ export class ToolCallTracker {
   }
 
   /**
+   * Settles every currently open call as interrupted. A stream can terminate
+   * after announcing a function call but before its execution/result event;
+   * emit final updates so the live UI never retains a permanent spinner and
+   * persistence matches what the user saw.
+   */
+  failOpenCalls(output = "[tool did not settle before the stream ended]"): ToolStreamEvent[] {
+    const calls = Array.from(this.open.values()).flat();
+    return calls.map((call) => {
+      const durationMs = this.now() - call.startedAt;
+      this.settle(call);
+      const ev: ToolStreamEvent = {
+        id: call.id,
+        name: call.name,
+        output,
+        status: "error",
+        durationMs,
+      };
+      this.record(ev);
+      return ev;
+    });
+  }
+
+  /**
    * stream-json `tool_result` block (from the follow-up user message).
    * Returns null when the matching call was already settled by a post hook
    * (hook output + duration win) or was never announced.

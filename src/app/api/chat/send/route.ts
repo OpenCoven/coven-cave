@@ -1516,6 +1516,10 @@ export async function POST(req: Request) {
       // `previous_response_id` instead of accidentally resuming from Cave's
       // UUID.
       let hermesResponseId: string | null = null;
+      // A conversation created by Hermes CLI has a CLI-native session id here,
+      // not a Responses id. If the API rejects it, the shared resume fallback
+      // replays saved context into one fresh Responses turn instead.
+      let hermesPreviousResponseId = existingConversation?.harnessSessionId ?? null;
       // First-turn visibility (cave-0g2x): the id of the in-flight user turn,
       // minted up front so the announce-time stub conversation and the
       // end-of-stream authoritative save agree on the turn's identity.
@@ -2032,6 +2036,14 @@ export async function POST(req: Request) {
         const attemptStartedAt = Date.now();
         const abort = new AbortController();
         currentHermesAbort = abort;
+        let hermesToolsSettled = false;
+        const settleOpenHermesTools = (reason: string) => {
+          if (hermesToolsSettled) return;
+          hermesToolsSettled = true;
+          for (const toolEv of toolTracker.failOpenCalls(reason)) {
+            push({ kind: "tool_use", ...toolEv });
+          }
+        };
         pushProgress("harness-start", "Starting Hermes API", "running", hermesApi.baseUrl);
         const onAbort = () => {
           // Transport loss is resumable, not a user Stop: keep consuming until
@@ -2040,7 +2052,7 @@ export async function POST(req: Request) {
         };
         req.signal.addEventListener("abort", onAbort, { once: true });
         try {
-          const previousResponseId = existingConversation?.harnessSessionId;
+          const previousResponseId = hermesPreviousResponseId;
           const response = await fetch(hermesResponsesUrl(hermesApi), {
             method: "POST",
             signal: abort.signal,
@@ -2058,6 +2070,9 @@ export async function POST(req: Request) {
           });
           const contentType = response.headers.get("content-type") ?? "";
           if (!response.ok || !response.body || !/^text\/event-stream(?:\s*;|$)/i.test(contentType)) {
+            if (previousResponseId && response.status >= 400 && response.status < 500) {
+              resumeFailed = true;
+            }
             result = { ...result, is_error: true };
             recordStdoutErrorTail(
               !response.ok
@@ -2065,6 +2080,7 @@ export async function POST(req: Request) {
                 : `Hermes API protocol error: expected text/event-stream, received ${contentType || "no content type"}`,
               true,
             );
+            await response.body?.cancel().catch(() => undefined);
             return;
           }
           const reader = response.body.getReader();
@@ -2122,9 +2138,11 @@ export async function POST(req: Request) {
               }
               case "done":
                 result = { ...result, is_error: event.isError };
+                if (event.isError && previousResponseId) resumeFailed = true;
                 return true;
               case "error":
                 result = { ...result, is_error: true };
+                if (previousResponseId) resumeFailed = true;
                 recordStdoutErrorTail(event.message, true);
                 return true;
               case "ignore":
@@ -2177,6 +2195,11 @@ export async function POST(req: Request) {
             );
           }
         } finally {
+          settleOpenHermesTools(
+            abort.signal.aborted
+              ? "[tool interrupted because the Hermes stream was cancelled]"
+              : "[tool did not settle before the Hermes stream ended]",
+          );
           req.signal.removeEventListener("abort", onAbort);
           if (currentHermesAbort === abort) currentHermesAbort = null;
           result.duration_ms = Date.now() - attemptStartedAt;
@@ -2407,6 +2430,8 @@ export async function POST(req: Request) {
           "running",
         );
         sessionId = null;
+        hermesResponseId = null;
+        hermesPreviousResponseId = null;
         assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
         assistantText = "";
         jsonBuf = "";
