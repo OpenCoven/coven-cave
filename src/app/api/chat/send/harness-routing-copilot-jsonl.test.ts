@@ -14,6 +14,8 @@ import {
   ToolCallTracker,
   toPersistedTools,
 } from "../../../../lib/chat-tool-events.ts";
+import { buildCopilotStreamArgs } from "../../../../lib/copilot-stream.ts";
+import { resolveCopilotChatRouting } from "./copilot-routing.ts";
 
 const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
@@ -41,10 +43,47 @@ const chatView = await readFile(
 // directly with its manifest-declared stream args and parse its JSONL events;
 // every other adapter (and SSH runtimes) keeps the coven run path.
 
-assert.match(
-  chatRoute,
-  /import \{[\s\S]*?copilotStreamSpec,[\s\S]*?\} from "@\/lib\/copilot-stream";/,
-  "Chat send should source copilot stream wiring from the shared copilot-stream lib",
+const directCopilot = resolveCopilotChatRouting({
+  harness: "copilot",
+  isSshRuntime: false,
+  capabilityVersion: "1.0.70",
+});
+assert.equal(directCopilot.mode, "direct-jsonl");
+assert.ok(directCopilot.spec, "a supported local Copilot runtime selects the direct JSONL launch");
+assert.equal(directCopilot.spec.executable, "copilot");
+assert.deepEqual(
+  buildCopilotStreamArgs({
+    spec: directCopilot.spec,
+    prompt: "route behavior",
+    resumeSessionId: null,
+    newSessionId: null,
+    model: null,
+    permissionMode: "full",
+    addDirs: [],
+  }).slice(0, 4),
+  ["--output-format", "json", "--stream", "on"],
+  "the direct routing decision carries the reviewed JSONL launch contract",
+);
+
+for (const capabilityVersion of [null, "1.0.70.1", "0.9.9", "2.0.0", "2.0.0-rc.1"]) {
+  const routing = resolveCopilotChatRouting({
+    harness: "copilot",
+    isSshRuntime: false,
+    capabilityVersion,
+  });
+  assert.equal(routing.mode, "plain", `${capabilityVersion ?? "unavailable"} must use generic chat`);
+  assert.equal(routing.spec, null, "the fallback must never direct-spawn the JSONL parser");
+  assert.match(routing.compatibilityDiagnostic ?? "", /not yet compatible/);
+}
+
+assert.deepEqual(
+  resolveCopilotChatRouting({
+    harness: "copilot",
+    isSshRuntime: true,
+    capabilityVersion: "1.0.70",
+  }),
+  { mode: "plain", spec: null, compatibilityDiagnostic: null },
+  "remote Copilot routing keeps the remote generic execution path",
 );
 
 // ── Grok Build JSONL stream wiring ─────────────────────────────────────────
@@ -119,11 +158,6 @@ assert.match(
   chatRoute,
   /Promise\.all\(\[probeCopilotCapability\(\), resolveRuntimeCompatibility\("copilot"\)\]\)/,
   "The local Copilot probe and bounded registry refresh run concurrently",
-);
-assert.match(
-  chatRoute,
-  /copilotStreamSpec\(\s*copilotCapability\?\.version \?\? null,\s*copilotCompatibility\?\.eventProtocols,/,
-  "The direct stream path receives only refreshed protocol metadata, never remote launch configuration",
 );
 assert.match(
   chatRoute,

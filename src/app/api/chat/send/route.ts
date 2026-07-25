@@ -50,10 +50,10 @@ import {
   buildCopilotStreamArgs,
   copilotIdentityPreamble,
   copilotProtocolDiagnostic,
-  copilotStreamSpec,
   CopilotTextAssembler,
   parseCopilotChatEvent,
 } from "@/lib/copilot-stream";
+import { resolveCopilotChatRouting } from "./copilot-routing";
 import {
   buildGrokBuildArgs,
   grokIdentityRules,
@@ -1270,20 +1270,14 @@ export async function POST(req: Request) {
     !sshRuntime && binding.harness === "copilot"
       ? await Promise.all([probeCopilotCapability(), resolveRuntimeCompatibility("copilot")])
       : [null, null];
-  const copilotStream =
-    !sshRuntime && binding.harness === "copilot"
-      ? copilotStreamSpec(
-          copilotCapability?.version ?? null,
-          copilotCompatibility?.eventProtocols,
-        )
-      : null;
-  // A direct Copilot JSONL parser is only safe when a locally probed version
-  // selected a known protocol schema. Keep plain chat available for an
-  // unknown client, but make the reduced tool visibility explicit.
-  const copilotCompatibilityDiagnostic =
-    !sshRuntime && binding.harness === "copilot" && !copilotStream
-      ? "This Copilot CLI version is not yet compatible with Cave tool activity. Chat continues without live tool details; update the Copilot runtime schema or CLI."
-      : null;
+  const copilotRouting = resolveCopilotChatRouting({
+    harness: binding.harness,
+    isSshRuntime: Boolean(sshRuntime),
+    capabilityVersion: copilotCapability?.version ?? null,
+    eventProtocols: copilotCompatibility?.eventProtocols,
+  });
+  const copilotStream = copilotRouting.spec;
+  const copilotCompatibilityDiagnostic = copilotRouting.compatibilityDiagnostic;
   // Hermes has a documented one-shot API (`hermes chat -Q -q <prompt>`), but
   // its Coven adapter convention requires a POSIX shell shim to translate the
   // positional prompt that `coven run` appends. The shim cannot be installed
@@ -1539,6 +1533,13 @@ export async function POST(req: Request) {
       // distinct ids, and hook/envelope events describing the same call are
       // deduped onto one id (hook events win — they carry real durations).
       let toolTracker = new ToolCallTracker();
+      // JSONL frames can be replayed or reordered. Hold a completion until
+      // its request/start arrives so the shared tracker emits one settled
+      // tool bubble instead of later synthesizing a failure for the call.
+      let pendingCopilotToolCompletions = new Map<
+        string,
+        { output: string | undefined; isError: boolean }
+      >();
       // Keep stderr off the assistant stream — surface it only on failure
       // or empty-success so users don't see raw 401 traces mid-bubble.
       const stderrTail: string[] = [];
@@ -1583,6 +1584,19 @@ export async function POST(req: Request) {
       // prompts, paths, or tool output). One status row per safe code avoids
       // flooding the transcript when a newer CLI repeats the frame.
       const copilotProtocolDiagnosticCodes = new Set<string>();
+
+      const settlePendingCopilotToolCompletion = (toolCallId: string) => {
+        const completion = pendingCopilotToolCompletions.get(toolCallId);
+        if (!completion) return;
+        const toolEv = toolTracker.envelopeToolResult(
+          toolCallId,
+          completion.output,
+          completion.isError,
+        );
+        if (!toolEv) return;
+        pendingCopilotToolCompletions.delete(toolCallId);
+        push({ kind: "tool_use", ...toolEv });
+      };
 
       const announceSession = (id: string) => {
         sessionId = id;
@@ -1709,6 +1723,7 @@ export async function POST(req: Request) {
                     assistantText.length,
                   );
                   if (toolEv) push({ kind: "tool_use", ...toolEv });
+                  settlePendingCopilotToolCompletion(req.toolCallId);
                 }
                 break;
               }
@@ -1721,6 +1736,7 @@ export async function POST(req: Request) {
                   assistantText.length,
                 );
                 if (toolEv) push({ kind: "tool_use", ...toolEv });
+                settlePendingCopilotToolCompletion(ev.toolCallId);
                 break;
               }
               case "tool_end": {
@@ -1730,6 +1746,12 @@ export async function POST(req: Request) {
                   ev.isError,
                 );
                 if (toolEv) push({ kind: "tool_use", ...toolEv });
+                else {
+                  pendingCopilotToolCompletions.set(ev.toolCallId, {
+                    output: ev.output,
+                    isError: ev.isError,
+                  });
+                }
                 break;
               }
               case "result": {
@@ -2225,6 +2247,7 @@ export async function POST(req: Request) {
         jsonBuf = "";
         result = {};
         toolTracker = new ToolCallTracker();
+        pendingCopilotToolCompletions = new Map();
         copilotText.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
@@ -2264,6 +2287,7 @@ export async function POST(req: Request) {
         jsonBuf = "";
         result = {};
         toolTracker = new ToolCallTracker();
+        pendingCopilotToolCompletions = new Map();
         copilotText.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
