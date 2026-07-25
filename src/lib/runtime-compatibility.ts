@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, verify } from "node:crypto";
 import { REGISTRY_SOURCE } from "./runtime-registry.gen.ts";
 
 /**
@@ -22,7 +22,10 @@ export type RuntimeCompatibilityProfile = {
   source: { repo: string; blobSha: string; keyId: "cave-registry-v1" };
   issuedAt: string;
   expiresAt: string;
+  /** Public integrity hash for cache identity; this is not an authentication mechanism. */
   contentHash: string;
+  /** Ed25519 signature over the profile including contentHash. */
+  signature: string;
 };
 
 export type RuntimeCompatibilityReport = {
@@ -57,23 +60,32 @@ function compareVersion(a: string, b: string): number | null {
   return 0;
 }
 
-function canonicalProfile(profile: Omit<RuntimeCompatibilityProfile, "contentHash">): string {
+const CLAUDE_REGISTRY_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAy/bra+zIoYCVcILpstPd4goiqmy1wnjF5rHnnkwmZI4=
+-----END PUBLIC KEY-----
+`;
+
+function canonicalProfile(profile: Omit<RuntimeCompatibilityProfile, "contentHash" | "signature">): string {
   return JSON.stringify(profile);
 }
 
-function hashProfile(profile: Omit<RuntimeCompatibilityProfile, "contentHash">): string {
+function hashProfile(profile: Omit<RuntimeCompatibilityProfile, "contentHash" | "signature">): string {
   return createHash("sha256").update(canonicalProfile(profile)).digest("hex");
 }
 
-function profile(input: Omit<RuntimeCompatibilityProfile, "contentHash">): RuntimeCompatibilityProfile {
-  return { ...input, contentHash: hashProfile(input) };
+function canonicalSignedProfile(profile: Omit<RuntimeCompatibilityProfile, "signature">): string {
+  return JSON.stringify(profile);
 }
 
 /** Bundled last-known-good profiles. The generated runtime registry provenance
  * pins the accepted registry snapshot that shipped them. A registry refresh can
- * add another profile, but it may never replace this data with arbitrary code. */
+ * add another profile, but it may never replace this data with arbitrary code.
+ *
+ * The hash is intentionally public and only detects accidental corruption. The
+ * embedded Ed25519 public key authenticates profile documents, so a caller that
+ * can recompute SHA-256 cannot forge a cache refresh. */
 export const CLAUDE_COMPATIBILITY_PROFILES: RuntimeCompatibilityProfile[] = [
-  profile({
+  {
     schemaVersion: 1,
     runtime: "claude",
     id: "claude-stream-json-v1",
@@ -85,8 +97,10 @@ export const CLAUDE_COMPATIBILITY_PROFILES: RuntimeCompatibilityProfile[] = [
     source: { repo: REGISTRY_SOURCE.repo, blobSha: REGISTRY_SOURCE.blobSha, keyId: "cave-registry-v1" },
     issuedAt: "2025-01-01T00:00:00.000Z",
     expiresAt: "2030-01-01T00:00:00.000Z",
-  }),
-  profile({
+    contentHash: "c5a49fc19813f345bd56686666aa30cffb043b8f3bdd9b0dae2fb74e7d2254c8",
+    signature: "vbGyDzWZgJGUdaXGRi11MoeRs4XBYXvseebluFEDww+XgyYhZcj5PW8x349W+FdJtJhH17B9X5wjsPpouviLCQ==",
+  },
+  {
     schemaVersion: 1,
     runtime: "claude",
     id: "claude-stream-json-v2",
@@ -100,7 +114,9 @@ export const CLAUDE_COMPATIBILITY_PROFILES: RuntimeCompatibilityProfile[] = [
     source: { repo: REGISTRY_SOURCE.repo, blobSha: REGISTRY_SOURCE.blobSha, keyId: "cave-registry-v1" },
     issuedAt: "2025-01-01T00:00:00.000Z",
     expiresAt: "2030-01-01T00:00:00.000Z",
-  }),
+    contentHash: "c88d0ac5818a9934c138e7621880b199229607c6bcf60afb719d6fcd98a754e2",
+    signature: "F6VqA/dHBrl42nKBj70NOZd1emTF1Kr+8FTrYIKzrtwKv2aSv8GaNG5T9ThMGLijVJpvxMpJJAQ+9gGxdLStBA==",
+  },
 ];
 
 export function validateRuntimeCompatibilityProfile(
@@ -139,8 +155,16 @@ export function validateRuntimeCompatibilityProfile(
   // Expiry is checked by the resolver so an offline cache can be reported as
   // stale rather than silently used as fresh.
   if (now.getTime() < issued - 86_400_000) return false;
-  const { contentHash, ...unsigned } = p;
-  return typeof contentHash === "string" && contentHash === hashProfile(unsigned);
+  const { signature, contentHash, ...unsigned } = p;
+  if (typeof contentHash !== "string" || contentHash !== hashProfile(unsigned)) return false;
+  // A content hash is public and therefore forgeable; profile acceptance needs
+  // the registry authority's signature as well as the pinned provenance.
+  return typeof signature === "string" && verify(
+    null,
+    Buffer.from(canonicalSignedProfile({ ...unsigned, contentHash })),
+    CLAUDE_REGISTRY_PUBLIC_KEY,
+    Buffer.from(signature, "base64"),
+  );
 }
 
 function matches(profile: RuntimeCompatibilityProfile, report: RuntimeCompatibilityReport): boolean {

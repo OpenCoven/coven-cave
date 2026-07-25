@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import {
   claudeCompatibilityDiagnostic,
@@ -85,13 +84,27 @@ assert.match(
   "a successful profile refresh must invalidate the cached compatibility resolution",
 );
 
-const unpersisted = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
-unpersisted.id = "claude-stream-json-v3";
-unpersisted.sequence = 3;
-const { contentHash: _oldHash, ...unpersistedPayload } = unpersisted;
-unpersisted.contentHash = createHash("sha256").update(JSON.stringify(unpersistedPayload)).digest("hex");
+// Signed by the registry fixture key (the private key is deliberately not
+// available to runtime code). This models a future profile received through a
+// transport after signature verification, rather than treating a public hash
+// as if it were an authorization token.
+const signedV3 = {
+  schemaVersion: 1 as const,
+  runtime: "claude" as const,
+  id: "claude-stream-json-v3-test",
+  sequence: 3,
+  version: { min: "3.0.0", maxExclusive: "4.0.0" },
+  requires: ["stream-json" as const],
+  parser: "claude-stream-json-v1" as const,
+  eventTypes: { assistant: "assistant", toolUse: "tool_use", user: "user", toolResult: "tool_result" },
+  source: { repo: "OpenCoven/coven-runtimes", blobSha: "b1c23ce0d8577f2e808472c39795c6a726b75a7b", keyId: "cave-registry-v1" as const },
+  issuedAt: "2025-01-01T00:00:00.000Z",
+  expiresAt: "2030-01-01T00:00:00.000Z",
+  contentHash: "dfbf920628b0110e6628386df12d68d974d85131680711d1d050e534438fcbbe",
+  signature: "aLoC2wLxSA9DYh5MGckdxQJbdV1LcIlLhyqu58H++4LdXr+FT/qD3e3kwBDcmsLAm4nE1c/8+DY9/xbY5qzgDA==",
+};
 await assert.rejects(
-  refreshClaudeCompatibilityProfiles([...CLAUDE_COMPATIBILITY_PROFILES, unpersisted], {
+  refreshClaudeCompatibilityProfiles([...CLAUDE_COMPATIBILITY_PROFILES, signedV3], {
     path: "ignored",
     write: async () => { throw new Error("disk full"); },
   }),
@@ -108,5 +121,21 @@ assert.equal(
   "claude-stream-json-v2",
   "a failed write must retain the previously persisted compatibility profile in memory",
 );
+let refreshed: unknown = null;
+assert.equal(
+  await refreshClaudeCompatibilityProfiles([...CLAUDE_COMPATIBILITY_PROFILES, signedV3], {
+    path: "ignored",
+    write: async (_path, value) => { refreshed = value; },
+  }),
+  true,
+  "a registry-signed append-only profile refresh is accepted and persisted",
+);
+assert.equal((refreshed as { profiles: Array<{ id: string }> }).profiles.at(-1)?.id, signedV3.id);
+const v3 = await resolveInstalledClaudeCompatibility({
+  version: async () => "3.1.0",
+  help: async () => "--output-format stream-json",
+  now: () => Date.parse("2026-07-24T00:00:00.000Z"),
+});
+assert.equal(v3.kind === "compatible" && v3.profile.id, signedV3.id);
 
 console.log("claude-runtime-compatibility: ok");

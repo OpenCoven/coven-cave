@@ -48,6 +48,16 @@ const tampered = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
 tampered.eventTypes.toolUse = "arbitrary-remote-event";
 assert.equal(validateRuntimeCompatibilityProfile(tampered, NOW), false, "profile hashes reject silent schema tampering");
 
+const forgedHash = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
+forgedHash.id = "claude-stream-json-v2-forged";
+const { contentHash: _forgedHash, signature: _forgedSignature, ...forgedHashUnsigned } = forgedHash;
+forgedHash.contentHash = createHash("sha256").update(JSON.stringify(forgedHashUnsigned)).digest("hex");
+assert.equal(
+  validateRuntimeCompatibilityProfile(forgedHash, NOW),
+  false,
+  "a recomputed public content hash without the registry signature cannot authorize a profile refresh",
+);
+
 const forgedProvenance = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
 forgedProvenance.source.blobSha = "a".repeat(40);
 const { contentHash: _oldHash, ...forgedUnsigned } = forgedProvenance;
