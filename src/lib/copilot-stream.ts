@@ -762,6 +762,11 @@ export class CopilotMessageTranscript {
     return this.text;
   }
 
+  offset(messageId: string): number {
+    const index = this.order.indexOf(messageId);
+    return index < 0 ? this.text.length : this.order.slice(0, index).reduce((sum, id) => sum + (this.content.get(id) ?? "").length, 0);
+  }
+
   get text(): string {
     return this.order.map((messageId) => this.content.get(messageId) ?? "").join("");
   }

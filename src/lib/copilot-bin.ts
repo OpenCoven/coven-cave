@@ -8,7 +8,7 @@
 import { spawn } from "node:child_process";
 import { covenLaunchCommandForBinary, pickWindowsLauncher, type CovenLaunchCommand } from "./coven-bin.ts";
 
-async function windowsCopilotLauncher(binary: string, timeoutMs: number): Promise<string> {
+async function windowsCopilotLauncher(binary: string, timeoutMs: number, env?: NodeJS.ProcessEnv): Promise<string> {
   if (/\.(?:cmd|bat|exe|com)$/i.test(binary)) return binary;
   return await new Promise<string>((resolve) => {
     let settled = false;
@@ -20,7 +20,7 @@ async function windowsCopilotLauncher(binary: string, timeoutMs: number): Promis
     let output = "";
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn("where", [binary], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+      child = spawn("where", [binary], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, env });
     } catch {
       settle(binary);
       return;
@@ -45,11 +45,11 @@ async function windowsCopilotLauncher(binary: string, timeoutMs: number): Promis
 /** Resolve a direct spawn command for a native binary or npm Windows shim. */
 export async function resolveCopilotLaunchCommand(
   binary: string,
-  options: { platform?: NodeJS.Platform; timeoutMs?: number } = {},
+  options: { platform?: NodeJS.Platform; timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
 ): Promise<CovenLaunchCommand> {
   const platform = options.platform ?? process.platform;
   const launcher = platform === "win32"
-    ? await windowsCopilotLauncher(binary, options.timeoutMs ?? 1_500)
+    ? await windowsCopilotLauncher(binary, options.timeoutMs ?? 1_500, options.env)
     : binary;
   return covenLaunchCommandForBinary(launcher, platform);
 }

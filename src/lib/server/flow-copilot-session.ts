@@ -119,14 +119,16 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
   const toolTracker = new ToolCallTracker();
   const pendingToolCompletions = new Map<string, { output: string | undefined; isError: boolean }>();
   const compatibilityDiagnostics = new Map<string, string>();
-  let stderrTail = "";
 
   const rl = createInterface({ input: child.stdout });
   rl.on("line", (line) => {
     const trimmed = line.trim();
     if (!trimmed.startsWith("{")) return;
     let raw: unknown;
-    try { raw = JSON.parse(trimmed); } catch { return; }
+    try { raw = JSON.parse(trimmed); } catch {
+      compatibilityDiagnostics.set("malformed-jsonl", "Copilot emitted a malformed protocol frame.");
+      return;
+    }
     const event = parseCopilotChatEvent(raw, launch.spec.protocol);
     if (!event) {
       const diagnostic = copilotProtocolDiagnostic(raw, launch.spec.protocol);
@@ -170,9 +172,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     }
   });
 
-  child.stderr.on("data", (chunk: Buffer) => {
-    stderrTail = (stderrTail + chunk.toString()).slice(-2_000);
-  });
+  child.stderr.resume();
 
   const timeout = setTimeout(() => {
     try { child.kill("SIGKILL"); } catch { /* already gone */ }
@@ -203,9 +203,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       // output, the run didn't finish cleanly and the diagnostics must not
       // be dropped. Captured text is preserved ahead of the exit note.
       const failed = code !== 0;
-      const exitNote = failed
-        ? `copilot exited with code ${code ?? "?"}${stderrTail.trim() ? `:\n${stderrTail.trim()}` : ""}`
-        : "";
+      const exitNote = failed ? `Copilot exited with code ${code ?? "?"}.` : "";
       const finishedAt = new Date().toISOString();
       const text = [assistantText, ...compatibilityDiagnostics.values(), exitNote].filter(Boolean).join("\n\n");
       void (async () => {
@@ -239,8 +237,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
         resolve();
       })();
     };
-    child.on("error", (err) => {
-      stderrTail = `${stderrTail}\n${err.message}`.slice(-2_000);
+    child.on("error", () => {
       // Give a same-tick "close" the chance to carry the real exit code;
       // finalize from here only if it never arrives.
       setImmediate(() => finalize(null));

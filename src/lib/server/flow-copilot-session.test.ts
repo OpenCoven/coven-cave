@@ -149,7 +149,7 @@ test("a failed spawn persists an error turn instead of dropping the run", async 
   const conv = JSON.parse(readFileSync(convPath, "utf8"));
   const assistant = conv.turns.find((t) => t.role === "assistant");
   assert.ok(assistant.isError, "failure is an error turn");
-  assert.match(assistant.text, /copilot exited|ENOENT/);
+  assert.match(assistant.text, /Copilot exited with code \?\./);
 });
 
 test("a non-zero exit with partial output keeps the text AND the exit diagnostics", async () => {
@@ -172,6 +172,6 @@ process.exit(3);
   const assistant = conv.turns.find((t) => t.role === "assistant");
   assert.ok(assistant.isError, "non-zero exit is an error even with partial output");
   assert.match(assistant.text, /partial findings before the crash/);
-  assert.match(assistant.text, /copilot exited with code 3/);
-  assert.match(assistant.text, /boom: model backend dropped/);
+  assert.match(assistant.text, /Copilot exited with code 3\./);
+  assert.doesNotMatch(assistant.text, /boom: model backend dropped/, "raw CLI stderr is never persisted");
 });

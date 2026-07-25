@@ -4,6 +4,7 @@ import { delimiter, isAbsolute, join } from "node:path";
 import { parseRuntimeClientVersion } from "../copilot-stream.ts";
 import { resolveCopilotLaunchCommand } from "../copilot-bin.ts";
 import type { CovenLaunchCommand } from "../coven-bin.ts";
+import { harnessSpawnEnv } from "../harness-spawn-env.ts";
 
 export type CopilotCapabilityProbe = {
   version: string | null;
@@ -29,8 +30,8 @@ const TIMEOUT_MS = 2_500;
  * resolved file metadata in the short-lived cache key so a changed binary is
  * probed before it can select an old JSONL schema.
  */
-async function binaryIdentity(executable: string): Promise<string> {
-  const pathValue = process.env.PATH ?? "";
+async function binaryIdentity(executable: string, env: NodeJS.ProcessEnv): Promise<string> {
+  const pathValue = env.PATH ?? "";
   const extensions = process.platform === "win32"
     ? ["", ...(process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";")]
     : [""];
@@ -52,9 +53,9 @@ async function binaryIdentity(executable: string): Promise<string> {
   return `unresolved:${executable}:${pathValue}`;
 }
 
-async function launchIdentity(launch: CovenLaunchCommand): Promise<string> {
+async function launchIdentity(launch: CovenLaunchCommand, env: NodeJS.ProcessEnv): Promise<string> {
   const targets = [launch.command, ...launch.fixedArgs.filter((arg) => isAbsolute(arg))];
-  return (await Promise.all(targets.map(binaryIdentity))).join("\u0000");
+  return (await Promise.all(targets.map((target) => binaryIdentity(target, env)))).join("\u0000");
 }
 
 async function identityBeforeDeadline(
@@ -92,24 +93,26 @@ export async function probeCopilotCapability(
 ): Promise<CopilotCapabilityProbe> {
   const now = options.now ?? Date.now;
   const deadline = Date.now() + TIMEOUT_MS;
+  const probeEnv = harnessSpawnEnv(null);
   // Cache by command name plus PATH, then validate the *previously launched*
   // command's binary/script metadata. This keeps normal turns off `where`
   // while invalidating immediately when an npm shim target is updated.
-  const cacheKey = `${executable}\u0000${process.env.PATH ?? ""}`;
+  const cacheKey = `${executable}\u0000${probeEnv.PATH ?? ""}`;
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > now()) {
     const identity = options.binaryIdentity
       ? await options.binaryIdentity(cached.launchCommand.command)
-      : await identityBeforeDeadline(() => launchIdentity(cached.launchCommand), deadline);
+      : await identityBeforeDeadline(() => launchIdentity(cached.launchCommand, probeEnv), deadline);
     if (identity && identity === cached.identity) return cached.value;
   }
   const launch = await resolveCopilotLaunchCommand(executable, {
     timeoutMs: Math.max(1, deadline - Date.now()),
+    env: probeEnv,
   });
   if (launch.unresolvedWindowsShim) return { version: null, diagnostic: "version-unavailable" };
   const identity = options.binaryIdentity
     ? await options.binaryIdentity(launch.command)
-    : await identityBeforeDeadline(() => launchIdentity(launch), deadline);
+    : await identityBeforeDeadline(() => launchIdentity(launch, probeEnv), deadline);
   if (!identity) return { version: null, diagnostic: "probe-timeout" };
   const childSpawn = options.spawnImpl ?? spawn;
   const value = await new Promise<CopilotCapabilityProbe>((resolve) => {
@@ -125,6 +128,7 @@ export async function probeCopilotCapability(
       child = childSpawn(launch.command, [...launch.fixedArgs, "--version"], {
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
+        env: probeEnv,
       });
     } catch {
       settle({ version: null, diagnostic: "version-unavailable" });

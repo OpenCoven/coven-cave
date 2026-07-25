@@ -1717,11 +1717,16 @@ export async function POST(req: Request) {
               case "message": {
                 const text = copilotText.message(ev.messageId, ev.content);
                 const replacement = copilotText.takeReplacement(ev.messageId);
+                const correctionStart = copilotTranscript.offset(ev.messageId);
                 const correctedText = copilotTranscript.setMessage(ev.messageId, ev.content);
                 if (replacement) {
                   // A full frame corrects only its own message. Rebuild from
                   // per-message spans so an interleaved later message survives.
                   assistantText = correctedText;
+                  toolTracker.rebaseTextOffsets(
+                    correctionStart + replacement.previous.length,
+                    replacement.content.length - replacement.previous.length,
+                  );
                   push({ kind: "assistant_replace", text: assistantText });
                 } else if (text) {
                   if (assistantText === correctedText) {
@@ -2231,6 +2236,11 @@ export async function POST(req: Request) {
             // failed invocation for a successful model application below.
             if ((openCodeDirect || copilotStream) && code !== 0) {
               result = { ...result, is_error: true };
+              if (copilotStream) {
+                stderrTail.length = 0;
+                stdoutErrTail.length = 0;
+                stdoutErrTail.push("Copilot exited before completing its response.");
+              }
             }
             pushProgress(
               "harness-start",
