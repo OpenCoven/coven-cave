@@ -164,6 +164,13 @@ const refreshRetryAt = new Map<string, number>();
 // replaying the incompatible turn (which may already have run tools).
 const quarantinedSchemaRevisions = new Map<string, string>();
 const MAX_QUARANTINED_SCHEMA_IDS = 64;
+/**
+ * The release ships sequence 1 as an immutable registry genesis contract.
+ * A remote registry may advance it, but a fresh install must never accept a
+ * different signed history at or below this floor just because it has no
+ * writable cache yet.
+ */
+export const OPENCODE_REGISTRY_GENESIS_SEQUENCE = 1;
 
 export function quarantineOpenCodeSchema(schema: OpenCodeEventSchema | undefined): void {
   if (!schema) return;
@@ -184,7 +191,7 @@ export function quarantineOpenCodeSchema(schema: OpenCodeEventSchema | undefined
 export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
   format: 1,
   runtime: "opencode",
-  sequence: 1,
+  sequence: OPENCODE_REGISTRY_GENESIS_SEQUENCE,
   issuedAt: "2026-07-24T00:00:00.000Z",
   expiresAt: "2030-01-01T00:00:00.000Z",
   schemas: [
@@ -492,6 +499,15 @@ function stableJson(value: unknown): string {
 export function openCodeSchemaBundleSigningPayload(bundle: OpenCodeSchemaBundle): string {
   const { signature: _signature, ...unsigned } = bundle;
   return stableJson(unsigned);
+}
+
+function meetsOpenCodeRegistryGenesisFloor(bundle: OpenCodeSchemaBundle): boolean {
+  if (bundle.sequence < OPENCODE_REGISTRY_GENESIS_SEQUENCE) return false;
+  // Sequence 1 is a pinned genesis payload, not a registry-controlled slot.
+  // This blocks a historical, still-valid signature from defining first-use
+  // behavior after the cache has been cleared or corrupted.
+  return bundle.sequence !== OPENCODE_REGISTRY_GENESIS_SEQUENCE
+    || openCodeSchemaBundleSigningPayload(bundle) === openCodeSchemaBundleSigningPayload(BUILTIN_OPENCODE_SCHEMA_BUNDLE);
 }
 
 export function verifyOpenCodeSchemaBundle(
@@ -831,6 +847,7 @@ async function refreshOpenCodeSchemaBundle(
   const raw = await fetchSchemaBundle(url, fetcher, refreshTimeoutMs);
   const remote = JSON.parse(raw) as unknown;
   if (!verifyOpenCodeSchemaBundle(remote, publicKeys, now)) throw new Error("invalid schema signature");
+  if (!meetsOpenCodeRegistryGenesisFloor(remote)) throw new Error("schema registry genesis mismatch");
   if (Object.keys(publicKeys).length > 1 && remote.keyId === undefined) throw new Error("missing schema signing key id");
   const cachedTrust = await readCachedTrustState(file, publicKeys, now);
   if (cachedTrust && remote.sequence < cachedTrust.bundle.sequence) throw new Error("schema rollback");

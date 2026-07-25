@@ -54,6 +54,34 @@ const signedRollback = {
     value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(unsignedSignedRollback)), privateKey).toString("base64"),
   },
 };
+const firstUseReplayFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-first-use-replay-")), "bundle.json");
+const firstUseReplay = await loadOpenCodeSchemaBundle({
+  cacheFile: firstUseReplayFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now,
+  fetch: async () => new Response(JSON.stringify(signedRollback), { status: 200 }),
+});
+assert.equal(firstUseReplay.source, "built-in", "a fresh install rejects a signed historical sequence-one registry replay");
+assert.equal(firstUseReplay.diagnostic, "schema-registry-refresh-rejected");
+const unsignedGenesis = { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE };
+const signedGenesis = {
+  ...unsignedGenesis,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(unsignedGenesis)), privateKey).toString("base64"),
+  },
+};
+const firstUseGenesisFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-first-use-genesis-")), "bundle.json");
+const firstUseGenesis = await loadOpenCodeSchemaBundle({
+  cacheFile: firstUseGenesisFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now,
+  fetch: async () => new Response(JSON.stringify(signedGenesis), { status: 200 }),
+});
+assert.equal(firstUseGenesis.source, "remote", "only the shipped sequence-one registry genesis payload is admissible on first use");
+assert.equal(firstUseGenesis.bundle.sequence, 1);
 await writeFile(cacheFile, "{corrupted-primary-cache", "utf8");
 const corruptCacheRollback = await loadOpenCodeSchemaBundle({
   cacheFile,
