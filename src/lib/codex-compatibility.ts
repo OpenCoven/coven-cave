@@ -40,7 +40,12 @@ export type CodexEventSchema = {
   id: string;
   schemaVersion: 1;
   minVersion: string;
+  /** Inclusive upper bound, retained for previously signed registry documents. */
   maxVersion?: string;
+  /** Exclusive upper bound, suitable for a complete minor protocol line. */
+  maxVersionExclusive?: string;
+  /** Signed precedence for corrective schemas with the same minimum version. */
+  priority?: number;
   requiredCapabilities: Partial<CodexCapabilities>;
   /** Exact outer event names accepted from a Codex JSONL stream. */
   eventTypes: readonly string[];
@@ -83,8 +88,9 @@ export const CODEX_BOOTSTRAP_SCHEMAS: readonly CodexEventSchema[] = [
     schemaVersion: 1,
     minVersion: "0.145.0",
     // A new minor release must be admitted by a signed registry fixture, not
-    // silently parsed as if its protocol were unchanged.
-    maxVersion: "0.145.999",
+    // silently parsed as if its protocol were unchanged. The next-minor bound
+    // keeps every valid 0.145 patch (including four-digit patches) supported.
+    maxVersionExclusive: "0.146.0",
     requiredCapabilities: { jsonEvents: true },
     eventTypes: ["thread.started", "turn.started", "turn.completed", "turn.failed", "item.started", "item.updated", "item.completed", "item.failed", "error"],
     toolItemTypes: ["command_execution", "file_change", "mcp_tool_call", "web_search", "tool_call"],
@@ -94,7 +100,7 @@ export const CODEX_BOOTSTRAP_SCHEMAS: readonly CodexEventSchema[] = [
     id: "codex-jsonl-legacy-v1",
     schemaVersion: 1,
     minVersion: "0.0.0",
-    maxVersion: "0.144.999",
+    maxVersionExclusive: "0.145.0",
     requiredCapabilities: { jsonEvents: true },
     eventTypes: ["thread.started", "turn.started", "turn.completed", "turn.failed", "item.started", "item.updated", "item.completed", "item.failed", "error"],
     toolItemTypes: ["command_execution", "file_change", "mcp_tool_call", "web_search", "tool_call"],
@@ -216,8 +222,10 @@ export function isValidCodexSchema(schema: unknown): schema is CodexEventSchema 
     || !parsedVersion(minVersion)
   ) return false;
   if (
-    value.maxVersion
-    && (!parsedVersion(value.maxVersion) || compareVersions(value.maxVersion, minVersion) < 0)
+    (value.maxVersion !== undefined && (typeof value.maxVersion !== "string" || !parsedVersion(value.maxVersion) || compareVersions(value.maxVersion, minVersion) < 0))
+    || (value.maxVersionExclusive !== undefined && (typeof value.maxVersionExclusive !== "string" || !parsedVersion(value.maxVersionExclusive) || compareVersions(value.maxVersionExclusive, minVersion) <= 0))
+    || (value.maxVersion !== undefined && value.maxVersionExclusive !== undefined)
+    || (value.priority !== undefined && (!Number.isSafeInteger(value.priority) || value.priority < 0))
   ) return false;
   if (
     !isStringArray(value.eventTypes, MAX_EVENT_TYPES_PER_SCHEMA)
@@ -638,19 +646,29 @@ export function resolveCodexSchema(
   if (version.prerelease) return { ok: false, report, reason: "unsupported-version" };
   const precedence = { builtin: 0, cache: 1, registry: 2 } as const;
   const compatible = sources.flatMap(({ source, schemas }) => schemas.map((schema) => ({ source, schema })))
-    .filter(({ schema }) => compareVersions(report.version!, schema.minVersion) >= 0 && (!schema.maxVersion || compareVersions(report.version!, schema.maxVersion) <= 0))
+    .filter(({ schema }) => compareVersions(report.version!, schema.minVersion) >= 0
+      && (!schema.maxVersion || compareVersions(report.version!, schema.maxVersion) <= 0)
+      && (!schema.maxVersionExclusive || compareVersions(report.version!, schema.maxVersionExclusive) < 0))
     .sort((left, right) => {
       const versionOrder = compareVersions(right.schema.minVersion, left.schema.minVersion);
       if (versionOrder !== 0) return versionOrder;
+      const priorityOrder = (right.schema.priority ?? 0) - (left.schema.priority ?? 0);
+      if (priorityOrder !== 0) return priorityOrder;
       const sourceOrder = precedence[right.source] - precedence[left.source];
       if (sourceOrder !== 0) return sourceOrder;
-      return right.schema.id.localeCompare(left.schema.id);
+      return 0;
     });
   const sawVersion = compatible.length > 0;
-  for (const { source, schema } of compatible) {
-    if (hasCapabilities(report, schema.requiredCapabilities)) {
-      return { ok: true, schema, report, source };
-    }
+  const capable = compatible.filter(({ schema }) => hasCapabilities(report, schema.requiredCapabilities));
+  const ambiguous = capable.some((candidate, index) => capable.slice(index + 1).some((other) =>
+    candidate.source === other.source
+    && compareVersions(candidate.schema.minVersion, other.schema.minVersion) === 0
+    && (candidate.schema.priority ?? 0) === (other.schema.priority ?? 0),
+  ));
+  if (ambiguous) return { ok: false, report, reason: "invalid-schema" };
+  const selected = capable[0];
+  if (selected) {
+    return { ok: true, schema: selected.schema, report, source: selected.source };
   }
   return { ok: false, report, reason: sawVersion ? "capability-mismatch" : "unsupported-version" };
 }

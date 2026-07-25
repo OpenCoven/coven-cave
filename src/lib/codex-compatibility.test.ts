@@ -30,6 +30,7 @@ assert.equal(selected.schema.id, "codex-jsonl-v1");
 
 const legacy = resolveCodexSchema({ version: "0.144.2", capabilities: { jsonEvents: true, resume: false } });
 assert.ok(legacy.ok, "older supported Codex clients retain a compatible schema");
+assert.ok(resolveCodexSchema({ version: "0.145.1000", capabilities: { jsonEvents: true, resume: true } }).ok, "every patch within the supported 0.145 minor line selects its schema");
 assert.equal(resolveCodexSchema({ version: "9.0.0", capabilities: { jsonEvents: true, resume: true } }).ok, false, "unknown future versions fail closed into plain-chat fallback");
 assert.equal(resolveCodexSchema({ version: "0.145.0", capabilities: { jsonEvents: false, resume: true } }).ok, false, "required capability mismatch never selects a parser");
 assert.equal(resolveCodexSchema({ version: "0.145.0-beta.1", capabilities: { jsonEvents: true, resume: true } }).ok, false, "prerelease clients fail closed until a prerelease schema is conformance-tested");
@@ -44,13 +45,29 @@ const registryOverride = {
   ...selected.schema,
   id: "codex-jsonl-v1-registry-fix",
   minVersion: "0.145.1",
-  maxVersion: "0.145.999",
+  maxVersionExclusive: "0.146.0",
 };
 const overridden = resolveCodexSchema(
   { version: "0.145.2", capabilities: { jsonEvents: true, resume: true } },
   [{ source: "builtin", schemas: CODEX_BOOTSTRAP_SCHEMAS }, { source: "registry", schemas: [registryOverride] }],
 );
 assert.equal(overridden.ok && overridden.schema.id, "codex-jsonl-v1-registry-fix", "a newer registry schema supersedes an overlapping bootstrap range");
+const sameMinimumHotfix = {
+  ...selected.schema,
+  id: "a-corrective-schema",
+  priority: 1,
+};
+const sameMinimumSelection = resolveCodexSchema(
+  { version: "0.145.2", capabilities: { jsonEvents: true, resume: true } },
+  [{ source: "registry", schemas: [{ ...selected.schema, id: "z-obsolete-schema" }, sameMinimumHotfix] }],
+);
+assert.equal(sameMinimumSelection.ok && sameMinimumSelection.schema.id, "a-corrective-schema", "a signed priority selects a same-minimum corrective schema independently of id order");
+const ambiguousSameMinimum = resolveCodexSchema(
+  { version: "0.145.2", capabilities: { jsonEvents: true, resume: true } },
+  [{ source: "registry", schemas: [{ ...selected.schema, id: "schema-one" }, { ...selected.schema, id: "schema-two" }] }],
+);
+assert.equal(ambiguousSameMinimum.ok, false, "same-source schemas without a signed precedence fail closed rather than selecting by id");
+assert.equal(!ambiguousSameMinimum.ok && ambiguousSameMinimum.reason, "invalid-schema");
 
 const start = parseCodexStreamEvent({ type: "item.started", item: { id: "call-a", type: "command_execution", command: "pwd" } }, selected.schema);
 assert.deepEqual(start, { kind: "tool_start", id: "call-a", name: "Bash", input: { command: "pwd" } });
@@ -179,7 +196,9 @@ const reorderedPayload = {
     toolItemTypes: schema.toolItemTypes,
     eventTypes: schema.eventTypes,
     requiredCapabilities: schema.requiredCapabilities,
-    maxVersion: schema.maxVersion,
+    ...(schema.priority !== undefined ? { priority: schema.priority } : {}),
+    ...(schema.maxVersionExclusive !== undefined ? { maxVersionExclusive: schema.maxVersionExclusive } : {}),
+    ...(schema.maxVersion !== undefined ? { maxVersion: schema.maxVersion } : {}),
     minVersion: schema.minVersion,
     schemaVersion: schema.schemaVersion,
     id: schema.id,
