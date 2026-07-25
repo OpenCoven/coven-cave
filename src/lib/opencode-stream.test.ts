@@ -58,6 +58,14 @@ assert.deepEqual(
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
+    { type: "step_start", sessionID: "ses_without_part_id", part: {} },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "ignore", sessionId: "ses_without_part_id" },
+  "a signed lifecycle frame retains an announced session even when it has no call id",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
     { type: "step_finish", sessionID: "ses_123", part: { id: "step_1" } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),

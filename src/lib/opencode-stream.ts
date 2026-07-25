@@ -151,7 +151,9 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
     // Lifecycle/control frames are deliberately non-renderable. The selected
     // schema nevertheless authorizes their label, so retain its session token:
     // OpenCode emits it on step_start before terminal text/tool frames.
-    return typeof record(part)?.id === "string" ? { kind: "ignore", sessionId } : { kind: "ignore" };
+    const lifecyclePayload = record(part);
+    const carriesText = valueAt(lifecyclePayload, shapeAliases(schema, "text", ["text", "content"])) !== undefined;
+    return sessionId && !carriesText ? { kind: "ignore", sessionId } : { kind: "ignore" };
   }
   if (eventTypes(schema, "error", ["error"]).includes(eventType)) {
     const errorValue = valueAt(part, shapeAliases(schema, "error", ["error"])) ?? event.error;
