@@ -181,7 +181,9 @@ export async function openCodeExecutableIdentity(
       .split(";")
       .map((extension) => extension.trim())
       .filter((extension) => /^\.[A-Za-z0-9]+$/.test(extension))
-      .map((extension) => `opencode${extension}`)
+      // Windows resolves extensions case-insensitively. Lower-casing also
+      // lets the explicit win32 resolver contract be exercised on Unix CI.
+      .map((extension) => `opencode${extension.toLowerCase()}`)
     : ["opencode"];
   for (const directory of pathValue.split(path.delimiter).filter(Boolean)) {
     for (const name of names) {
