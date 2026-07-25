@@ -192,8 +192,13 @@ assert.match(
 );
 assert.match(
   capabilities,
-  /export async function openCodeRunCapabilities\(familiarId\?[^)]*\)[\s\S]*?const env = openCodeSpawnEnv\(familiarId\);[\s\S]*?openCodeExecutableIdentity\(env\)[\s\S]*?const versionLaunch = openCodeLaunch\(\["--version"\]\);[\s\S]*?probeOutput\(helpLaunch\.command, helpLaunch\.args, env[\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
+  /export async function openCodeRunCapabilities\(familiarId\?[^)]*\)[\s\S]*?const env = openCodeSpawnEnv\(familiarId\);[\s\S]*?const versionLaunch = openCodeLaunch\(\["--version"\]\);[\s\S]*?probeOutput\(helpLaunch\.command, helpLaunch\.args, env[\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
   "OpenCode discovers feature support from the scoped executable environment and records version only for diagnostics",
+);
+assert.match(
+  capabilities,
+  /openCodeExecutableIdentity/,
+  "capability discovery fingerprints the launched OpenCode contract without walking machine-local PATH entries",
 );
 
 console.log("opencode harness routing tests passed");

@@ -639,7 +639,7 @@ function cacheTrustAnchorPath(file: string): string {
 async function readBoundedCacheFile(file: string): Promise<string | null> {
   let handle: Awaited<ReturnType<typeof open>> | null = null;
   try {
-    handle = await open(file, "r");
+    handle = await open(/* turbopackIgnore: true */ file, "r");
     const bytes = Buffer.allocUnsafe(MAX_SCHEMA_BUNDLE_BYTES + 1);
     const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
     if (bytesRead > MAX_SCHEMA_BUNDLE_BYTES) return null;
@@ -739,7 +739,7 @@ async function fetchSchemaBundle(url: string, fetcher: typeof fetch, timeoutMs =
  */
 async function staleLockCanBeReclaimed(lock: string): Promise<boolean> {
   try {
-    const info = await stat(lock);
+    const info = await stat(/* turbopackIgnore: true */ lock);
     // A PID is not a durable process identity: after a crash it can be reused
     // by an unrelated long-running process. The lock is therefore a bounded
     // lease, not a liveness claim. Release ownership remains token-checked,
@@ -784,7 +784,9 @@ async function writeVerifiedCache(
   publicKey: string | OpenCodeRegistryKeyring,
   now: number,
   cached: CachedBundle,
+  assertLockOwner?: () => Promise<void>,
 ): Promise<void> {
+  await assertLockOwner?.();
   const priorAnchor = await readTrustedCacheRecord(trustAnchorFile, publicKey, now);
   if (priorAnchor && priorAnchor.bundle.sequence > cached.bundle.sequence) throw new Error("schema rollback");
   if (
@@ -794,8 +796,14 @@ async function writeVerifiedCache(
   ) throw new Error("schema sequence rewritten");
   // Persist the independent signed high-water anchor first: later damage to
   // both cache records cannot erase the highest accepted registry sequence.
+  await assertLockOwner?.();
   await writeJsonAtomic(trustAnchorFile, cached);
+  // A stale lock can be reclaimed when an original writer is suspended by a
+  // filesystem stall. Recheck before every replace so that old owner cannot
+  // subsequently overwrite the new owner's higher sequence.
+  await assertLockOwner?.();
   await writeJsonAtomic(cacheTrustPath(file), cached);
+  await assertLockOwner?.();
   await writeJsonAtomic(file, cached);
 }
 
@@ -822,25 +830,25 @@ async function releaseCacheLock(lock: string, ownerToken: string): Promise<void>
     // Never unlink a lock that was reclaimed and replaced after an unusually
     // slow filesystem operation. The unique token makes release ownership
     // explicit across processes and antivirus/filesystem stalls.
-    if ((await readFile(lock, "utf8")) !== ownerToken) return;
-    await rm(lock, { force: true });
+    if ((await readFile(/* turbopackIgnore: true */ lock, "utf8")) !== ownerToken) return;
+    await rm(/* turbopackIgnore: true */ lock, { force: true });
   } catch {
     // A concurrent stale-lock recovery or shutdown already cleaned it up.
   }
 }
 
-async function withCacheWriteLock<T>(file: string, callback: () => Promise<T>): Promise<T | null> {
+async function withCacheWriteLock<T>(file: string, callback: (assertOwner: () => Promise<void>) => Promise<T>): Promise<T | null> {
   const lock = `${file}.lock`;
   let handle: Awaited<ReturnType<typeof open>> | null = null;
   const ownerToken = `${process.pid}:${randomBytes(16).toString("hex")}`;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const acquired = await open(lock, "wx", 0o600);
+      const acquired = await open(/* turbopackIgnore: true */ lock, "wx", 0o600);
       try {
         await acquired.writeFile(ownerToken);
       } catch (error) {
         await acquired.close().catch(() => undefined);
-        await rm(lock, { force: true }).catch(() => undefined);
+        await rm(/* turbopackIgnore: true */ lock, { force: true }).catch(() => undefined);
         throw error;
       }
       handle = acquired;
@@ -851,16 +859,26 @@ async function withCacheWriteLock<T>(file: string, callback: () => Promise<T>): 
       // delete a newly acquired lock between its stale check and this cleanup.
       const stale = `${lock}.${process.pid}.${randomBytes(6).toString("hex")}.stale`;
       try {
-        await rename(lock, stale);
-        await rm(stale, { force: true });
+        await rename(/* turbopackIgnore: true */ lock, stale);
+        await rm(/* turbopackIgnore: true */ stale, { force: true });
       } catch {
         return null;
       }
     }
   }
   if (!handle) return null;
+  const assertOwner = async () => {
+    try {
+      if ((await readFile(/* turbopackIgnore: true */ lock, "utf8")) !== ownerToken) {
+        throw new CacheWriterPendingError("schema cache lock ownership changed");
+      }
+    } catch (error) {
+      if (error instanceof CacheWriterPendingError) throw error;
+      throw new CacheWriterPendingError("schema cache lock ownership changed");
+    }
+  };
   try {
-    return await callback();
+    return await callback(assertOwner);
   } finally {
     await handle.close().catch(() => undefined);
     await releaseCacheLock(lock, ownerToken);
@@ -883,7 +901,7 @@ async function waitForConcurrentCacheWriter(
     latest = await readVerifiedCache(file, publicKeys, now, checkpoint, trustAnchorFile);
     if (latest && latest.bundle.sequence >= minimumSequence) return latest;
     try {
-      await stat(lock);
+      await stat(/* turbopackIgnore: true */ lock);
     } catch {
       // Lock release follows the atomic write, so one final verified read sees
       // the owner's result without trusting its in-progress payload.
@@ -995,8 +1013,8 @@ async function refreshOpenCodeSchemaBundle(
   if (Object.keys(publicKeys).length > 1 && remote.keyId === undefined) throw new Error("missing schema signing key id");
   const cachedTrust = await readCachedTrustState(file, publicKeys, now, checkpoint, trustAnchorFile);
   if (cachedTrust && remote.sequence < cachedTrust.bundle.sequence) throw new Error("schema rollback");
-  await mkdir(localPathParent(file), { recursive: true });
-  const writeResult = await withCacheWriteLock(file, async () => {
+  await mkdir(/* turbopackIgnore: true */ localPathParent(file), { recursive: true });
+  const writeResult = await withCacheWriteLock(file, async (assertLockOwner) => {
     // Re-read after acquiring the lock. Another process may have refreshed
     // while this request was in flight, and the cache must never move back.
     const currentTrust = await readCachedTrustState(file, publicKeys, now, checkpoint, trustAnchorFile);
@@ -1005,10 +1023,10 @@ async function refreshOpenCodeSchemaBundle(
       if (openCodeSchemaBundleSigningPayload(remote) !== openCodeSchemaBundleSigningPayload(currentTrust.bundle)) throw new Error("schema sequence rewritten");
       // The just-verified remote payload is byte-for-byte the same signed
       // contract, so it is safe to refresh only the unsigned cache freshness.
-      await writeVerifiedCache(file, trustAnchorFile, publicKeys, now, { checkedAt: now, bundle: remote, verifiedKeyId: remote.keyId });
+      await writeVerifiedCache(file, trustAnchorFile, publicKeys, now, { checkedAt: now, bundle: remote, verifiedKeyId: remote.keyId }, assertLockOwner);
       return { bundle: remote, source: "remote" as const };
     }
-    await writeVerifiedCache(file, trustAnchorFile, publicKeys, now, { checkedAt: now, bundle: remote, verifiedKeyId: remote.keyId });
+    await writeVerifiedCache(file, trustAnchorFile, publicKeys, now, { checkedAt: now, bundle: remote, verifiedKeyId: remote.keyId }, assertLockOwner);
     return { bundle: remote, source: "remote" as const };
   });
   if (writeResult) return writeResult;
