@@ -103,7 +103,17 @@ assert.match(
 assert.match(
   chatRoute,
   /subscribeOpenClawGatewayToolEvents\([\s\S]*?sessionKey: openClawSessionKey\(conversationId\)[\s\S]*?agentId,[\s\S]*?onToolEvent:/,
-  "OpenClaw should subscribe by its Cave-owned session key before the CLI turn begins",
+  "OpenClaw should subscribe by its Cave-owned session key alongside the CLI turn",
+);
+assert.match(
+  chatRoute,
+  /const gatewayToolSubscriptionPromise = subscribeOpenClawGatewayToolEvents\([\s\S]*?const child = spawn\([\s\S]*?gatewayToolSubscriptionPromise\.then\(/,
+  "Optional Gateway negotiation must not delay spawning or registering the authoritative CLI turn",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /await subscribeOpenClawGatewayToolEvents\(/,
+  "An unavailable Gateway must not block the existing OpenClaw CLI fallback",
 );
 assert.match(
   chatRoute,
@@ -112,8 +122,18 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /gatewayToolSubscription\.close\(\);[\s\S]*?gatewayToolSubscription\.close\(\);/,
+  /gatewayToolSubscription\?\.close\(\);[\s\S]*?gatewayToolSubscription\?\.close\(\);/,
   "Gateway subscriptions must close on both process error and terminal close",
+);
+assert.match(
+  chatRoute,
+  /gatewayToolSubscriptionPromise\.then\([\s\S]*?if \(cliLifecycleFinished\) \{\s*subscription\.close\(\);/,
+  "A late Gateway handshake must close itself after the CLI turn has finished",
+);
+assert.match(
+  chatRoute,
+  /onToolEvent: \(event\) => \{\s*if \(cliLifecycleFinished\) return;/,
+  "Late Gateway frames must not modify a completed CLI turn",
 );
 assert.match(
   chatRoute,

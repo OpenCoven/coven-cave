@@ -210,6 +210,9 @@ gateway.on("connection", (socket) => {
       assert.deepEqual(request.params, { key: "cave-session", agentId: "nova" });
       socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: {} }));
       socket.send(JSON.stringify(startFrame));
+      socket.send(JSON.stringify(updateFrame));
+      socket.send(JSON.stringify(terminalFrame));
+      socket.send(JSON.stringify({ type: "event", event: "session.tool", payload: { data: {} } }));
     }
   });
 });
@@ -219,15 +222,32 @@ process.env.OPENCLAW_GATEWAY_URL = `ws://127.0.0.1:${address.port}`;
 process.env.OPENCLAW_GATEWAY_TOKEN = "fixture-token";
 try {
   let disconnects = 0;
+  let resolveEvents: (() => void) | undefined;
+  const eventsReceived = new Promise<void>((resolve) => {
+    resolveEvents = resolve;
+  });
+  let resolveDisconnect: (() => void) | undefined;
+  const disconnected = new Promise<void>((resolve) => {
+    resolveDisconnect = resolve;
+  });
   const subscription = await subscribeOpenClawGatewayToolEvents({
     sessionKey: "cave-session",
     agentId: "nova",
     persistCapabilityCache: false,
-    onToolEvent: (event) => receivedFrames.push(event),
-    onDisconnect: () => { disconnects += 1; },
+    onToolEvent: (event) => {
+      receivedFrames.push(event);
+      if (receivedFrames.length === 3) resolveEvents?.();
+    },
+    onDisconnect: () => {
+      disconnects += 1;
+      resolveDisconnect?.();
+    },
   });
   assert.equal(subscription.active, true);
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await Promise.race([
+    eventsReceived,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Gateway tool lifecycle was not observed")), 1_000)),
+  ]);
   assert.deepEqual(receivedFrames, [
     {
       id: "call-1",
@@ -238,9 +258,30 @@ try {
       seq: 1,
       timestamp: 1_000,
     },
+    {
+      id: "call-1",
+      name: "exec",
+      phase: "update",
+      output: "still running",
+      isError: false,
+      seq: 2,
+      timestamp: 1_050,
+    },
+    {
+      id: "call-1",
+      name: "exec",
+      phase: "result",
+      output: '{\n  "output": "ok"\n}',
+      isError: false,
+      seq: 3,
+      timestamp: 1_100,
+    },
   ]);
   gatewaySocket.close();
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await Promise.race([
+    disconnected,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Gateway close was not observed")), 1_000)),
+  ]);
   assert.equal(disconnects, 1, "an unexpected Gateway close must settle the route exactly once");
   subscription.close();
   process.env.OPENCLAW_GATEWAY_URL = "ws://gateway.example.test";

@@ -576,10 +576,17 @@ function openClawChatResponse(args: {
       // This makes an unavailable, old, or future-incompatible gateway a
       // visible plain-chat fallback instead of a broken or fabricated bubble.
       const openClawTools = new OpenClawToolEventLedger();
-      const gatewayToolSubscription = await subscribeOpenClawGatewayToolEvents({
+      // Gateway negotiation is supplemental: never make the established CLI
+      // path, its stop registration, or its transcript persistence wait for an
+      // unavailable Gateway. A late subscription is closed below if the CLI
+      // already reached a terminal lifecycle state.
+      let cliLifecycleFinished = false;
+      let gatewayToolSubscription: { close(): void } | undefined;
+      const gatewayToolSubscriptionPromise = subscribeOpenClawGatewayToolEvents({
         sessionKey: openClawSessionKey(conversationId),
         agentId,
         onToolEvent: (event) => {
+          if (cliLifecycleFinished) return;
           const tool = openClawTools.accept(event);
           if (tool) push({ kind: "tool_use", ...tool });
         },
@@ -587,6 +594,7 @@ function openClawChatResponse(args: {
         // observed cards now, and leave the established CLI response path to
         // complete the plain-chat turn.
         onDisconnect: () => {
+          if (cliLifecycleFinished) return;
           pushProgress(
             "openclaw-tool-activity",
             "Live OpenClaw tool activity disconnected",
@@ -600,21 +608,6 @@ function openClawChatResponse(args: {
           }
         },
       });
-      if (gatewayToolSubscription.active) {
-        pushProgress(
-          "openclaw-tool-activity",
-          "Live OpenClaw tool activity enabled",
-          "done",
-          `Gateway protocol ${gatewayToolSubscription.compatibility?.protocol}`,
-        );
-      } else {
-        pushProgress(
-          "openclaw-tool-activity",
-          "Live OpenClaw tool activity unavailable",
-          "done",
-          "Showing the completed OpenClaw response; no tool activity was inferred.",
-        );
-      }
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
       const child = spawn(openclawLaunch.command, spawnArgv, {
         cwd,
@@ -624,6 +617,41 @@ function openClawChatResponse(args: {
       });
       pushProgress("openclaw-start", "OpenClaw bridge started", "done");
       pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
+
+      void gatewayToolSubscriptionPromise.then((subscription) => {
+        gatewayToolSubscription = subscription;
+        if (cliLifecycleFinished) {
+          subscription.close();
+          return;
+        }
+        if (subscription.active) {
+          pushProgress(
+            "openclaw-tool-activity",
+            "Live OpenClaw tool activity enabled",
+            "done",
+            `Gateway protocol ${subscription.compatibility?.protocol}`,
+          );
+        } else {
+          pushProgress(
+            "openclaw-tool-activity",
+            "Live OpenClaw tool activity unavailable",
+            "done",
+            "Showing the completed OpenClaw response; no tool activity was inferred.",
+          );
+        }
+      }).catch(() => {
+        // An optional transport must never turn a successful CLI turn into a
+        // route error. The subscription helper normally resolves fallbacks;
+        // this guards unexpected future transport failures too.
+        if (!cliLifecycleFinished) {
+          pushProgress(
+            "openclaw-tool-activity",
+            "Live OpenClaw tool activity unavailable",
+            "done",
+            "Showing the completed OpenClaw response; no tool activity was inferred.",
+          );
+        }
+      });
 
       let stdout = "";
       let stderr = "";
@@ -693,7 +721,8 @@ function openClawChatResponse(args: {
         stderr += stripAnsi(data.toString("utf8"));
       });
       child.on("error", (err: NodeJS.ErrnoException) => {
-        gatewayToolSubscription.close();
+        cliLifecycleFinished = true;
+        gatewayToolSubscription?.close();
         // A spawn failure can race a previously observed Gateway start frame.
         // Settle it before ending the SSE stream so no live tool card remains
         // running when the authoritative CLI path could not start.
@@ -721,7 +750,8 @@ function openClawChatResponse(args: {
         close();
       });
       child.on("close", async (code) => {
-        gatewayToolSubscription.close();
+        cliLifecycleFinished = true;
+        gatewayToolSubscription?.close();
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         unregisterChatRun(runHandle);
