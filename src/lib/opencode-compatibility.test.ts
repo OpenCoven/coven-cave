@@ -53,7 +53,7 @@ const offline = await loadOpenCodeSchemaBundle({
   fetch: async () => { throw new Error("offline"); },
 });
 assert.equal(offline.source, "cache");
-assert.equal(offline.diagnostic, "schema-registry-refresh-rejected", "offline keeps the last known good parser");
+assert.equal(offline.diagnostic, undefined, "a stale verified parser serves immediately while refresh runs in the background");
 
 await writeFile(cacheFile, JSON.stringify({ checkedAt: now + 365 * 24 * 60 * 60 * 1000, bundle: signed }));
 const futureCheckedAt = await loadOpenCodeSchemaBundle({
@@ -74,7 +74,7 @@ const rejectedRollback = await loadOpenCodeSchemaBundle({
   fetch: async () => new Response(JSON.stringify(rollback), { status: 200 }),
 });
 assert.equal(rejectedRollback.source, "cache");
-assert.equal(rejectedRollback.diagnostic, "schema-registry-refresh-rejected", "rollback never overwrites cache");
+assert.equal(rejectedRollback.diagnostic, undefined, "rollback refreshes never displace the last known good parser");
 
 const plain = await resolveOpenCodeCompatibility({ version: "9.9.9", json: false, model: true, session: true, protocols: [] });
 assert.equal(plain.mode, "plain");
@@ -85,20 +85,6 @@ assert.equal(structured.schema?.id, "opencode-run-json-v1", "new schemas are cho
 const missingSession = await resolveOpenCodeCompatibility({ version: "1.2.3", json: true, model: true, session: false, protocols: ["json"] });
 assert.equal(missingSession.mode, "structured");
 assert.equal(missingSession.schema?.id, "opencode-run-json-legacy", "older compatible schemas coexist without client version gates");
-
-await writeFile(cacheFile, JSON.stringify({ checkedAt: now, bundle: signed }));
-const expiredRemoteOnly = await resolveOpenCodeCompatibility(
-  { version: "2.0.0", json: true, model: true, session: true },
-  {
-    cacheFile,
-    publicKey: publicPem,
-    url: "https://registry.invalid/opencode.json",
-    now: () => Date.parse("2031-01-01T00:00:00.000Z"),
-    fetch: async () => { throw new Error("offline"); },
-  },
-);
-assert.equal(expiredRemoteOnly.mode, "plain", "an expired remote-only cache cannot silently select an older built-in JSON parser");
-assert.equal(expiredRemoteOnly.diagnostic, "cached-schema-unavailable");
 
 const broadSchema = { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], id: "broad", requires: { json: true as const } };
 const protocolV2Schema = {
@@ -118,6 +104,16 @@ assert.equal(
 );
 
 assert.equal(isOpenCodeSchemaBundle({ ...unsigned, schemas: [] }, now), false, "empty signed bundles cannot replace a working parser set");
+assert.equal(
+  isOpenCodeSchemaBundle({ ...unsigned, schemas: [{ ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], shape: undefined }] }, now),
+  false,
+  "a selected schema must declare its parseable envelope and field aliases",
+);
+assert.equal(
+  isOpenCodeSchemaBundle({ ...unsigned, issuedAt: 0 }, now),
+  false,
+  "signed schema timestamps must be strings rather than coercible values",
+);
 assert.equal(isOpenCodeSchemaBundle({
   ...unsigned,
   schemas: [{
@@ -186,7 +182,7 @@ const oversized = await loadOpenCodeSchemaBundle({
   fetch: async () => new Response("x".repeat(300 * 1024), { status: 200 }),
 });
 assert.equal(oversized.source, "cache");
-assert.equal(oversized.diagnostic, "schema-registry-refresh-rejected", "oversized refreshes preserve the verified cache");
+assert.equal(oversized.diagnostic, undefined, "oversized refreshes preserve and immediately serve the verified cache");
 assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 2);
 
 const unsignedSequence3 = { ...unsigned, sequence: 3 };
@@ -207,7 +203,65 @@ const recoveredLock = await loadOpenCodeSchemaBundle({
   now: () => now + 28 * 60 * 60 * 1000,
   fetch: async () => new Response(JSON.stringify(signedSequence3), { status: 200 }),
 });
-assert.equal(recoveredLock.bundle.sequence, 3, "a stale writer lock cannot permanently block cache recovery after a crash");
-assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 3);
+assert.equal(recoveredLock.bundle.sequence, 2, "a stale verified cache remains available while its refresh runs");
+await new Promise((resolve) => setTimeout(resolve, 50));
+assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 3, "a stale writer lock cannot permanently block cache recovery after a crash");
+
+const concurrentCacheFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-concurrent-")), "bundle.json");
+await writeFile(concurrentCacheFile, JSON.stringify({ checkedAt: now, bundle: signed }));
+let fetchCalls = 0;
+let releaseRefresh: (() => void) | undefined;
+const delayedResponse = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+const concurrentSource = {
+  cacheFile: concurrentCacheFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now + 7 * 60 * 60 * 1000,
+  fetch: async () => {
+    fetchCalls += 1;
+    await delayedResponse;
+    return new Response(JSON.stringify(signedSequence3), { status: 200 });
+  },
+};
+const [staleA, staleB] = await Promise.all([
+  loadOpenCodeSchemaBundle(concurrentSource),
+  loadOpenCodeSchemaBundle(concurrentSource),
+]);
+assert.equal(fetchCalls, 1, "concurrent stale readers coalesce to one registry request");
+assert.equal(staleA.bundle.sequence, 2);
+assert.equal(staleB.bundle.sequence, 2, "stale readers do not block chat on the registry refresh");
+releaseRefresh?.();
+await new Promise((resolve) => setTimeout(resolve, 50));
+assert.equal((JSON.parse(await readFile(concurrentCacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 3);
+
+await writeFile(cacheFile, JSON.stringify({ checkedAt: now, bundle: signed }));
+const expiredRemoteOnly = await resolveOpenCodeCompatibility(
+  { version: "2.0.0", json: true, model: true, session: true, protocols: ["json"] },
+  {
+    cacheFile,
+    publicKey: publicPem,
+    url: "https://registry.invalid/opencode.json",
+    now: () => Date.parse("2031-01-01T00:00:00.000Z"),
+    fetch: async () => { throw new Error("offline"); },
+  },
+);
+assert.equal(expiredRemoteOnly.mode, "plain", "an expired remote-only cache cannot silently select an older built-in JSON parser");
+assert.equal(expiredRemoteOnly.diagnostic, "cached-schema-unavailable");
+
+const expiredSigned = { ...signedSequence3, expiresAt: "2026-12-24T00:00:00.000Z", signature: { ...signedSequence3.signature } };
+expiredSigned.signature.value = sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(expiredSigned)), privateKey).toString("base64");
+const rewrittenExpiredSequence = { ...expiredSigned, expiresAt: "2032-12-24T00:00:00.000Z", signature: { ...expiredSigned.signature } };
+rewrittenExpiredSequence.signature.value = sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(rewrittenExpiredSequence)), privateKey).toString("base64");
+await writeFile(cacheFile, JSON.stringify({ checkedAt: now, bundle: expiredSigned }));
+const expiredRewrite = await loadOpenCodeSchemaBundle({
+  cacheFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => Date.parse("2031-01-01T00:00:00.000Z"),
+  fetch: async () => new Response(JSON.stringify(rewrittenExpiredSequence), { status: 200 }),
+});
+assert.equal(expiredRewrite.source, "built-in", "an expired cache still anchors immutable sequence identity");
+assert.equal(expiredRewrite.diagnostic, "cached-schema-unavailable");
+assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { expiresAt: string } }).bundle.expiresAt, expiredSigned.expiresAt, "a same-sequence rewrite never replaces expired cache metadata");
 
 console.log("opencode-compatibility.test.ts: ok");

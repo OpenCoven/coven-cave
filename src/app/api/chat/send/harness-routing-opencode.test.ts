@@ -67,8 +67,13 @@ assert.match(
 );
 assert.match(
   route,
-  /let openCodeToolActivityDisabled = false;[\s\S]*?if \(ev\.kind === "tool"\) \{\s*if \(openCodeToolActivityDisabled\) return;[\s\S]*?if \(ev\.kind === "other"\) \{\s*openCodeToolActivityDisabled = true;/,
-  "an unknown OpenCode envelope disables subsequent structured tool activity for the turn",
+  /if \(ev\.kind === "other"\) \{[\s\S]*?unrecognized event; that event was skipped while compatible tool activity continues/,
+  "an unknown OpenCode envelope is skipped without suppressing later compatible tool activity",
+);
+assert.match(
+  route,
+  /parseOpenCodeRunEvent\(rawEvent, openCodeCompatibility\?\.schema\);[\s\S]*?if \(ev\.kind === "ignore"\) return;[\s\S]*?if \(ev\.kind === "text"\)/,
+  "documented non-renderable OpenCode lifecycle frames are ignored before tool activity is evaluated",
 );
 assert.match(
   route,
@@ -97,6 +102,11 @@ assert.match(
 );
 assert.match(
   route,
+  /openCodeDirect && body\.sessionId && existingConversation && \([\s\S]*?!openCodeCompatibility\?\.capabilities\.session \|\| !existingConversation\.harnessSessionId[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  "plain-mode follow-ups replay Cave context when no native OpenCode session was minted",
+);
+assert.match(
+  route,
   /ev\.kind === "tool_start"[\s\S]*?envelopeToolUse[\s\S]*?ev\.kind === "tool_end"[\s\S]*?envelopeToolResult/,
   "split tool lifecycle frames preserve the stable bubble id across progress and result",
 );
@@ -104,6 +114,11 @@ assert.match(
   route,
   /opencode-compatibility[\s\S]*?unrecognized event[\s\S]*?redactedOpenCodeEventFingerprint\(rawEvent\)/,
   "unknown future event shapes surface a safe visible diagnostic",
+);
+assert.match(
+  route,
+  /persistedOpenCodeDiagnostics[\s\S]*?id === "opencode-compatibility"[\s\S]*?progress: persistedOpenCodeDiagnostics/,
+  "safe OpenCode compatibility diagnostics persist with the completed assistant turn",
 );
 assert.match(
   route,

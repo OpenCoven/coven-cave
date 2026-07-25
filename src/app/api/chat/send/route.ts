@@ -1413,12 +1413,16 @@ export async function POST(req: Request) {
   const grokSandboxRetry = grokFreshSessionForSandbox
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
-  // A client which no longer advertises `--session` cannot safely be pointed
-  // at Cave's saved session id. Start a fresh native session with recent
-  // transcript context instead; the in-stream notice makes this explicit.
+  // A client which no longer advertises `--session`, or a prior plain-mode
+  // turn which never received a native OpenCode id, must start fresh with
+  // bounded Cave transcript replay. Otherwise a follow-up silently loses its
+  // earlier conversation context.
   const openCodeFreshSessionForCompatibility = Boolean(
-    openCodeDirect && resumeTarget && !openCodeCompatibility?.capabilities.session,
+    openCodeDirect && body.sessionId && existingConversation && (
+      !openCodeCompatibility?.capabilities.session || !existingConversation.harnessSessionId
+    ),
   );
+  const openCodeSessionUnavailable = !openCodeCompatibility?.capabilities.session;
   const openCodeCompatibilityRetry = openCodeFreshSessionForCompatibility
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
@@ -1463,13 +1467,27 @@ export async function POST(req: Request) {
         }
       };
       let runBuffer: RunBufferHandle | null = null;
+      // Compatibility notices are deliberately value-free and must survive
+      // transcript reloads; the live SSE buffer alone expires after two
+      // minutes. Keep only this narrowly-scoped subset of progress rows.
+      const persistedOpenCodeDiagnostics: NonNullable<ChatTurn["progress"]> = [];
       const pushProgress = (
         id: string,
         label: string,
         status: "running" | "done" | "error",
         detail?: string,
         durationMs?: number,
-      ) =>
+      ) => {
+        if (id === "opencode-compatibility") {
+          persistedOpenCodeDiagnostics.push({
+            id,
+            label,
+            status,
+            createdAt: new Date().toISOString(),
+            ...(detail ? { detail } : {}),
+            ...(durationMs != null ? { durationMs } : {}),
+          });
+        }
         push({
           kind: "progress",
           id,
@@ -1478,6 +1496,7 @@ export async function POST(req: Request) {
           ...(detail ? { detail } : {}),
           ...(durationMs != null ? { durationMs } : {}),
         });
+      };
       const heartbeat = startChatSseHeartbeat(controller, () => closed || req.signal.aborted);
       const close = () => {
         if (closed) return;
@@ -1565,11 +1584,6 @@ export async function POST(req: Request) {
       // Detected from stderr; healed (manifest quarantined) and retried below.
       let adapterConflict: BuiltinAdapterConflict | null = null;
       let openCodeCompatibilityNoticeSent = false;
-      // Once an unknown structured envelope appears, retaining later tool
-      // frames would mix an unverified lifecycle with a known one. Continue
-      // decoding text only for this turn instead of showing potentially wrong
-      // tool activity.
-      let openCodeToolActivityDisabled = false;
       let openCodeModelRejected = false;
 
       // Model parity: the harness echoes its resolved model on the init/system
@@ -1800,6 +1814,7 @@ export async function POST(req: Request) {
           const rawEvent = JSON.parse(line);
           const ev = parseOpenCodeRunEvent(rawEvent, openCodeCompatibility?.schema);
           if (ev.sessionId && !sessionId) announceSession(ev.sessionId);
+          if (ev.kind === "ignore") return;
           if (ev.kind === "text") {
             const text = ev.text.endsWith("\n") ? ev.text : `${ev.text}\n`;
             assistantText += text;
@@ -1807,7 +1822,6 @@ export async function POST(req: Request) {
             return;
           }
           if (ev.kind === "tool") {
-            if (openCodeToolActivityDisabled) return;
             boundarySentinel?.observe(ev.name, ev.input);
             const started = toolTracker.envelopeToolUse(
               ev.id,
@@ -1825,7 +1839,6 @@ export async function POST(req: Request) {
             return;
           }
           if (ev.kind === "tool_start") {
-            if (openCodeToolActivityDisabled) return;
             boundarySentinel?.observe(ev.name, ev.input);
             const started = toolTracker.envelopeToolUse(
               ev.id,
@@ -1839,7 +1852,6 @@ export async function POST(req: Request) {
             return;
           }
           if (ev.kind === "tool_end") {
-            if (openCodeToolActivityDisabled) return;
             const ended = toolTracker.envelopeToolResult(
               ev.id,
               typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
@@ -1861,7 +1873,6 @@ export async function POST(req: Request) {
             return;
           }
           if (ev.kind === "other") {
-            openCodeToolActivityDisabled = true;
             // Do not treat arbitrary `text`/`content` on an unknown envelope
             // as assistant output: tool progress and provider errors often
             // carry those fields and may contain secrets or file contents.
@@ -1869,7 +1880,7 @@ export async function POST(req: Request) {
               openCodeCompatibilityNoticeSent = true;
               pushProgress(
                 "opencode-compatibility",
-                "OpenCode sent an unrecognized event; tool activity was disabled for this turn",
+                "OpenCode sent an unrecognized event; that event was skipped while compatible tool activity continues",
                 "error",
                 `${ev.diagnostic ?? "unknown-event"}:${redactedOpenCodeEventFingerprint(rawEvent)}`,
               );
@@ -1879,13 +1890,12 @@ export async function POST(req: Request) {
           // Structured-mode stdout can contain a malformed future event with
           // arbitrary tool payloads. Do not feed that raw line into the
           // persisted error tail or any user-visible diagnostic.
-          openCodeToolActivityDisabled = true;
           recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
           if (!openCodeCompatibilityNoticeSent) {
             openCodeCompatibilityNoticeSent = true;
             pushProgress(
               "opencode-compatibility",
-              "OpenCode sent a malformed event; tool activity was disabled for this turn",
+              "OpenCode sent a malformed event; that event was skipped while compatible tool activity continues",
               "error",
               "malformed-json-event",
             );
@@ -2274,8 +2284,12 @@ export async function POST(req: Request) {
         pushProgress(
           "opencode-compatibility",
           openCodeCompatibilityRetry?.replayedHistory
-            ? "This OpenCode client cannot resume sessions; replaying recent context in a fresh chat"
-            : "This OpenCode client cannot resume sessions; starting a fresh chat",
+            ? openCodeSessionUnavailable
+              ? "This OpenCode client cannot resume sessions; replaying recent context in a fresh chat"
+              : "This conversation has no resumable OpenCode session; replaying recent context in a fresh chat"
+            : openCodeSessionUnavailable
+              ? "This OpenCode client cannot resume sessions; starting a fresh chat"
+              : "This conversation has no resumable OpenCode session; starting a fresh chat",
           "error",
           "session-unavailable",
         );
@@ -2309,7 +2323,6 @@ export async function POST(req: Request) {
         result = {};
         toolTracker = new ToolCallTracker();
         openCodeCompatibilityNoticeSent = false;
-        openCodeToolActivityDisabled = false;
         openCodeModelRejected = false;
         copilotText.reset();
         stderrTail.length = 0;
@@ -2351,7 +2364,6 @@ export async function POST(req: Request) {
         result = {};
         toolTracker = new ToolCallTracker();
         openCodeCompatibilityNoticeSent = false;
-        openCodeToolActivityDisabled = false;
         openCodeModelRejected = false;
         copilotText.reset();
         stderrTail.length = 0;
@@ -2564,6 +2576,7 @@ export async function POST(req: Request) {
           ...(result.usage ? { usage: result.usage } : {}),
           ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
           ...(persistedTools ? { tools: persistedTools } : {}),
+          ...(persistedOpenCodeDiagnostics.length ? { progress: persistedOpenCodeDiagnostics } : {}),
           parentId: userTurnId,
           responseMetadata,
         };

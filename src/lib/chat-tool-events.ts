@@ -40,11 +40,22 @@ export const LIVE_TOOL_INPUT_CAP = 8_000;
 export const LIVE_TOOL_OUTPUT_CAP = 16_000;
 const MAX_PENDING_TOOL_RESULTS = 100;
 const MAX_PENDING_TOOL_RESULT_BYTES = 64_000;
+const PENDING_TOOL_RESULT_TTL_MS = 60_000;
 const MAX_OPEN_ENVELOPE_CALLS = 200;
 
+function utf8Bytes(value: string | undefined): number {
+  return value === undefined ? 0 : new TextEncoder().encode(value).byteLength;
+}
+
 export function capLiveToolPayload(value: string | undefined, cap: number): string | undefined {
-  if (value === undefined || value.length <= cap) return value;
-  return `${value.slice(0, cap)}\n[tool payload truncated]`;
+  if (value === undefined || utf8Bytes(value) <= cap) return value;
+  const suffix = "\n[tool payload truncated]";
+  const budget = Math.max(0, cap - utf8Bytes(suffix));
+  let end = Math.min(value.length, budget);
+  // UTF-16 code-unit offsets are not byte offsets. Trim to a UTF-8 boundary
+  // so a hostile unicode payload cannot exceed the advertised byte cap.
+  while (end > 0 && utf8Bytes(value.slice(0, end)) > budget) end -= 1;
+  return `${value.slice(0, end)}${suffix}`;
 }
 
 /** Pretty-print a raw JSON payload string; fall back to the raw text. */
@@ -116,7 +127,7 @@ export class ToolCallTracker {
   /** Envelope ids whose calls were already settled (dedup tool_result). */
   private settledEnvelopeIds = new Set<string>();
   /** Terminal envelopes can precede starts after a reconnect or CLI flush. */
-  private pendingEnvelopeResults = new Map<string, { output: string | undefined; isError: boolean }>();
+  private pendingEnvelopeResults = new Map<string, { output: string | undefined; isError: boolean; bytes: number; receivedAt: number }>();
   private pendingEnvelopeResultBytes = 0;
   /** Final state of every call this tracker has emitted, by stream id —
    *  insertion-ordered, so snapshot() preserves call order for persistence. */
@@ -134,6 +145,21 @@ export class ToolCallTracker {
       this.open.set(name, q);
     }
     return q;
+  }
+
+  private dropPendingEnvelopeResult(id: string): void {
+    const pending = this.pendingEnvelopeResults.get(id);
+    if (!pending) return;
+    this.pendingEnvelopeResults.delete(id);
+    this.pendingEnvelopeResultBytes -= pending.bytes;
+  }
+
+  private prunePendingEnvelopeResults(): void {
+    const oldestAllowed = this.now() - PENDING_TOOL_RESULT_TTL_MS;
+    for (const [id, pending] of this.pendingEnvelopeResults) {
+      if (pending.receivedAt >= oldestAllowed) break;
+      this.dropPendingEnvelopeResult(id);
+    }
   }
 
   private settle(call: OpenCall): void {
@@ -238,7 +264,8 @@ export class ToolCallTracker {
    * linked to the hook's id instead, so later tool_result blocks dedup).
    */
   envelopeToolUse(id: string, name: string, input?: string, textOffset?: number): ToolStreamEvent | null {
-    if (id.length > 512 || this.byEnvelopeId.has(id) || this.settledEnvelopeIds.has(id)) return null;
+    this.prunePendingEnvelopeResults();
+    if (utf8Bytes(id) > 512 || utf8Bytes(name) > 512 || this.byEnvelopeId.has(id) || this.settledEnvelopeIds.has(id)) return null;
     if (this.byEnvelopeId.size >= MAX_OPEN_ENVELOPE_CALLS) return null;
     const queue = this.queueFor(name);
     // A hook pre may have surfaced this call already under a minted id. Link
@@ -271,10 +298,10 @@ export class ToolCallTracker {
 
   /** Settle a result that arrived before its start, once the id is known. */
   consumePendingEnvelopeResult(toolUseId: string): ToolStreamEvent | null {
+    this.prunePendingEnvelopeResults();
     const pending = this.pendingEnvelopeResults.get(toolUseId);
     if (!pending) return null;
-    this.pendingEnvelopeResults.delete(toolUseId);
-    this.pendingEnvelopeResultBytes -= pending.output?.length ?? 0;
+    this.dropPendingEnvelopeResult(toolUseId);
     return this.envelopeToolResult(toolUseId, pending.output, pending.isError);
   }
 
@@ -290,8 +317,10 @@ export class ToolCallTracker {
     output: string | undefined,
     isError: boolean,
   ): ToolStreamEvent | null {
-    if (toolUseId.length > 512 || this.settledEnvelopeIds.has(toolUseId)) return null;
+    this.prunePendingEnvelopeResults();
+    if (utf8Bytes(toolUseId) > 512 || this.settledEnvelopeIds.has(toolUseId)) return null;
     const boundedOutput = capLiveToolPayload(output, LIVE_TOOL_OUTPUT_CAP);
+    const pendingBytes = utf8Bytes(boundedOutput);
     const call = this.byEnvelopeId.get(toolUseId);
     if (!call) {
       // A malformed stream must not turn arbitrary unmatched ids into an
@@ -303,21 +332,17 @@ export class ToolCallTracker {
       if (this.pendingEnvelopeResults.size >= MAX_PENDING_TOOL_RESULTS) {
         const oldest = this.pendingEnvelopeResults.keys().next().value;
         if (oldest) {
-          const dropped = this.pendingEnvelopeResults.get(oldest);
-          this.pendingEnvelopeResultBytes -= dropped?.output?.length ?? 0;
-          this.pendingEnvelopeResults.delete(oldest);
+          this.dropPendingEnvelopeResult(oldest);
         }
       }
-      while (this.pendingEnvelopeResultBytes + (boundedOutput?.length ?? 0) > MAX_PENDING_TOOL_RESULT_BYTES && this.pendingEnvelopeResults.size) {
+      while (this.pendingEnvelopeResultBytes + pendingBytes > MAX_PENDING_TOOL_RESULT_BYTES && this.pendingEnvelopeResults.size) {
         const oldest = this.pendingEnvelopeResults.keys().next().value;
         if (!oldest) break;
-        const dropped = this.pendingEnvelopeResults.get(oldest);
-        this.pendingEnvelopeResultBytes -= dropped?.output?.length ?? 0;
-        this.pendingEnvelopeResults.delete(oldest);
+        this.dropPendingEnvelopeResult(oldest);
       }
-      if ((boundedOutput?.length ?? 0) > MAX_PENDING_TOOL_RESULT_BYTES) return null;
-      this.pendingEnvelopeResults.set(toolUseId, { output: boundedOutput, isError });
-      this.pendingEnvelopeResultBytes += boundedOutput?.length ?? 0;
+      if (pendingBytes > MAX_PENDING_TOOL_RESULT_BYTES) return null;
+      this.pendingEnvelopeResults.set(toolUseId, { output: boundedOutput, isError, bytes: pendingBytes, receivedAt: this.now() });
+      this.pendingEnvelopeResultBytes += pendingBytes;
       return null;
     }
     const durationMs = this.now() - call.startedAt;

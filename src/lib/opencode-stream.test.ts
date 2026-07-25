@@ -8,6 +8,48 @@ assert.deepEqual(
   { kind: "text", sessionId: "ses_123", text: "Hello" },
 );
 assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "step_start", sessionID: "ses_123", part: { id: "step_1" } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "ignore", sessionId: "ses_123" },
+  "current OpenCode step-start frames are lifecycle metadata, not compatibility failures",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "step_finish", sessionID: "ses_123", part: { id: "step_1" } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "ignore", sessionId: "ses_123" },
+  "current OpenCode step-finish frames are lifecycle metadata, not compatibility failures",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "reasoning", sessionID: "ses_123", part: { text: "private chain of thought" } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "ignore", sessionId: "ses_123" },
+  "current OpenCode reasoning frames are lifecycle metadata and never leak as assistant text",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "reply", session: "ses_mapped", payload: { body: "A registry-mapped reply" } },
+    {
+      ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+      id: "mapped-envelope",
+      eventTypes: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].eventTypes, text: ["reply"] },
+      shape: {
+        ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].shape,
+        envelope: ["payload"],
+        sessionId: ["session"],
+        text: ["body"],
+      },
+    },
+  ),
+  { kind: "text", sessionId: "ses_mapped", text: "A registry-mapped reply" },
+  "a signed schema can adapt a renamed envelope and session/text fields without code changes",
+);
+assert.deepEqual(
   parseOpenCodeRunEvent({ type: "tool_use", sessionID: "ses_123", part: { id: "prt_1", tool: "bash", state: { input: { command: "pwd" }, output: "ok", status: "completed" } } }),
   { kind: "tool", sessionId: "ses_123", id: "prt_1", name: "bash", input: { command: "pwd" }, output: "ok", isError: false },
 );
@@ -126,5 +168,30 @@ assert.deepEqual(
   ),
   { kind: "tool_start", sessionId: "ses_legacy", id: "legacy_1", name: "Read", input: { path: "README.md" } },
   "the legacy profile keeps stable ids for a split tool lifecycle",
+);
+const shapedSchema = {
+  ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  id: "opencode-run-json-shaped-v2",
+  shape: {
+    envelope: ["payload"],
+    sessionId: ["session"],
+    id: ["call_id"],
+    name: ["tool_name"],
+    state: ["phase"],
+    status: ["state"],
+    input: ["arguments"],
+    output: ["result"],
+    error: ["failure"],
+    terminalStates: ["done", "failed"],
+    errorStates: ["failed"],
+  },
+};
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool", session: "ses_v2", payload: { call_id: "call_v2", tool_name: "Read", phase: { state: "done", arguments: { path: "README.md" }, result: "ok" } } },
+    shapedSchema,
+  ),
+  { kind: "tool", sessionId: "ses_v2", id: "call_v2", name: "Read", input: { path: "README.md" }, output: "ok", isError: false },
+  "a signed schema can map bounded future envelope fields and terminal states",
 );
 console.log("opencode-stream.test.ts: ok");
