@@ -2692,6 +2692,12 @@ export async function POST(req: Request) {
         const reportedPrUrl = latestPrUrlFromText(cleanedAssistantText);
         if (reportedPrUrl) conv.prUrl = reportedPrUrl;
         if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
+        else if (openCodeDirect && existingConversation && !openCodeNativeResumeUsed) {
+          // A fresh compatibility fallback intentionally did not use the
+          // prior native session. Persist that invalidation so a later client
+          // upgrade cannot silently resume context that excludes this turn.
+          delete conv.harnessSessionId;
+        }
         if (grokDirect && grokSessionId) conv.grokSandboxProfile = grokSandboxProfile;
         conv.turns.push(userTurn, assistantTurn);
         conv.activeLeafId = assistantTurnId;

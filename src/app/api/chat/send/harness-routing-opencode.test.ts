@@ -137,6 +137,11 @@ assert.match(
 );
 assert.match(
   route,
+  /else if \(openCodeDirect && existingConversation && !openCodeNativeResumeUsed\) \{[\s\S]*?delete conv\.harnessSessionId/,
+  "a fresh OpenCode compatibility fallback clears the obsolete native token from the persisted conversation",
+);
+assert.match(
+  route,
   /const openCodeNativeResumeSupported = openCodeCompatibility\?\.mode === "structured"[\s\S]*?schema\?\.launch\.sessionOption[\s\S]*?const openCodeFreshSessionForCompatibility = Boolean\([\s\S]*?!openCodeNativeResumeSupported[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
   "OpenCode replays Cave context when the selected schema cannot launch a native resume",
 );

@@ -348,18 +348,16 @@ function isEventSchema(value: unknown): value is OpenCodeEventSchema {
       && labels.length <= 32
       && labels.every((type: unknown) => typeof type === "string" && type.length > 0 && type.length <= 80);
   })) return false;
-  const nonToolLabels = new Set<string>();
-  for (const key of ["ignored", "text", "error", "toolEnd"] as const) {
-    for (const label of eventTypes[key] as unknown[]) {
-      if (nonToolLabels.has(label as string)) return false;
-      nonToolLabels.add(label as string);
+  // Event dispatch is category-first, so a label can never safely represent
+  // two phases. Reject every cross-category overlap, including start/end,
+  // instead of relying on parser order to resolve a publisher mistake.
+  const assignedLabels = new Set<string>();
+  for (const key of eventKeys) {
+    for (const label of eventTypes[key] as string[]) {
+      if (assignedLabels.has(label)) return false;
+      assignedLabels.add(label);
     }
   }
-  const toolLabels = [
-    ...(eventTypes.toolStart as string[]),
-    ...(eventTypes.toolComplete as string[]),
-  ];
-  if (new Set(toolLabels).size !== toolLabels.length || toolLabels.some((label) => nonToolLabels.has(label))) return false;
   return true;
 }
 

@@ -268,6 +268,21 @@ assert.equal(
   false,
   "a signed schema cannot assign one tool label to incompatible lifecycle states",
 );
+assert.equal(
+  isOpenCodeSchemaBundle({
+    ...unsigned,
+    schemas: [{
+      ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+      eventTypes: {
+        ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].eventTypes,
+        toolStart: ["tool_phase"],
+        toolEnd: ["tool_phase"],
+      },
+    }],
+  }, now),
+  false,
+  "a signed schema cannot overlap start and end lifecycle labels",
+);
 assert.equal(isOpenCodeSchemaBundle({ ...unsigned, unexpected: true }, now), false, "unknown format-1 bundle fields fail closed");
 assert.equal(isOpenCodeSchemaBundle({
   ...unsigned,
