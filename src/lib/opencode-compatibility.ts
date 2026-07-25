@@ -1,8 +1,7 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { homedir } from "node:os";
-import { writeJsonAtomic } from "./server/atomic-write.ts";
 
-type RegistryFs = Pick<typeof import("node:fs/promises"), "mkdir" | "open" | "readFile" | "rename" | "rm" | "stat">;
+type RegistryFs = Pick<typeof import("node:fs/promises"), "mkdir" | "open" | "readFile" | "readdir" | "rename" | "rm" | "stat">;
 
 // The registry cache is per-user runtime state. Resolve its Node built-in at
 // runtime so Next's file tracer cannot mistake its dynamic paths for packaged
@@ -177,6 +176,7 @@ const MAX_SCHEMA_BUNDLE_BYTES = 256 * 1024;
 // bounded, but large enough that every accepted remote bundle remains usable
 // after the wrapper is written.
 const MAX_SCHEMA_CACHE_RECORD_BYTES = 512 * 1024;
+const MAX_TRUST_ANCHOR_JOURNAL_ENTRIES = 16;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const CACHE_FILE = "opencode-schema-bundle-v1.json";
 const REFRESH_TIMEOUT_MS = 5_000;
@@ -649,6 +649,58 @@ function cacheTrustAnchorPath(file: string): string {
 }
 
 /**
+ * Immutable sequence-keyed anchor records. A lock lease may be reclaimed
+ * while a suspended writer is between a token check and an atomic replace;
+ * distinct journal names ensure that writer can never replace a newer
+ * high-water record when it resumes.
+ */
+function cacheTrustAnchorJournalPath(anchorFile: string): string {
+  return `${anchorFile}.journal`;
+}
+
+function cacheTrustAnchorJournalEntryPath(anchorFile: string, bundle: OpenCodeSchemaBundle): string {
+  return `${cacheTrustAnchorJournalPath(anchorFile)}/${bundle.sequence}-${openCodeSchemaBundlePayloadHash(bundle)}.json`;
+}
+
+function newestAnchorJournalEntries(entries: string[]): string[] {
+  return entries
+    .filter((entry) => /^\d{1,16}-[a-f0-9]{64}\.json$/.test(entry))
+    .sort((left, right) => {
+      const leftSequence = Number(left.slice(0, left.indexOf("-")));
+      const rightSequence = Number(right.slice(0, right.indexOf("-")));
+      if (leftSequence !== rightSequence) return rightSequence > leftSequence ? 1 : -1;
+      return right.localeCompare(left);
+    })
+    .slice(0, MAX_TRUST_ANCHOR_JOURNAL_ENTRIES);
+}
+
+/**
+ * Registry cache paths are per-user runtime state. Keep the atomic writer on
+ * the same lazy filesystem boundary as the reader: importing the shared
+ * writer statically makes Next trace dynamic cache paths as app assets.
+ */
+async function writeRegistryJsonAtomic(file: string, value: unknown): Promise<void> {
+  const fs = requireRegistryFs() as RegistryFs & Pick<typeof import("node:fs/promises"), "writeFile">;
+  const temporary = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    await fs.writeFile(temporary, JSON.stringify(value, null, 2));
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await fs.rename(temporary, file);
+        return;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code ?? "";
+        if (!(code === "EACCES" || code === "EBUSY" || code === "EPERM") || attempt >= 6) throw error;
+        await new Promise<void>((resolve) => setTimeout(resolve, Math.min(50, 2 ** (attempt + 1))));
+      }
+    }
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
  * The cache is writable local state, so do not let a corrupt or maliciously
  * enlarged file bypass the registry response limit and exhaust process memory
  * before signature verification. Reading from one open handle also bounds the
@@ -776,12 +828,13 @@ async function readCachedTrustState(
   checkpoint?: OpenCodeRegistryCheckpoint,
   trustAnchorFile = cacheTrustAnchorPath(file),
 ): Promise<CachedBundle | null> {
-  const [primary, backup, anchor] = await Promise.all([
+  const [primary, backup, anchor, journal] = await Promise.all([
     readTrustedCacheRecord(file, publicKey, now),
     readTrustedCacheRecord(cacheTrustPath(file), publicKey, now),
     readTrustedCacheRecord(trustAnchorFile, publicKey, now),
+    readTrustedAnchorJournal(trustAnchorFile, publicKey, now),
   ]);
-  const candidates = [primary, backup, anchor].filter((cached): cached is CachedBundle => cached !== null);
+  const candidates = [primary, backup, anchor, ...journal].filter((cached): cached is CachedBundle => cached !== null);
   const trusted = candidates.filter((cached) => meetsOpenCodeRegistryCheckpoint(cached.bundle, checkpoint));
   if (!trusted.length) return null;
   const highestSequence = Math.max(...trusted.map((cached) => cached.bundle.sequence));
@@ -796,6 +849,41 @@ async function readCachedTrustState(
   return highest[0];
 }
 
+async function readTrustedAnchorJournal(
+  anchorFile: string,
+  publicKey: string | OpenCodeRegistryKeyring,
+  now: number,
+): Promise<CachedBundle[]> {
+  let entries: string[];
+  try {
+    entries = await requireRegistryFs().readdir(cacheTrustAnchorJournalPath(anchorFile));
+  } catch {
+    return [];
+  }
+  // A stale writer can leave a lower immutable record after a newer writer
+  // commits. Resolve only a bounded newest window; valid registry sequences
+  // are safe integers, so filename ordering is an exact high-water ordering.
+  const anchorEntries = newestAnchorJournalEntries(entries);
+  return (await Promise.all(anchorEntries.map((entry) => readTrustedCacheRecord(
+    `${cacheTrustAnchorJournalPath(anchorFile)}/${entry}`,
+    publicKey,
+    now,
+  )))).filter((cached): cached is CachedBundle => cached !== null);
+}
+
+async function pruneTrustAnchorJournal(anchorFile: string): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await requireRegistryFs().readdir(cacheTrustAnchorJournalPath(anchorFile));
+  } catch {
+    return;
+  }
+  const retained = new Set(newestAnchorJournalEntries(entries));
+  await Promise.all(entries
+    .filter((entry) => /^\d{1,16}-[a-f0-9]{64}\.json$/.test(entry) && !retained.has(entry))
+    .map((entry) => requireRegistryFs().rm(`${cacheTrustAnchorJournalPath(anchorFile)}/${entry}`, { force: true }).catch(() => undefined)));
+}
+
 async function writeVerifiedCache(
   file: string,
   trustAnchorFile: string,
@@ -805,24 +893,28 @@ async function writeVerifiedCache(
   assertLockOwner?: () => Promise<void>,
 ): Promise<void> {
   await assertLockOwner?.();
-  const priorAnchor = await readTrustedCacheRecord(trustAnchorFile, publicKey, now);
+  const priorAnchor = await readCachedTrustState(file, publicKey, now, undefined, trustAnchorFile);
   if (priorAnchor && priorAnchor.bundle.sequence > cached.bundle.sequence) throw new Error("schema rollback");
   if (
     priorAnchor
     && priorAnchor.bundle.sequence === cached.bundle.sequence
     && openCodeSchemaBundleSigningPayload(priorAnchor.bundle) !== openCodeSchemaBundleSigningPayload(cached.bundle)
   ) throw new Error("schema sequence rewritten");
-  // Persist the independent signed high-water anchor first: later damage to
-  // both cache records cannot erase the highest accepted registry sequence.
-  await assertLockOwner?.();
-  await writeJsonAtomic(trustAnchorFile, cached);
+  // Persist the independent signed high-water anchor first. It is append-only
+  // by sequence/payload hash, so a writer whose lease is reclaimed cannot
+  // overwrite a newer anchor after it resumes. The mutable primary/backup
+  // records may still be replaced by that stale writer, but journal selection
+  // retains the highest verified sequence.
+  await requireRegistryFs().mkdir(cacheTrustAnchorJournalPath(trustAnchorFile), { recursive: true });
+  await writeRegistryJsonAtomic(cacheTrustAnchorJournalEntryPath(trustAnchorFile, cached.bundle), cached);
+  await pruneTrustAnchorJournal(trustAnchorFile);
   // A stale lock can be reclaimed when an original writer is suspended by a
   // filesystem stall. Recheck before every replace so that old owner cannot
   // subsequently overwrite the new owner's higher sequence.
   await assertLockOwner?.();
-  await writeJsonAtomic(cacheTrustPath(file), cached);
+  await writeRegistryJsonAtomic(cacheTrustPath(file), cached);
   await assertLockOwner?.();
-  await writeJsonAtomic(file, cached);
+  await writeRegistryJsonAtomic(file, cached);
 }
 
 async function readVerifiedCache(

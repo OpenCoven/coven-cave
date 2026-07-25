@@ -140,6 +140,26 @@ assert.equal(recoveredFromAnchor.bundle.sequence, 4, "the independent trust anch
 assert.equal(recoveredFromAnchor.source, "cache");
 assert.equal(recoveredFromAnchor.diagnostic, "schema-registry-refresh-rejected");
 
+// A writer may be suspended after its lock lease is reclaimed. Simulate that
+// old owner resuming after sequence 4 was committed and replacing every
+// mutable record with its stale sequence 3 snapshot. The append-only anchor
+// journal must still retain sequence 4 as the irreversible floor.
+await writeFile(durableAnchorCacheFile, JSON.stringify({ checkedAt: now, bundle: signedCheckpointAdvance }));
+await writeFile(`${durableAnchorCacheFile}.trust`, JSON.stringify({ checkedAt: now, bundle: signedCheckpointAdvance }));
+await writeFile(`${durableAnchorCacheFile}.anchor`, JSON.stringify({ checkedAt: now, bundle: signedCheckpointAdvance }));
+const staleWriterAnchorRecovery = await loadOpenCodeSchemaBundle({
+  cacheFile: durableAnchorCacheFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now + 8 * 60 * 60 * 1000,
+  fetch: async () => new Response(JSON.stringify(signedCheckpointAdvance), { status: 200 }),
+});
+assert.equal(
+  staleWriterAnchorRecovery.bundle.sequence,
+  4,
+  "a reclaimed stale writer cannot roll the append-only trust anchor back after a newer commit",
+);
+
 const unsignedSignedRollback = { ...unsigned, sequence: 1 };
 const signedRollback = {
   ...unsignedSignedRollback,
