@@ -394,7 +394,8 @@ async function renameLockCandidate(
 
 async function acquireLock(options: ReconciliationOptions): Promise<() => Promise<void>> {
   const lock = migrationLockPath();
-  const startedAt = Date.now();
+  const now = options.lockNow ?? Date.now;
+  const startedAt = now();
   const timeoutMs = Math.max(1, options.lockTimeoutMs ?? RECONCILIATION_LOCK_TIMEOUT_MS);
   const deadline = startedAt + timeoutMs;
   let slowDiagnosticEmitted = false;
@@ -407,7 +408,7 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
     const event: ReconciliationLockDiagnostic = {
       phase,
       result,
-      durationMs: Date.now() - startedAt,
+      durationMs: now() - startedAt,
       ...(error && typeof error === "object" && "code" in error
         ? { errorCode: String((error as NodeJS.ErrnoException).code ?? "") }
         : {}),
@@ -443,13 +444,13 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
   const removeCandidate = () => rm(candidate, { recursive: true, force: true }).catch(() => {});
 
   for (;;) {
-    if (Date.now() >= deadline) {
+    if (now() >= deadline) {
       await removeCandidate();
       const timeout = new Error(`timed out acquiring cave home reconciliation lock after ${timeoutMs}ms`) as NodeJS.ErrnoException;
       timeout.code = "ETIMEDOUT";
       throw terminalError(timeout);
     }
-    if (!slowDiagnosticEmitted && Date.now() - startedAt >= LOCK_SLOW_DIAGNOSTIC_MS) {
+    if (!slowDiagnosticEmitted && now() - startedAt >= LOCK_SLOW_DIAGNOSTIC_MS) {
       slowDiagnosticEmitted = true;
       diagnostic("waiting", "pending", undefined, true);
     }
@@ -545,7 +546,7 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
         const sameProcessOrphan = owner.pid === process.pid &&
           (!owner.token || !activeLockTokens().has(owner.token));
         const reclaimable = Boolean(owner.releasedAt) || sameProcessOrphan ||
-          (owner.pid ? !alive : Date.now() - info.mtimeMs > LOCK_STALE_MS);
+          (owner.pid ? !alive : now() - info.mtimeMs > LOCK_STALE_MS);
         if (reclaimable) {
           await options.lockProbe?.("stale-observed");
           const takeover = path.join(lock, ".takeover");

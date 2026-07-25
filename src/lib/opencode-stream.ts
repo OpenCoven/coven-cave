@@ -198,7 +198,10 @@ export function handleOpenCodeJsonLine(
   try {
     const rawEvent = JSON.parse(line) as unknown;
     const event = parseOpenCodeRunEvent(rawEvent, schema);
-    if (event.sessionId) handlers.onSession?.(event.sessionId);
+    // `other` includes unknown event labels and malformed selected envelopes.
+    // Their session-shaped fields are untrusted: adopting one would poison the
+    // native resume token even though the payload is deliberately skipped.
+    if (event.kind !== "other" && event.sessionId) handlers.onSession?.(event.sessionId);
     switch (event.kind) {
       case "ignore": return;
       case "text": handlers.onText?.(event); return;

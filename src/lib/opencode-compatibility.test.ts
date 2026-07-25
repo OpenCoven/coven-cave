@@ -172,6 +172,54 @@ assert.equal(
   true,
   "schemas may omit lifecycle-only and combined-tool categories when split frames describe the protocol",
 );
+assert.equal(
+  isOpenCodeSchemaBundle({
+    ...unsigned,
+    schemas: [{
+      ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+      id: "text-only",
+      eventTypes: {
+        ignored: [],
+        text: ["message"],
+        toolStart: [],
+        toolEnd: [],
+        toolComplete: [],
+        error: [],
+      },
+    }],
+  }, now),
+  true,
+  "a signed text-only protocol may explicitly retire every tool and error envelope",
+);
+assert.equal(
+  isOpenCodeSchemaBundle({
+    ...unsigned,
+    schemas: [{
+      ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+      id: "no-text-contract",
+      eventTypes: {
+        ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].eventTypes,
+        text: [],
+      },
+    }],
+  }, now),
+  false,
+  "a structured schema without a trusted assistant-text category is rejected",
+);
+assert.equal(
+  isOpenCodeSchemaBundle({
+    ...unsigned,
+    schemas: [{
+      ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+      launch: {
+        ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].launch,
+        requiredFlags: ["--share"],
+      },
+    }],
+  }, now),
+  false,
+  "a signed parser registry cannot add OpenCode flags that publish or otherwise alter a conversation",
+);
 assert.equal(isOpenCodeSchemaBundle({ ...unsigned, unexpected: true }, now), false, "unknown format-1 bundle fields fail closed");
 assert.equal(isOpenCodeSchemaBundle({
   ...unsigned,
@@ -258,17 +306,8 @@ const framingSchema = {
 };
 assert.equal(
   isOpenCodeSchemaBundle({ ...unsigned, schemas: [framingSchema] }, now),
-  true,
-  "signed schemas may declare bounded harmless no-value framing flags",
-);
-assert.equal(
-  selectOpenCodeSchema([framingSchema], {
-    ...structuredSwitchCapabilities,
-    options: ["--structured-output", "--event-stream", "--no-color"],
-    noValueOptions: ["--event-stream", "--no-color"],
-  })?.id,
-  "structured-framing",
-  "companion flags require both a declaration and no-value capability evidence",
+  false,
+  "a registry schema cannot add even a harmless-looking flag outside the audited framing allowlist",
 );
 assert.equal(
   isOpenCodeSchemaBundle({ ...unsigned, issuedAt: 0 }, now),
@@ -286,9 +325,9 @@ assert.equal(isOpenCodeSchemaBundle({
   ...unsigned,
   schemas: [{
     ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
-    eventTypes: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].eventTypes, toolEnd: [] },
+    eventTypes: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].eventTypes, text: [] },
   }],
-}, now), false, "incomplete event mappings cannot be selected as structured parsers");
+}, now), false, "a structured schema must retain a trusted text mapping");
 assert.equal(isOpenCodeSchemaBundle({
   ...unsigned,
   schemas: [{

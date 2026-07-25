@@ -142,7 +142,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const handleOpenCodeLine[\s\S]*?openCodePlainFallback && line\.startsWith\("\{"\)[\s\S]*?onMalformedJson: \(\) => \{[\s\S]*?openCodeStructuredIncompatibility = true;[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)/,
+  /const handleOpenCodeLine[\s\S]*?openCodePlainFallback && line\.startsWith\("\{"\)[\s\S]*?onMalformedJson: \(\) => \{[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)[\s\S]*?openCodeStructuredIncompatibility = true;/,
   "malformed structured OpenCode events quarantine parsing without copying raw JSON into assistant text or diagnostics",
 );
 assert.match(

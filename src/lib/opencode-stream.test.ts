@@ -23,11 +23,11 @@ assert.deepEqual(
     { onSession: (id) => sessions.push(id), onText: (event) => text.push(event.text), onTool: (event) => toolIds.push(event.id), onOther: (event) => diagnostics.push(event.diagnostic ?? "other") },
   );
   handleOpenCodeJsonLine(
-    JSON.stringify({ type: "text", sessionID: "ses_live", text: "hostile root text" }),
+    JSON.stringify({ type: "text", sessionID: "ses_hijack", text: "hostile root text" }),
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
     { onSession: (id) => sessions.push(id), onText: (event) => text.push(event.text), onTool: (event) => toolIds.push(event.id), onOther: (event) => diagnostics.push(event.diagnostic ?? "other") },
   );
-  assert.deepEqual(sessions, ["ses_live", "ses_live", "ses_live"], "JSONL dispatch adopts the native session before handling each frame");
+  assert.deepEqual(sessions, ["ses_live", "ses_live"], "JSONL dispatch adopts a native session only after a frame matches the selected schema");
   assert.deepEqual(text, ["live reply"], "only schema-authorized text reaches the route callback");
   assert.deepEqual(toolIds, ["tool_live"], "terminal tool frames retain their upstream call id");
   assert.deepEqual(diagnostics, ["malformed-event"], "hostile frames reach the diagnostic path instead of assistant text");

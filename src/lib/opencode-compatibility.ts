@@ -245,7 +245,10 @@ const SAFE_STRUCTURED_LAUNCH_OPTION = /^--[a-z0-9-]*(?:format|output|json|event|
 const UNSAFE_STRUCTURED_LAUNCH_OPTIONS = new Set([
   "--auto", "--permission", "--sandbox", "--skip-permissions", "--dangerously-skip-permissions", "--trust-all-tools", "--yolo",
 ]);
-const SAFE_STRUCTURED_REQUIRED_FLAG = /^--[A-Za-z][A-Za-z0-9-]{0,78}$/;
+// A registry describes how to frame and parse a stream; it must never widen
+// what an OpenCode invocation is allowed to do. Keep the remotely supplied
+// companion flags to the small, audited set that only requests event framing.
+const SAFE_STRUCTURED_REQUIRED_FLAGS = new Set(["--event-stream"]);
 
 function safeStructuredLaunchOption(value: unknown): value is string {
   return typeof value === "string"
@@ -265,8 +268,8 @@ function hasValidLaunch(value: unknown, requires: Record<string, unknown>): bool
   if (structuredOutput.value !== (typeof requires.protocol === "string" ? requires.protocol : "json")) return false;
   if (value.sessionOption !== undefined && value.sessionOption !== "--session" && value.sessionOption !== "--resume") return false;
   if (requires.session === true && value.sessionOption === undefined) return false;
-  return value.requiredFlags.length <= 4
-    && value.requiredFlags.every((flag) => typeof flag === "string" && SAFE_STRUCTURED_REQUIRED_FLAG.test(flag) && !UNSAFE_STRUCTURED_LAUNCH_OPTIONS.has(flag.toLowerCase()))
+  return value.requiredFlags.length <= SAFE_STRUCTURED_REQUIRED_FLAGS.size
+    && value.requiredFlags.every((flag) => typeof flag === "string" && SAFE_STRUCTURED_REQUIRED_FLAGS.has(flag))
     && new Set(value.requiredFlags).size === value.requiredFlags.length
     && !value.requiredFlags.includes(structuredOutput.option);
 }
@@ -285,11 +288,12 @@ function isEventSchema(value: unknown): value is OpenCodeEventSchema {
   const eventTypes = value.eventTypes as unknown as OpenCodeEventSchema["eventTypes"];
   if (Object.keys(eventTypes).length !== eventKeys.length || !eventKeys.every((key) => {
     const labels = eventTypes[key];
-    // `ignored` and `toolComplete` are protocol-shape optional: a schema may
-    // use only split tool frames and may have no lifecycle-only frames. The
-    // other categories remain required so a selected profile always has a
-    // trusted assistant-text and tool/error contract.
-    const mayBeEmpty = key === "ignored" || key === "toolComplete";
+    // Text is the only universal structured-output contract. Every other
+    // category is protocol-shape optional: a text-only client has no tool
+    // frames, and a split-lifecycle client has no combined completion frame.
+    // Empty arrays are authoritative retirements, not invitations to use the
+    // built-in aliases.
+    const mayBeEmpty = key !== "text";
     return Array.isArray(labels)
       && (mayBeEmpty || labels.length > 0)
       && labels.length <= 32
