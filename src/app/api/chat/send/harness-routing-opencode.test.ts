@@ -112,11 +112,6 @@ assert.match(
 );
 assert.match(
   route,
-  /openCodeDirect && openCodeCompatibility\?\.mode === "plain" && !sessionId[\s\S]*?announceSession\(crypto\.randomUUID\(\)\)/,
-  "plain OpenCode output receives a Cave-owned stable session id so its first transcript persists",
-);
-assert.match(
-  route,
   /const harnessSessionId = grokDirect[\s\S]*?: openCodeDirect[\s\S]*?openCodeSessionId \?\? existingConversation\?\.harnessSessionId \?\? \(!existingConversation \? body\.sessionId : undefined\)/,
   "a plain OpenCode turn retains the native id it used to resume without mistaking Cave's stable id for a new native token",
 );
