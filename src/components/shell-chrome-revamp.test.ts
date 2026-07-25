@@ -50,11 +50,17 @@ assert.match(
   /\.shell-nav--rail \.sidebar-folder-row,\n\.shell-nav--rail \.sidebar-action-row,\n\.shell-nav--rail \.sidebar-foot-btn,\n\.shell-nav--rail \.sidebar-foot-icon-btn \{[\s\S]{0,220}?width: 36px;\s*\n\s*height: 36px;/,
   "rail controls are 36px squares",
 );
-// Primary-only rail: quiet cluster + Dashboard demoted to the expanded panel.
+// Every visible workspace destination earns a rail icon; Dashboard remains an
+// expanded-panel link because it leaves the workspace route context.
 assert.match(
   sidebarCss,
-  /\.shell-nav--rail \.sidebar-folder-row--quiet,\s*\n\.shell-nav--rail a\.sidebar-foot-btn\[href="\/dashboard"\] \{\s*\n\s*display: none;/,
-  "quiet destinations and the Dashboard link don't earn rail slots (reachable when expanded / via ⌘K)",
+  /\.shell-nav--rail a\.sidebar-foot-btn\[href="\/dashboard"\] \{\s*\n\s*display: none;/,
+  "Dashboard stays out of the rail because it leaves the workspace route context",
+);
+assert.doesNotMatch(
+  sidebarCss,
+  /\.shell-nav--rail \.sidebar-folder-row--quiet[\s\S]{0,100}display: none;/,
+  "quiet sidebar destinations retain rail icons, including Memories, Marketplace, and GitHub",
 );
 // The avatar keeps a real action (Settings) and an accessible name.
 assert.match(

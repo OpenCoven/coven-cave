@@ -95,8 +95,8 @@ assert.doesNotMatch(
 );
 assert.match(
   chatSurface,
-  /className=\{`chat-scope-group-btn[\s\S]*onClick=\{\(\) => setScope\("coven"\)\}/,
-  "ChatSurface exposes Group as a demoted icon-button that switches to the coven scope",
+  /className=\{`chat-scope-group-btn[\s\S]*onClick=\{\(\) => window\.dispatchEvent\(new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: "groupchat" \} \}\)\)\}/,
+  "ChatSurface exposes Group as a demoted icon-button that routes through workspace history",
 );
 assert.match(
   chatSurface,

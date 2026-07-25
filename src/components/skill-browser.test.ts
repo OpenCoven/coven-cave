@@ -215,6 +215,11 @@ assert.match(src, /onChanged\?\.\(\)/, "a successful delete asks the parent to r
 assert.match(hub, /import \{ type SkillBrowserEntry \} from "@\/components\/skill-browser"/, "the Marketplace hub imports the skill entry type");
 assert.doesNotMatch(hub, /<SkillBrowser\b/, "the standalone Skills tab (SkillBrowser) is retired from the hub");
 assert.match(hub, /<SkillExploreCard\b/, "registry skills render as Explore cards");
+assert.match(
+  hub,
+  /key=\{`skill:\$\{s\.slug \?\? sourceTarget\(s\)\}:\$\{s\.id\}`\}/,
+  "Explore keys skills by source and id because directory ids are publisher-scoped",
+);
 assert.match(hub, /<SkillExploreDrawer\b/, "opening a skill card shows the Explore skill drawer");
 assert.match(hub, /`\/api\/skills\/directory\?q=\$\{encodeURIComponent\(trimmed\)\}`/, "skill search reloads through the registry search endpoint");
 assert.match(hub, /window\.setTimeout\(\(\) => \{[\s\S]*?void loadSkills\(query\);[\s\S]*?\}, query\.trim\(\) \? 250 : 0\)/, "skill search uses a small debounce before reloading remote results");

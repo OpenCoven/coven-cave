@@ -954,7 +954,9 @@ export function MarketplaceViewSurface({
                       ))}
                       {group.skills.map((s) => (
                         <SkillExploreCard
-                          key={`skill:${s.id}`}
+                          // Skill ids are scoped to a publisher. The directory can
+                          // legitimately contain the same id from distinct sources.
+                          key={`skill:${s.slug ?? sourceTarget(s)}:${s.id}`}
                           skill={s}
                           installed={skillIsInstalled(s)}
                           busy={skillBusyIds.has(s.id)}

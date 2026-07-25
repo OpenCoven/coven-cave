@@ -99,11 +99,10 @@
   color: var(--text-primary);
 }
 
-/* Primary-surfaces-only rail (phase D): the quiet cluster (Memories /
-   Marketplace / GitHub) and the Dashboard link stay reachable from the
-   EXPANDED panel (⌘B, hover-peek) and the ⌘K palette, but don't earn rail
-   slots — the rail carries the daily destinations plus Settings + account. */
-.shell-nav--rail .sidebar-folder-row--quiet,
+/* The collapsed rail keeps every visible sidebar destination reachable by
+   icon, including the quiet cluster (Memories, Marketplace, and GitHub).
+   Dashboard remains an expanded-panel destination; its route context is
+   distinct from workspace mode navigation. */
 .shell-nav--rail a.sidebar-foot-btn[href="/dashboard"] {
   display: none;
 }
