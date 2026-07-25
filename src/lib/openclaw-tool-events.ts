@@ -16,7 +16,11 @@ export const OPENCLAW_TOOL_PROTOCOL_ADAPTERS = [
     protocol: 4,
     requiredMethods: ["sessions.messages.subscribe"],
     requiredEvents: ["session.tool"],
-    requiredCapabilities: ["openclaw.session-tool.v1"],
+    // `features.capabilities` is a Gateway server-capability list; tool-events
+    // is instead a client capability negotiated in connect.params.caps.
+    // Protocol v4 plus these discovered features is the documented schema
+    // contract for this adapter.
+    requiredCapabilities: [],
     schema: "openclaw.session-tool.v1",
   },
 ] as const;
@@ -78,6 +82,7 @@ export function resolveOpenClawToolCompatibility(value: unknown): OpenClawToolCo
     typeof hello.server.connId !== "string" ||
     !hello.server.connId.trim() ||
     !hello.features
+    || (hello.features.capabilities !== undefined && strings(hello.features.capabilities) === null)
     || !hello.snapshot || typeof hello.snapshot !== "object" || Array.isArray(hello.snapshot)
     || !hello.auth || hello.auth.role !== "operator" || !strings(hello.auth.scopes)?.includes("operator.read")
     || !hello.policy || !positiveSafeInteger(hello.policy.maxPayload)
@@ -98,11 +103,10 @@ export function resolveOpenClawToolCompatibility(value: unknown): OpenClawToolCo
   }
   const methods = strings(hello.features.methods);
   const events = strings(hello.features.events);
-  const capabilities = strings(hello.features.capabilities);
+  const capabilities = strings(hello.features.capabilities) ?? [];
   const supported =
     methods !== null &&
     events !== null &&
-    capabilities !== null &&
     adapter.requiredMethods.every((method) => methods.includes(method)) &&
     adapter.requiredEvents.every((event) => events.includes(event)) &&
     adapter.requiredCapabilities.every((capability) => capabilities.includes(capability));

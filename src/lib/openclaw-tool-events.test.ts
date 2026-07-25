@@ -29,17 +29,36 @@ assert.equal(
   "a newer incompatible protocol must fall back until an adapter is shipped",
 );
 assert.equal(
-  resolveOpenClawToolCompatibility({ ...hello, features: { methods: [], events: [] } }).reason,
+  resolveOpenClawToolCompatibility({
+    ...hello,
+    features: { ...hello.features, methods: ["chat.send"] },
+  }).reason,
   "missing_feature",
   "capability discovery must be stricter than a version match",
 );
 assert.equal(
   resolveOpenClawToolCompatibility({
     ...hello,
-    features: { ...hello.features, capabilities: [] },
+    features: { ...hello.features, events: ["chat"] },
   }).reason,
   "missing_feature",
-  "the versioned session.tool payload contract must be negotiated explicitly",
+  "the session.tool event must be discovered explicitly",
+);
+assert.equal(
+  resolveOpenClawToolCompatibility({
+    ...hello,
+    features: { ...hello.features, capabilities: ["unexpected-server-capability"] },
+  }).reason,
+  undefined,
+  "server capabilities do not replace the client tool-events capability",
+);
+assert.equal(
+  resolveOpenClawToolCompatibility({
+    ...hello,
+    features: { ...hello.features, capabilities: ["unexpected-server-capability", 1] },
+  } as never).reason,
+  "invalid_hello",
+  "malformed optional server-capability metadata must fail closed",
 );
 
 const [startFrame, updateFrame, terminalFrame] = fixture.frames;
