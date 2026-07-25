@@ -12,7 +12,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?const launch = openCodeCompatibility\.schema!\.launch;[\s\S]*?a\.push\(launch\.structuredOutput\.option, launch\.structuredOutput\.value, \.\.\.launch\.requiredFlags\);[\s\S]*?launch\.sessionOption[\s\S]*?else if \(resumeSessionId && openCodeCompatibility\?\.capabilities\.session\) a\.push\("--session", resumeSessionId\);/,
+  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?const launch = openCodeCompatibility\.schema!\.launch;[\s\S]*?a\.push\(launch\.structuredOutput\.option, launch\.structuredOutput\.value, \.\.\.launch\.requiredFlags\);[\s\S]*?launch\.sessionOption[\s\S]*?if \(forwardModel\)/,
   "OpenCode uses the selected schema's discovered structured-output and session argv contract rather than a version threshold",
 );
 assert.match(
@@ -102,8 +102,8 @@ assert.match(
 );
 assert.match(
   route,
-  /openCodeDirect && body\.sessionId && existingConversation && \([\s\S]*?!openCodeCompatibility\?\.capabilities\.session \|\| !existingConversation\.harnessSessionId[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
-  "plain-mode follow-ups replay Cave context when no native OpenCode session was minted",
+  /openCodeDirect && body\.sessionId && existingConversation && \([\s\S]*?openCodeCompatibility\?\.mode !== "structured"[\s\S]*?\|\| !openCodeCompatibility\?\.capabilities\.session[\s\S]*?\|\| !existingConversation\.harnessSessionId[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  "plain-mode follow-ups replay Cave context instead of guessing a native resume flag",
 );
 assert.match(
   route,

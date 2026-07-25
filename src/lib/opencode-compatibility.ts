@@ -220,7 +220,10 @@ function hasValidLaunch(value: unknown, requires: Record<string, unknown>): bool
   if (structuredOutput.value !== requires.protocol && structuredOutput.value !== "json") return false;
   if (value.sessionOption !== undefined && value.sessionOption !== "--session" && value.sessionOption !== "--resume") return false;
   if (requires.session === true && value.sessionOption === undefined) return false;
-  return value.requiredFlags.length <= 12 && value.requiredFlags.every((flag) => typeof flag === "string" && /^--[a-z][a-z0-9-]{0,63}$/i.test(flag) && flag !== structuredOutput.option && flag !== value.sessionOption && flag !== "--model");
+  // The registry may describe protocol selection, but must never add launch
+  // switches. Some OpenCode flags (for example `--auto`) alter permission
+  // approval; keeping this list empty preserves Cave's local safety policy.
+  return value.requiredFlags.length === 0;
 }
 
 function isEventSchema(value: unknown): value is OpenCodeEventSchema {

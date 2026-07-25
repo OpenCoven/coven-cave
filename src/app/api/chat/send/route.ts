@@ -1370,7 +1370,6 @@ export async function POST(req: Request) {
         a.push(launch.structuredOutput.option, launch.structuredOutput.value, ...launch.requiredFlags);
         if (resumeSessionId && launch.sessionOption) a.push(launch.sessionOption, resumeSessionId);
       }
-      else if (resumeSessionId && openCodeCompatibility?.capabilities.session) a.push("--session", resumeSessionId);
       if (forwardModel) a.push("--model", forwardModel);
       a.push(prompt);
       return a;
@@ -1421,7 +1420,9 @@ export async function POST(req: Request) {
   // earlier conversation context.
   const openCodeFreshSessionForCompatibility = Boolean(
     openCodeDirect && body.sessionId && existingConversation && (
-      !openCodeCompatibility?.capabilities.session || !existingConversation.harnessSessionId
+      openCodeCompatibility?.mode !== "structured"
+      || !openCodeCompatibility?.capabilities.session
+      || !existingConversation.harnessSessionId
     ),
   );
   const openCodeSessionUnavailable = !openCodeCompatibility?.capabilities.session;

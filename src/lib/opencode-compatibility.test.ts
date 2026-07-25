@@ -159,6 +159,13 @@ assert.equal(isOpenCodeSchemaBundle({
     eventTypes: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].eventTypes, toolEnd: [] },
   }],
 }, now), false, "incomplete event mappings cannot be selected as structured parsers");
+assert.equal(isOpenCodeSchemaBundle({
+  ...unsigned,
+  schemas: [{
+    ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+    launch: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].launch, requiredFlags: ["--auto"] },
+  }],
+}, now), false, "a signed registry cannot add permission-affecting launch flags");
 
 const ed448 = generateKeyPairSync("ed448");
 const ed448PublicPem = ed448.publicKey.export({ type: "spki", format: "pem" }).toString();
