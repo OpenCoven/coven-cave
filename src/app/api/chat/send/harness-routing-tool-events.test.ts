@@ -91,6 +91,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /binding\.harness === "claude" && \(trimmed\.startsWith\("\{"\) \|\| trimmed\.startsWith\("\["\)\)/,
+  "malformed Claude array frames must also bypass payload-bearing stdout diagnostics",
+);
+
+assert.match(
+  chatRoute,
   /toolTracker = new ToolCallTracker\(\);/,
   "The resume retry should reset the tool tracker alongside the other per-attempt state",
 );

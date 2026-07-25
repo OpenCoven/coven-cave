@@ -1994,10 +1994,11 @@ export async function POST(req: Request) {
         }
         const cleaned = resolveBackspaces(stripAnsi(line));
         const trimmed = cleaned.trim();
-        // `isJson` requires a closing brace, so an unterminated Claude JSONL
-        // frame reaches this path. Treat it like any other malformed stream
-        // frame instead of rendering or retaining its raw payload.
-        if (binding.harness === "claude" && trimmed.startsWith("{")) {
+        // `isJson` requires an object with a closing brace, so malformed
+        // object and array JSONL frames reach this path. Treat them like any
+        // other malformed stream frame instead of rendering or retaining raw
+        // tool payload values in an empty-response diagnostic.
+        if (binding.harness === "claude" && (trimmed.startsWith("{") || trimmed.startsWith("["))) {
           reportMalformedClaudeStreamFrame(line);
           return;
         }
