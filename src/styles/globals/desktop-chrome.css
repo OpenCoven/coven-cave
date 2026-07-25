@@ -159,6 +159,22 @@ button:active > .edge-rail-chip {
 }
 
 @media (min-width: 1024px) {
+  /* Destination shells provide their own visible top-level shell bar on
+     desktop, so it owns the traffic-light reserve. Their route-local headers
+     sit below it and must keep their normal content alignment rather than
+     leaving a second, empty inset. Below this breakpoint .aps-top is hidden,
+     while macOS traffic lights remain visible, so those headers retain their
+     base --titlebar-lights-inset. */
+  :root[data-tauri-titlebar] .aps-top + .aps-body .settings-shell__header {
+    padding-left: var(--space-3);
+  }
+  :root[data-tauri-titlebar] .aps-top + .aps-body .dr-topbar {
+    padding-left: clamp(20px, 5vw, 64px);
+  }
+  :root[data-tauri-titlebar] .aps-top + .aps-body .fa-topbar {
+    padding-left: var(--space-6);
+  }
+
   :root[data-tauri-titlebar] .shell-top {
     /* The slim 29px band hugs the 28px controls so the bar doesn't tower
        over the lights (was 36px — user asked for ~20% shorter). */

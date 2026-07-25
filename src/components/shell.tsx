@@ -16,6 +16,7 @@ import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
+import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { useIsMobile } from "@/lib/use-viewport";
 import { isMacDesktopShell } from "@/lib/tauri-platform";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
@@ -961,31 +962,34 @@ function ShellInner({
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
     </button>
   ) : null;
-  // Workspace owns the destination stack. Keeping it app-scoped means these
-  // controls never escape into an unrelated webview page at the boundary.
+  // Workspace owns its destination stack, while the other shell surfaces use
+  // browser history. Keep the app-scoped boundary controls intact there and
+  // reuse the shared browser controls everywhere else.
   const historyNav = !isMobile ? (
-    <div className="shell-top-history" role="group" aria-label="History">
-      <button
-        type="button"
-        className="shell-top-toggle focus-ring"
-        aria-label="Go back"
-        title={historyNavigation?.canGoBack ? "Back" : "No previous destination"}
-        disabled={!historyNavigation?.canGoBack}
-        onClick={historyNavigation?.goBack}
-      >
-        <Icon name="ph:caret-left" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
-      </button>
-      <button
-        type="button"
-        className="shell-top-toggle focus-ring"
-        aria-label="Go forward"
-        title={historyNavigation?.canGoForward ? "Forward" : "No next destination"}
-        disabled={!historyNavigation?.canGoForward}
-        onClick={historyNavigation?.goForward}
-      >
-        <Icon name="ph:caret-right" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
-      </button>
-    </div>
+    historyNavigation ? (
+      <div className="shell-top-history" role="group" aria-label="History">
+        <button
+          type="button"
+          className="shell-top-toggle focus-ring"
+          aria-label="Go back"
+          title={historyNavigation.canGoBack ? "Back" : "No previous destination"}
+          disabled={!historyNavigation?.canGoBack}
+          onClick={historyNavigation.goBack}
+        >
+          <Icon name="ph:caret-left" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
+        </button>
+        <button
+          type="button"
+          className="shell-top-toggle focus-ring"
+          aria-label="Go forward"
+          title={historyNavigation.canGoForward ? "Forward" : "No next destination"}
+          disabled={!historyNavigation?.canGoForward}
+          onClick={historyNavigation.goForward}
+        >
+          <Icon name="ph:caret-right" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
+        </button>
+      </div>
+    ) : <DesktopHistoryNav />
   ) : null;
 
   return (
