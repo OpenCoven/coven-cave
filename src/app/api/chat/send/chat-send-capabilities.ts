@@ -254,8 +254,13 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
  * The version is retained for support diagnostics only; it never gates a
  * schema because vendors can backport or change protocol behavior.
  */
-export async function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
-  const identity = await openCodeExecutableIdentity();
+export async function openCodeRunCapabilities(familiarId?: string): Promise<OpenCodeRunCapabilities> {
+  // The help/version probes must resolve exactly the binary and scoped vault
+  // environment that will execute the chat turn. Include the familiar scope
+  // in the cache key even when two scopes currently resolve the same binary.
+  const env = openCodeSpawnEnv(familiarId);
+  const executableIdentity = await openCodeExecutableIdentity(env);
+  const identity = `${familiarId ?? "default"}\0${executableIdentity}`;
   if (openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.identity === identity) {
     return openCodeCapabilitiesProbe.value;
   }
@@ -263,8 +268,8 @@ export async function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities
     const helpLaunch = openCodeLaunch(["run", "--help"]);
     const versionLaunch = openCodeLaunch(["--version"]);
     const [helpProbe, versionProbe] = await Promise.all([
-      probeOutput(helpLaunch.command, helpLaunch.args, openCodeSpawnEnv(), helpLaunch.input),
-      probeOutput(versionLaunch.command, versionLaunch.args, openCodeSpawnEnv(), versionLaunch.input),
+      probeOutput(helpLaunch.command, helpLaunch.args, env, helpLaunch.input),
+      probeOutput(versionLaunch.command, versionLaunch.args, env, versionLaunch.input),
     ]);
     const version = versionProbe.complete
       ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null

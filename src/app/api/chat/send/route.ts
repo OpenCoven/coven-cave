@@ -936,8 +936,13 @@ export async function POST(req: Request) {
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
   const openCodeCompatibility = openCodeDirect
-    ? await resolveOpenCodeCompatibility(await openCodeRunCapabilities())
+    ? await resolveOpenCodeCompatibility(await openCodeRunCapabilities(body.familiarId))
     : null;
+  // A selected structured schema is quarantined for the remainder of this
+  // request after it observes an incompatible frame. The retry below launches
+  // without the structured-output switch; never reinterpret that frame as
+  // assistant text.
+  let openCodePlainFallback = false;
   const modelForwardingEnabled =
     hermesDirect
       ? await hermesChatSupportsModel()
@@ -1365,7 +1370,7 @@ export async function POST(req: Request) {
       // If JSON is unavailable, preserve plain chat instead of launching with
       // an unsupported flag and losing the whole reply.
       const a = ["run"];
-      if (openCodeCompatibility?.mode === "structured") {
+      if (openCodeCompatibility?.mode === "structured" && !openCodePlainFallback) {
         const launch = openCodeCompatibility.schema!.launch;
         a.push(launch.structuredOutput.option, launch.structuredOutput.value, ...launch.requiredFlags);
         if (resumeSessionId && launch.sessionOption) a.push(launch.sessionOption, resumeSessionId);
@@ -1616,6 +1621,11 @@ export async function POST(req: Request) {
       let adapterConflict: BuiltinAdapterConflict | null = null;
       let openCodeCompatibilityNoticeSent = false;
       let openCodeModelRejected = false;
+      // Unknown or malformed JSON proves that the selected schema no longer
+      // describes this stream. A fresh plain attempt is safe only if this
+      // attempt has not emitted any trusted assistant/tool/error activity.
+      let openCodeStructuredIncompatibility = false;
+      let openCodeStructuredTrustedActivity = false;
 
       // Model parity: the harness echoes its resolved model on the init/system
       // stream event. Capturing it lets the application state render honestly as
@@ -1841,7 +1851,16 @@ export async function POST(req: Request) {
       };
 
       const handleOpenCodeLine = (line: string) => {
-        if (openCodeCompatibility?.mode === "plain") {
+        if (openCodeCompatibility?.mode === "plain" || openCodePlainFallback) {
+          // The retry deliberately asks OpenCode for plain output. If it still
+          // sends a JSON-shaped envelope, do not promote provider-controlled
+          // fields to assistant text merely because structured parsing was
+          // quarantined.
+          if (openCodePlainFallback && line.startsWith("{") && line.endsWith("}")) {
+            recordStdoutErrorTail("OpenCode emitted JSON during plain compatibility fallback", true);
+            result = { ...result, is_error: true };
+            return;
+          }
           const text = `${resolveBackspaces(stripAnsi(line))}\n`;
           assistantText += text;
           push({ kind: "assistant_chunk", text });
@@ -1853,11 +1872,13 @@ export async function POST(req: Request) {
             if (!sessionId) announceSession(nativeSessionId);
           },
           onText: (ev) => {
+            openCodeStructuredTrustedActivity = true;
             const text = ev.text.endsWith("\n") ? ev.text : `${ev.text}\n`;
             assistantText += text;
             push({ kind: "assistant_chunk", text });
           },
           onTool: (ev) => {
+            openCodeStructuredTrustedActivity = true;
             boundarySentinel?.observe(ev.name, ev.input);
             const started = toolTracker.envelopeToolUse(
               ev.id,
@@ -1881,6 +1902,7 @@ export async function POST(req: Request) {
             if (ended) push({ kind: "tool_use", ...ended });
           },
           onToolStart: (ev) => {
+            openCodeStructuredTrustedActivity = true;
             boundarySentinel?.observe(ev.name, ev.input);
             const started = toolTracker.envelopeToolUse(
               ev.id,
@@ -1893,6 +1915,7 @@ export async function POST(req: Request) {
             if (reorderedEnd) push({ kind: "tool_use", ...reorderedEnd });
           },
           onToolEnd: (ev) => {
+            openCodeStructuredTrustedActivity = true;
             const ended = toolTracker.envelopeToolResult(
               ev.id,
               typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
@@ -1901,6 +1924,7 @@ export async function POST(req: Request) {
             if (ended) push({ kind: "tool_use", ...ended });
           },
           onError: (ev) => {
+            openCodeStructuredTrustedActivity = true;
             // This is an explicit error envelope, so retain its error state
             // even if its message does not match the generic stderr filter.
             // Error envelopes are provider-controlled and can repeat prompts,
@@ -1915,11 +1939,12 @@ export async function POST(req: Request) {
             // Do not treat arbitrary `text`/`content` on an unknown envelope
             // as assistant output: tool progress and provider errors often
             // carry those fields and may contain secrets or file contents.
+            openCodeStructuredIncompatibility = true;
             if (!openCodeCompatibilityNoticeSent) {
               openCodeCompatibilityNoticeSent = true;
               pushProgress(
                 "opencode-compatibility",
-                "OpenCode sent an unrecognized event; that event was skipped while compatible tool activity continues",
+                "OpenCode sent an unrecognized event; compatible activity will continue, or Cave will safely retry in plain chat",
                 "error",
                 `${ev.diagnostic ?? "unknown-event"}:${redactedOpenCodeEventFingerprint(rawEvent)}`,
               );
@@ -1929,12 +1954,13 @@ export async function POST(req: Request) {
           // Structured-mode stdout can contain a malformed future event with
           // arbitrary tool payloads. Do not feed that raw line into the
           // persisted error tail or any user-visible diagnostic.
-          recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
+            recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
+          openCodeStructuredIncompatibility = true;
           if (!openCodeCompatibilityNoticeSent) {
             openCodeCompatibilityNoticeSent = true;
             pushProgress(
               "opencode-compatibility",
-              "OpenCode sent a malformed event; that event was skipped while compatible tool activity continues",
+              "OpenCode sent a malformed event; compatible activity will continue, or Cave will safely retry in plain chat",
               "error",
               "malformed-json-event",
             );
@@ -2387,6 +2413,48 @@ export async function POST(req: Request) {
         await runAttempt(args);
       }
 
+      // A future client can retain the same documented launch surface while
+      // changing JSON event labels. Do not render unknown envelopes as text.
+      // When the failed structured attempt emitted no trusted activity, retry
+      // once as a fresh plain chat so the user still receives its reply.
+      if (
+        openCodeDirect
+        && openCodeStructuredIncompatibility
+        && !openCodeStructuredTrustedActivity
+        && !runHandle.stopRequested
+      ) {
+        const retry = buildResumeRetryPrompt(harnessPrompt, existingConversation);
+        pushProgress(
+          "opencode-compatibility",
+          retry.replayedHistory
+            ? "OpenCode's JSON protocol changed; replaying recent context in plain chat"
+            : "OpenCode's JSON protocol changed; restarting safely in plain chat",
+          "running",
+          "structured-stream-quarantined",
+        );
+        openCodePlainFallback = true;
+        if (!sessionId) announceSession(crypto.randomUUID());
+        assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
+        assistantText = "";
+        jsonBuf = "";
+        result = {};
+        toolTracker = new ToolCallTracker();
+        openCodeSessionId = null;
+        openCodeModelRejected = false;
+        stderrTail.length = 0;
+        stdoutErrTail.length = 0;
+        resumeFailed = false;
+        openCodeStructuredIncompatibility = false;
+        openCodeStructuredTrustedActivity = false;
+        pushProgress(
+          "opencode-compatibility",
+          "OpenCode restarted in plain chat",
+          "done",
+          "structured-stream-quarantined",
+        );
+        await runAttempt(buildArgs(null, retry.prompt));
+      }
+
       // Transparent retry: if codex reported its rollout-resume failed and
       // we had been resuming, start a fresh thread (no --continue) so the
       // user's prompt still gets answered. A fresh harness session has no
@@ -2452,7 +2520,10 @@ export async function POST(req: Request) {
         const durMs = result.duration_ms;
         const durSuffix = durMs != null ? ` in ${durMs}ms` : "";
         const tailSource = stderrTail.length ? stderrTail : stdoutErrTail;
-        const tailBlock = tailSource.length
+        // OpenCode stderr can include request bodies, provider diagnostics, or
+        // local paths. It is useful for other harnesses' existing recovery
+        // guidance, but must never become assistant-visible/persisted text.
+        const tailBlock = !openCodeDirect && tailSource.length
           ? `\n\n\`\`\`\n${tailSource.slice(-5).join("\n")}\n\`\`\``
           : "";
         const diagnostic = result.is_error
@@ -2533,11 +2604,11 @@ export async function POST(req: Request) {
       // access session.
       const harnessSessionId = grokDirect
         ? grokSessionId
-        : openCodeDirect && openCodeCompatibility?.mode === "plain"
-          ? undefined
-          : openCodeDirect
-            ? openCodeSessionId ?? existingConversation?.harnessSessionId ?? (!existingConversation ? body.sessionId : undefined)
-            : sessionId;
+        : openCodeDirect
+          // Plain output has no new native id to announce, but a native id
+          // used to resume this turn remains valid for its next resume.
+          ? openCodeSessionId ?? existingConversation?.harnessSessionId ?? (!existingConversation ? body.sessionId : undefined)
+          : sessionId;
       // OpenCode's JSON event protocol does not echo the selected model. Its
       // direct argv proves the selection was forwarded, while a successful
       // exit is the only confirmation it was applied. Preserve an explicit

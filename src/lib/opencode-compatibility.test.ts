@@ -156,6 +156,22 @@ assert.equal(
 );
 
 assert.equal(isOpenCodeSchemaBundle({ ...unsigned, schemas: [] }, now), false, "empty signed bundles cannot replace a working parser set");
+assert.equal(
+  isOpenCodeSchemaBundle({
+    ...unsigned,
+    schemas: [{
+      ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+      id: "split-lifecycle-only",
+      eventTypes: {
+        ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].eventTypes,
+        ignored: [],
+        toolComplete: [],
+      },
+    }],
+  }, now),
+  true,
+  "schemas may omit lifecycle-only and combined-tool categories when split frames describe the protocol",
+);
 assert.equal(isOpenCodeSchemaBundle({ ...unsigned, unexpected: true }, now), false, "unknown format-1 bundle fields fail closed");
 assert.equal(isOpenCodeSchemaBundle({
   ...unsigned,
@@ -399,6 +415,25 @@ const recoveredLock = await loadOpenCodeSchemaBundle({
   fetch: async () => new Response(JSON.stringify(signedSequence3), { status: 200 }),
 });
 assert.equal(recoveredLock.bundle.sequence, 3, "a stale writer lock cannot permanently block cache recovery after a crash");
+
+const rollbackRaceFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-rollback-race-")), "bundle.json");
+await writeFile(rollbackRaceFile, JSON.stringify({ checkedAt: now, bundle: signed }));
+const rollbackRace = await loadOpenCodeSchemaBundle({
+  cacheFile: rollbackRaceFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now + 7 * 60 * 60 * 1000,
+  fetch: async () => {
+    // Simulate another process accepting a newer contract after this process
+    // captured sequence 2 but before its sequence 2 response reaches the
+    // monotonic check.
+    await writeFile(rollbackRaceFile, JSON.stringify({ checkedAt: now + 7 * 60 * 60 * 1000, bundle: signedSequence3 }));
+    return new Response(JSON.stringify(signed), { status: 200 });
+  },
+});
+assert.equal(rollbackRace.bundle.sequence, 3, "a rejected concurrent rollback re-reads and selects the newer verified cache");
+assert.equal(rollbackRace.source, "cache");
+assert.equal(rollbackRace.diagnostic, "schema-registry-refresh-rejected");
 
 const concurrentCacheFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-concurrent-")), "bundle.json");
 await writeFile(concurrentCacheFile, JSON.stringify({ checkedAt: now, bundle: signed }));

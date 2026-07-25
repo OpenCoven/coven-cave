@@ -12,6 +12,11 @@ assert.match(
 );
 assert.match(
   route,
+  /resolveOpenCodeCompatibility\(await openCodeRunCapabilities\(body\.familiarId\)\)/,
+  "OpenCode capability discovery uses the same familiar scope as its launched runtime",
+);
+assert.match(
+  route,
   /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?const launch = openCodeCompatibility\.schema!\.launch;[\s\S]*?a\.push\(launch\.structuredOutput\.option, launch\.structuredOutput\.value, \.\.\.launch\.requiredFlags\);[\s\S]*?launch\.sessionOption[\s\S]*?options\.includes\("--session"\)[\s\S]*?options\.includes\("--resume"\)[\s\S]*?if \(forwardModel\)/,
   "OpenCode uses selected structured syntax and only a help-confirmed plain-mode resume option rather than a version threshold",
 );
@@ -67,8 +72,8 @@ assert.match(
 );
 assert.match(
   route,
-  /onOther: \(ev, rawEvent\) => \{[\s\S]*?unrecognized event; that event was skipped while compatible tool activity continues/,
-  "an unknown OpenCode envelope is skipped without suppressing later compatible tool activity",
+  /let openCodePlainFallback = false;[\s\S]*?onOther: \(ev, rawEvent\) => \{[\s\S]*?openCodeStructuredIncompatibility = true;[\s\S]*?structured-stream-quarantined[\s\S]*?openCodePlainFallback = true;[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
+  "an unknown OpenCode envelope quarantines structured parsing and safely retries only a no-activity turn in plain chat",
 );
 assert.match(
   route,
@@ -92,6 +97,11 @@ assert.match(
 );
 assert.match(
   route,
+  /const tailBlock = !openCodeDirect && tailSource\.length/,
+  "OpenCode stderr never becomes assistant-visible or persisted empty-response diagnostics",
+);
+assert.match(
+  route,
   /openCodeCompatibility\?\.mode === "plain"[\s\S]*?assistant_chunk/,
   "clients without structured output fall back to plain assistant text instead of dropping a reply",
 );
@@ -102,8 +112,8 @@ assert.match(
 );
 assert.match(
   route,
-  /openCodeCompatibility\?\.mode === "plain"[\s\S]*?\? undefined[\s\S]*?: sessionId/,
-  "a Cave-owned plain-mode id is never mistaken for a native OpenCode resume token",
+  /const harnessSessionId = grokDirect[\s\S]*?: openCodeDirect[\s\S]*?openCodeSessionId \?\? existingConversation\?\.harnessSessionId \?\? \(!existingConversation \? body\.sessionId : undefined\)/,
+  "a plain OpenCode turn retains the native id it used to resume without mistaking Cave's stable id for a new native token",
 );
 assert.match(
   route,
@@ -132,13 +142,13 @@ assert.match(
 );
 assert.match(
   route,
-  /const handleOpenCodeLine[\s\S]*?onMalformedJson: \(\) => \{[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)/,
-  "malformed structured OpenCode events never copy their raw payload into diagnostics",
+  /const handleOpenCodeLine[\s\S]*?openCodePlainFallback && line\.startsWith\("\{"\)[\s\S]*?onMalformedJson: \(\) => \{[\s\S]*?openCodeStructuredIncompatibility = true;[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)/,
+  "malformed structured OpenCode events quarantine parsing without copying raw JSON into assistant text or diagnostics",
 );
 assert.match(
   capabilities,
-  /export async function openCodeRunCapabilities\([^)]*\)[\s\S]*?openCodeExecutableIdentity\(\)[\s\S]*?\["--version"\][\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
-  "OpenCode discovers feature support from the current executable and records version only for diagnostics",
+  /export async function openCodeRunCapabilities\(familiarId\?[^)]*\)[\s\S]*?const env = openCodeSpawnEnv\(familiarId\);[\s\S]*?openCodeExecutableIdentity\(env\)[\s\S]*?const versionLaunch = openCodeLaunch\(\["--version"\]\);[\s\S]*?probeOutput\(helpLaunch\.command, helpLaunch\.args, env[\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
+  "OpenCode discovers feature support from the scoped executable environment and records version only for diagnostics",
 );
 
 console.log("opencode harness routing tests passed");

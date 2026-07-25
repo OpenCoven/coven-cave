@@ -283,7 +283,18 @@ function isEventSchema(value: unknown): value is OpenCodeEventSchema {
   // boundary while validating, then use the internal shape for the duplicate
   // label checks below.
   const eventTypes = value.eventTypes as unknown as OpenCodeEventSchema["eventTypes"];
-  if (Object.keys(eventTypes).length !== eventKeys.length || !eventKeys.every((key) => Array.isArray(eventTypes[key]) && eventTypes[key].length > 0 && eventTypes[key].length <= 32 && eventTypes[key].every((type: unknown) => typeof type === "string" && type.length > 0 && type.length <= 80))) return false;
+  if (Object.keys(eventTypes).length !== eventKeys.length || !eventKeys.every((key) => {
+    const labels = eventTypes[key];
+    // `ignored` and `toolComplete` are protocol-shape optional: a schema may
+    // use only split tool frames and may have no lifecycle-only frames. The
+    // other categories remain required so a selected profile always has a
+    // trusted assistant-text and tool/error contract.
+    const mayBeEmpty = key === "ignored" || key === "toolComplete";
+    return Array.isArray(labels)
+      && (mayBeEmpty || labels.length > 0)
+      && labels.length <= 32
+      && labels.every((type: unknown) => typeof type === "string" && type.length > 0 && type.length <= 80);
+  })) return false;
   const nonToolLabels = new Set<string>();
   for (const key of ["ignored", "text", "error", "toolEnd"] as const) {
     for (const label of eventTypes[key] as unknown[]) {
@@ -766,6 +777,14 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   try {
     return await refresh;
   } catch {
+    // Another process may have installed a newer verified contract after this
+    // invocation captured `cached` but before its refresh lost the cache lock
+    // to a rollback rejection. Re-read first so this turn cannot regress to
+    // the stale parser that initiated the race.
+    const current = await readVerifiedCache(file, publicKeys, now);
+    if (current && (!cached || current.bundle.sequence >= cached.bundle.sequence)) {
+      return { bundle: current.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" };
+    }
     // A verified stale bundle is still valid for its own expiry window. Keep
     // using it, but surface this turn's rejected refresh instead of hiding the
     // first recovery failure until the retry backoff path runs.

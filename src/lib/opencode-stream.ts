@@ -68,9 +68,11 @@ function textEnvelope(event: Record<string, unknown>, schema: OpenCodeEventSchem
 }
 
 function eventTypes(schema: OpenCodeEventSchema | undefined, kind: keyof OpenCodeEventSchema["eventTypes"], defaults: string[]): string[] {
-  // Selected signed schemas are authoritative: the validator rejects empty
-  // mappings, so falling back here could revive a label that a registry
-  // deliberately retired. Defaults are only for legacy callers with no schema.
+  // Selected signed schemas are authoritative. Empty optional mappings are
+  // intentional (for example, a split-lifecycle protocol has no combined
+  // tool-complete frame), so falling back here could revive a label that a
+  // registry deliberately retired. Defaults are only for legacy callers with
+  // no schema.
   return schema ? schema.eventTypes[kind] : defaults;
 }
 
