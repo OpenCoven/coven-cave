@@ -423,7 +423,6 @@ export async function refreshCodexSchemaCache(
   }
 }
 
-const DEFAULT_CODEX_SCHEMA_REGISTRY_URL = "https://raw.githubusercontent.com/OpenCoven/coven-runtimes/main/registry/codex/schemas.json";
 const schemaRefreshes = new Map<string, { checkedAt: number; pending: Promise<void> | null }>();
 
 /**
@@ -536,10 +535,14 @@ export async function productionCodexSchemaSources(options: {
   const cached = await readCodexSchemaCache(cachePath, verifier, now);
   if (cached) sources.push({ source: "cache", schemas: cached.schemas });
 
-  const registryUrl = options.registryUrl ?? process.env.COVEN_CODEX_SCHEMA_REGISTRY_URL ?? DEFAULT_CODEX_SCHEMA_REGISTRY_URL;
+  // The runtime registry currently publishes adapter manifests, not signed
+  // Codex event schemas. Do not silently poll a guessed URL: deployments that
+  // operate a signed schema registry opt in explicitly, and stock clients keep
+  // using the reviewed bootstrap schemas plus a verified LKG cache.
+  const registryUrl = options.registryUrl ?? process.env.COVEN_CODEX_SCHEMA_REGISTRY_URL;
   const refresh = schemaRefreshes.get(cachePath);
   const refreshDue = !refresh || Date.now() - refresh.checkedAt >= 5 * 60_000;
-  if (refreshDue && !refresh?.pending) {
+  if (registryUrl && refreshDue && !refresh?.pending) {
     const fetchImpl = options.fetchImpl ?? fetch;
     const pending = refreshCodexSchemaCache(
       cachePath,
@@ -649,8 +652,17 @@ export async function discoverCachedCodexRuntime(
   env = codexProbeEnv(),
   now = Date.now(),
 ): Promise<CodexRuntimeReport> {
+  return startCodexRuntimeDiscovery(command, timeout, env, now);
+}
+
+function startCodexRuntimeDiscovery(
+  command: string,
+  timeout: number,
+  env: NodeJS.ProcessEnv,
+  now: number,
+): Promise<CodexRuntimeReport> {
   const cached = codexProbeCache;
-  if (cached && cached.expiresAt > now) return cached.pending ?? cached.report;
+  if (cached && cached.expiresAt > now) return cached.pending ?? Promise.resolve(cached.report);
   const pending = discoverCodexRuntime(command, timeout, env).then((report) => {
     codexProbeCache = {
       report,
@@ -664,6 +676,25 @@ export async function discoverCachedCodexRuntime(
     pending,
   };
   return pending;
+}
+
+/**
+ * Return the last probe result immediately and warm a stale entry in the
+ * background. A cold process spawn must not put a chat request on the critical
+ * path; that first turn safely uses the text-only fallback while later turns
+ * use the cached, capability-gated schema.
+ */
+export function peekCachedCodexRuntime(
+  command = "codex",
+  timeout = 1_500,
+  env = codexProbeEnv(),
+  now = Date.now(),
+): CodexRuntimeReport {
+  const cached = codexProbeCache;
+  if (!cached || cached.expiresAt <= now) {
+    void startCodexRuntimeDiscovery(command, timeout, env, now);
+  }
+  return cached?.report ?? { version: null, capabilities: { jsonEvents: false, resume: false } };
 }
 
 export type CodexStreamEvent =

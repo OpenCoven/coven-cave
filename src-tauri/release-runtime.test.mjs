@@ -390,7 +390,7 @@ test("mobile startup remains available after native-host extraction", async () =
 
   assert.match(nativeHost, /\nmod tauri_setup;/);
   assert.doesNotMatch(nativeHost, /#\[cfg\(desktop\)\]\s*\nmod tauri_setup;/);
-  assert.match(setup, /#\[cfg_attr\(mobile, tauri::mobile_entry_point\)\]\npub fn run\(\)/);
+  assert.match(setup, /#\[cfg_attr\(mobile, tauri::mobile_entry_point\)\]\r?\npub fn run\(\)/);
 });
 
 test("Windows close watchdog helper follows extracted lifecycle tests", async () => {

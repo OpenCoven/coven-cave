@@ -272,8 +272,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /discoverCachedCodexRuntime\("codex", 1_500, codexProbeEnv\(harnessSpawnEnv\(\)\)\)[\s\S]*?productionCodexSchemaSources\(\)/,
-  "Codex parsing must use a credential-free cached probe and verified schema sources",
+  /peekCachedCodexRuntime\("codex", 1_500, codexProbeEnv\(harnessSpawnEnv\(\)\)\)[\s\S]*?productionCodexSchemaSources\(\)/,
+  "Codex parsing must use a credential-free non-blocking cached probe and verified schema sources",
 );
 
 assert.match(

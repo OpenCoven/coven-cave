@@ -236,6 +236,16 @@ try {
     now: new Date("2026-07-24T12:00:00.000Z"),
   });
   assert.equal(productionSources.some((source) => source.source === "cache"), true, "production selection hydrates a verified last-known-good cache before refresh");
+  let unexpectedDefaultFetches = 0;
+  await productionCodexSchemaSources({
+    cachePath: path.join(cacheDir, "no-default-registry.json"),
+    verifier: verify,
+    fetchImpl: async () => {
+      unexpectedDefaultFetches += 1;
+      return new Response("unexpected");
+    },
+  });
+  assert.equal(unexpectedDefaultFetches, 0, "stock clients do not poll an unprovisioned schema registry URL");
   assert.equal(await refreshCodexSchemaCache(cachePath, async () => ({ ...document, contentHash: "0".repeat(64) }), verify, new Date("2026-07-24T12:00:00.000Z")), "retained", "failed refreshes preserve last-known-good cache");
   assert.equal((await readCodexSchemaCache(cachePath, verify, new Date("2026-07-24T12:00:00.000Z")))?.contentHash, newerDocument.contentHash, "failed refresh preserves the newest last-known-good cache");
 } finally {

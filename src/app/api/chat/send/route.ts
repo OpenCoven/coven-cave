@@ -42,7 +42,7 @@ import {
   CodexJsonlDecoder,
   CODEX_TEXT_ONLY_FALLBACK_SCHEMA,
   codexProbeEnv,
-  discoverCachedCodexRuntime,
+  peekCachedCodexRuntime,
   productionCodexSchemaSources,
   resolveCodexSchema,
 } from "@/lib/codex-compatibility";
@@ -939,12 +939,13 @@ export async function POST(req: Request) {
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
   // Codex's JSONL item protocol evolves independently of Cave. Discover the
-  // local CLI and select a constrained version/capability schema once per
-  // turn; unknown versions retain the established generic stream path.
+  // local CLI and select a constrained version/capability schema once a
+  // cached probe is available; a cold probe warms in the background so it
+  // never delays chat startup. Unknown versions retain the generic path.
   const codexCompatibility =
     !sshRuntime && binding.harness === "codex"
       ? resolveCodexSchema(
-        await discoverCachedCodexRuntime("codex", 1_500, codexProbeEnv(harnessSpawnEnv())),
+        peekCachedCodexRuntime("codex", 1_500, codexProbeEnv(harnessSpawnEnv())),
         await productionCodexSchemaSources(),
       )
       : null;
