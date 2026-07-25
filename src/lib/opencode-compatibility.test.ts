@@ -612,6 +612,25 @@ assert.equal(
   "json-with-tool-events",
   "a help-confirmed tool-event flag makes its parser more specific than the plain JSON baseline",
 );
+const shortToolEventsSchema = {
+  ...toolEventsSchema,
+  id: "json-with-short-tool-events",
+  launch: { ...toolEventsSchema.launch, requiredFlags: ["--tool-events"] },
+};
+assert.equal(
+  isOpenCodeSchemaBundle({ ...unsigned, schemas: [shortToolEventsSchema] }, now),
+  true,
+  "a versioned schema may add a documented neutral tool-event output flag within the audited grammar",
+);
+assert.equal(
+  selectOpenCodeSchema([shortToolEventsSchema], {
+    ...toolEventsCapabilities,
+    options: ["--format", "--session", "--tool-events"],
+    noValueOptions: ["--tool-events"],
+  })?.id,
+  "json-with-short-tool-events",
+  "a safe registry flag remains gated on the exact valueless option advertised by run help",
+);
 assert.equal(
   selectOpenCodeSchema([toolEventsSchema], {
     ...toolEventsCapabilities,

@@ -320,16 +320,13 @@ const SAFE_STRUCTURED_LAUNCH_OPTION = /^--[a-z0-9-]*(?:format|output|json|event|
 const UNSAFE_STRUCTURED_LAUNCH_OPTIONS = new Set([
   "--auto", "--permission", "--sandbox", "--skip-permissions", "--dangerously-skip-permissions", "--trust-all-tools", "--yolo",
 ]);
-// A registry describes how to frame and parse a stream; it must never widen
-// what an OpenCode invocation is allowed to do. Keep the remotely supplied
-// companion flags to a versioned, locally audited set that only asks the CLI
-// to include structured output. Each one is still separately confirmed as a
-// declared valueless `run` option before its schema can be selected; a signed
-// registry never gets to introduce an arbitrary command switch.
-const SAFE_STRUCTURED_REQUIRED_FLAGS = new Set([
-  "--event-stream",
-  "--include-tool-events",
-]);
+// Format 1 can add only output-event switches. This constrained grammar and
+// denylist keep a signed registry from widening tool permissions or execution
+// policy, while allowing a newly documented neutral flag (for example
+// `--tool-events`) without requiring an app release. Every flag is separately
+// confirmed as a declared *valueless* `opencode run` option before selection.
+const SAFE_STRUCTURED_REQUIRED_FLAG = /^--(?:(?:include|emit|output|show)-)?(?:(?:tool-(?:event|events|stream|streams))|(?:(?:event|events|stream|streams)(?:-[a-z0-9]+)*))$/i;
+const MAX_SAFE_STRUCTURED_REQUIRED_FLAGS = 4;
 
 function safeStructuredLaunchOption(value: unknown): value is string {
   return typeof value === "string"
@@ -353,8 +350,8 @@ function hasValidLaunch(value: unknown, requires: Record<string, unknown>): bool
   if (structuredOutput.value === undefined && (typeof requires.protocol !== "string" || !structuredOutput.option.toLowerCase().includes("json"))) return false;
   if (value.sessionOption !== undefined && value.sessionOption !== "--session" && value.sessionOption !== "--resume") return false;
   if (requires.session === true && value.sessionOption === undefined) return false;
-  return value.requiredFlags.length <= SAFE_STRUCTURED_REQUIRED_FLAGS.size
-    && value.requiredFlags.every((flag) => typeof flag === "string" && SAFE_STRUCTURED_REQUIRED_FLAGS.has(flag))
+  return value.requiredFlags.length <= MAX_SAFE_STRUCTURED_REQUIRED_FLAGS
+    && value.requiredFlags.every((flag) => typeof flag === "string" && SAFE_STRUCTURED_REQUIRED_FLAG.test(flag) && !UNSAFE_STRUCTURED_LAUNCH_OPTIONS.has(flag.toLowerCase()))
     && new Set(value.requiredFlags).size === value.requiredFlags.length
     && !value.requiredFlags.includes(structuredOutput.option);
 }
@@ -599,6 +596,15 @@ function cacheTrustPath(file: string): string {
 }
 
 /**
+ * This is deliberately separate from the replaceable parser cache and its
+ * recovery sidecar. It retains only verified signed high-water state, so a
+ * damaged cache cannot make an already accepted remote sequence replayable.
+ */
+function cacheTrustAnchorPath(file: string): string {
+  return `${file}.anchor`;
+}
+
+/**
  * The cache is writable local state, so do not let a corrupt or maliciously
  * enlarged file bypass the registry response limit and exhaust process memory
  * before signature verification. Reading from one open handle also bounds the
@@ -728,29 +734,43 @@ async function readCachedTrustState(
   publicKey: string | OpenCodeRegistryKeyring,
   now: number,
   checkpoint?: OpenCodeRegistryCheckpoint,
+  trustAnchorFile = cacheTrustAnchorPath(file),
 ): Promise<CachedBundle | null> {
-  const [primary, backup] = await Promise.all([
+  const [primary, backup, anchor] = await Promise.all([
     readTrustedCacheRecord(file, publicKey, now),
     readTrustedCacheRecord(cacheTrustPath(file), publicKey, now),
+    readTrustedCacheRecord(trustAnchorFile, publicKey, now),
   ]);
-  const trustedPrimary = primary && meetsOpenCodeRegistryCheckpoint(primary.bundle, checkpoint) ? primary : null;
-  const trustedBackup = backup && meetsOpenCodeRegistryCheckpoint(backup.bundle, checkpoint) ? backup : null;
-  if (!trustedPrimary) return trustedBackup;
-  if (!trustedBackup) return trustedPrimary;
-  // The sidecar is written before the replaceable cache payload, so it wins
-  // only after a strict sequence advance. Equal sequences must be byte-for-
-  // byte identical signed contracts; choosing either one would let a copied
-  // or rewritten cache define parser behavior without a remote comparison.
-  if (
-    trustedPrimary.bundle.sequence === trustedBackup.bundle.sequence
-    && openCodeSchemaBundleSigningPayload(trustedPrimary.bundle) !== openCodeSchemaBundleSigningPayload(trustedBackup.bundle)
-  ) return null;
-  return trustedBackup.bundle.sequence >= trustedPrimary.bundle.sequence ? trustedBackup : trustedPrimary;
+  const trusted = [primary, backup, anchor].filter((cached): cached is CachedBundle =>
+    Boolean(cached) && meetsOpenCodeRegistryCheckpoint(cached.bundle, checkpoint),
+  );
+  if (!trusted.length) return null;
+  const highestSequence = Math.max(...trusted.map((cached) => cached.bundle.sequence));
+  const highest = trusted.filter((cached) => cached.bundle.sequence === highestSequence);
+  // A same-sequence mutation is not made trustworthy by duplicating it into
+  // another local record. Keep the parser boundary closed until a signed
+  // remote refresh resolves the conflict.
+  if (new Set(highest.map((cached) => openCodeSchemaBundleSigningPayload(cached.bundle))).size !== 1) return null;
+  return highest[0];
 }
 
-async function writeVerifiedCache(file: string, cached: CachedBundle): Promise<void> {
-  // Persist the signed trust floor first: a later damaged/truncated primary
-  // file cannot erase the highest accepted sequence before the next refresh.
+async function writeVerifiedCache(
+  file: string,
+  trustAnchorFile: string,
+  publicKey: string | OpenCodeRegistryKeyring,
+  now: number,
+  cached: CachedBundle,
+): Promise<void> {
+  const priorAnchor = await readTrustedCacheRecord(trustAnchorFile, publicKey, now);
+  if (priorAnchor && priorAnchor.bundle.sequence > cached.bundle.sequence) throw new Error("schema rollback");
+  if (
+    priorAnchor
+    && priorAnchor.bundle.sequence === cached.bundle.sequence
+    && openCodeSchemaBundleSigningPayload(priorAnchor.bundle) !== openCodeSchemaBundleSigningPayload(cached.bundle)
+  ) throw new Error("schema sequence rewritten");
+  // Persist the independent signed high-water anchor first: later damage to
+  // both cache records cannot erase the highest accepted registry sequence.
+  await writeJsonAtomic(trustAnchorFile, cached);
   await writeJsonAtomic(cacheTrustPath(file), cached);
   await writeJsonAtomic(file, cached);
 }
@@ -760,8 +780,9 @@ async function readVerifiedCache(
   publicKey: string | OpenCodeRegistryKeyring,
   now: number,
   checkpoint?: OpenCodeRegistryCheckpoint,
+  trustAnchorFile = cacheTrustAnchorPath(file),
 ): Promise<CachedBundle | null> {
-  const cached = await readCachedTrustState(file, publicKey, now, checkpoint);
+  const cached = await readCachedTrustState(file, publicKey, now, checkpoint, trustAnchorFile);
   if (
     !cached
     // The wrapper is not signed; a future timestamp must not pin an old,
@@ -829,19 +850,20 @@ async function waitForConcurrentCacheWriter(
   now: number,
   minimumSequence: number,
   checkpoint?: OpenCodeRegistryCheckpoint,
+  trustAnchorFile = cacheTrustAnchorPath(file),
 ): Promise<CachedBundle | null> {
   const lock = `${file}.lock`;
   const deadline = Date.now() + CACHE_LOCK_WAIT_MS;
   let latest: CachedBundle | null = null;
   for (;;) {
-    latest = await readVerifiedCache(file, publicKeys, now, checkpoint);
+    latest = await readVerifiedCache(file, publicKeys, now, checkpoint, trustAnchorFile);
     if (latest && latest.bundle.sequence >= minimumSequence) return latest;
     try {
       await stat(lock);
     } catch {
       // Lock release follows the atomic write, so one final verified read sees
       // the owner's result without trusting its in-progress payload.
-      return await readVerifiedCache(file, publicKeys, now, checkpoint);
+      return await readVerifiedCache(file, publicKeys, now, checkpoint, trustAnchorFile);
     }
     if (Date.now() >= deadline) return latest;
     await new Promise<void>((resolve) => setTimeout(resolve, CACHE_LOCK_POLL_MS));
@@ -855,6 +877,8 @@ export type OpenCodeSchemaBundleSource = {
   publicKeys?: OpenCodeRegistryKeyring;
   /** Release-pinned minimum registry sequence and canonical payload hash. */
   checkpoint?: OpenCodeRegistryCheckpoint;
+  /** Independent durable high-water record; defaults beside the cache file. */
+  trustAnchorFile?: string;
   fetch?: typeof fetch;
   now?: () => number;
   cacheFile?: string;
@@ -925,8 +949,8 @@ function registryCheckpoint(source: OpenCodeSchemaBundleSource): OpenCodeRegistr
     ?? (process.env.NODE_ENV === "production" ? undefined : parseRegistryCheckpoint(process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_CHECKPOINT));
 }
 
-function schemaRefreshKey(file: string, url: string, publicKeys: OpenCodeRegistryKeyring, checkpoint: OpenCodeRegistryCheckpoint | undefined): string {
-  return createHash("sha256").update(`${file}\0${url}\0${stableJson(publicKeys)}\0${stableJson(checkpoint ?? null)}`).digest("hex");
+function schemaRefreshKey(file: string, trustAnchorFile: string, url: string, publicKeys: OpenCodeRegistryKeyring, checkpoint: OpenCodeRegistryCheckpoint | undefined): string {
+  return createHash("sha256").update(`${file}\0${trustAnchorFile}\0${url}\0${stableJson(publicKeys)}\0${stableJson(checkpoint ?? null)}`).digest("hex");
 }
 
 async function refreshOpenCodeSchemaBundle(
@@ -934,6 +958,7 @@ async function refreshOpenCodeSchemaBundle(
   url: string,
   publicKeys: OpenCodeRegistryKeyring,
   checkpoint: OpenCodeRegistryCheckpoint | undefined,
+  trustAnchorFile: string,
   fetcher: typeof fetch,
   now: number,
   refreshTimeoutMs?: number,
@@ -944,29 +969,29 @@ async function refreshOpenCodeSchemaBundle(
   if (!meetsOpenCodeRegistryGenesisFloor(remote)) throw new Error("schema registry genesis mismatch");
   if (!meetsOpenCodeRegistryCheckpoint(remote, checkpoint)) throw new Error("schema registry checkpoint mismatch");
   if (Object.keys(publicKeys).length > 1 && remote.keyId === undefined) throw new Error("missing schema signing key id");
-  const cachedTrust = await readCachedTrustState(file, publicKeys, now, checkpoint);
+  const cachedTrust = await readCachedTrustState(file, publicKeys, now, checkpoint, trustAnchorFile);
   if (cachedTrust && remote.sequence < cachedTrust.bundle.sequence) throw new Error("schema rollback");
   await mkdir(path.dirname(file), { recursive: true });
   const writeResult = await withCacheWriteLock(file, async () => {
     // Re-read after acquiring the lock. Another process may have refreshed
     // while this request was in flight, and the cache must never move back.
-    const currentTrust = await readCachedTrustState(file, publicKeys, now, checkpoint);
+    const currentTrust = await readCachedTrustState(file, publicKeys, now, checkpoint, trustAnchorFile);
     if (currentTrust && remote.sequence < currentTrust.bundle.sequence) throw new Error("schema rollback");
     if (currentTrust && remote.sequence === currentTrust.bundle.sequence) {
       if (openCodeSchemaBundleSigningPayload(remote) !== openCodeSchemaBundleSigningPayload(currentTrust.bundle)) throw new Error("schema sequence rewritten");
       // The just-verified remote payload is byte-for-byte the same signed
       // contract, so it is safe to refresh only the unsigned cache freshness.
-      await writeVerifiedCache(file, { checkedAt: now, bundle: remote, verifiedKeyId: remote.keyId });
+      await writeVerifiedCache(file, trustAnchorFile, publicKeys, now, { checkedAt: now, bundle: remote, verifiedKeyId: remote.keyId });
       return { bundle: remote, source: "remote" as const };
     }
-    await writeVerifiedCache(file, { checkedAt: now, bundle: remote, verifiedKeyId: remote.keyId });
+    await writeVerifiedCache(file, trustAnchorFile, publicKeys, now, { checkedAt: now, bundle: remote, verifiedKeyId: remote.keyId });
     return { bundle: remote, source: "remote" as const };
   });
   if (writeResult) return writeResult;
   // A concurrent writer can have installed a newer sequence while this
   // request held an older verified response. Never select that older parser
   // for this turn merely because the lock was busy.
-  const current = await waitForConcurrentCacheWriter(file, publicKeys, now, remote.sequence, checkpoint);
+  const current = await waitForConcurrentCacheWriter(file, publicKeys, now, remote.sequence, checkpoint, trustAnchorFile);
   if (current && current.bundle.sequence >= remote.sequence) {
     return { bundle: current.bundle, source: "cache" };
   }
@@ -1006,6 +1031,7 @@ function startSchemaRefresh(
 export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSource = {}): Promise<LoadedOpenCodeSchemaBundle> {
   const now = source.now?.() ?? Date.now();
   const file = source.cacheFile ?? cachePath();
+  const trustAnchorFile = source.trustAnchorFile ?? cacheTrustAnchorPath(file);
   const url = registryUrl(source);
   const publicKeys = registryKeyring(source);
   const checkpoint = registryCheckpoint(source);
@@ -1017,15 +1043,15 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
     return { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "schema-registry-refresh-rejected" };
   }
 
-  const cached = await readVerifiedCache(file, publicKeys, now, checkpoint);
+  const cached = await readVerifiedCache(file, publicKeys, now, checkpoint, trustAnchorFile);
   // An expired signed cache cannot parse a turn, but it records that this
   // client previously trusted a newer registry contract. Do not silently
   // regress to the compiled parser if refresh fails; a first offline launch
   // without any cache can still use that source-trusted baseline.
-  const cacheTrust = cached ?? await readCachedTrustState(file, publicKeys, now, checkpoint);
+  const cacheTrust = cached ?? await readCachedTrustState(file, publicKeys, now, checkpoint, trustAnchorFile);
   const cacheFresh = cached && now - cached.checkedAt < CACHE_TTL_MS;
   if (cacheFresh) return { bundle: cached.bundle, source: "cache" };
-  const key = schemaRefreshKey(file, url, publicKeys, checkpoint);
+  const key = schemaRefreshKey(file, trustAnchorFile, url, publicKeys, checkpoint);
   if ((refreshRetryAt.get(key) ?? 0) > now) {
     return cached
       ? { bundle: cached.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" }
@@ -1035,7 +1061,7 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   }
   const refresh = startSchemaRefresh(
     key,
-    () => refreshOpenCodeSchemaBundle(file, url, publicKeys, checkpoint, source.fetch ?? fetch, now, source.refreshTimeoutMs),
+    () => refreshOpenCodeSchemaBundle(file, url, publicKeys, checkpoint, trustAnchorFile, source.fetch ?? fetch, now, source.refreshTimeoutMs),
     now,
   );
   try {

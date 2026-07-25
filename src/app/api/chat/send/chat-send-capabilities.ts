@@ -113,22 +113,31 @@ function optionStanza(help: string, option: string): string {
   return help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b[^\\n]*(?:\\n(?!\\s*(?:-[A-Za-z],?\\s+)?--)[^\\n]*){0,2}`, "im"))?.[0] ?? "";
 }
 
+type OptionSyntax = { declaration: string; synopsis: string };
+
+function optionSyntax(help: string, option: string): OptionSyntax | null {
+  const lines = optionStanza(help, option).split(/\r?\n/);
+  const declarationLine = lines.find((line) => line.includes(option));
+  if (!declarationLine) return null;
+  const optionAt = declarationLine.indexOf(option);
+  const trailing = optionAt >= 0 ? declarationLine.slice(optionAt + option.length) : "";
+  // Help renderers conventionally begin the description in a second column.
+  // Keep that prose out of argv capability evidence.
+  const descriptionAt = trailing.search(/\s{2,}/);
+  const declaration = (descriptionAt >= 0 ? trailing.slice(0, descriptionAt) : trailing).trim();
+  // yargs wraps an option's type and choices onto an indented continuation,
+  // for example: `[string] [choices: "text", "json"]`. Only that exact
+  // annotation grammar is syntax; arbitrary wrapped prose remains ignored.
+  const yargsAnnotations = lines.filter((line) => /^\s*\[(?:string|number|boolean|array|count)\](?:\s+\[(?:choices?|default):[^\]\r\n]*\])*\s*$/i.test(line));
+  return { declaration, synopsis: [declaration, ...yargsAnnotations].join(" ") };
+}
+
 function optionTakesExplicitValue(help: string, option: string): boolean {
   // Do not infer a value from prose such as "Emit JSON". We only forward an
   // argv value after the option synopsis itself declares one. Bare positional
   // words are deliberately ambiguous (for example `--event-stream MODE`).
-  const line = optionStanza(help, option)
-    .split(/\r?\n/)
-    .find((line) => line.includes(option))
-    ?? "";
-  const optionAt = line.indexOf(option);
-  const trailingSyntax = optionAt >= 0 ? line.slice(optionAt + option.length) : "";
-  // Help renderers conventionally start the description after two or more
-  // spaces. Inspect only the syntax column: prose such as "Prints <json>"
-  // must never be mistaken for a documented `--format <value>` argv form.
-  const descriptionAt = trailingSyntax.search(/\s{2,}/);
-  const synopsis = descriptionAt >= 0 ? trailingSyntax.slice(0, descriptionAt) : trailingSyntax;
-  return /<[^>\n]+>|\[[^\]\n]+\]|=\S+/.test(synopsis);
+  const syntax = optionSyntax(help, option);
+  return syntax !== null && /<[^>\n]+>|\[[^\]\n]+\]|=\S+/.test(syntax.synopsis);
 }
 
 /** Extract bracketed enum bodies in one pass. Help output is runtime-provided,
@@ -153,15 +162,13 @@ function advertisedStructuredOutputs(help: string): Array<{ option: string; valu
   return declaredRunOptions(help).flatMap((option) => {
     if (!optionTakesExplicitValue(help, option)) return [];
     const stanza = optionStanza(help, option);
-    const optionAt = stanza.indexOf(option);
-    const trailingSyntax = optionAt >= 0 ? stanza.slice(optionAt + option.length).split(/\r?\n/, 1)[0] : "";
-    const descriptionAt = trailingSyntax.search(/\s{2,}/);
-    const synopsis = descriptionAt >= 0 ? trailingSyntax.slice(0, descriptionAt) : trailingSyntax;
+    const syntax = optionSyntax(help, option);
+    if (!syntax) return [];
     // JSON in arbitrary prose is not an accepted option value. Restrict the
     // evidence to an explicit enum in the synopsis or to an option-local
     // `format:`/`values:`/`choices:` metadata list.
     const enumerations = [
-      ...bracketEnumerations(synopsis),
+      ...bracketEnumerations(syntax.synopsis),
       ...[...stanza.matchAll(/\b(?:output\s+)?(?:format|values?|choices?)\s*:\s*([^\r\n]+)/gi)].map((match) => match[1]),
     ];
     const values = [...new Set(enumerations.flatMap((enumeration) => enumeration.match(/\bjson(?:[._-][a-z0-9]+)*\b/gi) ?? []).map((value) => value.toLowerCase()))];
@@ -178,8 +185,9 @@ function declaredNoValueRunOptions(help: string, options: string[]): string[] {
     // A valueless option is either alone or followed by a conventional
     // two-space help-description column. A single following token (for
     // example `--event-stream MODE`) is ambiguous and therefore unsupported.
-    const line = help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b(?=$|\\s{2,})([^\\n]*)$`, "m"))?.[1];
-    return line !== undefined && !/[<\[=]/.test(line);
+    // Wrapped yargs `[string]` continuations count as value syntax too.
+    const syntax = optionSyntax(help, option);
+    return syntax !== null && syntax.declaration === "" && !optionTakesExplicitValue(help, option);
   });
 }
 
