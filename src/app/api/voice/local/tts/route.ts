@@ -77,8 +77,11 @@ export async function handleLocalTtsPost(
   req: Request,
   dependencies: LocalTtsRouteDependencies = {},
 ): Promise<Response> {
-  const contentType = req.headers.get("content-type")?.toLowerCase() ?? "";
-  if (!contentType.startsWith("application/json")) {
+  const mediaType = (req.headers.get("content-type") ?? "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  if (mediaType !== "application/json") {
     return NextResponse.json({ ok: false, error: "unsupported_media_type" }, { status: 415 });
   }
   let body: unknown;

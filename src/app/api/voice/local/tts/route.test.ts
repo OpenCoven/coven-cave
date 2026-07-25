@@ -73,6 +73,14 @@ test("POST local TTS validates JSON, text, and local voice ids", async () => {
     }))).status,
     415,
   );
+  assert.equal(
+    (await handleLocalTtsPost(new Request("http://test/api/voice/local/tts", {
+      method: "POST",
+      headers: { "content-type": "application/jsonp" },
+      body: JSON.stringify({ text: "hello", voiceName: readyVoice.id }),
+    }))).status,
+    415,
+  );
 });
 
 test("POST local TTS bounds declared and streamed request bodies before JSON parsing", async () => {
