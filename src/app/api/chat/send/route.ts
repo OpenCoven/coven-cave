@@ -2219,7 +2219,16 @@ export async function POST(req: Request) {
             reader.releaseLock();
           }
         } catch (error) {
-          if (!abort.signal.aborted) {
+          if (abort.signal.aborted) {
+            // A detach deadline aborts the fetch just like a child kill. It
+            // never received a protocol terminal, so do not persist partial
+            // output as a resumable completed turn. Explicit Stop follows the
+            // cancellation path below and remains intentionally non-error.
+            if (!runHandle.stopRequested) {
+              result = { ...result, is_error: true };
+              recordStdoutErrorTail("Hermes API stream aborted after client disconnect", true);
+            }
+          } else {
             result = { ...result, is_error: true };
             recordStdoutErrorTail(
               error instanceof Error ? `Hermes API request failed: ${error.message}` : "Hermes API request failed",
@@ -2594,7 +2603,9 @@ export async function POST(req: Request) {
       const harnessSessionId = grokDirect
         ? grokSessionId
         : hermesDirect && hermesApi
-          ? hermesResponseId ?? sessionId
+          ? !result.is_error && hermesResponseId
+            ? hermesResponseId
+            : existingConversation?.harnessSessionId ?? sessionId
           : sessionId;
       // OpenCode's JSON event protocol does not echo the selected model. Its
       // direct argv proves the selection was forwarded, while a successful

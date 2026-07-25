@@ -150,6 +150,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /if \(abort\.signal\.aborted\) \{[\s\S]*?!runHandle\.stopRequested[\s\S]*?Hermes API stream aborted after client disconnect/,
+  "a detach-time Hermes fetch abort must persist as an error while explicit Stop remains a cancellation",
+);
+
+assert.match(
+  chatRoute,
   /isHermesInvalidPreviousResponseIdError\(apiError\)[\s\S]*?resumeFailed = true/,
   "only a structured invalid previous Responses id may use the fresh-session retry",
 );
@@ -224,6 +230,12 @@ assert.match(
   chatRoute,
   /case "done":\s*if \(event\.id\) \{\s*hermesResponseId = event\.id;\s*if \(!sessionId\) announceSession\(event\.id\);/,
   "terminal Responses events must retain response ids even when no earlier session event arrived",
+);
+
+assert.match(
+  chatRoute,
+  /hermesDirect && hermesApi\s*\? !result\.is_error && hermesResponseId\s*\? hermesResponseId\s*:\s*existingConversation\?\.harnessSessionId \?\? sessionId/,
+  "failed Hermes API turns must retain the prior successful Responses id for the next continuation",
 );
 
 assert.match(
