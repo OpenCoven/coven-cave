@@ -3,10 +3,24 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { openCodeCapabilityProbeTimeoutMs, openCodeExecutableIdentity, parseOpenCodeRunCapabilitiesHelp } from "./chat-send-capabilities.ts";
+import {
+  openCodeCapabilityProbeCacheable,
+  openCodeCapabilityProbeTimeoutMs,
+  openCodeExecutableIdentity,
+  openCodeProbeTreeKillCommand,
+  parseOpenCodeRunCapabilitiesHelp,
+} from "./chat-send-capabilities.ts";
 
 assert.equal(openCodeCapabilityProbeTimeoutMs("linux"), 2_500, "non-Windows capability probes retain the short bounded deadline");
 assert.equal(openCodeCapabilityProbeTimeoutMs("win32"), 6_000, "Windows PowerShell/npm launchers receive a bounded cold-start allowance");
+assert.equal(openCodeCapabilityProbeCacheable("linux"), true, "direct Unix executable identity supports a short capability cache");
+assert.equal(openCodeCapabilityProbeCacheable("win32"), false, "Windows launcher shims are reprobed rather than reusing stale downstream capability evidence");
+assert.deepEqual(
+  openCodeProbeTreeKillCommand(4242, "win32"),
+  { command: "taskkill.exe", args: ["/PID", "4242", "/T", "/F"] },
+  "timed-out Windows probes terminate their launcher tree rather than only PowerShell",
+);
+assert.equal(openCodeProbeTreeKillCommand(4242, "linux"), null, "non-Windows probes retain process-local termination");
 
 const capabilities = parseOpenCodeRunCapabilitiesHelp(`
   --structured-output <format>  Output format: text, json-v3

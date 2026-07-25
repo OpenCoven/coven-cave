@@ -26,6 +26,48 @@ export function openCodeCapabilityProbeTimeoutMs(platform: NodeJS.Platform = pro
   return platform === "win32" ? WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS : DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS;
 }
 
+/** Windows launchers can be stable shims whose downstream target changes.
+ * Do not reuse their help-derived argv evidence between turns. */
+export function openCodeCapabilityProbeCacheable(platform: NodeJS.Platform = process.platform): boolean {
+  return platform !== "win32";
+}
+
+/** `taskkill /T` is required because killing the PowerShell launcher alone
+ * leaves its opencode(.cmd) child running on Windows. */
+export function openCodeProbeTreeKillCommand(
+  pid: number | undefined,
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } | null {
+  if (platform !== "win32" || typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return null;
+  const processId: number = pid;
+  return { command: "taskkill.exe", args: ["/PID", String(processId), "/T", "/F"] };
+}
+
+function terminateProbeProcessTree(child: ChildProcessWithoutNullStreams): Promise<void> {
+  const treeKill = openCodeProbeTreeKillCommand(child.pid);
+  if (!treeKill) {
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      // The close/error handler below still marks this probe unsupported.
+    }
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    try {
+      const killer = spawn(treeKill.command, treeKill.args, { stdio: "ignore", windowsHide: true });
+      killer.once("error", () => {
+        try { child.kill("SIGTERM"); } catch { /* Best-effort fallback. */ }
+        resolve();
+      });
+      killer.once("close", () => resolve());
+    } catch {
+      try { child.kill("SIGTERM"); } catch { /* Best-effort fallback. */ }
+      resolve();
+    }
+  });
+}
+
 function probeHelp(
   command: string,
   args: string[],
@@ -97,12 +139,34 @@ function probeOutput(command: string, args: string[], env = harnessSpawnEnv(), i
       };
       child.stdout.on("data", append);
       child.stderr.on("data", append);
-      const timeout = setTimeout(() => {
-        try { child.kill("SIGTERM"); } catch { /* Probe failures are capabilities=false. */ }
-        done(false);
+      let timedOut = false;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      let exitResolved = false;
+      let resolveExit!: () => void;
+      const exited = new Promise<void>((resolve) => { resolveExit = resolve; });
+      const markExited = () => {
+        if (exitResolved) return;
+        exitResolved = true;
+        resolveExit();
+      };
+      child.on("close", (code) => {
+        if (timeout) clearTimeout(timeout);
+        markExited();
+        if (!timedOut) done(code === 0 && !overflowed);
+      });
+      child.on("error", () => {
+        if (timeout) clearTimeout(timeout);
+        markExited();
+        if (!timedOut) done(false);
+      });
+      timeout = setTimeout(() => {
+        timedOut = true;
+        // Do not resolve a timed-out probe until the entire Windows launcher
+        // tree has exited; otherwise orphaned OpenCode children accumulate.
+        void terminateProbeProcessTree(child).finally(() => {
+          void exited.then(() => done(false));
+        });
       }, openCodeCapabilityProbeTimeoutMs());
-      child.on("close", (code) => { clearTimeout(timeout); done(code === 0 && !overflowed); });
-      child.on("error", () => { clearTimeout(timeout); done(false); });
     } catch {
       done(false);
     }
@@ -368,9 +432,10 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
   // environment that will execute the chat turn. Include the familiar scope
   // in the cache key even when two scopes currently resolve the same binary.
   const env = openCodeSpawnEnv(familiarId);
-  const executableIdentity = await openCodeExecutableIdentity(env);
+  const cacheable = openCodeCapabilityProbeCacheable();
+  const executableIdentity = cacheable ? await openCodeExecutableIdentity(env) : "uncached-windows-launcher";
   const identity = `${familiarId ?? "default"}\0${executableIdentity}`;
-  if (openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.identity === identity) {
+  if (cacheable && openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.identity === identity) {
     return openCodeCapabilitiesProbe.value;
   }
   const value = (async () => {
@@ -389,6 +454,6 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
     if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], endOfOptions: false, structuredSwitches: [], structuredOutputs: [] };
     return parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
   })();
-  openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, identity, value };
+  if (cacheable) openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, identity, value };
   return value;
 }
