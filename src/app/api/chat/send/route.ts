@@ -1728,6 +1728,18 @@ export async function POST(req: Request) {
         return assistantOutput;
       };
 
+      // Retry attempts replace the per-attempt tracker so their output and
+      // offsets do not leak into the persisted turn. Settle anything already
+      // announced first, though: those ids have reached the live client and
+      // would otherwise remain running forever after the tracker is dropped.
+      const settleToolCallsBeforeRetry = () => {
+        for (const toolEvent of toolTracker.settleOpenCalls(
+          "[tool interrupted before the harness retry]",
+        )) {
+          push({ kind: "tool_use", ...toolEvent });
+        }
+      };
+
       // Copilot JSONL stream (cave-yesg): the CLI's own event schema, not
       // claude stream-json. Text arrives as message deltas + a full-content
       // message frame (deduped by CopilotTextAssembler); tool calls arrive as
@@ -2293,6 +2305,7 @@ export async function POST(req: Request) {
         assistantText = "";
         jsonBuf = "";
         result = {};
+        settleToolCallsBeforeRetry();
         toolTracker = new ToolCallTracker();
         copilotText.reset();
         codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
@@ -2335,6 +2348,7 @@ export async function POST(req: Request) {
         assistantText = "";
         jsonBuf = "";
         result = {};
+        settleToolCallsBeforeRetry();
         toolTracker = new ToolCallTracker();
         copilotText.reset();
         codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;

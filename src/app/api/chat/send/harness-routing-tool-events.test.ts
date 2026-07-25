@@ -76,8 +76,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /toolTracker = new ToolCallTracker\(\);/,
-  "The resume retry should reset the tool tracker alongside the other per-attempt state",
+  /settleToolCallsBeforeRetry\(\);[\s\S]*?toolTracker = new ToolCallTracker\(\);/,
+  "Retries settle announced tools before resetting per-attempt state, so live bubbles cannot remain running",
 );
 
 assert.match(
