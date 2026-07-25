@@ -125,6 +125,10 @@ assert.doesNotMatch(JSON.stringify(controls.events), /never render/, "unknown pr
 const unarmedDottedJson = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"invoice.created","value":"assistant JSON"}\n', selected.schema);
 assert.equal(unarmedDottedJson.events.length, 0, "dotted JSON remains prose until a Codex protocol boundary is confirmed");
 assert.equal(unarmedDottedJson.passthrough, '{"type":"invoice.created","value":"assistant JSON"}\n', "captured output preserves ordinary JSON with dotted types before a valid preamble");
+const preamblelessControls = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"error","message":"never render"}\n{"type":"item.started","item":{"id":"secret-call","type":"command_execution","arguments":"never render"}}\n', selected.schema);
+assert.equal(preamblelessControls.passthrough, "", "trusted captured-pipe control frames are quarantined before thread startup");
+assert.equal(preamblelessControls.events.filter((event) => event.kind === "unknown").length, 2, "preamble-less control frames become only shape diagnostics");
+assert.doesNotMatch(JSON.stringify(preamblelessControls.events), /never render|secret-call/, "preamble-less diagnostics contain no protocol payloads");
 const registrySchema = { ...selected.schema, eventTypes: [...selected.schema.eventTypes, "response.started"] };
 const registryFrames = new CodexJsonlDecoder().push('codex\n{"type":"thread.started","thread":{"id":"thread-nested"}}\n{"type":"response.started","secret":"never render"}\n', registrySchema);
 assert.deepEqual(registryFrames.events.map((event) => event.kind), ["session", "unknown"], "nested thread ids and registry-only event names are consumed by the selected schema");
@@ -226,6 +230,7 @@ try {
   const olderDocument = { ...olderPayload, contentHash: schemaContentHash(olderPayload), signature: document.signature };
   assert.equal(await writeCodexSchemaCache(cachePath, newerDocument, verify, new Date("2026-07-24T12:00:00.000Z")), true, "a newer verified document replaces LKG");
   assert.equal(await writeCodexSchemaCache(cachePath, olderDocument, verify, new Date("2026-07-24T12:00:00.000Z")), false, "an older verified filesystem document cannot roll back LKG");
+  assert.equal(await writeCodexSchemaCache(cachePath, olderDocument, verify, new Date("2026-07-24T10:30:00.000Z")), false, "a backward clock correction cannot erase the newer cache watermark before rejecting an older replay");
   assert.equal((await readCodexSchemaCache(cachePath, verify, new Date("2026-07-24T12:00:00.000Z")))?.provenance.revision, "newer", "the newest verified filesystem document remains cached");
   const expiredNewerPayload = {
     ...unsignedPayload,

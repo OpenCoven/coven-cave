@@ -246,7 +246,7 @@ export function isValidCodexSchema(schema: unknown): schema is CodexEventSchema 
 export function validateCodexSchemaDocument(
   document: unknown,
   now = new Date(),
-  options: { allowExpired?: boolean } = {},
+  options: { allowExpired?: boolean; ignoreTime?: boolean } = {},
 ): { ok: true; value: CodexSchemaDocument } | { ok: false; reason: "invalid" | "expired" | "hash" } {
   if (!document || typeof document !== "object") return { ok: false, reason: "invalid" };
   const value = document as CodexSchemaDocument;
@@ -275,12 +275,14 @@ export function validateCodexSchemaDocument(
   if (
     !Number.isFinite(fetchedAt)
     || !Number.isFinite(expiresAt)
-    || fetchedAt > now.getTime() + MAX_SCHEMA_FUTURE_SKEW_MS
     || expiresAt <= fetchedAt
-    || (!options.allowExpired && expiresAt <= now.getTime())
   ) {
     return { ok: false, reason: "expired" };
   }
+  if (!options.ignoreTime && (
+    fetchedAt > now.getTime() + MAX_SCHEMA_FUTURE_SKEW_MS
+    || (!options.allowExpired && expiresAt <= now.getTime())
+  )) return { ok: false, reason: "expired" };
   if (schemaContentHash(value) !== value.contentHash) return { ok: false, reason: "hash" };
   return { ok: true, value };
 }
@@ -390,7 +392,7 @@ export async function readCodexSchemaCache(
   cachePath: string,
   verifySignature: CodexSchemaSignatureVerifier,
   now = new Date(),
-  options: { allowExpired?: boolean } = {},
+  options: { allowExpired?: boolean; ignoreTime?: boolean } = {},
 ): Promise<CodexSchemaDocument | null> {
   try {
     if ((await stat(cachePath)).size > MAX_SCHEMA_DOCUMENT_BYTES) return null;
@@ -441,7 +443,10 @@ export async function writeCodexSchemaCache(
       // Keep an authenticated watermark even when this document is too old
       // to select. That prevents an offline replay from rolling the cache
       // back after the current selection has expired.
-      const previous = await readCodexSchemaCache(cachePath, verifySignature, now, { allowExpired: true });
+      // A watermark only needs a valid signature/hash and coherent issued
+      // times. It must survive a backward clock correction, otherwise a
+      // previously newer signed document could be replayed over the cache.
+      const previous = await readCodexSchemaCache(cachePath, verifySignature, now, { allowExpired: true, ignoreTime: true });
       if (previous && compareSchemaDocumentFreshness(checked.value, previous) <= 0) return false;
       const serialized = JSON.stringify(checked.value);
       if (Buffer.byteLength(serialized, "utf8") > MAX_SCHEMA_DOCUMENT_BYTES) return false;
@@ -918,10 +923,11 @@ export class CodexJsonlDecoder {
             ? thread.id
             : null;
         const validThreadPreamble = rawType === "thread.started" && !!sessionId;
-        // The `codex` marker is an unambiguous transport boundary. On the
-        // marker-free captured-pipe path, only a complete `thread.started`
-        // preamble establishes the boundary; before that, JSON belongs to the
-        // assistant so requested JSON/code examples remain visible.
+        // The `codex` marker is an unambiguous transport boundary. The
+        // marker-free captured-pipe transport also reserves documented
+        // control families from its first frame so startup errors cannot leak
+        // into prose; unrelated JSON/code remains visible until a complete
+        // thread preamble establishes full protocol ownership.
         // A marker is transport proof. The marker-free captured-pipe path
         // instead needs a complete, valid `thread.started` preamble before it
         // owns later JSON records. In particular, do not let an assistant's
@@ -929,16 +935,22 @@ export class CodexJsonlDecoder {
         // unsupported protocol frame merely because it has a dotted type.
         const protocolFrame = this.protocolArmed || this.protocolActive
           ? protocolType || reservedProtocolType
-          : this.options.trustThreadPreamble === true && validThreadPreamble;
+          : this.options.trustThreadPreamble === true && (validThreadPreamble || reservedProtocolType);
         if (protocolFrame) {
           if (validThreadPreamble) this.protocolActive = true;
-          const event = parseCodexStreamEvent(parsed, schema) ?? { kind: "unknown" as const, fingerprint: "unmapped-frame" };
+          // Before a valid preamble, trusted control families are quarantined
+          // as shape-only diagnostics. Do not let a startup `item.*` frame
+          // manufacture a tool bubble or expose its arguments.
+          const event = (this.protocolArmed || this.protocolActive)
+            ? parseCodexStreamEvent(parsed, schema) ?? { kind: "unknown" as const, fingerprint: "unmapped-frame" }
+            : { kind: "unknown" as const, fingerprint: "prelude-control-frame" };
           events.push(event);
           tokens.push(event);
           continue;
         }
       } catch {
-        if ((this.protocolArmed || this.protocolActive) && /"type"\s*:\s*"[^"\\.\s]+(?:\.[^"\\.\s]+)+"/.test(line)) {
+        if ((this.protocolArmed || this.protocolActive || this.options.trustThreadPreamble === true)
+          && /"type"\s*:\s*"(?:(?:thread|turn|item|response)\.[^"\\.\s]+|error)"/.test(line)) {
           const event: CodexStreamEvent = { kind: "unknown", fingerprint: "malformed-jsonl" };
           events.push(event);
           tokens.push(event);
