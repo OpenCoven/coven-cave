@@ -42,6 +42,11 @@ assert.match(
 );
 assert.match(
   reachability,
+  /power_assertion_is_effective[\s\S]*mac_is_on_ac_power/,
+  "AC-only sleep prevention must report inactive while the Mac is on battery",
+);
+assert.match(
+  reachability,
   /mobile_mode_enabled_from_preferences[\s\S]*unwrap_or\(true\)/,
   "mobile mode must preserve its schema default until explicitly disabled",
 );
@@ -80,6 +85,21 @@ assert.match(
   reachability,
   /process_identity[\s\S]*lease_matches/,
   "GUI and daemon ownership markers must validate process identity as well as PID",
+);
+assert.match(
+  reachability,
+  /proc_pidinfo[\s\S]*start_microseconds/,
+  "process leases must use a kernel birth timestamp rather than a reusable PID or second-granularity ps value",
+);
+assert.match(
+  reachability,
+  /GuiOwnershipState[\s\S]*sidecar: Option<DaemonSidecarState>[\s\S]*stop_recorded_gui_sidecar/,
+  "a stale GUI ownership record must retain and reap its sidecar before daemon fallback",
+);
+assert.match(
+  reachability,
+  /another CovenCave GUI already owns desktop reachability/,
+  "a second GUI must not overwrite the live GUI ownership marker",
 );
 assert.match(
   reachability,
@@ -150,6 +170,11 @@ assert.match(
   reachability,
   /SERVE_REPAIR_TIMEOUT[\s\S]*child\.try_wait\(\)[\s\S]*child\.kill\(\)[\s\S]*timed out/,
   "a stalled Tailscale Serve command must be killed after a bounded timeout",
+);
+assert.match(
+  reachability,
+  /!mobile_mode_enabled\(\) \|\| !paired_phone_seen\(&paired_phone_path\(\)\)/,
+  "Serve repair must not adopt an existing route until Cave has pairing evidence",
 );
 assert.match(
   mobileScript,

@@ -97,6 +97,19 @@ struct DaemonSidecarState {
     port: u16,
 }
 
+/// The GUI marker is also the recovery record for its independently spawned
+/// Node child.  A force-quit can leave that child alive after the GUI process
+/// has gone away, so the daemon must be able to identity-check and reap it
+/// before selecting a fallback port.
+#[cfg(desktop)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct GuiOwnershipState {
+    #[serde(flatten)]
+    lease: ProcessLease,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sidecar: Option<DaemonSidecarState>,
+}
+
 #[cfg(desktop)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TailscaleServeMode {
@@ -182,8 +195,14 @@ impl DesktopReachabilityRuntime {
             if target_pid.is_none() {
                 self.clear_target_pid();
             }
-            let desired =
-                config.prevent_sleep && paired && mobile_mode_enabled() && target_pid.is_some();
+            let desired = config.prevent_sleep
+                && paired
+                && mobile_mode_enabled()
+                && target_pid.is_some()
+                && power_assertion_is_effective(
+                    config.prevent_sleep_on_ac_only,
+                    mac_is_on_ac_power(),
+                );
             let mut assertion = match self.power_assertion.lock() {
                 Ok(guard) => guard,
                 Err(poisoned) => poisoned.into_inner(),
@@ -241,6 +260,10 @@ impl DesktopReachabilityRuntime {
         };
         if current.child.try_wait().ok().flatten().is_some() {
             *assertion = None;
+            return false;
+        }
+        #[cfg(target_os = "macos")]
+        if current.on_ac_only && !mac_is_on_ac_power() {
             return false;
         }
         true
@@ -383,6 +406,23 @@ fn power_assertion_arguments(target_pid: u32, on_ac_only: bool) -> Vec<String> {
     ]
 }
 
+#[cfg(desktop)]
+fn power_assertion_is_effective(on_ac_only: bool, on_ac_power: bool) -> bool {
+    !on_ac_only || on_ac_power
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn mac_is_on_ac_power() -> bool {
+    Command::new("/usr/bin/pmset")
+        .args(["-g", "batt"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .is_some_and(|output| String::from_utf8_lossy(&output.stdout).contains("AC Power"))
+}
+
 #[cfg(all(desktop, target_os = "macos"))]
 fn spawn_power_assertion(target_pid: u32, on_ac_only: bool) -> std::io::Result<Child> {
     Command::new("/usr/bin/caffeinate")
@@ -465,7 +505,10 @@ fn tailscale_binary() -> PathBuf {
 
 #[cfg(all(desktop, target_os = "macos"))]
 pub(super) fn repair_tailscale_serve_for_port(port: u16) {
-    if !mobile_mode_enabled() {
+    // The desktop must never adopt an arbitrary user-managed Serve route just
+    // because mobile mode has its schema default. A paired-device heartbeat is
+    // the persisted proof that this Cave has actually exposed a phone route.
+    if !mobile_mode_enabled() || !paired_phone_seen(&paired_phone_path()) {
         return;
     }
     let state = SERVE_REPAIR_STATE.get_or_init(|| Mutex::new(ServeRepairState::default()));
@@ -838,16 +881,29 @@ fn app_data_path_without_handle() -> Result<PathBuf, String> {
 
 #[cfg(all(desktop, target_os = "macos"))]
 fn gui_is_active(app_data_dir: &Path) -> bool {
-    let marker = app_data_dir.join(GUI_ACTIVE_FILE);
-    let lease = std::fs::read_to_string(&marker)
+    read_gui_ownership_state(app_data_dir).is_some_and(|state| {
+        lease_matches(&state.lease, process_identity(state.lease.pid).as_deref())
+    })
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn read_gui_ownership_state(app_data_dir: &Path) -> Option<GuiOwnershipState> {
+    std::fs::read_to_string(app_data_dir.join(GUI_ACTIVE_FILE))
         .ok()
-        .and_then(|raw| serde_json::from_str::<ProcessLease>(&raw).ok());
-    match lease {
-        Some(lease) if lease_matches(&lease, process_identity(lease.pid).as_deref()) => true,
-        _ => {
-            let _ = std::fs::remove_file(marker);
-            false
-        }
+        .and_then(|raw| serde_json::from_str::<GuiOwnershipState>(&raw).ok())
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn write_gui_ownership_state(app_data_dir: &Path, state: &GuiOwnershipState) -> Result<(), String> {
+    write_private_json(&app_data_dir.join(GUI_ACTIVE_FILE), state)
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn remove_gui_ownership_if_owned(app_data_dir: &Path, owner: &ProcessLease) {
+    if read_gui_ownership_state(app_data_dir)
+        .is_some_and(|state| state.lease.pid == owner.pid && state.lease.identity == owner.identity)
+    {
+        let _ = std::fs::remove_file(app_data_dir.join(GUI_ACTIVE_FILE));
     }
 }
 
@@ -858,8 +914,38 @@ pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<(), Str
         .app_data_dir()
         .map_err(|error| format!("could not resolve app data: {error}"))?;
     let _ownership = acquire_reachability_ownership_lease(&app_data_dir)?;
-    let marker = app_data_dir.join(GUI_ACTIVE_FILE);
-    write_private_json(&marker, &current_process_lease()?)?;
+    let current_gui = current_process_lease()?;
+    if let Some(existing) = read_gui_ownership_state(&app_data_dir) {
+        if lease_matches(
+            &existing.lease,
+            process_identity(existing.lease.pid).as_deref(),
+        ) && existing.lease.pid != current_gui.pid
+        {
+            return Err("another CovenCave GUI already owns desktop reachability".to_string());
+        }
+        if existing.lease.pid == current_gui.pid && existing.lease.identity == current_gui.identity
+        {
+            // Setup can be re-entered during macOS lifecycle restoration. Keep
+            // this GUI's existing sidecar lease rather than replacing it.
+        } else {
+            stop_recorded_gui_sidecar(&app_data_dir)?;
+            write_gui_ownership_state(
+                &app_data_dir,
+                &GuiOwnershipState {
+                    lease: current_gui.clone(),
+                    sidecar: None,
+                },
+            )?;
+        }
+    } else {
+        write_gui_ownership_state(
+            &app_data_dir,
+            &GuiOwnershipState {
+                lease: current_gui.clone(),
+                sidecar: None,
+            },
+        )?;
+    }
 
     let config_path = app_data_dir.join(REACHABILITY_CONFIG_FILE);
     let config = read_reachability_config(&config_path);
@@ -897,7 +983,9 @@ pub(super) fn handoff_to_background_daemon(app: &tauri::AppHandle) {
     };
     let config = read_reachability_config(&app_data_dir.join(REACHABILITY_CONFIG_FILE));
     if !config.daemon_mode || !background_availability_supported() {
-        let _ = std::fs::remove_file(app_data_dir.join(GUI_ACTIVE_FILE));
+        if let Ok(owner) = current_process_lease() {
+            remove_gui_ownership_if_owned(&app_data_dir, &owner);
+        }
         return;
     }
 
@@ -910,7 +998,9 @@ pub(super) fn handoff_to_background_daemon(app: &tauri::AppHandle) {
             return;
         }
     }
-    let _ = std::fs::remove_file(app_data_dir.join(GUI_ACTIVE_FILE));
+    if let Ok(owner) = current_process_lease() {
+        remove_gui_ownership_if_owned(&app_data_dir, &owner);
+    }
 }
 
 #[cfg(all(desktop, not(target_os = "macos")))]
@@ -918,6 +1008,10 @@ pub(super) fn handoff_to_background_daemon(_app: &tauri::AppHandle) {}
 
 #[cfg(desktop)]
 pub(super) fn sidecar_reachability_ready(app: &tauri::AppHandle, port: u16, pid: u32) {
+    #[cfg(target_os = "macos")]
+    if let Err(error) = record_gui_sidecar(app, pid, port) {
+        log::warn!("[cave] could not record GUI sidecar ownership: {error}");
+    }
     repair_tailscale_serve_for_port(port);
     let Some(runtime) = app.try_state::<Arc<DesktopReachabilityRuntime>>() else {
         return;
@@ -934,18 +1028,65 @@ pub(super) fn sidecar_reachability_ready(app: &tauri::AppHandle, port: u16, pid:
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
+#[repr(C)]
+struct ProcBsdInfo {
+    flags: u32,
+    status: u32,
+    xstatus: u32,
+    pid: u32,
+    ppid: u32,
+    uid: u32,
+    gid: u32,
+    ruid: u32,
+    rgid: u32,
+    svuid: u32,
+    svgid: u32,
+    reserved: u32,
+    comm: [u8; 16],
+    name: [u8; 32],
+    nfiles: u32,
+    pgid: u32,
+    pjobc: u32,
+    tdev: u32,
+    tpgid: u32,
+    nice: i32,
+    start_seconds: u64,
+    start_microseconds: u64,
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+#[link(name = "proc")]
+unsafe extern "C" {
+    fn proc_pidinfo(
+        pid: std::os::raw::c_int,
+        flavor: std::os::raw::c_int,
+        arg: u64,
+        buffer: *mut std::ffi::c_void,
+        buffer_size: std::os::raw::c_int,
+    ) -> std::os::raw::c_int;
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
 fn process_identity(pid: u32) -> Option<String> {
-    let output = Command::new("/bin/ps")
-        .args(["-o", "lstart=", "-o", "comm=", "-p", &pid.to_string()])
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
-    if !output.status.success() {
+    // PROC_PIDTBSDINFO exposes the kernel-recorded birth timestamp with
+    // microsecond precision. Unlike `ps -o lstart`, it cannot confuse a
+    // process that reuses the same PID during the same wall-clock second.
+    const PROC_PIDTBSDINFO: std::os::raw::c_int = 3;
+    let mut info = std::mem::MaybeUninit::<ProcBsdInfo>::zeroed();
+    let written = unsafe {
+        proc_pidinfo(
+            pid as std::os::raw::c_int,
+            PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            std::mem::size_of::<ProcBsdInfo>() as std::os::raw::c_int,
+        )
+    };
+    if written < std::mem::size_of::<ProcBsdInfo>() as std::os::raw::c_int {
         return None;
     }
-    let identity = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!identity.is_empty()).then_some(identity)
+    let info = unsafe { info.assume_init() };
+    (info.pid == pid).then(|| format!("{}.{}", info.start_seconds, info.start_microseconds))
 }
 
 #[cfg(desktop)]
@@ -962,10 +1103,102 @@ fn current_process_lease() -> Result<ProcessLease, String> {
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
+fn record_gui_sidecar(app: &tauri::AppHandle, pid: u32, port: u16) -> Result<(), String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("could not resolve app data: {error}"))?;
+    let _ownership = acquire_reachability_ownership_lease(&app_data_dir)?;
+    let owner = current_process_lease()?;
+    let Some(mut state) = read_gui_ownership_state(&app_data_dir) else {
+        return Err("GUI reachability ownership is missing".to_string());
+    };
+    if state.lease.pid != owner.pid || state.lease.identity != owner.identity {
+        return Err("this GUI does not own desktop reachability".to_string());
+    }
+    let identity = process_identity(pid)
+        .ok_or_else(|| "could not establish GUI sidecar identity".to_string())?;
+    state.sidecar = Some(DaemonSidecarState {
+        lease: ProcessLease { pid, identity },
+        port,
+    });
+    write_gui_ownership_state(&app_data_dir, &state)
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn clear_recorded_gui_sidecar(app: &tauri::AppHandle) -> Result<(), String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("could not resolve app data: {error}"))?;
+    let _ownership = acquire_reachability_ownership_lease(&app_data_dir)?;
+    let owner = current_process_lease()?;
+    let Some(mut state) = read_gui_ownership_state(&app_data_dir) else {
+        return Ok(());
+    };
+    if state.lease.pid != owner.pid || state.lease.identity != owner.identity {
+        return Ok(());
+    }
+    state.sidecar = None;
+    write_gui_ownership_state(&app_data_dir, &state)
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
 fn read_daemon_sidecar_state(app_data_dir: &Path) -> Option<DaemonSidecarState> {
     std::fs::read_to_string(app_data_dir.join(DAEMON_STATE_FILE))
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok())
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn stop_recorded_sidecar(state_path: &Path, state: &DaemonSidecarState) -> Result<(), String> {
+    if !lease_matches(&state.lease, process_identity(state.lease.pid).as_deref()) {
+        let _ = std::fs::remove_file(state_path);
+        return Ok(());
+    }
+    let pid = state.lease.pid.to_string();
+    if let Err(error) = run_process_signal("TERM", &pid) {
+        // A natural child exit can land between the identity check and TERM.
+        // Treat that race as a successful cleanup, but never hide an error for
+        // a still-live process that we verified as ours.
+        if !lease_matches(&state.lease, process_identity(state.lease.pid).as_deref()) {
+            let _ = std::fs::remove_file(state_path);
+            return Ok(());
+        }
+        return Err(error);
+    }
+    if !wait_for_process_exit(&state.lease, DAEMON_STOP_TIMEOUT) {
+        if let Err(error) = run_process_signal("KILL", &pid) {
+            if !lease_matches(&state.lease, process_identity(state.lease.pid).as_deref()) {
+                let _ = std::fs::remove_file(state_path);
+                return Ok(());
+            }
+            return Err(error);
+        }
+        if !wait_for_process_exit(&state.lease, Duration::from_secs(1)) {
+            return Err(format!(
+                "background sidecar {} did not stop",
+                state.lease.pid
+            ));
+        }
+    }
+    let _ = std::fs::remove_file(state_path);
+    Ok(())
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn stop_recorded_gui_sidecar(app_data_dir: &Path) -> Result<(), String> {
+    let state_path = app_data_dir.join(GUI_ACTIVE_FILE);
+    let Some(state) = read_gui_ownership_state(app_data_dir) else {
+        return Ok(());
+    };
+    match state.sidecar {
+        Some(sidecar) => stop_recorded_sidecar(&state_path, &sidecar),
+        None => {
+            let _ = std::fs::remove_file(state_path);
+            Ok(())
+        }
+    }
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -1002,23 +1235,7 @@ fn stop_recorded_daemon_sidecar(app_data_dir: &Path) -> Result<(), String> {
     let Some(state) = read_daemon_sidecar_state(app_data_dir) else {
         return Ok(());
     };
-    if !lease_matches(&state.lease, process_identity(state.lease.pid).as_deref()) {
-        let _ = std::fs::remove_file(state_path);
-        return Ok(());
-    }
-    let pid = state.lease.pid.to_string();
-    run_process_signal("TERM", &pid)?;
-    if !wait_for_process_exit(&state.lease, DAEMON_STOP_TIMEOUT) {
-        run_process_signal("KILL", &pid)?;
-        if !wait_for_process_exit(&state.lease, Duration::from_secs(1)) {
-            return Err(format!(
-                "background sidecar {} did not stop",
-                state.lease.pid
-            ));
-        }
-    }
-    let _ = std::fs::remove_file(state_path);
-    Ok(())
+    stop_recorded_sidecar(&state_path, &state)
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -1048,6 +1265,10 @@ pub(super) fn sidecar_reachability_stopped(app: &tauri::AppHandle) {
         return;
     };
     runtime.clear_target_pid();
+    #[cfg(target_os = "macos")]
+    if let Err(error) = clear_recorded_gui_sidecar(app) {
+        log::warn!("[cave] could not clear GUI sidecar ownership: {error}");
+    }
     if let Ok(app_data_dir) = app.path().app_data_dir() {
         runtime.reconcile_power(
             app,
@@ -1108,6 +1329,10 @@ pub(super) fn desktop_reachability_configure(
             .path()
             .app_data_dir()
             .map_err(|error| format!("could not resolve app data: {error}"))?;
+        // This covers the config write and launchd reconciliation together so
+        // window teardown cannot hand off a daemon while a settings mutation
+        // is rolling back its opt-in state.
+        let _ownership = acquire_reachability_ownership_lease(&app_data_dir)?;
         let config_path = app_data_dir.join(REACHABILITY_CONFIG_FILE);
         let previous = read_reachability_config(&config_path);
         write_private_json(&config_path, &config)?;
@@ -1120,6 +1345,18 @@ pub(super) fn desktop_reachability_configure(
         };
         if let Err(error) = launch_agent_result {
             let _ = write_private_json(&config_path, &previous);
+            let restore_result = if previous.daemon_mode && background_availability_supported() {
+                install_launch_agent(&app, &app_data_dir)
+            } else if previous.daemon_mode {
+                suspend_background_launch_agent(&app_data_dir)
+            } else {
+                uninstall_launch_agent(&app_data_dir)
+            };
+            if let Err(restore_error) = restore_result {
+                log::warn!(
+                    "[cave] could not restore background availability after a failed settings change: {restore_error}"
+                );
+            }
             return Err(error);
         }
         if let Some(runtime) = app.try_state::<Arc<DesktopReachabilityRuntime>>() {
@@ -1281,9 +1518,10 @@ fn run_sidecar_daemon() -> Result<i32, String> {
         }
         wait_for_daemon_activity(Duration::from_secs(1));
     }
-    // A previous wrapper can crash without reaping Node. Its signed state is
-    // identity-checked before we stop it, so a restart never creates a second
-    // loopback server on a fallback port.
+    // A force-quit GUI or a previous daemon wrapper can leave Node alive. Both
+    // ownership records are identity-checked and reaped before a restart can
+    // select a fallback port.
+    stop_recorded_gui_sidecar(&app_data_dir)?;
     stop_recorded_daemon_sidecar(&app_data_dir)?;
 
     let executable = std::env::current_exe()
@@ -1429,7 +1667,8 @@ fn run_sidecar_daemon() -> Result<i32, String> {
         let current = read_reachability_config(&config_path);
         let desired_power = current.prevent_sleep
             && mobile_mode_enabled()
-            && paired_phone_seen(&paired_phone_path());
+            && paired_phone_seen(&paired_phone_path())
+            && power_assertion_is_effective(current.prevent_sleep_on_ac_only, mac_is_on_ac_power());
         if let Some(active) = assertion.as_mut() {
             let exited = active.child.try_wait().ok().flatten().is_some();
             if !desired_power || exited || active.on_ac_only != current.prevent_sleep_on_ac_only {
@@ -1496,6 +1735,13 @@ mod tests {
     fn caffeinate_policy_uses_system_assertion_on_ac_and_idle_assertion_on_battery() {
         assert_eq!(power_assertion_arguments(42, true), ["-s", "-w", "42"]);
         assert_eq!(power_assertion_arguments(42, false), ["-i", "-w", "42"]);
+    }
+
+    #[test]
+    fn ac_only_sleep_prevention_is_inactive_on_battery() {
+        assert!(power_assertion_is_effective(true, true));
+        assert!(!power_assertion_is_effective(true, false));
+        assert!(power_assertion_is_effective(false, false));
     }
 
     #[test]
@@ -1595,6 +1841,28 @@ mod tests {
             Some("Thu Jul 24 12:00:01 2026 /usr/bin/unrelated")
         ));
         assert!(!lease_matches(&lease, None));
+    }
+
+    #[test]
+    fn gui_ownership_persists_its_sidecar_lease_for_crash_recovery() {
+        let state = GuiOwnershipState {
+            lease: ProcessLease {
+                pid: 10,
+                identity: "gui-birth".to_string(),
+            },
+            sidecar: Some(DaemonSidecarState {
+                lease: ProcessLease {
+                    pid: 11,
+                    identity: "sidecar-birth".to_string(),
+                },
+                port: 3007,
+            }),
+        };
+        let restored: GuiOwnershipState = serde_json::from_value(
+            serde_json::to_value(&state).expect("GUI ownership state serializes"),
+        )
+        .expect("GUI ownership state deserializes");
+        assert_eq!(restored.sidecar.expect("sidecar is retained").port, 3007);
     }
 
     #[test]
