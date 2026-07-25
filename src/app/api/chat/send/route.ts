@@ -1223,13 +1223,13 @@ export async function POST(req: Request) {
   // back to the boundary block ("listed above") and only exists when the
   // conversation's previous turn strayed out of the granted roots.
   const harnessPrompt = buildPromptWithBoundaryReminder(scopedPrompt, body.sessionId);
-  // Do not assume every OpenCode release implements the conventional `--`
-  // delimiter. A selected schema must opt into it and this installed CLI must
-  // document it; ordinary prompts keep the compatible positional launch.
+  // A signed selected profile is authoritative for its launch contract. The
+  // current OpenCode profile explicitly consumes yargs's conventional `--`
+  // delimiter even though its help omits a standalone delimiter row.
   const openCodeEndOfOptionsSupported = Boolean(
     openCodeDirect
-    && openCodeCompatibility?.capabilities.endOfOptions
-    && (openCodeCompatibility.mode === "plain" || openCodeCompatibility.schema?.launch.endOfOptions === true),
+    && (openCodeCompatibility.schema?.launch.endOfOptions === true
+      || (openCodeCompatibility.mode === "plain" && openCodeCompatibility.capabilities.endOfOptions)),
   );
   const openCodePromptNeedsDelimiter = openCodeDirect && harnessPrompt.startsWith("--");
   if (openCodePromptNeedsDelimiter && !openCodeEndOfOptionsSupported) {

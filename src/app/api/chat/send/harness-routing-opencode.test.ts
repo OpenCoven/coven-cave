@@ -27,7 +27,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const openCodeEndOfOptionsSupported = Boolean\([\s\S]*?capabilities\.endOfOptions[\s\S]*?schema\?\.launch\.endOfOptions === true[\s\S]*?const openCodePromptNeedsDelimiter = openCodeDirect && harnessPrompt\.startsWith\("--"\);[\s\S]*?if \(openCodePromptNeedsDelimiter && !openCodeEndOfOptionsSupported\)[\s\S]*?status: 400[\s\S]*?if \(openCodeEndOfOptionsSupported\) a\.push\("--"\);/,
+  /const openCodeEndOfOptionsSupported = Boolean\([\s\S]*?schema\?\.launch\.endOfOptions === true[\s\S]*?mode === "plain"[\s\S]*?capabilities\.endOfOptions[\s\S]*?const openCodePromptNeedsDelimiter = openCodeDirect && harnessPrompt\.startsWith\("--"\);[\s\S]*?if \(openCodePromptNeedsDelimiter && !openCodeEndOfOptionsSupported\)[\s\S]*?status: 400[\s\S]*?if \(openCodeEndOfOptionsSupported\) a\.push\("--"\);/,
   "OpenCode emits the end-of-options delimiter only when both the selected schema and help probe confirm it, refusing an unsafe flag-shaped prompt otherwise",
 );
 assert.match(
@@ -202,8 +202,8 @@ assert.match(
 );
 assert.match(
   capabilities,
-  /export async function openCodeRunCapabilities\(familiarId\?[^)]*\)[\s\S]*?const env = openCodeSpawnEnv\(familiarId\);[\s\S]*?await openCodeExecutableIdentity\(env\)[\s\S]*?openCodeCapabilitiesProbe[\s\S]*?probeOpenCodeRunContract\(env\)[\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
-  "OpenCode checks a cheap scoped executable identity before reusing or probing its capability contract",
+  /export async function openCodeRunCapabilities\(familiarId\?[^)]*\)[\s\S]*?const env = openCodeSpawnEnv\(familiarId\);[\s\S]*?await openCodeExecutableIdentity\(env\)[\s\S]*?probeOpenCodeRunContract\(env\)[\s\S]*?json:[\s\S]*?model:[\s\S]*?session:[\s\S]*?contractIdentity[\s\S]*?openCodeCapabilityIdentity\(helpProbe\.output, versionProbe\.output\)/,
+  "OpenCode fingerprints the completed scoped help contract before retaining capability evidence",
 );
 assert.match(
   capabilities,

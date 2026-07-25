@@ -483,10 +483,6 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
   const env = openCodeSpawnEnv(familiarId);
   const cacheable = openCodeCapabilityProbeCacheable();
   const executableIdentity = cacheable ? await openCodeExecutableIdentity(env) : "uncached-windows-launcher";
-  const identity = `${familiarId ?? "default"}\0${executableIdentity}`;
-  if (cacheable && openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.identity === identity) {
-    return openCodeCapabilitiesProbe.value;
-  }
   const value = (async () => {
     const { helpProbe, versionProbe } = await probeOpenCodeRunContract(env);
     const version = versionProbe.complete
@@ -495,10 +491,23 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
     // Partial, timed-out, non-zero, or oversized help is never capability
     // evidence. Probe again after the short TTL instead of risking an argv
     // that the installed client does not accept.
-    return !helpProbe.complete
+    const capabilities = !helpProbe.complete
       ? { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], endOfOptions: false, structuredSwitches: [], structuredOutputs: [] }
       : parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
+    // The help surface is the actual argv/event contract. Include its
+    // fingerprint in any retained entry so an in-place shim replacement with
+    // the same version can never reuse stale capability evidence.
+    const contractIdentity = helpProbe.complete
+      ? openCodeCapabilityIdentity(helpProbe.output, versionProbe.output)
+      : `unresolved:${Date.now()}`;
+    if (cacheable && !contractIdentity.startsWith("unresolved:")) {
+      openCodeCapabilitiesProbe = {
+        until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS,
+        identity: `${familiarId ?? "default"}\0${executableIdentity}\0${contractIdentity}`,
+        value: Promise.resolve(capabilities),
+      };
+    }
+    return capabilities;
   })();
-  if (cacheable) openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, identity, value };
   return value;
 }
