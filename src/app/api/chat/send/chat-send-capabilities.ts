@@ -1,7 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
-import { stat } from "node:fs/promises";
-import path from "node:path";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
@@ -11,6 +9,18 @@ import {
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import type { OpenCodeRunCapabilities } from "@/lib/opencode-compatibility";
+
+type ExecutableFs = Pick<typeof import("node:fs/promises"), "stat">;
+
+// PATH entries are machine-local runtime state, not standalone assets. Resolve
+// this Node builtin lazily so Turbopack cannot trace an installed CLI tree.
+const executableFs = (process as typeof process & {
+  getBuiltinModule?: (id: "node:fs/promises") => ExecutableFs | undefined;
+}).getBuiltinModule?.("node:fs/promises");
+
+function requireExecutableFs(): ExecutableFs | null {
+  return executableFs ?? null;
+}
 
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
@@ -336,6 +346,8 @@ export async function openCodeExecutableIdentity(
   env = openCodeSpawnEnv(),
   platform: NodeJS.Platform = process.platform,
 ): Promise<string> {
+  const fs = requireExecutableFs();
+  if (!fs) return `unresolved:${Date.now()}`;
   const pathValue = env.PATH ?? env.Path ?? "";
   const names = platform === "win32"
     ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
@@ -344,11 +356,13 @@ export async function openCodeExecutableIdentity(
       .filter((extension) => /^\.[A-Za-z0-9]+$/.test(extension))
       .map((extension) => `opencode${extension.toLowerCase()}`)
     : ["opencode"];
-  for (const directory of pathValue.split(path.delimiter).filter(Boolean)) {
+  const pathSeparator = platform === "win32" ? ";" : ":";
+  const directorySeparator = platform === "win32" ? "\\" : "/";
+  for (const directory of pathValue.split(pathSeparator).filter(Boolean)) {
     for (const name of names) {
-      const candidate = path.join(/* turbopackIgnore: true */ directory, name);
+      const candidate = `${directory.replace(/[\\/]+$/, "")}${directorySeparator}${name}`;
       try {
-        const info = await stat(/* turbopackIgnore: true */ candidate);
+        const info = await fs.stat(candidate);
         if (info.isFile()) return `${candidate}\0${info.size}\0${info.mtimeMs}`;
       } catch {
         // Keep looking: the launched binary may be later in PATH.
