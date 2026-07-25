@@ -2488,6 +2488,11 @@ export async function POST(req: Request) {
           "running",
         );
         sessionId = null;
+        // The failed resumed stream can echo the stale native token before its
+        // error frame. This retry deliberately omits --session, so retaining
+        // that token would persist it again if the fresh process exits before
+        // announcing a replacement session.
+        openCodeSessionId = null;
         assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
         assistantText = "";
         jsonBuf = "";

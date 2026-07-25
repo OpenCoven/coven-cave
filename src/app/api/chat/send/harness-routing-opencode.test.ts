@@ -72,6 +72,11 @@ assert.match(
 );
 assert.match(
   route,
+  /if \(resumeFailed && body\.sessionId\) \{[\s\S]*?sessionId = null;[\s\S]*?openCodeSessionId = null;[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
+  "a fresh OpenCode resume retry clears the stale native token before launching without --session",
+);
+assert.match(
+  route,
   /openCodeDirect && forwardModel[\s\S]*?modelApplicationFromRun\([\s\S]*?isError: result\.is_error === true,[\s\S]*?errorText: openCodeModelRejected \? "model unavailable" : \[\.\.\.stderrTail, \.\.\.stdoutErrTail\]\.join\("\\n"\)/,
   "OpenCode marks model-specific failed runs as rejected without retaining raw JSON error messages",
 );
