@@ -256,8 +256,10 @@ function safeStructuredLaunchOption(value: unknown): value is string {
 
 function hasValidLaunch(value: unknown, requires: Record<string, unknown>): boolean {
   if (!isRecord(value) || !Array.isArray(value.requiredFlags)) return false;
+  if (!Object.keys(value).every((key) => key === "structuredOutput" || key === "sessionOption" || key === "requiredFlags")) return false;
   const structuredOutput = value.structuredOutput;
   if (!isRecord(structuredOutput)) return false;
+  if (!Object.keys(structuredOutput).every((key) => key === "option" || key === "value")) return false;
   if (!safeStructuredLaunchOption(structuredOutput.option)) return false;
   if (typeof structuredOutput.value !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(structuredOutput.value)) return false;
   if (structuredOutput.value !== (typeof requires.protocol === "string" ? requires.protocol : "json")) return false;
@@ -271,6 +273,7 @@ function hasValidLaunch(value: unknown, requires: Record<string, unknown>): bool
 
 function isEventSchema(value: unknown): value is OpenCodeEventSchema {
   if (!isRecord(value) || typeof value.id !== "string" || value.id.length === 0 || value.id.length > 128 || !isRecord(value.eventTypes) || !isRecord(value.requires)) return false;
+  if (!Object.keys(value).every((key) => key === "id" || key === "requires" || key === "eventTypes" || key === "shape" || key === "launch")) return false;
   if (!hasValidShape(value.shape)) return false;
   if (!hasValidLaunch(value.launch, value.requires)) return false;
   if (!Object.keys(value.requires).every((key) => key === "json" || key === "session" || key === "model" || key === "protocol")) return false;
@@ -355,8 +358,13 @@ export function isOpenCodeSchemaBundle(
   options: { allowExpired?: boolean } = {},
 ): value is OpenCodeSchemaBundle {
   if (!isRecord(value) || value.format !== 1 || value.runtime !== "opencode") return false;
+  if (!Object.keys(value).every((key) => key === "format" || key === "runtime" || key === "sequence" || key === "issuedAt" || key === "expiresAt" || key === "keyId" || key === "schemas" || key === "signature")) return false;
   if (typeof value.sequence !== "number" || !Number.isSafeInteger(value.sequence) || value.sequence < 1 || !Array.isArray(value.schemas) || value.schemas.length === 0 || value.schemas.length > 64 || !value.schemas.every(isEventSchema)) return false;
   if (value.keyId !== undefined && (typeof value.keyId !== "string" || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(value.keyId))) return false;
+  if (value.signature !== undefined && (!isRecord(value.signature)
+    || !Object.keys(value.signature).every((key) => key === "algorithm" || key === "value")
+    || value.signature.algorithm !== "ed25519"
+    || typeof value.signature.value !== "string")) return false;
   const issuedAt = parseCanonicalTimestamp(value.issuedAt);
   const expiresAt = parseCanonicalTimestamp(value.expiresAt);
   if (issuedAt === null || expiresAt === null || issuedAt > now || expiresAt <= issuedAt || (!options.allowExpired && expiresAt <= now)) return false;

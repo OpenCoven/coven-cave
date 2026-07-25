@@ -42,6 +42,8 @@ const MAX_PENDING_TOOL_RESULTS = 100;
 const MAX_PENDING_TOOL_RESULT_BYTES = 64_000;
 const PENDING_TOOL_RESULT_TTL_MS = 60_000;
 const MAX_OPEN_ENVELOPE_CALLS = 200;
+/** Keep a bounded recent window to suppress terminal-frame retransmits. */
+export const MAX_SETTLED_ENVELOPE_IDS = 512;
 
 function utf8Bytes(value: string | undefined): number {
   return value === undefined ? 0 : new TextEncoder().encode(value).byteLength;
@@ -167,11 +169,24 @@ export class ToolCallTracker {
     if (q) {
       const idx = q.indexOf(call);
       if (idx >= 0) q.splice(idx, 1);
+      if (q.length === 0) this.open.delete(call.name);
     }
     if (call.envelopeId) {
       this.byEnvelopeId.delete(call.envelopeId);
-      this.settledEnvelopeIds.add(call.envelopeId);
+      this.rememberSettledEnvelopeId(call.envelopeId);
     }
+  }
+
+  private rememberSettledEnvelopeId(id: string): void {
+    // Set iteration preserves insertion order. Refresh a retransmitted id and
+    // evict the oldest terminal id before the tracker can grow for a long run.
+    this.settledEnvelopeIds.delete(id);
+    while (this.settledEnvelopeIds.size >= MAX_SETTLED_ENVELOPE_IDS) {
+      const oldest = this.settledEnvelopeIds.values().next().value;
+      if (oldest === undefined) break;
+      this.settledEnvelopeIds.delete(oldest);
+    }
+    this.settledEnvelopeIds.add(id);
   }
 
   private record(ev: ToolStreamEvent, textOffset?: number): void {
@@ -239,10 +254,10 @@ export class ToolCallTracker {
 
   /** post_tool_use hook line: the OLDEST open hook-started call completed. */
   hookEnd(name: string, output: string | undefined, isError: boolean): ToolStreamEvent {
-    const queue = this.queueFor(name);
+    const queue = this.open.get(name);
     // FIFO pairing: a post matches the oldest open pre of the same name.
     // Fall back to the oldest envelope-only call (post-hook-only harnesses).
-    const call = queue.find((c) => c.hookStarted) ?? queue[0];
+    const call = queue?.find((c) => c.hookStarted) ?? queue?.[0];
     const status = isError ? "error" : "ok";
     if (!call) {
       // Post without any open call: surface it anyway under a fresh id.

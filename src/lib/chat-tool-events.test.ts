@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
+import { MAX_SETTLED_ENVELOPE_IDS, ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
 
 const tracker = new ToolCallTracker(() => 1_000);
 assert.equal(tracker.envelopeToolResult("call_1", "late terminal output", false), null);
@@ -31,5 +31,16 @@ assert.ok(
   new TextEncoder().encode(capLiveToolPayload("😀".repeat(10_000), 16_000) ?? "").byteLength <= 16_000,
   "unicode tool payloads respect byte rather than UTF-16 code-unit caps",
 );
+
+const terminalWindow = new ToolCallTracker(() => 1_000);
+for (let index = 0; index <= MAX_SETTLED_ENVELOPE_IDS; index += 1) {
+  const id = `settled-${index}`;
+  assert.ok(terminalWindow.envelopeToolUse(id, "read"));
+  assert.ok(terminalWindow.envelopeToolResult(id, "ok", false));
+}
+assert.equal(terminalWindow.envelopeToolUse(`settled-${MAX_SETTLED_ENVELOPE_IDS}`, "read"), null, "recent terminal ids still suppress retransmitted starts");
+assert.ok(terminalWindow.envelopeToolUse("settled-0", "read"), "the bounded terminal-id window evicts only the oldest completed id");
+terminalWindow.hookEnd("never-started", undefined, false);
+assert.ok(terminalWindow.envelopeToolUse("after-empty-hook-end", "never-started"), "a terminal hook without a start does not retain an empty per-name queue");
 
 console.log("chat-tool-events.test.ts: ok");

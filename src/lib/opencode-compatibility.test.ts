@@ -156,6 +156,22 @@ assert.equal(
 );
 
 assert.equal(isOpenCodeSchemaBundle({ ...unsigned, schemas: [] }, now), false, "empty signed bundles cannot replace a working parser set");
+assert.equal(isOpenCodeSchemaBundle({ ...unsigned, unexpected: true }, now), false, "unknown format-1 bundle fields fail closed");
+assert.equal(isOpenCodeSchemaBundle({
+  ...unsigned,
+  signature: { algorithm: "ed25519", value: "signature", unexpected: true },
+}, now), false, "unknown signature fields fail closed");
+assert.equal(isOpenCodeSchemaBundle({
+  ...unsigned,
+  schemas: [{ ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], unexpected: true }],
+}, now), false, "unknown schema fields fail closed");
+assert.equal(isOpenCodeSchemaBundle({
+  ...unsigned,
+  schemas: [{
+    ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+    launch: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].launch, requiredCapability: "model" },
+  }],
+}, now), false, "unknown launch constraints cannot be silently ignored");
 const protocolOnlySchema = {
   ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   id: "protocol-only",
