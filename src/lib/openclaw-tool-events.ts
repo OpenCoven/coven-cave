@@ -433,6 +433,12 @@ type GatewayResponse = { type?: unknown; id?: unknown; ok?: unknown; payload?: u
 export async function subscribeOpenClawGatewayToolEvents(options: {
   sessionKey: string;
   agentId: string;
+  /**
+   * The Gateway-issued run id for this exact invocation. Session subscriptions
+   * intentionally see every run for that session, so no tool frame is safe to
+   * render without this correlation value.
+   */
+  expectedRunId?: string;
   onToolEvent(event: OpenClawGatewayToolEvent): void;
   onDisconnect?(): void;
   onDiagnostic?(diagnostic: { code: string; protocol?: number; schema?: string }): void;
@@ -440,6 +446,19 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
   /** Test seam; production always persists verified compatibility metadata. */
   persistCapabilityCache?: boolean;
 }): Promise<OpenClawGatewayToolSubscription> {
+  if (
+    typeof options.expectedRunId !== "string" ||
+    !options.expectedRunId.trim() ||
+    options.expectedRunId.length > MAX_TOOL_IDENTIFIER_LENGTH
+  ) {
+    // `openclaw agent --json` returns its accepted run id only with the final
+    // response, after live events may already have arrived. The legacy CLI
+    // transport therefore remains plain chat until it can provide this proof;
+    // guessing from the first session event would attach concurrent work to
+    // the wrong Cave turn.
+    return { active: false, fallbackReason: "gateway_run_correlation_unavailable", close() {} };
+  }
+  const expectedRunId = options.expectedRunId;
   const config = gatewayConfigFromEnv();
   if (!config) return { active: false, fallbackReason: "gateway_not_configured", close() {} };
   // The cache is diagnostic/fallback state only. It never authorizes a stream:
@@ -691,7 +710,7 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
       // can legally send arbitrary event envelopes before then.
       if (!connected || closed) return;
       const toolEvent = normalizeOpenClawGatewayToolEvent(frame, options.sessionKey, options.agentId);
-      if (toolEvent) options.onToolEvent(toolEvent);
+      if (toolEvent?.runId === expectedRunId) options.onToolEvent(toolEvent);
     });
   });
 }

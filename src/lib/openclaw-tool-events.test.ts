@@ -63,6 +63,14 @@ assert.equal(
 
 const [startFrame, updateFrame, terminalFrame] = fixture.frames;
 const gatewaySessionKey = "agent:nova:explicit:cave-session";
+const foreignRunStartFrame = {
+  ...startFrame,
+  payload: {
+    ...startFrame.payload,
+    runId: "run-other",
+    data: { ...startFrame.payload.data, toolCallId: "call-other" },
+  },
+};
 assert.deepEqual(normalizeOpenClawGatewayToolEvent(startFrame, gatewaySessionKey, "nova"), {
   runId: "run-1",
   id: "call-1",
@@ -254,6 +262,9 @@ gateway.on("connection", (socket) => {
       messageSubscriptionRequests += 1;
       assert.deepEqual(request.params, { key: gatewaySessionKey, agentId: "nova" });
       socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: {} }));
+      // Session subscriptions carry every run. A valid frame belonging to a
+      // concurrent turn must not leak into this invocation's event ledger.
+      socket.send(JSON.stringify(foreignRunStartFrame));
       socket.send(JSON.stringify(startFrame));
       socket.send(JSON.stringify(updateFrame));
       socket.send(JSON.stringify(terminalFrame));
@@ -278,6 +289,7 @@ try {
   const subscription = await subscribeOpenClawGatewayToolEvents({
     sessionKey: gatewaySessionKey,
     agentId: "nova",
+    expectedRunId: "run-1",
     persistCapabilityCache: false,
     onToolEvent: (event) => {
       receivedFrames.push(event);
@@ -340,6 +352,7 @@ try {
     (await subscribeOpenClawGatewayToolEvents({
       sessionKey: gatewaySessionKey,
       agentId: "nova",
+      expectedRunId: "run-1",
       persistCapabilityCache: false,
       onToolEvent: () => assert.fail("a plaintext remote Gateway must not be contacted"),
     })).active,
@@ -353,10 +366,20 @@ try {
     (await subscribeOpenClawGatewayToolEvents({
       sessionKey: gatewaySessionKey,
       agentId: "nova",
+      expectedRunId: "run-1",
       persistCapabilityCache: false,
       onToolEvent: () => assert.fail("unauthenticated Gateway must not emit events"),
     })).active,
     false,
+  );
+  assert.equal(
+    (await subscribeOpenClawGatewayToolEvents({
+      sessionKey: gatewaySessionKey,
+      agentId: "nova",
+      onToolEvent: () => assert.fail("unbound sessions must not emit tool events"),
+    })).fallbackReason,
+    "gateway_run_correlation_unavailable",
+    "the CLI bridge must fall back before it can prove a session event belongs to this turn",
   );
 } finally {
   if (previousGatewayUrl === undefined) delete process.env.OPENCLAW_GATEWAY_URL;

@@ -595,6 +595,11 @@ function openClawChatResponse(args: {
       const gatewayToolSubscriptionPromise = subscribeOpenClawGatewayToolEvents({
         sessionKey: openClawGatewaySessionKey(agentId, conversationId),
         agentId,
+        // The current one-shot CLI reports the Gateway run id only in its
+        // terminal JSON. Until a direct Gateway dispatch supplies it before
+        // streaming starts, the bridge must retain the visible plain-chat
+        // fallback rather than attaching another run's session.tool frames.
+        expectedRunId: undefined,
         onToolEvent: (event) => {
           if (cliLifecycleFinished || toolActivityClosed) return;
           const tool = openClawTools.accept(event);
