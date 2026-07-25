@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import WebSocket from "ws";
@@ -419,10 +419,31 @@ function runtimeKey(url: string): string {
   return createHash("sha256").update(url).digest("hex").slice(0, 24);
 }
 
-function gatewayConfigFromEnv(): { url: string; token?: string } | null {
+type GatewayDeviceIdentity = {
+  id: string;
+  publicKey: string;
+  privateKey: ReturnType<typeof createPrivateKey>;
+};
+
+type GatewayConfig = {
+  url: string;
+  token: string;
+  device: GatewayDeviceIdentity;
+};
+
+/**
+ * OpenClaw v4 requires a challenge-bound Ed25519 device proof in addition to
+ * the bootstrap/device token. Keep all credential material in the process
+ * environment: this observer is deliberately ephemeral and never writes a
+ * Gateway URL, token, or private key to Cave's capability cache.
+ */
+function gatewayConfigFromEnv(): GatewayConfig | null {
   const url = process.env.OPENCLAW_GATEWAY_URL?.trim();
   const token = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
-  if (!url || !token) return null;
+  const deviceId = process.env.OPENCLAW_GATEWAY_DEVICE_ID?.trim();
+  const publicKey = process.env.OPENCLAW_GATEWAY_DEVICE_PUBLIC_KEY?.trim();
+  const privateKeyPem = process.env.OPENCLAW_GATEWAY_DEVICE_PRIVATE_KEY?.replace(/\\n/g, "\n").trim();
+  if (!url || !token || !deviceId || !publicKey || !privateKeyPem) return null;
   try {
     const parsed = new URL(url);
     const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "::1" || parsed.hostname === "localhost";
@@ -434,10 +455,55 @@ function gatewayConfigFromEnv(): { url: string; token?: string } | null {
       parsed.search ||
       parsed.hash
     ) return null;
+    if (
+      deviceId.length > MAX_TOOL_IDENTIFIER_LENGTH ||
+      !/^[A-Za-z0-9_-]{43}$/.test(publicKey)
+    ) return null;
+    const privateKey = createPrivateKey(privateKeyPem);
+    if (privateKey.asymmetricKeyType !== "ed25519") return null;
+    const derivedPublicKey = createPublicKey(privateKey).export({ format: "jwk" }) as { kty?: unknown; crv?: unknown; x?: unknown };
+    if (
+      derivedPublicKey.kty !== "OKP" ||
+      derivedPublicKey.crv !== "Ed25519" ||
+      derivedPublicKey.x !== publicKey
+    ) return null;
+    return { url, token, device: { id: deviceId, publicKey, privateKey } };
   } catch {
     return null;
   }
-  return { url, token };
+}
+
+function signGatewayConnectChallenge(config: GatewayConfig, nonce: string): {
+  id: string;
+  publicKey: string;
+  signature: string;
+  signedAt: number;
+  nonce: string;
+} {
+  const signedAt = Date.now();
+  // This v3 canonical payload is the public Gateway device-auth contract. Do
+  // not substitute a home-grown auth envelope: protocol changes must get a
+  // new adapter rather than accidentally weakening the handshake.
+  const payload = [
+    "v3",
+    config.device.id,
+    "gateway-client",
+    "backend",
+    "operator",
+    "operator.read",
+    String(signedAt),
+    config.token,
+    nonce,
+    process.platform.trim().toLowerCase(),
+    "",
+  ].join("|");
+  return {
+    id: config.device.id,
+    publicKey: config.device.publicKey,
+    signature: sign(null, Buffer.from(payload), config.device.privateKey).toString("base64url"),
+    signedAt,
+    nonce,
+  };
 }
 
 export type OpenClawGatewayToolSubscription = {
@@ -610,9 +676,32 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
         // Challenges and responses are transport frames too: ignore replays so
         // a duplicate challenge cannot send credentials or subscriptions twice.
         if (closed || connected || connectRequested) return;
+        const challenge = frame.payload as { nonce?: unknown; ts?: unknown } | null;
+        if (
+          !challenge ||
+          typeof challenge.nonce !== "string" ||
+          !challenge.nonce.trim() ||
+          challenge.nonce.length > MAX_TOOL_IDENTIFIER_LENGTH ||
+          !nonNegativeSafeInteger(challenge.ts)
+        ) {
+          options.onDiagnostic?.({ code: "gateway_invalid_challenge" });
+          close();
+          finish(fallback("gateway_invalid_challenge"));
+          return;
+        }
+        let device;
+        try {
+          device = signGatewayConnectChallenge(config, challenge.nonce);
+        } catch {
+          options.onDiagnostic?.({ code: "gateway_auth_unavailable" });
+          close();
+          finish(fallback("gateway_auth_unavailable"));
+          return;
+        }
         connectRequested = true;
-        socket.send(
-          JSON.stringify({
+        try {
+          socket.send(
+            JSON.stringify({
             type: "req",
             id: "cave-openclaw-connect",
             method: "connect",
@@ -629,9 +718,14 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
               commands: [],
               permissions: {},
               auth: { token: config.token },
+              device,
             },
-          }),
-        );
+            }),
+          );
+        } catch {
+          close();
+          finish(fallback("gateway_unavailable"));
+        }
         return;
       }
       if (frame.type === "res" && frame.id === "cave-openclaw-connect") {
@@ -686,7 +780,12 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
           finish(fallback("gateway_policy_exceeded", negotiatedCompatibility));
           return;
         }
-        socket.send(subscriptionRequest);
+        try {
+          socket.send(subscriptionRequest);
+        } catch {
+          close();
+          finish(fallback("gateway_unavailable", negotiatedCompatibility));
+        }
         return;
       }
       if (frame.type === "res" && frame.id === messageSubscriptionId) {

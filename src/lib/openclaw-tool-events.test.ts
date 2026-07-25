@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { createPublicKey, generateKeyPairSync, verify } from "node:crypto";
 import { once } from "node:events";
 import { readFile } from "node:fs/promises";
 import { WebSocketServer } from "ws";
@@ -252,13 +253,18 @@ const receivedFrames = [];
 let gatewaySocket;
 let connectRequests = 0;
 let messageSubscriptionRequests = 0;
+const devicePair = generateKeyPairSync("ed25519");
+const devicePublicJwk = createPublicKey(devicePair.privateKey).export({ format: "jwk" });
+assert.equal(devicePublicJwk.kty, "OKP");
+assert.equal(devicePublicJwk.crv, "Ed25519");
+assert.ok(devicePublicJwk.x);
 gateway.on("connection", (socket) => {
   gatewaySocket = socket;
   // A pre-auth event must never be rendered, even if it happens to look like
   // the selected session's tool frame.
   socket.send(JSON.stringify(startFrame));
-  socket.send(JSON.stringify({ type: "event", event: "connect.challenge", payload: { nonce: "fixture" } }));
-  socket.send(JSON.stringify({ type: "event", event: "connect.challenge", payload: { nonce: "replayed-fixture" } }));
+  socket.send(JSON.stringify({ type: "event", event: "connect.challenge", payload: { nonce: "fixture", ts: 1_000 } }));
+  socket.send(JSON.stringify({ type: "event", event: "connect.challenge", payload: { nonce: "replayed-fixture", ts: 1_001 } }));
   socket.on("message", (raw) => {
     const request = JSON.parse(raw.toString());
     if (request.method === "connect") {
@@ -272,6 +278,36 @@ gateway.on("connection", (socket) => {
         platform: process.platform,
         mode: "backend",
       });
+      assert.deepEqual(
+        request.params.device,
+        {
+          id: "cave-fixture-device",
+          publicKey: devicePublicJwk.x,
+          signature: request.params.device.signature,
+          signedAt: request.params.device.signedAt,
+          nonce: "fixture",
+        },
+        "the connect request must bind device identity to the server nonce",
+      );
+      assert.equal(typeof request.params.device.signedAt, "number");
+      const signedPayload = [
+        "v3",
+        "cave-fixture-device",
+        "gateway-client",
+        "backend",
+        "operator",
+        "operator.read",
+        String(request.params.device.signedAt),
+        "fixture-token",
+        "fixture",
+        process.platform.toLowerCase(),
+        "",
+      ].join("|");
+      assert.equal(
+        verify(null, Buffer.from(signedPayload), devicePair.publicKey, Buffer.from(request.params.device.signature, "base64url")),
+        true,
+        "the Gateway-facing proof must verify against the advertised Ed25519 public key",
+      );
       socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: hello }));
     }
     if (request.method === "sessions.messages.subscribe") {
@@ -290,8 +326,14 @@ gateway.on("connection", (socket) => {
 });
 const previousGatewayUrl = process.env.OPENCLAW_GATEWAY_URL;
 const previousGatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN;
+const previousGatewayDeviceId = process.env.OPENCLAW_GATEWAY_DEVICE_ID;
+const previousGatewayDevicePublicKey = process.env.OPENCLAW_GATEWAY_DEVICE_PUBLIC_KEY;
+const previousGatewayDevicePrivateKey = process.env.OPENCLAW_GATEWAY_DEVICE_PRIVATE_KEY;
 process.env.OPENCLAW_GATEWAY_URL = `ws://127.0.0.1:${address.port}`;
 process.env.OPENCLAW_GATEWAY_TOKEN = "fixture-token";
+process.env.OPENCLAW_GATEWAY_DEVICE_ID = "cave-fixture-device";
+process.env.OPENCLAW_GATEWAY_DEVICE_PUBLIC_KEY = devicePublicJwk.x;
+process.env.OPENCLAW_GATEWAY_DEVICE_PRIVATE_KEY = devicePair.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
 try {
   let disconnects = 0;
   let resolveEvents: (() => void) | undefined;
@@ -374,8 +416,8 @@ try {
     false,
   );
   process.env.OPENCLAW_GATEWAY_URL = `ws://127.0.0.1:${address.port}`;
-  // A URL alone is never enough to turn on Gateway streaming: the token must
-  // be present so the normal path always performs an authenticated handshake.
+  // A URL alone is never enough to turn on Gateway streaming: the token and
+  // challenge-signing device identity must both be present before connecting.
   delete process.env.OPENCLAW_GATEWAY_TOKEN;
   assert.equal(
     (await subscribeOpenClawGatewayToolEvents({
@@ -387,6 +429,20 @@ try {
     })).active,
     false,
   );
+  process.env.OPENCLAW_GATEWAY_TOKEN = "fixture-token";
+  delete process.env.OPENCLAW_GATEWAY_DEVICE_PRIVATE_KEY;
+  assert.equal(
+    (await subscribeOpenClawGatewayToolEvents({
+      sessionKey: gatewaySessionKey,
+      agentId: "nova",
+      expectedRunId: "run-1",
+      persistCapabilityCache: false,
+      onToolEvent: () => assert.fail("an unsigned Gateway observer must not emit tool events"),
+    })).active,
+    false,
+    "a token without the challenge-signing device identity must fail closed before opening a socket",
+  );
+  process.env.OPENCLAW_GATEWAY_DEVICE_PRIVATE_KEY = devicePair.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
   assert.equal(
     (await subscribeOpenClawGatewayToolEvents({
       sessionKey: gatewaySessionKey,
@@ -401,6 +457,12 @@ try {
   else process.env.OPENCLAW_GATEWAY_URL = previousGatewayUrl;
   if (previousGatewayToken === undefined) delete process.env.OPENCLAW_GATEWAY_TOKEN;
   else process.env.OPENCLAW_GATEWAY_TOKEN = previousGatewayToken;
+  if (previousGatewayDeviceId === undefined) delete process.env.OPENCLAW_GATEWAY_DEVICE_ID;
+  else process.env.OPENCLAW_GATEWAY_DEVICE_ID = previousGatewayDeviceId;
+  if (previousGatewayDevicePublicKey === undefined) delete process.env.OPENCLAW_GATEWAY_DEVICE_PUBLIC_KEY;
+  else process.env.OPENCLAW_GATEWAY_DEVICE_PUBLIC_KEY = previousGatewayDevicePublicKey;
+  if (previousGatewayDevicePrivateKey === undefined) delete process.env.OPENCLAW_GATEWAY_DEVICE_PRIVATE_KEY;
+  else process.env.OPENCLAW_GATEWAY_DEVICE_PRIVATE_KEY = previousGatewayDevicePrivateKey;
   await new Promise<void>((resolve) => gateway.close(() => resolve()));
 }
 
