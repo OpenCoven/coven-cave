@@ -109,7 +109,12 @@ assert.match(boardInspector, /card\.sessionId/, "Task inspector should render ta
 assert.match(boardInspector, /<div className="board-drawer-field-label board-drawer-field-label--split">[\s\S]{0,120}<span>Project<\/span>/, "Task inspector should expose the task project selector");
 assert.match(
   boardInspector,
+  /onPatch\(card\.id, \{[\s\S]{0,160}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,160}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,160}sessionId: null,[\s\S]{0,160}\}\)/,
+  "Task project changes should set the persisted cwd and clear the prior session",
+);
+assert.doesNotMatch(
+  boardInspector,
   /onPatch\(card\.id, \{[\s\S]{0,160}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,160}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,160}familiarId: null,[\s\S]{0,160}\}\)/,
-  "Task project changes should set the persisted cwd and clear the prior familiar",
+  "A familiar-scoped project change should preserve its authorized familiar",
 );
 assert.doesNotMatch(boardInspector, /function openCwdInExplorer|aria-label="Open CWD in directory explorer"/, "Task inspector should not expose a separate CWD open action");
