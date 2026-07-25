@@ -166,10 +166,14 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
       launch: { structuredOutput: { option: "--format", value: "json" }, sessionOption: "--session", requiredFlags: [] },
     },
     {
-      // Earlier and preview clients used generic tool envelopes. Keeping this
-      // separate lets a signed registry retire it without a code release.
+      // Earlier and preview clients used generic tool envelopes. Their
+      // `json` format is not distinguishable from the current envelope by
+      // flags alone, so it must advertise this separate protocol marker
+      // before structured parsing is allowed. A client that only says
+      // `--format json` safely uses plain output until a verified schema can
+      // prove its envelope contract.
       id: "opencode-run-json-legacy",
-      requires: { json: true, session: false, protocol: "json" },
+      requires: { json: true, session: false, protocol: "json-legacy" },
       eventTypes: {
         ignored: ["step_start", "step_finish", "reasoning"],
         text: ["message", "assistant_text"],
@@ -188,7 +192,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
         terminalStates: ["completed", "complete", "error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
         errorStates: ["error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
       },
-      launch: { structuredOutput: { option: "--format", value: "json" }, requiredFlags: [] },
+      launch: { structuredOutput: { option: "--format", value: "json-legacy" }, requiredFlags: [] },
     },
   ],
 };
@@ -628,10 +632,10 @@ function startSchemaRefresh(
 }
 
 /**
- * Read a last-known-good schema bundle and opportunistically refresh it. A
- * remote bundle is accepted only with a configured Ed25519 key, valid dates,
- * a monotonic sequence, and a valid signature. Failed refreshes never replace
- * the old cache. This makes network loss and unsafe rollbacks non-events.
+ * Read a last-known-good schema bundle and refresh it within a bounded
+ * deadline. A remote bundle is accepted only with a configured Ed25519 key,
+ * valid dates, a monotonic sequence, and a valid signature. Failed refreshes
+ * never replace the old cache and are surfaced as a value-free diagnostic.
  */
 export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSource = {}): Promise<LoadedOpenCodeSchemaBundle> {
   const now = source.now?.() ?? Date.now();
@@ -661,15 +665,13 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
     () => refreshOpenCodeSchemaBundle(file, url, publicKey, source.fetch ?? fetch, now, source.refreshTimeoutMs),
     now,
   );
-  if (cached) {
-    // A stale but verified parser is safer than delaying a chat behind a
-    // registry outage. One in-flight refresh updates it for later turns.
-    void refresh.catch(() => undefined);
-    return { bundle: cached.bundle, source: "cache" };
-  }
   try {
     return await refresh;
   } catch {
+    // A verified stale bundle is still valid for its own expiry window. Keep
+    // using it, but surface this turn's rejected refresh instead of hiding the
+    // first recovery failure until the retry backoff path runs.
+    if (cached) return { bundle: cached.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" };
     return cacheTrust
       ? { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "cached-schema-unavailable" }
       : { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "schema-registry-refresh-rejected" };

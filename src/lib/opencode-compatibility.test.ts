@@ -13,6 +13,7 @@ import {
   selectOpenCodeSchema,
   isOpenCodeSchemaBundle,
 } from "./opencode-compatibility.ts";
+import { parseOpenCodeRunCapabilitiesHelp } from "../app/api/chat/send/chat-send-capabilities.ts";
 
 const now = Date.parse("2026-07-24T12:00:00.000Z");
 const { privateKey, publicKey } = generateKeyPairSync("ed25519");
@@ -53,7 +54,7 @@ const offline = await loadOpenCodeSchemaBundle({
   fetch: async () => { throw new Error("offline"); },
 });
 assert.equal(offline.source, "cache");
-assert.equal(offline.diagnostic, undefined, "a stale verified parser serves immediately while refresh runs in the background");
+assert.equal(offline.diagnostic, "schema-registry-refresh-rejected", "the first stale-cache refresh failure remains visible while preserving the verified parser");
 
 await writeFile(cacheFile, JSON.stringify({ checkedAt: now + 365 * 24 * 60 * 60 * 1000, bundle: signed }));
 const futureCheckedAt = await loadOpenCodeSchemaBundle({
@@ -74,7 +75,7 @@ const rejectedRollback = await loadOpenCodeSchemaBundle({
   fetch: async () => new Response(JSON.stringify(rollback), { status: 200 }),
 });
 assert.equal(rejectedRollback.source, "cache");
-assert.equal(rejectedRollback.diagnostic, undefined, "rollback refreshes never displace the last known good parser");
+assert.equal(rejectedRollback.diagnostic, "schema-registry-refresh-rejected", "rollback refreshes never displace the last known good parser and remain visible");
 
 const plain = await resolveOpenCodeCompatibility({ version: "9.9.9", json: false, model: true, session: true, protocols: [] });
 assert.equal(plain.mode, "plain");
@@ -83,8 +84,16 @@ const structured = await resolveOpenCodeCompatibility({ version: null, json: tru
 assert.equal(structured.mode, "structured");
 assert.equal(structured.schema?.id, "opencode-run-json-v1", "new schemas are chosen by observed capabilities, not a version threshold");
 const missingSession = await resolveOpenCodeCompatibility({ version: "1.2.3", json: true, model: true, session: false, protocols: ["json"] });
-assert.equal(missingSession.mode, "structured");
-assert.equal(missingSession.schema?.id, "opencode-run-json-legacy", "older compatible schemas coexist without client version gates");
+assert.equal(missingSession.mode, "plain");
+assert.equal(missingSession.diagnostic, "no-compatible-schema", "an envelope that cannot be distinguished by observed capabilities fails closed");
+
+const resumeOnlyCapabilities = parseOpenCodeRunCapabilitiesHelp(`
+  --format <format>  Output format: text, json
+  --resume <id>      Resume a prior session
+`, "1.2.3");
+assert.equal(resumeOnlyCapabilities.session, true, "resume-only help advertises native session support");
+assert.deepEqual(resumeOnlyCapabilities.options, ["--format", "--resume"], "the concrete resume option is retained for plain-mode launch");
+assert.equal(resumeOnlyCapabilities.options?.includes("--session"), false);
 
 const offlineBaseline = await resolveOpenCodeCompatibility(
   { version: "current", json: true, model: false, session: true, protocols: ["json"] },
@@ -236,7 +245,7 @@ const oversized = await loadOpenCodeSchemaBundle({
   fetch: async () => new Response("x".repeat(300 * 1024), { status: 200 }),
 });
 assert.equal(oversized.source, "cache");
-assert.equal(oversized.diagnostic, undefined, "oversized refreshes preserve and immediately serve the verified cache");
+assert.equal(oversized.diagnostic, "schema-registry-refresh-rejected", "oversized refreshes preserve the cache and report the rejected update");
 assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 2);
 
 const stalled = await loadOpenCodeSchemaBundle({
@@ -268,15 +277,15 @@ const recoveredLock = await loadOpenCodeSchemaBundle({
   now: () => now + 28 * 60 * 60 * 1000,
   fetch: async () => new Response(JSON.stringify(signedSequence3), { status: 200 }),
 });
-assert.equal(recoveredLock.bundle.sequence, 2, "a stale verified cache remains available while its refresh runs");
-await new Promise((resolve) => setTimeout(resolve, 50));
-assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 3, "a stale writer lock cannot permanently block cache recovery after a crash");
+assert.equal(recoveredLock.bundle.sequence, 3, "a stale writer lock cannot permanently block cache recovery after a crash");
 
 const concurrentCacheFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-concurrent-")), "bundle.json");
 await writeFile(concurrentCacheFile, JSON.stringify({ checkedAt: now, bundle: signed }));
 let fetchCalls = 0;
 let releaseRefresh: (() => void) | undefined;
+let markFetchStarted: (() => void) | undefined;
 const delayedResponse = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+const fetchStarted = new Promise<void>((resolve) => { markFetchStarted = resolve; });
 const concurrentSource = {
   cacheFile: concurrentCacheFile,
   publicKey: publicPem,
@@ -284,19 +293,22 @@ const concurrentSource = {
   now: () => now + 7 * 60 * 60 * 1000,
   fetch: async () => {
     fetchCalls += 1;
+    markFetchStarted?.();
     await delayedResponse;
     return new Response(JSON.stringify(signedSequence3), { status: 200 });
   },
 };
-const [staleA, staleB] = await Promise.all([
-  loadOpenCodeSchemaBundle(concurrentSource),
-  loadOpenCodeSchemaBundle(concurrentSource),
-]);
+const staleA = loadOpenCodeSchemaBundle(concurrentSource);
+const staleB = loadOpenCodeSchemaBundle(concurrentSource);
+await fetchStarted;
 assert.equal(fetchCalls, 1, "concurrent stale readers coalesce to one registry request");
-assert.equal(staleA.bundle.sequence, 2);
-assert.equal(staleB.bundle.sequence, 2, "stale readers do not block chat on the registry refresh");
 releaseRefresh?.();
-await new Promise((resolve) => setTimeout(resolve, 50));
+const [resolvedA, resolvedB] = await Promise.all([
+  staleA,
+  staleB,
+]);
+assert.equal(resolvedA.bundle.sequence, 3);
+assert.equal(resolvedB.bundle.sequence, 3, "concurrent stale readers receive the one verified refresh result");
 assert.equal((JSON.parse(await readFile(concurrentCacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 3);
 
 await writeFile(cacheFile, JSON.stringify({ checkedAt: now, bundle: signed }));

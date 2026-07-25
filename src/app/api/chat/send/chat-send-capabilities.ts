@@ -130,6 +130,35 @@ function advertisedFormatProtocols(help: string): string[] {
   return [...new Set(outputs.flatMap((output) => output.values))];
 }
 
+/**
+ * Convert a complete `opencode run --help` response into the bounded
+ * capability contract consumed by schema selection and plain-mode launching.
+ * Exported for fixtures so resume-only clients remain covered without spawning
+ * an installed runtime.
+ */
+export function parseOpenCodeRunCapabilitiesHelp(help: string, version: string | null): OpenCodeRunCapabilities {
+  const options = declaredRunOptions(help);
+  const structuredOutputs = advertisedStructuredOutputs(help);
+  const protocols = advertisedFormatProtocols(help);
+  const json = protocols.some((protocol) => protocol === "json" || protocol.startsWith("json-") || protocol.startsWith("json_"));
+  return {
+    version,
+    // Only accept JSON when it appears in the `--format` option's own
+    // stanza. A stray "JSON" in a banner or another option's description
+    // must not make us launch an unsupported `--format json` command.
+    json,
+    model: options.includes("--model"),
+    session: options.includes("--session") || options.includes("--resume"),
+    // The documented format value is an independently observed protocol
+    // marker. Future formats (for example json-v2) must be explicitly
+    // advertised and selected by a matching schema; we never infer them
+    // from the installed version string.
+    protocols,
+    options,
+    structuredOutputs,
+  };
+}
+
 /** Capability probes are cached because old Coven CLIs reject unknown flags. */
 export function covenRunSupportsModel(): Promise<boolean> {
   const { command, fixedArgs } = covenLaunchCommand();
@@ -203,27 +232,7 @@ export function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
     // evidence. Probe again after the short TTL instead of risking an argv
     // that the installed client does not accept.
     if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], structuredOutputs: [] };
-    const help = helpProbe.output;
-    const options = declaredRunOptions(help);
-    const structuredOutputs = advertisedStructuredOutputs(help);
-    const protocols = advertisedFormatProtocols(help);
-    const json = protocols.some((protocol) => protocol === "json" || protocol.startsWith("json-") || protocol.startsWith("json_"));
-    return {
-      version,
-      // Only accept JSON when it appears in the `--format` option's own
-      // stanza. A stray "JSON" in a banner or another option's description
-      // must not make us launch an unsupported `--format json` command.
-      json,
-      model: options.includes("--model"),
-      session: options.includes("--session") || options.includes("--resume"),
-      // The documented format value is an independently observed protocol
-      // marker. Future formats (for example json-v2) must be explicitly
-      // advertised and selected by a matching schema; we never infer them
-      // from the installed version string.
-      protocols,
-      options,
-      structuredOutputs,
-    };
+    return parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
   })();
   openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, value };
   return value;
