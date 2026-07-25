@@ -88,8 +88,8 @@ assert.match(
 );
 assert.match(
   newCard,
-  /const projectPickerReady = !familiarId \|\| \(projectsLoaded && !projectsLoading\)/,
-  "new-card modal fails closed while the current familiar-scoped project result is pending",
+  /const projectPickerReady = isProjectPickerReady\(\{[\s\S]{0,200}opening,[\s\S]{0,200}loadedSuccessfully: projectsLoaded,[\s\S]{0,200}loading: projectsLoading/,
+  "new-card modal fails closed until the current familiar scope completes after opening",
 );
 assert.match(
   newCard,
