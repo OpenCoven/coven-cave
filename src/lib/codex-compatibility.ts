@@ -120,9 +120,18 @@ export const CODEX_TEXT_ONLY_FALLBACK_SCHEMA: CodexEventSchema = {
 
 type ParsedVersion = { core: [number, number, number]; prerelease: string[] | null };
 
+export function parseCodexVersionOutput(output: string | null): string | null {
+  if (!output) return null;
+  // The version must end at a complete semver token. `\b` alone accepts the
+  // first three components of malformed values such as `0.145.0.1`, because
+  // the dot creates a word boundary after the patch component.
+  return /(?:^|[^0-9A-Za-z.-])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?=$|[^0-9A-Za-z.-])/.exec(output)?.[1] ?? null;
+}
+
 function parsedVersion(version: string | null): ParsedVersion | null {
-  if (!version) return null;
-  const match = /(?:^|\s|v)(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?(?:\b|\s|$)/.exec(version);
+  const parsed = parseCodexVersionOutput(version);
+  if (!parsed) return null;
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(parsed);
   if (!match) return null;
   const prerelease = match[4] ? match[4].split(".") : null;
   if (prerelease?.some((entry) => !entry || !/^[0-9A-Za-z-]+$/.test(entry))) return null;
@@ -637,7 +646,7 @@ export async function discoverCodexRuntime(
       execFileAsync(command, ["--version"], { timeout, windowsHide: true, env, shell: windowsShim }),
       execFileAsync(command, ["exec", "--help"], { timeout, windowsHide: true, env, shell: windowsShim }),
     ]);
-    const version = /\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/.exec(`${versionOut}\n${versionErr}`)?.[0] ?? null;
+    const version = parseCodexVersionOutput(`${versionOut}\n${versionErr}`);
     const help = `${helpOut}\n${helpErr}`;
     return { version, capabilities: { jsonEvents: /(?:^|\s)--json(?:\s|$)/m.test(help), resume: /\bresume\b/i.test(help) } };
   } catch {
@@ -855,7 +864,7 @@ export class CodexJsonlDecoder {
           continue;
         }
       } catch {
-        if (this.protocolActive && /^\s*\{\s*"type"\s*:\s*"[^"\\.\s]+(?:\.[^"\\.\s]+)+"/.test(line)) {
+        if ((this.protocolActive || this.options.trustThreadPreamble === true) && /"type"\s*:\s*"[^"\\.\s]+(?:\.[^"\\.\s]+)+"/.test(line)) {
           const event: CodexStreamEvent = { kind: "unknown", fingerprint: "malformed-jsonl" };
           events.push(event);
           tokens.push(event);

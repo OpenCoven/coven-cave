@@ -10,6 +10,7 @@ import {
   CodexSchemaCache,
   codexProbeEnv,
   codexSchemaSignatureVerifierFromEnv,
+  parseCodexVersionOutput,
   parseCodexStreamEvent,
   productionCodexSchemaSources,
   readBoundedCodexSchemaResponse,
@@ -32,6 +33,8 @@ assert.ok(legacy.ok, "older supported Codex clients retain a compatible schema")
 assert.equal(resolveCodexSchema({ version: "9.0.0", capabilities: { jsonEvents: true, resume: true } }).ok, false, "unknown future versions fail closed into plain-chat fallback");
 assert.equal(resolveCodexSchema({ version: "0.145.0", capabilities: { jsonEvents: false, resume: true } }).ok, false, "required capability mismatch never selects a parser");
 assert.equal(resolveCodexSchema({ version: "0.145.0-beta.1", capabilities: { jsonEvents: true, resume: true } }).ok, false, "prerelease clients fail closed until a prerelease schema is conformance-tested");
+assert.equal(resolveCodexSchema({ version: "codex-cli 0.145.0.1", capabilities: { jsonEvents: true, resume: true } }).ok, false, "malformed four-component version output never selects a three-component schema");
+assert.equal(parseCodexVersionOutput("codex-cli 0.145.0.1"), null, "runtime discovery does not truncate a malformed four-component version");
 
 const registryOverride = {
   ...selected.schema,
@@ -102,6 +105,10 @@ const malformedFirstFrame = new CodexJsonlDecoder({ trustThreadPreamble: true })
 assert.equal(malformedFirstFrame.passthrough, "", "a malformed first captured-pipe protocol frame never leaks into assistant prose");
 assert.equal(malformedFirstFrame.events.filter((event) => event.kind === "unknown").length, 3, "trusted malformed and future frames are retained only as shape diagnostics");
 assert.doesNotMatch(JSON.stringify(malformedFirstFrame.events), /never render/, "a malformed preamble never includes protocol payloads in diagnostics");
+const syntacticallyMalformedFirstFrame = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"thread.started","thread_id":"thread-live","secret":"never render"\n', selected.schema);
+assert.equal(syntacticallyMalformedFirstFrame.passthrough, "", "a syntactically malformed first captured-pipe frame never leaks into assistant prose");
+assert.equal(syntacticallyMalformedFirstFrame.events[0]?.kind, "unknown", "a malformed captured-pipe frame emits only a shape diagnostic");
+assert.doesNotMatch(JSON.stringify(syntacticallyMalformedFirstFrame.events), /never render/, "a malformed captured-pipe diagnostic never includes protocol payloads");
 const registrySchema = { ...selected.schema, eventTypes: [...selected.schema.eventTypes, "response.started"] };
 const registryFrames = new CodexJsonlDecoder().push('codex\n{"type":"thread.started","thread":{"id":"thread-nested"}}\n{"type":"response.started","secret":"never render"}\n', registrySchema);
 assert.deepEqual(registryFrames.events.map((event) => event.kind), ["session", "unknown"], "nested thread ids and registry-only event names are consumed by the selected schema");
