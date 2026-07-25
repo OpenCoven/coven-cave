@@ -1,26 +1,10 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
-import { createRequire } from "node:module";
+import * as registryFs from "node:fs/promises";
 import { homedir } from "node:os";
 
-type RegistryFs = Record<string, (...args: any[]) => Promise<any>>;
-
-// The registry cache is per-user runtime state, never a packaged input. Keep
-// Node's filesystem module behind a runtime-only boundary: TurboPack/NFT
-// otherwise follows its dynamic cache paths and traces the entire repository.
-const registryFs = (() => {
-  try {
-    // Keep the runtime-only builtin opaque to Turbopack's static evaluator;
-    // otherwise it sees filesystem calls with runtime paths and copies the
-    // repository into the desktop sidecar.
-    const fsPromisesBuiltin = Buffer.from("bm9kZTpmcy9wcm9taXNlcw==", "base64").toString("utf8");
-    return createRequire(import.meta.url)(fsPromisesBuiltin) as RegistryFs;
-  } catch {
-    return undefined;
-  }
-})();
+type RegistryFs = typeof registryFs;
 
 function requireRegistryFs(): RegistryFs {
-  if (!registryFs) throw new Error("node fs promises unavailable");
   return registryFs;
 }
 
