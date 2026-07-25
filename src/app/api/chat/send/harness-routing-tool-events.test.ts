@@ -357,6 +357,30 @@ assert.match(
   );
 }
 
+// A full pre/post pair can also reach stdout before its delayed assistant
+// envelope. Linking the late native id must preserve the hook record so both
+// the eventual tool_result and persistence remain deduplicated.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  const hookRunning = tracker.hookStart("Read", undefined);
+  const hookDone = tracker.hookEnd("Read", "hook contents", false);
+  assert.equal(hookDone.id, hookRunning.id);
+  assert.equal(
+    tracker.envelopeToolUse("toolu_late_envelope", "Read", '{"file_path":"/tmp/x"}'),
+    null,
+    "a late envelope links to an already-completed hook instead of duplicating it",
+  );
+  assert.equal(
+    tracker.envelopeToolResult("toolu_late_envelope", "envelope contents", false),
+    null,
+    "the late native id suppresses its duplicate envelope result",
+  );
+  const snapshot = tracker.snapshot();
+  assert.equal(snapshot.length, 1, "late envelopes must not add an orphan bubble");
+  assert.equal(snapshot[0].output, "hook contents", "hook output keeps precedence");
+  assert.equal(snapshot[0].input, '{"file_path":"/tmp/x"}', "late envelope input backfills the hook record");
+}
+
 // Behavioral: payload formatters used by both event sources.
 {
   assert.equal(formatToolPayload(""), undefined);

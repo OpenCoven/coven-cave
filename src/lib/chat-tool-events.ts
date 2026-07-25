@@ -292,6 +292,10 @@ export class ToolCallTracker {
     }
     const durationMs = this.now() - call.startedAt;
     this.settle(call);
+    // A delayed assistant envelope can arrive after a complete pre/post hook
+    // pair. Retain hook-only completions long enough to link that native id
+    // rather than rendering a second tool bubble for the same execution.
+    if (!call.envelopeId) this.rememberSettledHookCall(call);
     const ev: ToolStreamEvent = { id: call.id, name, output, status, durationMs };
     this.record(ev);
     return ev;
@@ -331,6 +335,21 @@ export class ToolCallTracker {
         };
         this.record(ev);
         return ev;
+      }
+      return null;
+    }
+    // Hooks and JSONL normally share stdout ordering, but buffered transports
+    // can flush a complete pre/post pair before the assistant tool_use frame.
+    // The hook result/timing are already authoritative; attach the native id
+    // and suppress its later tool_result instead of creating a second record.
+    const settledHookCall = this.takeSettledHookCall(name);
+    if (settledHookCall) {
+      settledHookCall.envelopeId = id;
+      this.settledEnvelopeIds.add(id);
+      this.pendingEnvelopeResults.delete(id);
+      const prev = this.recorded.get(settledHookCall.id);
+      if (prev && prev.input === undefined && input !== undefined) {
+        this.recorded.set(settledHookCall.id, { ...prev, input });
       }
       return null;
     }
