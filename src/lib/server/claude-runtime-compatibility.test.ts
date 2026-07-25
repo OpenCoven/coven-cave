@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import {
   claudeCompatibilityDiagnostic,
   loadClaudeCompatibilityCache,
@@ -7,6 +8,16 @@ import {
   resolveInstalledClaudeCompatibility,
 } from "./claude-runtime-compatibility.ts";
 import { CLAUDE_COMPATIBILITY_PROFILES } from "../runtime-compatibility.ts";
+
+const compatibilitySource = await readFile(
+  new URL("./claude-runtime-compatibility.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  compatibilitySource,
+  /child\.on\("close", \(code\) => \{[\s\S]*?finish\(code === 0 \? output : null\)/,
+  "non-zero Claude probes must not select a profile from version-like error output",
+);
 
 const compatible = await resolveInstalledClaudeCompatibility({
   version: async () => "2.1.179 (Claude Code)",

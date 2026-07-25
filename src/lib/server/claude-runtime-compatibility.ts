@@ -115,8 +115,11 @@ function runClaude(args: string[]): Promise<string | null> {
     child.on("error", () => {
       finish(null);
     });
-    child.on("close", () => {
-      finish(output);
+    child.on("close", (code) => {
+      // Some failed invocations print their installed version before reporting
+      // an error. Treat every non-zero exit as a failed probe so that banner
+      // text can never select a tool-envelope profile.
+      finish(code === 0 ? output : null);
     });
   });
 }

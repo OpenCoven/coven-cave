@@ -111,6 +111,10 @@ export class ToolCallTracker {
    * normally preserve order, but retaining one result prevents an out-of-order
    * pair from leaving a newly announced call running for the whole turn. */
   private pendingEnvelopeResults = new Map<string, { output: string | undefined; isError: boolean }>();
+  /** A result can reach stdout before its post_tool_use hook line. Keep only
+   * calls that did receive a pre hook so that late post hooks update the same
+   * record instead of creating a second, orphaned tool bubble. */
+  private settledHookCalls = new Map<string, OpenCall[]>();
   /** Final state of every call this tracker has emitted, by stream id —
    *  insertion-ordered, so snapshot() preserves call order for persistence. */
   private recorded = new Map<string, RecordedToolEvent>();
@@ -139,6 +143,20 @@ export class ToolCallTracker {
       this.byEnvelopeId.delete(call.envelopeId);
       this.settledEnvelopeIds.add(call.envelopeId);
     }
+  }
+
+  private rememberSettledHookCall(call: OpenCall): void {
+    if (!call.hookStarted) return;
+    const queue = this.settledHookCalls.get(call.name) ?? [];
+    queue.push(call);
+    this.settledHookCalls.set(call.name, queue);
+  }
+
+  private takeSettledHookCall(name: string): OpenCall | undefined {
+    const queue = this.settledHookCalls.get(name);
+    const call = queue?.shift();
+    if (queue?.length === 0) this.settledHookCalls.delete(name);
+    return call;
   }
 
   private record(ev: ToolStreamEvent, textOffset?: number): void {
@@ -204,7 +222,12 @@ export class ToolCallTracker {
     const queue = this.queueFor(name);
     // FIFO pairing: a post matches the oldest open pre of the same name.
     // Fall back to the oldest envelope-only call (post-hook-only harnesses).
-    const call = queue.find((c) => c.hookStarted) ?? queue[0];
+    const hookStartedCall = queue.find((c) => c.hookStarted);
+    // Claude's stdout can deliver the user tool_result before the post hook.
+    // Prefer that already-settled pre-hook call over an unrelated envelope-only
+    // call of the same name, preserving the hook's output and timing on its
+    // original stream id.
+    const call = hookStartedCall ?? this.takeSettledHookCall(name) ?? queue[0];
     const status = isError ? "error" : "ok";
     if (!call) {
       // Post without any open call: surface it anyway under a fresh id.
@@ -243,6 +266,7 @@ export class ToolCallTracker {
       if (pending) {
         this.pendingEnvelopeResults.delete(id);
         const durationMs = this.now() - hookCall.startedAt;
+        this.rememberSettledHookCall(hookCall);
         this.settle(hookCall);
         const ev: ToolStreamEvent = {
           id: hookCall.id,
@@ -307,6 +331,7 @@ export class ToolCallTracker {
       return null;
     }
     const durationMs = this.now() - call.startedAt;
+    this.rememberSettledHookCall(call);
     this.settle(call);
     const ev: ToolStreamEvent = {
       id: call.id,

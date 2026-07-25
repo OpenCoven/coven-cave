@@ -261,6 +261,25 @@ assert.match(
   );
 }
 
+// A buffered stream can flush a user tool_result before the corresponding
+// post_tool_use hook. The late hook must update the original bubble, rather
+// than creating a second orphan record for the same tool execution.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  const started = tracker.hookStart("Bash", '{"command":"pwd"}');
+  tracker.envelopeToolUse("toolu_late_post", "Bash");
+  t = 100;
+  const result = tracker.envelopeToolResult("toolu_late_post", "envelope output", false);
+  assert.equal(result?.id, started.id);
+  t = 250;
+  const post = tracker.hookEnd("Bash", "hook output", false);
+  assert.equal(post.id, started.id, "late post hooks retain the original tool id");
+  assert.equal(post.output, "hook output", "post-hook output takes precedence over the envelope result");
+  assert.equal(post.durationMs, 250, "late post-hook timing uses the pre-hook start");
+  assert.equal(tracker.snapshot().length, 1, "late post hooks must not create an orphan bubble");
+}
+
 {
   // Hook first (interleaving can deliver the hook line before the envelope).
   const tracker = new ToolCallTracker(() => 0);
