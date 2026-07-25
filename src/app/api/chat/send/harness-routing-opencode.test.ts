@@ -192,8 +192,8 @@ assert.match(
 );
 assert.match(
   capabilities,
-  /export async function openCodeRunCapabilities\(familiarId\?[^)]*\)[\s\S]*?const env = openCodeSpawnEnv\(familiarId\);[\s\S]*?probeOpenCodeRunContract\(env\)[\s\S]*?openCodeCapabilityIdentity\(helpProbe\.output, versionProbe\.output\)[\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
-  "OpenCode discovers feature support from the scoped executable environment and records version only for diagnostics",
+  /export async function openCodeRunCapabilities\(familiarId\?[^)]*\)[\s\S]*?const env = openCodeSpawnEnv\(familiarId\);[\s\S]*?await openCodeExecutableIdentity\(env\)[\s\S]*?openCodeCapabilitiesProbe[\s\S]*?probeOpenCodeRunContract\(env\)[\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
+  "OpenCode checks a cheap scoped executable identity before reusing or probing its capability contract",
 );
 assert.match(
   capabilities,

@@ -1,5 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
+import { stat } from "node:fs/promises";
+import path from "node:path";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
@@ -304,12 +306,7 @@ function advertisedStructuredSwitches(options: string[], noValueOptions: string[
   });
 }
 
-/**
- * Fingerprint the exact launch contract before using a cached capability
- * result. This is more useful than a PATH filesystem identity: a replacement
- * binary with different accepted flags changes its bounded help/version
- * response even when it keeps the same pathname or timestamp.
- */
+/** Fingerprint a verified help/version contract for diagnostics and tests. */
 export function openCodeCapabilityIdentity(help: string, version: string): string {
   return createHash("sha256")
     .update(help)
@@ -330,12 +327,37 @@ async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCod
   return { helpProbe, versionProbe };
 }
 
-export async function openCodeExecutableIdentity(env = openCodeSpawnEnv()): Promise<string> {
-  const { helpProbe, versionProbe } = await probeOpenCodeRunContract(env);
-  // Never cache a transient failure: a just-installed or updating executable
-  // must be retried on the next turn rather than pinned for the TTL.
-  if (!helpProbe.complete || !versionProbe.complete) return `unverified:${Date.now()}`;
-  return openCodeCapabilityIdentity(helpProbe.output, versionProbe.output);
+/**
+ * Resolve only executable metadata before consulting the capability cache.
+ * `stat` is bounded by PATH entries and deliberately marked opaque to
+ * Turbopack: this is per-machine runtime state, not a standalone asset.
+ */
+export async function openCodeExecutableIdentity(
+  env = openCodeSpawnEnv(),
+  platform: NodeJS.Platform = process.platform,
+): Promise<string> {
+  const pathValue = env.PATH ?? env.Path ?? "";
+  const names = platform === "win32"
+    ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+      .split(";")
+      .map((extension) => extension.trim())
+      .filter((extension) => /^\.[A-Za-z0-9]+$/.test(extension))
+      .map((extension) => `opencode${extension.toLowerCase()}`)
+    : ["opencode"];
+  for (const directory of pathValue.split(path.delimiter).filter(Boolean)) {
+    for (const name of names) {
+      const candidate = path.join(/* turbopackIgnore: true */ directory, name);
+      try {
+        const info = await stat(/* turbopackIgnore: true */ candidate);
+        if (info.isFile()) return `${candidate}\0${info.size}\0${info.mtimeMs}`;
+      } catch {
+        // Keep looking: the launched binary may be later in PATH.
+      }
+    }
+  }
+  // An unresolved command is never retained across turns: installation or a
+  // PATH update must immediately become visible.
+  return `unresolved:${Date.now()}`;
 }
 
 function advertisedFormatProtocols(
@@ -444,34 +466,27 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
  * schema because vendors can backport or change protocol behavior.
  */
 export async function openCodeRunCapabilities(familiarId?: string): Promise<OpenCodeRunCapabilities> {
-  // The identity probes use exactly the scoped environment that will execute
-  // the chat turn. A changed help/version contract invalidates the TTL cache
-  // without filesystem inspection of machine-local PATH entries.
+  // The executable identity uses exactly the scoped environment that will
+  // execute the chat turn, but is intentionally much cheaper than `--help`.
   const env = openCodeSpawnEnv(familiarId);
   const cacheable = openCodeCapabilityProbeCacheable();
-  // Probe once and reuse the verified contract for both cache validation and
-  // capability parsing. Re-probing after calculating the fingerprint would
-  // double launch latency and could select flags from a different executable.
-  const { helpProbe, versionProbe } = await probeOpenCodeRunContract(env);
-  const executableIdentity = cacheable
-    ? helpProbe.complete && versionProbe.complete
-      ? openCodeCapabilityIdentity(helpProbe.output, versionProbe.output)
-      : `unverified:${Date.now()}`
-    : "uncached-windows-launcher";
+  const executableIdentity = cacheable ? await openCodeExecutableIdentity(env) : "uncached-windows-launcher";
   const identity = `${familiarId ?? "default"}\0${executableIdentity}`;
   if (cacheable && openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.identity === identity) {
     return openCodeCapabilitiesProbe.value;
   }
-  const version = versionProbe.complete
-    ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null
-    : null;
-  // Partial, timed-out, non-zero, or oversized help is never capability
-  // evidence. Probe again after the short TTL instead of risking an argv
-  // that the installed client does not accept.
-  const capabilities = !helpProbe.complete
-    ? { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], endOfOptions: false, structuredSwitches: [], structuredOutputs: [] }
-    : parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
-  const value = Promise.resolve(capabilities);
+  const value = (async () => {
+    const { helpProbe, versionProbe } = await probeOpenCodeRunContract(env);
+    const version = versionProbe.complete
+      ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null
+      : null;
+    // Partial, timed-out, non-zero, or oversized help is never capability
+    // evidence. Probe again after the short TTL instead of risking an argv
+    // that the installed client does not accept.
+    return !helpProbe.complete
+      ? { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], endOfOptions: false, structuredSwitches: [], structuredOutputs: [] }
+      : parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
+  })();
   if (cacheable) openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, identity, value };
   return value;
 }

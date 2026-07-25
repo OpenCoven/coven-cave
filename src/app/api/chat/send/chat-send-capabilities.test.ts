@@ -1,11 +1,15 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   openCodeCapabilityIdentity,
   openCodeCapabilityProbeCacheable,
   openCodeCapabilityProbeTimeoutMs,
   openCodeProbeCleanupGraceMs,
   openCodeProbeTreeKillCommand,
+  openCodeExecutableIdentity,
   parseOpenCodeRunCapabilitiesHelp,
 } from "./chat-send-capabilities.ts";
 
@@ -19,6 +23,13 @@ assert.notEqual(
   openCodeCapabilityIdentity("--format [json-v2]", "1.0.0"),
   "a changed executable help contract invalidates cached capability evidence even when its version remains unchanged",
 );
+const launcher = await mkdtemp(path.join(tmpdir(), "cave-opencode-identity-"));
+const launcherPath = path.join(launcher, "opencode");
+await writeFile(launcherPath, "first");
+const firstIdentity = await openCodeExecutableIdentity({ PATH: launcher }, "linux");
+await writeFile(launcherPath, "a replacement with different metadata");
+const secondIdentity = await openCodeExecutableIdentity({ PATH: launcher }, "linux");
+assert.notEqual(firstIdentity, secondIdentity, "an in-place executable replacement invalidates the cached capability probe before help is reused");
 assert.deepEqual(
   openCodeProbeTreeKillCommand(4242, "win32"),
   { command: "taskkill.exe", args: ["/PID", "4242", "/T", "/F"] },
