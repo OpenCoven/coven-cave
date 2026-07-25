@@ -1313,6 +1313,10 @@ export async function POST(req: Request) {
   // UUID for new native sessions so a stopped first turn can still be saved
   // and resumed instead of disappearing with the unreceived end frame.
   let grokSessionHint: string | null = null;
+  // On Windows the npm-distributed Codex entrypoint is a .cmd shim. Run it
+  // through the platform shell, but keep the user prompt off that command
+  // line: the prompt is written to stdin after spawning instead.
+  let codexLaunchInput: string | null = null;
   // `promptOverride` lets the transparent resume-retry (below) prime a fresh
   // harness session with replayed conversation history — without it the retry
   // forks a context-free session and the familiar loses the thread.
@@ -1358,14 +1362,18 @@ export async function POST(req: Request) {
     }
     if (codexDirect) {
       const a = resumeSessionId
-        ? ["exec", "resume", "--json", resumeSessionId]
+        ? ["exec", "resume", "--json", "--skip-git-repo-check", resumeSessionId]
         : ["exec", "--json", "--skip-git-repo-check", "--color", "never"];
       if (forwardModel) a.push("--model", forwardModel);
       if (!resumeSessionId && forwardPermission) a.push("--sandbox", forwardPermission === "read-only" ? "read-only" : "workspace-write");
       if (!resumeSessionId) {
         for (const dir of forwardAddDirs) a.push("--add-dir", dir);
       }
-      a.push(prompt);
+      codexLaunchInput = prompt;
+      // `-` tells Codex to read the prompt from stdin. Besides avoiding shell
+      // quoting of user content for Windows .cmd shims, this keeps large
+      // prompts out of the process command line on every platform.
+      a.push("-");
       return a;
     }
     if (hermesDirect) {
@@ -2203,6 +2211,7 @@ export async function POST(req: Request) {
                   ? { command: "codex", args: spawnArgs }
                   : openCodeLaunchCommand
                     ?? { command: launch.command, args: [...launch.fixedArgs, ...spawnArgs] };
+                const codexShellShim = codexDirect && process.platform === "win32";
                 const child = spawn(command.command, command.args, {
                   // Spawn IN the familiar's workspace when no project root was
                   // supplied, so coven's project-root resolver picks that dir as
@@ -2210,7 +2219,7 @@ export async function POST(req: Request) {
                   // from the familiar's home. When a project root IS supplied,
                   // honor that instead.
                   cwd: familiarCwd ?? cwd,
-                  stdio: openCodeLaunchCommand?.input === undefined
+                  stdio: openCodeLaunchCommand?.input === undefined && !codexDirect
                     ? ["ignore", "pipe", "pipe"]
                     : ["pipe", "pipe", "pipe"],
                   // Scoped vault keys the familiar is not granted are
@@ -2219,10 +2228,18 @@ export async function POST(req: Request) {
                   env: openCodeDirect
                     ? openCodeSpawnEnv(body.familiarId)
                     : harnessSpawnEnv(body.familiarId),
+                  // Node cannot execute the normal npm-installed .cmd shim
+                  // directly. The shell only receives validated flags and
+                  // local grant paths; user-authored prompt text goes via
+                  // stdin below.
+                  shell: codexShellShim,
                   windowsHide: true,
                 }) as ChildProcessWithoutNullStreams;
                 if (openCodeLaunchCommand) {
                   writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
+                } else if (codexDirect && codexLaunchInput !== null) {
+                  child.stdin.write(codexLaunchInput);
+                  child.stdin.end();
                 }
                 return child;
               })();

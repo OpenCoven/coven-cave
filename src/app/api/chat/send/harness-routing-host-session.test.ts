@@ -77,8 +77,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?await hermesChatSupportsModel\(\)/,
+  /const modelForwardingEnabled\s*=[\s\S]*?hermesDirect\s*\?\s*await hermesChatSupportsModel\(\)/,
   "Hermes model forwarding must probe its direct CLI instead of assuming the coven-run capability applies",
+);
+
+assert.match(
+  chatRoute,
+  /\["exec", "resume", "--json", "--skip-git-repo-check", resumeSessionId\]/,
+  "Resumed direct Codex chats must retain support for familiar workspaces outside Git repositories",
 );
 
 assert.match(
