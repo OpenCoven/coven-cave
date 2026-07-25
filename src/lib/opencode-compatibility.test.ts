@@ -244,6 +244,21 @@ assert.equal(
   "a rejected remote rewrite preserves the conflicting trust sidecar for investigation",
 );
 
+const lateConflictFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-late-conflict-")), "bundle.json");
+await writeFile(lateConflictFile, JSON.stringify({ checkedAt: now - 7 * 60 * 60 * 1000, bundle: signed }));
+const lateConflict = await loadOpenCodeSchemaBundle({
+  cacheFile: lateConflictFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now,
+  fetch: async () => {
+    await writeFile(`${lateConflictFile}.trust`, JSON.stringify({ checkedAt: now, bundle: signedEqualSequenceRewrite }));
+    throw new Error("registry unavailable after concurrent cache mutation");
+  },
+});
+assert.equal(lateConflict.source, "built-in", "a cache conflict introduced during refresh fails closed instead of rejecting compatibility resolution");
+assert.equal(lateConflict.diagnostic, "schema-registry-refresh-rejected");
+
 const offline = await loadOpenCodeSchemaBundle({
   cacheFile,
   publicKey: publicPem,
@@ -591,6 +606,36 @@ const legacyAfterPartialRemote = await resolveOpenCodeCompatibility(
 assert.equal(legacyAfterPartialRemote.mode, "structured");
 assert.equal(legacyAfterPartialRemote.schema?.id, "opencode-run-json-v1", "a partial remote registry retains matching compiled baseline coverage");
 assert.equal(legacyAfterPartialRemote.bundleSource, "built-in");
+const broadRemoteSchema = {
+  ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  id: "remote-json-only",
+  requires: { json: true as const },
+  launch: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].launch, sessionOption: undefined },
+};
+const broadRemoteUnsigned = { ...unsigned, sequence: 12, schemas: [broadRemoteSchema] };
+const broadRemote = {
+  ...broadRemoteUnsigned,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(broadRemoteUnsigned)), privateKey).toString("base64"),
+  },
+};
+const currentAfterBroadRemote = await resolveOpenCodeCompatibility(
+  {
+    version: "current", json: true, model: false, session: true, protocols: ["json"],
+    options: ["--format", "--session"], valueOptions: ["--format", "--session"],
+    structuredOutputs: [{ option: "--format", values: ["json"] }],
+  },
+  {
+    cacheFile: path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-broad-remote-")), "bundle.json"),
+    publicKey: publicPem,
+    url: "https://registry.invalid/opencode.json",
+    now: () => now,
+    fetch: async () => new Response(JSON.stringify(broadRemote), { status: 200 }),
+  },
+);
+assert.equal(currentAfterBroadRemote.schema?.id, "opencode-run-json-v1", "a broad remote schema cannot preempt the more-specific built-in current-client profile");
+assert.equal(currentAfterBroadRemote.bundleSource, "built-in");
 const retiredPartialUnsigned = { ...partialRemoteUnsigned, sequence: 11, retiredSchemaIds: ["opencode-run-json-v1"] };
 const retiredPartial = {
   ...retiredPartialUnsigned,

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { homedir } from "node:os";
+import { StringDecoder } from "node:string_decoder";
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
@@ -1908,6 +1909,12 @@ export async function POST(req: Request) {
           push({ kind: "assistant_chunk", text });
           return;
         }
+        // Current OpenCode writes this human-oriented permission control
+        // notice to stdout even in `--format json` mode before it rejects the
+        // request. It is neither an event nor assistant output; parsing it as
+        // JSON would incorrectly quarantine an otherwise compatible stream.
+        const normalized = resolveBackspaces(stripAnsi(line)).trim();
+        if (/^permission requested\b[\s\S]*\bauto-rejecting\b/i.test(normalized)) return;
         handleOpenCodeJsonLine(line, openCodeCompatibility?.schema, {
           onSession: (nativeSessionId) => {
             openCodeSessionId = nativeSessionId;
@@ -2289,8 +2296,12 @@ export async function POST(req: Request) {
           };
           req.signal.addEventListener("abort", onAbort, { once: true });
 
-          child.stdout.on("data", (data: Buffer) => {
-            let chunk = data.toString("utf8");
+          // Child-process chunks are arbitrary bytes, not UTF-8 character
+          // boundaries. Preserve a split code point until its remaining bytes
+          // arrive so JSONL text/tool payloads cannot silently gain U+FFFD.
+          const openCodeStdoutDecoder = openCodeDirect ? new StringDecoder("utf8") : null;
+          const handleStdoutChunk = (decodedChunk: string) => {
+            let chunk = decodedChunk;
             // Once an unterminated frame crosses the cap, discard through its
             // newline before looking for another frame. Parsing its tail could
             // turn provider data into a misleading compatibility event.
@@ -2330,6 +2341,11 @@ export async function POST(req: Request) {
                 "oversized-jsonl-event",
               );
             }
+          };
+
+          child.stdout.on("data", (data: Buffer) => {
+            const chunk = openCodeStdoutDecoder ? openCodeStdoutDecoder.write(data) : data.toString("utf8");
+            if (chunk) handleStdoutChunk(chunk);
           });
 
           child.stderr.on("data", (data: Buffer) => {
@@ -2381,6 +2397,8 @@ export async function POST(req: Request) {
           });
 
           child.on("close", (code) => {
+            const trailingOpenCodeText = openCodeStdoutDecoder?.end();
+            if (trailingOpenCodeText) handleStdoutChunk(trailingOpenCodeText);
             captureHermesSessionFromStderr("", true);
             // OpenCode normally emits a JSON error envelope, but older CLI
             // builds can exit non-zero with only stderr. Do not mistake that

@@ -24,6 +24,7 @@ process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`;
 
 const executable = process.platform === "win32" ? "opencode.cmd" : "opencode";
+const expectedReply = process.platform === "win32" ? "route reply" : "split 😀";
 const launcher = process.platform === "win32"
   ? [
       "@echo off",
@@ -37,6 +38,7 @@ const launcher = process.platform === "win32"
       "if not \"%~2\"==\"--format\" exit /b 9",
       "if not \"%~3\"==\"json\" exit /b 9",
       "if \"%~4\"==\"--\" exit /b 9",
+      "echo permission requested ... auto-rejecting",
       "echo {\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"type\":\"text\",\"text\":\"route reply\"}}",
       "exit /b 0",
     ].join("\r\n")
@@ -48,7 +50,12 @@ const launcher = process.platform === "win32"
       "  exit 0",
       "fi",
       "if [ \"$1\" != \"run\" ] || [ \"$2\" != \"--format\" ] || [ \"$3\" != \"json\" ] || [ \"$4\" = \"--\" ]; then exit 9; fi",
-      "printf '%s\\n' '{\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"type\":\"text\",\"text\":\"route reply\"}}'",
+      "printf '%s\\n' 'permission requested ... auto-rejecting'",
+      "printf '%s' '{\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"type\":\"text\",\"text\":\"split '",
+      "sleep 0.05",
+      "printf '\\360\\237'",
+      "sleep 0.05",
+      "printf '\\230\\200\"}}\\n'",
     ].join("\n");
 await writeFile(path.join(bin, executable), launcher, { mode: 0o755 });
 
@@ -75,7 +82,8 @@ try {
   assert.equal(response.status, 200, await response.clone().text());
   const body = await response.text();
   assert.doesNotMatch(body, /empty response/i, "a legacy OpenCode help surface keeps the compatible positional prompt launch without an unprobed delimiter");
-  assert.match(body, /"kind":"assistant_chunk","text":"route reply\\n"/, "the route streams text from the selected OpenCode JSON profile");
+  assert.doesNotMatch(body, /opencode-compatibility/i, "a current OpenCode permission control notice does not quarantine the selected JSON schema");
+  assert.match(body, new RegExp(`"kind":"assistant_chunk","text":"${expectedReply}\\\\n"`), "the route preserves selected OpenCode JSON text when UTF-8 spans stdout chunks");
   const done = body
     .split("\n")
     .filter((line) => line.startsWith("data: "))

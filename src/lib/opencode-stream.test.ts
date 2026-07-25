@@ -190,15 +190,17 @@ assert.deepEqual(
   "an unknown label retains text only when the signed text envelope and payload kind both validate",
 );
 {
+  const sessions: string[] = [];
   const text: string[] = [];
   const diagnostics: string[] = [];
   handleOpenCodeJsonLine(
-    JSON.stringify({ type: "future_text_delta", part: { type: "text", text: "trusted reply" } }),
+    JSON.stringify({ type: "future_text_delta", sessionID: "ses_future", part: { type: "text", text: "trusted reply" } }),
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
-    { onText: (event) => text.push(event.text), onOther: (event) => diagnostics.push(event.diagnostic ?? "other") },
+    { onSession: (id) => sessions.push(id), onText: (event) => text.push(event.text), onOther: (event) => diagnostics.push(event.diagnostic ?? "other") },
   );
   assert.deepEqual(text, ["trusted reply"], "a trusted unknown-label text frame reaches the live assistant transcript");
   assert.deepEqual(diagnostics, ["unknown-event"], "the same evolved label still creates one compatibility diagnostic");
+  assert.deepEqual(sessions, [], "an unknown text label cannot overwrite the persisted native resume token");
 }
 assert.deepEqual(
   parseOpenCodeRunEvent(["future", "envelope"]),

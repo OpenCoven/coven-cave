@@ -1103,7 +1103,20 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
     // invocation captured `cached` but before its refresh lost the cache lock
     // to a rollback rejection. Re-read first so this turn cannot regress to
     // the stale parser that initiated the race.
-    const current = await readVerifiedCache(file, publicKeys, now, checkpoint, trustAnchorFile);
+    let current: CachedBundle | null;
+    try {
+      current = await readVerifiedCache(file, publicKeys, now, checkpoint, trustAnchorFile);
+    } catch (currentError) {
+      if (currentError instanceof CacheTrustConflictError) {
+        return {
+          bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE,
+          source: "built-in",
+          diagnostic: "schema-registry-refresh-rejected",
+          remoteSchemaRequired: true,
+        };
+      }
+      throw currentError;
+    }
     if (current && (!cached || current.bundle.sequence >= cached.bundle.sequence)) {
       return { bundle: current.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" };
     }
@@ -1155,16 +1168,26 @@ export async function resolveOpenCodeCompatibility(
       diagnostic: loaded.diagnostic,
     };
   }
-  const remoteSchema = selectOpenCodeSchema(loaded.bundle.schemas, capabilities);
-  // Remote registries publish additive compatibility profiles by default. A
-  // partial update must not evict a compiled, known-safe parser for another
-  // installed client; retirement is possible only through an explicit signed
-  // baseline schema ID in the same bundle.
-  const builtInSchema = remoteSchema || loaded.source === "built-in"
-    ? null
-    : selectOpenCodeSchema(BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas, capabilities);
-  const schema = remoteSchema
-    ?? (builtInSchema && !loaded.bundle.retiredSchemaIds?.includes(builtInSchema.id) ? builtInSchema : null);
+  // Remote registries publish additive compatibility profiles by default.
+  // Select their schemas and non-retired compiled baselines together, so a
+  // broad remote profile cannot preempt a more-specific known-safe parser.
+  // A remote replacement must therefore win the same specificity/priority
+  // comparison as every other candidate, rather than merely appearing first.
+  const remoteSchemas = loaded.source === "built-in" ? new Set<OpenCodeEventSchema>() : new Set(loaded.bundle.schemas);
+  const remoteById = new Map(loaded.bundle.schemas.map((schema) => [schema.id, schema]));
+  const candidates = loaded.source === "built-in"
+    ? loaded.bundle.schemas
+    : [
+        ...loaded.bundle.schemas,
+        ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas.filter((builtIn) => {
+          if (loaded.bundle.retiredSchemaIds?.includes(builtIn.id)) return false;
+          const remoteRevision = remoteById.get(builtIn.id);
+          // Reusing a baseline id is an explicit signed revision. A distinct
+          // remote profile must instead win globally by specificity/priority.
+          return !remoteRevision || schemaSpecificity(remoteRevision) < schemaSpecificity(builtIn);
+        }),
+      ];
+  const schema = selectOpenCodeSchema(candidates, capabilities);
   if (!schema) {
     return {
       mode: "plain",
@@ -1186,7 +1209,7 @@ export async function resolveOpenCodeCompatibility(
     mode: "structured",
     capabilities,
     schema,
-    bundleSource: remoteSchema ? loaded.source : "built-in",
+    bundleSource: schema && remoteSchemas.has(schema) ? loaded.source : "built-in",
     // The shipped parser is a source-trusted offline baseline. A failed
     // registry refresh must not remove otherwise compatible tool activity,
     // but callers still surface the value-free recovery state.

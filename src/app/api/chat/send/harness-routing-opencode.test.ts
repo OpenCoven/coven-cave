@@ -22,6 +22,11 @@ assert.match(
 );
 assert.match(
   route,
+  /import \{ StringDecoder \} from "node:string_decoder";[\s\S]*?const openCodeStdoutDecoder = openCodeDirect \? new StringDecoder\("utf8"\) : null;[\s\S]*?openCodeStdoutDecoder \? openCodeStdoutDecoder\.write\(data\)[\s\S]*?openCodeStdoutDecoder\?\.end\(\)/,
+  "OpenCode stdout uses a streaming UTF-8 decoder and flushes its final bytes before parsing JSONL",
+);
+assert.match(
+  route,
   /const openCodeEndOfOptionsSupported = Boolean\([\s\S]*?capabilities\.endOfOptions[\s\S]*?schema\?\.launch\.endOfOptions === true[\s\S]*?const openCodePromptNeedsDelimiter = openCodeDirect && harnessPrompt\.startsWith\("--"\);[\s\S]*?if \(openCodePromptNeedsDelimiter && !openCodeEndOfOptionsSupported\)[\s\S]*?status: 400[\s\S]*?if \(openCodeEndOfOptionsSupported\) a\.push\("--"\);/,
   "OpenCode emits the end-of-options delimiter only when both the selected schema and help probe confirm it, refusing an unsafe flag-shaped prompt otherwise",
 );
