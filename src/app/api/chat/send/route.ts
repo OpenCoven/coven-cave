@@ -67,6 +67,7 @@ import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import {
   hasUnsupportedClaudeToolFrame,
   parseClaudeMessageEnvelope,
+  parseClaudeTextOnlyEnvelope,
 } from "@/lib/claude-stream";
 import { redactedEventFingerprint } from "@/lib/runtime-compatibility";
 import {
@@ -1956,11 +1957,9 @@ export async function POST(req: Request) {
                   fingerprint: redactedEventFingerprint(ev),
                 });
               }
-              for (const block of ev.message.content) {
-                if (block.type === "text" && typeof block.text === "string" && block.text) {
-                  assistantText += block.text;
-                  push({ kind: "assistant_chunk", text: block.text });
-                }
+              for (const text of parseClaudeTextOnlyEnvelope(ev)) {
+                assistantText += text;
+                push({ kind: "assistant_chunk", text });
               }
             }
             return;

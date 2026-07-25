@@ -1,9 +1,38 @@
 import assert from "node:assert/strict";
-import { hasUnsupportedClaudeToolFrame, parseClaudeMessageEnvelope } from "./claude-stream.ts";
+import {
+  hasUnsupportedClaudeToolFrame,
+  parseClaudeMessageEnvelope,
+  parseClaudeTextOnlyEnvelope,
+} from "./claude-stream.ts";
 import { CLAUDE_COMPATIBILITY_PROFILES } from "./runtime-compatibility.ts";
 
 const v1 = CLAUDE_COMPATIBILITY_PROFILES.find((entry) => entry.id === "claude-stream-json-v1")!;
 const v2 = CLAUDE_COMPATIBILITY_PROFILES.find((entry) => entry.id === "claude-stream-json-v2")!;
+
+for (const profile of CLAUDE_COMPATIBILITY_PROFILES) {
+  assert.deepEqual(
+    parseClaudeMessageEnvelope({
+      type: "assistant",
+      message: { content: [
+        { type: "text", text: "I will inspect it." },
+        { type: "tool_use", id: `toolu-${profile.id}`, name: "Read", input: { path: "README.md" } },
+      ] },
+    }, profile),
+    [
+      { kind: "text", text: "I will inspect it." },
+      { kind: "tool-use", id: `toolu-${profile.id}`, name: "Read", input: { path: "README.md" } },
+    ],
+    `${profile.id} decodes assistant text and tool_use blocks`,
+  );
+  assert.deepEqual(
+    parseClaudeMessageEnvelope({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: `toolu-${profile.id}`, content: "done", is_error: true }] },
+    }, profile),
+    [{ kind: "tool-result", toolUseId: `toolu-${profile.id}`, content: "done", isError: true }],
+    `${profile.id} decodes user tool_result blocks`,
+  );
+}
 
 assert.deepEqual(
   parseClaudeMessageEnvelope({
@@ -59,6 +88,19 @@ assert.equal(
   true,
   "unknown message envelopes are visible compatibility failures",
 );
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "future", message: "partial" }, v2),
+  true,
+  "unknown partial message frames still surface the compatibility diagnostic",
+);
 assert.deepEqual(parseClaudeMessageEnvelope({ type: "future", payload: "untrusted" }, v2), []);
+assert.deepEqual(
+  parseClaudeTextOnlyEnvelope({
+    type: "assistant",
+    message: { content: [null, { type: "tool_use", id: "untrusted" }, { type: "text", text: "keep this" }] },
+  }),
+  ["keep this"],
+  "fallback preserves valid text after malformed or tool blocks without creating a tool event",
+);
 
 console.log("claude-stream: ok");

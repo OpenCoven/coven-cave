@@ -25,7 +25,12 @@ assert.deepEqual(
   { kind: "fallback", reason: "unsupported-version" },
 );
 assert.deepEqual(
-  resolveRuntimeCompatibility({ ...current, capabilities: ["stream-json"] }, CLAUDE_COMPATIBILITY_PROFILES, NOW),
+  resolveRuntimeCompatibility({ ...current, version: "3.0.0" }, CLAUDE_COMPATIBILITY_PROFILES, NOW),
+  { kind: "fallback", reason: "unsupported-version" },
+  "a future major must not inherit the v2 parser before a reviewed profile is available",
+);
+assert.deepEqual(
+  resolveRuntimeCompatibility({ ...current, capabilities: [] }, CLAUDE_COMPATIBILITY_PROFILES, NOW),
   { kind: "fallback", reason: "missing-capability" },
 );
 assert.deepEqual(

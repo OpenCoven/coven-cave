@@ -11,6 +11,24 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+/** Decode only assistant text for the compatibility fallback. In particular,
+ * malformed sibling blocks must not make a valid later text block disappear,
+ * and this path must never manufacture a tool activity event. */
+export function parseClaudeTextOnlyEnvelope(value: unknown): string[] {
+  const envelope = record(value);
+  const message = record(envelope?.message);
+  const content = message?.content;
+  if (envelope?.type !== "assistant" || !Array.isArray(content)) return [];
+  const text: string[] = [];
+  for (const value of content) {
+    const block = record(value);
+    if (block?.type === "text" && typeof block.text === "string" && block.text) {
+      text.push(block.text);
+    }
+  }
+  return text;
+}
+
 /**
  * Decode only the message envelope explicitly described by the selected
  * compatibility profile. This is intentionally a data parser, not a plugin:
@@ -81,7 +99,7 @@ export function hasUnsupportedClaudeToolFrame(
   // System/result envelopes have their own route handling. An unknown envelope
   // only needs a compatibility diagnostic when it looks like a message frame;
   // otherwise ordinary stream metadata would create false alarms.
-  if (!isAssistant && !isUser) return Boolean(message && "content" in message);
+  if (!isAssistant && !isUser) return Object.hasOwn(envelope, "message");
   if (!Array.isArray(content)) return true;
   if (isAssistant) {
     return content.some((value) => {

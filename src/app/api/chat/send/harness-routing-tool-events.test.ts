@@ -11,6 +11,7 @@ import {
   flattenToolResultContent,
   formatToolInputValue,
   formatToolPayload,
+  MAX_PENDING_ENVELOPE_RESULTS,
   ToolCallTracker,
   toPersistedTools,
 } from "../../../../lib/chat-tool-events.ts";
@@ -188,6 +189,25 @@ assert.match(
   assert.ok(errored);
   const erroredDone = tracker.envelopeToolResult("toolu_02", "boom", true);
   assert.equal(erroredDone?.status, "error", "is_error tool_result blocks settle as errors");
+}
+
+// Unknown result ids are retained briefly to recover reordered JSONL, but a
+// malformed stream cannot grow that recovery buffer without bound.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  for (let index = 0; index <= MAX_PENDING_ENVELOPE_RESULTS; index += 1) {
+    tracker.envelopeToolResult(`unknown-${index}`, "ignored", false);
+  }
+  assert.equal(
+    tracker.envelopeToolUse("unknown-0", "Read")?.status,
+    "running",
+    "the oldest unmatched result is evicted once the bounded recovery buffer fills",
+  );
+  assert.equal(
+    tracker.envelopeToolUse(`unknown-${MAX_PENDING_ENVELOPE_RESULTS}`, "Read")?.status,
+    "ok",
+    "the most recent reordered result remains recoverable within the bound",
+  );
 }
 
 // A buffered/partial JSONL transport can deliver the result line before the

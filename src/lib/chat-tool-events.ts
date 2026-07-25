@@ -34,6 +34,11 @@ export type ToolStreamEvent = {
  *  (mirrors the chat UI's textOffset for chronological interleaving). */
 export type RecordedToolEvent = ToolStreamEvent & { textOffset?: number };
 
+// Keep out-of-order JSONL recovery finite when a malformed or hostile stream
+// sends results for ids that are never announced. This comfortably exceeds the
+// number of simultaneous tool calls a normal turn can carry.
+export const MAX_PENDING_ENVELOPE_RESULTS = 256;
+
 /** Pretty-print a raw JSON payload string; fall back to the raw text. */
 export function formatToolPayload(raw: string): string | undefined {
   if (!raw) return undefined;
@@ -293,6 +298,10 @@ export class ToolCallTracker {
     const call = this.byEnvelopeId.get(toolUseId);
     if (!call) {
       if (!this.pendingEnvelopeResults.has(toolUseId)) {
+        if (this.pendingEnvelopeResults.size >= MAX_PENDING_ENVELOPE_RESULTS) {
+          const oldest = this.pendingEnvelopeResults.keys().next().value;
+          if (oldest !== undefined) this.pendingEnvelopeResults.delete(oldest);
+        }
         this.pendingEnvelopeResults.set(toolUseId, { output, isError });
       }
       return null;

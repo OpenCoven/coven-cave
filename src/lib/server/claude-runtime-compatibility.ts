@@ -137,10 +137,9 @@ export async function resolveInstalledClaudeCompatibility(
   const capabilities: RuntimeCapability[] = [];
   const help = helpOutput ?? "";
   if (/--output-format[\s\S]*stream-json|stream-json[\s\S]*--output-format/i.test(help)) capabilities.push("stream-json");
-  // Claude stream-json tool envelopes are a documented companion to stream
-  // mode. Keep it separate so a future CLI can advertise streaming without
-  // being assumed to retain the same tool block contract.
-  if (/tool_use|tool_result/i.test(help) || capabilities.includes("stream-json")) capabilities.push("tool-envelopes");
+  // Profile selection proves the versioned message-envelope contract. The CLI
+  // help has no independent documented tool-envelope capability, so do not
+  // fabricate one from the generic stream-json flag.
   if (/pre_tool_use|post_tool_use/i.test(help)) capabilities.push("tool-hooks");
   const report: RuntimeCompatibilityReport = { runtime: "claude", version, capabilities, probe: version ? "ok" : "failed" };
   const resolution = resolveRuntimeCompatibility(report, profileCache.current(), new Date(now));

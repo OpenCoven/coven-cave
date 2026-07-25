@@ -79,7 +79,7 @@ export const CLAUDE_COMPATIBILITY_PROFILES: RuntimeCompatibilityProfile[] = [
     id: "claude-stream-json-v1",
     sequence: 1,
     version: { min: "1.0.0", maxExclusive: "2.0.0" },
-    requires: ["stream-json", "tool-envelopes"],
+    requires: ["stream-json"],
     parser: "claude-stream-json-v1",
     eventTypes: { assistant: "assistant", toolUse: "tool_use", user: "user", toolResult: "tool_result" },
     source: { repo: REGISTRY_SOURCE.repo, blobSha: REGISTRY_SOURCE.blobSha, keyId: "cave-registry-v1" },
@@ -91,8 +91,10 @@ export const CLAUDE_COMPATIBILITY_PROFILES: RuntimeCompatibilityProfile[] = [
     runtime: "claude",
     id: "claude-stream-json-v2",
     sequence: 2,
-    version: { min: "2.0.0" },
-    requires: ["stream-json", "tool-envelopes"],
+    // Keep the profile range bounded. A new major Claude Code release must
+    // select a newly reviewed profile rather than inheriting this parser.
+    version: { min: "2.0.0", maxExclusive: "3.0.0" },
+    requires: ["stream-json"],
     parser: "claude-stream-json-v1",
     eventTypes: { assistant: "assistant", toolUse: "tool_use", user: "user", toolResult: "tool_result" },
     source: { repo: REGISTRY_SOURCE.repo, blobSha: REGISTRY_SOURCE.blobSha, keyId: "cave-registry-v1" },
