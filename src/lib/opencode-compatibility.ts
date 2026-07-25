@@ -147,6 +147,8 @@ const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const CACHE_FILE = "opencode-schema-bundle-v1.json";
 const REFRESH_TIMEOUT_MS = 5_000;
 const CACHE_LOCK_STALE_MS = 30_000;
+const CACHE_LOCK_WAIT_MS = 500;
+const CACHE_LOCK_POLL_MS = 20;
 const REFRESH_FAILURE_BACKOFF_MS = 60_000;
 const refreshFlights = new Map<string, Promise<LoadedOpenCodeSchemaBundle>>();
 const refreshRetryAt = new Map<string, number>();
@@ -703,6 +705,31 @@ async function withCacheWriteLock<T>(file: string, callback: () => Promise<T>): 
   }
 }
 
+/** Wait briefly for a competing writer before choosing an older remote reply. */
+async function waitForConcurrentCacheWriter(
+  file: string,
+  publicKeys: OpenCodeRegistryKeyring,
+  now: number,
+  minimumSequence: number,
+): Promise<CachedBundle | null> {
+  const lock = `${file}.lock`;
+  const deadline = Date.now() + CACHE_LOCK_WAIT_MS;
+  let latest: CachedBundle | null = null;
+  for (;;) {
+    latest = await readVerifiedCache(file, publicKeys, now);
+    if (latest && latest.bundle.sequence >= minimumSequence) return latest;
+    try {
+      await stat(lock);
+    } catch {
+      // Lock release follows the atomic write, so one final verified read sees
+      // the owner's result without trusting its in-progress payload.
+      return await readVerifiedCache(file, publicKeys, now);
+    }
+    if (Date.now() >= deadline) return latest;
+    await new Promise<void>((resolve) => setTimeout(resolve, CACHE_LOCK_POLL_MS));
+  }
+}
+
 export type OpenCodeSchemaBundleSource = {
   url?: string;
   publicKey?: string;
@@ -715,9 +742,9 @@ export type OpenCodeSchemaBundleSource = {
   refreshTimeoutMs?: number;
 };
 
-// Release builds inject these public values at compile time. Server-side
-// overrides retain local test and operator support without changing the
-// packaged trust anchor.
+// Release builds inject these public values at compile time. A packaged
+// process treats them as its immutable trust anchor; mutable COVEN_* values
+// are for explicit test/developer configuration only.
 const PACKAGED_REGISTRY_URL = process.env.NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_URL;
 const PACKAGED_REGISTRY_PUBLIC_KEY = process.env.NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY;
 const PACKAGED_REGISTRY_PUBLIC_KEYS = process.env.NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS;
@@ -737,12 +764,20 @@ function parseKeyring(value: string | undefined): OpenCodeRegistryKeyring | unde
 }
 
 function registryKeyring(source: OpenCodeSchemaBundleSource): OpenCodeRegistryKeyring | undefined {
-  const configured = source.publicKeys
-    ?? parseKeyring(process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS)
-    ?? parseKeyring(PACKAGED_REGISTRY_PUBLIC_KEYS);
+  if (source.publicKeys) return source.publicKeys;
+  if (source.publicKey) return { legacy: source.publicKey };
+  const configured = parseKeyring(PACKAGED_REGISTRY_PUBLIC_KEYS)
+    ?? (process.env.NODE_ENV === "production" ? undefined : parseKeyring(process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS));
   if (configured) return configured;
-  const single = source.publicKey ?? process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY ?? PACKAGED_REGISTRY_PUBLIC_KEY;
+  const single = PACKAGED_REGISTRY_PUBLIC_KEY
+    ?? (process.env.NODE_ENV === "production" ? undefined : process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY);
   return single ? { legacy: single } : undefined;
+}
+
+function registryUrl(source: OpenCodeSchemaBundleSource): string | undefined {
+  return source.url
+    ?? PACKAGED_REGISTRY_URL
+    ?? (process.env.NODE_ENV === "production" ? undefined : process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_URL);
 }
 
 function schemaRefreshKey(file: string, url: string, publicKeys: OpenCodeRegistryKeyring): string {
@@ -783,7 +818,7 @@ async function refreshOpenCodeSchemaBundle(
   // A concurrent writer can have installed a newer sequence while this
   // request held an older verified response. Never select that older parser
   // for this turn merely because the lock was busy.
-  const current = await readVerifiedCache(file, publicKeys, now);
+  const current = await waitForConcurrentCacheWriter(file, publicKeys, now, remote.sequence);
   if (current && current.bundle.sequence >= remote.sequence) {
     return { bundle: current.bundle, source: "cache" };
   }
@@ -820,7 +855,7 @@ function startSchemaRefresh(
 export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSource = {}): Promise<LoadedOpenCodeSchemaBundle> {
   const now = source.now?.() ?? Date.now();
   const file = source.cacheFile ?? cachePath();
-  const url = source.url ?? process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_URL ?? PACKAGED_REGISTRY_URL;
+  const url = registryUrl(source);
   const publicKeys = registryKeyring(source);
   if (!url || !publicKeys) return { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in" };
 

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdtemp, readFile, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -563,6 +563,34 @@ const recoveredLock = await loadOpenCodeSchemaBundle({
   fetch: async () => new Response(JSON.stringify(signedSequence3), { status: 200 }),
 });
 assert.equal(recoveredLock.bundle.sequence, 3, "a stale writer lock cannot permanently block cache recovery after a crash");
+
+const writerWaitFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-writer-wait-")), "bundle.json");
+await writeFile(writerWaitFile, JSON.stringify({ checkedAt: now, bundle: signedRollback }));
+const writerWaitUnsigned = { ...unsigned, sequence: 3 };
+const writerWaitBundle = {
+  ...writerWaitUnsigned,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(writerWaitUnsigned)), privateKey).toString("base64"),
+  },
+};
+await writeFile(`${writerWaitFile}.lock`, "concurrent-writer");
+const writerCommit = new Promise<void>((resolve) => setTimeout(() => {
+  void (async () => {
+    await writeFile(writerWaitFile, JSON.stringify({ checkedAt: now + 7 * 60 * 60 * 1000, bundle: writerWaitBundle }));
+    await rm(`${writerWaitFile}.lock`, { force: true });
+    resolve();
+  })();
+}, 20));
+const waitedForWriter = await loadOpenCodeSchemaBundle({
+  cacheFile: writerWaitFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now + 7 * 60 * 60 * 1000,
+  fetch: async () => new Response(JSON.stringify(signed), { status: 200 }),
+});
+await writerCommit;
+assert.equal(waitedForWriter.bundle.sequence, 3, "a lock loser waits for a concurrent newer verified cache write before selecting a parser");
 
 const rollbackRaceFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-rollback-race-")), "bundle.json");
 await writeFile(rollbackRaceFile, JSON.stringify({ checkedAt: now, bundle: signed }));
