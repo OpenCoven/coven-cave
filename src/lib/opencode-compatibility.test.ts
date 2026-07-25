@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -115,5 +115,26 @@ const oversized = await loadOpenCodeSchemaBundle({
 assert.equal(oversized.source, "cache");
 assert.equal(oversized.diagnostic, "schema-registry-refresh-rejected", "oversized refreshes preserve the verified cache");
 assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 2);
+
+const unsignedSequence3 = { ...unsigned, sequence: 3 };
+const signedSequence3 = {
+  ...unsignedSequence3,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(unsignedSequence3)), privateKey).toString("base64"),
+  },
+};
+const staleLock = `${cacheFile}.lock`;
+await writeFile(staleLock, "99999999");
+await utimes(staleLock, new Date(0), new Date(0));
+const recoveredLock = await loadOpenCodeSchemaBundle({
+  cacheFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now + 28 * 60 * 60 * 1000,
+  fetch: async () => new Response(JSON.stringify(signedSequence3), { status: 200 }),
+});
+assert.equal(recoveredLock.bundle.sequence, 3, "a stale writer lock cannot permanently block cache recovery after a crash");
+assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 3);
 
 console.log("opencode-compatibility.test.ts: ok");

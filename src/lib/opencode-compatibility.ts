@@ -1,6 +1,5 @@
-import { createPublicKey, verify } from "node:crypto";
-import { createHash } from "node:crypto";
-import { mkdir, open, readFile, rm } from "node:fs/promises";
+import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
+import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
@@ -81,6 +80,7 @@ const MAX_SCHEMA_BUNDLE_BYTES = 256 * 1024;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const CACHE_FILE = "opencode-schema-bundle-v1.json";
 const REFRESH_TIMEOUT_MS = 5_000;
+const CACHE_LOCK_STALE_MS = 30_000;
 
 /**
  * Shipped schemas remain usable offline. Selection is capability-based: a
@@ -269,14 +269,53 @@ async function fetchSchemaBundle(url: string, fetcher: typeof fetch): Promise<Re
  * still use its verified remote bundle for this turn, but it never races a
  * peer into replacing a newer last-known-good cache with an older sequence.
  */
+async function staleLockCanBeReclaimed(lock: string): Promise<boolean> {
+  try {
+    const info = await stat(lock);
+    if (Date.now() - info.mtimeMs < CACHE_LOCK_STALE_MS) return false;
+    const owner = Number((await readFile(lock, "utf8")).trim());
+    if (!Number.isSafeInteger(owner) || owner < 1) return true;
+    try {
+      process.kill(owner, 0);
+      return false;
+    } catch (error) {
+      // EPERM means the process exists but this user cannot signal it.
+      return (error as NodeJS.ErrnoException).code !== "EPERM";
+    }
+  } catch {
+    return false;
+  }
+}
+
 async function withCacheWriteLock<T>(file: string, callback: () => Promise<T>): Promise<T | null> {
   const lock = `${file}.lock`;
-  let handle: Awaited<ReturnType<typeof open>>;
-  try {
-    handle = await open(lock, "wx", 0o600);
-  } catch {
-    return null;
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const acquired = await open(lock, "wx", 0o600);
+      try {
+        await acquired.writeFile(String(process.pid));
+      } catch (error) {
+        await acquired.close().catch(() => undefined);
+        await rm(lock, { force: true }).catch(() => undefined);
+        throw error;
+      }
+      handle = acquired;
+      break;
+    } catch {
+      if (attempt || !(await staleLockCanBeReclaimed(lock))) return null;
+      // Move rather than unlink the stale lock: a competing refresher cannot
+      // delete a newly acquired lock between its stale check and this cleanup.
+      const stale = `${lock}.${process.pid}.${randomBytes(6).toString("hex")}.stale`;
+      try {
+        await rename(lock, stale);
+        await rm(stale, { force: true });
+      } catch {
+        return null;
+      }
+    }
   }
+  if (!handle) return null;
   try {
     return await callback();
   } finally {
