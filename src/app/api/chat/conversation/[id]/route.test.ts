@@ -63,7 +63,7 @@ function paramsFor(id: string) {
   return { params: Promise.resolve({ id }) };
 }
 
-const { DELETE } = await import("./route.ts");
+const { DELETE, GET } = await import("./route.ts");
 const { PUT, POST } = await import("./route.ts");
 
 function writeReq(bodyObj: unknown) {
@@ -192,4 +192,30 @@ test("PUT rejects an over-long turn with 413", async () => {
   const json = await res.json();
   assert.equal(json.ok, false);
   assert.match(json.error, /too long/);
+});
+
+test("GET preserves persisted OpenCode compatibility diagnostics", async () => {
+  writeConversation("sess-opencode-diagnostic", [
+    {
+      id: "assistant-diagnostic",
+      role: "assistant",
+      text: "Reply preserved safely.",
+      createdAt: "2026-07-25T00:00:00.000Z",
+      progress: [{
+        id: "opencode-compatibility",
+        label: "OpenCode compatibility notice",
+        detail: "unrecognized event",
+        status: "error",
+        createdAt: "2026-07-25T00:00:00.000Z",
+      }],
+    },
+  ]);
+  const res = await GET(new Request("http://test/api/chat/conversation/sess-opencode-diagnostic"), paramsFor("sess-opencode-diagnostic"));
+  const json = await res.json();
+  assert.equal(res.status, 200);
+  assert.deepEqual(
+    json.conversation.turns[0].progress,
+    [{ id: "opencode-compatibility", label: "OpenCode compatibility notice", detail: "unrecognized event", status: "error", createdAt: "2026-07-25T00:00:00.000Z" }],
+    "stored compatibility diagnostics survive the conversation API reload path",
+  );
 });

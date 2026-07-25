@@ -15,6 +15,7 @@ const {
   loadConversation,
   saveConversation,
 } = await import("./cave-conversations.ts");
+const { mapConversationHistoryTurns } = await import("./chat-turn-state.ts");
 
 assert.equal(isSafeConversationSessionId("session-1"), true);
 assert.equal(isSafeConversationSessionId("019e-a-valid-thread"), true);
@@ -24,6 +25,48 @@ assert.equal(isSafeConversationSessionId("nested\\session-1"), false);
 assert.equal(isSafeConversationSessionId("."), false);
 assert.equal(isSafeConversationSessionId(".."), false);
 assert.equal(isSafeConversationSessionId(""), false);
+
+assert.deepEqual(
+  mapConversationHistoryTurns([{
+    id: "turn-progress",
+    role: "assistant",
+    text: "Safe reply",
+    createdAt: "2026-07-25T00:00:00.000Z",
+    progress: [{
+      id: "opencode-compatibility",
+      label: "OpenCode compatibility notice",
+      detail: "unrecognized event",
+      status: "error",
+      createdAt: "2026-07-25T00:00:00.000Z",
+    }],
+  }]),
+  [{
+    id: "turn-progress",
+    parentId: undefined,
+    role: "assistant",
+    text: "Safe reply",
+    attachments: undefined,
+    reasoning: undefined,
+    tools: undefined,
+    progress: [{
+      id: "opencode-compatibility",
+      label: "OpenCode compatibility notice",
+      detail: "unrecognized event",
+      status: "error",
+      createdAt: "2026-07-25T00:00:00.000Z",
+    }],
+    durationMs: undefined,
+    usage: undefined,
+    costUsd: undefined,
+    responseMetadata: undefined,
+    error: undefined,
+    lifecycle: undefined,
+    createdAt: "2026-07-25T00:00:00.000Z",
+    origin: undefined,
+    voiceCallId: undefined,
+  }],
+  "persisted compatibility diagnostics round-trip into the client transcript after reload",
+);
 
 await saveConversation({
   sessionId: "delete-me",
