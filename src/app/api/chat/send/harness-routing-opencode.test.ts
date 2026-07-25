@@ -207,7 +207,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const handleOpenCodeLine = \(line: string\) => \{[\s\S]*?const normalized = resolveBackspaces\(stripAnsi\(line\)\)\.trim\(\);[\s\S]*?permission requested[\s\S]*?if \(openCodeCompatibility\?\.mode === "plain"\)/,
+  /const handleOpenCodeLine = \(line: string\) => \{[\s\S]*?const plainText = resolveBackspaces\(stripAnsi\(line\)\);[\s\S]*?permission requested[\s\S]*?plainText\.trim\(\)[\s\S]*?if \(openCodeCompatibility\?\.mode === "plain"\)/,
   "plain OpenCode fallback filters permission control notices before rendering assistant text",
 );
 assert.match(

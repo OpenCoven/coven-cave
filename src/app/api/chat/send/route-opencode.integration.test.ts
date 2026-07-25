@@ -19,6 +19,7 @@ await mkdir(familiarWorkspace, { recursive: true });
 const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousPath = process.env.PATH;
+const previousOpenCodeTestMode = process.env.OPENCODE_TEST_MODE;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`;
@@ -28,13 +29,16 @@ const expectedReply = process.platform === "win32" ? "route reply" : "split 😀
 const launcher = process.platform === "win32"
   ? [
       "@echo off",
+      "if \"%~1\"==\"--version\" if \"%OPENCODE_TEST_MODE%\"==\"plain\" (echo 1.2.4& exit /b 0)",
       "if \"%~1\"==\"--version\" (echo 1.2.3& exit /b 0)",
       "if \"%~1\"==\"run\" if \"%~2\"==\"--help\" (",
+      "  if \"%OPENCODE_TEST_MODE%\"==\"plain\" (echo   --format ^<format^>  Output format: text, json-v2& exit /b 0)",
       "  echo   --format ^<format^>  Output format: text, json",
       "  echo   --session ^<id^>     Session to continue",
       "  exit /b 0",
       ")",
       "if not \"%~1\"==\"run\" exit /b 9",
+      "if \"%OPENCODE_TEST_MODE%\"==\"plain\" (echo   const value = 1;& echo.& echo   return value;& exit /b 0)",
       "if not \"%~2\"==\"--format\" exit /b 9",
       "if not \"%~3\"==\"json\" exit /b 9",
       "if \"%~4\"==\"--\" exit /b 9",
@@ -44,12 +48,14 @@ const launcher = process.platform === "win32"
     ].join("\r\n")
   : [
       "#!/bin/sh",
-      "if [ \"$1\" = \"--version\" ]; then echo 1.2.3; exit 0; fi",
+      "if [ \"$1\" = \"--version\" ]; then if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then echo 1.2.4; else echo 1.2.3; fi; exit 0; fi",
       "if [ \"$1\" = \"run\" ] && [ \"$2\" = \"--help\" ]; then",
-      "  printf '%s\\n' '  --format <format>  Output format: text, json' '  --session <id>     Session to continue'",
+      "  if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf '%s\\n' '  --format <format>  Output format: text, json-v2'; else printf '%s\\n' '  --format <format>  Output format: text, json' '  --session <id>     Session to continue'; fi",
       "  exit 0",
       "fi",
-      "if [ \"$1\" != \"run\" ] || [ \"$2\" != \"--format\" ] || [ \"$3\" != \"json\" ] || [ \"$4\" = \"--\" ]; then exit 9; fi",
+      "if [ \"$1\" != \"run\" ]; then exit 9; fi",
+      "if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf '  const value = 1;\\n\\n  return value;\\n'; exit 0; fi",
+      "if [ \"$2\" != \"--format\" ] || [ \"$3\" != \"json\" ] || [ \"$4\" = \"--\" ]; then exit 9; fi",
       "printf '%s\\n' 'permission requested ... auto-rejecting'",
       "printf '%s' '{\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"type\":\"text\",\"text\":\"split '",
       "sleep 0.05",
@@ -95,6 +101,22 @@ try {
   assert.notEqual(sessionId, "native_opencode_session", "Cave keeps its stable conversation id separate from OpenCode's native resume id");
   const conversation = await loadConversation(sessionId);
   assert.equal(conversation?.harnessSessionId, "native_opencode_session", "the route persists the native OpenCode session id separately from Cave's stable id");
+
+  // A future JSON format with no signed parser must fall back to plain chat
+  // without turning source-code indentation or blank lines into data loss.
+  process.env.OPENCODE_TEST_MODE = "plain";
+  const plainResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "plain fallback", projectRoot: familiarWorkspace }),
+  }));
+  assert.equal(plainResponse.status, 200, await plainResponse.clone().text());
+  const plainBody = await plainResponse.text();
+  assert.match(
+    plainBody,
+    /"kind":"assistant_chunk","text":"  const value = 1;\\n"[\s\S]*?"kind":"assistant_chunk","text":"\\n"[\s\S]*?"kind":"assistant_chunk","text":"  return value;\\n"/,
+    "plain OpenCode fallback preserves leading whitespace and blank assistant lines",
+  );
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;
@@ -102,6 +124,8 @@ try {
   else process.env.COVEN_CAVE_HOME = previousCaveHome;
   if (previousPath === undefined) delete process.env.PATH;
   else process.env.PATH = previousPath;
+  if (previousOpenCodeTestMode === undefined) delete process.env.OPENCODE_TEST_MODE;
+  else process.env.OPENCODE_TEST_MODE = previousOpenCodeTestMode;
   await rm(home, { recursive: true, force: true });
 }
 

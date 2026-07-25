@@ -1907,10 +1907,10 @@ export async function POST(req: Request) {
         // Current OpenCode writes this human-oriented permission control
         // notice to stdout even in plain fallback mode. It is neither an
         // event nor assistant output and must never enter the transcript.
-        const normalized = resolveBackspaces(stripAnsi(line)).trim();
-        if (/^permission requested\b[\s\S]*\bauto-rejecting\b/i.test(normalized)) return;
+        const plainText = resolveBackspaces(stripAnsi(line));
+        if (/^permission requested\b[\s\S]*\bauto-rejecting\b/i.test(plainText.trim())) return;
         if (openCodeCompatibility?.mode === "plain") {
-          const text = `${normalized}\n`;
+          const text = `${plainText}\n`;
           assistantText += text;
           push({ kind: "assistant_chunk", text });
           return;
@@ -2036,7 +2036,9 @@ export async function POST(req: Request) {
         // and a trailing \r would both fail the endsWith("}") JSON sniff and
         // leak into bubble text.
         const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-        if (!line) return;
+        // Plain fallback is ordinary assistant text, so preserve empty lines;
+        // structured JSONL control frames can still ignore blank transport rows.
+        if (!line && !(openCodeDirect && openCodeCompatibility?.mode === "plain")) return;
         if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
           openCodeCompatibilityHealthNoticeSent = true;
           const diagnostic = openCodeCompatibility.diagnostic === "json-format-unavailable"
