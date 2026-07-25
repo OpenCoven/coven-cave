@@ -194,7 +194,13 @@ export function openCodeSchemaBundleSigningPayload(bundle: OpenCodeSchemaBundle)
 export function verifyOpenCodeSchemaBundle(bundle: unknown, publicKey: string, now = Date.now()): bundle is OpenCodeSchemaBundle {
   if (!isOpenCodeSchemaBundle(bundle, now) || !bundle.signature || bundle.signature.algorithm !== "ed25519") return false;
   try {
-    return verify(null, Buffer.from(openCodeSchemaBundleSigningPayload(bundle)), createPublicKey(publicKey), Buffer.from(bundle.signature.value, "base64"));
+    // Buffer's base64 decoder silently ignores malformed trailing characters.
+    // Require the registry's encoding to round-trip before verification.
+    const encoded = bundle.signature.value;
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) return false;
+    const signature = Buffer.from(encoded, "base64");
+    if (!signature.length || signature.toString("base64") !== encoded) return false;
+    return verify(null, Buffer.from(openCodeSchemaBundleSigningPayload(bundle)), createPublicKey(publicKey), signature);
   } catch {
     return false;
   }
@@ -211,7 +217,15 @@ async function readVerifiedCache(file: string, publicKey: string, now: number): 
     const raw = await readFile(file, "utf8");
     if (Buffer.byteLength(raw, "utf8") > MAX_SCHEMA_BUNDLE_BYTES) return null;
     const cached = JSON.parse(raw) as CachedBundle;
-    if (!isRecord(cached) || typeof cached.checkedAt !== "number" || !verifyOpenCodeSchemaBundle(cached.bundle, publicKey, now)) return null;
+    if (
+      !isRecord(cached)
+      || typeof cached.checkedAt !== "number"
+      || !Number.isFinite(cached.checkedAt)
+      // The wrapper is not signed; a future timestamp must not pin an old,
+      // otherwise valid bundle and suppress all subsequent registry refreshes.
+      || cached.checkedAt > now
+      || !verifyOpenCodeSchemaBundle(cached.bundle, publicKey, now)
+    ) return null;
     return cached;
   } catch {
     return null;
@@ -378,8 +392,14 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
       return { bundle: remote, source: "remote" as const };
     });
     if (writeResult) return writeResult;
-    // Do not overwrite a cache another process is refreshing. The remote was
-    // independently verified and remains safe for this request.
+    // A concurrent writer can have installed a newer sequence while this
+    // request held an older verified response. Never select that older parser
+    // for this turn merely because the lock was busy.
+    const current = await readVerifiedCache(file, publicKey, now);
+    if (current && current.bundle.sequence >= remote.sequence) {
+      return { bundle: current.bundle, source: "cache" };
+    }
+    // The remote was independently verified and no newer cache exists.
     return { bundle: remote, source: "remote" };
   } catch {
     if (cached) return { bundle: cached.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" };

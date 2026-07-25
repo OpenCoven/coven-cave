@@ -6,7 +6,7 @@ export type OpenCodeRunEvent =
   | { kind: "tool_end"; sessionId?: string; id: string; output: unknown; isError: boolean }
   | { kind: "tool"; sessionId?: string; id: string; name: string; input: unknown; output: unknown; isError: boolean }
   | { kind: "error"; sessionId?: string; message: string }
-  | { kind: "other"; sessionId?: string; diagnostic?: "unknown-event" | "malformed-event" };
+  | { kind: "other"; sessionId?: string; diagnostic?: "unknown-event" | "malformed-event"; text?: string };
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -32,10 +32,17 @@ function terminalToolState(state: Record<string, unknown> | null): boolean {
   return status === "completed" || status === "complete" || status === "error" || status === "failed";
 }
 
+function toolStateIsError(state: Record<string, unknown> | null): boolean {
+  const status = stringAt(state, "status")?.toLowerCase();
+  return status === "error" || status === "failed" || Boolean(state?.error);
+}
+
 /** Decode OpenCode's `run --format json` envelope without trusting its fields. */
-export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSchema): OpenCodeRunEvent | null {
+export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSchema): OpenCodeRunEvent {
   const event = record(value);
-  if (!event || typeof event.type !== "string") return null;
+  if (!event || typeof event.type !== "string") {
+    return { kind: "other", diagnostic: "malformed-event" };
+  }
   const sessionId = stringAt(event, "sessionID", "sessionId", "session_id");
   if (eventTypes(schema, "error", ["error"]).includes(event.type)) {
     const error = record(event.error);
@@ -67,7 +74,7 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
     return { kind: "tool_start", sessionId, id, name: stringAt(part, "tool", "name") ?? "tool", input: state?.input ?? part?.input ?? {} };
   }
   if (toolEndTypes.includes(event.type) && id) {
-    return { kind: "tool_end", sessionId, id, output: state?.output ?? state?.error ?? part?.output ?? "", isError: state?.status === "error" || state?.status === "failed" || Boolean(state?.error) };
+    return { kind: "tool_end", sessionId, id, output: state?.output ?? state?.error ?? part?.output ?? "", isError: toolStateIsError(state) };
   }
   if (toolCompleteTypes.includes(event.type) && id && part) {
     if (!terminalToolState(state)) {
@@ -80,7 +87,7 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
       name: stringAt(part, "tool", "name") ?? "tool",
       input: state?.input ?? {},
       output: state?.output ?? state?.error ?? "",
-      isError: state?.status === "error" || state?.status === "failed" || Boolean(state?.error),
+      isError: toolStateIsError(state),
     };
   }
   const knownType = [
@@ -90,5 +97,10 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
     ...toolCompleteTypes,
     ...eventTypes(schema, "error", ["error"]),
   ].includes(event.type);
-  return { kind: "other", sessionId, diagnostic: knownType ? "malformed-event" : "unknown-event" };
+  return {
+    kind: "other",
+    sessionId,
+    diagnostic: knownType ? "malformed-event" : "unknown-event",
+    ...(text === undefined ? {} : { text }),
+  };
 }

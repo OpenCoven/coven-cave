@@ -54,6 +54,16 @@ const offline = await loadOpenCodeSchemaBundle({
 assert.equal(offline.source, "cache");
 assert.equal(offline.diagnostic, "schema-registry-refresh-rejected", "offline keeps the last known good parser");
 
+await writeFile(cacheFile, JSON.stringify({ checkedAt: now + 365 * 24 * 60 * 60 * 1000, bundle: signed }));
+const futureCheckedAt = await loadOpenCodeSchemaBundle({
+  cacheFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now + 8 * 60 * 60 * 1000,
+  fetch: async () => new Response(JSON.stringify(signed), { status: 200 }),
+});
+assert.equal(futureCheckedAt.source, "remote", "an unsigned future cache timestamp cannot suppress registry refreshes");
+
 const rollback = { ...signed, sequence: 1 };
 const rejectedRollback = await loadOpenCodeSchemaBundle({
   cacheFile,
@@ -104,6 +114,16 @@ assert.equal(
   "diagnostic fingerprints do not retain untrusted payload keys",
 );
 assert.match(secretShape, /^[a-f0-9]{16}$/);
+
+assert.equal(
+  // Node's permissive base64 decoder accepts this suffix, but registry input must not.
+  (await import("./opencode-compatibility.ts")).verifyOpenCodeSchemaBundle({
+    ...signed,
+    signature: { ...signed.signature, value: `${signed.signature.value}!` },
+  }, publicPem, now),
+  false,
+  "malformed signature encodings are rejected before verification",
+);
 
 const oversized = await loadOpenCodeSchemaBundle({
   cacheFile,

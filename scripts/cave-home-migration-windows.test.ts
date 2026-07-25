@@ -122,7 +122,7 @@ try {
     throw error;
   };
   await assert.rejects(
-    migrateCaveHome({ lockTimeoutMs: 150, lockCandidateRename: persistentEperm }),
+    migrateCaveHome({ lockTimeoutMs: 500, lockCandidateRename: persistentEperm }),
     (error) => error?.code === "ETIMEDOUT",
   );
   assert.ok(candidateAttempts >= 2);

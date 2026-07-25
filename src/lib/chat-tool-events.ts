@@ -275,6 +275,9 @@ export class ToolCallTracker {
       // A malformed stream must not turn arbitrary unmatched ids into an
       // unbounded in-memory buffer. Retain a small FIFO window for genuine
       // reorderings; the start event remains the authority for rendering.
+      // The first terminal frame wins just like an already-settled result;
+      // retransmits before the start frame must not replace its output.
+      if (this.pendingEnvelopeResults.has(toolUseId)) return null;
       if (this.pendingEnvelopeResults.size >= 100) {
         const oldest = this.pendingEnvelopeResults.keys().next().value;
         if (oldest) this.pendingEnvelopeResults.delete(oldest);

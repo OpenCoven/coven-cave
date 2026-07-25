@@ -14,7 +14,8 @@ let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let hermesModelFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
-let openCodeCapabilitiesProbe: Promise<OpenCodeRunCapabilities> | null = null;
+let openCodeCapabilitiesProbe: { until: number; value: Promise<OpenCodeRunCapabilities> } | null = null;
+const OPENCODE_CAPABILITY_PROBE_TTL_MS = 60_000;
 
 function probeHelp(
   command: string,
@@ -151,7 +152,10 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
  * schema because vendors can backport or change protocol behavior.
  */
 export function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
-  return (openCodeCapabilitiesProbe ??= (async () => {
+  if (openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until) {
+    return openCodeCapabilitiesProbe.value;
+  }
+  const value = (async () => {
     const helpLaunch = openCodeLaunch(["run", "--help"]);
     const versionLaunch = openCodeLaunch(["--version"]);
     const [help, versionOutput] = await Promise.all([
@@ -161,9 +165,14 @@ export function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
     const version = versionOutput.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null;
     return {
       version,
-      json: /--format(?:[=\s][^\n]*)?/m.test(help) && /\bjson\b/i.test(help),
+      // Only accept JSON when it appears in the `--format` option's own
+      // stanza. A stray "JSON" in a banner or another option's description
+      // must not make us launch an unsupported `--format json` command.
+      json: /(?:^|\n)\s*--format(?:[=\s][^\n]*)?(?:\n(?!\s*--)[^\n]*){0,2}\bjson\b/im.test(help),
       model: /(^|\s)--model(?![\w-])/m.test(help),
       session: /(^|\s)--session(?![\w-])/m.test(help),
     };
-  })());
+  })();
+  openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, value };
+  return value;
 }

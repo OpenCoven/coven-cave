@@ -71,6 +71,26 @@ assert.deepEqual(
   "missing tool ids never create random, non-resumable bubbles",
 );
 assert.deepEqual(
+  parseOpenCodeRunEvent({ type: "future_text_delta", data: { text: "Still show this reply" } }),
+  { kind: "other", sessionId: undefined, diagnostic: "unknown-event", text: "Still show this reply" },
+  "unknown future envelopes retain safe assistant text while disabling tool activity",
+);
+assert.equal(
+  parseOpenCodeRunEvent({ type: "tool", callID: "failed_1", tool: "bash", state: { status: "FAILED" } }, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]).kind,
+  "tool",
+  "case variants of terminal states remain terminal",
+);
+assert.equal(
+  (parseOpenCodeRunEvent({ type: "tool", callID: "failed_1", tool: "bash", state: { status: "FAILED" } }, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]) as { isError: boolean }).isError,
+  true,
+  "case variants of error statuses do not render successful tool bubbles",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(["future", "envelope"]),
+  { kind: "other", diagnostic: "malformed-event" },
+  "valid JSON with an unsupported envelope still produces one compatibility diagnostic",
+);
+assert.deepEqual(
   parseOpenCodeRunEvent(
     { type: "assistant_text", session_id: "ses_legacy", data: { content: "Older client reply" } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[1],

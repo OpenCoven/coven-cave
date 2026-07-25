@@ -1791,7 +1791,6 @@ export async function POST(req: Request) {
         try {
           const rawEvent = JSON.parse(line);
           const ev = parseOpenCodeRunEvent(rawEvent, openCodeCompatibility?.schema);
-          if (!ev) return;
           if (ev.sessionId && !sessionId) announceSession(ev.sessionId);
           if (ev.kind === "text") {
             const text = ev.text.endsWith("\n") ? ev.text : `${ev.text}\n`;
@@ -1846,14 +1845,23 @@ export async function POST(req: Request) {
             result = { ...result, is_error: true };
             return;
           }
-          if (ev.kind === "other" && !openCodeCompatibilityNoticeSent) {
-            openCodeCompatibilityNoticeSent = true;
-            pushProgress(
-              "opencode-compatibility",
-              "OpenCode sent an unrecognized tool event; continuing with assistant text",
-              "error",
-              `${ev.diagnostic ?? "unknown-event"}:${redactedOpenCodeEventFingerprint(rawEvent)}`,
-            );
+          if (ev.kind === "other") {
+            // A future envelope can still carry assistant text even when its
+            // event label is unknown. Preserve that safe textual field while
+            // disabling only the unsupported structured activity.
+            if (ev.text) {
+              assistantText += ev.text;
+              push({ kind: "assistant_chunk", text: ev.text });
+            }
+            if (!openCodeCompatibilityNoticeSent) {
+              openCodeCompatibilityNoticeSent = true;
+              pushProgress(
+                "opencode-compatibility",
+                "OpenCode sent an unrecognized tool event; continuing with assistant text",
+                "error",
+                `${ev.diagnostic ?? "unknown-event"}:${redactedOpenCodeEventFingerprint(rawEvent)}`,
+              );
+            }
           }
         } catch {
           // Structured-mode stdout can contain a malformed future event with
