@@ -34,6 +34,7 @@ type TimerOptions = {
   stabilityMs?: number;
   maxUtteranceMs?: number;
   voiceThreshold?: number;
+  locale?: string;
   fetchImpl?: typeof fetch;
   setTimeout?: (fn: () => void, ms: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
@@ -48,6 +49,12 @@ export function whisperModelSupportsLocale(modelId: string | undefined, locale?:
   if (!language || language === "en") return true;
   if (!modelId) return false;
   return !/(?:[-_.]en)$/i.test(modelId);
+}
+
+/** whisper.cpp expects an ISO language ID, not a browser BCP-47 tag. */
+export function normalizeWhisperLanguage(locale?: string): string {
+  const language = locale?.trim().split(/[-_]/)[0]?.toLowerCase();
+  return language && /^[a-z]{2,3}$/.test(language) ? language : "auto";
 }
 
 /** True only for a verified downloaded Whisper model advertised by the sidecar
@@ -168,6 +175,9 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
   const stabilityMs = options.stabilityMs ?? WHISPER_SILENCE_MS;
   const maxUtteranceMs = options.maxUtteranceMs ?? WHISPER_MAX_UTTERANCE_MS;
   const threshold = options.voiceThreshold ?? WHISPER_VOICE_THRESHOLD;
+  const recognitionLanguage = normalizeWhisperLanguage(
+    options.locale ?? (typeof navigator !== "undefined" ? navigator.language : undefined),
+  );
   const request = options.fetchImpl ?? fetch;
   const schedule = options.setTimeout ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
   const unschedule = options.clearTimeout ?? ((handle: unknown) => clearTimeout(handle as number));
@@ -246,6 +256,7 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
       const form = new FormData();
       form.set("session", String(session));
       form.set("kind", kind);
+      form.set("lang", recognitionLanguage);
       const wavBuffer = wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength) as ArrayBuffer;
       form.set("audio", new Blob([wavBuffer], { type: "audio/wav" }), "utterance.wav");
       return request(SIDECAR_WHISPER_ENDPOINT, { method: "POST", body: form, signal })
