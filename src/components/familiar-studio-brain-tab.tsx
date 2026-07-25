@@ -481,7 +481,10 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     setLocalVoiceCatalog({ status: "loading", voices: [] });
     (async () => {
       try {
-        const res = await fetch("/api/voice/engines", { signal: controller.signal });
+        const res = await fetch("/api/voice/engines", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
         const json = await res.json().catch(() => null);
         if (cancelled) return;
         if (!res.ok || !json?.ok || !Array.isArray(json.tts)) {

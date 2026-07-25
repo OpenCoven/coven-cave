@@ -12,8 +12,11 @@ export async function GET() {
     piperRuntimeAvailability(),
     whisperRuntimeAvailable(),
   ]);
-  return NextResponse.json({
-    ...engines,
-    runtimes: { piper, whisper: { available: whisperAvailable } },
-  });
+  return NextResponse.json(
+    {
+      ...engines,
+      runtimes: { piper, whisper: { available: whisperAvailable } },
+    },
+    { headers: { "cache-control": "no-store" } },
+  );
 }

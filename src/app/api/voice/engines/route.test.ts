@@ -30,6 +30,7 @@ test("GET /api/voice/engines advertises readonly readiness and management endpoi
   await withCovenHome("engines", async () => {
     const res = await getEngines();
     assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
     const body = await json(res as Response);
     assert.equal(body.ok, true);
     assert.equal(body.management.surface, "settings");

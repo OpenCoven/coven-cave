@@ -222,8 +222,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const controller = new AbortController\(\);[\s\S]{0,300}LOCAL_VOICE_CATALOG_TIMEOUT_MS[\s\S]{0,300}fetch\("\/api\/voice\/engines", \{ signal: controller\.signal \}\)/,
-  "local voice catalog loading has a bounded abortable request",
+  /const controller = new AbortController\(\);[\s\S]{0,300}LOCAL_VOICE_CATALOG_TIMEOUT_MS[\s\S]{0,300}fetch\("\/api\/voice\/engines", \{[\s\S]{0,100}cache: "no-store",[\s\S]{0,100}signal: controller\.signal,[\s\S]{0,100}\}\)/,
+  "local voice catalog loading has a bounded, non-cached abortable request",
 );
 assert.match(
   source,
