@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../src-tauri/frontend-stub",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "bash scripts/whisper-runtime-bundle.sh && pnpm dev",
     "beforeBuildCommand": "bash scripts/sidecar-bundle.sh"
   },
   "app": {

@@ -154,6 +154,11 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     "sidecar resources must be generated before Tauri validates bundle resource globs",
   );
   assert.match(
+    tauriConfig,
+    /"beforeDevCommand": "bash scripts\/whisper-runtime-bundle\.sh && pnpm dev"/,
+    "direct Tauri development launches must stage the mandatory Whisper runtime",
+  );
+  assert.match(
     bundleScript,
     /BUNDLED_NODE_DIR=/,
     "sidecar bundle script must stage the runner Node binary",
