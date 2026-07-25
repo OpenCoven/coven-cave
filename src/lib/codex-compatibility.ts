@@ -817,7 +817,7 @@ export class CodexJsonlDecoder {
           continue;
         }
       } catch {
-        if (this.protocolActive && /^\s*\{\s*"type"\s*:\s*"(?:[^"\\]+\.)+[^"\\]+"/.test(line)) {
+        if (this.protocolActive && /^\s*\{\s*"type"\s*:\s*"[^"\\.\s]+(?:\.[^"\\.\s]+)+"/.test(line)) {
           const event: CodexStreamEvent = { kind: "unknown", fingerprint: "malformed-jsonl" };
           events.push(event);
           tokens.push(event);
