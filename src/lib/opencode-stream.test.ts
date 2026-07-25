@@ -89,6 +89,14 @@ assert.deepEqual(
   { kind: "tool", sessionId: "ses_123", id: "prt_1", name: "bash", input: { command: "pwd" }, output: "ok", isError: false },
 );
 assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool_use", sessionID: "ses_123", id: "root_tool", tool: "bash", state: { input: { command: "pwd" }, output: "secret", status: "completed" } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "other", sessionId: "ses_123", diagnostic: "malformed-event" },
+  "the current v1 profile requires the documented part envelope for tool activity",
+);
+assert.deepEqual(
   parseOpenCodeRunEvent({ type: "text" }),
   { kind: "other", sessionId: undefined, diagnostic: "malformed-event" },
   "malformed events never produce assistant text",

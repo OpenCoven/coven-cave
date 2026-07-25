@@ -253,6 +253,21 @@ assert.equal(
   false,
   "a signed parser registry cannot add OpenCode flags that publish or otherwise alter a conversation",
 );
+assert.equal(
+  isOpenCodeSchemaBundle({
+    ...unsigned,
+    schemas: [{
+      ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+      eventTypes: {
+        ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].eventTypes,
+        toolStart: ["tool_use"],
+        toolComplete: ["tool_use"],
+      },
+    }],
+  }, now),
+  false,
+  "a signed schema cannot assign one tool label to incompatible lifecycle states",
+);
 assert.equal(isOpenCodeSchemaBundle({ ...unsigned, unexpected: true }, now), false, "unknown format-1 bundle fields fail closed");
 assert.equal(isOpenCodeSchemaBundle({
   ...unsigned,
@@ -591,6 +606,22 @@ const waitedForWriter = await loadOpenCodeSchemaBundle({
 });
 await writerCommit;
 assert.equal(waitedForWriter.bundle.sequence, 3, "a lock loser waits for a concurrent newer verified cache write before selecting a parser");
+
+const unresolvedWriterFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-unresolved-writer-")), "bundle.json");
+await writeFile(unresolvedWriterFile, JSON.stringify({ checkedAt: now, bundle: signedRollback }));
+await writeFile(`${unresolvedWriterFile}.lock`, "concurrent-writer");
+const unresolvedWriter = await resolveOpenCodeCompatibility(
+  { version: "current", json: true, model: false, session: true, protocols: ["json"] },
+  {
+    cacheFile: unresolvedWriterFile,
+    publicKey: publicPem,
+    url: "https://registry.invalid/opencode.json",
+    now: () => now + 7 * 60 * 60 * 1000,
+    fetch: async () => new Response(JSON.stringify(signed), { status: 200 }),
+  },
+);
+assert.equal(unresolvedWriter.mode, "plain", "a lock loser never selects an uncommitted older remote schema");
+assert.equal(unresolvedWriter.diagnostic, "schema-registry-refresh-rejected");
 
 const rollbackRaceFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-rollback-race-")), "bundle.json");
 await writeFile(rollbackRaceFile, JSON.stringify({ checkedAt: now, bundle: signed }));

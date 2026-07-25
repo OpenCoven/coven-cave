@@ -55,6 +55,8 @@ export type OpenCodeEventSchema = {
     };
     /** Envelope(s) explicitly trusted to carry assistant text. */
     textEnvelope?: OpenCodeEnvelopePath[];
+    /** Envelope(s) explicitly trusted to carry tool input/output/state. */
+    toolEnvelope?: OpenCodeEnvelopePath[];
     /** Envelope(s) that carry the stable tool-call id; defaults to payload/root. */
     idEnvelope?: OpenCodeEnvelopePath[];
     sessionId: string[];
@@ -150,6 +152,7 @@ const CACHE_LOCK_STALE_MS = 30_000;
 const CACHE_LOCK_WAIT_MS = 500;
 const CACHE_LOCK_POLL_MS = 20;
 const REFRESH_FAILURE_BACKOFF_MS = 60_000;
+class CacheWriterPendingError extends Error {}
 const refreshFlights = new Map<string, Promise<LoadedOpenCodeSchemaBundle>>();
 const refreshRetryAt = new Map<string, number>();
 // A selected schema that emits an unknown or malformed frame is unsafe for
@@ -201,6 +204,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
         envelope: ["part", "data", "root"],
         discriminator: { envelope: "root", field: "type" },
         textEnvelope: ["part", "data"],
+        toolEnvelope: ["part"],
         sessionId: ["sessionID", "sessionId", "session_id"],
         id: ["id", "callID", "callId", "toolCallId", "tool_call_id"],
         name: ["tool", "name"], text: ["text", "content"], state: ["state"], input: ["input"], output: ["output"], error: ["error"], status: ["status"],
@@ -230,6 +234,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
         envelope: ["part", "data", "root"],
         discriminator: { envelope: "root", field: "type" },
         textEnvelope: ["part", "data"],
+        toolEnvelope: ["data", "root"],
         sessionId: ["sessionID", "sessionId", "session_id"],
         id: ["id", "callID", "callId", "toolCallId", "tool_call_id"],
         name: ["tool", "name"], text: ["text", "content"], state: ["state"], input: ["input"], output: ["output"], error: ["error"], status: ["status"],
@@ -267,9 +272,10 @@ function hasValidShape(value: unknown): boolean {
     && fields.length > 0
     && fields.length <= 4
     && fields.every(hasValidEnvelopePath);
-  if (!Object.keys(value).every((key) => key === "envelope" || key === "textEnvelope" || key === "idEnvelope" || key === "discriminator" || aliasKeys.includes(key))) return false;
+  if (!Object.keys(value).every((key) => key === "envelope" || key === "textEnvelope" || key === "toolEnvelope" || key === "idEnvelope" || key === "discriminator" || aliasKeys.includes(key))) return false;
   if (!envelopeFields(value.envelope)
     || (value.textEnvelope !== undefined && !envelopeFields(value.textEnvelope))
+    || (value.toolEnvelope !== undefined && !envelopeFields(value.toolEnvelope))
     || (value.idEnvelope !== undefined && !envelopeFields(value.idEnvelope))) return false;
   if (!isRecord(value.discriminator)
     || !Object.keys(value.discriminator).every((key) => key === "envelope" || key === "field")
@@ -353,7 +359,7 @@ function isEventSchema(value: unknown): value is OpenCodeEventSchema {
     ...(eventTypes.toolStart as string[]),
     ...(eventTypes.toolComplete as string[]),
   ];
-  if (toolLabels.some((label) => nonToolLabels.has(label))) return false;
+  if (new Set(toolLabels).size !== toolLabels.length || toolLabels.some((label) => nonToolLabels.has(label))) return false;
   return true;
 }
 
@@ -822,7 +828,10 @@ async function refreshOpenCodeSchemaBundle(
   if (current && current.bundle.sequence >= remote.sequence) {
     return { bundle: current.bundle, source: "cache" };
   }
-  return { bundle: remote, source: "remote" };
+  // Selecting the fetched payload here could race a still-running writer with
+  // a newer sequence. Keep the protocol boundary fail-closed until that
+  // writer commits or a later refresh can make an ordered decision.
+  throw new CacheWriterPendingError("schema cache writer did not settle");
 }
 
 function startSchemaRefresh(
@@ -882,7 +891,15 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   );
   try {
     return await refresh;
-  } catch {
+  } catch (error) {
+    if (error instanceof CacheWriterPendingError) {
+      return {
+        bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE,
+        source: "built-in",
+        diagnostic: "schema-registry-refresh-rejected",
+        remoteSchemaRequired: true,
+      };
+    }
     // Another process may have installed a newer verified contract after this
     // invocation captured `cached` but before its refresh lost the cache lock
     // to a rollback rejection. Re-read first so this turn cannot regress to

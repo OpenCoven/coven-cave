@@ -31,7 +31,7 @@ function stringAt(recordValue: Record<string, unknown> | null, ...keys: string[]
   return undefined;
 }
 
-type ShapeAlias = Exclude<keyof NonNullable<OpenCodeEventSchema["shape"]>, "envelope" | "textEnvelope" | "idEnvelope" | "discriminator">;
+type ShapeAlias = Exclude<keyof NonNullable<OpenCodeEventSchema["shape"]>, "envelope" | "textEnvelope" | "toolEnvelope" | "idEnvelope" | "discriminator">;
 
 function shapeAliases(schema: OpenCodeEventSchema | undefined, key: ShapeAlias, defaults: string[]): string[] {
   const aliases = schema?.shape?.[key];
@@ -145,37 +145,41 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   if (eventTypes(schema, "text", ["text"]).includes(eventType) && text !== undefined) {
     return { kind: "text", sessionId, text };
   }
+  // Tool payloads are stricter than errors/session metadata: v1 only trusts
+  // the documented nested `part` envelope, while a separately negotiated
+  // legacy/future schema may explicitly select another bounded location.
+  const toolPart = envelope(event, schema?.shape?.toolEnvelope ?? schema?.shape?.envelope ?? ["part", "data", "root"]);
   const stateAliases = shapeAliases(schema, "state", ["state"]);
-  const state = record(valueAt(part, stateAliases)) ?? record(valueAt(event, stateAliases));
-  const id = toolId(event, part, schema);
+  const state = record(valueAt(toolPart, stateAliases)) ?? record(valueAt(event, stateAliases));
+  const id = toolId(event, toolPart, schema);
   const toolStartTypes = eventTypes(schema, "toolStart", ["tool_start"]);
   const toolEndTypes = eventTypes(schema, "toolEnd", ["tool_result"]);
   const toolCompleteTypes = eventTypes(schema, "toolComplete", ["tool_use"]);
-  if (toolStartTypes.includes(eventType) && id && !terminalToolState(state, part, schema)) {
-    return { kind: "tool_start", sessionId, id, name: stringAt(part, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(part, shapeAliases(schema, "input", ["input"])) ?? {} };
+  if (toolStartTypes.includes(eventType) && id && toolPart && !terminalToolState(state, toolPart, schema)) {
+    return { kind: "tool_start", sessionId, id, name: stringAt(toolPart, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(toolPart, shapeAliases(schema, "input", ["input"])) ?? {} };
   }
-  if (toolEndTypes.includes(eventType) && id) {
+  if (toolEndTypes.includes(eventType) && id && toolPart) {
     const output = shapeAliases(schema, "output", ["output"]);
     const error = shapeAliases(schema, "error", ["error"]);
-    return { kind: "tool_end", sessionId, id, output: valueAt(state, output) ?? valueAt(state, error) ?? valueAt(part, output) ?? valueAt(part, error) ?? "", isError: toolStateIsError(state, part, schema) };
+    return { kind: "tool_end", sessionId, id, output: valueAt(state, output) ?? valueAt(state, error) ?? valueAt(toolPart, output) ?? valueAt(toolPart, error) ?? "", isError: toolStateIsError(state, toolPart, schema) };
   }
-  if (toolCompleteTypes.includes(eventType) && id && part) {
+  if (toolCompleteTypes.includes(eventType) && id && toolPart) {
     // Legacy `tool_use` frames were terminal snapshots and some omit a
     // status entirely. Their output/error is the durable terminal signal.
     const output = shapeAliases(schema, "output", ["output"]);
     const error = shapeAliases(schema, "error", ["error"]);
-    const hasTerminalPayload = valueAt(state, output) !== undefined || valueAt(state, error) !== undefined || valueAt(part, output) !== undefined || valueAt(part, error) !== undefined;
-    if (!terminalToolState(state, part, schema) && !hasTerminalPayload) {
-      return { kind: "tool_start", sessionId, id, name: stringAt(part, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(part, shapeAliases(schema, "input", ["input"])) ?? {} };
+    const hasTerminalPayload = valueAt(state, output) !== undefined || valueAt(state, error) !== undefined || valueAt(toolPart, output) !== undefined || valueAt(toolPart, error) !== undefined;
+    if (!terminalToolState(state, toolPart, schema) && !hasTerminalPayload) {
+      return { kind: "tool_start", sessionId, id, name: stringAt(toolPart, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(toolPart, shapeAliases(schema, "input", ["input"])) ?? {} };
     }
     return {
       kind: "tool",
       sessionId,
       id,
-      name: stringAt(part, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool",
-      input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(part, shapeAliases(schema, "input", ["input"])) ?? {},
-      output: valueAt(state, output) ?? valueAt(state, error) ?? valueAt(part, output) ?? valueAt(part, error) ?? "",
-      isError: toolStateIsError(state, part, schema),
+      name: stringAt(toolPart, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool",
+      input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(toolPart, shapeAliases(schema, "input", ["input"])) ?? {},
+      output: valueAt(state, output) ?? valueAt(state, error) ?? valueAt(toolPart, output) ?? valueAt(toolPart, error) ?? "",
+      isError: toolStateIsError(state, toolPart, schema),
     };
   }
   const knownType = [
