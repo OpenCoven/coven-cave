@@ -109,6 +109,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /for \(const toolEv of toolTracker\.settleUnfinished\(\)\) \{[\s\S]*?push\(\{ kind: "tool_use", \.\.\.toolEv \}\)/,
+  "the route must settle every live tool chip before completing the stream",
+);
+
+assert.match(
+  chatRoute,
   /\.\.\.\(persistedTools \? \{ tools: persistedTools \} : \{\}\)/,
   "tools persist on the assistant turn alongside usage and cost",
 );
@@ -228,6 +234,28 @@ assert.match(
     toPersistedTools(tracker.snapshot(), 0)?.[0].status,
     "ok",
     "reordered envelopes must not become an indefinitely running persisted tool",
+  );
+}
+
+// An announced call that never receives a result must emit a terminal SSE
+// update before `done`, not just be fixed up in the persisted transcript.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  const running = tracker.envelopeToolUse("toolu_unfinished", "Bash");
+  assert.equal(running?.status, "running");
+  t = 75;
+  assert.deepEqual(tracker.settleUnfinished(), [{
+    id: "toolu_unfinished",
+    name: "Bash",
+    output: "[tool did not settle before the turn ended]",
+    status: "error",
+    durationMs: 75,
+  }]);
+  assert.equal(
+    toPersistedTools(tracker.snapshot(), 0)?.[0].status,
+    "error",
+    "unfinished calls are terminal both live and after reload",
   );
 }
 

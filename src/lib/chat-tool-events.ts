@@ -187,6 +187,27 @@ export class ToolCallTracker {
     return Array.from(this.recorded.values());
   }
 
+  /** Settle every call still open when a harness attempt ends. The client only
+   * receives incremental SSE events, so persistence-time coercion alone would
+   * leave a live tool chip spinning until the conversation is reloaded. */
+  settleUnfinished(output = "[tool did not settle before the turn ended]"): ToolStreamEvent[] {
+    const unfinished = Array.from(this.open.values()).flat();
+    const settled: ToolStreamEvent[] = [];
+    for (const call of unfinished) {
+      const ev: ToolStreamEvent = {
+        id: call.id,
+        name: call.name,
+        output,
+        status: "error",
+        durationMs: this.now() - call.startedAt,
+      };
+      this.settle(call);
+      this.record(ev);
+      settled.push(ev);
+    }
+    return settled;
+  }
+
   /** pre_tool_use (or bare tool_use) hook line: a call is starting. */
   hookStart(name: string, input?: string, textOffset?: number): ToolStreamEvent {
     const queue = this.queueFor(name);

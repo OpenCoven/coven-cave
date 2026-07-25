@@ -2453,6 +2453,12 @@ export async function POST(req: Request) {
         // state fed by SSE; without this, refresh/chat-switch loses them.
         // Offsets were stamped against the untrimmed stream — shift by the
         // leading trim so interleaving matches the saved text.
+        // A process can exit after announcing a tool but before its matching
+        // hook/result arrives. Send a terminal update before `done`; otherwise
+        // the client-only chip remains running until the next transcript load.
+        for (const toolEv of toolTracker.settleUnfinished()) {
+          push({ kind: "tool_use", ...toolEv });
+        }
         const persistedTools = toPersistedTools(toolTracker.snapshot(),
           assistantText.length - assistantText.trimStart().length,
         );
