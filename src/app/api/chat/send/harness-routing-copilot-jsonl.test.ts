@@ -86,7 +86,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const harnessSessionId = grokDirect \? grokSessionId : sessionId;/,
+  /const harnessSessionId = grokDirect\s*\? grokSessionId\s*:\s*openCodeDirect/,
   "a failed Grok resume must not overwrite the native resume id with Cave's stable conversation id",
 );
 assert.match(
