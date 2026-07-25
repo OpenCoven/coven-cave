@@ -64,7 +64,10 @@ import {
 import { grokLaunchCommand } from "@/lib/grok-bin";
 import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
-import { parseClaudeMessageEnvelope } from "@/lib/claude-stream";
+import {
+  hasUnsupportedClaudeToolFrame,
+  parseClaudeMessageEnvelope,
+} from "@/lib/claude-stream";
 import { redactedEventFingerprint } from "@/lib/runtime-compatibility";
 import {
   claudeCompatibilityDiagnostic,
@@ -1533,8 +1536,13 @@ export async function POST(req: Request) {
         : binding.harness === "claude" && sshRuntime
           ? "Claude Code tool activity cannot be verified on an SSH host; chat text will continue without tool bubbles."
           : null;
-      let claudeDiagnosticSent = false;
+      if (claudeDiagnostic) {
+        // Emit the fallback state before the child produces output: an absent
+        // or immediately-failing CLI must not hide the only useful diagnostic.
+        pushProgress("claude-runtime-compatibility", claudeDiagnostic, "error");
+      }
       let claudeFallbackFingerprintLogged = false;
+      let claudeUnsupportedFrameDiagnosticSent = false;
       // Keep stderr off the assistant stream — surface it only on failure
       // or empty-success so users don't see raw 401 traces mid-bubble.
       const stderrTail: string[] = [];
@@ -1821,14 +1829,6 @@ export async function POST(req: Request) {
         if (!line) return;
         if (RESUME_ERR_RE.test(line)) resumeFailed = true;
         const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
-        if (
-          binding.harness === "claude" &&
-          !claudeDiagnosticSent &&
-          claudeDiagnostic
-        ) {
-          claudeDiagnosticSent = true;
-          pushProgress("claude-runtime-compatibility", claudeDiagnostic, "error");
-        }
         if (copilotStream) {
           handleCopilotLine(line, isJson);
           return;
@@ -1906,6 +1906,20 @@ export async function POST(req: Request) {
               // Profile-selected decoding keeps version-specific envelope names
               // outside this route. The shared tracker continues to provide
               // stable ids, hook/envelope deduplication, and persisted state.
+              if (
+                !claudeUnsupportedFrameDiagnosticSent &&
+                hasUnsupportedClaudeToolFrame(ev, claudeCompatibility.profile)
+              ) {
+                claudeUnsupportedFrameDiagnosticSent = true;
+                console.warn("[chat] Claude tool frame ignored by compatibility profile", {
+                  fingerprint: redactedEventFingerprint(ev),
+                });
+                pushProgress(
+                  "claude-runtime-compatibility",
+                  "A Claude Code tool frame is not supported by the selected compatibility profile; chat text will continue without unverified tool bubbles.",
+                  "error",
+                );
+              }
               for (const claudeEvent of parseClaudeMessageEnvelope(ev, claudeCompatibility.profile)) {
                 if (claudeEvent.kind === "text") {
                   assistantText += claudeEvent.text;

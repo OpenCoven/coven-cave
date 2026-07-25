@@ -36,12 +36,15 @@ export type CompatibilityResolution =
   | { kind: "compatible"; profile: RuntimeCompatibilityProfile; stale: boolean }
   | { kind: "fallback"; reason: "probe-failed" | "unsupported-version" | "missing-capability" | "invalid-profile" };
 
-const SEMVER = /(?:^|[^\d])(\d+)\.(\d+)(?:\.(\d+))?/;
+// Keep the token bounded on both sides: accepting the first three components
+// of `2.1.179.1` would select a profile for a malformed/unknown CLI version.
+const SEMVER = /(?:^|[^\d.])(\d+)\.(\d+)(?:\.(\d+))?(?![\d.])/;
 
 function semver(value: string): [number, number, number] | null {
   const found = value.match(SEMVER);
   if (!found) return null;
-  return [Number(found[1]), Number(found[2]), Number(found[3] ?? 0)];
+  const parsed: [number, number, number] = [Number(found[1]), Number(found[2]), Number(found[3] ?? 0)];
+  return parsed.every(Number.isSafeInteger) ? parsed : null;
 }
 
 function compareVersion(a: string, b: string): number | null {
@@ -112,7 +115,10 @@ export function validateRuntimeCompatibilityProfile(
     !Number.isSafeInteger(p.sequence) ||
     p.sequence < 1
   ) return false;
-  if (!semver(p.version?.min ?? "") || (p.version.maxExclusive && !semver(p.version.maxExclusive))) return false;
+  const min = semver(p.version?.min ?? "");
+  const maxExclusive = p.version?.maxExclusive ? semver(p.version.maxExclusive) : null;
+  if (!min || (p.version?.maxExclusive && !maxExclusive)) return false;
+  if (maxExclusive && compareVersion(p.version.min, p.version.maxExclusive!)! >= 0) return false;
   if (
     !Array.isArray(p.requires) ||
     new Set(p.requires).size !== p.requires.length ||

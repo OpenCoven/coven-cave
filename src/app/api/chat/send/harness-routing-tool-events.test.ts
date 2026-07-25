@@ -78,6 +78,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /hasUnsupportedClaudeToolFrame\(ev, claudeCompatibility\.profile\)[\s\S]*?fingerprint: redactedEventFingerprint\(ev\)[\s\S]*?Claude Code tool frame is not supported/,
+  "a malformed or unknown profiled tool block should emit one redacted compatibility diagnostic instead of silently creating a bubble",
+);
+
+assert.match(
+  chatRoute,
   /toolTracker = new ToolCallTracker\(\);/,
   "The resume retry should reset the tool tracker alongside the other per-attempt state",
 );

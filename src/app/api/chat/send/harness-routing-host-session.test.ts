@@ -539,6 +539,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /const claudeDiagnostic =[\s\S]*?if \(claudeDiagnostic\) \{[\s\S]*?pushProgress\("claude-runtime-compatibility", claudeDiagnostic, "error"\)/,
+  "Claude compatibility diagnostics should be emitted before stdout so an immediately failing CLI still explains the text-only fallback",
+);
+
+assert.match(
+  chatRoute,
   /if \(!isPost\) boundarySentinel\?\.observe\(name, rest\)/,
   "pre_tool_use hook lines should feed the boundary sentinel",
 );

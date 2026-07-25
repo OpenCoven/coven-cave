@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseClaudeMessageEnvelope } from "./claude-stream.ts";
+import { hasUnsupportedClaudeToolFrame, parseClaudeMessageEnvelope } from "./claude-stream.ts";
 import { CLAUDE_COMPATIBILITY_PROFILES } from "./runtime-compatibility.ts";
 
 const v1 = CLAUDE_COMPATIBILITY_PROFILES.find((entry) => entry.id === "claude-stream-json-v1")!;
@@ -33,6 +33,16 @@ assert.deepEqual(
   parseClaudeMessageEnvelope({ type: "assistant", message: { content: [{ type: "tool_use", id: 1, name: "Read" }] } }, v2),
   [],
   "malformed ids are ignored rather than becoming unstable UI keys",
+);
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: [{ type: "tool_use", id: 1, name: "Read" }] } }, v2),
+  true,
+  "malformed tool blocks are visible compatibility failures, not tool bubbles",
+);
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: [{ type: "text", text: "ordinary text" }] } }, v2),
+  false,
+  "valid text-only frames do not produce a tool compatibility diagnostic",
 );
 assert.deepEqual(parseClaudeMessageEnvelope({ type: "future", payload: "untrusted" }, v2), []);
 

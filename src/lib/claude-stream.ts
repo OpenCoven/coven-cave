@@ -62,3 +62,36 @@ export function parseClaudeMessageEnvelope(
   }
   return events;
 }
+
+/**
+ * Detect a malformed or newly-shaped tool block without inspecting any payload
+ * values. The route uses this only to show one compatibility diagnostic; it
+ * must not turn an unknown block into a tool activity record.
+ */
+export function hasUnsupportedClaudeToolFrame(
+  value: unknown,
+  profile: RuntimeCompatibilityProfile,
+): boolean {
+  const envelope = record(value);
+  const message = record(envelope?.message);
+  const content = message?.content;
+  if (!envelope || !Array.isArray(content)) return false;
+  if (envelope.type === profile.eventTypes.assistant) {
+    return content.some((value) => {
+      const block = record(value);
+      if (!block) return true;
+      if (block.type === "text") return typeof block.text !== "string";
+      if (block.type !== profile.eventTypes.toolUse) return true;
+      return typeof block.id !== "string" || !block.id || typeof block.name !== "string" || !block.name;
+    });
+  }
+  if (envelope.type === profile.eventTypes.user) {
+    return content.some((value) => {
+      const block = record(value);
+      if (!block) return true;
+      if (block.type !== profile.eventTypes.toolResult) return false;
+      return typeof block.tool_use_id !== "string" || !block.tool_use_id;
+    });
+  }
+  return false;
+}

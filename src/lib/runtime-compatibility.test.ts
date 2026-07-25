@@ -32,6 +32,12 @@ assert.deepEqual(
   resolveRuntimeCompatibility({ ...current, probe: "failed", version: null }, CLAUDE_COMPATIBILITY_PROFILES, NOW),
   { kind: "fallback", reason: "probe-failed" },
 );
+assert.equal(validateRuntimeCompatibilityProfile({ ...CLAUDE_COMPATIBILITY_PROFILES[1], version: null }, NOW), false);
+assert.deepEqual(
+  resolveRuntimeCompatibility({ ...current, version: "2.1.179.1" }, CLAUDE_COMPATIBILITY_PROFILES, NOW),
+  { kind: "fallback", reason: "unsupported-version" },
+  "a malformed four-component version must not select the three-component v2 profile",
+);
 
 const tampered = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
 tampered.eventTypes.toolUse = "arbitrary-remote-event";
@@ -46,6 +52,12 @@ assert.equal(
   false,
   "profiles must retain the generated registry's exact provenance even when an attacker recomputes the public content hash",
 );
+
+const invertedRange = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
+invertedRange.version = { min: "3.0.0", maxExclusive: "2.0.0" };
+const { contentHash: _invertedHash, ...invertedUnsigned } = invertedRange;
+invertedRange.contentHash = createHash("sha256").update(JSON.stringify(invertedUnsigned)).digest("hex");
+assert.equal(validateRuntimeCompatibilityProfile(invertedRange, NOW), false, "profiles require a non-empty version range");
 
 const cache = new RuntimeCompatibilityCache([CLAUDE_COMPATIBILITY_PROFILES[1]]);
 assert.equal(cache.refresh([CLAUDE_COMPATIBILITY_PROFILES[0]], NOW), false, "a lower profile sequence cannot roll back last-known-good data");
