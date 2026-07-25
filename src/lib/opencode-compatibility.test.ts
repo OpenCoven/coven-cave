@@ -81,6 +81,34 @@ const checkpointAccepted = await loadOpenCodeSchemaBundle({
   fetch: async () => new Response(JSON.stringify(signed), { status: 200 }),
 });
 assert.equal(checkpointAccepted.source, "remote", "a release checkpoint admits exactly its canonical signed payload");
+const unsignedCheckpointAdvance = { ...unsigned, sequence: 3 };
+const signedCheckpointAdvance = {
+  ...unsignedCheckpointAdvance,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(unsignedCheckpointAdvance)), privateKey).toString("base64"),
+  },
+};
+const advancedCheckpoint = { sequence: 3, payloadHash: openCodeSchemaBundlePayloadHash(signedCheckpointAdvance) };
+const checkpointStaleCache = await loadOpenCodeSchemaBundle({
+  cacheFile: checkpointAcceptedFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  checkpoint: advancedCheckpoint,
+  now: () => now,
+  fetch: async () => { throw new Error("offline"); },
+});
+assert.equal(checkpointStaleCache.source, "built-in", "a release checkpoint never continues to select a lower-sequence cache after an upgrade");
+assert.equal(checkpointStaleCache.diagnostic, "schema-registry-refresh-rejected");
+const checkpointUpgrade = await loadOpenCodeSchemaBundle({
+  cacheFile: checkpointAcceptedFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  checkpoint: advancedCheckpoint,
+  now: () => now + 60_001,
+  fetch: async () => new Response(JSON.stringify(signedCheckpointAdvance), { status: 200 }),
+});
+assert.equal(checkpointUpgrade.source, "remote", "a later signed checkpoint replaces an older cache after a release upgrade");
 
 const unsignedSignedRollback = { ...unsigned, sequence: 1 };
 const signedRollback = {

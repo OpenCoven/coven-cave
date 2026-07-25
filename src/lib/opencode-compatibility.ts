@@ -723,16 +723,23 @@ async function staleLockCanBeReclaimed(lock: string): Promise<boolean> {
   }
 }
 
-async function readCachedTrustState(file: string, publicKey: string | OpenCodeRegistryKeyring, now: number): Promise<CachedBundle | null> {
+async function readCachedTrustState(
+  file: string,
+  publicKey: string | OpenCodeRegistryKeyring,
+  now: number,
+  checkpoint?: OpenCodeRegistryCheckpoint,
+): Promise<CachedBundle | null> {
   const [primary, backup] = await Promise.all([
     readTrustedCacheRecord(file, publicKey, now),
     readTrustedCacheRecord(cacheTrustPath(file), publicKey, now),
   ]);
-  if (!primary) return backup;
-  if (!backup) return primary;
+  const trustedPrimary = primary && meetsOpenCodeRegistryCheckpoint(primary.bundle, checkpoint) ? primary : null;
+  const trustedBackup = backup && meetsOpenCodeRegistryCheckpoint(backup.bundle, checkpoint) ? backup : null;
+  if (!trustedPrimary) return trustedBackup;
+  if (!trustedBackup) return trustedPrimary;
   // The sidecar is written before the replaceable cache payload. At an equal
   // sequence it is the durable floor if a torn/manual primary differs.
-  return backup.bundle.sequence >= primary.bundle.sequence ? backup : primary;
+  return trustedBackup.bundle.sequence >= trustedPrimary.bundle.sequence ? trustedBackup : trustedPrimary;
 }
 
 async function writeVerifiedCache(file: string, cached: CachedBundle): Promise<void> {
@@ -742,8 +749,13 @@ async function writeVerifiedCache(file: string, cached: CachedBundle): Promise<v
   await writeJsonAtomic(file, cached);
 }
 
-async function readVerifiedCache(file: string, publicKey: string | OpenCodeRegistryKeyring, now: number): Promise<CachedBundle | null> {
-  const cached = await readCachedTrustState(file, publicKey, now);
+async function readVerifiedCache(
+  file: string,
+  publicKey: string | OpenCodeRegistryKeyring,
+  now: number,
+  checkpoint?: OpenCodeRegistryCheckpoint,
+): Promise<CachedBundle | null> {
+  const cached = await readCachedTrustState(file, publicKey, now, checkpoint);
   if (
     !cached
     // The wrapper is not signed; a future timestamp must not pin an old,
@@ -810,19 +822,20 @@ async function waitForConcurrentCacheWriter(
   publicKeys: OpenCodeRegistryKeyring,
   now: number,
   minimumSequence: number,
+  checkpoint?: OpenCodeRegistryCheckpoint,
 ): Promise<CachedBundle | null> {
   const lock = `${file}.lock`;
   const deadline = Date.now() + CACHE_LOCK_WAIT_MS;
   let latest: CachedBundle | null = null;
   for (;;) {
-    latest = await readVerifiedCache(file, publicKeys, now);
+    latest = await readVerifiedCache(file, publicKeys, now, checkpoint);
     if (latest && latest.bundle.sequence >= minimumSequence) return latest;
     try {
       await stat(lock);
     } catch {
       // Lock release follows the atomic write, so one final verified read sees
       // the owner's result without trusting its in-progress payload.
-      return await readVerifiedCache(file, publicKeys, now);
+      return await readVerifiedCache(file, publicKeys, now, checkpoint);
     }
     if (Date.now() >= deadline) return latest;
     await new Promise<void>((resolve) => setTimeout(resolve, CACHE_LOCK_POLL_MS));
@@ -925,13 +938,13 @@ async function refreshOpenCodeSchemaBundle(
   if (!meetsOpenCodeRegistryGenesisFloor(remote)) throw new Error("schema registry genesis mismatch");
   if (!meetsOpenCodeRegistryCheckpoint(remote, checkpoint)) throw new Error("schema registry checkpoint mismatch");
   if (Object.keys(publicKeys).length > 1 && remote.keyId === undefined) throw new Error("missing schema signing key id");
-  const cachedTrust = await readCachedTrustState(file, publicKeys, now);
+  const cachedTrust = await readCachedTrustState(file, publicKeys, now, checkpoint);
   if (cachedTrust && remote.sequence < cachedTrust.bundle.sequence) throw new Error("schema rollback");
   await mkdir(path.dirname(file), { recursive: true });
   const writeResult = await withCacheWriteLock(file, async () => {
     // Re-read after acquiring the lock. Another process may have refreshed
     // while this request was in flight, and the cache must never move back.
-    const currentTrust = await readCachedTrustState(file, publicKeys, now);
+    const currentTrust = await readCachedTrustState(file, publicKeys, now, checkpoint);
     if (currentTrust && remote.sequence < currentTrust.bundle.sequence) throw new Error("schema rollback");
     if (currentTrust && remote.sequence === currentTrust.bundle.sequence) {
       if (openCodeSchemaBundleSigningPayload(remote) !== openCodeSchemaBundleSigningPayload(currentTrust.bundle)) throw new Error("schema sequence rewritten");
@@ -947,7 +960,7 @@ async function refreshOpenCodeSchemaBundle(
   // A concurrent writer can have installed a newer sequence while this
   // request held an older verified response. Never select that older parser
   // for this turn merely because the lock was busy.
-  const current = await waitForConcurrentCacheWriter(file, publicKeys, now, remote.sequence);
+  const current = await waitForConcurrentCacheWriter(file, publicKeys, now, remote.sequence, checkpoint);
   if (current && current.bundle.sequence >= remote.sequence) {
     return { bundle: current.bundle, source: "cache" };
   }
@@ -998,12 +1011,12 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
     return { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "schema-registry-refresh-rejected" };
   }
 
-  const cached = await readVerifiedCache(file, publicKeys, now);
+  const cached = await readVerifiedCache(file, publicKeys, now, checkpoint);
   // An expired signed cache cannot parse a turn, but it records that this
   // client previously trusted a newer registry contract. Do not silently
   // regress to the compiled parser if refresh fails; a first offline launch
   // without any cache can still use that source-trusted baseline.
-  const cacheTrust = cached ?? await readCachedTrustState(file, publicKeys, now);
+  const cacheTrust = cached ?? await readCachedTrustState(file, publicKeys, now, checkpoint);
   const cacheFresh = cached && now - cached.checkedAt < CACHE_TTL_MS;
   if (cacheFresh) return { bundle: cached.bundle, source: "cache" };
   const key = schemaRefreshKey(file, url, publicKeys, checkpoint);
@@ -1034,7 +1047,7 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
     // invocation captured `cached` but before its refresh lost the cache lock
     // to a rollback rejection. Re-read first so this turn cannot regress to
     // the stale parser that initiated the race.
-    const current = await readVerifiedCache(file, publicKeys, now);
+    const current = await readVerifiedCache(file, publicKeys, now, checkpoint);
     if (current && (!cached || current.bundle.sequence >= cached.bundle.sequence)) {
       return { bundle: current.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" };
     }
