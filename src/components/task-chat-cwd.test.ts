@@ -139,13 +139,13 @@ assert.match(
 );
 assert.match(
   boardInspector,
-  /<div className="board-drawer-field-label board-drawer-field-label--split">[\s\S]{0,120}<span>Project<\/span>[\s\S]{0,1700}onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}familiarId: null,[\s\S]{0,180}\}\)/,
-  "The task Project field should set the runtime root and clear the prior familiar",
+  /<div className="board-drawer-field-label board-drawer-field-label--split">[\s\S]{0,120}<span>Project<\/span>[\s\S]{0,1700}onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}sessionId: null,[\s\S]{0,180}\}\)/,
+  "The task Project field should set the runtime root and clear the prior session",
 );
-assert.match(
+assert.doesNotMatch(
   boardInspector,
   /onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}familiarId: null,[\s\S]{0,180}\}\)/,
-  "Changing the task project should persist projectId and cwd, then clear the familiar",
+  "A familiar-scoped project choice must preserve its authorized familiar",
 );
 assert.match(
   boardInspector,

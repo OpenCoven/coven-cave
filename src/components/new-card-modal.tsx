@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { useProjects } from "@/lib/use-projects";
 import { useProjectFamiliars } from "@/lib/use-project-familiars";
+import { isProjectPickerReady } from "@/lib/project-scope";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { PropertyPill } from "@/components/ui/property-pill";
@@ -72,6 +73,8 @@ export function NewCardModal({
   const [endDate, setEndDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const wasOpenRef = useRef(open);
+  const opening = open && !wasOpenRef.current;
   const coarse = useIsCoarsePointer();
 
   // When the modal opens with a familiar already selected (such as from a
@@ -88,7 +91,14 @@ export function NewCardModal({
     loadedSuccessfully: eligibleFamiliarsLoaded,
   } = useProjectFamiliars({ projectId, enabled: open });
 
-  useEffect(() => {
+  // This is deliberately a layout effect: on close/reopen the component stays
+  // mounted, so its prior familiar state exists for one render. Apply the new
+  // defaults before the browser can paint that stale familiar's projects.
+  useLayoutEffect(() => {
+    wasOpenRef.current = open;
+  }, [open]);
+
+  useLayoutEffect(() => {
     if (!open) return;
     setTitle(defaultTitle ?? "");
     setNotes(defaultNotes ?? "");
@@ -122,20 +132,23 @@ export function NewCardModal({
   // A familiar-scoped project result must belong to the familiar currently
   // selected in this modal. While a familiar changes, fail closed rather than
   // briefly offering the prior familiar's retained project list.
-  const projectPickerReady = !familiarId || (projectsLoaded && !projectsLoading);
-  const projectOptions = !familiarId
-    ? [
-        { value: "", label: projectsLoading ? "Loading projects…" : "No project" },
-        ...(projectsLoading ? [] : projects.map((project) => ({ value: project.id, label: project.name }))),
-      ]
-    : projectsLoading
-      ? [{ value: "", label: "Loading accessible projects…", disabled: true }]
-      : !projectsLoaded
-        ? [{ value: "", label: "Could not load accessible projects", disabled: true }]
-        : [
-            { value: "", label: "No project" },
-            ...projects.map((project) => ({ value: project.id, label: project.name })),
-          ];
+  const projectPickerReady = isProjectPickerReady({
+    opening,
+    loadedSuccessfully: projectsLoaded,
+    loading: projectsLoading,
+  });
+  const projectOptions = !projectPickerReady
+    ? [{
+        value: "",
+        label: opening || projectsLoading
+          ? familiarId ? "Loading accessible projects…" : "Loading projects…"
+          : familiarId ? "Could not load accessible projects" : "Could not load projects",
+        disabled: true,
+      }]
+    : [
+        { value: "", label: "No project" },
+        ...projects.map((project) => ({ value: project.id, label: project.name })),
+      ];
   const familiarPickerReady = !projectId || (eligibleFamiliarsLoaded && !eligibleFamiliarsLoading);
   const familiarOptions = !projectId
     ? [

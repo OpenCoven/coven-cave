@@ -10,3 +10,19 @@ export function isCurrentProjectScope(
 ): boolean {
   return loadedScopeKey === projectScopeKey(familiarId);
 }
+
+/**
+ * A picker must stay unavailable while a modal is applying a new set of
+ * defaults, even if the previous familiar's request had completed.
+ */
+export function isProjectPickerReady({
+  opening,
+  loadedSuccessfully,
+  loading,
+}: {
+  opening: boolean;
+  loadedSuccessfully: boolean;
+  loading: boolean;
+}): boolean {
+  return !opening && loadedSuccessfully && !loading;
+}

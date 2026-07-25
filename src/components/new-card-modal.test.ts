@@ -25,8 +25,13 @@ assert.match(
 );
 assert.match(
   modal,
-  /const projectPickerReady = !familiarId \|\| \(projectsLoaded && !projectsLoading\)/,
-  "new-card modal does not enable a familiar-scoped project picker until that familiar's result succeeds",
+  /const opening = open && !wasOpenRef\.current;[\s\S]{0,1800}useLayoutEffect\(\(\) => \{[\s\S]{0,240}setFamiliarId\(defaultFamiliarId\)/,
+  "new-card modal applies a reopened modal's default familiar before paint",
+);
+assert.match(
+  modal,
+  /const projectPickerReady = isProjectPickerReady\(\{[\s\S]{0,200}opening,[\s\S]{0,200}loadedSuccessfully: projectsLoaded,[\s\S]{0,200}loading: projectsLoading/,
+  "new-card modal does not enable a project picker until the current scope succeeds after opening",
 );
 assert.match(
   modal,
