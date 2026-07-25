@@ -44,6 +44,8 @@ const PENDING_TOOL_RESULT_TTL_MS = 60_000;
 const MAX_OPEN_ENVELOPE_CALLS = 200;
 /** Keep a bounded recent window to suppress terminal-frame retransmits. */
 export const MAX_SETTLED_ENVELOPE_IDS = 512;
+/** A malicious or runaway runtime must not grow the persisted event index forever. */
+export const MAX_RECORDED_TOOL_EVENTS = 512;
 
 function utf8Bytes(value: string | undefined): number {
   return value === undefined ? 0 : new TextEncoder().encode(value).byteLength;
@@ -215,6 +217,7 @@ export class ToolCallTracker {
     };
     const prev = this.recorded.get(ev.id);
     if (!prev) {
+      if (this.recorded.size >= MAX_RECORDED_TOOL_EVENTS) return;
       this.recorded.set(ev.id, {
         ...bounded,
         ...(textOffset !== undefined ? { textOffset } : {}),

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { MAX_SETTLED_ENVELOPE_IDS, ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
+import { MAX_RECORDED_TOOL_EVENTS, MAX_SETTLED_ENVELOPE_IDS, ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
 
 const tracker = new ToolCallTracker(() => 1_000);
 assert.equal(tracker.envelopeToolResult("call_1", "late terminal output", false), null);
@@ -66,5 +66,13 @@ assert.equal(terminalWindow.envelopeToolUse(`settled-${MAX_SETTLED_ENVELOPE_IDS}
 assert.ok(terminalWindow.envelopeToolUse("settled-0", "read"), "the bounded terminal-id window evicts only the oldest completed id");
 terminalWindow.hookEnd("never-started", undefined, false);
 assert.ok(terminalWindow.envelopeToolUse("after-empty-hook-end", "never-started"), "a terminal hook without a start does not retain an empty per-name queue");
+
+const recordedWindow = new ToolCallTracker(() => 1_000);
+for (let index = 0; index <= MAX_RECORDED_TOOL_EVENTS; index += 1) {
+  const id = `recorded-${index}`;
+  assert.ok(recordedWindow.envelopeToolUse(id, "read"));
+  assert.ok(recordedWindow.envelopeToolResult(id, "ok", false));
+}
+assert.equal(recordedWindow.snapshot().length, MAX_RECORDED_TOOL_EVENTS, "a long-running runtime cannot retain unbounded settled tool records");
 
 console.log("chat-tool-events.test.ts: ok");
