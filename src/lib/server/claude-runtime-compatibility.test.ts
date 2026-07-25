@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   claudeCompatibilityDiagnostic,
   loadClaudeCompatibilityCache,
@@ -50,5 +51,29 @@ assert.equal(
   "the accepted bundle can be atomically persisted as last-known-good data",
 );
 assert.deepEqual(persisted, { schemaVersion: 1, profiles: CLAUDE_COMPATIBILITY_PROFILES });
+
+const unpersisted = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
+unpersisted.id = "claude-stream-json-v3";
+unpersisted.sequence = 3;
+const { contentHash: _oldHash, ...unpersistedPayload } = unpersisted;
+unpersisted.contentHash = createHash("sha256").update(JSON.stringify(unpersistedPayload)).digest("hex");
+await assert.rejects(
+  refreshClaudeCompatibilityProfiles([...CLAUDE_COMPATIBILITY_PROFILES, unpersisted], {
+    path: "ignored",
+    write: async () => { throw new Error("disk full"); },
+  }),
+  /disk full/,
+  "a persistence failure must be visible to the caller instead of publishing an unpersisted profile set",
+);
+const afterFailedPersist = await resolveInstalledClaudeCompatibility({
+  version: async () => "2.1.179 (Claude Code)",
+  help: async () => "--output-format stream-json",
+  now: () => Date.parse("2026-07-24T00:00:00.000Z"),
+});
+assert.equal(
+  afterFailedPersist.kind === "compatible" && afterFailedPersist.profile.id,
+  "claude-stream-json-v2",
+  "a failed write must retain the previously persisted compatibility profile in memory",
+);
 
 console.log("claude-runtime-compatibility: ok");

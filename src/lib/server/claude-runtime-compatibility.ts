@@ -17,8 +17,9 @@ import { writeJsonAtomic } from "./atomic-write.ts";
 const PROBE_TTL_MS = 60_000;
 const PROBE_MAX_OUTPUT_BYTES = 64 * 1024;
 let cached: { at: number; value: CompatibilityResolution } | null = null;
-const profileCache = new RuntimeCompatibilityCache();
+let profileCache = new RuntimeCompatibilityCache();
 let profileCacheLoaded = false;
+let refreshQueue: Promise<void> = Promise.resolve();
 
 type ProfileCacheDocument = { schemaVersion: 1; profiles: unknown[] };
 
@@ -51,15 +52,28 @@ export async function refreshClaudeCompatibilityProfiles(
   profiles: readonly unknown[],
   dependencies: { write?: (path: string, value: ProfileCacheDocument) => Promise<void>; path?: string } = {},
 ): Promise<boolean> {
-  if (!profileCache.refresh(profiles)) return false;
-  if (dependencies.write) {
-    await dependencies.write(dependencies.path ?? profileCachePath(), { schemaVersion: 1, profiles: [...profileCache.current()] });
-    return true;
-  }
-  const target = dependencies.path ?? profileCachePath();
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeJsonAtomic(target, { schemaVersion: 1, profiles: profileCache.current() });
-  return true;
+  let accepted = false;
+  const refresh = async () => {
+    // Do not publish the freshly accepted set until its replacement file is
+    // durable. A failed write must leave both the in-memory resolver and the
+    // on-disk last-known-good snapshot unchanged.
+    const next = new RuntimeCompatibilityCache(profileCache.current());
+    if (!next.refresh(profiles)) return;
+    const document = { schemaVersion: 1 as const, profiles: [...next.current()] };
+    if (dependencies.write) {
+      await dependencies.write(dependencies.path ?? profileCachePath(), document);
+    } else {
+      const target = dependencies.path ?? profileCachePath();
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeJsonAtomic(target, document);
+    }
+    profileCache = next;
+    accepted = true;
+  };
+  const pending = refreshQueue.then(refresh, refresh);
+  refreshQueue = pending.then(() => undefined, () => undefined);
+  await pending;
+  return accepted;
 }
 
 function runClaude(args: string[]): Promise<string | null> {

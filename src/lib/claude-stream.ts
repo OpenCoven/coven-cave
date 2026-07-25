@@ -75,8 +75,15 @@ export function hasUnsupportedClaudeToolFrame(
   const envelope = record(value);
   const message = record(envelope?.message);
   const content = message?.content;
-  if (!envelope || !Array.isArray(content)) return false;
-  if (envelope.type === profile.eventTypes.assistant) {
+  if (!envelope) return false;
+  const isAssistant = envelope.type === profile.eventTypes.assistant;
+  const isUser = envelope.type === profile.eventTypes.user;
+  // System/result envelopes have their own route handling. An unknown envelope
+  // only needs a compatibility diagnostic when it looks like a message frame;
+  // otherwise ordinary stream metadata would create false alarms.
+  if (!isAssistant && !isUser) return Boolean(message && "content" in message);
+  if (!Array.isArray(content)) return true;
+  if (isAssistant) {
     return content.some((value) => {
       const block = record(value);
       if (!block) return true;
@@ -85,11 +92,11 @@ export function hasUnsupportedClaudeToolFrame(
       return typeof block.id !== "string" || !block.id || typeof block.name !== "string" || !block.name;
     });
   }
-  if (envelope.type === profile.eventTypes.user) {
+  if (isUser) {
     return content.some((value) => {
       const block = record(value);
       if (!block) return true;
-      if (block.type !== profile.eventTypes.toolResult) return false;
+      if (block.type !== profile.eventTypes.toolResult) return true;
       return typeof block.tool_use_id !== "string" || !block.tool_use_id;
     });
   }

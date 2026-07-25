@@ -102,6 +102,10 @@ export class ToolCallTracker {
   private byEnvelopeId = new Map<string, OpenCall>();
   /** Envelope ids whose calls were already settled (dedup tool_result). */
   private settledEnvelopeIds = new Set<string>();
+  /** Results observed before their matching tool_use block. JSONL transports
+   * normally preserve order, but retaining one result prevents an out-of-order
+   * pair from leaving a newly announced call running for the whole turn. */
+  private pendingEnvelopeResults = new Map<string, { output: string | undefined; isError: boolean }>();
   /** Final state of every call this tracker has emitted, by stream id —
    *  insertion-ordered, so snapshot() preserves call order for persistence. */
   private recorded = new Map<string, RecordedToolEvent>();
@@ -218,6 +222,7 @@ export class ToolCallTracker {
    */
   envelopeToolUse(id: string, name: string, input?: string, textOffset?: number): ToolStreamEvent | null {
     if (this.byEnvelopeId.has(id) || this.settledEnvelopeIds.has(id)) return null;
+    const pending = this.pendingEnvelopeResults.get(id);
     const queue = this.queueFor(name);
     // A hook pre may have surfaced this call already under a minted id. Link
     // the native id to the oldest unlinked hook call rather than emitting a
@@ -230,6 +235,20 @@ export class ToolCallTracker {
       if (prev && prev.input === undefined && input !== undefined) {
         this.recorded.set(hookCall.id, { ...prev, input });
       }
+      if (pending) {
+        this.pendingEnvelopeResults.delete(id);
+        const durationMs = this.now() - hookCall.startedAt;
+        this.settle(hookCall);
+        const ev: ToolStreamEvent = {
+          id: hookCall.id,
+          name,
+          output: pending.output,
+          status: pending.isError ? "error" : "ok",
+          durationMs,
+        };
+        this.record(ev);
+        return ev;
+      }
       return null;
     }
     const call: OpenCall = {
@@ -240,6 +259,19 @@ export class ToolCallTracker {
       origin: "envelope",
       hookStarted: false,
     };
+    if (pending) {
+      this.pendingEnvelopeResults.delete(id);
+      this.settledEnvelopeIds.add(id);
+      const ev: ToolStreamEvent = {
+        id,
+        name,
+        input,
+        output: pending.output,
+        status: pending.isError ? "error" : "ok",
+      };
+      this.record(ev, textOffset);
+      return ev;
+    }
     queue.push(call);
     this.byEnvelopeId.set(id, call);
     const ev: ToolStreamEvent = { id, name, input, status: "running" };
@@ -259,7 +291,12 @@ export class ToolCallTracker {
   ): ToolStreamEvent | null {
     if (this.settledEnvelopeIds.has(toolUseId)) return null;
     const call = this.byEnvelopeId.get(toolUseId);
-    if (!call) return null;
+    if (!call) {
+      if (!this.pendingEnvelopeResults.has(toolUseId)) {
+        this.pendingEnvelopeResults.set(toolUseId, { output, isError });
+      }
+      return null;
+    }
     const durationMs = this.now() - call.startedAt;
     this.settle(call);
     const ev: ToolStreamEvent = {

@@ -190,6 +190,27 @@ assert.match(
   assert.equal(erroredDone?.status, "error", "is_error tool_result blocks settle as errors");
 }
 
+// A buffered/partial JSONL transport can deliver the result line before the
+// matching assistant block. Once the tool_use arrives, expose its settled
+// state directly rather than leaving a fresh bubble running until persistence.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  assert.equal(tracker.envelopeToolResult("toolu_reordered", "done", false), null);
+  const settled = tracker.envelopeToolUse("toolu_reordered", "Read", '{"path":"a.ts"}');
+  assert.deepEqual(settled, {
+    id: "toolu_reordered",
+    name: "Read",
+    input: '{"path":"a.ts"}',
+    output: "done",
+    status: "ok",
+  });
+  assert.equal(
+    toPersistedTools(tracker.snapshot(), 0)?.[0].status,
+    "ok",
+    "reordered envelopes must not become an indefinitely running persisted tool",
+  );
+}
+
 // Behavioral: hook events win when hooks AND envelopes describe the same
 // call — envelope blocks are linked onto the hook's id (UI merges on id) or
 // suppressed once the hook has settled the call.

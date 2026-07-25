@@ -44,6 +44,21 @@ assert.equal(
   false,
   "valid text-only frames do not produce a tool compatibility diagnostic",
 );
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "user", message: { content: [{ type: "future_tool_result", id: "toolu-new" }] } }, v2),
+  true,
+  "unknown user tool frames surface one compatibility diagnostic instead of being silently ignored",
+);
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: { type: "tool_use" } } }, v2),
+  true,
+  "partial message envelopes are compatibility failures rather than silent drops",
+);
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "future", message: { content: [] } }, v2),
+  true,
+  "unknown message envelopes are visible compatibility failures",
+);
 assert.deepEqual(parseClaudeMessageEnvelope({ type: "future", payload: "untrusted" }, v2), []);
 
 console.log("claude-stream: ok");

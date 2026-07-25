@@ -1957,7 +1957,7 @@ export async function POST(req: Request) {
                 });
               }
               for (const block of ev.message.content) {
-                if (block.type === "text" && block.text) {
+                if (block.type === "text" && typeof block.text === "string" && block.text) {
                   assistantText += block.text;
                   push({ kind: "assistant_chunk", text: block.text });
                 }
