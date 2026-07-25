@@ -64,6 +64,16 @@ const { contentHash: _invertedHash, ...invertedUnsigned } = invertedRange;
 invertedRange.contentHash = createHash("sha256").update(JSON.stringify(invertedUnsigned)).digest("hex");
 assert.equal(validateRuntimeCompatibilityProfile(invertedRange, NOW), false, "profiles require a non-empty version range");
 
+const resolverDuplicate = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
+resolverDuplicate.id = "claude-stream-json-v2-duplicate";
+const { contentHash: _resolverDuplicateHash, ...resolverDuplicateUnsigned } = resolverDuplicate;
+resolverDuplicate.contentHash = createHash("sha256").update(JSON.stringify(resolverDuplicateUnsigned)).digest("hex");
+assert.deepEqual(
+  resolveRuntimeCompatibility(current, [CLAUDE_COMPATIBILITY_PROFILES[1], resolverDuplicate], NOW),
+  { kind: "fallback", reason: "invalid-profile" },
+  "direct profile resolution rejects duplicate sequences instead of selecting by input order",
+);
+
 const cache = new RuntimeCompatibilityCache([CLAUDE_COMPATIBILITY_PROFILES[1]]);
 assert.equal(cache.refresh([CLAUDE_COMPATIBILITY_PROFILES[0]], NOW), false, "a lower profile sequence cannot roll back last-known-good data");
 assert.equal(cache.current()[0].id, "claude-stream-json-v2");

@@ -114,6 +114,9 @@ function runClaude(args: string[]): Promise<string | null> {
     child.stderr.on("data", capture);
     timer = setTimeout(() => {
       child.kill("SIGTERM");
+      // A broken shim can ignore SIGTERM or leave a descendant holding its
+      // pipes open. The compatibility probe must not hold a chat request
+      // indefinitely waiting for a `close` event after its bounded deadline.
       finish(null);
     }, 2_500);
     child.on("error", () => {

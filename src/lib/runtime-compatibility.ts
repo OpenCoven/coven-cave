@@ -160,6 +160,15 @@ export function resolveRuntimeCompatibility(
     validateRuntimeCompatibilityProfile(candidate, now),
   );
   if (valid.length === 0) return { kind: "fallback", reason: "invalid-profile" };
+  // `resolveRuntimeCompatibility` is also the boundary used by callers that
+  // supply an offline profile list directly, rather than going through the
+  // refresh cache. Do not make profile choice depend on input order when that
+  // list contains conflicting records.
+  if (
+    valid.length !== profiles.length ||
+    new Set(valid.map((candidate) => candidate.id)).size !== valid.length ||
+    new Set(valid.map((candidate) => candidate.sequence)).size !== valid.length
+  ) return { kind: "fallback", reason: "invalid-profile" };
   const compatible = valid.filter((candidate) => matches(candidate, report));
   if (compatible.length === 0) {
     const hasVersion = valid.some((candidate) => {

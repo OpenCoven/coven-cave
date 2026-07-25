@@ -18,6 +18,11 @@ assert.match(
   /child\.on\("close", \(code\) => \{[\s\S]*?finish\(code === 0 \? output : null\)/,
   "non-zero Claude probes must not select a profile from version-like error output",
 );
+assert.match(
+  compatibilitySource,
+  /timer = setTimeout\(\(\) => \{[\s\S]*?child\.kill\("SIGTERM"\);[\s\S]*?finish\(null\);[\s\S]*?\}, 2_500\)/,
+  "a probe that ignores SIGTERM must still resolve at the deadline instead of blocking chat indefinitely",
+);
 
 const compatible = await resolveInstalledClaudeCompatibility({
   version: async () => "2.1.179 (Claude Code)",
