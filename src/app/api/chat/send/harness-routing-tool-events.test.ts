@@ -14,6 +14,10 @@ import {
   ToolCallTracker,
   toPersistedTools,
 } from "../../../../lib/chat-tool-events.ts";
+import {
+  CodexJsonlDecoder,
+  resolveCodexSchema,
+} from "../../../../lib/codex-compatibility.ts";
 
 const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
@@ -268,15 +272,93 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /ev\.type === "output" && typeof ev\.text === "string"[\s\S]*?assistantFilter\.push\(cleaned\)[\s\S]*?kind: "assistant_chunk", text: filtered/,
-  "Coven stream-json output events must pass through the Codex assistant filter instead of being discarded as handled JSON",
+  /discoverCachedCodexRuntime\("codex", 1_500, codexProbeEnv\(harnessSpawnEnv\(\)\)\)[\s\S]*?productionCodexSchemaSources\(\)/,
+  "Codex parsing must use a credential-free cached probe and verified schema sources",
 );
 
 assert.match(
   chatRoute,
-  /ev\.type === "output" && typeof ev\.text === "string"[\s\S]*?recordStdoutErrorTail\(cleaned\)[\s\S]*?assistantFilter\.push\(cleaned\)/,
-  "Coven stream-json output events must preserve error-looking stdout text for empty-response diagnostics before filtering",
+  /let codexDecoder = binding\.harness === "codex" \? new CodexJsonlDecoder\(\{ trustThreadPreamble: true \}\) : null/,
+  "Codex JSONL decoding trusts a thread preamble only on the captured-pipe transport",
 );
+
+assert.match(
+  chatRoute,
+  /Codex emitted an unsupported tool event; continuing in plain chat/,
+  "unknown Codex shapes surface a visible plain-chat compatibility diagnostic",
+);
+
+assert.match(
+  chatRoute,
+  /case "text":[\s\S]*?assistantText \+= event\.text;[\s\S]*?kind: "assistant_chunk", text: event\.text/,
+  "known Codex agent-message items bypass the legacy transcript phase gate and preserve assistant prose",
+);
+
+assert.match(
+  chatRoute,
+  /let codexHarnessSessionId: string \| null = null;[\s\S]*?codexHarnessSessionId = event\.sessionId/,
+  "Codex's resume handle is retained separately from Cave's stable conversation id",
+);
+
+assert.match(
+  chatRoute,
+  /ev\.type === "output" && typeof ev\.text === "string"[\s\S]*?recordStdoutErrorTail\(passthrough\)[\s\S]*?assistantFilter\.push\(passthrough\)/,
+  "Coven stream-json output events must preserve error-looking transcript passthrough for empty-response diagnostics before filtering",
+);
+
+// Behavioral: Windows captured pipes can coalesce prose and several JSONL
+// records, then close without a final newline. Drive the same decoder and
+// tracker pair used by the route and assert the ordered SSE/persistence shape
+// rather than inferring it from source text.
+{
+  const resolution = resolveCodexSchema({
+    version: "0.145.0",
+    capabilities: { jsonEvents: true, resume: true },
+  });
+  assert.ok(resolution.ok, "fixture runtime resolves a Codex schema");
+  if (!resolution.ok) throw new Error("fixture schema unavailable");
+
+  const decoder = new CodexJsonlDecoder();
+  const tracker = new ToolCallTracker(() => 0);
+  const sse: Array<{ kind: string; id?: string; status?: string; text?: string }> = [];
+  let text = "";
+  let threadId: string | null = null;
+  const routeCapturedOutput = (chunk: string) => {
+    for (const token of decoder.push(chunk, resolution.schema).tokens) {
+      if (token.kind === "passthrough") {
+        text += token.text;
+        sse.push({ kind: "assistant_chunk", text: token.text });
+      } else if (token.kind === "session") {
+        threadId = token.sessionId;
+      } else if (token.kind === "tool_start") {
+        const tool = tracker.envelopeToolUse(token.id, token.name, formatToolInputValue(token.input), text.length);
+        if (tool) sse.push({ kind: "tool_use", id: tool.id, status: tool.status });
+      } else if (token.kind === "tool_end") {
+        const tool = tracker.envelopeToolResult(token.id, token.output, token.isError);
+        if (tool) sse.push({ kind: "tool_use", id: tool.id, status: tool.status });
+      } else if (token.kind === "text") {
+        text += token.text;
+        sse.push({ kind: "assistant_chunk", text: token.text });
+      }
+    }
+  };
+
+  routeCapturedOutput('notice\ncodex\n{"type":"thread.started","thread_id":"thread-captured"}\n{"type":"item.started","item":{"id":"call-captured","type":"command_execution","command":"pwd"}}\n');
+  routeCapturedOutput('{"type":"item.completed","item":{"id":"call-captured","type":"command_execution","exit_code":2}}\n{"type":"item.completed","item":{"id":"answer-captured","type":"agent_message","text":"answer"}}');
+  routeCapturedOutput("\n"); // equivalent to the route's close-time flush
+
+  assert.equal(threadId, "thread-captured", "captured thread id is retained for resume");
+  assert.deepEqual(
+    sse.map((event) => [event.kind, event.status ?? event.text]),
+    [["assistant_chunk", "notice\n"], ["tool_use", "running"], ["tool_use", "error"], ["assistant_chunk", "answer"]],
+    "mixed captured chunks preserve assistant/tool SSE ordering and settle nonzero exits as errors",
+  );
+  assert.deepEqual(
+    toPersistedTools(tracker.snapshot(), 0).map((tool) => [tool.id, tool.status, tool.textOffset]),
+    [["call-captured", "error", 7]],
+    "the same stable tool lifecycle is retained for persistence with its prose offset",
+  );
+}
 
 assert.match(
   streamEvents,

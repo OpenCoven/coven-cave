@@ -1009,6 +1009,7 @@ export const SUITES = {
     "src/lib/grok-build.test.ts",
     "src/app/api/harnesses/route.test.ts",
     "src/lib/copilot-stream.test.ts",
+    "src/lib/codex-compatibility.test.ts",
     "src/app/api/board/enrich-steps/route.test.ts",
     "src/app/api/board/route.test.ts",
     "src/app/api/board/[id]/chat/route.test.ts",

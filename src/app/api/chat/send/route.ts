@@ -38,6 +38,14 @@ import {
   toPersistedTools,
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
+import {
+  CodexJsonlDecoder,
+  CODEX_TEXT_ONLY_FALLBACK_SCHEMA,
+  codexProbeEnv,
+  discoverCachedCodexRuntime,
+  productionCodexSchemaSources,
+  resolveCodexSchema,
+} from "@/lib/codex-compatibility";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
@@ -930,6 +938,16 @@ export async function POST(req: Request) {
   // harness uses coven run's capability probe.
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
+  // Codex's JSONL item protocol evolves independently of Cave. Discover the
+  // local CLI and select a constrained version/capability schema once per
+  // turn; unknown versions retain the established generic stream path.
+  const codexCompatibility =
+    !sshRuntime && binding.harness === "codex"
+      ? resolveCodexSchema(
+        await discoverCachedCodexRuntime("codex", 1_500, codexProbeEnv(harnessSpawnEnv())),
+        await productionCodexSchemaSources(),
+      )
+      : null;
   const modelForwardingEnabled =
     hermesDirect
       ? await hermesChatSupportsModel()
@@ -1496,8 +1514,11 @@ export async function POST(req: Request) {
       // none of those shapes — the phase gate ate whole replies ("completed
       // but produced no output") and the banner heuristic ate bare-number
       // answers — so their text passes through verbatim.
-      const rawStdoutHarness =
-        binding.harness !== "codex" && binding.harness !== "claude";
+      // Codex protocol ownership is armed only by its captured `codex`
+      // transport marker. Before that marker, a JSON/code response belongs to
+      // the assistant and must survive verbatim rather than being phase-gated
+      // by the legacy transcript filter.
+      const rawStdoutHarness = binding.harness !== "claude";
       let assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
       let assistantText = "";
       let jsonBuf = "";
@@ -1551,6 +1572,15 @@ export async function POST(req: Request) {
       // Dedups copilot's streamed text deltas against the full-content
       // assistant.message frame that follows them.
       const copilotText = new CopilotTextAssembler();
+      // The decoder only consumes complete, recognised Codex JSONL records.
+      // Everything else continues through AssistantFilter, which preserves
+      // the established transcript behavior for unknown/new CLI versions.
+      // Keep a text-only decoder even if the installed version has no schema:
+      // new clients can still deliver a completed agent_message without
+      // exposing undocumented tool/control payloads as transcript text.
+      let codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
+      let codexUnknownShapeReported = false;
+      let codexHarnessSessionId: string | null = null;
 
       const announceSession = (id: string) => {
         sessionId = id;
@@ -1612,6 +1642,89 @@ export async function POST(req: Request) {
             return;
           }
         }
+      };
+
+      const handleCodexEvents = (text: string): string => {
+        if (!codexDecoder) return text;
+        const schema = codexCompatibility?.ok
+          ? codexCompatibility.schema
+          : CODEX_TEXT_ONLY_FALLBACK_SCHEMA;
+        const decoded = codexDecoder.push(text, schema);
+        let assistantOutput = "";
+        const flushAssistantOutput = () => {
+          if (!assistantOutput) return;
+          recordStdoutErrorTail(assistantOutput);
+          const filtered = assistantFilter.push(assistantOutput);
+          assistantOutput = "";
+          if (filtered) {
+            assistantText += filtered;
+            push({ kind: "assistant_chunk", text: filtered });
+          }
+        };
+        for (const event of decoded.tokens) {
+          if (event.kind === "passthrough") {
+            assistantOutput += event.text;
+            continue;
+          }
+          flushAssistantOutput();
+          switch (event.kind) {
+            case "session":
+              // The Codex thread is an internal resume handle, not Cave's
+              // stable conversation id. Always refresh it, even on resumed
+              // turns where sessionId already identifies the UI conversation.
+              codexHarnessSessionId = event.sessionId;
+              if (!sessionId) announceSession(event.sessionId);
+              break;
+            case "tool_start": {
+              boundarySentinel?.observe(event.name, event.input);
+              const toolEvent = toolTracker.envelopeToolUse(
+                event.id,
+                event.name,
+                formatToolInputValue(event.input),
+                assistantText.length,
+              );
+              if (toolEvent) push({ kind: "tool_use", ...toolEvent });
+              break;
+            }
+            case "tool_end": {
+              const toolEvent = toolTracker.envelopeToolResult(
+                event.id,
+                event.output,
+                event.isError,
+              );
+              if (toolEvent) push({ kind: "tool_use", ...toolEvent });
+              break;
+            }
+            case "unknown":
+              // A fingerprint is deliberately shape-only. The progress row is
+              // visible to the user and survives the SSE activity timeline,
+              // while no raw runtime payload reaches logs or chat text.
+              if (!codexUnknownShapeReported) {
+                codexUnknownShapeReported = true;
+                pushProgress(
+                  "codex-compatibility",
+                  "Codex emitted an unsupported tool event; continuing in plain chat",
+                  "error",
+                  `event shape ${event.fingerprint}`,
+                );
+              }
+              break;
+            case "text":
+              // JSONL agent messages are already a schema-validated
+              // assistant channel. They must bypass AssistantFilter's legacy
+              // transcript phase gate, which expects a preceding `codex`
+              // banner that structured streams do not emit.
+              if (event.text) {
+                assistantText += event.text;
+                push({ kind: "assistant_chunk", text: event.text });
+              }
+              break;
+            case "ignored":
+              break;
+          }
+        }
+        flushAssistantOutput();
+        return assistantOutput;
       };
 
       // Copilot JSONL stream (cave-yesg): the CLI's own event schema, not
@@ -1865,8 +1978,11 @@ export async function POST(req: Request) {
               // AssistantFilter buffers partial lines and exposes only the
               // assistant phase after stripping Codex's startup transcript.
               const cleaned = resolveBackspaces(stripAnsi(ev.text));
-              recordStdoutErrorTail(cleaned);
-              const filtered = assistantFilter.push(cleaned);
+              const passthrough = binding.harness === "codex"
+                ? handleCodexEvents(cleaned)
+                : cleaned;
+              recordStdoutErrorTail(passthrough);
+              const filtered = assistantFilter.push(passthrough);
               if (filtered) {
                 assistantText += filtered;
                 push({ kind: "assistant_chunk", text: filtered });
@@ -2131,6 +2247,12 @@ export async function POST(req: Request) {
               Date.now() - attemptStartedAt,
             );
             if (jsonBuf) handleLine(jsonBuf);
+            if (codexDecoder?.hasPendingRecord) {
+              // Terminate the buffered record through the same ordered event
+              // handler. JSONL does not require a final newline, so this
+              // settles a final tool or agent message rather than dropping it.
+              handleCodexEvents("\n");
+            }
             const tail = assistantFilter.flush();
             if (tail) {
               assistantText += tail;
@@ -2172,6 +2294,9 @@ export async function POST(req: Request) {
         result = {};
         toolTracker = new ToolCallTracker();
         copilotText.reset();
+        codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
+        codexUnknownShapeReported = false;
+        codexHarnessSessionId = null;
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         resumeFailed = false;
@@ -2211,6 +2336,9 @@ export async function POST(req: Request) {
         result = {};
         toolTracker = new ToolCallTracker();
         copilotText.reset();
+        codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
+        codexUnknownShapeReported = false;
+        codexHarnessSessionId = null;
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         resumeFailed = false;
@@ -2332,7 +2460,11 @@ export async function POST(req: Request) {
       // do not overwrite the previous native id (or record a changed sandbox
       // profile) and accidentally let a later read turn resume the old full
       // access session.
-      const harnessSessionId = grokDirect ? grokSessionId : sessionId;
+      const harnessSessionId = grokDirect
+        ? grokSessionId
+        : binding.harness === "codex"
+          ? codexHarnessSessionId ?? sessionId
+          : sessionId;
       // OpenCode's JSON event protocol does not echo the selected model. Its
       // direct argv proves the selection was forwarded, while a successful
       // exit is the only confirmation it was applied. Preserve an explicit

@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"thread-current"}
+{"type":"item.completed","item":{"id":"message-current","type":"agent_message","text":"Fixture assistant response."}}
+{"type":"item.started","item":{"id":"call-current","type":"command_execution","command":"git status --short"}}
+{"type":"item.completed","item":{"id":"call-current","type":"command_execution","command":"git status --short","aggregated_output":""}}
+{"type":"item.started","item":{"id":"call-failed","type":"mcp_tool_call","server":"example","tool":"lookup","arguments":{"query":"sanitized fixture"}}}
+{"type":"item.failed","item":{"id":"call-failed","type":"mcp_tool_call","error":"fixture failure"}}
