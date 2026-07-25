@@ -86,7 +86,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const harnessSessionId = grokDirect\s*\?\s*grokSessionId\s*:\s*hermesDirect && hermesApi\s*\?\s*!result\.is_error && hermesResponseId\s*\?\s*hermesResponseId\s*:\s*existingConversation\?\.harnessSessionId \?\? sessionId\s*:\s*sessionId;/,
+  /const harnessSessionId = grokDirect\s*\?\s*grokSessionId\s*:\s*hermesDirect && hermesApi\s*\?\s*!result\.is_error && hermesResponseId\s*\?\s*hermesResponseId\s*:\s*existingConversation\?\.harnessSessionId \?\? null\s*:\s*sessionId;/,
   "failed Grok or Hermes resumes must retain their prior native continuation id",
 );
 assert.match(

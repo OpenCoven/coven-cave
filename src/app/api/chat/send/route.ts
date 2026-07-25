@@ -2172,13 +2172,13 @@ export async function POST(req: Request) {
                   if (!sessionId) announceSession(event.id);
                 }
                 result = { ...result, is_error: event.isError };
-                if (event.message) recordStdoutErrorTail(event.message, true);
+                if (event.isError) recordStdoutErrorTail("Hermes API stream failed", true);
                 if (event.isError && previousResponseId && event.invalidPreviousResponseId) resumeFailed = true;
                 return true;
               case "error":
                 result = { ...result, is_error: true };
                 if (previousResponseId && event.invalidPreviousResponseId) resumeFailed = true;
-                recordStdoutErrorTail(event.message, true);
+                recordStdoutErrorTail("Hermes API stream failed", true);
                 return true;
               case "ignore":
                 return false;
@@ -2608,7 +2608,7 @@ export async function POST(req: Request) {
         : hermesDirect && hermesApi
           ? !result.is_error && hermesResponseId
             ? hermesResponseId
-            : existingConversation?.harnessSessionId ?? sessionId
+            : existingConversation?.harnessSessionId ?? null
           : sessionId;
       // OpenCode's JSON event protocol does not echo the selected model. Its
       // direct argv proves the selection was forwarded, while a successful

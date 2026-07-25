@@ -216,8 +216,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /if \(event\.message\) recordStdoutErrorTail\(event\.message, true\)/,
-  "terminal Hermes failures must retain their normalized diagnostic",
+  /if \(event\.isError\) recordStdoutErrorTail\("Hermes API stream failed", true\)[\s\S]*?recordStdoutErrorTail\("Hermes API stream failed", true\)/,
+  "terminal Hermes failures must persist only a fixed diagnostic, never endpoint-provided error text",
 );
 
 assert.match(
@@ -240,8 +240,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /hermesDirect && hermesApi\s*\? !result\.is_error && hermesResponseId\s*\? hermesResponseId\s*:\s*existingConversation\?\.harnessSessionId \?\? sessionId/,
-  "failed Hermes API turns must retain the prior successful Responses id for the next continuation",
+  /hermesDirect && hermesApi\s*\? !result\.is_error && hermesResponseId\s*\? hermesResponseId\s*:\s*existingConversation\?\.harnessSessionId \?\? null/,
+  "failed Hermes API turns must retain only a prior successful Responses id, never a failed first-turn id",
 );
 
 assert.match(
