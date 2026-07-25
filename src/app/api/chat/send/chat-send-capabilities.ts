@@ -15,7 +15,7 @@ let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let hermesModelFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
-let openCodeCapabilitiesProbe: { until: number; identity: string; value: Promise<OpenCodeRunCapabilities> } | null = null;
+let openCodeCapabilitiesProbe: { until: number; executableIdentity: string; identity: string; value: Promise<OpenCodeRunCapabilities> } | null = null;
 const OPENCODE_CAPABILITY_PROBE_TTL_MS = 60_000;
 const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 2_500;
 const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
@@ -483,6 +483,9 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
   const env = openCodeSpawnEnv(familiarId);
   const cacheable = openCodeCapabilityProbeCacheable();
   const executableIdentity = cacheable ? await openCodeExecutableIdentity(env) : "uncached-windows-launcher";
+  if (cacheable && openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.executableIdentity === executableIdentity) {
+    return openCodeCapabilitiesProbe.value;
+  }
   const value = (async () => {
     const { helpProbe, versionProbe } = await probeOpenCodeRunContract(env);
     const version = versionProbe.complete
@@ -503,6 +506,7 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
     if (cacheable && !contractIdentity.startsWith("unresolved:")) {
       openCodeCapabilitiesProbe = {
         until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS,
+        executableIdentity,
         identity: `${familiarId ?? "default"}\0${executableIdentity}\0${contractIdentity}`,
         value: Promise.resolve(capabilities),
       };

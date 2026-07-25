@@ -8,7 +8,11 @@ type RegistryFs = Record<string, (...args: any[]) => Promise<any>>;
 // otherwise follows its dynamic cache paths and traces the entire repository.
 const registryFs = (() => {
   try {
-    const loadBuiltin = Function("return process.getBuiltinModule")() as
+    // Avoid `Function` here: Turbopack treats dynamic code evaluation as an
+    // unconstrained module boundary and traces the whole project into the
+    // standalone sidecar. The computed member and module names keep this
+    // runtime-only without presenting the filesystem builtin to its tracer.
+    const loadBuiltin = (process as typeof process & Record<string, unknown>)["getBuiltin" + "Module"] as
       | ((id: string) => RegistryFs | undefined)
       | undefined;
     return loadBuiltin?.(["node:fs", "promises"].join("/"));
@@ -266,7 +270,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
         terminalStates: ["completed", "complete", "error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
         errorStates: ["error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
       },
-      launch: { structuredOutput: { option: "--format", value: "json" }, sessionOption: "--session", requiredFlags: [], endOfOptions: true },
+      launch: { structuredOutput: { option: "--format", value: "json" }, sessionOption: "--session", requiredFlags: [] },
     },
     {
       // Earlier and preview clients used generic tool envelopes. Their
@@ -298,7 +302,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
         terminalStates: ["completed", "complete", "error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
         errorStates: ["error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
       },
-      launch: { structuredOutput: { option: "--format", value: "json-legacy" }, requiredFlags: [], endOfOptions: true },
+      launch: { structuredOutput: { option: "--format", value: "json-legacy" }, requiredFlags: [] },
     },
   ],
 };
@@ -687,7 +691,7 @@ function newestAnchorJournalEntries(entries: string[]): string[] {
  * writer statically makes Next trace dynamic cache paths as app assets.
  */
 async function writeRegistryJsonAtomic(file: string, value: unknown): Promise<void> {
-  const fs = requireRegistryFs() as RegistryFs & Pick<typeof import("node:fs/promises"), "writeFile">;
+  const fs = requireRegistryFs();
   const temporary = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   try {
     await fs.writeFile(temporary, JSON.stringify(value, null, 2));
