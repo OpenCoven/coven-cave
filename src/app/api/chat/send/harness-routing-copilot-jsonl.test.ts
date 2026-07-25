@@ -209,8 +209,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /if \(copilotStream\) \{\s*\n\s*handleCopilotLine\(line, isJson\);\s*\n\s*return;/,
-  "Copilot stdout routes through the copilot JSONL handler, never the AssistantFilter (raw JSON frames must not leak into the bubble)",
+  /if \(copilotStream\) \{[\s\S]*?handleCopilotLine\(line, isJson \|\| line\.trimStart\(\)\.startsWith\("\{"\)\);[\s\S]*?return;/,
+  "Complete and truncated Copilot JSONL frames route through the redacted protocol handler, never the AssistantFilter",
 );
 
 assert.match(

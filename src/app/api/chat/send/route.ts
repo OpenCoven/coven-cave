@@ -39,6 +39,7 @@ import {
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
 import { covenLaunchCommand } from "@/lib/coven-bin";
+import { copilotLaunchCommandForBinary } from "@/lib/copilot-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
@@ -1905,7 +1906,10 @@ export async function POST(req: Request) {
         if (RESUME_ERR_RE.test(line)) resumeFailed = true;
         const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
         if (copilotStream) {
-          handleCopilotLine(line, isJson);
+          // Direct Copilot output is JSONL. A truncated frame still starts
+          // with `{`, so route it through the fixed redacted diagnostic path
+          // instead of ever adding raw tool data to stdout error tails.
+          handleCopilotLine(line, isJson || line.trimStart().startsWith("{"));
           return;
         }
         if (grokDirect) {
@@ -2120,7 +2124,7 @@ export async function POST(req: Request) {
                 // direct CLI integrations. Every other local harness goes
                 // through `coven run`.
                 const launch = copilotStream
-                  ? { command: copilotStream.executable, fixedArgs: [] as string[] }
+                  ? copilotLaunchCommandForBinary(copilotStream.executable)
                   : grokDirect
                     ? grokLaunchCommand()
                   : hermesDirect

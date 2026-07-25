@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, join } from "node:path";
 import { parseRuntimeClientVersion } from "../copilot-stream.ts";
+import { copilotLaunchCommandForBinary } from "../copilot-bin.ts";
 
 export type CopilotCapabilityProbe = {
   version: string | null;
@@ -43,6 +44,21 @@ async function binaryIdentity(executable: string): Promise<string> {
   return `unresolved:${executable}:${pathValue}`;
 }
 
+async function identityBeforeDeadline(executable: string): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      binaryIdentity(executable),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), TIMEOUT_MS);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * Probe only `copilot --version`, cache the normalized result briefly, and
  * deliberately discard stdout/stderr.  This is the runtime-version boundary
@@ -57,7 +73,11 @@ export async function probeCopilotCapability(
   } = {},
 ): Promise<CopilotCapabilityProbe> {
   const now = options.now ?? Date.now;
-  const identity = await (options.binaryIdentity ?? binaryIdentity)(executable);
+  const startedAt = Date.now();
+  const identity = options.binaryIdentity
+    ? await options.binaryIdentity(executable)
+    : await identityBeforeDeadline(executable);
+  if (!identity) return { version: null, diagnostic: "probe-timeout" };
   const cacheKey = `${executable}\u0000${identity}`;
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > now()) return cached.value;
@@ -72,7 +92,12 @@ export async function probeCopilotCapability(
     };
     let child: ReturnType<typeof spawn>;
     try {
-      child = childSpawn(executable, ["--version"], {
+      const launch = copilotLaunchCommandForBinary(executable);
+      if (launch.unresolvedWindowsShim) {
+        settle({ version: null, diagnostic: "version-unavailable" });
+        return;
+      }
+      child = childSpawn(launch.command, [...launch.fixedArgs, "--version"], {
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });
@@ -92,7 +117,7 @@ export async function probeCopilotCapability(
       }, 250);
       forceKill.unref?.();
       settle({ version: null, diagnostic: "probe-timeout" });
-    }, TIMEOUT_MS);
+    }, Math.max(1, TIMEOUT_MS - (Date.now() - startedAt)));
     child.stdout?.on("data", (chunk: Buffer | string) => {
       if (stdout.length < 4_096) stdout += String(chunk).slice(0, 4_096 - stdout.length);
     });

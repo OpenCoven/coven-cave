@@ -8,10 +8,20 @@ import {
   resolveRuntimeCompatibility,
   validateRuntimeCompatibilitySnapshot,
 } from "./runtime-compatibility-registry.ts";
+import { COPILOT_EVENT_PROTOCOL_SCHEMAS } from "../copilot-stream.ts";
 
 const root = await mkdtemp(path.join(tmpdir(), "coven-runtime-compatibility-"));
 const cachePath = path.join(root, "copilot.json");
 const at = new Date("2026-07-24T12:00:00.000Z");
+
+function protocol(id: string, minClientVersion: string, maxClientVersionExclusive: string | null) {
+  return {
+    ...COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+    id,
+    minClientVersion,
+    maxClientVersionExclusive,
+  };
+}
 
 function index(version: string, eventProtocols: unknown[] = []) {
   return indexEntries([{ version, eventProtocols }]);
@@ -122,15 +132,37 @@ try {
     cachePath: path.join(root, "protocol-union.json"),
     now: new Date(at.getTime() + 3_400),
     fetchImpl: async () => response(indexEntries([
-      { version: "1.5.0", eventProtocols: [{ id: "copilot-jsonl-v1" }] },
-      { version: "2.0.0", eventProtocols: [{ id: "copilot-jsonl-v2" }] },
+      { version: "1.5.0", eventProtocols: [protocol("copilot-jsonl-v1-registry", "1.0.0", "2.0.0")] },
+      { version: "2.0.0", eventProtocols: [protocol("copilot-jsonl-v2-registry", "2.0.0", null)] },
     ])),
   });
   assert.equal(protocolUnion?.runtimeVersion, "2.0.0", "the highest accepted revision remains the rollback version");
   assert.deepEqual(
     protocolUnion?.eventProtocols,
-    [{ id: "copilot-jsonl-v1" }, { id: "copilot-jsonl-v2" }],
+    [
+      protocol("copilot-jsonl-v1-registry", "1.0.0", "2.0.0"),
+      protocol("copilot-jsonl-v2-registry", "2.0.0", null),
+    ],
     "schemas from every accepted registry revision remain available for client-version selection",
+  );
+
+  const malformedCachePath = path.join(root, "malformed-protocol.json");
+  const lkg = await refreshRuntimeCompatibility("copilot", {
+    cachePath: malformedCachePath,
+    now: new Date(at.getTime() + 3_450),
+    fetchImpl: async () => response(index("3.0.0", [protocol("copilot-jsonl-v3", "3.0.0", null)])),
+  });
+  assert.equal(lkg?.runtimeVersion, "3.0.0");
+  const malformedProtocolRefresh = await refreshRuntimeCompatibility("copilot", {
+    cachePath: malformedCachePath,
+    now: new Date(at.getTime() + 3_500),
+    fetchImpl: async () => response(index("4.0.0", [{ id: "broken" }])),
+  });
+  assert.equal(malformedProtocolRefresh, null, "a malformed protocol cannot replace a working last-known-good cache");
+  assert.deepEqual(
+    JSON.parse(await readFile(malformedCachePath, "utf8")).eventProtocols,
+    lkg?.eventProtocols,
+    "the cached parser schema survives malformed registry data",
   );
 
   const staleLockPath = `${cachePath}.lock`;

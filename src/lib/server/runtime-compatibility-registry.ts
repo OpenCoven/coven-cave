@@ -13,6 +13,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
+import { runtimeEventProtocolSchemas } from "../copilot-stream.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 
 const REGISTRY_REPO = "OpenCoven/coven-runtimes" as const;
@@ -114,7 +115,12 @@ function eventProtocolsForAdapter(runtimeId: string, adapter: unknown): unknown[
     ? value.stream_args as Record<string, unknown>
     : null;
   const protocols = value.event_protocols ?? streamArgs?.event_protocols ?? [];
-  return Array.isArray(protocols) ? protocols : null;
+  if (!Array.isArray(protocols)) return null;
+  // A last-known-good cache must contain parser-valid schemas only. Publishing
+  // one malformed entry would otherwise replace a working future-version
+  // schema and leave the installed client unsupported until another refresh.
+  if (runtimeId === "copilot" && runtimeEventProtocolSchemas(protocols).length !== protocols.length) return null;
+  return protocols;
 }
 
 export function validateRuntimeCompatibilitySnapshot(
@@ -132,6 +138,10 @@ export function validateRuntimeCompatibilitySnapshot(
     !/^[a-f0-9]{40}$/i.test(snapshot.source.blobSha ?? "") ||
     !Array.isArray(snapshot.eventProtocols) ||
     !/^[a-f0-9]{64}$/i.test(snapshot.contentHash ?? "")
+  ) return null;
+  if (
+    snapshot.runtimeId === "copilot" &&
+    runtimeEventProtocolSchemas(snapshot.eventProtocols).length !== snapshot.eventProtocols.length
   ) return null;
   const fetchedAt = Date.parse(snapshot.fetchedAt);
   const expiresAt = Date.parse(snapshot.expiresAt);
