@@ -217,7 +217,19 @@ export async function runPiperWithDependencies(
     // audio into. Windows ignores POSIX permission bits safely.
     await chmod(/* turbopackIgnore: true */ outputDirectory, 0o700);
     await new Promise<void>((resolve, reject) => {
-      const child: ChildProcess = spawnImpl(executable, ["-m", modelPath, "-f", outputPath], {
+      // Piper's Windows/macOS/Linux archives keep espeak-ng-data beside the
+      // executable. The sidecar runs from resources/server, so leaving this to
+      // Piper's cwd-relative default makes every packaged voice fail to
+      // phonemize despite the bundled runtime being present.
+      const bundledEspeakData = path.join(
+        /* turbopackIgnore: true */ path.dirname(executable),
+        "espeak-ng-data",
+      );
+      const args = ["-m", modelPath, "-f", outputPath];
+      if (existsSync(bundledEspeakData)) {
+        args.push("--espeak_data", bundledEspeakData);
+      }
+      const child: ChildProcess = spawnImpl(executable, args, {
         env: piperSpawnEnv(),
         stdio: ["pipe", "ignore", "pipe"],
         windowsHide: true,

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { existsSync, statSync, writeFileSync } from "node:fs";
-import { rm as remove } from "node:fs/promises";
+import { mkdir, mkdtemp, rm as remove } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -113,6 +113,35 @@ test("Piper runner sends normalized multiline text as one utterance", async () =
     spawnImpl: fakeRunner,
   });
   assert.equal(stdin, "First line Second line Third line\n");
+});
+
+test("Piper runner passes the managed runtime's espeak data directory", async () => {
+  const runtimeDir = await mkdtemp(path.join(os.tmpdir(), "coven-piper-runtime-"));
+  await mkdir(path.join(runtimeDir, "espeak-ng-data"));
+  let argv = null;
+  const fakeRunner = (_command, args) => {
+    argv = args;
+    const child = new EventEmitter();
+    child.stdin = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => true;
+    child.stdin.resume();
+    child.stdin.on("end", () => {
+      writeFileSync(args[args.indexOf("-f") + 1], Buffer.from("RIFF"));
+      queueMicrotask(() => child.emit("close", 0));
+    });
+    return child;
+  };
+
+  try {
+    await runPiperWithDependencies("voice.onnx", "Packaged voice.", undefined, {
+      executable: path.join(runtimeDir, process.platform === "win32" ? "piper.exe" : "piper"),
+      spawnImpl: fakeRunner,
+    });
+    assert.deepEqual(argv.slice(-2), ["--espeak_data", path.join(runtimeDir, "espeak-ng-data")]);
+  } finally {
+    await remove(runtimeDir, { recursive: true, force: true });
+  }
 });
 
 test("Piper runner rejects an empty normalized utterance before spawning", async () => {
