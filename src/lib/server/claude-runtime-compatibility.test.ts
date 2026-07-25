@@ -51,6 +51,18 @@ const failed = await resolveInstalledClaudeCompatibility({
 assert.equal(failed.kind, "fallback");
 assert.match(claudeCompatibilityDiagnostic(failed) ?? "", /could not be verified/i);
 
+const helpProbeFailed = await resolveInstalledClaudeCompatibility({
+  version: async () => "2.1.179 (Claude Code)",
+  help: async () => null,
+  now: () => Date.parse("2026-07-24T00:00:00.000Z"),
+});
+assert.deepEqual(
+  helpProbeFailed,
+  { kind: "fallback", reason: "probe-failed" },
+  "a failed capability probe must not be reported as a missing advertised capability",
+);
+assert.match(claudeCompatibilityDiagnostic(helpProbeFailed) ?? "", /could not be verified/i);
+
 await loadClaudeCompatibilityCache({ read: async () => "{not json" });
 let persisted: unknown = null;
 assert.equal(
@@ -62,6 +74,11 @@ assert.equal(
   "the accepted bundle can be atomically persisted as last-known-good data",
 );
 assert.deepEqual(persisted, { schemaVersion: 1, profiles: CLAUDE_COMPATIBILITY_PROFILES });
+assert.match(
+  compatibilitySource,
+  /profileCache = next;[\s\S]*?cached = null;/,
+  "a successful profile refresh must invalidate the cached compatibility resolution",
+);
 
 const unpersisted = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
 unpersisted.id = "claude-stream-json-v3";

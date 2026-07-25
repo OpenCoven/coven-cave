@@ -68,6 +68,10 @@ export async function refreshClaudeCompatibilityProfiles(
       await writeJsonAtomic(target, document);
     }
     profileCache = next;
+    // The probe cache contains a completed resolution rather than just raw
+    // probe output. It may have selected a fallback for a profile that this
+    // refresh just added, so it cannot survive a successful publication.
+    cached = null;
     accepted = true;
   };
   const pending = refreshQueue.then(refresh, refresh);
@@ -144,7 +148,17 @@ export async function resolveInstalledClaudeCompatibility(
   // help has no independent documented tool-envelope capability, so do not
   // fabricate one from the generic stream-json flag.
   if (/pre_tool_use|post_tool_use/i.test(help)) capabilities.push("tool-hooks");
-  const report: RuntimeCompatibilityReport = { runtime: "claude", version, capabilities, probe: version ? "ok" : "failed" };
+  // A version alone is not enough to assert the stream capability: when
+  // `--help` failed or timed out we cannot distinguish an unsupported binary
+  // from one that simply was not probed. Keep that failure on the conservative
+  // text-only path and give the user the truthful probe diagnostic instead of
+  // claiming the installation lacks a capability we never observed.
+  const report: RuntimeCompatibilityReport = {
+    runtime: "claude",
+    version,
+    capabilities,
+    probe: version && helpOutput !== null ? "ok" : "failed",
+  };
   const resolution = resolveRuntimeCompatibility(report, profileCache.current(), new Date(now));
   if (!dependencies.version && !dependencies.help) cached = { at: now, value: resolution };
   return resolution;
