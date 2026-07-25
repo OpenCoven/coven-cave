@@ -19,6 +19,19 @@ import {
 const now = Date.parse("2026-07-24T12:00:00.000Z");
 const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 const publicPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+const canonicalizationVector = {
+  z: "last",
+  runtime: "opencode",
+  number: 0,
+  nested: { unicode: "é", quote: "\"", line: "a\nb" },
+  array: [true, 2, null],
+  signature: { algorithm: "ed25519", value: "excluded-from-payload" },
+};
+assert.equal(
+  openCodeSchemaBundleSigningPayload(canonicalizationVector),
+  `{"array":[true,2,null],"nested":{"line":"a\\nb","quote":"\\"","unicode":"é"},"number":0,"runtime":"opencode","z":"last"}`,
+  "format-1 signing bytes match the documented cross-publisher canonicalization vector",
+);
 const unsigned = {
   format: 1,
   runtime: "opencode",
