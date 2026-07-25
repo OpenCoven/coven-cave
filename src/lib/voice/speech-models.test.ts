@@ -15,6 +15,7 @@ import {
   speechModelPath,
   speechModelReadiness,
   startSpeechModelDownload,
+  withSpeechModelUse,
   SPEECH_MODEL_REGISTRY,
 } from "./speech-models.ts";
 
@@ -446,5 +447,36 @@ test("removing a model after publication cannot leave its download ready", async
   assert.equal(cancelled?.status, "cancelled");
   assert.equal(cancelled?.ready, false);
   await assert.rejects(stat(speechModelPath(model, root)), /ENOENT/);
+  await rm(root, { recursive: true, force: true });
+});
+
+test("removal waits for an active verified model use", async () => {
+  const root = testRoot("remove-active-use");
+  await rm(root, { recursive: true, force: true });
+  const model = SPEECH_MODEL_REGISTRY[0];
+  const modelDir = path.dirname(speechModelPath(model, root));
+  await mkdir(modelDir, { recursive: true });
+  await writeFile(path.join(modelDir, "sentinel"), "in use");
+
+  let releaseUse: (() => void) | undefined;
+  const useStarted = new Promise<void>((resolve) => {
+    void withSpeechModelUse(model.id, async () => {
+      resolve();
+      await new Promise<void>((finish) => { releaseUse = finish; });
+    });
+  });
+  await useStarted;
+
+  let removalFinished = false;
+  const removal = removeSpeechModel(model.id, root).then((result) => {
+    removalFinished = true;
+    return result;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(removalFinished, false, "removal must not unlink a model while Piper may open it");
+
+  releaseUse?.();
+  assert.equal(await removal, "removed");
+  await assert.rejects(stat(modelDir), { code: "ENOENT" });
   await rm(root, { recursive: true, force: true });
 });

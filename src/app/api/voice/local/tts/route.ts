@@ -2,6 +2,7 @@ import { NextResponse } from "next/server.js";
 import {
   speechModelById,
   speechModelReadiness,
+  withSpeechModelUse,
   type SpeechModelReadiness,
 } from "../../../../../lib/voice/speech-models.ts";
 import {
@@ -134,53 +135,55 @@ export async function handleLocalTtsPost(
     );
   }
 
-  const readiness = await (dependencies.readiness ?? defaultReadiness)(
-    voiceName,
-  );
-  if (!readiness || readiness.kind !== "tts") {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "local_voice_not_ready",
-        hint: "The selected local voice is no longer available. Download it again in Settings or choose another voice.",
-      },
-      { status: 409 },
-    );
-  }
-  if (!readiness.ready || !readiness.verified) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "local_voice_not_ready",
-        hint: `Download and verify ${readiness.name} in Settings before using it.`,
-      },
-      { status: 409 },
-    );
-  }
-  if (readiness.engine !== "piper") {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "local_tts_engine_unavailable",
-        hint: `${readiness.name} needs a ${readiness.engine} runtime this build doesn't include.`,
-      },
-      { status: 503 },
-    );
-  }
-
   try {
-    const audio = await (dependencies.piper ?? runPiper)(
-      readiness.path,
-      text,
-      req.signal,
-    );
-    const body = Uint8Array.from(audio).buffer;
-    return new Response(body, {
-      status: 200,
-      headers: {
-        "content-type": "audio/wav",
-        "cache-control": "no-store",
-      },
+    return await withSpeechModelUse(voiceName, async () => {
+      // This must remain inside the removal lease: readiness hashes both the
+      // ONNX and its Piper config immediately before the runner opens them.
+      const readiness = await (dependencies.readiness ?? defaultReadiness)(voiceName);
+      if (!readiness || readiness.kind !== "tts") {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "local_voice_not_ready",
+            hint: "The selected local voice is no longer available. Download it again in Settings or choose another voice.",
+          },
+          { status: 409 },
+        );
+      }
+      if (!readiness.ready || !readiness.verified) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "local_voice_not_ready",
+            hint: `Download and verify ${readiness.name} in Settings before using it.`,
+          },
+          { status: 409 },
+        );
+      }
+      if (readiness.engine !== "piper") {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "local_tts_engine_unavailable",
+            hint: `${readiness.name} needs a ${readiness.engine} runtime this build doesn't include.`,
+          },
+          { status: 503 },
+        );
+      }
+
+      const audio = await (dependencies.piper ?? runPiper)(
+        readiness.path,
+        text,
+        req.signal,
+      );
+      const body = Uint8Array.from(audio).buffer;
+      return new Response(body, {
+        status: 200,
+        headers: {
+          "content-type": "audio/wav",
+          "cache-control": "no-store",
+        },
+      });
     });
   } catch (error) {
     const synthesisError =

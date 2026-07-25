@@ -117,9 +117,55 @@ const modelRemovalGenerations = new Map<string, number>();
 // delete a just-published replacement during cancellation cleanup.
 const downloadTasks = new Map<string, Promise<void>>();
 const modelRemovals = new Map<string, Promise<"removed" | "missing">>();
+// A model directory must not be removed between its final integrity check and
+// Piper opening the ONNX/config pair. Keep the lease for the entire runner so
+// removal cannot turn a verified ready voice into a mid-request failure.
+const modelUseTasks = new Map<string, Set<Promise<void>>>();
 
 function modelRemovalGeneration(modelId: string): number {
   return modelRemovalGenerations.get(modelId) ?? 0;
+}
+
+/**
+ * Run work that consumes a registered model while preventing removal from
+ * unlinking it. A use that arrives during removal waits for that removal, then
+ * lets its caller re-check readiness instead of touching a stale directory.
+ */
+export async function withSpeechModelUse<T>(
+  modelId: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const removal = modelRemovals.get(modelId);
+  if (removal) {
+    await removal;
+    return withSpeechModelUse(modelId, work);
+  }
+
+  let release!: () => void;
+  const use = new Promise<void>((resolve) => { release = resolve; });
+  const uses = modelUseTasks.get(modelId) ?? new Set<Promise<void>>();
+  uses.add(use);
+  modelUseTasks.set(modelId, uses);
+
+  // `removeSpeechModel` can only start synchronously between the first check
+  // and adding this lease. If it did, release and retry after it has removed
+  // the old directory so the caller performs a fresh integrity check.
+  const startedRemoval = modelRemovals.get(modelId);
+  if (startedRemoval) {
+    uses.delete(use);
+    if (uses.size === 0) modelUseTasks.delete(modelId);
+    release();
+    await startedRemoval;
+    return withSpeechModelUse(modelId, work);
+  }
+
+  try {
+    return await work();
+  } finally {
+    uses.delete(use);
+    if (uses.size === 0) modelUseTasks.delete(modelId);
+    release();
+  }
 }
 
 export function speechModelsRoot(): string {
@@ -566,7 +612,8 @@ export async function removeSpeechModel(modelId: string, root = speechModelsRoot
     const activeTasks = [...downloadTasks.entries()]
       .filter(([jobId]) => jobs.get(jobId)?.modelId === model.id)
       .map(([, running]) => running);
-    await Promise.allSettled(activeTasks);
+    const activeUses = [...(modelUseTasks.get(model.id) ?? [])];
+    await Promise.allSettled([...activeTasks, ...activeUses]);
     const modelPath = speechModelPath(model, root);
     const modelDir = path.dirname(modelPath);
     try {
