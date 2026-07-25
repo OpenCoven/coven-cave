@@ -123,7 +123,7 @@ assert.match(
 
 assert.match(
   source,
-  /const scopeKey = familiarId \? `familiar:\$\{familiarId\}` : "unscoped";[\s\S]*const \[loadedScopeKey, setLoadedScopeKey\] = useState<string \| null>\(null\);[\s\S]*const loadedSuccessfully = enabled && loadedScopeKey === scopeKey;/,
+  /const scopeKey = projectScopeKey\(familiarId\);[\s\S]*const \[loadedScopeKey, setLoadedScopeKey\] = useState<string \| null>\(null\);[\s\S]*const loadedSuccessfully = enabled && isCurrentProjectScope\(loadedScopeKey, familiarId\);/,
   "useProjects reports success only when the response belongs to the current familiar scope",
 );
 assert.match(

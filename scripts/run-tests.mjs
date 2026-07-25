@@ -434,6 +434,7 @@ export const SUITES = {
     "src/components/new-card-modal.test.ts",
     "src/lib/active-familiar.test.ts",
     "src/lib/use-project-familiars.test.ts",
+    "src/lib/project-scope.test.ts",
     "src/lib/use-projects.test.ts",
     "src/lib/use-projects-race.test.ts",
     "src/components/calendar-view-polish.test.ts",
