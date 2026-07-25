@@ -67,7 +67,9 @@ export function flattenToolResultContent(content: unknown): string | undefined {
       if (
         block &&
         typeof block === "object" &&
-        (block as { type?: unknown }).type === "text" &&
+        (["text", "input_text", "output_text"] as unknown[]).includes(
+          (block as { type?: unknown }).type,
+        ) &&
         typeof (block as { text?: unknown }).text === "string"
       ) {
         parts.push((block as { text: string }).text);

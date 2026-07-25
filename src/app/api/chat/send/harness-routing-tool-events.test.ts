@@ -186,6 +186,24 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /redirect: "error"/,
+  "Hermes API requests must reject redirects rather than crossing the validated endpoint boundary",
+);
+
+assert.match(
+  chatRoute,
+  /flattenToolResultContent\(event\.output\) \?\? formatToolInputValue\(event\.output\)/,
+  "structured Hermes function output must display supported text blocks rather than protocol JSON",
+);
+
+assert.match(
+  chatRoute,
+  /if \(event\.message\) recordStdoutErrorTail\(event\.message, true\)/,
+  "terminal Hermes failures must retain their normalized diagnostic",
+);
+
+assert.match(
+  chatRoute,
   /\.\.\.\(persistedTools \? \{ tools: persistedTools \} : \{\}\)/,
   "tools persist on the assistant turn alongside usage and cost",
 );
@@ -382,6 +400,11 @@ assert.match(
       { type: "text", text: "two" },
     ]),
     "one\ntwo",
+  );
+  assert.equal(
+    flattenToolResultContent([{ type: "input_text", text: "tool output" }]),
+    "tool output",
+    "Responses function output blocks flatten to their text rather than protocol scaffolding",
   );
   assert.equal(flattenToolResultContent(null), undefined);
 }

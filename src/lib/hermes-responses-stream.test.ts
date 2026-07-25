@@ -28,6 +28,10 @@ test("Hermes Responses events normalise text, calls, output, session, and comple
   );
   assert.deepEqual(parseHermesResponsesEvent("response.completed", {}), { kind: "done", isError: false });
   assert.deepEqual(
+    parseHermesResponsesEvent("response.failed", { response: { error: { message: "invalid model" } } }),
+    { kind: "done", isError: true, message: "invalid model" },
+  );
+  assert.deepEqual(
     parseHermesResponsesEvent("response.function_call_arguments.delta", {
       item_id: "item-1", delta: '{"command":',
     }),

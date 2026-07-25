@@ -2058,6 +2058,9 @@ export async function POST(req: Request) {
           const response = await fetch(hermesResponsesUrl(hermesApi), {
             method: "POST",
             signal: abort.signal,
+            // Do not let a configured server redirect prompts or bearer
+            // credentials past the validated endpoint boundary.
+            redirect: "error",
             headers: {
               "content-type": "application/json",
               accept: "text/event-stream",
@@ -2138,15 +2141,14 @@ export async function POST(req: Request) {
                 return false;
               }
               case "tool_end": {
-                const output = typeof event.output === "string"
-                  ? event.output
-                  : formatToolInputValue(event.output);
+                const output = flattenToolResultContent(event.output) ?? formatToolInputValue(event.output);
                 const toolEv = toolTracker.envelopeToolResult(event.id, output, event.isError);
                 if (toolEv) push({ kind: "tool_use", ...toolEv });
                 return false;
               }
               case "done":
                 result = { ...result, is_error: event.isError };
+                if (event.message) recordStdoutErrorTail(event.message, true);
                 if (event.isError && previousResponseId) resumeFailed = true;
                 return true;
               case "error":
