@@ -1023,6 +1023,7 @@ export const SUITES = {
     "src/app/api/chat/send/harness-routing-model-capabilities.test.ts",
     "src/app/api/chat/send/harness-routing-copilot-jsonl.test.ts",
     "src/app/api/chat/send/harness-routing-opencode.test.ts",
+    "src/app/api/chat/send/chat-send-capabilities.test.ts",
     "src/app/api/chat/send/offline-queue.test.ts",
     "src/app/api/chat/send/first-turn-stub.test.ts",
     "src/app/api/onboarding/status/route.test.ts",
@@ -1282,6 +1283,7 @@ const STRIP_TYPES_MJS = new Set([
 const ALIAS_LOADER = new Set([
   "src/lib/opencode-compatibility.test.ts",
   "src/lib/opencode-stream.test.ts",
+  "src/app/api/chat/send/chat-send-capabilities.test.ts",
   "src/lib/familiar-workspace-sessions.test.ts",
   "scripts/cave-home-migration-windows.test.ts",
   "src/lib/bento-dashboard.test.ts",

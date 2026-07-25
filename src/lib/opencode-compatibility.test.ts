@@ -200,6 +200,7 @@ const structuredSwitchCapabilities = {
   session: false,
   protocols: ["json-v3"],
   options: ["--structured-output", "--event-stream"],
+  noValueOptions: ["--event-stream"],
   structuredOutputs: [{ option: "--structured-output", values: ["json-v3"] }],
 };
 const structuredSwitchSchema = {
@@ -217,6 +218,25 @@ assert.equal(
   selectOpenCodeSchema([structuredSwitchSchema], structuredSwitchCapabilities)?.id,
   "structured-switch",
   "a structured switch is selected only after its option and JSON value are observed in run help",
+);
+const framingSchema = {
+  ...structuredSwitchSchema,
+  id: "structured-framing",
+  launch: { ...structuredSwitchSchema.launch, requiredFlags: ["--no-color", "--event-stream"] },
+};
+assert.equal(
+  isOpenCodeSchemaBundle({ ...unsigned, schemas: [framingSchema] }, now),
+  true,
+  "signed schemas may declare bounded harmless no-value framing flags",
+);
+assert.equal(
+  selectOpenCodeSchema([framingSchema], {
+    ...structuredSwitchCapabilities,
+    options: ["--structured-output", "--event-stream", "--no-color"],
+    noValueOptions: ["--event-stream", "--no-color"],
+  })?.id,
+  "structured-framing",
+  "companion flags require both a declaration and no-value capability evidence",
 );
 assert.equal(
   isOpenCodeSchemaBundle({ ...unsigned, issuedAt: 0 }, now),

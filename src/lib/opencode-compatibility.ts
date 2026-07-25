@@ -13,6 +13,8 @@ export type OpenCodeRunCapabilities = {
   protocols: string[];
   /** Declared `run` option names and structured-output option/value pairs. */
   options?: string[];
+  /** Declared run flags that take no value and are safe to forward verbatim. */
+  noValueOptions?: string[];
   structuredOutputs?: Array<{ option: string; values: string[] }>;
 };
 
@@ -243,7 +245,7 @@ const SAFE_STRUCTURED_LAUNCH_OPTION = /^--[a-z0-9-]*(?:format|output|json|event|
 const UNSAFE_STRUCTURED_LAUNCH_OPTIONS = new Set([
   "--auto", "--permission", "--sandbox", "--skip-permissions", "--dangerously-skip-permissions", "--trust-all-tools", "--yolo",
 ]);
-const SAFE_STRUCTURED_REQUIRED_FLAGS = new Set(["--event-stream"]);
+const SAFE_STRUCTURED_REQUIRED_FLAG = /^--[A-Za-z][A-Za-z0-9-]{0,78}$/;
 
 function safeStructuredLaunchOption(value: unknown): value is string {
   return typeof value === "string"
@@ -261,8 +263,8 @@ function hasValidLaunch(value: unknown, requires: Record<string, unknown>): bool
   if (structuredOutput.value !== (typeof requires.protocol === "string" ? requires.protocol : "json")) return false;
   if (value.sessionOption !== undefined && value.sessionOption !== "--session" && value.sessionOption !== "--resume") return false;
   if (requires.session === true && value.sessionOption === undefined) return false;
-  return value.requiredFlags.length <= 1
-    && value.requiredFlags.every((flag) => typeof flag === "string" && SAFE_STRUCTURED_REQUIRED_FLAGS.has(flag))
+  return value.requiredFlags.length <= 4
+    && value.requiredFlags.every((flag) => typeof flag === "string" && SAFE_STRUCTURED_REQUIRED_FLAG.test(flag) && !UNSAFE_STRUCTURED_LAUNCH_OPTIONS.has(flag.toLowerCase()))
     && new Set(value.requiredFlags).size === value.requiredFlags.length
     && !value.requiredFlags.includes(structuredOutput.option);
 }
@@ -307,7 +309,8 @@ function schemaMatches(schema: OpenCodeEventSchema, capabilities: OpenCodeRunCap
   const options = new Set(capabilities.options ?? ["--format", "--output", "--session", "--resume", "--model"]);
   if (!options.has(schema.launch.structuredOutput.option)) return false;
   if (schema.launch.sessionOption && !options.has(schema.launch.sessionOption)) return false;
-  if (schema.launch.requiredFlags.some((flag) => !options.has(flag))) return false;
+  const noValueOptions = new Set(capabilities.noValueOptions ?? []);
+  if (schema.launch.requiredFlags.some((flag) => !options.has(flag) || !noValueOptions.has(flag))) return false;
   return true;
 }
 

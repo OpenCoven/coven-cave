@@ -123,6 +123,15 @@ function declaredRunOptions(help: string): string[] {
   return [...new Set([...help.matchAll(/^\s*(?:-[A-Za-z],?\s+)?(--[A-Za-z][A-Za-z0-9-]*)\b/gm)].map((match) => match[1]))];
 }
 
+function declaredNoValueRunOptions(help: string, options: string[]): string[] {
+  return options.filter((option) => {
+    const line = help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b([^\\n]*)$`, "m"))?.[1] ?? "";
+    // An argument placeholder or equals syntax means the schema cannot safely
+    // forward this as a no-value flag, even if it is declared by the client.
+    return !/[<\[=]/.test(line);
+  });
+}
+
 function advertisedFormatProtocols(help: string): string[] {
   const outputs = advertisedStructuredOutputs(help);
   // A protocol marker is useful only when the CLI advertises it as an output
@@ -138,6 +147,7 @@ function advertisedFormatProtocols(help: string): string[] {
  */
 export function parseOpenCodeRunCapabilitiesHelp(help: string, version: string | null): OpenCodeRunCapabilities {
   const options = declaredRunOptions(help);
+  const noValueOptions = declaredNoValueRunOptions(help, options);
   const structuredOutputs = advertisedStructuredOutputs(help);
   const protocols = advertisedFormatProtocols(help);
   const json = protocols.some((protocol) => protocol === "json" || protocol.startsWith("json-") || protocol.startsWith("json_"));
@@ -155,6 +165,7 @@ export function parseOpenCodeRunCapabilitiesHelp(help: string, version: string |
     // from the installed version string.
     protocols,
     options,
+    noValueOptions,
     structuredOutputs,
   };
 }
@@ -231,7 +242,7 @@ export function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
     // Partial, timed-out, non-zero, or oversized help is never capability
     // evidence. Probe again after the short TTL instead of risking an argv
     // that the installed client does not accept.
-    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], structuredOutputs: [] };
+    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], noValueOptions: [], structuredOutputs: [] };
     return parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
   })();
   openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, value };

@@ -17,8 +17,8 @@ assert.match(
 );
 assert.match(
   route,
-  /handleOpenCodeJsonLine\(line, openCodeCompatibility\?\.schema, \{[\s\S]*?onSession: \(nativeSessionId\) => \{[\s\S]*?announceSession\(nativeSessionId\);/,
-  "the first structured OpenCode event persists its minted session id",
+  /let openCodeSessionId: string \| null = null;[\s\S]*?onSession: \(nativeSessionId\) => \{[\s\S]*?openCodeSessionId = nativeSessionId;[\s\S]*?if \(!sessionId\) announceSession\(nativeSessionId\);[\s\S]*?openCodeSessionId \?\? existingConversation\?\.harnessSessionId/,
+  "every structured OpenCode session event updates native resume state without replacing Cave's stable session id",
 );
 assert.match(
   route,
@@ -72,6 +72,11 @@ assert.match(
 );
 assert.match(
   route,
+  /existingConversation\?\.harnessSessionId \?\? body\.sessionId[\s\S]*?openCodeUnrecordedResume[\s\S]*?announceSession\(crypto\.randomUUID\(\)\)[\s\S]*?not recorded locally and this client cannot resume it; starting a fresh chat/,
+  "an unrecorded OpenCode resume token is attempted when supported or visibly restarted when it is not",
+);
+assert.match(
+  route,
   /import \{ handleOpenCodeJsonLine \} from "@\/lib\/opencode-stream";[\s\S]*?handleOpenCodeJsonLine\(line, openCodeCompatibility\?\.schema,/,
   "the route uses the behavioral JSONL handler, whose lifecycle-frame behavior is covered by its focused test",
 );
@@ -102,8 +107,8 @@ assert.match(
 );
 assert.match(
   route,
-  /openCodeDirect && body\.sessionId && existingConversation && \([\s\S]*?!openCodeCompatibility\?\.capabilities\.session[\s\S]*?\|\| !existingConversation\.harnessSessionId[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
-  "OpenCode replays Cave context only when a native resume option or token is unavailable",
+  /const openCodeFreshSessionForCompatibility = Boolean\([\s\S]*?openCodeUnrecordedResume[\s\S]*?Boolean\(existingConversation && \([\s\S]*?!openCodeCompatibility\?\.capabilities\.session[\s\S]*?\|\| !existingConversation\.harnessSessionId[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  "OpenCode replays Cave context only when a native resume option or recorded native token is unavailable",
 );
 assert.match(
   route,

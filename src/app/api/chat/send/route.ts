@@ -1408,7 +1408,10 @@ export async function POST(req: Request) {
     ? null
     : body.sessionId
       ? openCodeDirect
-        ? existingConversation?.harnessSessionId ?? null
+        // If the Cave transcript was removed, the submitted token may still be
+        // a valid native OpenCode session. Preserve it for a help-confirmed
+        // resume rather than silently creating a context-free chat.
+        ? existingConversation?.harnessSessionId ?? body.sessionId
         : existingConversation?.harnessSessionId ?? body.sessionId
       : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
@@ -1424,14 +1427,26 @@ export async function POST(req: Request) {
   const grokSandboxRetry = grokFreshSessionForSandbox
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
+  const openCodeNativeResumeSupported = openCodeCompatibility?.mode === "structured"
+    ? Boolean(openCodeCompatibility.schema?.launch.sessionOption)
+    : Boolean(
+      openCodeCompatibility?.capabilities.options?.includes("--session")
+      || openCodeCompatibility?.capabilities.options?.includes("--resume"),
+    );
+  const openCodeUnrecordedResume = Boolean(
+    openCodeDirect && body.sessionId && !existingConversation && !openCodeNativeResumeSupported,
+  );
   // A client which no longer advertises a native resume option, or a prior
   // turn which never received a native OpenCode id, must start fresh with
   // bounded Cave transcript replay. Plain output can still safely resume when
   // its exact option was confirmed by the capability probe.
   const openCodeFreshSessionForCompatibility = Boolean(
-    openCodeDirect && body.sessionId && existingConversation && (
-      !openCodeCompatibility?.capabilities.session
-      || !existingConversation.harnessSessionId
+    openCodeDirect && body.sessionId && (
+      openCodeUnrecordedResume
+      || Boolean(existingConversation && (
+        !openCodeCompatibility?.capabilities.session
+        || !existingConversation.harnessSessionId
+      ))
     ),
   );
   const openCodeSessionUnavailable = !openCodeCompatibility?.capabilities.session;
@@ -1537,6 +1552,10 @@ export async function POST(req: Request) {
       // Keep it separately so the next Grok turn resumes the actual CLI
       // session rather than Cave's conversation id.
       let grokSessionId: string | null = null;
+      // OpenCode's native session is distinct from Cave's stable conversation
+      // ID on resumed turns. Always retain the latest event-provided native ID
+      // for the next CLI resume, while only announcing the stable Cave ID.
+      let openCodeSessionId: string | null = null;
       // First-turn visibility (cave-0g2x): the id of the in-flight user turn,
       // minted up front so the announce-time stub conversation and the
       // end-of-stream authoritative save agree on the turn's identity.
@@ -1614,7 +1633,11 @@ export async function POST(req: Request) {
         // turns the harness mints a fresh internal id, which must not
         // leak out as a "new session" (it fragmented every continued
         // chat into one sidebar entry per turn).
-        const announcedId = body.sessionId ?? sessionId;
+        // An unrecorded resume token is not a Cave conversation identity. Its
+        // unsupported fallback gets a new stable Cave id before spawning.
+        const announcedId = body.sessionId && !openCodeUnrecordedResume
+          ? body.sessionId
+          : sessionId;
         // A new chat registered with only the client runId (body.sessionId is
         // null until the harness mints the id) — late-key the run so
         // /api/chat/stop and the sessions-list liveness probe reach it by
@@ -1656,7 +1679,9 @@ export async function POST(req: Request) {
       // needs a stable conversation identity so a plain-mode first response
       // is persisted and visible after reload; native resume remains disabled
       // below and falls back to recent-context replay.
-      if (openCodeDirect && openCodeCompatibility?.mode === "plain" && !sessionId) {
+      if (openCodeUnrecordedResume) {
+        announceSession(crypto.randomUUID());
+      } else if (openCodeDirect && openCodeCompatibility?.mode === "plain" && !sessionId) {
         announceSession(crypto.randomUUID());
       }
 
@@ -1824,6 +1849,7 @@ export async function POST(req: Request) {
         }
         handleOpenCodeJsonLine(line, openCodeCompatibility?.schema, {
           onSession: (nativeSessionId) => {
+            openCodeSessionId = nativeSessionId;
             if (!sessionId) announceSession(nativeSessionId);
           },
           onText: (ev) => {
@@ -2301,7 +2327,9 @@ export async function POST(req: Request) {
       if (openCodeFreshSessionForCompatibility) {
         pushProgress(
           "opencode-compatibility",
-          openCodeCompatibilityRetry?.replayedHistory
+          openCodeUnrecordedResume
+            ? "This OpenCode session is not recorded locally and this client cannot resume it; starting a fresh chat"
+            : openCodeCompatibilityRetry?.replayedHistory
             ? openCodeSessionUnavailable
               ? "This OpenCode client cannot resume sessions; replaying recent context in a fresh chat"
               : "This conversation has no resumable OpenCode session; replaying recent context in a fresh chat"
@@ -2507,7 +2535,9 @@ export async function POST(req: Request) {
         ? grokSessionId
         : openCodeDirect && openCodeCompatibility?.mode === "plain"
           ? undefined
-          : sessionId;
+          : openCodeDirect
+            ? openCodeSessionId ?? existingConversation?.harnessSessionId ?? (!existingConversation ? body.sessionId : undefined)
+            : sessionId;
       // OpenCode's JSON event protocol does not echo the selected model. Its
       // direct argv proves the selection was forwarded, while a successful
       // exit is the only confirmation it was applied. Preserve an explicit
@@ -2537,7 +2567,9 @@ export async function POST(req: Request) {
         modelState.applicationState = application.state;
         modelState.reason = application.reason;
       }
-      const finalSessionId = body.sessionId ?? sessionId;
+      const finalSessionId = body.sessionId && !openCodeUnrecordedResume
+        ? body.sessionId
+        : sessionId;
       if (finalSessionId) {
         pushProgress("save-transcript", "Saving transcript", "running");
         await recordSessionFamiliar(finalSessionId, body.familiarId);
