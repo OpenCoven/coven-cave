@@ -85,6 +85,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /Claude stream frame could not be decoded[\s\S]*?fingerprint: redactedEventFingerprint\(frame\)[\s\S]*?chat text will continue without unverified tool bubbles[\s\S]*?reportMalformedClaudeStreamFrame\(line\)/,
+  "malformed Claude JSONL must be reduced to a fingerprint and diagnostic rather than falling through to payload-bearing stdout diagnostics",
+);
+
+assert.match(
+  chatRoute,
   /toolTracker = new ToolCallTracker\(\);/,
   "The resume retry should reset the tool tracker alongside the other per-attempt state",
 );

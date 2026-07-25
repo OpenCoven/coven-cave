@@ -1544,6 +1544,18 @@ export async function POST(req: Request) {
       }
       let claudeFallbackFingerprintLogged = false;
       let claudeUnsupportedFrameDiagnosticSent = false;
+      const reportMalformedClaudeStreamFrame = (frame: unknown) => {
+        if (claudeUnsupportedFrameDiagnosticSent) return;
+        claudeUnsupportedFrameDiagnosticSent = true;
+        console.warn("[chat] Claude stream frame could not be decoded", {
+          fingerprint: redactedEventFingerprint(frame),
+        });
+        pushProgress(
+          "claude-runtime-compatibility",
+          "A Claude Code stream frame could not be decoded; chat text will continue without unverified tool bubbles.",
+          "error",
+        );
+      };
       const settleUnfinishedTools = () => {
         for (const toolEv of toolTracker.settleUnfinished()) {
           push({ kind: "tool_use", ...toolEv });
@@ -1969,11 +1981,26 @@ export async function POST(req: Request) {
             }
             return;
           } catch {
+            // Claude's stream-json frames can contain tool inputs and outputs.
+            // A malformed JSONL line must never fall through into the generic
+            // stdout/error diagnostics, which would expose that payload when a
+            // turn otherwise has no assistant text.
+            if (binding.harness === "claude") {
+              reportMalformedClaudeStreamFrame(line);
+              return;
+            }
             /* fall through to filter */
           }
         }
         const cleaned = resolveBackspaces(stripAnsi(line));
         const trimmed = cleaned.trim();
+        // `isJson` requires a closing brace, so an unterminated Claude JSONL
+        // frame reaches this path. Treat it like any other malformed stream
+        // frame instead of rendering or retaining its raw payload.
+        if (binding.harness === "claude" && trimmed.startsWith("{")) {
+          reportMalformedClaudeStreamFrame(line);
+          return;
+        }
         // Older Hermes versions can print the durable session id to stdout.
         // The current quiet path writes it to stderr (captured separately).
         if (hermesDirect) {
