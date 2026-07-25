@@ -122,11 +122,12 @@ async function readNativeHost(...modules) {
   )).join("\n");
 }
 
-test("release bundle includes and prefers a bundled Node runtime", async () => {
-  const [tauriConfig, windowsConfig, bundleScript, launcher] = await Promise.all([
+test("release bundle includes and prefers bundled Node and Whisper runtimes", async () => {
+  const [tauriConfig, windowsConfig, bundleScript, whisperBundleScript, launcher] = await Promise.all([
     readFile(new URL("./tauri.conf.json", import.meta.url), "utf8"),
     readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/whisper-runtime-bundle.sh", import.meta.url), "utf8"),
     readNativeHost("sidecar_discovery.rs", "sidecar_startup.rs"),
   ]);
 
@@ -135,6 +136,8 @@ test("release bundle includes and prefers a bundled Node runtime", async () => {
     /"resources\/node\/\*\*\/\*"/,
     "Tauri resources must include the bundled Node runtime",
   );
+  assert.match(tauriConfig, /"resources\/whisper\/\*\*\/\*"/, "Tauri resources must include Whisper runtime files");
+  assert.match(windowsConfig, /"resources\/whisper\/\*\*\/\*"/, "Windows bundles must include Whisper runtime files");
   assert.match(
     windowsConfig,
     /"resources\/server-archive\/\*\*\/\*"/,
@@ -160,6 +163,15 @@ test("release bundle includes and prefers a bundled Node runtime", async () => {
     /command -v node/,
     "sidecar bundle script must copy the release runner's Node binary",
   );
+  assert.match(bundleScript, /whisper-runtime-bundle\.sh/, "sidecar bundle script must stage Whisper before packaging");
+  assert.match(whisperBundleScript, /whisper-bin-x64\.zip/, "Windows must stage a pinned Whisper CLI archive");
+  assert.match(whisperBundleScript, /MSVCP140\.dll.*VCRUNTIME140\.dll.*VCRUNTIME140_1\.dll.*VCOMP140\.dll/, "Windows must ship Whisper's app-local MSVC runtime");
+  assert.match(whisperBundleScript, /whisper-bin-ubuntu-x64\.tar\.gz/, "Linux must stage a pinned Whisper CLI archive");
+  assert.match(whisperBundleScript, /f049fff95a089aa9969deb009cdd4892b3e74916/, "macOS must build the pinned Whisper release commit");
+  assert.match(whisperBundleScript, /CMAKE_INSTALL_RPATH='@loader_path'/, "macOS Whisper must resolve copied dylibs relative to its executable");
+  assert.doesNotMatch(whisperBundleScript, /install_name_tool -add_rpath/, "macOS Whisper must not add a duplicate CMake-provided rpath");
+  assert.match(whisperBundleScript, /cp -P/, "Linux Whisper staging must preserve SONAME links");
+  assert.match(whisperBundleScript, /checksum mismatch/, "Whisper artifact downloads must be hash-verified");
   assert.match(
     launcher,
     /fn find_node\(resource_dir: &Path\)/,
@@ -170,6 +182,9 @@ test("release bundle includes and prefers a bundled Node runtime", async () => {
     /resources[\s\S]*node[\s\S]*bin[\s\S]*node/,
     "launcher must know the bundled Node resource path",
   );
+  assert.match(launcher, /fn find_bundled_whisper_cli\(resource_dir: &Path\)/, "launcher must resolve Whisper relative to app resources");
+  assert.match(launcher, /COVEN_WHISPER_CPP_BIN/, "launcher must provide the absolute bundled Whisper path to the sidecar");
+  assert.match(launcher, /LD_LIBRARY_PATH/, "Linux sidecars must load Whisper's bundled shared libraries");
   assert.match(
     launcher,
     /sidecar_archive::prepare_sidecar_runtime\(app, &resource_dir\)/,
@@ -184,6 +199,7 @@ test("clean release runners have resource glob placeholders", async () => {
     access(new URL("./resources/server/placeholder.txt", import.meta.url)),
     access(new URL("./resources/server-archive/placeholder.txt", import.meta.url)),
     access(new URL("./resources/node/placeholder.txt", import.meta.url)),
+    access(new URL("./resources/whisper/placeholder.txt", import.meta.url)),
   ]);
 
   assert.match(
@@ -200,6 +216,14 @@ test("clean release runners have resource glob placeholders", async () => {
     gitignore,
     /!src-tauri\/resources\/node\/placeholder\.txt/,
     "node placeholder must be tracked so resources/node/**/* matches in clean CI",
+  );
+  const releaseScript = await readFile(new URL("../scripts/release.sh", import.meta.url), "utf8");
+  assert.match(releaseScript, /WHISPER_CLI=.*resources\/whisper\/whisper-cli/, "macOS release must resolve bundled Whisper before signing");
+  assert.match(releaseScript, /"\$WHISPER_CLI" --version/, "macOS release must smoke-test the copied Whisper runtime");
+  assert.match(
+    gitignore,
+    /!src-tauri\/resources\/whisper\/placeholder\.txt/,
+    "Whisper placeholder must be tracked so resources/whisper/**/* matches in clean CI",
   );
 });
 
@@ -385,7 +409,7 @@ test("mobile startup remains available after native-host extraction", async () =
 
   assert.match(nativeHost, /\nmod tauri_setup;/);
   assert.doesNotMatch(nativeHost, /#\[cfg\(desktop\)\]\s*\nmod tauri_setup;/);
-  assert.match(setup, /#\[cfg_attr\(mobile, tauri::mobile_entry_point\)\]\npub fn run\(\)/);
+  assert.match(setup, /#\[cfg_attr\(mobile, tauri::mobile_entry_point\)\]\r?\npub fn run\(\)/);
 });
 
 test("Windows close watchdog helper follows extracted lifecycle tests", async () => {

@@ -9,6 +9,31 @@ pub(super) fn bundled_node_path(resource_dir: &Path) -> PathBuf {
         .join("node.exe")
 }
 
+#[cfg(all(desktop, target_os = "windows"))]
+pub(super) fn bundled_whisper_cli_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("whisper")
+        .join("whisper-cli.exe")
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+pub(super) fn bundled_whisper_cli_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("whisper")
+        .join("whisper-cli")
+}
+
+/// Release builds must use the exact whisper.cpp executable staged with the
+/// app. This intentionally has no PATH fallback: a missing bundle is a
+/// packaging failure, not an invitation to upload audio to a host toolchain.
+#[cfg(desktop)]
+pub(super) fn find_bundled_whisper_cli(resource_dir: &Path) -> Option<PathBuf> {
+    let bundled = bundled_whisper_cli_path(resource_dir);
+    bundled.exists().then_some(bundled)
+}
+
 #[cfg(all(desktop, not(target_os = "windows")))]
 pub(super) fn bundled_node_path(resource_dir: &Path) -> PathBuf {
     resource_dir

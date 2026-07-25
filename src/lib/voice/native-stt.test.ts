@@ -5,6 +5,7 @@ import {
   createNativeSttEars,
   nativeSttAvailable,
   nativeSttAvailability,
+  resolvePreferredEars,
   selectNativeEarsEngine,
   STT_EVENT,
 } from "./native-stt.ts";
@@ -333,4 +334,38 @@ test("engine selection: on-device wins, strict refuses dictation, fallback is la
       /fr-FR/.test(err.hint) &&
       /Dictation/.test(err.hint),
   );
+});
+
+test("a ready sidecar Whisper model outranks the native bridge", async () => {
+  const priorWindow = globalThis.window;
+  const priorFetch = globalThis.fetch;
+  globalThis.window = { location: { hostname: "localhost" } };
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    ok: true,
+    runtimes: { whisper: { available: true } },
+    stt: [{ engine: "whisper", ready: true }],
+  }));
+  try {
+    const preferred = await resolvePreferredEars({ requireOnDevice: true });
+    assert.equal(preferred?.engine, "sidecar-whisper");
+  } finally {
+    globalThis.window = priorWindow;
+    globalThis.fetch = priorFetch;
+  }
+});
+
+test("strict Local voice rejects when neither sidecar nor native STT is available", async () => {
+  const priorWindow = globalThis.window;
+  const priorFetch = globalThis.fetch;
+  globalThis.window = { __TAURI_INTERNALS__: {}, location: { hostname: "localhost" } };
+  globalThis.fetch = async () => new Response("unavailable", { status: 503 });
+  try {
+    await assert.rejects(
+      () => resolvePreferredEars({ requireOnDevice: true }),
+      (error) => error?.name === "VoiceConnectError" && error.message === "stt_on_device_unavailable",
+    );
+  } finally {
+    globalThis.window = priorWindow;
+    globalThis.fetch = priorFetch;
+  }
 });

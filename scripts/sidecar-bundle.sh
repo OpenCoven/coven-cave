@@ -275,6 +275,9 @@ copy_node_shared_runtime "$NODE_BIN" "$BUNDLED_NODE_DIR"
 "$BUNDLED_NODE_DIR/bin/$NODE_NAME" -e "process.exit(0)" >/dev/null
 printf "generated at release build time\n" > "$BUNDLED_NODE_DIR/placeholder.txt"
 
+echo "==> staging bundled Whisper runtime"
+bash "$ROOT/scripts/whisper-runtime-bundle.sh"
+
 # Next.js + pnpm leaves a node_modules full of pnpm-style symlinks
 # (.pnpm/* paths) that don't survive the copy into the .app bundle. Recreate
 # production deps from the committed pnpm lockfile in a staging dir, then copy
