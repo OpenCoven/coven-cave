@@ -719,16 +719,12 @@ async function fetchSchemaBundle(url: string, fetcher: typeof fetch, timeoutMs =
 async function staleLockCanBeReclaimed(lock: string): Promise<boolean> {
   try {
     const info = await stat(lock);
-    if (Date.now() - info.mtimeMs < CACHE_LOCK_STALE_MS) return false;
-    const owner = Number((await readFile(lock, "utf8")).trim().split(":", 1)[0]);
-    if (!Number.isSafeInteger(owner) || owner < 1) return true;
-    try {
-      process.kill(owner, 0);
-      return false;
-    } catch (error) {
-      // EPERM means the process exists but this user cannot signal it.
-      return (error as NodeJS.ErrnoException).code !== "EPERM";
-    }
+    // A PID is not a durable process identity: after a crash it can be reused
+    // by an unrelated long-running process. The lock is therefore a bounded
+    // lease, not a liveness claim. Release ownership remains token-checked,
+    // and atomic cache writes/sequence checks preserve last-known-good state
+    // if an unusually slow writer overlaps the next lease holder.
+    return Date.now() - info.mtimeMs >= CACHE_LOCK_STALE_MS;
   } catch {
     return false;
   }

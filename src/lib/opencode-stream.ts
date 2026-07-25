@@ -117,9 +117,11 @@ function terminalToolState(state: Record<string, unknown> | null, part: Record<s
 function toolStateIsError(state: Record<string, unknown> | null, part: Record<string, unknown> | null, schema?: OpenCodeEventSchema): boolean {
   const status = toolStatus(state, part, schema)?.toLowerCase();
   const errorStates = schema?.shape?.errorStates ?? ["error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"];
+  const stateError = valueAt(state, shapeAliases(schema, "error", ["error"]));
+  const partError = valueAt(part, shapeAliases(schema, "error", ["error"]));
   return errorStates.some((error) => error.toLowerCase() === status)
-    || valueAt(state, shapeAliases(schema, "error", ["error"])) !== undefined
-    || valueAt(part, shapeAliases(schema, "error", ["error"])) !== undefined;
+    || (stateError !== undefined && stateError !== null)
+    || (partError !== undefined && partError !== null);
 }
 
 /** Decode OpenCode's `run --format json` envelope without trusting its fields. */
@@ -190,7 +192,12 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
     // status entirely. Their output/error is the durable terminal signal.
     const output = shapeAliases(schema, "output", ["output"]);
     const error = shapeAliases(schema, "error", ["error"]);
-    const hasTerminalPayload = valueAt(state, output) !== undefined || valueAt(state, error) !== undefined || valueAt(toolPart, output) !== undefined || valueAt(toolPart, error) !== undefined;
+    const stateError = valueAt(state, error);
+    const partError = valueAt(toolPart, error);
+    const hasTerminalPayload = valueAt(state, output) !== undefined
+      || (stateError !== undefined && stateError !== null)
+      || valueAt(toolPart, output) !== undefined
+      || (partError !== undefined && partError !== null);
     if (!terminalToolState(state, toolPart, schema) && !hasTerminalPayload) {
       return { kind: "tool_start", sessionId, id, name: stringAt(toolPart, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(toolPart, shapeAliases(schema, "input", ["input"])) ?? {} };
     }

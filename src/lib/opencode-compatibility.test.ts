@@ -835,7 +835,7 @@ const signedSequence3 = {
   },
 };
 const staleLock = `${cacheFile}.lock`;
-await writeFile(staleLock, "99999999");
+await writeFile(staleLock, `${process.pid}:reused-owner-token`);
 await utimes(staleLock, new Date(0), new Date(0));
 const recoveredLock = await loadOpenCodeSchemaBundle({
   cacheFile,
@@ -844,7 +844,7 @@ const recoveredLock = await loadOpenCodeSchemaBundle({
   now: () => now + 28 * 60 * 60 * 1000,
   fetch: async () => new Response(JSON.stringify(signedSequence3), { status: 200 }),
 });
-assert.equal(recoveredLock.bundle.sequence, 3, "a stale writer lock cannot permanently block cache recovery after a crash");
+assert.equal(recoveredLock.bundle.sequence, 3, "a stale writer lock cannot permanently block cache recovery after a crash or PID reuse");
 
 const writerWaitFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-writer-wait-")), "bundle.json");
 await writeFile(writerWaitFile, JSON.stringify({ checkedAt: now, bundle: signedRollback }));

@@ -159,6 +159,14 @@ assert.deepEqual(
   "terminal tool failures preserve a safe partial error output",
 );
 assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool_use", sessionID: "ses_123", part: { type: "tool", id: "prt_null_error", tool: "bash", state: { input: { command: "pwd" }, output: "ok", error: null, status: "completed" } } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "tool", sessionId: "ses_123", id: "prt_null_error", name: "bash", input: { command: "pwd" }, output: "ok", isError: false },
+  "a null error payload is a successful terminal result unless the status itself is an error",
+);
+assert.deepEqual(
   parseOpenCodeRunEvent({ type: "tool_use", part: { id: "prt_statusless", tool: "bash", state: { input: { command: "pwd" }, output: "ok" } } }),
   { kind: "tool", sessionId: undefined, id: "prt_statusless", name: "bash", input: { command: "pwd" }, output: "ok", isError: false },
   "legacy terminal snapshots preserve output even when status is omitted",
