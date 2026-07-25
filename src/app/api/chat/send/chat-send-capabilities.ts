@@ -38,6 +38,14 @@ export function openCodeCapabilityProbeCacheable(platform: NodeJS.Platform = pro
   return platform !== "win32";
 }
 
+/** POSIX probes need their own process group so a timed-out launcher cannot
+ * leave an OpenCode child running after the capability fallback has returned. */
+export function openCodeProbeSpawnOptions(
+  platform: NodeJS.Platform = process.platform,
+): { detached: boolean } {
+  return { detached: platform !== "win32" };
+}
+
 export function openCodeExecutableIdentityLookupTimeoutMs(): number {
   return OPENCODE_IDENTITY_PROBE_TIMEOUT_MS;
 }
@@ -112,7 +120,7 @@ function probeHelp(
       const child = spawn(command, args, {
         env,
         stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
-        detached: process.platform !== "win32",
+        ...openCodeProbeSpawnOptions(),
       }) as ChildProcessWithoutNullStreams;
       if (input !== undefined) writeOpenCodeLaunchInput(child, { command, args, input });
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
@@ -161,6 +169,7 @@ function probeOutput(
       const child = spawn(command, args, {
         env,
         stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
+        ...openCodeProbeSpawnOptions(),
       }) as ChildProcessWithoutNullStreams;
       if (input !== undefined) writeOpenCodeLaunchInput(child, { command, args, input });
       let overflowed = false;
