@@ -320,6 +320,25 @@ assert.match(
   assert.equal(tracker.snapshot().length, 1, "late post hooks must not create an orphan bubble");
 }
 
+// When a buffered stream reorders both envelope frames ahead of its hooks, the
+// eventual hooks must still replace the envelope result on the native record.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  tracker.envelopeToolResult("toolu_reordered_hook", "envelope output", false);
+  const envelope = tracker.envelopeToolUse("toolu_reordered_hook", "Bash", '{"command":"pwd"}');
+  assert.equal(envelope?.status, "ok");
+  t = 100;
+  const hookStart = tracker.hookStart("Bash", '{"command":"pwd"}');
+  assert.equal(hookStart.id, "toolu_reordered_hook", "a late pre hook reuses the envelope id");
+  t = 250;
+  const hookEnd = tracker.hookEnd("Bash", "hook output", false);
+  assert.equal(hookEnd.id, "toolu_reordered_hook", "a late post hook updates the same tool record");
+  assert.equal(hookEnd.output, "hook output", "hook output takes precedence after full reordering");
+  assert.equal(hookEnd.durationMs, 150, "hook timing begins at the late pre hook");
+  assert.equal(tracker.snapshot().length, 1, "fully reordered hooks must not create an orphan bubble");
+}
+
 {
   // Hook first (interleaving can deliver the hook line before the envelope).
   const tracker = new ToolCallTracker(() => 0);
