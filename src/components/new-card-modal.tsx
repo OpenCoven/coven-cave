@@ -77,7 +77,11 @@ export function NewCardModal({
   // When the modal opens with a familiar already selected (such as from a
   // familiar swimlane), only offer projects that familiar can launch work in.
   // Project-first selection remains supported when no familiar is set.
-  const { projects, loading: projectsLoading } = useProjects({ familiarId, enabled: open });
+  const {
+    projects,
+    loading: projectsLoading,
+    loadedSuccessfully: projectsLoaded,
+  } = useProjects({ familiarId, enabled: open });
   const {
     familiars: eligibleFamiliars,
     loading: eligibleFamiliarsLoading,
@@ -115,6 +119,23 @@ export function NewCardModal({
   // The selected project drives the card's working directory — there is no
   // free-form cwd field, so drafts never carry machine-specific paths.
   const selectedProject = projects.find((p) => p.id === projectId) ?? null;
+  // A familiar-scoped project result must belong to the familiar currently
+  // selected in this modal. While a familiar changes, fail closed rather than
+  // briefly offering the prior familiar's retained project list.
+  const projectPickerReady = !familiarId || (projectsLoaded && !projectsLoading);
+  const projectOptions = !familiarId
+    ? [
+        { value: "", label: projectsLoading ? "Loading projects…" : "No project" },
+        ...(projectsLoading ? [] : projects.map((project) => ({ value: project.id, label: project.name }))),
+      ]
+    : projectsLoading
+      ? [{ value: "", label: "Loading accessible projects…", disabled: true }]
+      : !projectsLoaded
+        ? [{ value: "", label: "Could not load accessible projects", disabled: true }]
+        : [
+            { value: "", label: "No project" },
+            ...projects.map((project) => ({ value: project.id, label: project.name })),
+          ];
   const familiarPickerReady = !projectId || (eligibleFamiliarsLoaded && !eligibleFamiliarsLoading);
   const familiarOptions = !projectId
     ? [
@@ -137,7 +158,7 @@ export function NewCardModal({
           ];
 
   const create = async () => {
-    if (!title.trim() || busy) return;
+    if (!title.trim() || busy || (projectId && !projectPickerReady)) return;
     setBusy(true);
     setError(null);
     try {
@@ -214,7 +235,7 @@ export function NewCardModal({
           <Button
             variant="primary"
             onClick={create}
-            disabled={!title.trim() || busy}
+            disabled={!title.trim() || busy || (projectId !== null && !projectPickerReady)}
           >
             {busy ? "Creating…" : "Create"}
           </Button>
@@ -259,7 +280,7 @@ export function NewCardModal({
 
         <Field label="Project">
           <Select
-            value={projectId ?? ""}
+            value={projectPickerReady ? projectId ?? "" : ""}
             onChange={(v) => {
               // With a familiar already selected, this list is server-scoped
               // to its session-launch access, so the familiar remains valid.
@@ -267,10 +288,8 @@ export function NewCardModal({
               setProjectId(v || null);
               setSessionId(null);
             }}
-            options={[
-              { value: "", label: projectsLoading ? "Loading projects…" : "No project" },
-              ...(projectsLoading ? [] : projects.map((p) => ({ value: p.id, label: p.name }))),
-            ]}
+            options={projectOptions}
+            disabled={!projectPickerReady}
           />
         </Field>
 

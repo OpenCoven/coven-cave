@@ -20,6 +20,21 @@ assert.match(
 );
 assert.match(
   modal,
+  /loadedSuccessfully: projectsLoaded/,
+  "new-card modal reads the project scope readiness signal",
+);
+assert.match(
+  modal,
+  /const projectPickerReady = !familiarId \|\| \(projectsLoaded && !projectsLoading\)/,
+  "new-card modal does not enable a familiar-scoped project picker until that familiar's result succeeds",
+);
+assert.match(
+  modal,
+  /value=\{projectPickerReady \? projectId \?\? "" : ""\}[\s\S]{0,1200}disabled=\{!projectPickerReady\}/,
+  "new-card modal suppresses retained prior-scope project options during a familiar transition",
+);
+assert.match(
+  modal,
   /useProjectFamiliars\(\{ projectId, enabled: open \}\)/,
   "new-card modal fetches familiars scoped to the selected project, only while open",
 );

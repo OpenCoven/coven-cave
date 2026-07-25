@@ -86,6 +86,16 @@ assert.match(
   /useProjects\(\{ familiarId, enabled: open \}\)/,
   "new-card modal scopes projects when a familiar is already selected",
 );
+assert.match(
+  newCard,
+  /const projectPickerReady = !familiarId \|\| \(projectsLoaded && !projectsLoading\)/,
+  "new-card modal fails closed while the current familiar-scoped project result is pending",
+);
+assert.match(
+  newCard,
+  /value=\{projectPickerReady \? projectId \?\? "" : ""\}[\s\S]{0,1200}disabled=\{!projectPickerReady\}/,
+  "new-card modal disables the project picker instead of exposing a prior familiar's projects",
+);
 assert.match(newCard, /setProjectId\(null\)/, "new-card modal resets projectId when reopened");
 assert.match(
   newCard,
