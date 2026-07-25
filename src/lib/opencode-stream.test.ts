@@ -208,8 +208,8 @@ const shapedSchema = {
   ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   id: "opencode-run-json-shaped-v2",
   shape: {
-    envelope: ["payload"],
-    discriminator: { envelope: "payload", field: "event" },
+    envelope: [["event", "payload"]],
+    discriminator: { envelope: ["event", "payload"], field: "event" },
     sessionId: ["session"],
     id: ["call_id"],
     name: ["tool_name"],
@@ -224,7 +224,7 @@ const shapedSchema = {
 };
 assert.deepEqual(
   parseOpenCodeRunEvent(
-    { payload: { event: "tool", session: "ses_v2", call_id: "call_v2", tool_name: "Read", phase: { state: "done", arguments: { path: "README.md" }, result: "ok" } } },
+    { event: { payload: { event: "tool", session: "ses_v2", call_id: "call_v2", tool_name: "Read", phase: { state: "done", arguments: { path: "README.md" }, result: "ok" } } } },
     shapedSchema,
   ),
   { kind: "tool", sessionId: "ses_v2", id: "call_v2", name: "Read", input: { path: "README.md" }, output: "ok", isError: false },

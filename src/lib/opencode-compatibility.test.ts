@@ -13,7 +13,6 @@ import {
   selectOpenCodeSchema,
   isOpenCodeSchemaBundle,
 } from "./opencode-compatibility.ts";
-import { parseOpenCodeRunCapabilitiesHelp } from "../app/api/chat/send/chat-send-capabilities.ts";
 
 const now = Date.parse("2026-07-24T12:00:00.000Z");
 const { privateKey, publicKey } = generateKeyPairSync("ed25519");
@@ -45,6 +44,30 @@ const remote = await loadOpenCodeSchemaBundle({
 assert.equal(remote.source, "remote");
 assert.equal(remote.bundle.sequence, 2);
 assert.match(await readFile(cacheFile, "utf8"), /"sequence": 2/, "accepted bundles are atomically cached");
+
+const unsignedSignedRollback = { ...unsigned, sequence: 1 };
+const signedRollback = {
+  ...unsignedSignedRollback,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(unsignedSignedRollback)), privateKey).toString("base64"),
+  },
+};
+await writeFile(cacheFile, "{corrupted-primary-cache", "utf8");
+const corruptCacheRollback = await loadOpenCodeSchemaBundle({
+  cacheFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now + 7 * 60 * 60 * 1000,
+  fetch: async () => new Response(JSON.stringify(signedRollback), { status: 200 }),
+});
+assert.equal(corruptCacheRollback.bundle.sequence, 2, "a verified sidecar preserves the highest accepted sequence after primary-cache corruption");
+assert.equal(corruptCacheRollback.diagnostic, "schema-registry-refresh-rejected", "a signed rollback remains rejected after primary-cache corruption");
+assert.equal(
+  (JSON.parse(await readFile(`${cacheFile}.trust`, "utf8")) as { bundle: { sequence: number } }).bundle.sequence,
+  2,
+  "the durable trust floor is not overwritten by the rejected rollback",
+);
 
 const offline = await loadOpenCodeSchemaBundle({
   cacheFile,
@@ -87,10 +110,15 @@ const missingSession = await resolveOpenCodeCompatibility({ version: "1.2.3", js
 assert.equal(missingSession.mode, "plain");
 assert.equal(missingSession.diagnostic, "no-compatible-schema", "an envelope that cannot be distinguished by observed capabilities fails closed");
 
-const resumeOnlyCapabilities = parseOpenCodeRunCapabilitiesHelp(`
-  --format <format>  Output format: text, json
-  --resume <id>      Resume a prior session
-`, "1.2.3");
+const resumeOnlyCapabilities = {
+  version: "1.2.3",
+  json: true,
+  model: false,
+  session: true,
+  protocols: ["json"],
+  options: ["--format", "--resume"],
+  structuredOutputs: [{ option: "--format", values: ["json"] }],
+};
 assert.equal(resumeOnlyCapabilities.session, true, "resume-only help advertises native session support");
 assert.deepEqual(resumeOnlyCapabilities.options, ["--format", "--resume"], "the concrete resume option is retained for plain-mode launch");
 assert.equal(resumeOnlyCapabilities.options?.includes("--session"), false);
@@ -157,13 +185,38 @@ assert.equal(
       id: "nested-discriminator",
       shape: {
         ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].shape,
-        envelope: ["payload"],
-        discriminator: { envelope: "payload", field: "event" },
+        envelope: [["event", "payload"]],
+        discriminator: { envelope: ["event", "payload"], field: "event" },
       },
     }],
   }, now),
   true,
-  "a signed schema can relocate the event discriminator into its declared envelope",
+  "a signed schema can relocate the event discriminator into a bounded nested envelope",
+);
+const structuredSwitchCapabilities = {
+  version: "3.0.0",
+  json: true,
+  model: false,
+  session: false,
+  protocols: ["json-v3"],
+  options: ["--structured-output", "--event-stream"],
+  structuredOutputs: [{ option: "--structured-output", values: ["json-v3"] }],
+};
+const structuredSwitchSchema = {
+  ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  id: "structured-switch",
+  requires: { json: true as const, session: false, protocol: "json-v3" },
+  launch: { structuredOutput: { option: "--structured-output", value: "json-v3" }, requiredFlags: ["--event-stream"] },
+};
+assert.equal(
+  isOpenCodeSchemaBundle({ ...unsigned, schemas: [structuredSwitchSchema] }, now),
+  true,
+  "a signed schema may use bounded output/event switches",
+);
+assert.equal(
+  selectOpenCodeSchema([structuredSwitchSchema], structuredSwitchCapabilities)?.id,
+  "structured-switch",
+  "a structured switch is selected only after its option and JSON value are observed in run help",
 );
 assert.equal(
   isOpenCodeSchemaBundle({ ...unsigned, issuedAt: 0 }, now),
@@ -191,6 +244,38 @@ assert.equal(isOpenCodeSchemaBundle({
     launch: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].launch, requiredFlags: ["--auto"] },
   }],
 }, now), false, "a signed registry cannot add permission-affecting launch flags");
+
+const previousKey = generateKeyPairSync("ed25519");
+const nextKey = generateKeyPairSync("ed25519");
+const previousPem = previousKey.publicKey.export({ type: "spki", format: "pem" }).toString();
+const nextPem = nextKey.publicKey.export({ type: "spki", format: "pem" }).toString();
+const rotationUnsigned = { ...unsigned, sequence: 9, keyId: "previous" };
+const rotationSigned = {
+  ...rotationUnsigned,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(rotationUnsigned)), previousKey.privateKey).toString("base64"),
+  },
+};
+const rotationCache = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-rotation-")), "bundle.json");
+const keyring = { current: nextPem, previous: previousPem };
+const rotated = await loadOpenCodeSchemaBundle({
+  cacheFile: rotationCache,
+  publicKeys: keyring,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now,
+  fetch: async () => new Response(JSON.stringify(rotationSigned), { status: 200 }),
+});
+assert.equal(rotated.source, "remote");
+assert.equal(JSON.parse(await readFile(rotationCache, "utf8")).verifiedKeyId, "previous", "cache records the signed key used during overlap");
+const rotatedOffline = await loadOpenCodeSchemaBundle({
+  cacheFile: rotationCache,
+  publicKeys: keyring,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now + 7 * 60 * 60 * 1000,
+  fetch: async () => { throw new Error("offline"); },
+});
+assert.equal(rotatedOffline.bundle.sequence, 9, "an overlapping keyring preserves an old-key verified cache while offline");
 
 const ed448 = generateKeyPairSync("ed448");
 const ed448PublicPem = ed448.publicKey.export({ type: "spki", format: "pem" }).toString();

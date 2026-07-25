@@ -237,6 +237,7 @@ jobs:
         env:
           NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_URL: ${{ secrets.OPENCODE_SCHEMA_REGISTRY_URL }}
           NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY: ${{ secrets.OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY }}
+          NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS: ${{ secrets.OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS }}
         run: |
           node scripts/check-opencode-registry-release.mjs
           {
@@ -244,6 +245,9 @@ jobs:
             echo "NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY<<COVEN_OPENCODE_KEY_EOF"
             printf '%s\n' "$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY"
             echo "COVEN_OPENCODE_KEY_EOF"
+            echo "NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS<<COVEN_OPENCODE_KEYS_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS"
+            echo "COVEN_OPENCODE_KEYS_EOF"
           } >> "$GITHUB_ENV"
 
       # Decode the App Store Connect API key onto the runner for the custom

@@ -1,4 +1,4 @@
-import type { OpenCodeEventSchema } from "@/lib/opencode-compatibility";
+import type { OpenCodeEnvelopePath, OpenCodeEventSchema } from "@/lib/opencode-compatibility";
 
 export type OpenCodeRunEvent =
   | { kind: "ignore"; sessionId?: string }
@@ -45,11 +45,13 @@ function valueAt(recordValue: Record<string, unknown> | null, keys: string[]): u
 
 function envelope(
   event: Record<string, unknown>,
-  envelopes: Array<"part" | "data" | "payload" | "root">,
+  envelopes: OpenCodeEnvelopePath[],
 ): Record<string, unknown> | null {
-  for (const field of envelopes) {
-    if (field === "root") return event;
-    const candidate = record(event[field]);
+  for (const path of envelopes) {
+    if (path === "root") return event;
+    const fields = typeof path === "string" ? [path] : path;
+    let candidate: Record<string, unknown> | null = event;
+    for (const field of fields) candidate = record(candidate?.[field]);
     if (candidate) return candidate;
   }
   return null;

@@ -107,12 +107,12 @@ function hasRunOption(help: string, flag: string): boolean {
   return new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${flag}\\b(?:\\s|=|,|$)`, "m").test(help);
 }
 
-function optionStanza(help: string, option: "--format" | "--output"): string {
+function optionStanza(help: string, option: string): string {
   return help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b[^\\n]*(?:\\n(?!\\s*(?:-[A-Za-z],?\\s+)?--)[^\\n]*){0,2}`, "im"))?.[0] ?? "";
 }
 
-function advertisedStructuredOutputs(help: string): Array<{ option: "--format" | "--output"; values: string[] }> {
-  return (["--format", "--output"] as const).flatMap((option) => {
+function advertisedStructuredOutputs(help: string): Array<{ option: string; values: string[] }> {
+  return declaredRunOptions(help).flatMap((option) => {
     const stanza = optionStanza(help, option);
     const values = [...new Set((stanza.match(/\bjson(?:[._-][a-z0-9]+)*\b/gi) ?? []).map((value) => value.toLowerCase()))];
     return values.length ? [{ option, values }] : [];

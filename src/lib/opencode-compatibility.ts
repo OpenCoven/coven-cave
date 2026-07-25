@@ -13,8 +13,12 @@ export type OpenCodeRunCapabilities = {
   protocols: string[];
   /** Declared `run` option names and structured-output option/value pairs. */
   options?: string[];
-  structuredOutputs?: Array<{ option: "--format" | "--output"; values: string[] }>;
+  structuredOutputs?: Array<{ option: string; values: string[] }>;
 };
+
+/** A direct field or a bounded two-segment envelope path. */
+export type OpenCodeEnvelopePath = string | [string, string];
+export type OpenCodeRegistryKeyring = Record<string, string>;
 
 export type OpenCodeEventSchema = {
   id: string;
@@ -35,14 +39,14 @@ export type OpenCodeEventSchema = {
    * selectors are deliberately not accepted from the remote registry.
    */
   shape: {
-    envelope: Array<"part" | "data" | "payload" | "root">;
+    envelope: OpenCodeEnvelopePath[];
     /** The bounded location and alias that identifies the event kind. */
     discriminator: {
-      envelope: "part" | "data" | "payload" | "root";
+      envelope: OpenCodeEnvelopePath;
       field: string;
     };
     /** Envelope(s) explicitly trusted to carry assistant text. */
-    textEnvelope?: Array<"part" | "data" | "payload" | "root">;
+    textEnvelope?: OpenCodeEnvelopePath[];
     sessionId: string[];
     id: string[];
     name: string[];
@@ -57,7 +61,7 @@ export type OpenCodeEventSchema = {
   };
   /** Bounded argv contract, confirmed against the installed client's help. */
   launch: {
-    structuredOutput: { option: "--format" | "--output"; value: string };
+    structuredOutput: { option: string; value: string };
     sessionOption?: "--session" | "--resume";
     requiredFlags: string[];
   };
@@ -69,6 +73,8 @@ export type OpenCodeSchemaBundle = {
   sequence: number;
   issuedAt: string;
   expiresAt: string;
+  /** Signed registry-key identifier; required when a keyring has more than one key. */
+  keyId?: string;
   schemas: OpenCodeEventSchema[];
   signature?: { algorithm: "ed25519"; value: string };
 };
@@ -208,38 +214,57 @@ function hasBoundedAliases(value: unknown): value is string[] {
     && value.every((alias) => typeof alias === "string" && /^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(alias));
 }
 
+function hasValidEnvelopePath(value: unknown): value is OpenCodeEnvelopePath {
+  if (typeof value === "string") return value === "root" || /^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(value);
+  return Array.isArray(value)
+    && value.length === 2
+    && value.every((segment) => typeof segment === "string" && /^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(segment));
+}
+
 function hasValidShape(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const aliasKeys = ["sessionId", "id", "name", "text", "state", "input", "output", "error", "status", "terminalStates", "errorStates"];
-  const envelopeFields = (fields: unknown, requireRoot: boolean): fields is Array<"part" | "data" | "payload" | "root"> =>
+  const envelopeFields = (fields: unknown): fields is OpenCodeEnvelopePath[] =>
     Array.isArray(fields)
     && fields.length > 0
     && fields.length <= 4
-    && (!requireRoot || fields.includes("root"))
-    && fields.every((field) => field === "part" || field === "data" || field === "payload" || field === "root");
+    && fields.every(hasValidEnvelopePath);
   if (!Object.keys(value).every((key) => key === "envelope" || key === "textEnvelope" || key === "discriminator" || aliasKeys.includes(key))) return false;
-  if (!envelopeFields(value.envelope, false) || (value.textEnvelope !== undefined && !envelopeFields(value.textEnvelope, false))) return false;
+  if (!envelopeFields(value.envelope) || (value.textEnvelope !== undefined && !envelopeFields(value.textEnvelope))) return false;
   if (!isRecord(value.discriminator)
     || !Object.keys(value.discriminator).every((key) => key === "envelope" || key === "field")
-    || (value.discriminator.envelope !== "part" && value.discriminator.envelope !== "data" && value.discriminator.envelope !== "payload" && value.discriminator.envelope !== "root")
+    || !hasValidEnvelopePath(value.discriminator.envelope)
     || typeof value.discriminator.field !== "string"
     || !/^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(value.discriminator.field)) return false;
   return aliasKeys.every((key) => hasBoundedAliases(value[key]));
+}
+
+const SAFE_STRUCTURED_LAUNCH_OPTION = /^--[a-z0-9-]*(?:format|output|json|event|stream)[a-z0-9-]*$/i;
+const UNSAFE_STRUCTURED_LAUNCH_OPTIONS = new Set([
+  "--auto", "--permission", "--sandbox", "--skip-permissions", "--dangerously-skip-permissions", "--trust-all-tools", "--yolo",
+]);
+const SAFE_STRUCTURED_REQUIRED_FLAGS = new Set(["--event-stream"]);
+
+function safeStructuredLaunchOption(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length <= 80
+    && SAFE_STRUCTURED_LAUNCH_OPTION.test(value)
+    && !UNSAFE_STRUCTURED_LAUNCH_OPTIONS.has(value.toLowerCase());
 }
 
 function hasValidLaunch(value: unknown, requires: Record<string, unknown>): boolean {
   if (!isRecord(value) || !Array.isArray(value.requiredFlags)) return false;
   const structuredOutput = value.structuredOutput;
   if (!isRecord(structuredOutput)) return false;
-  if (structuredOutput.option !== "--format" && structuredOutput.option !== "--output") return false;
+  if (!safeStructuredLaunchOption(structuredOutput.option)) return false;
   if (typeof structuredOutput.value !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(structuredOutput.value)) return false;
-  if (structuredOutput.value !== requires.protocol && structuredOutput.value !== "json") return false;
+  if (structuredOutput.value !== (typeof requires.protocol === "string" ? requires.protocol : "json")) return false;
   if (value.sessionOption !== undefined && value.sessionOption !== "--session" && value.sessionOption !== "--resume") return false;
   if (requires.session === true && value.sessionOption === undefined) return false;
-  // The registry may describe protocol selection, but must never add launch
-  // switches. Some OpenCode flags (for example `--auto`) alter permission
-  // approval; keeping this list empty preserves Cave's local safety policy.
-  return value.requiredFlags.length === 0;
+  return value.requiredFlags.length <= 1
+    && value.requiredFlags.every((flag) => typeof flag === "string" && SAFE_STRUCTURED_REQUIRED_FLAGS.has(flag))
+    && new Set(value.requiredFlags).size === value.requiredFlags.length
+    && !value.requiredFlags.includes(structuredOutput.option);
 }
 
 function isEventSchema(value: unknown): value is OpenCodeEventSchema {
@@ -277,7 +302,7 @@ function schemaMatches(schema: OpenCodeEventSchema, capabilities: OpenCodeRunCap
   // surface is the v1 `json` protocol. New probes always populate this list.
   const protocols = capabilities.protocols ?? (capabilities.json ? ["json"] : []);
   if (schema.requires.protocol !== undefined && !protocols.includes(schema.requires.protocol)) return false;
-  const structuredOutputs = capabilities.structuredOutputs ?? [{ option: "--format" as const, values: protocols }];
+  const structuredOutputs = capabilities.structuredOutputs ?? [{ option: "--format", values: protocols }];
   if (!structuredOutputs.some((output) => output.option === schema.launch.structuredOutput.option && output.values.includes(schema.launch.structuredOutput.value))) return false;
   const options = new Set(capabilities.options ?? ["--format", "--output", "--session", "--resume", "--model"]);
   if (!options.has(schema.launch.structuredOutput.option)) return false;
@@ -328,6 +353,7 @@ export function isOpenCodeSchemaBundle(
 ): value is OpenCodeSchemaBundle {
   if (!isRecord(value) || value.format !== 1 || value.runtime !== "opencode") return false;
   if (typeof value.sequence !== "number" || !Number.isSafeInteger(value.sequence) || value.sequence < 1 || !Array.isArray(value.schemas) || value.schemas.length === 0 || value.schemas.length > 64 || !value.schemas.every(isEventSchema)) return false;
+  if (value.keyId !== undefined && (typeof value.keyId !== "string" || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(value.keyId))) return false;
   const issuedAt = parseCanonicalTimestamp(value.issuedAt);
   const expiresAt = parseCanonicalTimestamp(value.expiresAt);
   if (issuedAt === null || expiresAt === null || issuedAt > now || expiresAt <= issuedAt || (!options.allowExpired && expiresAt <= now)) return false;
@@ -360,7 +386,7 @@ export function openCodeSchemaBundleSigningPayload(bundle: OpenCodeSchemaBundle)
 
 export function verifyOpenCodeSchemaBundle(
   bundle: unknown,
-  publicKey: string,
+  publicKey: string | OpenCodeRegistryKeyring,
   now = Date.now(),
   options: { allowExpired?: boolean } = {},
 ): bundle is OpenCodeSchemaBundle {
@@ -372,18 +398,32 @@ export function verifyOpenCodeSchemaBundle(
     if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) return false;
     const signature = Buffer.from(encoded, "base64");
     if (!signature.length || signature.toString("base64") !== encoded) return false;
-    const key = createPublicKey(publicKey);
-    if (key.asymmetricKeyType !== "ed25519") return false;
-    return verify(null, Buffer.from(openCodeSchemaBundleSigningPayload(bundle)), key, signature);
+    const keyring = typeof publicKey === "string" ? { legacy: publicKey } : publicKey;
+    const entries = Object.entries(keyring).filter(([id, pem]) => /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id) && typeof pem === "string");
+    if (!entries.length || entries.length > 4) return false;
+    // `keyId` is signed because it is part of the canonical unsigned payload.
+    // Legacy single-key caches remain readable during the staged migration.
+    const candidates = bundle.keyId === undefined
+      ? entries
+      : entries.filter(([id]) => id === bundle.keyId);
+    return candidates.some(([, pem]) => {
+      const key = createPublicKey(pem);
+      return key.asymmetricKeyType === "ed25519"
+        && verify(null, Buffer.from(openCodeSchemaBundleSigningPayload(bundle)), key, signature);
+    });
   } catch {
     return false;
   }
 }
 
-type CachedBundle = { checkedAt: number; bundle: OpenCodeSchemaBundle };
+type CachedBundle = { checkedAt: number; bundle: OpenCodeSchemaBundle; verifiedKeyId?: string };
 
 function cachePath(): string {
   return path.join(caveHome(), CACHE_FILE);
+}
+
+function cacheTrustPath(file: string): string {
+  return `${file}.trust`;
 }
 
 /**
@@ -392,7 +432,7 @@ function cachePath(): string {
  * where a signed lower sequence (or rewritten equal sequence) could replace
  * the durable cache.
  */
-async function readCachedTrustState(file: string, publicKey: string, now: number): Promise<CachedBundle | null> {
+async function readTrustedCacheRecord(file: string, publicKey: string | OpenCodeRegistryKeyring, now: number): Promise<CachedBundle | null> {
   try {
     const raw = await readFile(file, "utf8");
     if (Buffer.byteLength(raw, "utf8") > MAX_SCHEMA_BUNDLE_BYTES) return null;
@@ -401,6 +441,7 @@ async function readCachedTrustState(file: string, publicKey: string, now: number
       !isRecord(cached)
       || typeof cached.checkedAt !== "number"
       || !Number.isFinite(cached.checkedAt)
+      || (cached.verifiedKeyId !== undefined && (typeof cached.verifiedKeyId !== "string" || cached.bundle.keyId !== cached.verifiedKeyId))
       || !verifyOpenCodeSchemaBundle(cached.bundle, publicKey, now, { allowExpired: true })
     ) return null;
     return cached;
@@ -488,7 +529,26 @@ async function staleLockCanBeReclaimed(lock: string): Promise<boolean> {
   }
 }
 
-async function readVerifiedCache(file: string, publicKey: string, now: number): Promise<CachedBundle | null> {
+async function readCachedTrustState(file: string, publicKey: string | OpenCodeRegistryKeyring, now: number): Promise<CachedBundle | null> {
+  const [primary, backup] = await Promise.all([
+    readTrustedCacheRecord(file, publicKey, now),
+    readTrustedCacheRecord(cacheTrustPath(file), publicKey, now),
+  ]);
+  if (!primary) return backup;
+  if (!backup) return primary;
+  // The sidecar is written before the replaceable cache payload. At an equal
+  // sequence it is the durable floor if a torn/manual primary differs.
+  return backup.bundle.sequence >= primary.bundle.sequence ? backup : primary;
+}
+
+async function writeVerifiedCache(file: string, cached: CachedBundle): Promise<void> {
+  // Persist the signed trust floor first: a later damaged/truncated primary
+  // file cannot erase the highest accepted sequence before the next refresh.
+  await writeJsonAtomic(cacheTrustPath(file), cached);
+  await writeJsonAtomic(file, cached);
+}
+
+async function readVerifiedCache(file: string, publicKey: string | OpenCodeRegistryKeyring, now: number): Promise<CachedBundle | null> {
   const cached = await readCachedTrustState(file, publicKey, now);
   if (
     !cached
@@ -553,6 +613,8 @@ async function withCacheWriteLock<T>(file: string, callback: () => Promise<T>): 
 export type OpenCodeSchemaBundleSource = {
   url?: string;
   publicKey?: string;
+  /** Bounded active-plus-previous keyring for staged registry-key rotation. */
+  publicKeys?: OpenCodeRegistryKeyring;
   fetch?: typeof fetch;
   now?: () => number;
   cacheFile?: string;
@@ -565,45 +627,70 @@ export type OpenCodeSchemaBundleSource = {
 // packaged trust anchor.
 const PACKAGED_REGISTRY_URL = process.env.NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_URL;
 const PACKAGED_REGISTRY_PUBLIC_KEY = process.env.NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY;
+const PACKAGED_REGISTRY_PUBLIC_KEYS = process.env.NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS;
 
-function schemaRefreshKey(file: string, url: string, publicKey: string): string {
-  return createHash("sha256").update(`${file}\0${url}\0${publicKey}`).digest("hex");
+function parseKeyring(value: string | undefined): OpenCodeRegistryKeyring | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!isRecord(parsed)) return undefined;
+    const entries = Object.entries(parsed).filter(([id, pem]) => /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id) && typeof pem === "string");
+    return entries.length > 0 && entries.length <= 4 && entries.length === Object.keys(parsed).length
+      ? Object.fromEntries(entries) as OpenCodeRegistryKeyring
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function registryKeyring(source: OpenCodeSchemaBundleSource): OpenCodeRegistryKeyring | undefined {
+  const configured = source.publicKeys
+    ?? parseKeyring(process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS)
+    ?? parseKeyring(PACKAGED_REGISTRY_PUBLIC_KEYS);
+  if (configured) return configured;
+  const single = source.publicKey ?? process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY ?? PACKAGED_REGISTRY_PUBLIC_KEY;
+  return single ? { legacy: single } : undefined;
+}
+
+function schemaRefreshKey(file: string, url: string, publicKeys: OpenCodeRegistryKeyring): string {
+  return createHash("sha256").update(`${file}\0${url}\0${stableJson(publicKeys)}`).digest("hex");
 }
 
 async function refreshOpenCodeSchemaBundle(
   file: string,
   url: string,
-  publicKey: string,
+  publicKeys: OpenCodeRegistryKeyring,
   fetcher: typeof fetch,
   now: number,
   refreshTimeoutMs?: number,
 ): Promise<LoadedOpenCodeSchemaBundle> {
   const raw = await fetchSchemaBundle(url, fetcher, refreshTimeoutMs);
   const remote = JSON.parse(raw) as unknown;
-  if (!verifyOpenCodeSchemaBundle(remote, publicKey, now)) throw new Error("invalid schema signature");
-  const cachedTrust = await readCachedTrustState(file, publicKey, now);
+  if (!verifyOpenCodeSchemaBundle(remote, publicKeys, now)) throw new Error("invalid schema signature");
+  if (Object.keys(publicKeys).length > 1 && remote.keyId === undefined) throw new Error("missing schema signing key id");
+  const cachedTrust = await readCachedTrustState(file, publicKeys, now);
   if (cachedTrust && remote.sequence < cachedTrust.bundle.sequence) throw new Error("schema rollback");
   await mkdir(path.dirname(file), { recursive: true });
   const writeResult = await withCacheWriteLock(file, async () => {
     // Re-read after acquiring the lock. Another process may have refreshed
     // while this request was in flight, and the cache must never move back.
-    const currentTrust = await readCachedTrustState(file, publicKey, now);
+    const currentTrust = await readCachedTrustState(file, publicKeys, now);
     if (currentTrust && remote.sequence < currentTrust.bundle.sequence) throw new Error("schema rollback");
     if (currentTrust && remote.sequence === currentTrust.bundle.sequence) {
       if (openCodeSchemaBundleSigningPayload(remote) !== openCodeSchemaBundleSigningPayload(currentTrust.bundle)) throw new Error("schema sequence rewritten");
       // The just-verified remote payload is byte-for-byte the same signed
       // contract, so it is safe to refresh only the unsigned cache freshness.
-      await writeJsonAtomic(file, { checkedAt: now, bundle: remote });
+      await writeVerifiedCache(file, { checkedAt: now, bundle: remote, verifiedKeyId: remote.keyId });
       return { bundle: remote, source: "remote" as const };
     }
-    await writeJsonAtomic(file, { checkedAt: now, bundle: remote });
+    await writeVerifiedCache(file, { checkedAt: now, bundle: remote, verifiedKeyId: remote.keyId });
     return { bundle: remote, source: "remote" as const };
   });
   if (writeResult) return writeResult;
   // A concurrent writer can have installed a newer sequence while this
   // request held an older verified response. Never select that older parser
   // for this turn merely because the lock was busy.
-  const current = await readVerifiedCache(file, publicKey, now);
+  const current = await readVerifiedCache(file, publicKeys, now);
   if (current && current.bundle.sequence >= remote.sequence) {
     return { bundle: current.bundle, source: "cache" };
   }
@@ -641,18 +728,18 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   const now = source.now?.() ?? Date.now();
   const file = source.cacheFile ?? cachePath();
   const url = source.url ?? process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_URL ?? PACKAGED_REGISTRY_URL;
-  const publicKey = source.publicKey ?? process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY ?? PACKAGED_REGISTRY_PUBLIC_KEY;
-  if (!url || !publicKey) return { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in" };
+  const publicKeys = registryKeyring(source);
+  if (!url || !publicKeys) return { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in" };
 
-  const cached = await readVerifiedCache(file, publicKey, now);
+  const cached = await readVerifiedCache(file, publicKeys, now);
   // An expired signed cache cannot parse a turn, but it records that this
   // client previously trusted a newer registry contract. Do not silently
   // regress to the compiled parser if refresh fails; a first offline launch
   // without any cache can still use that source-trusted baseline.
-  const cacheTrust = cached ?? await readCachedTrustState(file, publicKey, now);
+  const cacheTrust = cached ?? await readCachedTrustState(file, publicKeys, now);
   const cacheFresh = cached && now - cached.checkedAt < CACHE_TTL_MS;
   if (cacheFresh) return { bundle: cached.bundle, source: "cache" };
-  const key = schemaRefreshKey(file, url, publicKey);
+  const key = schemaRefreshKey(file, url, publicKeys);
   if ((refreshRetryAt.get(key) ?? 0) > now) {
     return cached
       ? { bundle: cached.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" }
@@ -662,7 +749,7 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   }
   const refresh = startSchemaRefresh(
     key,
-    () => refreshOpenCodeSchemaBundle(file, url, publicKey, source.fetch ?? fetch, now, source.refreshTimeoutMs),
+    () => refreshOpenCodeSchemaBundle(file, url, publicKeys, source.fetch ?? fetch, now, source.refreshTimeoutMs),
     now,
   );
   try {
