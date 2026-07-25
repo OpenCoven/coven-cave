@@ -1223,13 +1223,12 @@ export async function POST(req: Request) {
   // back to the boundary block ("listed above") and only exists when the
   // conversation's previous turn strayed out of the granted roots.
   const harnessPrompt = buildPromptWithBoundaryReminder(scopedPrompt, body.sessionId);
-  // A signed selected profile is authoritative for its launch contract. The
-  // current OpenCode profile explicitly consumes yargs's conventional `--`
-  // delimiter even though its help omits a standalone delimiter row.
+  // A selected schema may opt into the delimiter, but the installed client
+  // must also document it before Cave sends an otherwise unsupported flag.
   const openCodeEndOfOptionsSupported = Boolean(
     openCodeDirect
-    && (openCodeCompatibility.schema?.launch.endOfOptions === true
-      || (openCodeCompatibility.mode === "plain" && openCodeCompatibility.capabilities.endOfOptions)),
+    && openCodeCompatibility?.capabilities.endOfOptions
+    && (openCodeCompatibility.mode === "plain" || openCodeCompatibility.schema?.launch.endOfOptions === true),
   );
   const openCodePromptNeedsDelimiter = openCodeDirect && harnessPrompt.startsWith("--");
   if (openCodePromptNeedsDelimiter && !openCodeEndOfOptionsSupported) {
