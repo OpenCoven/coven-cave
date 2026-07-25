@@ -14,8 +14,17 @@ struct CaveConnection: Codable, Equatable {
         let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        // Already a full URL? Use it.
+        // Already a full URL? MagicDNS hosts always use HTTPS. A pasted
+        // `http://*.ts.net` URL would otherwise be rejected by ATS (and derive
+        // an insecure `ws://` terminal URL), despite Tailscale Serve issuing a
+        // certificate for the host.
         if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
+            if var components = URLComponents(string: trimmed),
+               components.scheme?.lowercased() == "http",
+               components.host?.lowercased().hasSuffix(".ts.net") == true {
+                components.scheme = "https"
+                return components.url
+            }
             return URL(string: trimmed)
         }
 
@@ -48,7 +57,8 @@ struct CaveConnection: Codable, Equatable {
     /// terminates TLS on `:8443`, so a `.ts.net` host typed without a port
     /// (which resolves to plain `:443`) never connects; we probe `:8443` and
     /// relocate to it. A fully-qualified `http(s)://…` URL is trusted verbatim
-    /// (the user was explicit), so it gets no alternates.
+    /// (the user was explicit), so it gets no alternates. Explicit HTTP
+    /// MagicDNS URLs are normalized to HTTPS before the single candidate is returned.
     var candidateBaseURLs: [URL] {
         let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
@@ -61,7 +71,7 @@ struct CaveConnection: Codable, Equatable {
 
         let lower = trimmed.lowercased()
         if lower.hasPrefix("http://") || lower.hasPrefix("https://") {
-            if let url = URL(string: trimmed) { out.append(url) }
+            if let url = baseURL { out.append(url) }
             return out
         }
 
