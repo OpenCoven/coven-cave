@@ -62,7 +62,7 @@ assert.match(
 );
 assert.match(
   route,
-  /child\.on\("close", \(code\) => \{[\s\S]*?if \(openCodeDirect && code !== 0\)[\s\S]*?is_error: true/,
+  /child\.on\("close", \(code\) => \{[\s\S]*?if \(\(openCodeDirect \|\| codexDirect\) && code !== 0\)[\s\S]*?is_error: true/,
   "a non-zero OpenCode exit cannot be treated as a successful model run when no JSON error arrives",
 );
 assert.match(

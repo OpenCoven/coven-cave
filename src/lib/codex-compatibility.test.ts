@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -21,6 +21,7 @@ import {
   validateCodexSchemaDocument,
   writeCodexSchemaCache,
 } from "./codex-compatibility.ts";
+import { codexLaunchCommand } from "./codex-bin.ts";
 
 const current = { version: "0.145.0", capabilities: { jsonEvents: true, resume: true } };
 const selected = resolveCodexSchema(current);
@@ -244,6 +245,23 @@ const reissuedOldDocument = { ...reissuedOldPayload, contentHash: schemaContentH
 assert.equal(cache.offer(reissuedOldDocument, { verifySignature: () => true, now: new Date("2026-07-24T12:00:00.000Z") }), false, "a later timestamp cannot reissue a different payload at an accepted checkpoint");
 assert.equal(cache.offer(document, { verifySignature: () => false, now: new Date("2026-07-24T12:00:00.000Z") }), false, "host signature verification is required before caching");
 
+const codexShimDir = await mkdtemp(path.join(tmpdir(), "coven-codex-npm-shim-"));
+try {
+  const codexScript = path.join(codexShimDir, "node_modules", "@openai", "codex", "bin", "codex.js");
+  await mkdir(path.dirname(codexScript), { recursive: true });
+  await writeFile(codexScript, "process.exit(0);\n");
+  const codexShim = path.join(codexShimDir, "codex.cmd");
+  await writeFile(codexShim, `@"%~dp0\\node.exe" "%~dp0\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n`);
+  const windowsCodexLaunch = codexLaunchCommand(codexShim, "win32");
+  assert.deepEqual(
+    { command: windowsCodexLaunch.command, args: [...windowsCodexLaunch.fixedArgs, "exec", "--add-dir", "C:\\workspace&not-a-command"] },
+    { command: process.execPath, args: [codexScript, "exec", "--add-dir", "C:\\workspace&not-a-command"] },
+    "Windows npm shims launch through Node with a metacharacter path kept as one argv value",
+  );
+} finally {
+  await rm(codexShimDir, { recursive: true, force: true });
+}
+
 const cacheDir = await mkdtemp(path.join(tmpdir(), "coven-codex-schema-"));
 try {
   const cachePath = path.join(cacheDir, "codex.json");
@@ -261,6 +279,11 @@ try {
   assert.equal(await writeCodexSchemaCache(cachePath, laterReissueDocument, verify, new Date("2026-07-24T12:00:00.000Z")), false, "a later-dated lower checkpoint cannot roll back filesystem LKG");
   assert.equal(await writeCodexSchemaCache(cachePath, olderDocument, verify, new Date("2026-07-24T10:30:00.000Z")), false, "a backward clock correction cannot erase the newer cache watermark before rejecting an older replay");
   assert.equal((await readCodexSchemaCache(cachePath, verify, new Date("2026-07-24T12:00:00.000Z")))?.provenance.revision, "newer", "the newest verified filesystem document remains cached");
+  const corruptCachePath = path.join(cacheDir, "corrupt-cache.json");
+  assert.equal(await writeCodexSchemaCache(corruptCachePath, document, verify, new Date("2026-07-24T12:00:00.000Z")), true);
+  assert.equal(await writeCodexSchemaCache(corruptCachePath, newerDocument, verify, new Date("2026-07-24T12:00:00.000Z")), true);
+  await writeFile(corruptCachePath, "{ corrupt cache");
+  assert.equal(await writeCodexSchemaCache(corruptCachePath, olderDocument, verify, new Date("2026-07-24T12:00:00.000Z")), false, "a corrupt selectable cache still retains its signed anti-rollback watermark");
   const expiredNewerPayload = {
     ...unsignedPayload,
     provenance: {

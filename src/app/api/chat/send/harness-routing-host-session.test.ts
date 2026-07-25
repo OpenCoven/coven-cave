@@ -89,6 +89,18 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /codexLaunchCommand\(codexBin\(harnessSpawnEnv\(body\.familiarId\)\)\)/,
+  "Direct Codex chat must resolve a Windows npm shim to a non-shell launcher",
+);
+
+assert.doesNotMatch(
+  chatRoute,
+  /shell:\s*codexShellShim/,
+  "Direct Codex chat must never route project paths or resume ids through cmd.exe",
+);
+
+assert.match(
+  chatRoute,
   /if \(hermesDirect\) \{[\s\S]*?if \(forwardModel\) a\.push\("--model", forwardModel\);[\s\S]*?a\.push\("--query", prompt\)/,
   "An advertised Hermes --model flag must receive Cave's provider-qualified model id before the query",
 );

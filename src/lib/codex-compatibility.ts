@@ -414,6 +414,28 @@ export async function readCodexSchemaCache(
   }
 }
 
+function codexSchemaWatermarkPath(cachePath: string): string {
+  return `${cachePath}.watermark`;
+}
+
+/**
+ * The cache payload is selectable state; the sidecar is an authenticated
+ * high-water mark. Keeping the full signed document lets a corrupt payload
+ * still reject an older replay without trusting an unsigned sequence file.
+ */
+async function readCodexSchemaWatermark(
+  cachePath: string,
+  verifySignature: CodexSchemaSignatureVerifier,
+  now: Date,
+): Promise<CodexSchemaDocument | null> {
+  return readCodexSchemaCache(
+    codexSchemaWatermarkPath(cachePath),
+    verifySignature,
+    now,
+    { allowExpired: true, ignoreTime: true },
+  );
+}
+
 async function syncCacheFile(filePath: string): Promise<void> {
   // Windows only permits fsync on a writable handle, even though the file is
   // already closed and no longer needs modification.
@@ -438,6 +460,22 @@ async function syncCacheDirectory(dir: string): Promise<void> {
   }
 }
 
+async function writeDurableSchemaDocument(filePath: string, serialized: string): Promise<boolean> {
+  const dir = path.dirname(filePath);
+  const temp = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    await mkdir(dir, { recursive: true });
+    await writeFile(temp, serialized, { encoding: "utf8", mode: 0o600 });
+    await syncCacheFile(temp);
+    await rename(temp, filePath);
+    await syncCacheDirectory(dir);
+    return true;
+  } catch {
+    try { await unlink(temp); } catch { /* best effort */ }
+    return false;
+  }
+}
+
 /** Atomic, durable replace keeps a power loss or interrupted refresh from erasing LKG. */
 export async function writeCodexSchemaCache(
   cachePath: string,
@@ -457,26 +495,19 @@ export async function writeCodexSchemaCache(
       // A watermark only needs a valid signature/hash and coherent issued
       // times. It must survive a backward clock correction, otherwise a
       // previously newer signed document could be replayed over the cache.
-      const previous = await readCodexSchemaCache(cachePath, verifySignature, now, { allowExpired: true, ignoreTime: true });
+      const cached = await readCodexSchemaCache(cachePath, verifySignature, now, { allowExpired: true, ignoreTime: true });
+      const watermark = await readCodexSchemaWatermark(cachePath, verifySignature, now);
+      const previous = !cached || (watermark && compareSchemaDocumentFreshness(watermark, cached) > 0)
+        ? watermark
+        : cached;
       if (previous && compareSchemaDocumentFreshness(checked.value, previous) <= 0) return false;
       const serialized = JSON.stringify(checked.value);
       if (Buffer.byteLength(serialized, "utf8") > MAX_SCHEMA_DOCUMENT_BYTES) return false;
-      const dir = path.dirname(cachePath);
-      const temp = `${cachePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-      try {
-        await mkdir(dir, { recursive: true });
-        await writeFile(temp, serialized, { encoding: "utf8", mode: 0o600 });
-        // Do not publish a temp file that only exists in the kernel page
-        // cache. Once its bytes are stable, rename atomically and sync the
-        // parent directory so the new name is durable too.
-        await syncCacheFile(temp);
-        await rename(temp, cachePath);
-        await syncCacheDirectory(dir);
-        return true;
-      } catch {
-        try { await unlink(temp); } catch { /* best effort */ }
-        return false;
-      }
+      // Publish the authenticated checkpoint first. If the selectable cache
+      // is then damaged or a power loss interrupts its replacement, the next
+      // refresh still rejects any lower-sequence replay.
+      if (!await writeDurableSchemaDocument(codexSchemaWatermarkPath(cachePath), serialized)) return false;
+      return writeDurableSchemaDocument(cachePath, serialized);
     } finally {
       await release();
     }
