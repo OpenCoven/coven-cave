@@ -1,6 +1,4 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { stat } from "node:fs/promises";
-import path from "node:path";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
@@ -20,10 +18,16 @@ let openCodeCapabilitiesProbe: { until: number; identity: string; value: Promise
 const OPENCODE_CAPABILITY_PROBE_TTL_MS = 60_000;
 const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 2_500;
 const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
+const OPENCODE_PROBE_CLEANUP_GRACE_MS = 1_000;
 
 /** PowerShell/npm shims can be delayed by cold start or Defender scanning. */
 export function openCodeCapabilityProbeTimeoutMs(platform: NodeJS.Platform = process.platform): number {
   return platform === "win32" ? WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS : DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS;
+}
+
+/** Cleanup remains best-effort: a hung launcher must never block chat fallback. */
+export function openCodeProbeCleanupGraceMs(): number {
+  return OPENCODE_PROBE_CLEANUP_GRACE_MS;
 }
 
 /** Windows launchers can be stable shims whose downstream target changes.
@@ -162,9 +166,14 @@ function probeOutput(command: string, args: string[], env = harnessSpawnEnv(), i
       timeout = setTimeout(() => {
         timedOut = true;
         // Do not resolve a timed-out probe until the entire Windows launcher
-        // tree has exited; otherwise orphaned OpenCode children accumulate.
+        // tree has exited when possible; otherwise orphaned children are still
+        // cleaned up best-effort without making the chat request hang.
+        const cleanupDeadline = setTimeout(() => done(false), openCodeProbeCleanupGraceMs());
         void terminateProbeProcessTree(child).finally(() => {
-          void exited.then(() => done(false));
+          void exited.then(() => {
+            clearTimeout(cleanupDeadline);
+            done(false);
+          });
         });
       }, openCodeCapabilityProbeTimeoutMs());
     } catch {
@@ -294,43 +303,6 @@ function advertisedStructuredSwitches(options: string[], noValueOptions: string[
   });
 }
 
-/**
- * Identifies the executable the next OpenCode spawn will resolve. The PATH
- * lookup is repeated before using a cached capability probe so an in-place
- * upgrade, reinstall, or PATH change cannot reuse stale argv evidence.
- */
-export async function openCodeExecutableIdentity(
-  env = openCodeSpawnEnv(),
-  platform: NodeJS.Platform = process.platform,
-): Promise<string> {
-  const pathValue = env.PATH ?? env.Path ?? "";
-  // `& opencode` in PowerShell resolves external commands using PATHEXT
-  // order. Fingerprint that same winner so a co-located .exe/.cmd upgrade
-  // cannot reuse help evidence from a shadowed launcher.
-  const names = platform === "win32"
-    ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
-      .split(";")
-      .map((extension) => extension.trim())
-      .filter((extension) => /^\.[A-Za-z0-9]+$/.test(extension))
-      // Windows resolves extensions case-insensitively. Lower-casing also
-      // lets the explicit win32 resolver contract be exercised on Unix CI.
-      .map((extension) => `opencode${extension.toLowerCase()}`)
-    : ["opencode"];
-  for (const directory of pathValue.split(path.delimiter).filter(Boolean)) {
-    for (const name of names) {
-      const candidate = path.join(directory, name);
-      try {
-        const info = await stat(candidate);
-        if (info.isFile()) return `${candidate}\0${info.size}\0${info.mtimeMs}`;
-      } catch {
-        // Continue through PATH; an unresolved launcher is still fingerprinted
-        // below so a later install changes the cache key.
-      }
-    }
-  }
-  return `unresolved\0${platform}\0${pathValue}`;
-}
-
 function advertisedFormatProtocols(
   outputs: Array<{ option: string; values: string[] }>,
   switches: Array<{ option: string; protocols: string[] }>,
@@ -437,13 +409,13 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
  * schema because vendors can backport or change protocol behavior.
  */
 export async function openCodeRunCapabilities(familiarId?: string): Promise<OpenCodeRunCapabilities> {
-  // The help/version probes must resolve exactly the binary and scoped vault
-  // environment that will execute the chat turn. Include the familiar scope
-  // in the cache key even when two scopes currently resolve the same binary.
+  // The help/version probes use exactly the scoped environment that will
+  // execute the chat turn. A bounded TTL makes an in-place CLI upgrade or a
+  // PATH change visible without filesystem inspection that would pull a
+  // machine-local PATH tree into the standalone trace.
   const env = openCodeSpawnEnv(familiarId);
   const cacheable = openCodeCapabilityProbeCacheable();
-  const executableIdentity = cacheable ? await openCodeExecutableIdentity(env) : "uncached-windows-launcher";
-  const identity = `${familiarId ?? "default"}\0${executableIdentity}`;
+  const identity = familiarId ?? "default";
   if (cacheable && openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.identity === identity) {
     return openCodeCapabilitiesProbe.value;
   }

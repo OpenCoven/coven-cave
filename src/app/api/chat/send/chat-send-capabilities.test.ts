@@ -1,18 +1,16 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import {
   openCodeCapabilityProbeCacheable,
   openCodeCapabilityProbeTimeoutMs,
-  openCodeExecutableIdentity,
+  openCodeProbeCleanupGraceMs,
   openCodeProbeTreeKillCommand,
   parseOpenCodeRunCapabilitiesHelp,
 } from "./chat-send-capabilities.ts";
 
 assert.equal(openCodeCapabilityProbeTimeoutMs("linux"), 2_500, "non-Windows capability probes retain the short bounded deadline");
 assert.equal(openCodeCapabilityProbeTimeoutMs("win32"), 6_000, "Windows PowerShell/npm launchers receive a bounded cold-start allowance");
+assert.equal(openCodeProbeCleanupGraceMs(), 1_000, "timed-out probe cleanup has a short final deadline so chat can fall back");
 assert.equal(openCodeCapabilityProbeCacheable("linux"), true, "direct Unix executable identity supports a short capability cache");
 assert.equal(openCodeCapabilityProbeCacheable("win32"), false, "Windows launcher shims are reprobed rather than reusing stale downstream capability evidence");
 assert.deepEqual(
@@ -127,22 +125,7 @@ const resumeCapabilities = parseOpenCodeRunCapabilitiesHelp(`
 assert.equal(resumeCapabilities.session, true);
 assert.deepEqual(resumeCapabilities.valueOptions, ["--format", "--session"], "only session options with an explicit argument can receive Cave's native session id");
 
-const launcherA = await mkdtemp(path.join(tmpdir(), "cave-opencode-launch-a-"));
-const launcherB = await mkdtemp(path.join(tmpdir(), "cave-opencode-launch-b-"));
-const executable = process.platform === "win32" ? "opencode.cmd" : "opencode";
-await writeFile(path.join(launcherA, executable), "first");
-await writeFile(path.join(launcherB, executable), "second");
-const identityA = await openCodeExecutableIdentity({ PATH: launcherA });
-const identityB = await openCodeExecutableIdentity({ PATH: launcherB });
-assert.notEqual(identityA, identityB, "capability-cache identity changes when PATH resolves a different OpenCode executable");
-
-const windowsLauncher = await mkdtemp(path.join(tmpdir(), "cave-opencode-launch-windows-"));
-await writeFile(path.join(windowsLauncher, "opencode.cmd"), "shim");
-await writeFile(path.join(windowsLauncher, "opencode.exe"), "binary");
-const windowsIdentity = await openCodeExecutableIdentity(
-  { PATH: windowsLauncher, PATHEXT: ".COM;.EXE;.BAT;.CMD" },
-  "win32",
-);
-assert.match(windowsIdentity, /opencode\.exe\0/i, "Windows capability identity follows PowerShell PATHEXT precedence over a co-located cmd shim");
+assert.equal(openCodeCapabilityProbeCacheable("win32"), false, "Windows re-probes every turn because a shim target can change in place");
+assert.equal(openCodeCapabilityProbeCacheable("linux"), true, "other platforms retain the bounded sixty-second capability cache");
 
 console.log("chat-send-capabilities.test.ts: ok");

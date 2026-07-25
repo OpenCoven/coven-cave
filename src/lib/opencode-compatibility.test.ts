@@ -345,6 +345,13 @@ assert.equal(offlineBaseline.mode, "structured", "a first offline launch keeps t
 assert.equal(offlineBaseline.bundleSource, "built-in");
 assert.equal(offlineBaseline.diagnostic, "schema-registry-refresh-rejected", "the built-in recovery remains visible to the user");
 
+const expiredOfflineBaseline = await resolveOpenCodeCompatibility(
+  { version: "current", json: true, model: false, session: true, protocols: ["json"] },
+  { now: () => Date.parse("2031-01-01T00:00:00.000Z") },
+);
+assert.equal(expiredOfflineBaseline.mode, "plain", "an expired built-in schema never parses a fresh offline install");
+assert.equal(expiredOfflineBaseline.diagnostic, "cached-schema-unavailable", "expired built-in fallback remains visible to the user");
+
 const broadSchema = { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], id: "broad", requires: { json: true as const } };
 const protocolV2Schema = {
   ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],

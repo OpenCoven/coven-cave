@@ -120,8 +120,17 @@ function toolStateIsError(state: Record<string, unknown> | null, part: Record<st
   const stateError = valueAt(state, shapeAliases(schema, "error", ["error"]));
   const partError = valueAt(part, shapeAliases(schema, "error", ["error"]));
   return errorStates.some((error) => error.toLowerCase() === status)
-    || (stateError !== undefined && stateError !== null)
-    || (partError !== undefined && partError !== null);
+    || hasToolErrorPayload(stateError)
+    || hasToolErrorPayload(partError);
+}
+
+/** Boolean `error: false` is a conventional successful-result marker, not a
+ * payload to render or a reason to settle a tool bubble as failed. */
+function hasToolErrorPayload(value: unknown): boolean {
+  return value !== undefined
+    && value !== null
+    && value !== false
+    && (typeof value !== "string" || value.trim().length > 0);
 }
 
 /** Decode OpenCode's `run --format json` envelope without trusting its fields. */
@@ -195,9 +204,9 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
     const stateError = valueAt(state, error);
     const partError = valueAt(toolPart, error);
     const hasTerminalPayload = valueAt(state, output) !== undefined
-      || (stateError !== undefined && stateError !== null)
+      || hasToolErrorPayload(stateError)
       || valueAt(toolPart, output) !== undefined
-      || (partError !== undefined && partError !== null);
+      || hasToolErrorPayload(partError);
     if (!terminalToolState(state, toolPart, schema) && !hasTerminalPayload) {
       return { kind: "tool_start", sessionId, id, name: stringAt(toolPart, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(toolPart, shapeAliases(schema, "input", ["input"])) ?? {} };
     }

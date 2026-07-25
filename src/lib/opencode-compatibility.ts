@@ -1,7 +1,6 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
-import path from "node:path";
-import { caveHome } from "./coven-paths.ts";
+import { homedir } from "node:os";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 export type OpenCodeRunCapabilities = {
@@ -599,8 +598,23 @@ export function verifyOpenCodeSchemaBundle(
 
 type CachedBundle = { checkedAt: number; bundle: OpenCodeSchemaBundle; verifiedKeyId?: string };
 
+/** Build a runtime-only user-state path without presenting a dynamic filesystem
+ * lookup to Turbopack's standalone tracer. This mirrors covenHome/caveHome. */
+function localPathChild(parent: string, child: string): string {
+  const separator = process.platform === "win32" ? "\\" : "/";
+  return `${parent.replace(/[\\/]+$/, "")}${separator}${child}`;
+}
+
 function cachePath(): string {
-  return path.join(caveHome(), CACHE_FILE);
+  // The registry cache is mutable per-user state, never an application asset.
+  const covenRoot = process.env.COVEN_HOME || localPathChild(homedir(), ".coven");
+  const caveRoot = process.env.COVEN_CAVE_HOME || localPathChild(covenRoot, "cave");
+  return localPathChild(caveRoot, CACHE_FILE);
+}
+
+function localPathParent(file: string): string {
+  const slash = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
+  return slash > 0 ? file.slice(0, slash) : ".";
 }
 
 function cacheTrustPath(file: string): string {
@@ -981,7 +995,7 @@ async function refreshOpenCodeSchemaBundle(
   if (Object.keys(publicKeys).length > 1 && remote.keyId === undefined) throw new Error("missing schema signing key id");
   const cachedTrust = await readCachedTrustState(file, publicKeys, now, checkpoint, trustAnchorFile);
   if (cachedTrust && remote.sequence < cachedTrust.bundle.sequence) throw new Error("schema rollback");
-  await mkdir(path.dirname(file), { recursive: true });
+  await mkdir(localPathParent(file), { recursive: true });
   const writeResult = await withCacheWriteLock(file, async () => {
     // Re-read after acquiring the lock. Another process may have refreshed
     // while this request was in flight, and the cache must never move back.
@@ -1158,14 +1172,14 @@ export async function resolveOpenCodeCompatibility(
   // within its own explicit validity window. Once that baseline expires, do
   // not extend an old parser merely because a remote cache is unavailable.
   if (
-    loaded.diagnostic === "cached-schema-unavailable"
+    loaded.source === "built-in"
     && Date.parse(BUILTIN_OPENCODE_SCHEMA_BUNDLE.expiresAt) <= (source?.now?.() ?? Date.now())
   ) {
     return {
       mode: "plain",
       capabilities,
       bundleSource: loaded.source,
-      diagnostic: loaded.diagnostic,
+      diagnostic: loaded.diagnostic ?? "cached-schema-unavailable",
     };
   }
   // Remote registries publish additive compatibility profiles by default.
