@@ -88,6 +88,7 @@ import {
   extractOpenClawSessionId,
   extractOpenClawText,
   openClawAgentArgs,
+  openClawGatewaySessionKey,
   openClawSessionKey,
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
@@ -568,7 +569,7 @@ function openClawChatResponse(args: {
         openclawAgentSource: agentBinding.source,
         caveSessionId: conversationId,
         gatewaySessionId: undefined,
-        sessionKey: openClawSessionKey(conversationId),
+        sessionKey: openClawGatewaySessionKey(agentId, conversationId),
       };
       // Keep the established `openclaw agent --json` text path authoritative,
       // while an authenticated Gateway subscription supplies structured tool
@@ -592,7 +593,7 @@ function openClawChatResponse(args: {
         }
       };
       const gatewayToolSubscriptionPromise = subscribeOpenClawGatewayToolEvents({
-        sessionKey: openClawSessionKey(conversationId),
+        sessionKey: openClawGatewaySessionKey(agentId, conversationId),
         agentId,
         onToolEvent: (event) => {
           if (cliLifecycleFinished || toolActivityClosed) return;
@@ -800,7 +801,7 @@ function openClawChatResponse(args: {
             "openclaw-session",
             "Gateway session",
             "done",
-            `key ${openClawSessionKey(conversationId)} · id ${gatewaySessionId}`,
+            `key ${openClawGatewaySessionKey(agentId, conversationId)} · id ${gatewaySessionId}`,
           );
         }
 

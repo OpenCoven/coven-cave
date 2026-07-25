@@ -264,8 +264,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /openclawAgentId: agentBinding\.openclawAgentId,[\s\S]*caveSessionId: conversationId,[\s\S]*gatewaySessionId: undefined,[\s\S]*sessionKey: openClawSessionKey\(conversationId\)/,
-  "OpenClaw transcript metadata should persist Cave id, session key, agent id, and diagnostic gateway id separately",
+  /openclawAgentId: agentBinding\.openclawAgentId,[\s\S]*caveSessionId: conversationId,[\s\S]*gatewaySessionId: undefined,[\s\S]*sessionKey: openClawGatewaySessionKey\(agentId, conversationId\)/,
+  "OpenClaw transcript metadata should persist the canonical Gateway session key alongside Cave and diagnostic ids",
 );
 assert.match(
   chatRoute,

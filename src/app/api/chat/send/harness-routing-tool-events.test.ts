@@ -102,8 +102,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /subscribeOpenClawGatewayToolEvents\([\s\S]*?sessionKey: openClawSessionKey\(conversationId\)[\s\S]*?agentId,[\s\S]*?onToolEvent:/,
-  "OpenClaw should subscribe by its Cave-owned session key alongside the CLI turn",
+  /subscribeOpenClawGatewayToolEvents\([\s\S]*?sessionKey: openClawGatewaySessionKey\(agentId, conversationId\)[\s\S]*?agentId,[\s\S]*?onToolEvent:/,
+  "OpenClaw should subscribe by its canonical agent-scoped Gateway key alongside the CLI turn",
 );
 assert.match(
   chatRoute,

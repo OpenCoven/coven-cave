@@ -62,7 +62,8 @@ assert.equal(
 );
 
 const [startFrame, updateFrame, terminalFrame] = fixture.frames;
-assert.deepEqual(normalizeOpenClawGatewayToolEvent(startFrame, "cave-session", "nova"), {
+const gatewaySessionKey = "agent:nova:explicit:cave-session";
+assert.deepEqual(normalizeOpenClawGatewayToolEvent(startFrame, gatewaySessionKey, "nova"), {
   runId: "run-1",
   id: "call-1",
   name: "exec",
@@ -78,7 +79,7 @@ assert.equal(
   "a subscription must never leak a different session's tool payload",
 );
 assert.equal(
-  normalizeOpenClawGatewayToolEvent({ ...startFrame, event: "agent" }, "cave-session", "nova"),
+  normalizeOpenClawGatewayToolEvent({ ...startFrame, event: "agent" }, gatewaySessionKey, "nova"),
   null,
   "unknown event families must not become fabricated activity",
 );
@@ -86,14 +87,14 @@ assert.equal(
   normalizeOpenClawGatewayToolEvent({
     ...terminalFrame,
     payload: { ...terminalFrame.payload, data: { ...terminalFrame.payload.data, isError: undefined } },
-  }, "cave-session", "nova"),
+  }, gatewaySessionKey, "nova"),
   null,
   "a terminal frame without an explicit outcome must not be rendered as success",
 );
 
 const ledger = new OpenClawToolEventLedger();
 assert.equal(
-  normalizeOpenClawGatewayToolEvent(startFrame, "cave-session", "other-agent"),
+  normalizeOpenClawGatewayToolEvent(startFrame, gatewaySessionKey, "other-agent"),
   null,
   "a session subscription must not accept a different agent's tool payload",
 );
@@ -102,7 +103,7 @@ assert.equal(
   "invalid_hello",
   "a connect response without the authenticated read scope must fall back",
 );
-const start = normalizeOpenClawGatewayToolEvent(startFrame, "cave-session", "nova");
+const start = normalizeOpenClawGatewayToolEvent(startFrame, gatewaySessionKey, "nova");
 assert.ok(start);
 assert.deepEqual(ledger.accept(start, 1_000), {
   id: "run-1:call-1",
@@ -112,7 +113,7 @@ assert.deepEqual(ledger.accept(start, 1_000), {
 });
 const update = normalizeOpenClawGatewayToolEvent(
   updateFrame,
-  "cave-session",
+  gatewaySessionKey,
   "nova",
 );
 assert.ok(update);
@@ -125,7 +126,7 @@ assert.deepEqual(ledger.accept(update, 1_100), {
 });
 const terminal = normalizeOpenClawGatewayToolEvent(
   terminalFrame,
-  "cave-session",
+  gatewaySessionKey,
   "nova",
 );
 assert.ok(terminal);
@@ -245,7 +246,7 @@ gateway.on("connection", (socket) => {
     }
     if (request.method === "sessions.messages.subscribe") {
       subscriptionRequests += 1;
-      assert.deepEqual(request.params, { key: "cave-session", agentId: "nova" });
+      assert.deepEqual(request.params, { key: gatewaySessionKey, agentId: "nova" });
       socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: {} }));
       socket.send(JSON.stringify(startFrame));
       socket.send(JSON.stringify(updateFrame));
@@ -269,7 +270,7 @@ try {
     resolveDisconnect = resolve;
   });
   const subscription = await subscribeOpenClawGatewayToolEvents({
-    sessionKey: "cave-session",
+    sessionKey: gatewaySessionKey,
     agentId: "nova",
     persistCapabilityCache: false,
     onToolEvent: (event) => {
@@ -330,7 +331,7 @@ try {
   process.env.OPENCLAW_GATEWAY_URL = "ws://gateway.example.test";
   assert.equal(
     (await subscribeOpenClawGatewayToolEvents({
-      sessionKey: "cave-session",
+      sessionKey: gatewaySessionKey,
       agentId: "nova",
       persistCapabilityCache: false,
       onToolEvent: () => assert.fail("a plaintext remote Gateway must not be contacted"),
@@ -343,7 +344,7 @@ try {
   delete process.env.OPENCLAW_GATEWAY_TOKEN;
   assert.equal(
     (await subscribeOpenClawGatewayToolEvents({
-      sessionKey: "cave-session",
+      sessionKey: gatewaySessionKey,
       agentId: "nova",
       persistCapabilityCache: false,
       onToolEvent: () => assert.fail("unauthenticated Gateway must not emit events"),

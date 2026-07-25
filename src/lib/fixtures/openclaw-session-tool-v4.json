@@ -17,7 +17,7 @@
       "type": "event",
       "event": "session.tool",
       "payload": {
-        "sessionKey": "cave-session",
+        "sessionKey": "agent:nova:explicit:cave-session",
         "agentId": "nova",
         "runId": "run-1",
         "seq": 1,
@@ -35,7 +35,7 @@
       "type": "event",
       "event": "session.tool",
       "payload": {
-        "sessionKey": "cave-session",
+        "sessionKey": "agent:nova:explicit:cave-session",
         "agentId": "nova",
         "runId": "run-1",
         "seq": 2,
@@ -53,7 +53,7 @@
       "type": "event",
       "event": "session.tool",
       "payload": {
-        "sessionKey": "cave-session",
+        "sessionKey": "agent:nova:explicit:cave-session",
         "agentId": "nova",
         "runId": "run-1",
         "seq": 3,
