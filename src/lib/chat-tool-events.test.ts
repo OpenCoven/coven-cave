@@ -56,6 +56,15 @@ assert.ok(
   "unicode tool payloads respect byte rather than UTF-16 code-unit caps",
 );
 
+const linkedHook = new ToolCallTracker(() => 1_000);
+linkedHook.hookStart("read");
+assert.equal(linkedHook.envelopeToolUse("hook-linked", "read", "x".repeat(100_000)), null);
+const linkedHookInput = linkedHook.snapshot()[0]?.input;
+assert.ok(
+  new TextEncoder().encode(linkedHookInput ?? "").byteLength <= 8_000,
+  "linking an OpenCode envelope to a hook call preserves the live input cap",
+);
+
 const terminalWindow = new ToolCallTracker(() => 1_000);
 for (let index = 0; index <= MAX_SETTLED_ENVELOPE_IDS; index += 1) {
   const id = `settled-${index}`;

@@ -314,7 +314,10 @@ export class ToolCallTracker {
       this.byEnvelopeId.set(id, hookCall);
       const prev = this.recorded.get(hookCall.id);
       if (prev && prev.input === undefined && input !== undefined) {
-        this.recorded.set(hookCall.id, { ...prev, input });
+        this.recorded.set(hookCall.id, {
+          ...prev,
+          input: capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP),
+        });
       }
       return null;
     }
