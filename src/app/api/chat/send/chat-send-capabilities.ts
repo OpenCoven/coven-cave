@@ -145,7 +145,16 @@ export async function openCodeExecutableIdentity(
   platform: NodeJS.Platform = process.platform,
 ): Promise<string> {
   const pathValue = env.PATH ?? env.Path ?? "";
-  const names = platform === "win32" ? ["opencode.cmd", "opencode.exe", "opencode.bat", "opencode"] : ["opencode"];
+  // `& opencode` in PowerShell resolves external commands using PATHEXT
+  // order. Fingerprint that same winner so a co-located .exe/.cmd upgrade
+  // cannot reuse help evidence from a shadowed launcher.
+  const names = platform === "win32"
+    ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+      .split(";")
+      .map((extension) => extension.trim())
+      .filter((extension) => /^\.[A-Za-z0-9]+$/.test(extension))
+      .map((extension) => `opencode${extension}`)
+    : ["opencode"];
   for (const directory of pathValue.split(path.delimiter).filter(Boolean)) {
     for (const name of names) {
       const candidate = path.join(directory, name);

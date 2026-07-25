@@ -107,40 +107,24 @@ assert.deepEqual(
     { type: "tool_start", sessionId: "ses_123", data: { id: "tool_1", name: "Read", state: { input: { path: "README.md" } } } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),
-  { kind: "tool_start", sessionId: "ses_123", id: "tool_1", name: "Read", input: { path: "README.md" } },
-  "newer split lifecycle events keep their upstream id",
+  { kind: "other", sessionId: "ses_123", diagnostic: "unknown-event" },
+  "undocumented split lifecycle labels cannot become trusted v1 activity",
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
     { type: "tool_result", session_id: "ses_123", data: { id: "tool_1", state: { output: "ok" } } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),
-  { kind: "tool_end", sessionId: "ses_123", id: "tool_1", output: "ok", isError: false },
-  "reordered results can close the same stable tool bubble",
-);
-assert.deepEqual(
-  parseOpenCodeRunEvent(
-    { type: "tool_result", id: "tool_failed", error: "permission denied" },
-    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
-  ),
-  { kind: "tool_end", sessionId: undefined, id: "tool_failed", output: "permission denied", isError: true },
-  "root-level terminal errors settle a failed tool rather than an empty success",
+  { kind: "other", sessionId: "ses_123", diagnostic: "unknown-event" },
+  "undocumented terminal labels cannot settle a trusted v1 bubble",
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
     { type: "tool", sessionID: "ses_123", callID: "call_1", tool: "bash", state: { input: { command: "pwd" }, status: "running" } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),
-  { kind: "tool_start", sessionId: "ses_123", id: "call_1", name: "bash", input: { command: "pwd" } },
-  "current root tool updates use callID without fabricating a local id",
-);
-assert.deepEqual(
-  parseOpenCodeRunEvent(
-    { type: "tool", sessionID: "ses_123", callID: "call_1", tool: "bash", state: { input: { command: "pwd" }, output: "ok", status: "completed" } },
-    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
-  ),
-  { kind: "tool", sessionId: "ses_123", id: "call_1", name: "bash", input: { command: "pwd" }, output: "ok", isError: false },
-  "current root terminal tool updates preserve input and output",
+  { kind: "other", sessionId: "ses_123", diagnostic: "unknown-event" },
+  "undocumented root tool labels cannot create a trusted v1 bubble",
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
@@ -164,24 +148,6 @@ assert.deepEqual(
   parseOpenCodeRunEvent({ type: "future_text_delta", data: { text: "Still show this reply" } }),
   { kind: "other", sessionId: undefined, diagnostic: "unknown-event" },
   "unknown envelopes never promote arbitrary payload text into assistant output",
-);
-assert.equal(
-  parseOpenCodeRunEvent({ type: "tool", callID: "failed_1", tool: "bash", state: { status: "FAILED" } }, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]).kind,
-  "tool",
-  "case variants of terminal states remain terminal",
-);
-assert.equal(
-  (parseOpenCodeRunEvent({ type: "tool", callID: "failed_1", tool: "bash", state: { status: "FAILED" } }, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]) as { isError: boolean }).isError,
-  true,
-  "case variants of error statuses do not render successful tool bubbles",
-);
-assert.deepEqual(
-  parseOpenCodeRunEvent(
-    { type: "tool", callID: "cancelled_1", tool: "bash", state: { status: "CANCELLED" } },
-    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
-  ),
-  { kind: "tool", sessionId: undefined, id: "cancelled_1", name: "bash", input: {}, output: "", isError: true },
-  "cancelled terminal states settle the upstream tool as an error",
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(["future", "envelope"]),
@@ -207,6 +173,10 @@ assert.deepEqual(
 const shapedSchema = {
   ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   id: "opencode-run-json-shaped-v2",
+  eventTypes: {
+    ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].eventTypes,
+    toolComplete: ["tool"],
+  },
   shape: {
     envelope: [["event", "payload"]],
     discriminator: { envelope: ["event", "payload"], field: "event" },

@@ -174,6 +174,14 @@ assert.equal(
   "schemas may omit lifecycle-only and combined-tool categories when split frames describe the protocol",
 );
 assert.equal(
+  selectOpenCodeSchema(
+    [BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[1]],
+    { version: "current", json: true, model: true, session: true, protocols: ["json-legacy"] },
+  )?.id,
+  "opencode-run-json-legacy",
+  "a legacy protocol remains compatible when a newer client adds session or model flags",
+);
+assert.equal(
   isOpenCodeSchemaBundle({
     ...unsigned,
     schemas: [{
@@ -550,5 +558,29 @@ const quarantined = await resolveOpenCodeCompatibility(
 );
 assert.equal(quarantined.mode, "plain", "an incompatible structured profile is never relaunched in structured mode");
 assert.equal(quarantined.diagnostic, "schema-quarantined", "the next turn receives a stable safe-fallback diagnostic");
+
+const repairedSchema = {
+  ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  shape: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].shape, text: ["text", "content", "body"] },
+};
+const repairedUnsigned = { ...unsigned, sequence: 99, schemas: [repairedSchema] };
+const repairedBundle = {
+  ...repairedUnsigned,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(repairedUnsigned)), privateKey).toString("base64"),
+  },
+};
+const repaired = await resolveOpenCodeCompatibility(
+  { version: "current", json: true, model: false, session: true, protocols: ["json"] },
+  {
+    cacheFile: path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-repaired-")), "bundle.json"),
+    publicKey: publicPem,
+    url: "https://registry.invalid/opencode.json",
+    now: () => now,
+    fetch: async () => new Response(JSON.stringify(repairedBundle), { status: 200 }),
+  },
+);
+assert.equal(repaired.mode, "structured", "a signed schema revision with the same id clears the obsolete quarantine");
 
 console.log("opencode-compatibility.test.ts: ok");

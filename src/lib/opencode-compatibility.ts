@@ -24,6 +24,8 @@ export type OpenCodeRegistryKeyring = Record<string, string>;
 
 export type OpenCodeEventSchema = {
   id: string;
+  /** Signed tie-breaker for clients that advertise multiple valid protocols. */
+  priority?: number;
   /** A schema is selected only when every advertised requirement is met. */
   requires: { json: true; session?: boolean; model?: boolean; protocol?: string };
   eventTypes: {
@@ -101,6 +103,8 @@ type LoadedOpenCodeSchemaBundle = {
   bundle: OpenCodeSchemaBundle;
   source: "built-in" | "cache" | "remote";
   diagnostic?: "schema-registry-refresh-rejected" | "cached-schema-unavailable";
+  /** A verified-but-expired remote contract existed, so the built-in parser is unsafe. */
+  remoteSchemaRequired?: boolean;
 };
 
 /** A value-free event-shape identifier for diagnostics. It deliberately keeps
@@ -142,16 +146,18 @@ const refreshRetryAt = new Map<string, number>();
 // further structured launches in this process. Keep the bounded quarantine by
 // schema identity so a registry update with a new profile can recover without
 // replaying the incompatible turn (which may already have run tools).
-const quarantinedSchemaIds = new Set<string>();
+const quarantinedSchemaRevisions = new Map<string, string>();
 const MAX_QUARANTINED_SCHEMA_IDS = 64;
 
 export function quarantineOpenCodeSchema(schema: OpenCodeEventSchema | undefined): void {
-  if (!schema || quarantinedSchemaIds.has(schema.id)) return;
-  if (quarantinedSchemaIds.size >= MAX_QUARANTINED_SCHEMA_IDS) {
-    const oldest = quarantinedSchemaIds.values().next();
-    if (!oldest.done) quarantinedSchemaIds.delete(oldest.value);
+  if (!schema) return;
+  const revision = createHash("sha256").update(stableJson(schema)).digest("hex");
+  if (quarantinedSchemaRevisions.get(schema.id) === revision) return;
+  if (quarantinedSchemaRevisions.size >= MAX_QUARANTINED_SCHEMA_IDS) {
+    const oldest = quarantinedSchemaRevisions.keys().next();
+    if (!oldest.done) quarantinedSchemaRevisions.delete(oldest.value);
   }
-  quarantinedSchemaIds.add(schema.id);
+  quarantinedSchemaRevisions.set(schema.id, revision);
 }
 
 /**
@@ -172,9 +178,13 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
       eventTypes: {
         ignored: ["step_start", "step_finish", "reasoning"],
         text: ["text"],
-        toolStart: ["tool_start", "tool"],
-        toolEnd: ["tool_result"],
-        toolComplete: ["tool_use", "tool"],
+        // Current `run --format json` emits only terminal `tool_use` frames
+        // with a `part` envelope. Keep old split/root labels in the separately
+        // selected legacy profile so an evolved stream fails closed instead of
+        // being mistaken for trusted tool activity.
+        toolStart: [],
+        toolEnd: [],
+        toolComplete: ["tool_use"],
         error: ["error"],
       },
       shape: {
@@ -197,7 +207,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
       // `--format json` safely uses plain output until a verified schema can
       // prove its envelope contract.
       id: "opencode-run-json-legacy",
-      requires: { json: true, session: false, protocol: "json-legacy" },
+      requires: { json: true, protocol: "json-legacy" },
       eventTypes: {
         ignored: ["step_start", "step_finish", "reasoning"],
         text: ["message", "assistant_text"],
@@ -292,7 +302,8 @@ function hasValidLaunch(value: unknown, requires: Record<string, unknown>): bool
 
 function isEventSchema(value: unknown): value is OpenCodeEventSchema {
   if (!isRecord(value) || typeof value.id !== "string" || value.id.length === 0 || value.id.length > 128 || !isRecord(value.eventTypes) || !isRecord(value.requires)) return false;
-  if (!Object.keys(value).every((key) => key === "id" || key === "requires" || key === "eventTypes" || key === "shape" || key === "launch")) return false;
+  if (!Object.keys(value).every((key) => key === "id" || key === "priority" || key === "requires" || key === "eventTypes" || key === "shape" || key === "launch")) return false;
+  if (value.priority !== undefined && (!Number.isSafeInteger(value.priority) || value.priority < 0 || value.priority > 100)) return false;
   if (!hasValidShape(value.shape)) return false;
   if (!hasValidLaunch(value.launch, value.requires)) return false;
   if (!Object.keys(value.requires).every((key) => key === "json" || key === "session" || key === "model" || key === "protocol")) return false;
@@ -332,8 +343,11 @@ function isEventSchema(value: unknown): value is OpenCodeEventSchema {
 
 function schemaMatches(schema: OpenCodeEventSchema, capabilities: OpenCodeRunCapabilities): boolean {
   if (!capabilities.json) return false;
-  if (schema.requires.session !== undefined && schema.requires.session !== capabilities.session) return false;
-  if (schema.requires.model !== undefined && schema.requires.model !== capabilities.model) return false;
+  // Capability requirements are one-way: a client gaining an unrelated flag
+  // must not stop matching a known envelope. Explicit exclusions would need a
+  // separately audited contract rather than overloading `false` here.
+  if (schema.requires.session === true && !capabilities.session) return false;
+  if (schema.requires.model === true && !capabilities.model) return false;
   // Older callers/tests did not carry protocol markers; their documented JSON
   // surface is the v1 `json` protocol. New probes always populate this list.
   const protocols = capabilities.protocols ?? (capabilities.json ? ["json"] : []);
@@ -349,13 +363,17 @@ function schemaMatches(schema: OpenCodeEventSchema, capabilities: OpenCodeRunCap
 }
 
 function schemaSpecificity(schema: OpenCodeEventSchema): number {
-  return Number(schema.requires.session !== undefined) + Number(schema.requires.model !== undefined) + Number(schema.requires.protocol !== undefined);
+  return Number(schema.requires.session === true) + Number(schema.requires.model === true) + Number(schema.requires.protocol !== undefined);
+}
+
+function schemaPriority(schema: OpenCodeEventSchema): number {
+  return schema.priority ?? 0;
 }
 
 /**
  * Select the most specific matching schema rather than trusting registry
- * order. A same-specificity tie means two schemas claim the identical observed
- * capability surface, so the caller must fail closed instead of guessing.
+ * order. Signed priority selects a client that advertises multiple documented
+ * protocols; an equal-priority tie still fails closed instead of guessing.
  */
 export function selectOpenCodeSchema(
   schemas: OpenCodeEventSchema[],
@@ -365,7 +383,9 @@ export function selectOpenCodeSchema(
   if (!matches.length) return null;
   const specificity = Math.max(...matches.map(schemaSpecificity));
   const mostSpecific = matches.filter((schema) => schemaSpecificity(schema) === specificity);
-  return mostSpecific.length === 1 ? mostSpecific[0] : null;
+  const priority = Math.max(...mostSpecific.map(schemaPriority));
+  const preferred = mostSpecific.filter((schema) => schemaPriority(schema) === priority);
+  return preferred.length === 1 ? preferred[0] : null;
 }
 
 const CANONICAL_RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -378,8 +398,8 @@ function parseCanonicalTimestamp(value: unknown): number | null {
 
 function requirementsOverlap(left: OpenCodeEventSchema, right: OpenCodeEventSchema): boolean {
   const compatible = <T>(a: T | undefined, b: T | undefined) => a === undefined || b === undefined || a === b;
-  return compatible(left.requires.session, right.requires.session)
-    && compatible(left.requires.model, right.requires.model)
+  return compatible(left.requires.session === true ? true : undefined, right.requires.session === true ? true : undefined)
+    && compatible(left.requires.model === true ? true : undefined, right.requires.model === true ? true : undefined)
     && compatible(left.requires.protocol, right.requires.protocol);
 }
 
@@ -407,7 +427,11 @@ export function isOpenCodeSchemaBundle(
     const schema = value.schemas[index];
     if (ids.has(schema.id)) return false;
     for (const prior of value.schemas.slice(0, index)) {
-      if (schemaSpecificity(schema) === schemaSpecificity(prior) && requirementsOverlap(schema, prior)) return false;
+      if (
+        schemaSpecificity(schema) === schemaSpecificity(prior)
+        && schemaPriority(schema) === schemaPriority(prior)
+        && requirementsOverlap(schema, prior)
+      ) return false;
     }
     ids.add(schema.id);
   }
@@ -786,7 +810,7 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
     return cached
       ? { bundle: cached.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" }
       : cacheTrust
-        ? { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "cached-schema-unavailable" }
+        ? { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "cached-schema-unavailable", remoteSchemaRequired: true }
         : { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "schema-registry-refresh-rejected" };
   }
   const refresh = startSchemaRefresh(
@@ -810,7 +834,7 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
     // first recovery failure until the retry backoff path runs.
     if (cached) return { bundle: cached.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" };
     return cacheTrust
-      ? { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "cached-schema-unavailable" }
+      ? { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "cached-schema-unavailable", remoteSchemaRequired: true }
       : { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "schema-registry-refresh-rejected" };
   }
 }
@@ -828,6 +852,17 @@ export async function resolveOpenCodeCompatibility(
     };
   }
   const loaded = await loadOpenCodeSchemaBundle(source);
+  // A verified remote schema that has expired proves this client may require a
+  // newer envelope than the compiled baseline. Do not revive that baseline
+  // merely because refresh is temporarily offline or rejected.
+  if (loaded.remoteSchemaRequired) {
+    return {
+      mode: "plain",
+      capabilities,
+      bundleSource: loaded.source,
+      diagnostic: loaded.diagnostic ?? "cached-schema-unavailable",
+    };
+  }
   // The compiled baseline remains a safe first-launch fallback while it is
   // within its own explicit validity window. Once that baseline expires, do
   // not extend an old parser merely because a remote cache is unavailable.
@@ -851,7 +886,8 @@ export async function resolveOpenCodeCompatibility(
       diagnostic: "no-compatible-schema",
     };
   }
-  if (quarantinedSchemaIds.has(schema.id)) {
+  const schemaRevision = createHash("sha256").update(stableJson(schema)).digest("hex");
+  if (quarantinedSchemaRevisions.get(schema.id) === schemaRevision) {
     return {
       mode: "plain",
       capabilities,

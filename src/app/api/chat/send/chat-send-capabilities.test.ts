@@ -40,4 +40,13 @@ const identityA = await openCodeExecutableIdentity({ PATH: launcherA });
 const identityB = await openCodeExecutableIdentity({ PATH: launcherB });
 assert.notEqual(identityA, identityB, "capability-cache identity changes when PATH resolves a different OpenCode executable");
 
+const windowsLauncher = await mkdtemp(path.join(tmpdir(), "cave-opencode-launch-windows-"));
+await writeFile(path.join(windowsLauncher, "opencode.cmd"), "shim");
+await writeFile(path.join(windowsLauncher, "opencode.exe"), "binary");
+const windowsIdentity = await openCodeExecutableIdentity(
+  { PATH: windowsLauncher, PATHEXT: ".COM;.EXE;.BAT;.CMD" },
+  "win32",
+);
+assert.match(windowsIdentity, /opencode\.exe\0/i, "Windows capability identity follows PowerShell PATHEXT precedence over a co-located cmd shim");
+
 console.log("chat-send-capabilities.test.ts: ok");
