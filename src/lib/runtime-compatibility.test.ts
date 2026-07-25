@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   CLAUDE_COMPATIBILITY_PROFILES,
   redactedEventFingerprint,
@@ -35,6 +36,16 @@ assert.deepEqual(
 const tampered = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
 tampered.eventTypes.toolUse = "arbitrary-remote-event";
 assert.equal(validateRuntimeCompatibilityProfile(tampered, NOW), false, "profile hashes reject silent schema tampering");
+
+const forgedProvenance = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
+forgedProvenance.source.blobSha = "a".repeat(40);
+const { contentHash: _oldHash, ...forgedUnsigned } = forgedProvenance;
+forgedProvenance.contentHash = createHash("sha256").update(JSON.stringify(forgedUnsigned)).digest("hex");
+assert.equal(
+  validateRuntimeCompatibilityProfile(forgedProvenance, NOW),
+  false,
+  "profiles must retain the generated registry's exact provenance even when an attacker recomputes the public content hash",
+);
 
 const cache = new RuntimeCompatibilityCache([CLAUDE_COMPATIBILITY_PROFILES[1]]);
 assert.equal(cache.refresh([CLAUDE_COMPATIBILITY_PROFILES[0]], NOW), false, "a lower profile sequence cannot roll back last-known-good data");

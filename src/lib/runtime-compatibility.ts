@@ -109,7 +109,11 @@ export function validateRuntimeCompatibilityProfile(
   if (!Array.isArray(p.requires) || p.requires.some((cap) => !["stream-json", "tool-envelopes", "tool-hooks"].includes(cap))) return false;
   if (p.parser !== "claude-stream-json-v1") return false;
   if (p.eventTypes?.assistant !== "assistant" || p.eventTypes?.user !== "user" || p.eventTypes?.toolUse !== "tool_use" || p.eventTypes?.toolResult !== "tool_result") return false;
-  if (p.source?.repo !== REGISTRY_SOURCE.repo || p.source?.keyId !== "cave-registry-v1" || !/^[a-f0-9]{40}$/i.test(p.source?.blobSha ?? "")) return false;
+  if (
+    p.source?.repo !== REGISTRY_SOURCE.repo ||
+    p.source?.blobSha !== REGISTRY_SOURCE.blobSha ||
+    p.source?.keyId !== "cave-registry-v1"
+  ) return false;
   const issued = Date.parse(p.issuedAt);
   const expires = Date.parse(p.expiresAt);
   if (!Number.isFinite(issued) || !Number.isFinite(expires) || expires <= issued) return false;

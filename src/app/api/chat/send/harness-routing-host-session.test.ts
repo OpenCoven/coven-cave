@@ -527,8 +527,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /boundarySentinel\?\.observe\(block\.name, block\.input\)/,
-  "Envelope tool_use blocks should feed the boundary sentinel",
+  /parseClaudeMessageEnvelope\(ev, claudeCompatibility\.profile\)[\s\S]*?boundarySentinel\?\.observe\(claudeEvent\.name, claudeEvent\.input\)/,
+  "Profile-selected envelope tool_use blocks should feed the boundary sentinel",
 );
 
 assert.match(
