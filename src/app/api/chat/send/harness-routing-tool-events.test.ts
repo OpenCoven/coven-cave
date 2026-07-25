@@ -94,8 +94,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /toPersistedTools\(toolTracker\.snapshot\(\)/,
-  "the saved assistant turn captures the tracker's final tool state",
+  /toPersistedTools\(\[\.\.\.retrySettledTools, \.\.\.toolTracker\.snapshot\(\)\]/,
+  "the saved assistant turn captures both retry-settled and final tool state",
 );
 
 assert.match(
@@ -272,8 +272,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /peekCachedCodexRuntime\("codex", 1_500, codexProbeEnv\(harnessSpawnEnv\(\)\)\)[\s\S]*?productionCodexSchemaSources\(\)/,
-  "Codex parsing must use a credential-free non-blocking cached probe and verified schema sources",
+  /const codexLaunch = codexHarnessEnv[\s\S]*?codexLaunchCommand\(codexBin\(codexHarnessEnv\)\)/,
+  "Codex parsing must probe the same credential-sanitized executable it later launches",
 );
 
 assert.match(
@@ -284,8 +284,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const codexDirect = !sshRuntime && binding\.harness === "codex" && codexCompatibility\?\.ok === true;[\s\S]*?\["exec", "--json", "--skip-git-repo-check", "--color", "never"\][\s\S]*?command: "codex", args: spawnArgs/,
-  "a selected local Codex schema launches the CLI's authenticated native JSONL pipe instead of inventing an outer attestation",
+  /const selectedCodexDirect = codexCompatibility\?\.ok === true;[\s\S]*?codexCompatibility\.report\.capabilities\.resume[\s\S]*?\["exec", "--json", "--skip-git-repo-check", "--color", "never"\][\s\S]*?command: codexLaunch\.command,[\s\S]*?\.\.\.codexLaunch\.fixedArgs/,
+  "a selected, resume-capable local Codex schema launches the CLI's authenticated native JSONL pipe instead of inventing an outer attestation",
+);
+
+assert.match(
+  chatRoute,
+  /const retrySettledTools: RecordedToolEvent\[\] = \[\];[\s\S]*?retrySettledTools\.push\(\.\.\.toolTracker\.snapshot\(\)\);[\s\S]*?toPersistedTools\(\[\.\.\.retrySettledTools, \.\.\.toolTracker\.snapshot\(\)\]/,
+  "retry-settled tool records are retained for reload parity with live SSE",
 );
 
 assert.match(

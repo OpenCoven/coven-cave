@@ -944,24 +944,42 @@ export async function POST(req: Request) {
   // local CLI and select a constrained version/capability schema once a
   // cached probe is available; a cold probe warms in the background so it
   // never delays chat startup. Unknown versions retain the generic path.
+  // Resume the harness's latest session id, not the stable conversation id —
+  // after the first resume those diverge permanently.
+  const resumeTarget = body.startNewConversation && !existingConversation
+    ? null
+    : body.sessionId
+      ? existingConversation?.harnessSessionId ?? body.sessionId
+      : null;
+  const codexHarnessEnv = !sshRuntime && binding.harness === "codex"
+    ? harnessSpawnEnv(body.familiarId)
+    : null;
+  // Resolve before probing: schema selection must describe the exact native
+  // binary (including an npm shim's JavaScript entrypoint) we will launch.
+  const codexLaunch = codexHarnessEnv
+    ? codexLaunchCommand(codexBin(codexHarnessEnv))
+    : null;
   const codexCompatibility =
-    !sshRuntime && binding.harness === "codex"
+    codexLaunch && !codexLaunch.unresolvedWindowsShim
       ? resolveCodexSchema(
-        peekCachedCodexRuntime("codex", 1_500, codexProbeEnv(harnessSpawnEnv())),
+        peekCachedCodexRuntime(
+          { command: codexLaunch.command, fixedArgs: codexLaunch.fixedArgs },
+          1_500,
+          codexProbeEnv(codexHarnessEnv ?? undefined),
+        ),
         await productionCodexSchemaSources(),
       )
       : null;
   // A selected local schema enables Codex's own documented JSONL pipe. This
   // is an authenticated process channel, unlike unmarked `coven run` output
   // text which may simply be an assistant-authored JSON/code response.
-  const selectedCodexDirect = !sshRuntime && binding.harness === "codex" && codexCompatibility?.ok === true;
-  const codexLaunch = selectedCodexDirect
-    ? codexLaunchCommand(codexBin(harnessSpawnEnv(body.familiarId)))
-    : null;
   // A malformed npm batch shim is never run through cmd.exe. Keep the generic
   // Coven route for that case, where it can retain its established fallback
   // behavior without turning a path or resume id into shell syntax.
-  const codexDirect = selectedCodexDirect && !codexLaunch?.unresolvedWindowsShim;
+  const selectedCodexDirect = codexCompatibility?.ok === true;
+  const codexDirect = selectedCodexDirect
+    && !codexLaunch?.unresolvedWindowsShim
+    && (!resumeTarget || codexCompatibility.report.capabilities.resume);
   const modelForwardingEnabled =
     codexDirect
       ? true
@@ -1367,13 +1385,12 @@ export async function POST(req: Request) {
     }
     if (codexDirect) {
       const a = resumeSessionId
-        ? ["exec", "resume", "--json", "--skip-git-repo-check", resumeSessionId]
+        ? ["exec", "resume", "--json", "--skip-git-repo-check"]
         : ["exec", "--json", "--skip-git-repo-check", "--color", "never"];
       if (forwardModel) a.push("--model", forwardModel);
-      if (!resumeSessionId && forwardPermission) a.push("--sandbox", forwardPermission === "read-only" ? "read-only" : "workspace-write");
-      if (!resumeSessionId) {
-        for (const dir of forwardAddDirs) a.push("--add-dir", dir);
-      }
+      if (forwardPermission) a.push("--sandbox", forwardPermission === "read-only" ? "read-only" : "workspace-write");
+      for (const dir of forwardAddDirs) a.push("--add-dir", dir);
+      if (resumeSessionId) a.push(resumeSessionId);
       a.push(prompt);
       return a;
     }
@@ -1429,13 +1446,6 @@ export async function POST(req: Request) {
     a.push("--", prompt);
     return a;
   };
-  // Resume the harness's latest session id, not the stable conversation id —
-  // after the first resume those diverge permanently.
-  const resumeTarget = body.startNewConversation && !existingConversation
-    ? null
-    : body.sessionId
-      ? existingConversation?.harnessSessionId ?? body.sessionId
-      : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
   // the profile used for the previous native session and transparently start a
   // fresh one (with recent context replayed) when the access chip changed. An
@@ -2232,7 +2242,9 @@ export async function POST(req: Request) {
                   // plus its own grants (cave-4nu6).
                   env: openCodeDirect
                     ? openCodeSpawnEnv(body.familiarId)
-                    : harnessSpawnEnv(body.familiarId),
+                    : codexDirect && codexHarnessEnv
+                      ? codexHarnessEnv
+                      : harnessSpawnEnv(body.familiarId),
                   windowsHide: true,
                 }) as ChildProcessWithoutNullStreams;
                 if (openCodeLaunchCommand) {
@@ -2367,7 +2379,8 @@ export async function POST(req: Request) {
           conflict.manifestPath,
         );
         assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
-        assistantText = "";
+        // Keep already-streamed prose. The client cannot retract it, and its
+        // tool offsets must remain meaningful after the replacement attempt.
         jsonBuf = "";
         result = {};
         settleToolCallsBeforeRetry();
@@ -2410,7 +2423,7 @@ export async function POST(req: Request) {
         );
         sessionId = null;
         assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
-        assistantText = "";
+        // Keep already-streamed prose for live/reloaded transcript parity.
         jsonBuf = "";
         result = {};
         settleToolCallsBeforeRetry();

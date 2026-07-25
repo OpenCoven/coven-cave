@@ -361,6 +361,49 @@ async function waitForCacheLock(ms: number): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
+type CacheLockLease = { token: string; pid: number };
+
+function parseCacheLockLease(value: string): CacheLockLease | null {
+  try {
+    const parsed = JSON.parse(value) as Partial<CacheLockLease>;
+    const token = parsed.token;
+    const pid = parsed.pid;
+    if (typeof token !== "string" || token.length === 0 || typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return null;
+    return { token, pid };
+  } catch {
+    return null;
+  }
+}
+
+function pidIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM proves the process exists but is not ours to signal.
+    return !(error && typeof error === "object" && "code" in error && error.code === "ESRCH");
+  }
+}
+
+/** Move, never unlink, a crashed owner's lease so a racing writer cannot lose a new lock. */
+async function reclaimAbandonedCacheLock(lockPath: string): Promise<boolean> {
+  let observed: CacheLockLease | null = null;
+  try {
+    observed = parseCacheLockLease(await readFile(lockPath, "utf8"));
+  } catch {
+    return false;
+  }
+  if (!observed || pidIsAlive(observed.pid)) return false;
+  const tombstone = `${lockPath}.abandoned.${observed.token}`;
+  try {
+    await rename(lockPath, tombstone);
+    try { await unlink(tombstone); } catch { /* best effort */ }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The in-process queue prevents local contention; this lock protects the
  * shared per-user cache when two Cave processes refresh at the same time.
@@ -375,19 +418,20 @@ async function acquireCacheWriteLock(cachePath: string): Promise<(() => Promise<
       await mkdir(path.dirname(cachePath), { recursive: true });
       const handle = await open(lockPath, "wx", 0o600);
       const ownershipToken = crypto.randomUUID();
-      await handle.writeFile(ownershipToken, "utf8");
+      await handle.writeFile(JSON.stringify({ token: ownershipToken, pid: process.pid }), "utf8");
       await handle.close();
       return async () => {
         try {
           // Never delete a replacement lock acquired by another process after
           // this writer finished. The token is an ownership proof, not merely
           // a stale-file hint.
-          if ((await readFile(lockPath, "utf8")) === ownershipToken) await unlink(lockPath);
+          if (parseCacheLockLease(await readFile(lockPath, "utf8"))?.token === ownershipToken) await unlink(lockPath);
         } catch { /* best effort */ }
       };
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : null;
       if (code !== "EEXIST") return null;
+      if (await reclaimAbandonedCacheLock(lockPath)) continue;
       await waitForCacheLock(CACHE_LOCK_RETRY_MS);
     }
   }
@@ -733,29 +777,46 @@ export function codexProbeEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.P
   return env;
 }
 
+export type CodexProbeTarget = { command: string; fixedArgs?: readonly string[] };
 type CodexProbeCacheEntry = { report: CodexRuntimeReport; expiresAt: number; pending?: Promise<CodexRuntimeReport> };
-let codexProbeCache: CodexProbeCacheEntry | null = null;
+const codexProbeCache = new Map<string, CodexProbeCacheEntry>();
 const CODEX_PROBE_SUCCESS_TTL_MS = 60_000;
 const CODEX_PROBE_FAILURE_TTL_MS = 10_000;
 
 export function clearCodexRuntimeDiscoveryCache(): void {
-  codexProbeCache = null;
+  codexProbeCache.clear();
+}
+
+function normalizedProbeTarget(target: string | CodexProbeTarget): Required<CodexProbeTarget> {
+  return typeof target === "string"
+    ? { command: target, fixedArgs: [] }
+    : { command: target.command, fixedArgs: [...(target.fixedArgs ?? [])] };
+}
+
+function codexProbeCacheKey(target: Required<CodexProbeTarget>, env: NodeJS.ProcessEnv): string {
+  return JSON.stringify({
+    command: target.command,
+    fixedArgs: target.fixedArgs,
+    // `env` has already passed codexProbeEnv's secret allowlist.
+    env: PROBE_ENV_KEYS.map((key) => [key, env[key] ?? ""]),
+  });
 }
 
 /** Safe local discovery; failures become an explicit unavailable report. */
 export async function discoverCodexRuntime(
-  command = "codex",
+  command: string | CodexProbeTarget = "codex",
   timeout = 1_500,
   env?: NodeJS.ProcessEnv,
 ): Promise<CodexRuntimeReport> {
   try {
+    const target = normalizedProbeTarget(command);
     // `codex` is normally an npm `.cmd` shim on Windows. The argv is fixed
     // by this module (never request-supplied), so Node's shell bridge is used
     // only there to let Windows resolve the shim safely.
-    const windowsShim = process.platform === "win32";
+    const windowsShim = process.platform === "win32" && (target.command === "codex" || /\.(cmd|bat)$/i.test(target.command));
     const [{ stdout: versionOut, stderr: versionErr }, { stdout: helpOut, stderr: helpErr }] = await Promise.all([
-      execFileAsync(command, ["--version"], { timeout, windowsHide: true, env, shell: windowsShim }),
-      execFileAsync(command, ["exec", "--help"], { timeout, windowsHide: true, env, shell: windowsShim }),
+      execFileAsync(target.command, [...target.fixedArgs, "--version"], { timeout, windowsHide: true, env, shell: windowsShim }),
+      execFileAsync(target.command, [...target.fixedArgs, "exec", "--help"], { timeout, windowsHide: true, env, shell: windowsShim }),
     ]);
     const version = parseCodexVersionOutput(`${versionOut}\n${versionErr}`);
     const help = `${helpOut}\n${helpErr}`;
@@ -767,7 +828,7 @@ export async function discoverCodexRuntime(
 
 /** Single-flight, bounded-cadence discovery for chat turns. */
 export async function discoverCachedCodexRuntime(
-  command = "codex",
+  command: string | CodexProbeTarget = "codex",
   timeout = 1_500,
   env = codexProbeEnv(),
   now = Date.now(),
@@ -776,21 +837,23 @@ export async function discoverCachedCodexRuntime(
 }
 
 function startCodexRuntimeDiscovery(
-  command: string,
+  command: string | CodexProbeTarget,
   timeout: number,
   env: NodeJS.ProcessEnv,
   now: number,
 ): Promise<CodexRuntimeReport> {
-  const cached = codexProbeCache;
+  const target = normalizedProbeTarget(command);
+  const cacheKey = codexProbeCacheKey(target, env);
+  const cached = codexProbeCache.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.pending ?? Promise.resolve(cached.report);
-  const pending = discoverCodexRuntime(command, timeout, env).then((report) => {
-    codexProbeCache = {
+  const pending = discoverCodexRuntime(target, timeout, env).then((report) => {
+    codexProbeCache.set(cacheKey, {
       report,
       expiresAt: Date.now() + (report.version ? CODEX_PROBE_SUCCESS_TTL_MS : CODEX_PROBE_FAILURE_TTL_MS),
-    };
+    });
     return report;
   });
-  codexProbeCache = {
+  codexProbeCache.set(cacheKey, {
     // A stale report may describe an executable that has been replaced since
     // the last probe. Do not select its schema while the refresh is pending:
     // the text-only fallback is safer than parsing a newly upgraded runtime
@@ -800,7 +863,7 @@ function startCodexRuntimeDiscovery(
       : cached.report,
     expiresAt: now + timeout,
     pending,
-  };
+  });
   return pending;
 }
 
@@ -811,12 +874,14 @@ function startCodexRuntimeDiscovery(
  * use the cached, capability-gated schema.
  */
 export function peekCachedCodexRuntime(
-  command = "codex",
+  command: string | CodexProbeTarget = "codex",
   timeout = 1_500,
   env = codexProbeEnv(),
   now = Date.now(),
 ): CodexRuntimeReport {
-  const cached = codexProbeCache;
+  const target = normalizedProbeTarget(command);
+  const cacheKey = codexProbeCacheKey(target, env);
+  const cached = codexProbeCache.get(cacheKey);
   if (!cached || cached.expiresAt <= now) {
     void startCodexRuntimeDiscovery(command, timeout, env, now);
     return { version: null, capabilities: { jsonEvents: false, resume: false } };

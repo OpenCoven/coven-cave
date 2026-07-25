@@ -284,6 +284,9 @@ try {
   assert.equal(await writeCodexSchemaCache(corruptCachePath, newerDocument, verify, new Date("2026-07-24T12:00:00.000Z")), true);
   await writeFile(corruptCachePath, "{ corrupt cache");
   assert.equal(await writeCodexSchemaCache(corruptCachePath, olderDocument, verify, new Date("2026-07-24T12:00:00.000Z")), false, "a corrupt selectable cache still retains its signed anti-rollback watermark");
+  const abandonedLockCachePath = path.join(cacheDir, "abandoned-lock.json");
+  await writeFile(`${abandonedLockCachePath}.lock`, JSON.stringify({ token: "crashed-owner", pid: 2_147_483_647 }));
+  assert.equal(await writeCodexSchemaCache(abandonedLockCachePath, document, verify, new Date("2026-07-24T12:00:00.000Z")), true, "an abandoned owner lease is reclaimed without deleting an active replacement lock");
   const expiredNewerPayload = {
     ...unsignedPayload,
     provenance: {

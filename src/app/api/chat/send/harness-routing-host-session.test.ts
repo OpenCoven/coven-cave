@@ -83,13 +83,13 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /\["exec", "resume", "--json", "--skip-git-repo-check", resumeSessionId\]/,
-  "Resumed direct Codex chats must retain support for familiar workspaces outside Git repositories",
+  /\["exec", "resume", "--json", "--skip-git-repo-check"\][\s\S]*?if \(forwardPermission\)[\s\S]*?"--sandbox"[\s\S]*?for \(const dir of forwardAddDirs\)[\s\S]*?if \(resumeSessionId\) a\.push\(resumeSessionId\);/,
+  "Resumed direct Codex chats retain non-Git support plus the requested sandbox and granted roots",
 );
 
 assert.match(
   chatRoute,
-  /codexLaunchCommand\(codexBin\(harnessSpawnEnv\(body\.familiarId\)\)\)/,
+  /const codexHarnessEnv = !sshRuntime && binding\.harness === "codex"[\s\S]*?codexLaunchCommand\(codexBin\(codexHarnessEnv\)\)/,
   "Direct Codex chat must resolve a Windows npm shim to a non-shell launcher",
 );
 
