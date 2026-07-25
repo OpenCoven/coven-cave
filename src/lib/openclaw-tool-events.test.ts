@@ -33,6 +33,14 @@ assert.equal(
   "missing_feature",
   "capability discovery must be stricter than a version match",
 );
+assert.equal(
+  resolveOpenClawToolCompatibility({
+    ...hello,
+    features: { ...hello.features, capabilities: [] },
+  }).reason,
+  "missing_feature",
+  "the versioned session.tool payload contract must be negotiated explicitly",
+);
 
 const [startFrame, updateFrame, terminalFrame] = fixture.frames;
 assert.deepEqual(normalizeOpenClawGatewayToolEvent(startFrame, "cave-session", "nova"), {
@@ -53,6 +61,14 @@ assert.equal(
   normalizeOpenClawGatewayToolEvent({ ...startFrame, event: "agent" }, "cave-session", "nova"),
   null,
   "unknown event families must not become fabricated activity",
+);
+assert.equal(
+  normalizeOpenClawGatewayToolEvent({
+    ...terminalFrame,
+    payload: { ...terminalFrame.payload, data: { ...terminalFrame.payload.data, isError: undefined } },
+  }, "cave-session", "nova"),
+  null,
+  "a terminal frame without an explicit outcome must not be rendered as success",
 );
 
 const ledger = new OpenClawToolEventLedger();
@@ -135,6 +151,13 @@ assert.deepEqual(
   { id: "call-b", name: "exec", input: "b", output: "B", status: "ok", durationMs: 9 },
   "concurrent same-name calls remain keyed by their Gateway toolCallId",
 );
+const ordered = new OpenClawToolEventLedger();
+ordered.accept({ id: "call-ordered", name: "exec", phase: "start", input: "a", isError: false, seq: 10 });
+assert.equal(
+  ordered.accept({ id: "call-ordered", name: "exec", phase: "update", output: "stale", isError: false, seq: 9 }),
+  null,
+  "out-of-order updates must not overwrite newer output while a call is running",
+);
 
 const entry = {
   runtimeKey: "0123456789abcdef01234567",
@@ -162,7 +185,9 @@ await once(gateway, "listening");
 const address = gateway.address();
 assert.ok(address && typeof address !== "string");
 const receivedFrames = [];
+let gatewaySocket;
 gateway.on("connection", (socket) => {
+  gatewaySocket = socket;
   // A pre-auth event must never be rendered, even if it happens to look like
   // the selected session's tool frame.
   socket.send(JSON.stringify(startFrame));
@@ -193,11 +218,13 @@ const previousGatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN;
 process.env.OPENCLAW_GATEWAY_URL = `ws://127.0.0.1:${address.port}`;
 process.env.OPENCLAW_GATEWAY_TOKEN = "fixture-token";
 try {
+  let disconnects = 0;
   const subscription = await subscribeOpenClawGatewayToolEvents({
     sessionKey: "cave-session",
     agentId: "nova",
     persistCapabilityCache: false,
     onToolEvent: (event) => receivedFrames.push(event),
+    onDisconnect: () => { disconnects += 1; },
   });
   assert.equal(subscription.active, true);
   await new Promise((resolve) => setTimeout(resolve, 5));
@@ -212,6 +239,9 @@ try {
       timestamp: 1_000,
     },
   ]);
+  gatewaySocket.close();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(disconnects, 1, "an unexpected Gateway close must settle the route exactly once");
   subscription.close();
   process.env.OPENCLAW_GATEWAY_URL = "ws://gateway.example.test";
   assert.equal(

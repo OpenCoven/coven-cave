@@ -16,6 +16,7 @@ export const OPENCLAW_TOOL_PROTOCOL_ADAPTERS = [
     protocol: 4,
     requiredMethods: ["sessions.messages.subscribe"],
     requiredEvents: ["session.tool"],
+    requiredCapabilities: ["openclaw.session-tool.v1"],
     schema: "openclaw.session-tool.v1",
   },
 ] as const;
@@ -24,6 +25,8 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 8;
 const CACHE_MAX_BYTES = 16 * 1024;
 const MAX_GATEWAY_FRAME_BYTES = 1024 * 1024;
+const MAX_PREAUTH_FRAME_BYTES = 64 * 1024;
+const MAX_TRACKED_TOOL_CALLS = 1_024;
 const MAX_TOOL_IDENTIFIER_LENGTH = 512;
 const MAX_TOOL_TEXT_LENGTH = 64 * 1024;
 
@@ -49,6 +52,14 @@ function strings(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : null;
 }
 
+function positiveSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function safeServerVersion(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9._+-]{1,128}$/.test(value);
+}
+
 function boundedToolText(value: unknown, formatter: (raw: unknown) => string | undefined): string | undefined {
   const text = formatter(value);
   return text && text.length <= MAX_TOOL_TEXT_LENGTH ? text : undefined;
@@ -63,16 +74,15 @@ export function resolveOpenClawToolCompatibility(value: unknown): OpenClawToolCo
     hello.type !== "hello-ok" ||
     !Number.isInteger(hello.protocol) ||
     !hello.server ||
-    typeof hello.server.version !== "string" ||
-    !hello.server.version.trim() ||
+    !safeServerVersion(hello.server.version) ||
     typeof hello.server.connId !== "string" ||
     !hello.server.connId.trim() ||
     !hello.features
     || !hello.snapshot || typeof hello.snapshot !== "object" || Array.isArray(hello.snapshot)
     || !hello.auth || hello.auth.role !== "operator" || !strings(hello.auth.scopes)?.includes("operator.read")
-    || !hello.policy || !Number.isSafeInteger(hello.policy.maxPayload) || hello.policy.maxPayload < 1
-    || !Number.isSafeInteger(hello.policy.maxBufferedBytes) || hello.policy.maxBufferedBytes < 1
-    || !Number.isSafeInteger(hello.policy.tickIntervalMs) || hello.policy.tickIntervalMs < 1
+    || !hello.policy || !positiveSafeInteger(hello.policy.maxPayload)
+    || !positiveSafeInteger(hello.policy.maxBufferedBytes)
+    || !positiveSafeInteger(hello.policy.tickIntervalMs)
   ) {
     return { protocol: -1, serverVersion: "unknown", schema: "none", supported: false, reason: "invalid_hello" };
   }
@@ -88,11 +98,14 @@ export function resolveOpenClawToolCompatibility(value: unknown): OpenClawToolCo
   }
   const methods = strings(hello.features.methods);
   const events = strings(hello.features.events);
+  const capabilities = strings(hello.features.capabilities);
   const supported =
     methods !== null &&
     events !== null &&
+    capabilities !== null &&
     adapter.requiredMethods.every((method) => methods.includes(method)) &&
-    adapter.requiredEvents.every((event) => events.includes(event));
+    adapter.requiredEvents.every((event) => events.includes(event)) &&
+    adapter.requiredCapabilities.every((capability) => capabilities.includes(capability));
   return {
     protocol: hello.protocol as number,
     serverVersion: hello.server.version,
@@ -144,6 +157,9 @@ export function normalizeOpenClawGatewayToolEvent(
   const envelope = frame as { type?: unknown; event?: unknown; payload?: GatewayToolPayload };
   const payload = envelope?.payload;
   const data = payload?.data;
+  const phase = data?.phase;
+  const seq = payload?.seq;
+  const timestamp = payload?.ts;
   if (
     envelope?.type !== "event" ||
     envelope.event !== "session.tool" ||
@@ -160,25 +176,28 @@ export function normalizeOpenClawGatewayToolEvent(
     typeof data.name !== "string" ||
     !data.name.trim() ||
     data.name.length > MAX_TOOL_IDENTIFIER_LENGTH ||
-    (data.phase !== "start" && data.phase !== "update" && data.phase !== "result")
+    (phase !== "start" && phase !== "update" && phase !== "result") ||
+    (data.isError !== undefined && typeof data.isError !== "boolean") ||
+    // A terminal frame without an explicit outcome must not fabricate success.
+    (phase === "result" && typeof data.isError !== "boolean")
   ) {
     return null;
   }
   const output =
-    data.phase === "update"
+    phase === "update"
       ? boundedToolText(data.partialResult, flattenToolResultContent)
-      : data.phase === "result"
+      : phase === "result"
         ? boundedToolText(data.result, flattenToolResultContent)
         : undefined;
   return {
     id: data.toolCallId,
     name: data.name,
-    phase: data.phase,
-    ...(data.phase === "start" ? { input: boundedToolText(data.args, formatToolInputValue) } : {}),
+    phase,
+    ...(phase === "start" ? { input: boundedToolText(data.args, formatToolInputValue) } : {}),
     ...(output ? { output } : {}),
     isError: data.isError === true,
-    ...(Number.isSafeInteger(payload.seq) && payload.seq >= 0 ? { seq: payload.seq } : {}),
-    ...(Number.isSafeInteger(payload.ts) && payload.ts >= 0 ? { timestamp: payload.ts } : {}),
+    ...(typeof seq === "number" && Number.isSafeInteger(seq) && seq >= 0 ? { seq } : {}),
+    ...(typeof timestamp === "number" && Number.isSafeInteger(timestamp) && timestamp >= 0 ? { timestamp } : {}),
   };
 }
 
@@ -187,16 +206,21 @@ export class OpenClawToolEventLedger {
   private readonly tools = new Map<string, RecordedToolEvent>();
   private readonly startedAt = new Map<string, number>();
   private readonly seenSequences = new Set<number>();
+  private readonly lastSequenceByTool = new Map<string, number>();
 
   accept(event: OpenClawGatewayToolEvent, receivedAt = Date.now()): ToolStreamEvent | null {
+    const existing = this.tools.get(event.id);
+    if (!existing && this.tools.size >= MAX_TRACKED_TOOL_CALLS) return null;
     if (event.seq !== undefined) {
+      const lastSequence = this.lastSequenceByTool.get(event.id);
+      if (lastSequence !== undefined && event.seq <= lastSequence) return null;
       if (this.seenSequences.has(event.seq)) return null;
       this.seenSequences.add(event.seq);
       // A bounded replay guard is enough for one live turn and prevents an
       // untrusted runtime from growing this set indefinitely.
       if (this.seenSequences.size > 4096) this.seenSequences.clear();
+      this.lastSequenceByTool.set(event.id, event.seq);
     }
-    const existing = this.tools.get(event.id);
     if (existing && existing.status !== "running") return null;
     const status: ToolStreamEvent["status"] =
       event.phase === "result" ? (event.isError ? "error" : "ok") : "running";
@@ -368,6 +392,7 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
   sessionKey: string;
   agentId: string;
   onToolEvent(event: OpenClawGatewayToolEvent): void;
+  onDisconnect?(): void;
   onDiagnostic?(diagnostic: { code: string; protocol?: number; schema?: string }): void;
   timeoutMs?: number;
   /** Test seam; production always persists verified compatibility metadata. */
@@ -392,11 +417,25 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
   let closed = false;
   let connected = false;
   let finished = false;
+  let disconnected = false;
   let subscriptionId = "";
+  let maxInboundFrameBytes = MAX_PREAUTH_FRAME_BYTES;
+  let maxBufferedBytes = MAX_GATEWAY_FRAME_BYTES;
+  let tickIntervalMs: number | undefined;
+  let tickWatchdog: ReturnType<typeof setTimeout> | null = null;
   let negotiatedCompatibility: OpenClawToolCompatibility | undefined;
+  const armTickWatchdog = () => {
+    if (!connected || !tickIntervalMs || closed) return;
+    if (tickWatchdog) clearTimeout(tickWatchdog);
+    tickWatchdog = setTimeout(() => {
+      notifyDisconnect();
+      close();
+    }, tickIntervalMs * 2);
+  };
   const close = () => {
     if (closed) return;
     closed = true;
+    if (tickWatchdog) clearTimeout(tickWatchdog);
     try {
       socket.close();
     } catch {
@@ -420,6 +459,11 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
     fallbackReason,
     close,
   });
+  const notifyDisconnect = () => {
+    if (disconnected || closed) return;
+    disconnected = true;
+    options.onDisconnect?.();
+  };
   return await new Promise<OpenClawGatewayToolSubscription>((resolve) => {
     const timer = setTimeout(() => {
       if (!connected) {
@@ -438,19 +482,32 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
       if (!connected) {
         close();
         finish(fallback("gateway_unavailable"));
+      } else {
+        notifyDisconnect();
+        close();
       }
     });
     socket.on("close", () => {
       if (!connected) finish(fallback("gateway_closed"));
+      else notifyDisconnect();
     });
     socket.on("message", (raw) => {
       let frame: GatewayResponse & { event?: unknown };
+      const rawText = raw.toString();
+      if (Buffer.byteLength(rawText, "utf8") > maxInboundFrameBytes) {
+        options.onDiagnostic?.({ code: "gateway_frame_too_large" });
+        if (connected) notifyDisconnect();
+        close();
+        if (!connected) finish(fallback("gateway_frame_too_large"));
+        return;
+      }
       try {
-        frame = JSON.parse(raw.toString()) as GatewayResponse & { event?: unknown };
+        frame = JSON.parse(rawText) as GatewayResponse & { event?: unknown };
       } catch {
         options.onDiagnostic?.({ code: "gateway_invalid_frame" });
         return;
       }
+      armTickWatchdog();
       if (frame.type === "event" && frame.event === "connect.challenge") {
         socket.send(
           JSON.stringify({
@@ -484,6 +541,22 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
           return;
         }
         negotiatedCompatibility = compatibility;
+        const policy = (frame.payload as GatewayHello).policy;
+        if (
+          !policy ||
+          !positiveSafeInteger(policy.maxPayload) ||
+          !positiveSafeInteger(policy.maxBufferedBytes) ||
+          !positiveSafeInteger(policy.tickIntervalMs)
+        ) {
+          close();
+          finish(fallback("gateway_invalid_policy", compatibility));
+          return;
+        }
+        // The runtime's negotiated frame ceiling is authoritative; Cave's own
+        // lower cap remains a defense-in-depth limit.
+        maxInboundFrameBytes = Math.min(MAX_GATEWAY_FRAME_BYTES, policy.maxPayload);
+        maxBufferedBytes = policy.maxBufferedBytes;
+        tickIntervalMs = policy.tickIntervalMs;
         const observedAt = Date.now();
         if (options.persistCapabilityCache !== false) {
           void saveOpenClawCapabilityCache({
@@ -494,14 +567,21 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
           }).catch(() => undefined);
         }
         subscriptionId = "cave-openclaw-subscribe";
-        socket.send(
-          JSON.stringify({
-            type: "req",
-            id: subscriptionId,
-            method: "sessions.messages.subscribe",
-            params: { key: options.sessionKey, agentId: options.agentId },
-          }),
-        );
+        const subscriptionRequest = JSON.stringify({
+          type: "req",
+          id: subscriptionId,
+          method: "sessions.messages.subscribe",
+          params: { key: options.sessionKey, agentId: options.agentId },
+        });
+        if (
+          Buffer.byteLength(subscriptionRequest, "utf8") > maxInboundFrameBytes ||
+          socket.bufferedAmount > maxBufferedBytes
+        ) {
+          close();
+          finish(fallback("gateway_policy_exceeded", compatibility));
+          return;
+        }
+        socket.send(subscriptionRequest);
         return;
       }
       if (frame.type === "res" && frame.id === subscriptionId) {
@@ -511,13 +591,14 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
           return;
         }
         connected = true;
+        armTickWatchdog();
         finish({ active: true, compatibility: negotiatedCompatibility, close });
         return;
       }
       // Do not render an event until the authenticated connect response and
       // the scoped subscription acknowledgement have both completed. A peer
       // can legally send arbitrary event envelopes before then.
-      if (!connected) return;
+      if (!connected || closed) return;
       const toolEvent = normalizeOpenClawGatewayToolEvent(frame, options.sessionKey, options.agentId);
       if (toolEvent) options.onToolEvent(toolEvent);
     });

@@ -583,6 +583,22 @@ function openClawChatResponse(args: {
           const tool = openClawTools.accept(event);
           if (tool) push({ kind: "tool_use", ...tool });
         },
+        // Do not wait for the CLI to exit after a live transport loss: settle
+        // observed cards now, and leave the established CLI response path to
+        // complete the plain-chat turn.
+        onDisconnect: () => {
+          pushProgress(
+            "openclaw-tool-activity",
+            "Live OpenClaw tool activity disconnected",
+            "error",
+            "Showing the completed OpenClaw response; unfinished tools were settled.",
+          );
+          for (const tool of openClawTools.finalizeUnsettled(
+            "OpenClaw tool activity disconnected before the tool settled.",
+          )) {
+            push({ kind: "tool_use", ...tool });
+          }
+        },
       });
       if (gatewayToolSubscription.active) {
         pushProgress(

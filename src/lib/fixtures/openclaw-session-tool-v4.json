@@ -6,7 +6,8 @@
     "server": { "version": "2026.7.24", "connId": "conn-fixture" },
     "features": {
       "methods": ["sessions.messages.subscribe", "chat.send"],
-      "events": ["session.tool", "chat"]
+      "events": ["session.tool", "chat"],
+      "capabilities": ["openclaw.session-tool.v1"]
     },
     "snapshot": {},
     "auth": { "role": "operator", "scopes": ["operator.read"] },
@@ -63,7 +64,8 @@
           "phase": "result",
           "toolCallId": "call-1",
           "name": "exec",
-          "result": { "output": "ok" }
+          "result": { "output": "ok" },
+          "isError": false
         }
       }
     }
