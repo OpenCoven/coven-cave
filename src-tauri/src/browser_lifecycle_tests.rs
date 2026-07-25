@@ -1,9 +1,9 @@
 use super::{
     advance_scope_barrier, browser_bounds_within_client, effective_browser_intent,
-    offscreen_browser_creation_bounds, record_bounds_intent, record_navigation_intent,
-    record_scope_intent, record_visibility_intent, BrowserBounds, BrowserBoundsIntent,
-    BrowserEventTracker, BrowserLifecycleInner, BrowserScopeAction, BrowserVisibility,
-    EnvironmentCallbackTimeoutAction, EnvironmentCallbackTimeoutRetryState, Url,
+    offscreen_browser_creation_bounds, offscreen_browser_position, record_bounds_intent,
+    record_navigation_intent, record_scope_intent, record_visibility_intent, BrowserBounds,
+    BrowserBoundsIntent, BrowserEventTracker, BrowserLifecycleInner, BrowserScopeAction,
+    BrowserVisibility, EnvironmentCallbackTimeoutAction, EnvironmentCallbackTimeoutRetryState, Url,
     MAX_TRACKED_BROWSER_URLS, USER_NAVIGATION_MARKER_TTL,
 };
 use std::time::{Duration, Instant};
@@ -331,6 +331,18 @@ fn native_child_creation_is_always_realized_offscreen_at_full_size() {
     assert_eq!(
         offscreen_browser_creation_bounds(1000.0, 700.0, 5000.0, 5000.0),
         Ok((1000.0, 700.0)),
+    );
+}
+
+#[test]
+fn offscreen_position_excludes_oversized_native_children() {
+    assert_eq!(
+        offscreen_browser_position(12_000.0, 8_000.0, 20_000.0, 9_000.0),
+        Ok((-20_002.0, -9_002.0)),
+    );
+    assert_eq!(
+        offscreen_browser_position(12_000.0, 8_000.0, 600.0, 400.0),
+        Ok((-12_002.0, -8_002.0)),
     );
 }
 

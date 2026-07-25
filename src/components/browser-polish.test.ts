@@ -165,9 +165,19 @@ assert.match(
   "offscreen constant mirrors OFFSCREEN_X/Y in src-tauri/src/browser.rs",
 );
 assert.match(
+  nativeOverlay,
+  /function nativeBrowserBounds[\s\S]*window\.devicePixelRatio[\s\S]*const left = Math\.round\(rect\.left \* scale\)[\s\S]*const right = Math\.round\(\(rect\.left \+ rect\.width\) \* scale\)[\s\S]*w: right - left/,
+  "browser bounds cross the DOM/native boundary in renderer physical pixels",
+);
+assert.match(
   pane,
-  /const covered = toolbarOpenRef\.current \|\| surfaceIsCovered\(surface, rect\);[\s\S]{0,320}x: covered \? WEBVIEW_OFFSCREEN : rect\.left,\s*\n\s*y: covered \? WEBVIEW_OFFSCREEN : rect\.top,/,
+  /const covered = toolbarOpenRef\.current \|\| surfaceIsCovered\(surface, rect\);[\s\S]{0,320}\.{3}nativeBrowserBounds\(rect, covered\)/,
   "navigate loads covered webviews offscreen; the bounds loop re-seats them when the cover lifts",
+);
+assert.match(
+  pane,
+  /window\.matchMedia\(`\(resolution: \$\{window\.devicePixelRatio\}dppx\)`\)[\s\S]*onDprChange[\s\S]*scheduleImmediateReconcile\(\)/,
+  "a monitor DPI transition re-seats the native child even when CSS layout dimensions do not change",
 );
 
 // ───────── Native webview lifecycle: deactivate on surface leave ─────────
@@ -305,16 +315,21 @@ const hideWebviewFn = rustBrowser.match(
 )?.[0];
 assert.ok(hideWebviewFn, "hide_webview() exists in src-tauri/src/browser.rs");
 assert.match(hideWebviewFn, /#\[cfg\(target_os = "windows"\)\][\s\S]*webview\.hide\(\)/, "Windows hides WebView2 so it cannot capture clicks");
-assert.match(hideWebviewFn, /#\[cfg\(not\(target_os = "windows"\)\)\][\s\S]*set_position\(LogicalPosition::new\(OFFSCREEN_X, OFFSCREEN_Y\)\)/, "non-Windows retains offscreen parking");
+assert.match(
+  hideWebviewFn,
+  /#\[cfg\(not\(target_os = "windows"\)\)\][\s\S]*offscreen_browser_position\([\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*set_position\(offscreen_position\)/,
+  "non-Windows parks the retained child fully outside its physical client area",
+);
 assert.match(
   rustBrowser,
-  /fn show_webview_at[\s\S]*set_bounds\(Rect \{[\s\S]*position:[\s\S]*size:[\s\S]*#\[cfg\(target_os = "windows"\)\][\s\S]*webview\.show\(\)/,
+  /fn show_webview_at[\s\S]*inner_size\(\)[\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*PhysicalSize::new\(w, h\)[\s\S]*#\[cfg\(target_os = "windows"\)\][\s\S]*webview\.show\(\)/,
   "Windows atomically applies clamped bounds before revealing WebView2",
 );
 assert.match(rustBrowser, /fn browser_bounds_within_client[\s\S]{0,900}!x\.is_finite\(\)[\s\S]{0,500}browser bounds must be finite/, "invalid browser bounds fail closed");
 assert.match(rustBrowser, /fn ensure_browser[\s\S]{0,1200}offscreen_browser_creation_bounds[\s\S]*main\.add_child/, "first-created WebViews use the same bounded geometry policy");
 assert.match(rustBrowser, /fn offscreen_browser_creation_bounds[\s\S]{0,600}browser_bounds_within_client/, "offscreen creation bounds are derived from the bounded geometry policy");
 assert.match(rustBrowser, /fn show_webview_at[\s\S]{0,1200}browser_bounds_within_client[\s\S]*set_bounds/, "existing WebViews use the bounded geometry policy");
+assert.match(rustBrowser, /fn show_webview_at[\s\S]*inner_size\(\)[\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*PhysicalSize::new\(w, h\)/, "native bounds remain physical through client clamping and child placement");
 
 // Settings URLs survive the lazy Browser chunk and are cleared only after
 // BrowserPane acknowledges the declarative request.
