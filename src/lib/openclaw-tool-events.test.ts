@@ -435,6 +435,30 @@ try {
   ]);
   assert.equal(disconnects, 1, "a non-object Gateway frame must settle the route exactly once");
   subscription.close();
+  const malformedGateway = new WebSocketServer({ port: 0 });
+  await once(malformedGateway, "listening");
+  const malformedAddress = malformedGateway.address();
+  assert.ok(malformedAddress && typeof malformedAddress !== "string");
+  let malformedConnections = 0;
+  malformedGateway.on("connection", (socket) => {
+    malformedConnections += 1;
+    socket.send("{");
+  });
+  process.env.OPENCLAW_GATEWAY_URL = `ws://127.0.0.1:${malformedAddress.port}`;
+  const malformedSubscription = await Promise.race([
+    subscribeOpenClawGatewayToolEvents({
+      sessionKey: gatewaySessionKey,
+      agentId: "nova",
+      expectedRunId: "run-1",
+      persistCapabilityCache: false,
+      onToolEvent: () => assert.fail("a malformed pre-auth frame must not emit tool events"),
+    }),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Malformed pre-auth frame did not settle promptly")), 1_000)),
+  ]);
+  assert.equal(malformedSubscription.active, false);
+  assert.equal(malformedSubscription.fallbackReason, "gateway_invalid_frame");
+  assert.equal(malformedConnections, 1);
+  await new Promise<void>((resolve) => malformedGateway.close(() => resolve()));
   process.env.OPENCLAW_GATEWAY_URL = "ws://gateway.example.test";
   assert.equal(
     (await subscribeOpenClawGatewayToolEvents({

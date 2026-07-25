@@ -707,6 +707,9 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
         if (connected) {
           notifyDisconnect();
           close();
+        } else {
+          close();
+          finish(fallback("gateway_invalid_frame"));
         }
         return;
       }
