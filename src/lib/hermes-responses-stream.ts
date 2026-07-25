@@ -15,7 +15,7 @@ export type HermesResponsesEvent =
   | { kind: "tool_input"; id?: string; itemId?: string; input: string; isFinal: boolean }
   | { kind: "tool_end"; id: string; output?: unknown; isError: boolean }
   | { kind: "session"; id: string }
-  | { kind: "done"; isError: boolean; message?: string; invalidPreviousResponseId?: boolean }
+  | { kind: "done"; isError: boolean; id?: string; message?: string; invalidPreviousResponseId?: boolean }
   | { kind: "error"; message: string; invalidPreviousResponseId?: boolean }
   | { kind: "ignore" };
 
@@ -162,14 +162,19 @@ export function parseHermesResponsesEvent(eventName: string, payload: unknown): 
     return { kind: "tool_end", id, output: toolOutput(value), isError: failed };
   }
 
-  if (type === "response.completed") return { kind: "done", isError: false };
+  if (type === "response.completed") {
+    const id = responseId(value);
+    return { kind: "done", isError: false, ...(id ? { id } : {}) };
+  }
   if (type === "response.failed" || type === "response.incomplete") {
     const response = record(value.response);
     const error = record(response?.error) ?? record(value.error);
     const message = string(error?.message) ?? string(value.message);
+    const id = responseId(value);
     return {
       kind: "done",
       isError: true,
+      ...(id ? { id } : {}),
       ...(message ? { message } : {}),
       ...(isHermesInvalidPreviousResponseIdError(value) ? { invalidPreviousResponseId: true } : {}),
     };

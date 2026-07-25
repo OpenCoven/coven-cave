@@ -216,6 +216,18 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /JSON\.parse\(frame\.data\)[\s\S]*?Hermes API protocol error: malformed SSE payload[\s\S]*?return true/,
+  "malformed Hermes SSE data must fail and terminate the attempt rather than allowing a later terminal frame to succeed",
+);
+
+assert.match(
+  chatRoute,
+  /case "done":\s*if \(event\.id\) \{\s*hermesResponseId = event\.id;\s*if \(!sessionId\) announceSession\(event\.id\);/,
+  "terminal Responses events must retain response ids even when no earlier session event arrived",
+);
+
+assert.match(
+  chatRoute,
   /hermesCallNamesById\.set\(event\.id, event\.name\)[\s\S]*?if \(event\.isFinal\) \{\s*const name = hermesCallNamesById\.get\(id\);\s*if \(name\) boundarySentinel\?\.observe\(name, next\);/,
   "final streamed Hermes tool arguments must pass through the runtime boundary sentinel",
 );

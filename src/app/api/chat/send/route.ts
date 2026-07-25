@@ -2104,9 +2104,12 @@ export async function POST(req: Request) {
             try {
               payload = JSON.parse(frame.data);
             } catch {
-              // Future/non-JSON frames cannot safely become a tool bubble.
-              recordStdoutErrorTail(frame.data);
-              return false;
+              // A malformed event can hide text or a tool transition. Do not
+              // present a later terminal frame as a completed response after
+              // silently discarding it.
+              result = { ...result, is_error: true };
+              recordStdoutErrorTail("Hermes API protocol error: malformed SSE payload", true);
+              return true;
             }
             const event = parseHermesResponsesEvent(frame.event, payload);
             switch (event.kind) {
@@ -2161,6 +2164,10 @@ export async function POST(req: Request) {
                 return false;
               }
               case "done":
+                if (event.id) {
+                  hermesResponseId = event.id;
+                  if (!sessionId) announceSession(event.id);
+                }
                 result = { ...result, is_error: event.isError };
                 if (event.message) recordStdoutErrorTail(event.message, true);
                 if (event.isError && previousResponseId && event.invalidPreviousResponseId) resumeFailed = true;

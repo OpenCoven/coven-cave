@@ -563,13 +563,13 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /pushProgress\(\s*"resume-retry",[\s\S]*?"Resume failed; starting a fresh chat",\s*"running",?\s*\)[\s\S]*?pushProgress\(\s*"resume-retry",[\s\S]*?"Fresh chat started",\s*"done",?\s*\)[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
+  /pushProgress\(\s*"resume-retry",[\s\S]*?"Resume failed; starting a fresh chat",\s*"running",?\s*\)[\s\S]*?pushProgress\(\s*"resume-retry",[\s\S]*?"Fresh chat started",\s*"done",?\s*\)[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\), retry\.prompt\)/,
   "Transparent resume fallback should be visible in the progress timeline and settle BEFORE the fresh attempt runs — left running until the attempt ended, 'Resume failed…' headlined the activity strip for the whole reply",
 );
 
 assert.match(
   chatRoute,
-  /const retry = buildResumeRetryPrompt\(harnessPrompt, existingConversation\)[\s\S]*?retry\.replayedHistory[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
+  /const retry = buildResumeRetryPrompt\(harnessPrompt, existingConversation\)[\s\S]*?retry\.replayedHistory[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\), retry\.prompt\)/,
   "Fresh-session retry should replay recent conversation history so the familiar keeps context",
 );
 
@@ -593,7 +593,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /stderrTail\.length = 0;[\s\S]*stdoutErrTail\.length = 0;[\s\S]*await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
+  /stderrTail\.length = 0;[\s\S]*stdoutErrTail\.length = 0;[\s\S]*await runAttempt\(buildArgs\(null, retry\.prompt\), retry\.prompt\)/,
   "Fresh-chat retry should clear stale diagnostic tails before the retry attempt",
 );
 

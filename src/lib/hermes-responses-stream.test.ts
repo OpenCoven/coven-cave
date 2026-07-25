@@ -27,10 +27,13 @@ test("Hermes Responses events normalise text, calls, output, session, and comple
     parseHermesResponsesEvent("response.function_call_output", { call_id: "call-1", output: "C:/repo" }),
     { kind: "tool_end", id: "call-1", output: "C:/repo", isError: false },
   );
-  assert.deepEqual(parseHermesResponsesEvent("response.completed", {}), { kind: "done", isError: false });
   assert.deepEqual(
-    parseHermesResponsesEvent("response.failed", { response: { error: { message: "invalid model" } } }),
-    { kind: "done", isError: true, message: "invalid model" },
+    parseHermesResponsesEvent("response.completed", { response: { id: "resp-terminal" } }),
+    { kind: "done", isError: false, id: "resp-terminal" },
+  );
+  assert.deepEqual(
+    parseHermesResponsesEvent("response.failed", { response: { id: "resp-failed", error: { message: "invalid model" } } }),
+    { kind: "done", isError: true, id: "resp-failed", message: "invalid model" },
   );
   assert.deepEqual(
     parseHermesResponsesEvent("response.failed", {
