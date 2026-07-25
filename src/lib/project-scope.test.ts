@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { isCurrentProjectScope, isProjectPickerReady, projectScopeKey } from "./project-scope.ts";
+import {
+  isCurrentProjectScope,
+  isProjectPickerReady,
+  projectScopeKey,
+  projectsForCurrentScope,
+} from "./project-scope.ts";
 
 test("a completed project response becomes unavailable immediately when familiar scope changes", () => {
   const globalResult = projectScopeKey(null);
@@ -16,6 +21,34 @@ test("a completed project response becomes unavailable immediately when familiar
 test("pending or failed scoped loads never become ready", () => {
   assert.equal(isCurrentProjectScope(null, "familiar-a"), false, "a pending scope has no successful result");
   assert.equal(isCurrentProjectScope(null, null), false, "a failed unscoped request has no successful result");
+});
+
+test("a prior familiar's projects are synchronously masked before effects run", () => {
+  const familiarAProjects = ["only-familiar-a"];
+  const familiarAScope = projectScopeKey("familiar-a");
+
+  // This models the transition render: React still holds A's useState array,
+  // but props have already changed to B and useEffect has not run yet.
+  assert.deepEqual(
+    projectsForCurrentScope(familiarAProjects, familiarAScope, "familiar-b"),
+    [],
+    "familiar B cannot render familiar A's retained project option",
+  );
+  assert.deepEqual(
+    projectsForCurrentScope(["global-project"], projectScopeKey(null), "familiar-b"),
+    [],
+    "a familiar cannot render a retained global project option",
+  );
+  assert.deepEqual(
+    projectsForCurrentScope(familiarAProjects, familiarAScope, "familiar-a"),
+    familiarAProjects,
+    "the matching familiar keeps its completed project options",
+  );
+  assert.deepEqual(
+    projectsForCurrentScope(familiarAProjects, null, "familiar-b"),
+    [],
+    "a failed familiar B request keeps prior options hidden",
+  );
 });
 
 test("a reopened modal keeps its previous familiar's result unavailable until new defaults load", () => {

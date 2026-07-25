@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
-import { isCurrentProjectScope, projectScopeKey } from "./project-scope.ts";
+import { isCurrentProjectScope, projectScopeKey, projectsForCurrentScope } from "./project-scope.ts";
 import { emitProjectRegistryMutation, subscribeProjectRegistryMutation } from "./project-registry-events.ts";
 import { applyProjectRegistryMutation } from "./project-registry-mutation.ts";
 import { clearProjectsCache, fetchProjectsFromCache, type ProjectsPayload } from "./use-projects-cache.ts";
@@ -63,6 +63,12 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   const scopeKey = projectScopeKey(familiarId);
   const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
   const loadedSuccessfully = enabled && isCurrentProjectScope(loadedScopeKey, familiarId);
+  // Effects cannot clear state until after this render. Mask the prior
+  // scope's retained array synchronously so even a consumer that only maps
+  // `projects` cannot expose a familiar A result for familiar B.
+  const currentScopeProjects = enabled
+    ? projectsForCurrentScope(projects, loadedScopeKey, familiarId)
+    : [];
   // Generation guard: bumped on every load() call, scope change, and disable,
   // so a stale response can't write into newer state. (Replaces the previous
   // per-instance AbortController — the shared, coalesced request can't be
@@ -248,7 +254,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   }, []);
 
   return {
-    projects,
+    projects: currentScopeProjects,
     loading,
     error,
     loadedSuccessfully,

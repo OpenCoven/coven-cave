@@ -12,6 +12,19 @@ export function isCurrentProjectScope(
 }
 
 /**
+ * Do not hand a consumer a prior scope's projects during the render before its
+ * effect can clear local state. This is intentionally independent of picker
+ * readiness so every useProjects consumer fails closed by default.
+ */
+export function projectsForCurrentScope<T>(
+  projects: T[],
+  loadedScopeKey: string | null,
+  familiarId: string | null,
+): T[] {
+  return isCurrentProjectScope(loadedScopeKey, familiarId) ? projects : [];
+}
+
+/**
  * A picker must stay unavailable while a modal is applying a new set of
  * defaults, even if the previous familiar's request had completed.
  */
