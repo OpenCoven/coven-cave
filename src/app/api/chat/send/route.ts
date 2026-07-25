@@ -170,6 +170,7 @@ import {
   covenRunSupportsModel,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
+  openClawAgentSupportsRunId,
   openCodeRunSupportsModel,
 } from "./chat-send-capabilities";
 import {
@@ -510,11 +511,6 @@ function openClawChatResponse(args: {
       }
       const agentId = agentBinding.openclawAgentId;
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
-      // OpenClaw's documented --run-id is forwarded unchanged to Gateway
-      // dispatch. Generate it before either the CLI or event subscriber starts
-      // so a session-wide event can be proven to belong to this Cave turn.
-      const gatewayRunId = crypto.randomUUID();
-      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, gatewayRunId);
       const openclawLaunch = openClawLaunchCommand();
       if (openclawLaunch.unresolvedWindowsShim) {
         pushProgress(
@@ -537,6 +533,12 @@ function openClawChatResponse(args: {
         close();
         return;
       }
+      // When the installed CLI advertises --run-id, it forwards that ID to
+      // Gateway dispatch. Generate it before either the CLI or event
+      // subscriber starts so a session-wide event can be proven to belong to
+      // this Cave turn. Older CLIs keep their established plain-chat argv.
+      const gatewayRunId = (await openClawAgentSupportsRunId()) ? crypto.randomUUID() : undefined;
+      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, gatewayRunId);
       const spawnArgv = [...openclawLaunch.fixedArgs, ...argv];
       let cwd: string;
       try {

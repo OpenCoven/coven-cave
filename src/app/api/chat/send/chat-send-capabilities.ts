@@ -6,6 +6,7 @@ import {
   covenRunSupportsPermissionFlag,
 } from "@/lib/harness-adapters";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 
 let modelFlagProbe: Promise<boolean> | null = null;
@@ -13,6 +14,7 @@ let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let hermesModelFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
+let openClawAgentRunIdFlagProbe: Promise<boolean> | null = null;
 
 function probeHelp(
   command: string,
@@ -106,5 +108,21 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
     (help) => /(^|\s)--model(?![\w-])/m.test(help),
     openCodeSpawnEnv(),
     launch.input,
+  ));
+}
+
+/**
+ * Newer OpenClaw clients may expose a caller-provided dispatch run id. Probe
+ * the actual CLI help before forwarding it: passing an unknown option makes
+ * Commander abort the entire plain-chat fallback before it can run.
+ */
+export function openClawAgentSupportsRunId(): Promise<boolean> {
+  const launch = openClawLaunchCommand();
+  if (launch.unresolvedWindowsShim) return Promise.resolve(false);
+  return (openClawAgentRunIdFlagProbe ??= probeHelp(
+    launch.command,
+    [...launch.fixedArgs, "agent", "--help"],
+    (help) => /(^|\s)--run-id(?![\w-])/m.test(help),
+    openClawSpawnEnv(),
   ));
 }
