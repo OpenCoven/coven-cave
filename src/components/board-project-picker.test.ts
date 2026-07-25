@@ -96,6 +96,11 @@ assert.match(
   /value=\{projectPickerReady \? projectId \?\? "" : ""\}[\s\S]{0,1200}disabled=\{!projectPickerReady\}/,
   "new-card modal disables the project picker instead of exposing a prior familiar's projects",
 );
+assert.match(
+  newCard,
+  /const projectSelectionValid = !projectId \|\| \(projectPickerReady && selectedProject !== null\);[\s\S]{0,1800}if \(!title\.trim\(\) \|\| busy \|\| !projectSelectionValid\) return;[\s\S]{0,3000}disabled=\{!title\.trim\(\) \|\| busy \|\| !projectSelectionValid\}/,
+  "new-card modal cannot create an unverified retained project with a null cwd",
+);
 assert.match(newCard, /setProjectId\(null\)/, "new-card modal resets projectId when reopened");
 assert.match(
   newCard,

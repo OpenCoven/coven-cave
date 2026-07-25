@@ -403,6 +403,11 @@ assert.match(
 );
 assert.match(
   settings,
-  /<SettingsGroup label="Get the app">(?:(?!<SettingsGroup )[\s\S])*<\/SettingsGroup>\s*<SettingsGroup label="Phone write access">/,
-  "install comes before the deep supporting groups — Phone write access directly follows Get the app",
+  /<SettingsGroup label="Get the app">(?:(?!<SettingsGroup )[\s\S])*<\/SettingsGroup>\s*<SettingsGroup label="Keep this Mac reachable">/,
+  "desktop reachability follows installation as the first supporting group",
+);
+assert.match(
+  settings,
+  /<SettingsGroup label="Keep this Mac reachable">(?:(?!<SettingsGroup )[\s\S])*<\/SettingsGroup>\s*<SettingsGroup label="Phone write access">/,
+  "Phone write access directly follows desktop reachability",
 );
