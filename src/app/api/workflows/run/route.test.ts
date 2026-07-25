@@ -18,6 +18,17 @@ assert.match(source, /readJsonBody<RunBody>\(req, MAX_SESSION_JSON_BYTES\)/, "ru
 // Daemon-first: the native engine is still tried before anything local.
 assert.match(source, /path:\s*"\/api\/v1\/workflows\/run"/, "run route probes the native daemon engine first");
 assert.match(source, /executor:\s*"engine"/, "a native-engine run is tagged executor: engine");
+const engineLaunchIndex = source.indexOf('path: "/api/v1/workflows/run"');
+const engineCopilotGateIndex = source.indexOf("const copilotCompatibilityFailure");
+assert.ok(
+  engineCopilotGateIndex >= 0 && engineCopilotGateIndex < engineLaunchIndex,
+  "local Copilot capability is gated before the native workflow-engine launch path",
+);
+assert.match(
+  source,
+  /async function localCopilotWorkflowCompatibilityFailure[\s\S]*?binding\.harness !== "copilot" \|\| sshBound \|\| hubAuthority[\s\S]*?copilotStreamSpec\(capability\.version, compatibility\?\.eventProtocols\)[\s\S]*?status:\s*409/,
+  "an unsupported local Copilot runtime cannot reach the native engine, while SSH and hub bindings remain remote-authoritative",
+);
 
 // 404 (reachable, no engine) → the session executor runs it for real.
 assert.match(source, /engine\.status === 404[\s\S]{0,80}runViaSession\(body\)/, "a 404 from the engine hands off to the session executor");

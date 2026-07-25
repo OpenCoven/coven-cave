@@ -96,6 +96,35 @@ async function maybeQueueOfflineWorkflow(body: RunBody, workflow: WorkflowSummar
 }
 
 /**
+ * The native daemon workflow engine is an alternate launch path. It must not
+ * bypass the local Copilot stream compatibility gate that protects session
+ * workflows and flows. Remote/Hub bindings remain owned by their host.
+ */
+async function localCopilotWorkflowCompatibilityFailure(
+  body: RunBody,
+  workflow: WorkflowSummary | null,
+): Promise<NextResponse | null> {
+  const config = await loadConfig();
+  const familiarId = body.familiarId ?? workflow?.familiar ?? null;
+  const binding = familiarId
+    ? bindingFor(config, familiarId)
+    : { harness: config.defaults.harness, model: config.defaults.model };
+  const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
+  const hubAuthority = config.multiHost?.mode === "hub";
+  if (binding.harness !== "copilot" || sshBound || hubAuthority) return null;
+
+  const [capability, compatibility] = await Promise.all([
+    probeCopilotCapability(),
+    resolveRuntimeCompatibility("copilot"),
+  ]);
+  if (copilotStreamSpec(capability.version, compatibility?.eventProtocols)) return null;
+  return NextResponse.json(
+    { ok: false, error: "This Copilot CLI version is not compatible with Cave workflow execution. Update the Copilot runtime schema or CLI." },
+    { status: 409 },
+  );
+}
+
+/**
  * Execute a workflow. Travel-local clients queue work first; online execution
  * still uses two executors, daemon-first:
  *
@@ -136,6 +165,11 @@ export async function POST(req: Request) {
   }
   const offlineWorkflowResponse = await maybeQueueOfflineWorkflow(body, gateWorkflow);
   if (offlineWorkflowResponse) return offlineWorkflowResponse;
+
+  // Resolve this before the native-engine probe: an engine-capable daemon is
+  // still not allowed to launch an unversioned local Copilot protocol.
+  const copilotCompatibilityFailure = await localCopilotWorkflowCompatibilityFailure(body, gateWorkflow);
+  if (copilotCompatibilityFailure) return copilotCompatibilityFailure;
 
   // 1. Native daemon engine first (forward-compatible).
   const engine = await callDaemon<DaemonRunResponse>({
