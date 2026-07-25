@@ -56,12 +56,27 @@ export function openCodeProbeTreeKillCommand(
 function terminateProbeProcessTree(child: ChildProcessWithoutNullStreams): Promise<void> {
   const treeKill = openCodeProbeTreeKillCommand(child.pid);
   if (!treeKill) {
-    try {
-      child.kill("SIGTERM");
-    } catch {
-      // The close/error handler below still marks this probe unsupported.
-    }
-    return Promise.resolve();
+    return new Promise((resolve) => {
+      const pid = child.pid;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = () => {
+        if (timer) clearTimeout(timer);
+        resolve();
+      };
+      child.once("close", finish);
+      try {
+        // Probes start detached on POSIX, so the negative PID terminates the
+        // launcher and every descendant rather than leaking a helper process.
+        if (typeof pid === "number") process.kill(-pid, "SIGTERM");
+        else child.kill("SIGTERM");
+      } catch {
+        try { child.kill("SIGTERM"); } catch { /* Best effort. */ }
+      }
+      timer = setTimeout(() => {
+        try { if (typeof pid === "number") process.kill(-pid, "SIGKILL"); } catch { /* exited */ }
+        finish();
+      }, openCodeProbeCleanupGraceMs());
+    });
   }
   return new Promise((resolve) => {
     try {
@@ -97,6 +112,7 @@ function probeHelp(
       const child = spawn(command, args, {
         env,
         stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
+        detached: process.platform !== "win32",
       }) as ChildProcessWithoutNullStreams;
       if (input !== undefined) writeOpenCodeLaunchInput(child, { command, args, input });
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
