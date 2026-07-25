@@ -1648,12 +1648,12 @@ export async function POST(req: Request) {
         }
       };
 
-      const handleCodexEvents = (text: string): string => {
+      const handleCodexEvents = (text: string, flush = false): string => {
         if (!codexDecoder) return text;
         const schema = codexCompatibility?.ok
           ? codexCompatibility.schema
           : CODEX_TEXT_ONLY_FALLBACK_SCHEMA;
-        const decoded = codexDecoder.push(text, schema);
+        const decoded = flush ? codexDecoder.flush(schema) : codexDecoder.push(text, schema);
         let assistantOutput = "";
         const flushAssistantOutput = () => {
           if (!assistantOutput) return;
@@ -1717,6 +1717,12 @@ export async function POST(req: Request) {
                   `event shape ${event.fingerprint}`,
                 );
               }
+              break;
+            case "failure":
+              // A native Codex terminal frame can arrive without Coven's
+              // outer `result` event. Preserve failed SSE/persistence state
+              // while intentionally retaining none of the frame's payload.
+              result = { ...result, is_error: true };
               break;
             case "text":
               // JSONL agent messages are already a schema-validated
@@ -2272,7 +2278,7 @@ export async function POST(req: Request) {
               // Terminate the buffered record through the same ordered event
               // handler. JSONL does not require a final newline, so this
               // settles a final tool or agent message rather than dropping it.
-              handleCodexEvents("\n");
+              handleCodexEvents("", true);
             }
             const tail = assistantFilter.flush();
             if (tail) {

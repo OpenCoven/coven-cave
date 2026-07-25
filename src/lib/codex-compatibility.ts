@@ -794,6 +794,8 @@ export type CodexStreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "tool_start"; id: string; name: string; input?: unknown }
   | { kind: "tool_end"; id: string; name: string; input?: unknown; output?: string; isError: boolean }
+  /** Terminal Codex failure with no untrusted payload attached. */
+  | { kind: "failure" }
   | { kind: "unknown"; fingerprint: string }
   | { kind: "ignored" };
 
@@ -826,10 +828,12 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
     const id = typeof event.thread_id === "string" ? event.thread_id : typeof thread?.id === "string" ? thread.id : null;
     return id ? { kind: "session", sessionId: id } : { kind: "unknown", fingerprint: eventFingerprint(event) };
   }
-  if (event.type === "turn.started" || event.type === "turn.completed" || event.type === "turn.failed") {
+  if (event.type === "turn.failed" || event.type === "error") {
+    return { kind: "failure" };
+  }
+  if (event.type === "turn.started" || event.type === "turn.completed") {
     return { kind: "ignored" };
   }
-  if (event.type === "error") return { kind: "unknown", fingerprint: eventFingerprint(event) };
   const item = record(event.item);
   if (!item) return { kind: "unknown", fingerprint: eventFingerprint(event) };
   if (typeof item.type === "string" && schema.textItemTypes.includes(item.type)) {
@@ -877,6 +881,10 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
  */
 export class CodexJsonlDecoder {
   private pending = "";
+  // A `codex` line is common on captured pipes, but it can also be
+  // user-requested assistant prose. Hold it until a valid thread preamble
+  // proves protocol ownership, then consume it; otherwise preserve it.
+  private pendingUntrustedMarker: string | null = null;
   // Codex's captured stream may start with its own `codex` marker. Never infer
   // protocol ownership from a JSON value alone unless the trusted outer
   // transport explicitly says these bytes came from Codex's JSONL pipe.
@@ -889,7 +897,7 @@ export class CodexJsonlDecoder {
   }
 
   get hasPendingRecord(): boolean {
-    return this.pending.length > 0;
+    return this.pending.length > 0 || this.pendingUntrustedMarker !== null;
   }
 
   push(chunk: string, schema: CodexEventSchema): { events: CodexStreamEvent[]; passthrough: string; tokens: CodexDecodedToken[] } {
@@ -899,6 +907,13 @@ export class CodexJsonlDecoder {
     const events: CodexStreamEvent[] = [];
     const passthrough: string[] = [];
     const tokens: CodexDecodedToken[] = [];
+    const releaseUntrustedMarker = () => {
+      if (!this.pendingUntrustedMarker) return;
+      const text = this.pendingUntrustedMarker;
+      this.pendingUntrustedMarker = null;
+      passthrough.push(text);
+      tokens.push({ kind: "passthrough", text });
+    };
     for (const line of lines) {
       if (!line) continue;
       if (line.trim().toLowerCase() === "codex") {
@@ -907,6 +922,10 @@ export class CodexJsonlDecoder {
           // This is a transport/startup marker, never assistant prose. It is
           // intentionally consumed here instead of relying on text heuristics
           // downstream to hide it.
+          continue;
+        }
+        if (!this.protocolArmed && !this.protocolActive) {
+          this.pendingUntrustedMarker = `${line}\n`;
           continue;
         }
       }
@@ -957,13 +976,20 @@ export class CodexJsonlDecoder {
           ? protocolType || reservedProtocolType
           : this.options.trustThreadPreamble === true && (validThreadPreamble || reservedProtocolType);
         if (protocolFrame) {
-          if (validThreadPreamble) this.protocolActive = true;
+          if (validThreadPreamble) {
+            this.protocolActive = true;
+            // The pending marker is now proven to be captured-pipe startup
+            // metadata rather than assistant prose.
+            this.pendingUntrustedMarker = null;
+          }
           // Before a valid preamble, trusted control families are quarantined
           // as shape-only diagnostics. Do not let a startup `item.*` frame
           // manufacture a tool bubble or expose its arguments.
           const event = (this.protocolArmed || this.protocolActive)
             ? parseCodexStreamEvent(parsed, schema) ?? { kind: "unknown" as const, fingerprint: "unmapped-frame" }
-            : { kind: "unknown" as const, fingerprint: "prelude-control-frame" };
+            : rawType === "turn.failed" || rawType === "error"
+              ? { kind: "failure" as const }
+              : { kind: "unknown" as const, fingerprint: "prelude-control-frame" };
           events.push(event);
           tokens.push(event);
           continue;
@@ -977,6 +1003,7 @@ export class CodexJsonlDecoder {
           continue;
         }
       }
+      releaseUntrustedMarker();
       const text = `${line}\n`;
       passthrough.push(text);
       tokens.push({ kind: "passthrough", text });
@@ -985,7 +1012,12 @@ export class CodexJsonlDecoder {
   }
 
   flush(schema: CodexEventSchema): { events: CodexStreamEvent[]; passthrough: string; tokens: CodexDecodedToken[] } {
-    if (!this.pending) return { events: [], passthrough: "", tokens: [] };
+    if (!this.pending) {
+      if (!this.pendingUntrustedMarker) return { events: [], passthrough: "", tokens: [] };
+      const text = this.pendingUntrustedMarker;
+      this.pendingUntrustedMarker = null;
+      return { events: [], passthrough: text, tokens: [{ kind: "passthrough", text }] };
+    }
     return this.push("\n", schema);
   }
 }
