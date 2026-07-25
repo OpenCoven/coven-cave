@@ -499,6 +499,8 @@ export type CopilotChatEvent =
       messageId: string;
       content: string;
       toolRequests: CopilotToolRequest[];
+      /** The message content is usable, but one or more declared tool calls were not. */
+      malformedToolRequests?: boolean;
       model?: string;
     }
   | {
@@ -613,13 +615,16 @@ export function parseCopilotChatEvent(
       if (content === null) return null;
       const toolRequests: CopilotToolRequest[] = [];
       const requests = field(data, protocol.fields.toolRequests);
-      if (requests !== undefined && !Array.isArray(requests)) return null;
+      let malformedToolRequests = requests !== undefined && !Array.isArray(requests);
       if (Array.isArray(requests)) {
         for (const req of requests) {
           const r = record(req);
           const toolCallId = textField(r, protocol.fields.toolCallId);
           const name = textField(r, protocol.fields.toolName);
-          if (!toolCallId || !name) return null;
+          if (!toolCallId || !name) {
+            malformedToolRequests = true;
+            continue;
+          }
           toolRequests.push({
             toolCallId,
             name,
@@ -632,6 +637,7 @@ export function parseCopilotChatEvent(
         messageId,
         content: content ?? "",
         toolRequests,
+        ...(malformedToolRequests ? { malformedToolRequests: true } : {}),
         model: asModel(field(data, protocol.fields.model)),
       };
   }

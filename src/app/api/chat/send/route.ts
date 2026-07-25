@@ -1547,6 +1547,7 @@ export async function POST(req: Request) {
         string,
         { output: string | undefined; isError: boolean }
       >();
+      const MAX_PENDING_COPILOT_TOOL_COMPLETIONS = 64;
       // Keep stderr off the assistant stream — surface it only on failure
       // or empty-success so users don't see raw 401 traces mid-bubble.
       const stderrTail: string[] = [];
@@ -1592,6 +1593,34 @@ export async function POST(req: Request) {
       // prompts, paths, or tool output). One status row per safe code avoids
       // flooding the transcript when a newer CLI repeats the frame.
       const copilotProtocolDiagnosticCodes = new Set<string>();
+
+      const reportCopilotProtocolDiagnostic = (code: string, detail: string) => {
+        if (copilotProtocolDiagnosticCodes.has(code)) return;
+        copilotProtocolDiagnosticCodes.add(code);
+        push({
+          kind: "progress",
+          id: `copilot-protocol-${code}`,
+          label: "Copilot tool activity needs an update",
+          detail,
+          status: "error",
+        });
+      };
+
+      const rememberPendingCopilotToolCompletion = (
+        toolCallId: string,
+        completion: { output: string | undefined; isError: boolean },
+      ) => {
+        if (!pendingCopilotToolCompletions.has(toolCallId) &&
+            pendingCopilotToolCompletions.size >= MAX_PENDING_COPILOT_TOOL_COMPLETIONS) {
+          const oldest = pendingCopilotToolCompletions.keys().next().value;
+          if (oldest) pendingCopilotToolCompletions.delete(oldest);
+          reportCopilotProtocolDiagnostic(
+            "orphan-tool-completion-limit",
+            "Copilot emitted too many unmatched tool completions; some tool details were discarded.",
+          );
+        }
+        pendingCopilotToolCompletions.set(toolCallId, completion);
+      };
 
       const settlePendingCopilotToolCompletion = (toolCallId: string) => {
         const completion = pendingCopilotToolCompletions.get(toolCallId);
@@ -1685,16 +1714,7 @@ export async function POST(req: Request) {
             const ev = parseCopilotChatEvent(raw, protocol);
             if (!ev) {
               const diagnostic = copilotProtocolDiagnostic(raw, protocol);
-              if (diagnostic && !copilotProtocolDiagnosticCodes.has(diagnostic.code)) {
-                copilotProtocolDiagnosticCodes.add(diagnostic.code);
-                push({
-                  kind: "progress",
-                  id: `copilot-protocol-${diagnostic.code}`,
-                  label: "Copilot tool activity needs an update",
-                  detail: diagnostic.message,
-                  status: "error",
-                });
-              }
+              if (diagnostic) reportCopilotProtocolDiagnostic(diagnostic.code, diagnostic.message);
               return;
             }
             if (!confirmedModel && ev.kind !== "result") {
@@ -1738,6 +1758,12 @@ export async function POST(req: Request) {
                 } else {
                   assistantText = correctedText;
                 }
+                if (ev.malformedToolRequests) {
+                  reportCopilotProtocolDiagnostic(
+                    "malformed-tool-event",
+                    "Copilot CLI emitted a malformed tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",
+                  );
+                }
                 // Tool requests announce calls before execution starts; the
                 // tracker links the later execution_start onto the same id.
                 for (const req of ev.toolRequests) {
@@ -1773,7 +1799,7 @@ export async function POST(req: Request) {
                 );
                 if (toolEv) push({ kind: "tool_use", ...toolEv });
                 else {
-                  pendingCopilotToolCompletions.set(ev.toolCallId, {
+                  rememberPendingCopilotToolCompletion(ev.toolCallId, {
                     output: ev.output,
                     isError: ev.isError,
                   });
@@ -1795,21 +1821,19 @@ export async function POST(req: Request) {
             // contain prompts, paths, or secrets. Keep diagnostics fixed and
             // redacted just like other protocol-drift reporting.
             const code = "malformed-jsonl";
-            if (!copilotProtocolDiagnosticCodes.has(code)) {
-              copilotProtocolDiagnosticCodes.add(code);
-              push({
-                kind: "progress",
-                id: `copilot-protocol-${code}`,
-                label: "Copilot tool activity needs an update",
-                detail: "Copilot emitted a malformed protocol frame.",
-                status: "error",
-              });
-            }
+            reportCopilotProtocolDiagnostic(code, "Copilot emitted a malformed protocol frame.");
             recordStdoutErrorTail("Copilot emitted a malformed protocol frame.", true);
             return;
           }
         }
-        recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+        // Direct Copilot stdout is protocol-only. Preserve no raw text here:
+        // future CLIs may write prompts, paths, tool input, or output before
+        // their JSONL frame, and the generic empty-response error is persisted.
+        reportCopilotProtocolDiagnostic(
+          "unframed-output",
+          "Copilot emitted an unrecognized protocol frame.",
+        );
+        recordStdoutErrorTail("Copilot emitted an unrecognized protocol frame.", true);
       };
 
       const handleGrokLine = (line: string, isJson: boolean) => {

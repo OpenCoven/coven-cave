@@ -203,6 +203,11 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /recordStdoutErrorTail\("Copilot emitted an unrecognized protocol frame\.", true\)/,
+  "unframed Copilot stdout is recorded only as a fixed redacted protocol diagnostic",
+);
+assert.match(
+  chatRoute,
   /kind: "assistant_replace", text: assistantText/,
   "an authoritative Copilot full frame replaces divergent streamed text in the live and persisted turn",
 );

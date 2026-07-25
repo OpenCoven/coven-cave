@@ -207,13 +207,35 @@ assert.equal(
   null,
   "completion frames without a boolean success state are malformed",
 );
-assert.equal(
+assert.deepEqual(
   parseCopilotChatEvent(
     { type: "assistant.message", data: { messageId: "m", content: "text", toolRequests: [{ name: "shell" }] } },
     COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
   ),
-  null,
-  "malformed declared tool requests fail the known event closed",
+  {
+    kind: "message",
+    messageId: "m",
+    content: "text",
+    toolRequests: [],
+    malformedToolRequests: true,
+    model: undefined,
+  },
+  "malformed declared tool requests retain safe message text and flag the dropped tool activity",
+);
+assert.deepEqual(
+  parseCopilotChatEvent(
+    { type: "assistant.message", data: { messageId: "m", content: "text", toolRequests: { unexpected: true } } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  {
+    kind: "message",
+    messageId: "m",
+    content: "text",
+    toolRequests: [],
+    malformedToolRequests: true,
+    model: undefined,
+  },
+  "a non-array declared tool request collection also retains safe message text",
 );
 assert.equal(
   parseCopilotChatEvent(

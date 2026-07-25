@@ -118,7 +118,23 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
   const textAssembler = new CopilotTextAssembler();
   const toolTracker = new ToolCallTracker();
   const pendingToolCompletions = new Map<string, { output: string | undefined; isError: boolean }>();
+  const MAX_PENDING_TOOL_COMPLETIONS = 64;
   const compatibilityDiagnostics = new Map<string, string>();
+
+  const rememberPendingToolCompletion = (
+    toolCallId: string,
+    completion: { output: string | undefined; isError: boolean },
+  ) => {
+    if (!pendingToolCompletions.has(toolCallId) && pendingToolCompletions.size >= MAX_PENDING_TOOL_COMPLETIONS) {
+      const oldest = pendingToolCompletions.keys().next().value;
+      if (oldest) pendingToolCompletions.delete(oldest);
+      compatibilityDiagnostics.set(
+        "orphan-tool-completion-limit",
+        "Copilot emitted too many unmatched tool completions; some tool details were discarded.",
+      );
+    }
+    pendingToolCompletions.set(toolCallId, completion);
+  };
 
   const rl = createInterface({ input: child.stdout });
   rl.on("line", (line) => {
@@ -142,6 +158,12 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       // The final frame carries the complete content — prefer it over deltas.
       textAssembler.message(event.messageId, event.content);
       deltaByMessage.set(event.messageId, event.content);
+      if (event.malformedToolRequests) {
+        compatibilityDiagnostics.set(
+          "malformed-tool-event",
+          "Copilot CLI emitted a malformed tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",
+        );
+      }
       for (const request of event.toolRequests) {
         toolTracker.envelopeToolUse(
           request.toolCallId,
@@ -167,7 +189,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       }
     } else if (event.kind === "tool_end") {
       if (!toolTracker.envelopeToolResult(event.toolCallId, event.output, event.isError)) {
-        pendingToolCompletions.set(event.toolCallId, { output: event.output, isError: event.isError });
+        rememberPendingToolCompletion(event.toolCallId, { output: event.output, isError: event.isError });
       }
     }
   });
