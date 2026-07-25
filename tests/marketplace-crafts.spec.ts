@@ -93,7 +93,7 @@ test.describe("Craft Marketplace transactions", () => {
     let equipped = false;
     const roleWrites: Array<{ attach: boolean }> = [];
     let installCalls = 0;
-    let releaseInstall: (() => void) | null = null;
+    const installGate: { release: (() => void) | null } = { release: null };
     let uninstallCalls = 0;
 
     await page.route("**/api/roles/crafts", async (route) => {
@@ -116,7 +116,7 @@ test.describe("Craft Marketplace transactions", () => {
     }));
     await page.route("**/api/marketplace/crafts/install", async (route) => {
       installCalls += 1;
-      await new Promise<void>((resolve) => { releaseInstall = resolve; });
+      await new Promise<void>((resolve) => { installGate.release = resolve; });
       await route.fulfill({
         json: {
           ok: true,
@@ -147,7 +147,8 @@ test.describe("Craft Marketplace transactions", () => {
     await install.click();
     await expect.poll(() => installCalls).toBe(1);
     await expect(install).toHaveAttribute("aria-busy", "true");
-    releaseInstall?.();
+    if (!installGate.release) throw new Error("install request did not reach its test gate");
+    installGate.release();
     await expect(dialog.getByText("Installed and verified")).toBeVisible();
     expect(installCalls).toBe(1);
 
