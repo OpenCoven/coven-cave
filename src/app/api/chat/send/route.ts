@@ -702,6 +702,22 @@ function openClawChatResponse(args: {
             assistantText = extractOpenClawText(parsed);
             isError = isError || parsed.status === "error";
           } catch {
+            // Never persist raw malformed JSONL: tool inputs and outputs can
+            // contain prompts, paths, or secrets. Keep diagnostics fixed and
+            // redacted just like other protocol-drift reporting.
+            const code = "malformed-jsonl";
+            if (!copilotProtocolDiagnosticCodes.has(code)) {
+              copilotProtocolDiagnosticCodes.add(code);
+              push({
+                kind: "progress",
+                id: `copilot-protocol-${code}`,
+                label: "Copilot tool activity needs an update",
+                detail: "Copilot emitted a malformed protocol frame.",
+                status: "error",
+              });
+            }
+            recordStdoutErrorTail("Copilot emitted a malformed protocol frame.", true);
+            return;
             if (!cancelledByUser) assistantText = stdout.trim();
           }
         }
@@ -1704,7 +1720,16 @@ export async function POST(req: Request) {
               }
               case "message": {
                 const text = copilotText.message(ev.messageId, ev.content);
-                if (text) {
+                const replacement = copilotText.takeReplacement(ev.messageId);
+                if (replacement) {
+                  // The full message is authoritative over replayed/reordered
+                  // deltas. This message's deltas are normally the assistant
+                  // tail; replace the live text and persist the corrected form.
+                  assistantText = assistantText.endsWith(replacement.previous)
+                    ? `${assistantText.slice(0, -replacement.previous.length)}${replacement.content}`
+                    : replacement.content;
+                  push({ kind: "assistant_replace", text: assistantText });
+                } else if (text) {
                   assistantText += text;
                   push({ kind: "assistant_chunk", text });
                 }

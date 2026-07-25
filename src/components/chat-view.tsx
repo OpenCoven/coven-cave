@@ -4962,6 +4962,30 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     );
   };
 
+  const replaceAssistantText = (
+    text: string,
+    assistantId: string,
+    liveGeneration: LiveStreamGeneration,
+  ) => {
+    setAssistantLifecycle(
+      assistantId,
+      "streaming",
+      liveGeneration.sessionId,
+      liveStreamMetadata(liveGeneration),
+    );
+    updateLiveTurns((prev) =>
+      prev.map((t) =>
+        t.id === assistantId
+          ? { ...t, text, pending: true, lifecycle: "streaming" }
+          : t,
+      ),
+      assistantId,
+      undefined,
+      liveGeneration.sessionId,
+      liveStreamMetadata(liveGeneration),
+    );
+  };
+
   const handleEvent = (
     ev: StreamEvent,
     assistantId: string,
@@ -5011,6 +5035,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // chunkCoalescer and never reaches this case; it stays for any other
         // handleEvent caller so a chunk is never silently dropped.
         applyAssistantChunk(ev.text, assistantId, liveGeneration);
+        return;
+      }
+      case "assistant_replace": {
+        replaceAssistantText(ev.text, assistantId, liveGeneration);
         return;
       }
       case "attachment": {

@@ -118,6 +118,21 @@ try {
   });
   assert.equal(semverOrder?.runtimeVersion, "1.0.0-a", "ASCII SemVer ordering selects a above B regardless of locale");
 
+  const protocolUnion = await refreshRuntimeCompatibility("copilot", {
+    cachePath: path.join(root, "protocol-union.json"),
+    now: new Date(at.getTime() + 3_400),
+    fetchImpl: async () => response(indexEntries([
+      { version: "1.5.0", eventProtocols: [{ id: "copilot-jsonl-v1" }] },
+      { version: "2.0.0", eventProtocols: [{ id: "copilot-jsonl-v2" }] },
+    ])),
+  });
+  assert.equal(protocolUnion?.runtimeVersion, "2.0.0", "the highest accepted revision remains the rollback version");
+  assert.deepEqual(
+    protocolUnion?.eventProtocols,
+    [{ id: "copilot-jsonl-v1" }, { id: "copilot-jsonl-v2" }],
+    "schemas from every accepted registry revision remain available for client-version selection",
+  );
+
   const staleLockPath = `${cachePath}.lock`;
   await writeFile(staleLockPath, "interrupted refresh", "utf8");
   const staleAt = new Date(Date.now() - 31_000);

@@ -557,7 +557,12 @@ assert.equal(
   assert.equal(
     text.message("diverged", "Hello new"),
     "",
-    "a divergent full frame never appends a second conflicting copy",
+    "a divergent full frame is reconciled through a replacement event",
+  );
+  assert.deepEqual(
+    text.takeReplacement("diverged"),
+    { previous: "Hello old", content: "Hello new" },
+    "a divergent authoritative message replaces stale streamed text",
   );
 
   assert.equal(text.delta("interrupted", "partial response", "frame-partial"), "partial response");

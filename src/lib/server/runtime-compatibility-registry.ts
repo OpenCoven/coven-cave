@@ -166,14 +166,23 @@ function selectAdapter(index: unknown, runtimeId: string): { version: string; ev
   const candidates = canonical.runtimes[runtimeId];
   if (!Array.isArray(candidates)) return null;
   let selected: { version: string; eventProtocols: unknown[] } | null = null;
+  const protocolKeys = new Set<string>();
+  const eventProtocols: unknown[] = [];
   for (const candidate of candidates) {
-    const eventProtocols = candidate && !candidate.yanked ? eventProtocolsForAdapter(runtimeId, candidate.adapter) : null;
-    if (!candidate || !versionParts(candidate.version) || eventProtocols === null) continue;
+    const candidateProtocols = candidate && !candidate.yanked ? eventProtocolsForAdapter(runtimeId, candidate.adapter) : null;
+    if (!candidate || !versionParts(candidate.version) || candidateProtocols === null) continue;
+    for (const protocol of candidateProtocols) {
+      const key = JSON.stringify(protocol);
+      if (!protocolKeys.has(key)) {
+        protocolKeys.add(key);
+        eventProtocols.push(protocol);
+      }
+    }
     if (!selected || (compareVersions(candidate.version, selected.version) ?? -1) > 0) {
-      selected = { version: candidate.version, eventProtocols };
+      selected = { version: candidate.version, eventProtocols: [] };
     }
   }
-  return selected;
+  return selected ? { ...selected, eventProtocols } : null;
 }
 
 /**

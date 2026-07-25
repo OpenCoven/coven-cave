@@ -11,6 +11,7 @@ export type StreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
+  | { kind: "assistant_replace"; text: string }
   | { kind: "attachment"; attachment: ChatAttachment }
   | {
       kind: "progress";

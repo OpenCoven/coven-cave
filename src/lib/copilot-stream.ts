@@ -683,10 +683,15 @@ export function parseCopilotChatEvent(
  * suffix, preserving live streaming without duplicating normal frames.
  */
 export class CopilotTextAssembler {
-  private messages = new Map<string, { deltaText: string; fullText: string | null; seenFrameIds: Set<string> }>();
+  private messages = new Map<string, {
+    deltaText: string;
+    fullText: string | null;
+    seenFrameIds: Set<string>;
+    replacement: { previous: string; content: string } | null;
+  }>();
 
   delta(messageId: string, text: string, frameId?: string): string {
-    const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null, seenFrameIds: new Set<string>() };
+    const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null, seenFrameIds: new Set<string>(), replacement: null };
     if (state.fullText !== null || !text) return "";
     // Deltas are incremental chunks, so equal neighboring chunks are valid
     // text. Only a stable frame id proves that a chunk is a transport replay.
@@ -698,15 +703,25 @@ export class CopilotTextAssembler {
   }
 
   message(messageId: string, content: string): string {
-    const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null, seenFrameIds: new Set<string>() };
+    const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null, seenFrameIds: new Set<string>(), replacement: null };
     if (state.fullText !== null) return "";
     state.fullText = content;
     this.messages.set(messageId, state);
     // Normal streams have a full frame that starts with all already-emitted
-    // deltas. Append only what it adds. An append-only SSE protocol cannot
-    // safely replace a divergent stale delta, so preserve the live text and
-    // never append a second, conflicting copy.
-    return content.startsWith(state.deltaText) ? content.slice(state.deltaText.length) : state.deltaText ? "" : content;
+    // deltas. Append only what it adds. A divergent full frame is authoritative
+    // and must replace the live bubble rather than leave stale delta text.
+    if (content.startsWith(state.deltaText)) return content.slice(state.deltaText.length);
+    if (state.deltaText) state.replacement = { previous: state.deltaText, content };
+    return state.deltaText ? "" : content;
+  }
+
+  /** Consume one authoritative correction after divergent streamed deltas. */
+  takeReplacement(messageId: string): { previous: string; content: string } | null {
+    const state = this.messages.get(messageId);
+    if (!state?.replacement) return null;
+    const replacement = state.replacement;
+    state.replacement = null;
+    return replacement;
   }
 
   /** Preserve partial text only when the CLI exits before its full message. */

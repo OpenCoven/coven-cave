@@ -190,6 +190,16 @@ assert.match(
   /copilotProtocolDiagnostic\(raw, protocol\)/,
   "unknown tool-event shapes must become a redacted compatibility diagnostic instead of being silently dropped",
 );
+assert.match(
+  chatRoute,
+  /recordStdoutErrorTail\("Copilot emitted a malformed protocol frame\.", true\)/,
+  "malformed Copilot JSONL records only a fixed redacted diagnostic, never the raw frame",
+);
+assert.match(
+  chatRoute,
+  /kind: "assistant_replace", text: assistantText/,
+  "an authoritative Copilot full frame replaces divergent streamed text in the live and persisted turn",
+);
 
 assert.match(
   chatRoute,
