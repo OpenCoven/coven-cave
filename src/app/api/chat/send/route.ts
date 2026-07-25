@@ -1904,8 +1904,13 @@ export async function POST(req: Request) {
       };
 
       const handleOpenCodeLine = (line: string) => {
+        // Current OpenCode writes this human-oriented permission control
+        // notice to stdout even in plain fallback mode. It is neither an
+        // event nor assistant output and must never enter the transcript.
+        const normalized = resolveBackspaces(stripAnsi(line)).trim();
+        if (/^permission requested\b[\s\S]*\bauto-rejecting\b/i.test(normalized)) return;
         if (openCodeCompatibility?.mode === "plain") {
-          const text = `${resolveBackspaces(stripAnsi(line))}\n`;
+          const text = `${normalized}\n`;
           assistantText += text;
           push({ kind: "assistant_chunk", text });
           return;
@@ -1914,8 +1919,6 @@ export async function POST(req: Request) {
         // notice to stdout even in `--format json` mode before it rejects the
         // request. It is neither an event nor assistant output; parsing it as
         // JSON would incorrectly quarantine an otherwise compatible stream.
-        const normalized = resolveBackspaces(stripAnsi(line)).trim();
-        if (/^permission requested\b[\s\S]*\bauto-rejecting\b/i.test(normalized)) return;
         if (openCodeStructuredProtocolQuarantined) {
           // The schema has already proven incompatible in this stream. Keep
           // only text that still satisfies its explicit envelope/kind contract;
