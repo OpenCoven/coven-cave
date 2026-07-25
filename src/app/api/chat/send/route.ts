@@ -1597,6 +1597,10 @@ export async function POST(req: Request) {
       let assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
       let assistantText = "";
       let jsonBuf = "";
+      // A protocol frame is control-plane data, not assistant text. Bound an
+      // unterminated/malformed OpenCode JSONL frame so a client regression or
+      // a tool dumping one huge value cannot retain unbounded route memory.
+      const MAX_OPENCODE_JSONL_FRAME_BYTES = 256 * 1024;
       let result: {
         duration_ms?: number;
         is_error?: boolean;
@@ -1640,6 +1644,18 @@ export async function POST(req: Request) {
       let openCodeCompatibilityHealthNoticeSent = false;
       let openCodeProtocolQuarantineNoticeSent = false;
       let openCodeModelRejected = false;
+      const quarantineOpenCodeProtocol = (
+        label: string,
+        detail: "malformed-json-event" | "oversized-jsonl-event",
+      ) => {
+        // Structured-mode stdout can contain arbitrary tool payloads. Keep the
+        // error tail and persisted diagnostic value-free.
+        recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
+        quarantineOpenCodeSchema(openCodeCompatibility?.schema);
+        if (openCodeProtocolQuarantineNoticeSent) return;
+        openCodeProtocolQuarantineNoticeSent = true;
+        pushProgress("opencode-compatibility", label, "error", detail);
+      };
 
       // Model parity: the harness echoes its resolved model on the init/system
       // stream event. Capturing it lets the application state render honestly as
@@ -1963,20 +1979,10 @@ export async function POST(req: Request) {
             }
           },
           onMalformedJson: () => {
-          // Structured-mode stdout can contain a malformed future event with
-          // arbitrary tool payloads. Do not feed that raw line into the
-          // persisted error tail or any user-visible diagnostic.
-            recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
-          quarantineOpenCodeSchema(openCodeCompatibility?.schema);
-          if (!openCodeProtocolQuarantineNoticeSent) {
-            openCodeProtocolQuarantineNoticeSent = true;
-            pushProgress(
-              "opencode-compatibility",
+            quarantineOpenCodeProtocol(
               "OpenCode sent a malformed event; future turns will use safe plain chat until a compatible schema is available",
-              "error",
               "malformed-json-event",
             );
-          }
           },
         });
       };
@@ -2199,6 +2205,7 @@ export async function POST(req: Request) {
       const runAttempt = (spawnArgs: string[]): Promise<void> =>
         new Promise((resolve) => {
           const attemptStartedAt = Date.now();
+          let discardingOpenCodeFrame = false;
           pushProgress(
             "harness-start",
             `Starting ${binding.harness}`,
@@ -2264,12 +2271,45 @@ export async function POST(req: Request) {
           req.signal.addEventListener("abort", onAbort, { once: true });
 
           child.stdout.on("data", (data: Buffer) => {
-            jsonBuf += data.toString("utf8");
+            let chunk = data.toString("utf8");
+            // Once an unterminated frame crosses the cap, discard through its
+            // newline before looking for another frame. Parsing its tail could
+            // turn provider data into a misleading compatibility event.
+            if (discardingOpenCodeFrame) {
+              const newline = chunk.indexOf("\n");
+              if (newline < 0) return;
+              discardingOpenCodeFrame = false;
+              chunk = chunk.slice(newline + 1);
+            }
+            jsonBuf += chunk;
             let idx;
             while ((idx = jsonBuf.indexOf("\n")) >= 0) {
               const line = jsonBuf.slice(0, idx);
               jsonBuf = jsonBuf.slice(idx + 1);
+              if (
+                openCodeDirect
+                && openCodeCompatibility?.mode === "structured"
+                && Buffer.byteLength(line, "utf8") > MAX_OPENCODE_JSONL_FRAME_BYTES
+              ) {
+                quarantineOpenCodeProtocol(
+                  "OpenCode sent an oversized event; future turns will use safe plain chat until a compatible schema is available",
+                  "oversized-jsonl-event",
+                );
+                continue;
+              }
               handleLine(line);
+            }
+            if (
+              openCodeDirect
+              && openCodeCompatibility?.mode === "structured"
+              && Buffer.byteLength(jsonBuf, "utf8") > MAX_OPENCODE_JSONL_FRAME_BYTES
+            ) {
+              jsonBuf = "";
+              discardingOpenCodeFrame = true;
+              quarantineOpenCodeProtocol(
+                "OpenCode sent an oversized event; future turns will use safe plain chat until a compatible schema is available",
+                "oversized-jsonl-event",
+              );
             }
           });
 

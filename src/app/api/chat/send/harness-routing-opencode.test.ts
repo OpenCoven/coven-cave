@@ -167,8 +167,13 @@ assert.match(
 );
 assert.match(
   route,
-  /const handleOpenCodeLine[\s\S]*?onMalformedJson: \(\) => \{[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)[\s\S]*?quarantineOpenCodeSchema\(openCodeCompatibility\?\.schema\)/,
+  /const quarantineOpenCodeProtocol[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)[\s\S]*?quarantineOpenCodeSchema\(openCodeCompatibility\?\.schema\)[\s\S]*?const handleOpenCodeLine[\s\S]*?onMalformedJson: \(\) => \{[\s\S]*?quarantineOpenCodeProtocol\(/,
   "malformed structured OpenCode events quarantine future structured launches without copying raw payloads into text or diagnostics",
+);
+assert.match(
+  route,
+  /const MAX_OPENCODE_JSONL_FRAME_BYTES = 256 \* 1024;[\s\S]*?let discardingOpenCodeFrame = false;[\s\S]*?Buffer\.byteLength\(jsonBuf, "utf8"\) > MAX_OPENCODE_JSONL_FRAME_BYTES[\s\S]*?discardingOpenCodeFrame = true;[\s\S]*?oversized-jsonl-event/,
+  "unterminated OpenCode JSONL frames are bounded, discarded through their newline, and quarantined without retaining provider payloads",
 );
 assert.match(
   capabilities,
