@@ -1530,7 +1530,9 @@ export async function POST(req: Request) {
         binding.harness !== "claude" || claudeCompatibility?.kind === "compatible";
       const claudeDiagnostic = claudeCompatibility
         ? claudeCompatibilityDiagnostic(claudeCompatibility)
-        : null;
+        : binding.harness === "claude" && sshRuntime
+          ? "Claude Code tool activity cannot be verified on an SSH host; chat text will continue without tool bubbles."
+          : null;
       let claudeDiagnosticSent = false;
       let claudeFallbackFingerprintLogged = false;
       // Keep stderr off the assistant stream — surface it only on failure
@@ -1821,7 +1823,6 @@ export async function POST(req: Request) {
         const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
         if (
           binding.harness === "claude" &&
-          !claudeToolsEnabled &&
           !claudeDiagnosticSent &&
           claudeDiagnostic
         ) {
@@ -1970,7 +1971,7 @@ export async function POST(req: Request) {
         // render a tool block. Hooks are still discarded by AssistantFilter
         // below, so this is purely additive.
         const toolMatch = trimmed.match(TOOL_HOOK_RE);
-        if (toolMatch) {
+        if (toolMatch && claudeToolsEnabled) {
           const isPost = trimmed.startsWith("hook: post_tool_use");
           const name = toolMatch[1];
           const rest = (toolMatch[2] ?? "").trim();

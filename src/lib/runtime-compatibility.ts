@@ -104,9 +104,20 @@ export function validateRuntimeCompatibilityProfile(
 ): candidate is RuntimeCompatibilityProfile {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return false;
   const p = candidate as RuntimeCompatibilityProfile;
-  if (p.schemaVersion !== 1 || p.runtime !== "claude" || !p.id || !Number.isSafeInteger(p.sequence)) return false;
+  if (
+    p.schemaVersion !== 1 ||
+    p.runtime !== "claude" ||
+    typeof p.id !== "string" ||
+    !p.id ||
+    !Number.isSafeInteger(p.sequence) ||
+    p.sequence < 1
+  ) return false;
   if (!semver(p.version?.min ?? "") || (p.version.maxExclusive && !semver(p.version.maxExclusive))) return false;
-  if (!Array.isArray(p.requires) || p.requires.some((cap) => !["stream-json", "tool-envelopes", "tool-hooks"].includes(cap))) return false;
+  if (
+    !Array.isArray(p.requires) ||
+    new Set(p.requires).size !== p.requires.length ||
+    p.requires.some((cap) => !["stream-json", "tool-envelopes", "tool-hooks"].includes(cap))
+  ) return false;
   if (p.parser !== "claude-stream-json-v1") return false;
   if (p.eventTypes?.assistant !== "assistant" || p.eventTypes?.user !== "user" || p.eventTypes?.toolUse !== "tool_use" || p.eventTypes?.toolResult !== "tool_result") return false;
   if (
@@ -178,7 +189,10 @@ export class RuntimeCompatibilityCache {
     // new CLI generation, but may not quietly replace or remove one that was
     // already trusted. Corrections require a higher sequence/id, which gives
     // us a monotonic audit trail and a straightforward rollback barrier.
-    if (new Set(valid.map((entry) => entry.id)).size !== valid.length) return false;
+    if (
+      new Set(valid.map((entry) => entry.id)).size !== valid.length ||
+      new Set(valid.map((entry) => entry.sequence)).size !== valid.length
+    ) return false;
     if (this.profiles.some((entry) => byId.get(entry.id)?.contentHash !== entry.contentHash)) return false;
     const currentMax = Math.max(...this.profiles.map((entry) => entry.sequence));
     const nextMax = Math.max(...valid.map((entry) => entry.sequence));

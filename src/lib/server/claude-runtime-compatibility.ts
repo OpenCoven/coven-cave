@@ -15,6 +15,7 @@ import { harnessSpawnEnv } from "../harness-spawn-env.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 
 const PROBE_TTL_MS = 60_000;
+const PROBE_MAX_OUTPUT_BYTES = 64 * 1024;
 let cached: { at: number; value: CompatibilityResolution } | null = null;
 const profileCache = new RuntimeCompatibilityCache();
 let profileCacheLoaded = false;
@@ -71,19 +72,37 @@ function runClaude(args: string[]): Promise<string | null> {
       return;
     }
     let output = "";
-    child.stdout.on("data", (chunk) => (output += String(chunk)));
-    child.stderr.on("data", (chunk) => (output += String(chunk)));
-    const timer = setTimeout(() => {
+    let outputBytes = 0;
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(value);
+    };
+    const capture = (chunk: unknown) => {
+      if (settled) return;
+      const text = String(chunk);
+      outputBytes += Buffer.byteLength(text);
+      if (outputBytes > PROBE_MAX_OUTPUT_BYTES) {
+        child.kill("SIGTERM");
+        finish(null);
+        return;
+      }
+      output += text;
+    };
+    child.stdout.on("data", capture);
+    child.stderr.on("data", capture);
+    timer = setTimeout(() => {
       child.kill("SIGTERM");
-      resolve(null);
+      finish(null);
     }, 2_500);
     child.on("error", () => {
-      clearTimeout(timer);
-      resolve(null);
+      finish(null);
     });
     child.on("close", () => {
-      clearTimeout(timer);
-      resolve(output);
+      finish(output);
     });
   });
 }
@@ -116,7 +135,11 @@ export async function resolveInstalledClaudeCompatibility(
 }
 
 export function claudeCompatibilityDiagnostic(resolution: CompatibilityResolution): string | null {
-  if (resolution.kind === "compatible") return null;
+  if (resolution.kind === "compatible") {
+    return resolution.stale
+      ? "The cached Claude Code tool-activity profile has expired; tool activity may be outdated until a trusted profile refresh succeeds."
+      : null;
+  }
   switch (resolution.reason) {
     case "probe-failed":
       return "Claude Code compatibility could not be verified; tool activity may be unavailable. Run `claude --version` and `claude --help`, then try again.";

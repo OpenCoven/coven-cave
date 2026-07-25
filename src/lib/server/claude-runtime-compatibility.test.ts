@@ -15,6 +15,14 @@ const compatible = await resolveInstalledClaudeCompatibility({
 assert.equal(compatible.kind, "compatible");
 assert.equal(compatible.kind === "compatible" && compatible.profile.id, "claude-stream-json-v2");
 
+const stale = await resolveInstalledClaudeCompatibility({
+  version: async () => "2.1.179 (Claude Code)",
+  help: async () => "--output-format stream-json",
+  now: () => Date.parse("2031-01-01T00:00:00.000Z"),
+});
+assert.equal(stale.kind, "compatible");
+assert.match(claudeCompatibilityDiagnostic(stale) ?? "", /cached Claude Code tool-activity profile has expired/i);
+
 const unsupported = await resolveInstalledClaudeCompatibility({
   version: async () => "0.5.0",
   help: async () => "--output-format stream-json",

@@ -72,6 +72,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /if \(toolMatch && claudeToolsEnabled\)/,
+  "Claude compatibility fallback must not create tool bubbles from unverified hook lines",
+);
+
+assert.match(
+  chatRoute,
   /toolTracker = new ToolCallTracker\(\);/,
   "The resume retry should reset the tool tracker alongside the other per-attempt state",
 );

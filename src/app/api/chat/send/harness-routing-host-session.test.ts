@@ -533,6 +533,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /binding\.harness === "claude" && sshRuntime[\s\S]*?tool activity cannot be verified on an SSH host/,
+  "SSH Claude sessions should preserve text-only chat and surface an honest compatibility diagnostic",
+);
+
+assert.match(
+  chatRoute,
   /if \(!isPost\) boundarySentinel\?\.observe\(name, rest\)/,
   "pre_tool_use hook lines should feed the boundary sentinel",
 );

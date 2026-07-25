@@ -51,6 +51,19 @@ const cache = new RuntimeCompatibilityCache([CLAUDE_COMPATIBILITY_PROFILES[1]]);
 assert.equal(cache.refresh([CLAUDE_COMPATIBILITY_PROFILES[0]], NOW), false, "a lower profile sequence cannot roll back last-known-good data");
 assert.equal(cache.current()[0].id, "claude-stream-json-v2");
 assert.equal(cache.refresh([tampered], NOW), false, "invalid refreshes preserve last-known-good data");
+const duplicateSequence = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
+duplicateSequence.id = "claude-stream-json-v2-duplicate";
+const { contentHash: _duplicateHash, ...duplicateUnsigned } = duplicateSequence;
+duplicateSequence.contentHash = createHash("sha256").update(JSON.stringify(duplicateUnsigned)).digest("hex");
+assert.equal(
+  cache.refresh([CLAUDE_COMPATIBILITY_PROFILES[1], duplicateSequence], NOW),
+  false,
+  "a refresh cannot introduce two profiles at the same sequence",
+);
+
+const stale = resolveRuntimeCompatibility(current, CLAUDE_COMPATIBILITY_PROFILES, new Date("2031-01-01T00:00:00.000Z"));
+assert.equal(stale.kind, "compatible");
+assert.equal(stale.kind === "compatible" && stale.stale, true, "expired cached profiles remain explicitly stale");
 
 const first = redactedEventFingerprint({ type: "assistant", message: { content: [{ type: "tool_use", input: { token: "secret", path: "C:/private" } }] } });
 const second = redactedEventFingerprint({ type: "assistant", message: { content: [{ type: "tool_use", input: { token: "different", path: "/other" } }] } });
