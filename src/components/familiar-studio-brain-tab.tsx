@@ -494,13 +494,17 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           return;
         }
         const piper = json.runtimes?.piper as PiperRuntime | undefined;
-        const piperUnavailable = piper?.available === false;
+        // Treat an absent/malformed runtime report as unavailable. A ready
+        // model alone cannot synthesize, and offering it during a sidecar
+        // version mismatch only leads to a failing preview/call.
+        const piperAvailable = piper?.available === true;
+        const piperUnavailable = !piperAvailable;
         const verifiedVoices = json.tts.filter(
           (voice: LocalTtsVoice) =>
             voice?.ready === true &&
             voice?.verified === true &&
             voice.engine === "piper" &&
-            !piperUnavailable,
+            piperAvailable,
         );
         setLocalVoiceCatalog({
           status: "ready",

@@ -232,8 +232,13 @@ assert.match(
 );
 assert.match(
   source,
-  /voice\?\.ready === true[\s\S]{0,120}voice\?\.verified === true[\s\S]{0,120}voice\.engine === "piper"[\s\S]{0,80}!piperUnavailable/,
+  /voice\?\.ready === true[\s\S]{0,120}voice\?\.verified === true[\s\S]{0,120}voice\.engine === "piper"[\s\S]{0,80}piperAvailable/,
   "only verified Piper voices with an available runner become selectable",
+);
+assert.match(
+  source,
+  /const piperAvailable = piper\?\.available === true;[\s\S]{0,100}const piperUnavailable = !piperAvailable/,
+  "a missing or malformed runtime report must not make a Piper voice selectable",
 );
 assert.match(
   source,
