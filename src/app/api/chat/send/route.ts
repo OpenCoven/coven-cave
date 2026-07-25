@@ -67,6 +67,7 @@ import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import {
   HermesSseDecoder,
   hermesApiConfig,
+  hermesApiCanAccessLocalFiles,
   hermesResponsesUrl,
   isHermesInvalidPreviousResponseIdError,
   parseHermesResponsesEvent,
@@ -1166,10 +1167,11 @@ export async function POST(req: Request) {
   });
   if (offlineChatResponse) return offlineChatResponse;
 
-  // Image delivery channel: only local coven-run harnesses can Read files on
-  // this machine. The OpenClaw bridge and SSH runtimes cannot, so their
-  // prompts carry an explicit unsupported notice instead of a dead path.
-  const imagesSupported = !sshRuntime && binding.harness !== "openclaw";
+  // Image delivery channel: only harnesses that can read Cave's local temp
+  // files may receive image paths. Remote Hermes Responses endpoints cannot,
+  // so they receive the same explicit unsupported notice as bridge/SSH runs.
+  const imagesSupported = !sshRuntime && binding.harness !== "openclaw" &&
+    !(hermesApi && !hermesApiCanAccessLocalFiles(hermesApi));
   const imageFilePaths = imagesSupported
     ? await writeImageAttachmentsToTemp(attachments)
     : new Map<number, string>();
@@ -2099,6 +2101,7 @@ export async function POST(req: Request) {
           const hermesCallNamesById = new Map<string, string>();
           const hermesArgumentBuffers = new Map<string, string>();
           const consume = (frame: { event: string; data: string }): boolean => {
+            if (!frame.data.trim()) return false;
             if (frame.data === "[DONE]") return true;
             let payload: unknown;
             try {

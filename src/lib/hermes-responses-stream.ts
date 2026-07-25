@@ -38,7 +38,8 @@ function responseId(value: unknown): string | undefined {
 
 function toolId(value: RecordValue): string | undefined {
   const item = record(value.item);
-  return string(value.call_id) ?? string(value.tool_call_id) ?? string(item?.call_id) ?? string(item?.id);
+  return string(value.call_id) ?? string(value.tool_call_id) ?? string(value.toolCallId) ??
+    string(item?.call_id) ?? string(item?.id);
 }
 
 function toolItemId(value: RecordValue): string | undefined {
@@ -48,7 +49,8 @@ function toolItemId(value: RecordValue): string | undefined {
 
 function toolName(value: RecordValue): string | undefined {
   const item = record(value.item);
-  return string(value.name) ?? string(value.tool_name) ?? string(item?.name) ?? string(item?.tool_name);
+  return string(value.name) ?? string(value.tool_name) ?? string(value.tool) ??
+    string(item?.name) ?? string(item?.tool_name);
 }
 
 function toolInput(value: RecordValue): unknown {
@@ -271,6 +273,15 @@ function isLiteralLoopbackHost(host: string): boolean {
   return octets.length === 4 &&
     octets[0] === "127" &&
     octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255);
+}
+
+/** Remote Hermes servers cannot read Cave's temporary image files. */
+export function hermesApiCanAccessLocalFiles(config: HermesApiConfig): boolean {
+  try {
+    return isLiteralLoopbackHost(new URL(config.baseUrl).hostname);
+  } catch {
+    return false;
+  }
 }
 
 /**

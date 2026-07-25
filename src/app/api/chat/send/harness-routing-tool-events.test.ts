@@ -228,6 +228,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /if \(!frame\.data\.trim\(\)\) return false;[\s\S]*?if \(frame\.data === "\[DONE\]"\) return true;/,
+  "empty Hermes SSE keepalive frames must be ignored before JSON parsing",
+);
+
+assert.match(
+  chatRoute,
   /case "done":\s*if \(event\.id\) \{\s*hermesResponseId = event\.id;\s*if \(!sessionId\) announceSession\(event\.id\);/,
   "terminal Responses events must retain response ids even when no earlier session event arrived",
 );

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   HermesSseDecoder,
   hermesApiConfig,
+  hermesApiCanAccessLocalFiles,
   hermesResponsesUrl,
   isHermesInvalidPreviousResponseIdError,
   parseHermesResponsesEvent,
@@ -76,6 +77,18 @@ test("Hermes extension and malformed/future events fail closed", () => {
     parseHermesResponsesEvent("hermes.tool.progress", { tool_call_id: "call-2", status: "failed", output: "no" }),
     { kind: "tool_end", id: "call-2", output: "no", isError: true },
   );
+  assert.deepEqual(
+    parseHermesResponsesEvent("hermes.tool.progress", {
+      toolCallId: "call-camel", tool: "read_file", status: "running", input: { path: "a.ts" },
+    }),
+    { kind: "tool_start", id: "call-camel", name: "read_file", input: { path: "a.ts" } },
+  );
+  assert.deepEqual(
+    parseHermesResponsesEvent("hermes.tool.progress", {
+      toolCallId: "call-camel", status: "completed", output: "ok",
+    }),
+    { kind: "tool_end", id: "call-camel", output: "ok", isError: false },
+  );
   assert.deepEqual(parseHermesResponsesEvent("response.output_item.added", { item: { name: "missing-id" } }), { kind: "ignore" });
   assert.deepEqual(parseHermesResponsesEvent("new.future.event", { surprise: true }), { kind: "ignore" });
 });
@@ -118,6 +131,8 @@ test("structured transport is opt-in and refuses non-HTTP endpoint values", () =
   assert.deepEqual(hermesApiConfig({ HERMES_API_URL: "http://[::1]:8080" }), {
     baseUrl: "http://[::1]:8080",
   });
+  assert.equal(hermesApiCanAccessLocalFiles({ baseUrl: "https://hermes.example.test" }), false);
+  assert.equal(hermesApiCanAccessLocalFiles({ baseUrl: "http://127.0.0.1:8080" }), true);
   assert.deepEqual(hermesApiConfig({ HERMES_API_URL: "http://127.0.0.1:8080/", HERMES_API_KEY: " scoped " }), {
     baseUrl: "http://127.0.0.1:8080",
     apiKey: "scoped",
