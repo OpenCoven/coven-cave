@@ -2344,6 +2344,18 @@ export async function POST(req: Request) {
               }
               handleLine(line);
             }
+            // Plain compatibility mode is ordinary assistant text, not a
+            // JSONL control frame. Flush a long partial line in bounded
+            // chunks so a hostile/no-newline client cannot retain it forever.
+            if (
+              openCodeDirect
+              && openCodeCompatibility?.mode === "plain"
+              && Buffer.byteLength(jsonBuf, "utf8") > MAX_OPENCODE_JSONL_FRAME_BYTES
+            ) {
+              const plainChunk = jsonBuf;
+              jsonBuf = "";
+              handleLine(plainChunk);
+            }
             if (
               openCodeDirect
               && openCodeCompatibility?.mode === "structured"

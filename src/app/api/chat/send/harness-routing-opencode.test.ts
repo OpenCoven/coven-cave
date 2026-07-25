@@ -201,6 +201,11 @@ assert.match(
   "unterminated OpenCode JSONL frames are bounded, discarded through their newline, and quarantined without retaining provider payloads",
 );
 assert.match(
+  route,
+  /openCodeCompatibility\?\.mode === "plain"[\s\S]*?Buffer\.byteLength\(jsonBuf, "utf8"\) > MAX_OPENCODE_JSONL_FRAME_BYTES[\s\S]*?const plainChunk = jsonBuf;[\s\S]*?jsonBuf = "";[\s\S]*?handleLine\(plainChunk\)/,
+  "plain OpenCode compatibility mode flushes oversized partial stdout instead of buffering it indefinitely",
+);
+assert.match(
   capabilities,
   /export async function openCodeRunCapabilities\(familiarId\?[^)]*\)[\s\S]*?const env = openCodeSpawnEnv\(familiarId\);[\s\S]*?await openCodeExecutableIdentity\(env\)[\s\S]*?probeOpenCodeRunContract\(env\)[\s\S]*?json:[\s\S]*?model:[\s\S]*?session:[\s\S]*?contractIdentity[\s\S]*?openCodeCapabilityIdentity\(helpProbe\.output, versionProbe\.output\)/,
   "OpenCode fingerprints the completed scoped help contract before retaining capability evidence",
