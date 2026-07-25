@@ -1477,6 +1477,10 @@ export async function POST(req: Request) {
   const RESUME_ERR_RE =
     /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched|Session not found\b/i;
 
+  // A first structured OpenCode frame can establish Cave's stable chat id
+  // before the child-run registry is installed. Keep this binding available
+  // to `announceSession` without putting it in the temporal dead zone.
+  let runHandle!: ChatRunHandle;
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
       let closed = false;
@@ -1644,7 +1648,7 @@ export async function POST(req: Request) {
         // /api/chat/stop and the sessions-list liveness probe reach it by
         // conversation id. runHandle is declared later in this scope but is
         // always initialized before the stream handlers that call announce.
-        addChatRunKeys(runHandle, [announcedId]);
+        if (runHandle) addChatRunKeys(runHandle, [announcedId]);
         // First-turn visibility (cave-0g2x): persist a stub conversation with
         // the pending user turn as soon as the id exists, so the sessions
         // list can surface this chat during its entire first turn (and after
@@ -1682,7 +1686,10 @@ export async function POST(req: Request) {
       // below and falls back to recent-context replay.
       if (openCodeUnrecordedResume) {
         announceSession(crypto.randomUUID());
-      } else if (openCodeDirect && openCodeCompatibility?.mode === "plain" && !sessionId) {
+      } else if (openCodeDirect && !sessionId) {
+        // Cave owns the conversation identity in both structured and plain
+        // modes. Structured frames may announce a different native OpenCode
+        // token; retain that separately rather than exposing it as the chat id.
         announceSession(crypto.randomUUID());
       }
 
@@ -2137,8 +2144,8 @@ export async function POST(req: Request) {
           /* ignore */
         }
       };
-      const runHandle: ChatRunHandle = registerChatRun(
-        [body.runId, body.sessionId],
+      runHandle = registerChatRun(
+        [body.runId, body.sessionId, sessionId],
         killCurrentChild,
       );
       let detachKillTimer: ReturnType<typeof setTimeout> | null = null;

@@ -142,6 +142,7 @@ const broadSchema = { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], id: "broad",
 const protocolV2Schema = {
   ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   id: "opencode-run-json-v2",
+  priority: 1,
   requires: { json: true as const, session: true, protocol: "json-v2" },
   launch: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].launch, structuredOutput: { option: "--format" as const, value: "json-v2" } },
 };
@@ -149,6 +150,11 @@ assert.equal(
   selectOpenCodeSchema([BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], protocolV2Schema], { version: "current", json: true, model: false, session: true, protocols: ["json-v2"] })?.id,
   "opencode-run-json-v2",
   "same-flag schema variants select only through their advertised protocol marker",
+);
+assert.equal(
+  selectOpenCodeSchema([BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], protocolV2Schema], { version: "current", json: true, model: false, session: true, protocols: ["json", "json-v2"] })?.id,
+  "opencode-run-json-v2",
+  "a signed priority selects a protocol when a client advertises multiple supported formats",
 );
 assert.equal(
   selectOpenCodeSchema([broadSchema, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]], { version: "current", json: true, model: false, session: true, protocols: ["json"] })?.id,
@@ -516,6 +522,19 @@ assert.equal(resolvedB.bundle.sequence, 3, "concurrent stale readers receive the
 assert.equal((JSON.parse(await readFile(concurrentCacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 3);
 
 await writeFile(cacheFile, JSON.stringify({ checkedAt: now, bundle: signed }));
+const expiredRemoteWithLiveBaseline = await resolveOpenCodeCompatibility(
+  { version: "2.0.0", json: true, model: true, session: true, protocols: ["json"] },
+  {
+    cacheFile,
+    publicKey: publicPem,
+    url: "https://registry.invalid/opencode.json",
+    now: () => Date.parse("2027-01-01T00:00:00.000Z"),
+    fetch: async () => { throw new Error("offline"); },
+  },
+);
+assert.equal(expiredRemoteWithLiveBaseline.mode, "plain", "an expired remote contract never revives the older compiled parser while refresh is unavailable");
+assert.equal(expiredRemoteWithLiveBaseline.diagnostic, "cached-schema-unavailable");
+
 const expiredRemoteOnly = await resolveOpenCodeCompatibility(
   { version: "2.0.0", json: true, model: true, session: true, protocols: ["json"] },
   {

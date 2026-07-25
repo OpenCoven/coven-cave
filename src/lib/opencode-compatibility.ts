@@ -303,7 +303,7 @@ function hasValidLaunch(value: unknown, requires: Record<string, unknown>): bool
 function isEventSchema(value: unknown): value is OpenCodeEventSchema {
   if (!isRecord(value) || typeof value.id !== "string" || value.id.length === 0 || value.id.length > 128 || !isRecord(value.eventTypes) || !isRecord(value.requires)) return false;
   if (!Object.keys(value).every((key) => key === "id" || key === "priority" || key === "requires" || key === "eventTypes" || key === "shape" || key === "launch")) return false;
-  if (value.priority !== undefined && (!Number.isSafeInteger(value.priority) || value.priority < 0 || value.priority > 100)) return false;
+  if (value.priority !== undefined && (typeof value.priority !== "number" || !Number.isSafeInteger(value.priority) || value.priority < 0 || value.priority > 100)) return false;
   if (!hasValidShape(value.shape)) return false;
   if (!hasValidLaunch(value.launch, value.requires)) return false;
   if (!Object.keys(value.requires).every((key) => key === "json" || key === "session" || key === "model" || key === "protocol")) return false;
