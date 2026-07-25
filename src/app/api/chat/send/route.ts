@@ -1228,7 +1228,7 @@ export async function POST(req: Request) {
   const openCodeEndOfOptionsSupported = Boolean(
     openCodeDirect
     && openCodeCompatibility?.capabilities.endOfOptions
-    && (openCodeCompatibility.mode === "plain" || openCodeCompatibility.schema?.launch.endOfOptions === true),
+    && (openCodeCompatibility?.mode === "plain" || openCodeCompatibility?.schema?.launch.endOfOptions === true),
   );
   const openCodePromptNeedsDelimiter = openCodeDirect && harnessPrompt.startsWith("--");
   if (openCodePromptNeedsDelimiter && !openCodeEndOfOptionsSupported) {
