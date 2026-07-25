@@ -155,8 +155,8 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
   );
   assert.match(
     workspace,
-    /if \(next === "groupchat"\)[\s\S]*setModeRaw\("chat"\)[\s\S]*CHAT_OPEN_COVEN_EVENT/,
-    "workspace redirects the groupchat mode into chat + opens the coven tab",
+    /if \(next === "groupchat"\)[\s\S]*commitMode\("chat", "groupchat"\)[\s\S]*CHAT_OPEN_COVEN_EVENT/,
+    "workspace redirects groupchat into Chat, preserves the tab destination, and opens the coven tab",
   );
 
   // The standalone left-nav destination is gone.
@@ -175,8 +175,8 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
   );
   assert.match(
     chatSurface,
-    /chat-scope-group-btn[\s\S]*onClick=\{\(\) => setScope\("coven"\)\}/,
-    "ChatSurface exposes Group as a demoted icon-button (not a co-equal tab) that opens the coven scope (cave-xsq.5)",
+    /chat-scope-group-btn[\s\S]*onClick=\{\(\) => window\.dispatchEvent\(new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: "groupchat" \} \}\)\)\}/,
+    "ChatSurface routes its demoted Group icon through workspace navigation so history preserves the coven scope",
   );
   assert.match(
     chatSurface,

@@ -10,6 +10,11 @@ export const CHAT_FOCUS_PROJECT_EVENT = "cave:chat-focus-project";
  *  requested (nav/deep link) so it lands on the in-chat tab instead of a page. */
 export const CHAT_OPEN_COVEN_EVENT = "cave:chat-open-coven";
 
+/** Window event that asks the chat surface to return to its normal Sessions tab.
+ * Workspace history uses this when traversing from the Group Chat tab back to
+ * the ordinary Chat destination without unmounting the surface. */
+export const CHAT_OPEN_CONVERSATION_EVENT = "cave:chat-open-conversation";
+
 // A retained latch backing CHAT_OPEN_COVEN_EVENT. When the legacy `groupchat`
 // mode is requested from a DIFFERENT surface, ChatSurface mounts fresh — and a
 // fire-and-forget event can race its listener subscription. The Workspace sets

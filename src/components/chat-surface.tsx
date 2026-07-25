@@ -15,7 +15,7 @@ import {
   ProjectsView,
   WorkspaceRail,
 } from "@/components/lazy-surfaces";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, CHAT_OPEN_SKILLS_EVENT, consumeCovenTabPending, consumeProjectsTabPending, consumeSkillsTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_SKILLS_EVENT, consumeCovenTabPending, consumeProjectsTabPending, consumeSkillsTabPending } from "@/lib/chat-tab-events";
 import { requestDebugOpen, useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { Tabs } from "@/components/ui/tabs";
@@ -252,6 +252,12 @@ export function ChatSurface({
   }, []);
 
   useEffect(() => {
+    const open = () => setScope("conversation");
+    window.addEventListener(CHAT_OPEN_CONVERSATION_EVENT, open);
+    return () => window.removeEventListener(CHAT_OPEN_CONVERSATION_EVENT, open);
+  }, []);
+
+  useEffect(() => {
     if (!pendingChatAction) return;
     if (consumedPendingActionNonce.current === pendingChatAction.nonce) return;
     consumedPendingActionNonce.current = pendingChatAction.nonce;
@@ -381,7 +387,7 @@ export function ChatSurface({
               aria-label="Group chat — broadcast one prompt to a coven of familiars"
               aria-pressed={scope === "coven"}
               title="Group chat — broadcast one prompt to a coven of familiars"
-              onClick={() => setScope("coven")}
+              onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "groupchat" } }))}
             >
               <Icon name="ph:users-three" width={16} aria-hidden />
             </button>

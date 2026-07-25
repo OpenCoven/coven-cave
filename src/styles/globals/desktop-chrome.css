@@ -244,6 +244,12 @@ button:active > .edge-rail-chip {
   transform: scale(0.94);
 }
 
+.shell-top-toggle:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 /* History Back/Forward — quiet chevrons right of the nav toggle (Codex-style).
    They reuse the shell-top-toggle chrome; the tight gap groups them as a pair. */
 .shell-top-history {
