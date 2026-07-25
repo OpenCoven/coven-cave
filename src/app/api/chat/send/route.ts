@@ -53,7 +53,7 @@ import {
   CopilotTextAssembler,
   parseCopilotChatEvent,
 } from "@/lib/copilot-stream";
-import { resolveCopilotChatRouting } from "./copilot-routing";
+import { prepareCopilotChatRouting } from "./copilot-routing";
 import {
   buildGrokBuildArgs,
   grokIdentityRules,
@@ -1266,15 +1266,11 @@ export async function POST(req: Request) {
   // parse its event stream instead. Local runtimes only — SSH runtimes go
   // through `coven run` on the remote host. Null keeps the passthrough
   // fallback (and every other adapter keeps it unconditionally).
-  const [copilotCapability, copilotCompatibility] =
-    !sshRuntime && binding.harness === "copilot"
-      ? await Promise.all([probeCopilotCapability(), resolveRuntimeCompatibility("copilot")])
-      : [null, null];
-  const copilotRouting = resolveCopilotChatRouting({
+  const copilotRouting = await prepareCopilotChatRouting({
     harness: binding.harness,
     isSshRuntime: Boolean(sshRuntime),
-    capabilityVersion: copilotCapability?.version ?? null,
-    eventProtocols: copilotCompatibility?.eventProtocols,
+    probe: probeCopilotCapability,
+    resolveCompatibility: () => resolveRuntimeCompatibility("copilot"),
   });
   const copilotStream = copilotRouting.spec;
   const copilotCompatibilityDiagnostic = copilotRouting.compatibilityDiagnostic;
@@ -2201,12 +2197,6 @@ export async function POST(req: Request) {
               Date.now() - attemptStartedAt,
             );
             if (jsonBuf) handleLine(jsonBuf);
-            if (copilotStream) {
-              for (const pending of copilotText.flushUnconfirmed()) {
-                assistantText += pending.text;
-                push({ kind: "assistant_chunk", text: pending.text });
-              }
-            }
             const tail = assistantFilter.flush();
             if (tail) {
               assistantText += tail;

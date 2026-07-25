@@ -659,13 +659,15 @@ export function parseCopilotChatEvent(
       };
   }
   if (typeIs(type, protocol.eventTypes.result)) {
+      const exitCode = field(ev, protocol.fields.exitCode);
+      if (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode)) return null;
       const usage = record(field(ev, protocol.fields.usage));
       const duration = field(usage, protocol.fields.durationMs);
       const durationMs = typeof duration === "number" ? duration : undefined;
       return {
         kind: "result",
         sessionId: textField(ev, protocol.fields.sessionId),
-        isError: typeof field(ev, protocol.fields.exitCode) === "number" && field(ev, protocol.fields.exitCode) !== 0,
+        isError: exitCode !== 0,
         durationMs,
       };
   }
@@ -676,10 +678,9 @@ export function parseCopilotChatEvent(
  * Assembles assistant text from copilot's dual sources without duplication:
  * `assistant.message_delta` frames stream live text, and the follow-up
  * `assistant.message` frame repeats the full content (and is the ONLY text
- * source when the CLI skips deltas, e.g. tool-request-only messages). To keep
- * the full frame authoritative under transport reordering, deltas stay
- * buffered until that full frame arrives; interrupted streams can explicitly
- * flush their unconfirmed buffered text at process close.
+ * source when the CLI skips deltas, e.g. tool-request-only messages). Deltas
+ * are emitted immediately; the final full frame contributes only its unseen
+ * suffix, preserving live streaming without duplicating normal frames.
  */
 export class CopilotTextAssembler {
   private messages = new Map<string, { deltaText: string; fullText: string | null; seenFrameIds: Set<string> }>();
@@ -693,7 +694,7 @@ export class CopilotTextAssembler {
     if (frameId) state.seenFrameIds.add(frameId);
     state.deltaText += text;
     this.messages.set(messageId, state);
-    return "";
+    return text;
   }
 
   message(messageId: string, content: string): string {
@@ -701,7 +702,11 @@ export class CopilotTextAssembler {
     if (state.fullText !== null) return "";
     state.fullText = content;
     this.messages.set(messageId, state);
-    return content;
+    // Normal streams have a full frame that starts with all already-emitted
+    // deltas. Append only what it adds. An append-only SSE protocol cannot
+    // safely replace a divergent stale delta, so preserve the live text and
+    // never append a second, conflicting copy.
+    return content.startsWith(state.deltaText) ? content.slice(state.deltaText.length) : state.deltaText ? "" : content;
   }
 
   /** Preserve partial text only when the CLI exits before its full message. */

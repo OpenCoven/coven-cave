@@ -15,7 +15,7 @@ import {
   toPersistedTools,
 } from "../../../../lib/chat-tool-events.ts";
 import { buildCopilotStreamArgs } from "../../../../lib/copilot-stream.ts";
-import { resolveCopilotChatRouting } from "./copilot-routing.ts";
+import { prepareCopilotChatRouting, resolveCopilotChatRouting } from "./copilot-routing.ts";
 
 const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
@@ -85,6 +85,37 @@ assert.deepEqual(
   { mode: "plain", spec: null, compatibilityDiagnostic: null },
   "remote Copilot routing keeps the remote generic execution path",
 );
+
+let resolveProbe!: (value: { version: string }) => void;
+let resolveRegistry!: (value: { eventProtocols: unknown[] }) => void;
+let probeStarted = false;
+let registryStarted = false;
+const preparedDirect = prepareCopilotChatRouting({
+  harness: "copilot",
+  isSshRuntime: false,
+  probe: () => new Promise((resolve) => {
+    probeStarted = true;
+    resolveProbe = resolve;
+  }),
+  resolveCompatibility: () => new Promise((resolve) => {
+    registryStarted = true;
+    resolveRegistry = resolve;
+  }),
+});
+assert.equal(probeStarted, true, "the route preparation starts the version probe");
+assert.equal(registryStarted, true, "the route preparation starts registry resolution without awaiting the probe");
+resolveProbe({ version: "1.0.70" });
+resolveRegistry({ eventProtocols: [] });
+assert.equal((await preparedDirect).mode, "direct-jsonl", "a supported mocked runtime selects the direct JSONL route");
+
+const preparedFallback = await prepareCopilotChatRouting({
+  harness: "copilot",
+  isSshRuntime: false,
+  probe: async () => ({ version: "2.0.0" }),
+  resolveCompatibility: async () => ({ eventProtocols: [] }),
+});
+assert.equal(preparedFallback.mode, "plain", "an unsupported mocked runtime retains generic plain chat");
+assert.match(preparedFallback.compatibilityDiagnostic ?? "", /not yet compatible/);
 
 // ── Grok Build JSONL stream wiring ─────────────────────────────────────────
 
@@ -156,16 +187,6 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /Promise\.all\(\[probeCopilotCapability\(\), resolveRuntimeCompatibility\("copilot"\)\]\)/,
-  "The local Copilot probe and bounded registry refresh run concurrently",
-);
-assert.match(
-  chatRoute,
-  /Copilot tool activity needs an update/,
-  "unsupported client versions must surface a visible, safe compatibility diagnostic",
-);
-assert.match(
-  chatRoute,
   /copilotProtocolDiagnostic\(raw, protocol\)/,
   "unknown tool-event shapes must become a redacted compatibility diagnostic instead of being silently dropped",
 );
@@ -210,12 +231,6 @@ assert.match(
   /\(openCodeDirect \|\| copilotStream\) && code !== 0[\s\S]*?is_error: true/,
   "a nonzero direct Copilot process exit persists the turn as an error even without a final result frame",
 );
-assert.match(
-  chatRoute,
-  /copilotText\.flushUnconfirmed\(\)/,
-  "direct Copilot preserves buffered partial text only when the process exits before a full message frame",
-);
-
 assert.match(
   chatRoute,
   /const a = \["run", binding\.harness, "--stream-json"\];/,

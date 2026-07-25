@@ -408,6 +408,16 @@ assert.deepEqual(
   { kind: "result", sessionId: undefined, isError: true, durationMs: undefined },
   "nonzero exit codes surface as errors",
 );
+assert.equal(
+  parseCopilotChatEvent({ type: "result", exitCode: "1" }),
+  null,
+  "a malformed declared result exit code fails closed",
+);
+assert.equal(
+  parseCopilotChatEvent({ type: "result" }),
+  null,
+  "a result frame missing its declared exit code fails closed",
+);
 
 // ── full pipeline: fixture → tracker + text assembly (what the route runs) ───
 
@@ -520,12 +530,12 @@ assert.deepEqual(
   assert.equal(text.message("solo", "No deltas came first."), "", "repeats add nothing");
   assert.equal(text.delta("solo", "No deltas came first."), "", "a delayed replay after a full message never duplicates text");
 
-  assert.equal(text.delta("m", "Hello "), "", "deltas buffer until an authoritative full frame arrives");
-  assert.equal(text.delta("m", "world"), "");
+  assert.equal(text.delta("m", "Hello "), "Hello ", "deltas stream before an authoritative full frame arrives");
+  assert.equal(text.delta("m", "world"), "world");
   assert.equal(
     text.message("m", "Hello world!"),
-    "Hello world!",
-    "a final message is emitted intact, even after streamed deltas",
+    "!",
+    "a final message appends only the suffix after streamed deltas",
   );
   assert.equal(
     text.message("m", "Hello"),
@@ -534,23 +544,23 @@ assert.deepEqual(
   );
   assert.equal(text.delta("m", "world"), "", "deltas arriving after the authoritative full frame are ignored");
 
-  assert.equal(text.delta("repeat", "ha"), "");
-  assert.equal(text.delta("repeat", "ha"), "", "equal neighboring deltas remain buffered as valid assistant text");
-  assert.equal(text.message("repeat", "haha"), "haha", "the full message reconciles repeated streamed chunks without duplication");
+  assert.equal(text.delta("repeat", "ha"), "ha");
+  assert.equal(text.delta("repeat", "ha"), "ha", "equal neighboring deltas remain valid assistant text");
+  assert.equal(text.message("repeat", "haha"), "", "the full message reconciles repeated streamed chunks without duplication");
 
-  assert.equal(text.delta("replay", "Hello ", "frame-1"), "");
+  assert.equal(text.delta("replay", "Hello ", "frame-1"), "Hello ");
   assert.equal(text.delta("replay", "Hello ", "frame-1"), "", "a repeated JSONL frame id is ignored as a replay");
-  assert.equal(text.delta("replay", "Hello ", "frame-2"), "", "different frame ids preserve identical adjacent chunks while buffered");
-  assert.equal(text.message("replay", "Hello Hello "), "Hello Hello ", "the final frame confirms the replay-safe streamed content");
+  assert.equal(text.delta("replay", "Hello ", "frame-2"), "Hello ", "different frame ids preserve identical adjacent chunks while streaming");
+  assert.equal(text.message("replay", "Hello Hello "), "", "the final frame confirms the replay-safe streamed content");
 
-  assert.equal(text.delta("diverged", "Hello old", "frame-old"), "");
+  assert.equal(text.delta("diverged", "Hello old", "frame-old"), "Hello old");
   assert.equal(
     text.message("diverged", "Hello new"),
-    "Hello new",
-    "a divergent authoritative frame replaces stale buffered deltas with its complete text",
+    "",
+    "a divergent full frame never appends a second conflicting copy",
   );
 
-  assert.equal(text.delta("interrupted", "partial response", "frame-partial"), "");
+  assert.equal(text.delta("interrupted", "partial response", "frame-partial"), "partial response");
   assert.deepEqual(text.flushUnconfirmed(), [{ messageId: "interrupted", text: "partial response" }], "a process that exits before its full frame retains buffered partial text");
 
   text.reset();

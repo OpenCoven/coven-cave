@@ -239,7 +239,7 @@ async function refreshRuntimeCompatibilityOnce(
     const snapshot: RuntimeCompatibilitySnapshot = { ...payload, contentHash: runtimeCompatibilityContentHash(payload) };
     const target = options.cachePath ?? cacheFile(runtimeId);
     await mkdir(/* turbopackIgnore: true */ path.dirname(target), { recursive: true });
-    return await withCacheLock(target, async () => {
+    return await withCacheLock(target, async (lease) => {
       const current = await readSnapshot(runtimeId, { ...options, now }, true);
       if (current) {
         const comparison = compareVersions(selected.version, current.runtimeVersion);
@@ -248,6 +248,9 @@ async function refreshRuntimeCompatibilityOnce(
         // registry version; the same blob can safely renew its expiry.
         if (comparison === null || comparison < 0 || (comparison === 0 && current.source.blobSha !== doc.sha)) return null;
       }
+      // A failed lease renewal means another process reclaimed the lock; do
+      // not publish a snapshot selected against an older cache view.
+      if (!await lease.isOwner()) return null;
       await writeJsonAtomic(/* turbopackIgnore: true */ target, snapshot);
       return snapshot;
     });
@@ -295,8 +298,28 @@ async function releaseCacheLock(
   }
 }
 
+async function ownsCacheLock(
+  lockPath: string,
+  handle: Awaited<ReturnType<typeof open>>,
+  token: string,
+): Promise<boolean> {
+  try {
+    const [owner, current, currentToken] = await Promise.all([
+      handle.stat(),
+      stat(/* turbopackIgnore: true */ lockPath),
+      readFile(/* turbopackIgnore: true */ lockPath, "utf8"),
+    ]);
+    return owner.dev === current.dev && owner.ino === current.ino && currentToken === token;
+  } catch {
+    return false;
+  }
+}
+
 /** A small cross-process lock: failure to acquire it retains LKG, never races a downgrade. */
-async function withCacheLock<T>(target: string, action: () => Promise<T>): Promise<T | null> {
+async function withCacheLock<T>(
+  target: string,
+  action: (lease: { isOwner: () => Promise<boolean> }) => Promise<T>,
+): Promise<T | null> {
   const lockPath = `${target}.lock`;
   let handle: Awaited<ReturnType<typeof open>> | null = null;
   const token = randomUUID();
@@ -312,9 +335,15 @@ async function withCacheLock<T>(target: string, action: () => Promise<T>): Promi
     }
   }
   if (!handle) return null;
+  // A slow network-mounted Cave home can make a normal read/write exceed the
+  // stale threshold. Keep the lease fresh for as long as its owner is active.
+  const renewLease = () => handle?.utimes(new Date(), new Date()).catch(() => {});
+  const heartbeat = setInterval(renewLease, Math.max(1_000, Math.floor(CACHE_LOCK_STALE_MS / 3)));
+  heartbeat.unref?.();
   try {
-    return await action();
+    return await action({ isOwner: () => ownsCacheLock(lockPath, handle!, token) });
   } finally {
+    clearInterval(heartbeat);
     const owner = await handle.stat().catch(() => null);
     await handle.close().catch(() => {});
     if (owner) await releaseCacheLock(lockPath, owner, token);

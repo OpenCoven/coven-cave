@@ -32,3 +32,33 @@ export function resolveCopilotChatRouting(input: {
       "This Copilot CLI version is not yet compatible with Cave tool activity. Chat continues without live tool details; update the Copilot runtime schema or CLI.",
   };
 }
+
+/**
+ * Route-level capability preparation with injectable I/O. Keeping the probe
+ * and registry functions at this boundary makes the fail-closed launch choice
+ * behaviorally testable without starting a local CLI process.
+ */
+export async function prepareCopilotChatRouting(input: {
+  harness: string;
+  isSshRuntime: boolean;
+  probe: () => Promise<{ version?: string | null } | null>;
+  resolveCompatibility: () => Promise<{ eventProtocols?: unknown } | null>;
+}): Promise<CopilotChatRouting> {
+  if (input.isSshRuntime || input.harness !== "copilot") {
+    return resolveCopilotChatRouting({
+      harness: input.harness,
+      isSshRuntime: input.isSshRuntime,
+      capabilityVersion: null,
+    });
+  }
+  const [capability, compatibility] = await Promise.all([
+    input.probe(),
+    input.resolveCompatibility(),
+  ]);
+  return resolveCopilotChatRouting({
+    harness: input.harness,
+    isSshRuntime: false,
+    capabilityVersion: capability?.version ?? null,
+    eventProtocols: compatibility?.eventProtocols,
+  });
+}
