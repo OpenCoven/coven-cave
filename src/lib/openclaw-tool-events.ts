@@ -671,6 +671,17 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
         }
         return;
       }
+      if (!frame || typeof frame !== "object" || Array.isArray(frame)) {
+        options.onDiagnostic?.({ code: "gateway_invalid_frame" });
+        if (connected) {
+          notifyDisconnect();
+          close();
+        } else {
+          close();
+          finish(fallback("gateway_invalid_frame"));
+        }
+        return;
+      }
       armTickWatchdog();
       if (frame.type === "event" && frame.event === "connect.challenge") {
         // Challenges and responses are transport frames too: ignore replays so

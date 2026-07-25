@@ -321,6 +321,10 @@ gateway.on("connection", (socket) => {
       socket.send(JSON.stringify(updateFrame));
       socket.send(JSON.stringify(terminalFrame));
       socket.send(JSON.stringify({ type: "event", event: "session.tool", payload: { data: {} } }));
+      // JSON can parse successfully without being a protocol object. A null
+      // frame must close this optional transport rather than throw from its
+      // message handler or leave it active against an incompatible server.
+      socket.send("null");
     }
   });
 });
@@ -397,12 +401,11 @@ try {
       timestamp: 1_100,
     },
   ]);
-  gatewaySocket.close();
   await Promise.race([
     disconnected,
     new Promise((_, reject) => setTimeout(() => reject(new Error("Gateway close was not observed")), 1_000)),
   ]);
-  assert.equal(disconnects, 1, "an unexpected Gateway close must settle the route exactly once");
+  assert.equal(disconnects, 1, "a non-object Gateway frame must settle the route exactly once");
   subscription.close();
   process.env.OPENCLAW_GATEWAY_URL = "ws://gateway.example.test";
   assert.equal(

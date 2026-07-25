@@ -170,7 +170,6 @@ import {
   covenRunSupportsModel,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
-  openClawAgentSupportsRunId,
   openCodeRunSupportsModel,
 } from "./chat-send-capabilities";
 import {
@@ -533,12 +532,11 @@ function openClawChatResponse(args: {
         close();
         return;
       }
-      // When the installed CLI advertises --run-id, it forwards that ID to
-      // Gateway dispatch. Generate it before either the CLI or event
-      // subscriber starts so a session-wide event can be proven to belong to
-      // this Cave turn. Older CLIs keep their established plain-chat argv.
-      const gatewayRunId = (await openClawAgentSupportsRunId()) ? crypto.randomUUID() : undefined;
-      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, gatewayRunId);
+      // The released CLI does not expose the Gateway's accepted dispatch id.
+      // Keep its established argv authoritative; live tool events remain
+      // fail-closed until a direct Gateway dispatcher supplies that documented
+      // run correlation before events arrive.
+      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
       const spawnArgv = [...openclawLaunch.fixedArgs, ...argv];
       let cwd: string;
       try {
@@ -605,7 +603,6 @@ function openClawChatResponse(args: {
       const gatewayToolSubscriptionPromise = subscribeOpenClawGatewayToolEvents({
         sessionKey: openClawGatewaySessionKey(agentId, conversationId),
         agentId,
-        expectedRunId: gatewayRunId,
         onToolEvent: (event) => {
           if (cliLifecycleFinished || toolActivityClosed) return;
           const tool = openClawTools.accept(event);

@@ -27,10 +27,6 @@ const openclawBridge = await readFile(
   new URL("../../../../lib/openclaw-bridge.ts", import.meta.url),
   "utf8",
 );
-const capabilityProbes = await readFile(
-  new URL("./chat-send-capabilities.ts", import.meta.url),
-  "utf8",
-);
 const boardRoute = await readFile(
   new URL("../../board/enrich-steps/route.ts", import.meta.url),
   "utf8",
@@ -109,15 +105,10 @@ assert.match(
   /subscribeOpenClawGatewayToolEvents\([\s\S]*?sessionKey: openClawGatewaySessionKey\(agentId, conversationId\)[\s\S]*?agentId,[\s\S]*?onToolEvent:/,
   "OpenClaw should subscribe by its canonical agent-scoped Gateway key alongside the CLI turn",
 );
-assert.match(
-  chatRoute,
-  /const gatewayRunId = \(await openClawAgentSupportsRunId\(\)\) \? crypto\.randomUUID\(\) : undefined;[\s\S]*?openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, gatewayRunId\)[\s\S]*?expectedRunId: gatewayRunId,/,
-  "the Gateway subscription must filter by the exact capability-gated run id passed to the OpenClaw CLI dispatch",
-);
-assert.match(
-  capabilityProbes,
-  /export function openClawAgentSupportsRunId\(\)[\s\S]*?\[\.\.\.launch\.fixedArgs, "agent", "--help"\][\s\S]*?--run-id/,
-  "OpenClaw run correlation must be enabled only when the installed CLI advertises --run-id",
+assert.doesNotMatch(
+  openclawBridge,
+  /--run-id/,
+  "the released OpenClaw CLI has no documented --run-id option; forwarding it breaks plain chat",
 );
 assert.match(
   chatRoute,
