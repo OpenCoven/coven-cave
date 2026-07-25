@@ -109,8 +109,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /for \(const toolEv of toolTracker\.settleUnfinished\(\)\) \{[\s\S]*?push\(\{ kind: "tool_use", \.\.\.toolEv \}\)/,
+  /const settleUnfinishedTools = \(\) => \{[\s\S]*?toolTracker\.settleUnfinished\(\)[\s\S]*?push\(\{ kind: "tool_use", \.\.\.toolEv \}\)/,
   "the route must settle every live tool chip before completing the stream",
+);
+
+assert.match(
+  chatRoute,
+  /settleUnfinishedTools\(\);\s*toolTracker = new ToolCallTracker\(\);/,
+  "resume and recovery retries must settle prior-attempt tool chips before resetting their tracker",
 );
 
 assert.match(

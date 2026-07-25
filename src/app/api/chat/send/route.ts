@@ -1544,6 +1544,11 @@ export async function POST(req: Request) {
       }
       let claudeFallbackFingerprintLogged = false;
       let claudeUnsupportedFrameDiagnosticSent = false;
+      const settleUnfinishedTools = () => {
+        for (const toolEv of toolTracker.settleUnfinished()) {
+          push({ kind: "tool_use", ...toolEv });
+        }
+      };
       // Keep stderr off the assistant stream — surface it only on failure
       // or empty-success so users don't see raw 401 traces mid-bubble.
       const stderrTail: string[] = [];
@@ -2221,6 +2226,7 @@ export async function POST(req: Request) {
         assistantText = "";
         jsonBuf = "";
         result = {};
+        settleUnfinishedTools();
         toolTracker = new ToolCallTracker();
         copilotText.reset();
         stderrTail.length = 0;
@@ -2260,6 +2266,7 @@ export async function POST(req: Request) {
         assistantText = "";
         jsonBuf = "";
         result = {};
+        settleUnfinishedTools();
         toolTracker = new ToolCallTracker();
         copilotText.reset();
         stderrTail.length = 0;
@@ -2456,9 +2463,7 @@ export async function POST(req: Request) {
         // A process can exit after announcing a tool but before its matching
         // hook/result arrives. Send a terminal update before `done`; otherwise
         // the client-only chip remains running until the next transcript load.
-        for (const toolEv of toolTracker.settleUnfinished()) {
-          push({ kind: "tool_use", ...toolEv });
-        }
+        settleUnfinishedTools();
         const persistedTools = toPersistedTools(toolTracker.snapshot(),
           assistantText.length - assistantText.trimStart().length,
         );
