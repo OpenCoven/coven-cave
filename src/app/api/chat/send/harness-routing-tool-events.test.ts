@@ -117,6 +117,11 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /child\.on\("error"[\s\S]*?openClawTools\.finalizeUnsettled\([\s\S]*?kind: "tool_use"/,
+  "a CLI spawn failure must explicitly settle observed Gateway tool cards",
+);
+assert.match(
+  chatRoute,
   /openClawTools\.finalizeUnsettled\(unsettledToolMessage\)[\s\S]*?toPersistedTools\(openClawTools\.snapshot\(\), 0\)[\s\S]*?persistedOpenClawTools \? \{ tools: persistedOpenClawTools \} : \{\}/,
   "OpenClaw tool cards must survive reload through the saved assistant turn",
 );

@@ -678,6 +678,14 @@ function openClawChatResponse(args: {
       });
       child.on("error", (err: NodeJS.ErrnoException) => {
         gatewayToolSubscription.close();
+        // A spawn failure can race a previously observed Gateway start frame.
+        // Settle it before ending the SSE stream so no live tool card remains
+        // running when the authoritative CLI path could not start.
+        for (const tool of openClawTools.finalizeUnsettled(
+          "OpenClaw tool did not settle because the bridge failed to start.",
+        )) {
+          push({ kind: "tool_use", ...tool });
+        }
         const message =
           err.code === "ENOENT"
             ? "openclaw CLI not found on PATH. Open Setup to install it, then try again."
