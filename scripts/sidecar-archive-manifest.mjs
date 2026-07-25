@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { createReadStream, createWriteStream } from "node:fs";
-import { lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
@@ -20,6 +20,8 @@ const TAR_END_BYTES = TAR_BLOCK_BYTES * 2;
 const NORMALIZED_DIRECTORY_MODE = 0o755;
 const NORMALIZED_FILE_MODE = 0o644;
 const COMPLETION_MARKER_PATH = ".complete.json";
+const PUBLICATION_LOCK_WAIT_MS = 30_000;
+const MALFORMED_PUBLICATION_LOCK_STALE_MS = 5_000;
 
 // Windows runners expose different tar implementations over time. Keep this
 // small writer in-process so ordering and metadata are part of our format,
@@ -300,27 +302,256 @@ export async function writeSidecarArchiveManifest(sourceRoot, archivePath, outpu
   return manifest;
 }
 
+async function fileExists(file) {
+  try {
+    await lstat(file);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function removeFileWithRetries(file) {
+  let failure;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      const metadata = await lstat(file).catch((error) => {
+        if (error?.code === "ENOENT") return null;
+        throw error;
+      });
+      if (!metadata) return;
+      if (!metadata.isFile()) {
+        throw new Error(`refusing to remove non-file sidecar publication path: ${file}`);
+      }
+      await rm(file, { force: true });
+      return;
+    } catch (error) {
+      failure = error;
+      if (!["EACCES", "EBUSY", "EPERM"].includes(error?.code) || attempt === 3) break;
+      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
+  throw failure;
+}
+
+async function archiveMatchesManifest(archivePath, manifestPath) {
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    return typeof manifest.archiveSha256 === "string"
+      && manifest.archiveSha256 === await sha256File(archivePath);
+  } catch {
+    return false;
+  }
+}
+
+async function recoverPreviousPublication(
+  archivePath,
+  manifestPath,
+  previousArchivePath,
+  previousManifestPath,
+) {
+  const [hasPreviousArchive, hasPreviousManifest] = await Promise.all([
+    fileExists(previousArchivePath),
+    fileExists(previousManifestPath),
+  ]);
+  if (await archiveMatchesManifest(archivePath, manifestPath)) {
+    if (hasPreviousArchive) await removeFileWithRetries(previousArchivePath);
+    if (hasPreviousManifest) await removeFileWithRetries(previousManifestPath);
+    return;
+  }
+
+  if (!hasPreviousArchive) {
+    // A partial rollback may already have restored the archive while its
+    // manifest remains in the private backup. Resume that exact state first.
+    if (hasPreviousManifest && await archiveMatchesManifest(archivePath, previousManifestPath)) {
+      await removeFileWithRetries(manifestPath);
+      await rename(previousManifestPath, manifestPath);
+      return;
+    }
+
+    // A first publication, or an orphaned manifest, has no coherent archive
+    // pair to restore. If the archive reached its public path before the
+    // manifest failed, remove it while preserving the public manifest.
+    if (await fileExists(archivePath)) await removeFileWithRetries(archivePath);
+    if (hasPreviousManifest) await removeFileWithRetries(previousManifestPath);
+    return;
+  }
+
+  // If the old manifest survived a failed final rename, it already matches
+  // the archived prior payload. Restore that archive first; this does not
+  // require deleting a Windows-locked manifest.
+  if (hasPreviousArchive && await archiveMatchesManifest(previousArchivePath, manifestPath)) {
+    await removeFileWithRetries(archivePath);
+    await rename(previousArchivePath, archivePath);
+    if (hasPreviousManifest) await removeFileWithRetries(previousManifestPath);
+    return;
+  }
+
+  // A prior rollback may have restored the archive before it could restore
+  // the manifest. Resume from that state without deleting the restored file.
+  if (hasPreviousManifest && await archiveMatchesManifest(archivePath, previousManifestPath)) {
+    await removeFileWithRetries(manifestPath);
+    await rename(previousManifestPath, manifestPath);
+    return;
+  }
+
+  if (!hasPreviousArchive || !hasPreviousManifest) {
+    throw new Error("sidecar archive recovery is missing one half of its prior publication");
+  }
+
+  // Neither public resource belongs to the prior pair. Remove the candidate
+  // and restore the prior archive before replacing the manifest. If the
+  // manifest has become an unexpected non-file, the old archive is still
+  // preserved and the manifest backup can complete recovery later.
+  await removeFileWithRetries(archivePath);
+  await rename(previousArchivePath, archivePath);
+  await removeFileWithRetries(manifestPath);
+  await rename(previousManifestPath, manifestPath);
+}
+
+async function acquirePublicationLock(archivePath) {
+  const lockPath = `${archivePath}.publish.lock`;
+  const deadline = Date.now() + PUBLICATION_LOCK_WAIT_MS;
+  await mkdir(path.dirname(lockPath), { recursive: true });
+  while (true) {
+    try {
+      const handle = await open(lockPath, "wx");
+      await handle.writeFile(`${process.pid}\n`);
+      return {
+        async release() {
+          await handle.close();
+          await removeFileWithRetries(lockPath);
+        },
+      };
+    } catch (error) {
+      if (error?.code !== "EEXIST" || Date.now() >= deadline) {
+        throw new Error(`sidecar archive publication is already in progress: ${lockPath}`, { cause: error });
+      }
+      try {
+        const owner = Number.parseInt((await readFile(lockPath, "utf8")).trim(), 10);
+        if (Number.isSafeInteger(owner) && owner > 0) {
+          try {
+            process.kill(owner, 0);
+          } catch (ownerError) {
+            if (ownerError?.code === "ESRCH") {
+              await removeFileWithRetries(lockPath);
+              continue;
+            }
+          }
+        } else {
+          const metadata = await stat(lockPath);
+          if (Date.now() - metadata.mtimeMs >= MALFORMED_PUBLICATION_LOCK_STALE_MS) {
+            await removeFileWithRetries(lockPath);
+            continue;
+          }
+        }
+      } catch (lockError) {
+        if (lockError?.code === "ENOENT") continue;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+}
+
+function publicationFailure(error, failures) {
+  if (failures.length === 0) return error;
+  return new AggregateError(
+    [error, ...failures],
+    `sidecar archive publication failed and recovery is pending: ${error.message}`,
+  );
+}
+
+async function publishSidecarArchiveUnlocked(
+  sourceRoot,
+  temporaryArchivePath,
+  archivePath,
+  manifestPath,
+  temporaryManifestPath = `${manifestPath}.${process.pid}.tmp`,
+  { beforeManifestPublish } = {},
+) {
+  const previousArchivePath = `${archivePath}.previous`;
+  const previousManifestPath = `${manifestPath}.previous`;
+  let manifestPublished = false;
+  try {
+    await recoverPreviousPublication(
+      archivePath,
+      manifestPath,
+      previousArchivePath,
+      previousManifestPath,
+    );
+    const manifest = await writeSidecarArchiveManifest(sourceRoot, temporaryArchivePath, temporaryManifestPath);
+    // Both files are fully written, hashed, and budgeted before either public
+    // path changes. Publish the manifest last so readers never accept a new
+    // archive using stale integrity metadata. Move a coherent prior manifest
+    // out of the public path before the candidate archive is published: a
+    // Windows lock then fails before publication instead of leaving stale
+    // metadata beside a locked candidate. An orphan manifest stays public.
+    const hasPublicArchive = await fileExists(archivePath);
+    if (await fileExists(manifestPath)) {
+      if (hasPublicArchive) {
+        await rename(manifestPath, previousManifestPath);
+      } else {
+        await copyFile(manifestPath, previousManifestPath);
+      }
+    }
+    try {
+      await rename(archivePath, previousArchivePath);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    await rename(temporaryArchivePath, archivePath);
+    await beforeManifestPublish?.();
+    await rename(temporaryManifestPath, manifestPath);
+    manifestPublished = true;
+    await removeFileWithRetries(previousArchivePath);
+    await removeFileWithRetries(previousManifestPath);
+    return manifest;
+  } catch (error) {
+    const failures = [];
+    if (!manifestPublished) {
+      try {
+        await recoverPreviousPublication(
+          archivePath,
+          manifestPath,
+          previousArchivePath,
+          previousManifestPath,
+        );
+      } catch (recoveryError) {
+        failures.push(recoveryError);
+      }
+    }
+    for (const temporaryPath of [temporaryArchivePath, temporaryManifestPath]) {
+      try {
+        await removeFileWithRetries(temporaryPath);
+      } catch (cleanupError) {
+        failures.push(cleanupError);
+      }
+    }
+    throw publicationFailure(error, failures);
+  }
+}
+
 export async function publishSidecarArchive(
   sourceRoot,
   temporaryArchivePath,
   archivePath,
   manifestPath,
   temporaryManifestPath = `${manifestPath}.${process.pid}.tmp`,
+  options,
 ) {
+  const lock = await acquirePublicationLock(archivePath);
   try {
-    const manifest = await writeSidecarArchiveManifest(sourceRoot, temporaryArchivePath, temporaryManifestPath);
-    // Both files are fully written, hashed, and budgeted before either public
-    // path changes. Publish the manifest last so readers never accept a new
-    // archive using stale integrity metadata.
-    await rename(temporaryArchivePath, archivePath);
-    await rename(temporaryManifestPath, manifestPath);
-    return manifest;
-  } catch (error) {
-    await Promise.all([
-      rm(temporaryArchivePath, { force: true }),
-      rm(temporaryManifestPath, { force: true }),
-    ]);
-    throw error;
+    return await publishSidecarArchiveUnlocked(
+      sourceRoot,
+      temporaryArchivePath,
+      archivePath,
+      manifestPath,
+      temporaryManifestPath,
+      options,
+    );
+  } finally {
+    await lock.release();
   }
 }
 
