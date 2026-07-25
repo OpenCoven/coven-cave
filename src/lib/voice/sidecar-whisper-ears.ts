@@ -46,7 +46,8 @@ type AudioContextConstructor = new () => AudioContext;
 export function whisperModelSupportsLocale(modelId: string | undefined, locale?: string): boolean {
   const language = locale?.trim().split("-")[0]?.toLowerCase();
   if (!language || language === "en") return true;
-  return Boolean(modelId) && !/(?:[-_.]en)$/i.test(modelId);
+  if (!modelId) return false;
+  return !/(?:[-_.]en)$/i.test(modelId);
 }
 
 /** True only for a verified downloaded Whisper model advertised by the sidecar
