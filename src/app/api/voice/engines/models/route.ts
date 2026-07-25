@@ -11,6 +11,8 @@ export async function DELETE(req: Request) {
   try {
     body = await parseBoundedJsonBody(req, MODEL_REQUEST_MAX_BYTES);
   } catch (error) {
+    // Keep invalid JSON as an actionable client error while refusing oversized
+    // chunked request bodies before Next can buffer them.
     return NextResponse.json(
       { ok: false, error: error instanceof JsonBodyTooLargeError ? "payload_too_large" : "invalid_json" },
       { status: error instanceof JsonBodyTooLargeError ? 413 : 400 },
