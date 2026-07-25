@@ -118,11 +118,29 @@ const resumeOnlyCapabilities = {
   session: true,
   protocols: ["json"],
   options: ["--format", "--resume"],
+  valueOptions: ["--format", "--resume"],
   structuredOutputs: [{ option: "--format", values: ["json"] }],
 };
 assert.equal(resumeOnlyCapabilities.session, true, "resume-only help advertises native session support");
 assert.deepEqual(resumeOnlyCapabilities.options, ["--format", "--resume"], "the concrete resume option is retained for plain-mode launch");
 assert.equal(resumeOnlyCapabilities.options?.includes("--session"), false);
+assert.equal(
+  selectOpenCodeSchema(
+    [BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]],
+    {
+      version: "future",
+      json: true,
+      model: false,
+      session: true,
+      protocols: ["json"],
+      options: ["--format", "--session"],
+      valueOptions: ["--format"],
+      structuredOutputs: [{ option: "--format", values: ["json"] }],
+    },
+  ),
+  null,
+  "a resume flag without a documented argument cannot select a schema that forwards Cave's native session id",
+);
 
 const offlineBaseline = await resolveOpenCodeCompatibility(
   { version: "current", json: true, model: false, session: true, protocols: ["json"] },
@@ -325,6 +343,59 @@ const booleanStructuredCapabilities = {
   structuredOutputs: [],
   structuredSwitches: [{ option: "--event-json-v2", protocols: ["json-v2"] }],
 };
+const partialRemoteUnsigned = { ...unsigned, sequence: 10, schemas: [protocolV2Schema] };
+const partialRemote = {
+  ...partialRemoteUnsigned,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(partialRemoteUnsigned)), privateKey).toString("base64"),
+  },
+};
+const legacyAfterPartialRemote = await resolveOpenCodeCompatibility(
+  {
+    version: "legacy",
+    json: true,
+    model: false,
+    session: true,
+    protocols: ["json"],
+    options: ["--format", "--session"],
+    valueOptions: ["--format", "--session"],
+    structuredOutputs: [{ option: "--format", values: ["json"] }],
+  },
+  {
+    cacheFile: path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-partial-")), "bundle.json"),
+    publicKey: publicPem,
+    url: "https://registry.invalid/opencode.json",
+    now: () => now,
+    fetch: async () => new Response(JSON.stringify(partialRemote), { status: 200 }),
+  },
+);
+assert.equal(legacyAfterPartialRemote.mode, "structured");
+assert.equal(legacyAfterPartialRemote.schema?.id, "opencode-run-json-v1", "a partial remote registry retains matching compiled baseline coverage");
+assert.equal(legacyAfterPartialRemote.bundleSource, "built-in");
+const retiredPartialUnsigned = { ...partialRemoteUnsigned, sequence: 11, retiredSchemaIds: ["opencode-run-json-v1"] };
+const retiredPartial = {
+  ...retiredPartialUnsigned,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(retiredPartialUnsigned)), privateKey).toString("base64"),
+  },
+};
+const retiredLegacy = await resolveOpenCodeCompatibility(
+  {
+    version: "legacy", json: true, model: false, session: true, protocols: ["json"],
+    options: ["--format", "--session"], valueOptions: ["--format", "--session"],
+    structuredOutputs: [{ option: "--format", values: ["json"] }],
+  },
+  {
+    cacheFile: path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-retired-")), "bundle.json"),
+    publicKey: publicPem,
+    url: "https://registry.invalid/opencode.json",
+    now: () => now,
+    fetch: async () => new Response(JSON.stringify(retiredPartial), { status: 200 }),
+  },
+);
+assert.equal(retiredLegacy.mode, "plain", "a signed retirement can explicitly disable an unsafe compiled baseline profile");
 const booleanStructuredSchema = {
   ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   id: "boolean-structured-switch",

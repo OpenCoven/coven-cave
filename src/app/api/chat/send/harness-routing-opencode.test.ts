@@ -22,6 +22,11 @@ assert.match(
 );
 assert.match(
   route,
+  /const valueOptions = openCodeCompatibility\?\.capabilities\.valueOptions \?\? \[\];[\s\S]*?options\.includes\("--session"\) && valueOptions\.includes\("--session"\)[\s\S]*?options\.includes\("--resume"\) && valueOptions\.includes\("--resume"\)/,
+  "plain-mode OpenCode resumes only through an explicitly argument-taking session option",
+);
+assert.match(
+  route,
   /\.\.\.\(launch\.structuredOutput\.value === undefined \? \[\] : \[launch\.structuredOutput\.value\]\)/,
   "a signed valueless structured switch is forwarded without inventing a json argument",
 );

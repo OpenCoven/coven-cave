@@ -51,6 +51,25 @@ assert.deepEqual(
 );
 assert.deepEqual(booleanJson.protocols, ["json", "json-v2"]);
 
+const proseOnlyJson = parseOpenCodeRunCapabilitiesHelp(`
+  --format <format>             Select an output format; use --json for JSON output
+  --json                         Emit JSON events
+`, "3.3.0");
+assert.deepEqual(
+  proseOnlyJson.structuredOutputs,
+  [],
+  "a JSON mention in a value-taking option's prose is not treated as an accepted format value",
+);
+assert.deepEqual(proseOnlyJson.protocols, ["json"], "only the independently declared boolean JSON switch contributes a protocol");
+
+const resumeCapabilities = parseOpenCodeRunCapabilitiesHelp(`
+  --format <format>             Output format: text, json
+  --resume                        Resume the most recent session
+  --session <id>                 Resume a named session
+`, "3.4.0");
+assert.equal(resumeCapabilities.session, true);
+assert.deepEqual(resumeCapabilities.valueOptions, ["--format", "--session"], "only session options with an explicit argument can receive Cave's native session id");
+
 const launcherA = await mkdtemp(path.join(tmpdir(), "cave-opencode-launch-a-"));
 const launcherB = await mkdtemp(path.join(tmpdir(), "cave-opencode-launch-b-"));
 const executable = process.platform === "win32" ? "opencode.cmd" : "opencode";

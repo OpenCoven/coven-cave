@@ -128,7 +128,14 @@ function advertisedStructuredOutputs(help: string): Array<{ option: string; valu
   return declaredRunOptions(help).flatMap((option) => {
     if (!optionTakesExplicitValue(help, option)) return [];
     const stanza = optionStanza(help, option);
-    const values = [...new Set((stanza.match(/\bjson(?:[._-][a-z0-9]+)*\b/gi) ?? []).map((value) => value.toLowerCase()))];
+    // JSON in arbitrary prose is not an accepted option value. Restrict the
+    // evidence to an explicit enum in the synopsis or to an option-local
+    // `format:`/`values:`/`choices:` metadata list.
+    const enumerations = [
+      ...[...stanza.matchAll(/[<{[]([^}>\]\n]*(?:[,|][^}>\]\n]*)+)[}>\]]/g)].map((match) => match[1]),
+      ...[...stanza.matchAll(/\b(?:output\s+)?(?:format|values?|choices?)\s*:\s*([^\r\n]+)/gi)].map((match) => match[1]),
+    ];
+    const values = [...new Set(enumerations.flatMap((enumeration) => enumeration.match(/\bjson(?:[._-][a-z0-9]+)*\b/gi) ?? []).map((value) => value.toLowerCase()))];
     return values.length ? [{ option, values }] : [];
   });
 }
@@ -218,6 +225,7 @@ function advertisedFormatProtocols(
  */
 export function parseOpenCodeRunCapabilitiesHelp(help: string, version: string | null): OpenCodeRunCapabilities {
   const options = declaredRunOptions(help);
+  const valueOptions = options.filter((option) => optionTakesExplicitValue(help, option));
   const noValueOptions = declaredNoValueRunOptions(help, options);
   const structuredOutputs = advertisedStructuredOutputs(help);
   const structuredSwitches = advertisedStructuredSwitches(options, noValueOptions);
@@ -229,14 +237,19 @@ export function parseOpenCodeRunCapabilitiesHelp(help: string, version: string |
     // syntax or a valueless JSON switch. A stray "JSON" in a banner or
     // another option's description cannot make us launch unsupported argv.
     json,
-    model: options.includes("--model"),
-    session: options.includes("--session") || options.includes("--resume"),
+    model: valueOptions.includes("--model"),
+    // A bare --resume can mean "resume latest". Cave has a stable native id
+    // to forward, so it is resumable only when the synopsis documents an
+    // argument rather than merely mentioning the option.
+    session: (options.includes("--session") && valueOptions.includes("--session"))
+      || (options.includes("--resume") && valueOptions.includes("--resume")),
     // The documented format value is an independently observed protocol
     // marker. Future formats (for example json-v2) must be explicitly
     // advertised and selected by a matching schema; we never infer them
     // from the installed version string.
     protocols,
     options,
+    valueOptions,
     noValueOptions,
     structuredSwitches,
     structuredOutputs,
@@ -321,7 +334,7 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
     // Partial, timed-out, non-zero, or oversized help is never capability
     // evidence. Probe again after the short TTL instead of risking an argv
     // that the installed client does not accept.
-    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], noValueOptions: [], structuredSwitches: [], structuredOutputs: [] };
+    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], structuredSwitches: [], structuredOutputs: [] };
     return parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
   })();
   openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, identity, value };

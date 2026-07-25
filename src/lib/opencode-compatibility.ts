@@ -13,6 +13,8 @@ export type OpenCodeRunCapabilities = {
   protocols: string[];
   /** Declared `run` option names and structured-output option/value pairs. */
   options?: string[];
+  /** Declared run options whose synopsis explicitly accepts an argument. */
+  valueOptions?: string[];
   /** Declared run flags that take no value and are safe to forward verbatim. */
   noValueOptions?: string[];
   /** Declared valueless switches that explicitly request a JSON protocol. */
@@ -83,6 +85,8 @@ export type OpenCodeSchemaBundle = {
   expiresAt: string;
   /** Signed registry-key identifier; required when a keyring has more than one key. */
   keyId?: string;
+  /** Signed, explicit retirement of compiled baseline schema IDs. */
+  retiredSchemaIds?: string[];
   schemas: OpenCodeEventSchema[];
   signature?: { algorithm: "ed25519"; value: string };
 };
@@ -364,12 +368,16 @@ function schemaMatches(schema: OpenCodeEventSchema, capabilities: OpenCodeRunCap
   if (schema.requires.protocol !== undefined && !protocols.includes(schema.requires.protocol)) return false;
   const structuredOutputs = capabilities.structuredOutputs ?? [{ option: "--format", values: protocols }];
   const structuredSwitches = capabilities.structuredSwitches ?? [];
+  // Older programmatic callers predate per-option argument evidence; live
+  // probes always supply it. Preserve their documented option contract while
+  // refusing a current probe that marks an option valueless.
+  const valueOptions = new Set(capabilities.valueOptions ?? capabilities.options ?? ["--format", "--output", "--session", "--resume", "--model"]);
   if (schema.launch.structuredOutput.value === undefined) {
     if (!structuredSwitches.some((output) => output.option === schema.launch.structuredOutput.option && output.protocols.includes(schema.requires.protocol ?? "json"))) return false;
-  } else if (!structuredOutputs.some((output) => output.option === schema.launch.structuredOutput.option && output.values.includes(schema.launch.structuredOutput.value!))) return false;
+  } else if (!valueOptions.has(schema.launch.structuredOutput.option) || !structuredOutputs.some((output) => output.option === schema.launch.structuredOutput.option && output.values.includes(schema.launch.structuredOutput.value!))) return false;
   const options = new Set(capabilities.options ?? ["--format", "--output", "--session", "--resume", "--model"]);
   if (!options.has(schema.launch.structuredOutput.option)) return false;
-  if (schema.launch.sessionOption && !options.has(schema.launch.sessionOption)) return false;
+  if (schema.launch.sessionOption && (!options.has(schema.launch.sessionOption) || !valueOptions.has(schema.launch.sessionOption))) return false;
   const noValueOptions = new Set(capabilities.noValueOptions ?? []);
   if (schema.launch.requiredFlags.some((flag) => !options.has(flag) || !noValueOptions.has(flag))) return false;
   return true;
@@ -422,9 +430,15 @@ export function isOpenCodeSchemaBundle(
   options: { allowExpired?: boolean } = {},
 ): value is OpenCodeSchemaBundle {
   if (!isRecord(value) || value.format !== 1 || value.runtime !== "opencode") return false;
-  if (!Object.keys(value).every((key) => key === "format" || key === "runtime" || key === "sequence" || key === "issuedAt" || key === "expiresAt" || key === "keyId" || key === "schemas" || key === "signature")) return false;
+  if (!Object.keys(value).every((key) => key === "format" || key === "runtime" || key === "sequence" || key === "issuedAt" || key === "expiresAt" || key === "keyId" || key === "retiredSchemaIds" || key === "schemas" || key === "signature")) return false;
   if (typeof value.sequence !== "number" || !Number.isSafeInteger(value.sequence) || value.sequence < 1 || !Array.isArray(value.schemas) || value.schemas.length === 0 || value.schemas.length > 64 || !value.schemas.every(isEventSchema)) return false;
   if (value.keyId !== undefined && (typeof value.keyId !== "string" || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(value.keyId))) return false;
+  if (value.retiredSchemaIds !== undefined && (
+    !Array.isArray(value.retiredSchemaIds)
+    || value.retiredSchemaIds.length > BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas.length
+    || !value.retiredSchemaIds.every((id) => typeof id === "string" && BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas.some((schema) => schema.id === id))
+    || new Set(value.retiredSchemaIds).size !== value.retiredSchemaIds.length
+  )) return false;
   if (value.signature !== undefined && (!isRecord(value.signature)
     || !Object.keys(value.signature).every((key) => key === "algorithm" || key === "value")
     || value.signature.algorithm !== "ed25519"
@@ -890,7 +904,16 @@ export async function resolveOpenCodeCompatibility(
       diagnostic: loaded.diagnostic,
     };
   }
-  const schema = selectOpenCodeSchema(loaded.bundle.schemas, capabilities);
+  const remoteSchema = selectOpenCodeSchema(loaded.bundle.schemas, capabilities);
+  // Remote registries publish additive compatibility profiles by default. A
+  // partial update must not evict a compiled, known-safe parser for another
+  // installed client; retirement is possible only through an explicit signed
+  // baseline schema ID in the same bundle.
+  const builtInSchema = remoteSchema || loaded.source === "built-in"
+    ? null
+    : selectOpenCodeSchema(BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas, capabilities);
+  const schema = remoteSchema
+    ?? (builtInSchema && !loaded.bundle.retiredSchemaIds?.includes(builtInSchema.id) ? builtInSchema : null);
   if (!schema) {
     return {
       mode: "plain",
@@ -912,7 +935,7 @@ export async function resolveOpenCodeCompatibility(
     mode: "structured",
     capabilities,
     schema,
-    bundleSource: loaded.source,
+    bundleSource: remoteSchema ? loaded.source : "built-in",
     // The shipped parser is a source-trusted offline baseline. A failed
     // registry refresh must not remove otherwise compatible tool activity,
     // but callers still surface the value-free recovery state.

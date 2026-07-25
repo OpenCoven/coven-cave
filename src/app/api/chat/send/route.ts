@@ -1376,11 +1376,13 @@ export async function POST(req: Request) {
         if (resumeSessionId && launch.sessionOption) a.push(launch.sessionOption, resumeSessionId);
       } else if (resumeSessionId) {
         // Plain output can still resume a native session. Forward only the
-        // exact option confirmed by `run --help`; never guess `--session`.
+        // exact argument-taking option confirmed by `run --help`; never guess
+        // `--session` or feed an ID to a valueless "resume latest" switch.
         const options = openCodeCompatibility?.capabilities.options ?? [];
-        const sessionOption = options.includes("--session")
+        const valueOptions = openCodeCompatibility?.capabilities.valueOptions ?? [];
+        const sessionOption = options.includes("--session") && valueOptions.includes("--session")
           ? "--session"
-          : options.includes("--resume")
+          : options.includes("--resume") && valueOptions.includes("--resume")
             ? "--resume"
             : null;
         if (sessionOption) a.push(sessionOption, resumeSessionId);
@@ -1435,8 +1437,8 @@ export async function POST(req: Request) {
   const openCodeNativeResumeSupported = openCodeCompatibility?.mode === "structured"
     ? Boolean(openCodeCompatibility.schema?.launch.sessionOption)
     : Boolean(
-      openCodeCompatibility?.capabilities.options?.includes("--session")
-      || openCodeCompatibility?.capabilities.options?.includes("--resume"),
+      openCodeCompatibility?.capabilities.valueOptions?.includes("--session")
+      || openCodeCompatibility?.capabilities.valueOptions?.includes("--resume"),
     );
   const openCodeUnrecordedResume = Boolean(
     openCodeDirect && body.sessionId && !existingConversation && !openCodeNativeResumeSupported,
