@@ -589,6 +589,7 @@ async function readTrustedCacheRecord(file: string, publicKey: string | OpenCode
       || typeof cached.checkedAt !== "number"
       || !Number.isFinite(cached.checkedAt)
       || (cached.verifiedKeyId !== undefined && (typeof cached.verifiedKeyId !== "string" || cached.bundle.keyId !== cached.verifiedKeyId))
+      || !meetsOpenCodeRegistryGenesisFloor(cached.bundle)
       || !verifyOpenCodeSchemaBundle(cached.bundle, publicKey, now, { allowExpired: true })
     ) return null;
     return cached;

@@ -64,6 +64,16 @@ const firstUseReplay = await loadOpenCodeSchemaBundle({
 });
 assert.equal(firstUseReplay.source, "built-in", "a fresh install rejects a signed historical sequence-one registry replay");
 assert.equal(firstUseReplay.diagnostic, "schema-registry-refresh-rejected");
+await writeFile(firstUseReplayFile, JSON.stringify({ checkedAt: now, bundle: signedRollback }), "utf8");
+const cachedGenesisReplay = await loadOpenCodeSchemaBundle({
+  cacheFile: firstUseReplayFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now,
+  fetch: async () => { throw new Error("offline"); },
+});
+assert.equal(cachedGenesisReplay.source, "built-in", "a copied signed historical genesis cache cannot bypass first-use pinning");
+assert.equal(cachedGenesisReplay.diagnostic, "schema-registry-refresh-rejected");
 const unsignedGenesis = { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE };
 const signedGenesis = {
   ...unsignedGenesis,
