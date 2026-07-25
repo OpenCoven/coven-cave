@@ -144,6 +144,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /!terminal && !abort\.signal\.aborted[\s\S]*?Hermes API stream ended before a terminal event/,
+  "an SSE EOF without a terminal event must be persisted as an error, never a completed response",
+);
+
+assert.match(
+  chatRoute,
   /\.\.\.\(persistedTools \? \{ tools: persistedTools \} : \{\}\)/,
   "tools persist on the assistant turn alongside usage and cost",
 );

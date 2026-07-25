@@ -2157,6 +2157,14 @@ export async function POST(req: Request) {
                 if (terminal) break;
               }
             }
+            if (!terminal && !abort.signal.aborted) {
+              // EOF without an explicit protocol terminal means a proxy or
+              // server cut the response short. Preserve any partial text for
+              // diagnostics, but never present or persist it as a completed
+              // model turn.
+              result = { ...result, is_error: true };
+              recordStdoutErrorTail("Hermes API stream ended before a terminal event", true);
+            }
           } finally {
             reader.releaseLock();
           }

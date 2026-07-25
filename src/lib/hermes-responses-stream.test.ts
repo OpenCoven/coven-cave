@@ -83,8 +83,16 @@ test("SSE decoder handles arbitrary chunk boundaries and multi-line data", () =>
 test("structured transport is opt-in and refuses non-HTTP endpoint values", () => {
   assert.equal(hermesApiConfig({}), null);
   assert.equal(hermesApiConfig({ HERMES_API_URL: "file:///tmp/hermes" }), null);
+  assert.equal(hermesApiConfig({ HERMES_API_URL: "http://hermes.example.test:8080" }), null);
+  assert.equal(hermesApiConfig({ HERMES_API_URL: "http://192.168.1.20:8080" }), null);
   assert.equal(hermesApiConfig({ HERMES_API_URL: "https://user:token@example.test" }), null);
   assert.equal(hermesApiConfig({ HERMES_API_URL: "https://example.test?api_key=token" }), null);
+  assert.deepEqual(hermesApiConfig({ HERMES_API_URL: "https://hermes.example.test:8443" }), {
+    baseUrl: "https://hermes.example.test:8443",
+  });
+  assert.deepEqual(hermesApiConfig({ HERMES_API_URL: "http://[::1]:8080" }), {
+    baseUrl: "http://[::1]:8080",
+  });
   assert.deepEqual(hermesApiConfig({ HERMES_API_URL: "http://127.0.0.1:8080/", HERMES_API_KEY: " scoped " }), {
     baseUrl: "http://127.0.0.1:8080",
     apiKey: "scoped",

@@ -207,11 +207,25 @@ export class HermesSseDecoder {
 
 export type HermesApiConfig = { baseUrl: string; apiKey?: string };
 
+/** Plain HTTP is only safe for a numeric loopback listener. Do not resolve
+ * names here: a hostname such as `localhost` can be redirected by local DNS or
+ * hosts-file policy, which would put prompts and bearer credentials on the
+ * network. */
+function isLiteralLoopbackHost(host: string): boolean {
+  const normalized = host.replace(/^\[|\]$/g, "").toLowerCase();
+  if (normalized === "::1") return true;
+  const octets = normalized.split(".");
+  return octets.length === 4 &&
+    octets[0] === "127" &&
+    octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255);
+}
+
 /**
- * Opt in to the structured transport with a local/API-server endpoint. The
- * key is read from the familiar-scoped spawn environment by the caller, never
- * from a request body or persisted transcript. Invalid/non-HTTP values fall
- * back to the CLI, which remains functional but cannot promise tool bubbles.
+ * Opt in to the structured transport with a local/API-server endpoint. Remote
+ * endpoints must use HTTPS; HTTP is limited to literal loopback listeners.
+ * The key is read from the familiar-scoped spawn environment by the caller,
+ * never from a request body or persisted transcript. Invalid values fall back
+ * to the CLI, which remains functional but cannot promise tool bubbles.
  */
 export function hermesApiConfig(
   env: Partial<Record<"HERMES_API_URL" | "HERMES_API_KEY", string | undefined>>,
@@ -225,7 +239,8 @@ export function hermesApiConfig(
       url.username ||
       url.password ||
       url.search ||
-      url.hash
+      url.hash ||
+      (url.protocol === "http:" && !isLiteralLoopbackHost(url.hostname))
     ) return null;
     return {
       baseUrl: url.toString().replace(/\/$/, ""),
