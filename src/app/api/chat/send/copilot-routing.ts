@@ -16,13 +16,14 @@ export function resolveCopilotChatRouting(input: {
   harness: string;
   isSshRuntime: boolean;
   capabilityVersion: string | null;
+  launchCommand?: { command: string; fixedArgs: string[] };
   eventProtocols?: unknown;
 }): CopilotChatRouting {
   if (input.isSshRuntime || input.harness !== "copilot") {
     return { mode: "plain", spec: null, compatibilityDiagnostic: null };
   }
 
-  const spec = copilotStreamSpec(input.capabilityVersion, input.eventProtocols);
+  const spec = copilotStreamSpec(input.capabilityVersion, input.eventProtocols, input.launchCommand);
   if (spec) return { mode: "direct-jsonl", spec, compatibilityDiagnostic: null };
 
   return {
@@ -41,7 +42,7 @@ export function resolveCopilotChatRouting(input: {
 export async function prepareCopilotChatRouting(input: {
   harness: string;
   isSshRuntime: boolean;
-  probe: () => Promise<{ version?: string | null } | null>;
+  probe: () => Promise<{ version?: string | null; launchCommand?: { command: string; fixedArgs: string[] } } | null>;
   resolveCompatibility: () => Promise<{ eventProtocols?: unknown } | null>;
 }): Promise<CopilotChatRouting> {
   if (input.isSshRuntime || input.harness !== "copilot") {
@@ -59,6 +60,7 @@ export async function prepareCopilotChatRouting(input: {
     harness: input.harness,
     isSshRuntime: false,
     capabilityVersion: capability?.version ?? null,
+    launchCommand: capability?.launchCommand,
     eventProtocols: compatibility?.eventProtocols,
   });
 }

@@ -27,7 +27,6 @@ import {
   type CopilotStreamSpec,
 } from "../copilot-stream.ts";
 import { harnessSpawnEnv } from "../harness-spawn-env.ts";
-import { copilotLaunchCommandForBinary } from "../copilot-bin.ts";
 
 /** One bounded flow iteration should never outlive this. */
 const FLOW_COPILOT_TIMEOUT_MS = 60 * 60_000;
@@ -102,7 +101,10 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     addDirs,
   });
 
-  const command = launch.spawnCommand ?? copilotLaunchCommandForBinary(launch.spec.executable);
+  const command = launch.spawnCommand ?? launch.spec.launchCommand ?? {
+    command: launch.spec.executable,
+    fixedArgs: [],
+  };
   const child = spawn(command.command, [...command.fixedArgs, ...args], {
     cwd: launch.projectRoot,
     env: harnessSpawnEnv(launch.familiarId),

@@ -39,7 +39,6 @@ import {
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
 import { covenLaunchCommand } from "@/lib/coven-bin";
-import { copilotLaunchCommandForBinary } from "@/lib/copilot-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
@@ -2124,7 +2123,7 @@ export async function POST(req: Request) {
                 // direct CLI integrations. Every other local harness goes
                 // through `coven run`.
                 const launch = copilotStream
-                  ? copilotLaunchCommandForBinary(copilotStream.executable)
+                  ? copilotStream.launchCommand ?? { command: copilotStream.executable, fixedArgs: [] as string[] }
                   : grokDirect
                     ? grokLaunchCommand()
                   : hermesDirect

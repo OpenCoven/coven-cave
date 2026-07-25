@@ -309,6 +309,7 @@ async function runViaSession(body: RunBody) {
     const spec = copilotStreamSpec(
       capability.version,
       compatibility?.eventProtocols,
+      capability.launchCommand,
     );
     if (!spec) {
       return NextResponse.json(

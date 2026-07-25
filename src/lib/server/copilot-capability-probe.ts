@@ -2,15 +2,23 @@ import { spawn } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, join } from "node:path";
 import { parseRuntimeClientVersion } from "../copilot-stream.ts";
-import { copilotLaunchCommandForBinary } from "../copilot-bin.ts";
+import { resolveCopilotLaunchCommand } from "../copilot-bin.ts";
+import type { CovenLaunchCommand } from "../coven-bin.ts";
 
 export type CopilotCapabilityProbe = {
   version: string | null;
+  /** Exact spawn target resolved during this bounded probe, never request argv. */
+  launchCommand?: Pick<CovenLaunchCommand, "command" | "fixedArgs">;
   /** Only safe, non-payload diagnostic metadata; never command output. */
   diagnostic?: "version-unavailable" | "version-unparseable" | "probe-timeout";
 };
 
-type ProbeCacheEntry = { value: CopilotCapabilityProbe; expiresAt: number };
+type ProbeCacheEntry = {
+  value: CopilotCapabilityProbe;
+  expiresAt: number;
+  launchCommand: CovenLaunchCommand;
+  identity: string;
+};
 const cache = new Map<string, ProbeCacheEntry>();
 const CACHE_MS = 5 * 60_000;
 const TIMEOUT_MS = 2_500;
@@ -44,13 +52,23 @@ async function binaryIdentity(executable: string): Promise<string> {
   return `unresolved:${executable}:${pathValue}`;
 }
 
-async function identityBeforeDeadline(executable: string): Promise<string | null> {
+async function launchIdentity(launch: CovenLaunchCommand): Promise<string> {
+  const targets = [launch.command, ...launch.fixedArgs.filter((arg) => isAbsolute(arg))];
+  return (await Promise.all(targets.map(binaryIdentity))).join("\u0000");
+}
+
+async function identityBeforeDeadline(
+  work: () => Promise<string>,
+  deadline: number,
+): Promise<string | null> {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) return null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     return await Promise.race([
-      binaryIdentity(executable),
+      work(),
       new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), TIMEOUT_MS);
+        timer = setTimeout(() => resolve(null), remaining);
         timer.unref?.();
       }),
     ]);
@@ -73,14 +91,26 @@ export async function probeCopilotCapability(
   } = {},
 ): Promise<CopilotCapabilityProbe> {
   const now = options.now ?? Date.now;
-  const startedAt = Date.now();
-  const identity = options.binaryIdentity
-    ? await options.binaryIdentity(executable)
-    : await identityBeforeDeadline(executable);
-  if (!identity) return { version: null, diagnostic: "probe-timeout" };
-  const cacheKey = `${executable}\u0000${identity}`;
+  const deadline = Date.now() + TIMEOUT_MS;
+  // Cache by command name plus PATH, then validate the *previously launched*
+  // command's binary/script metadata. This keeps normal turns off `where`
+  // while invalidating immediately when an npm shim target is updated.
+  const cacheKey = `${executable}\u0000${process.env.PATH ?? ""}`;
   const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > now()) return cached.value;
+  if (cached && cached.expiresAt > now()) {
+    const identity = options.binaryIdentity
+      ? await options.binaryIdentity(cached.launchCommand.command)
+      : await identityBeforeDeadline(() => launchIdentity(cached.launchCommand), deadline);
+    if (identity && identity === cached.identity) return cached.value;
+  }
+  const launch = await resolveCopilotLaunchCommand(executable, {
+    timeoutMs: Math.max(1, deadline - Date.now()),
+  });
+  if (launch.unresolvedWindowsShim) return { version: null, diagnostic: "version-unavailable" };
+  const identity = options.binaryIdentity
+    ? await options.binaryIdentity(launch.command)
+    : await identityBeforeDeadline(() => launchIdentity(launch), deadline);
+  if (!identity) return { version: null, diagnostic: "probe-timeout" };
   const childSpawn = options.spawnImpl ?? spawn;
   const value = await new Promise<CopilotCapabilityProbe>((resolve) => {
     let stdout = "";
@@ -92,11 +122,6 @@ export async function probeCopilotCapability(
     };
     let child: ReturnType<typeof spawn>;
     try {
-      const launch = copilotLaunchCommandForBinary(executable);
-      if (launch.unresolvedWindowsShim) {
-        settle({ version: null, diagnostic: "version-unavailable" });
-        return;
-      }
       child = childSpawn(launch.command, [...launch.fixedArgs, "--version"], {
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
@@ -117,7 +142,7 @@ export async function probeCopilotCapability(
       }, 250);
       forceKill.unref?.();
       settle({ version: null, diagnostic: "probe-timeout" });
-    }, Math.max(1, TIMEOUT_MS - (Date.now() - startedAt)));
+    }, Math.max(1, deadline - Date.now()));
     child.stdout?.on("data", (chunk: Buffer | string) => {
       if (stdout.length < 4_096) stdout += String(chunk).slice(0, 4_096 - stdout.length);
     });
@@ -139,8 +164,9 @@ export async function probeCopilotCapability(
       settle(version ? { version } : { version: null, diagnostic: "version-unparseable" });
     });
   });
-  cache.set(cacheKey, { value, expiresAt: now() + CACHE_MS });
-  return value;
+  const result = { ...value, launchCommand: { command: launch.command, fixedArgs: launch.fixedArgs } };
+  cache.set(cacheKey, { value: result, expiresAt: now() + CACHE_MS, launchCommand: launch, identity });
+  return result;
 }
 
 /** Test seam: clear only process-local, non-persistent probe data. */

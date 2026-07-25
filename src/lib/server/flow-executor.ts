@@ -265,6 +265,7 @@ export async function startFlowSession(
     const spec = copilotStreamSpec(
       capability.version,
       compatibility?.eventProtocols,
+      capability.launchCommand,
     );
     if (spec) {
       const { sessionId } = startCopilotFlowRun({

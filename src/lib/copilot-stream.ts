@@ -235,6 +235,8 @@ export type RuntimeProtocolDiagnostic = {
 
 export type CopilotStreamSpec = {
   executable: string;
+  /** Resolved during the capability probe; direct spawns must reuse it. */
+  launchCommand?: { command: string; fixedArgs: string[] };
   /** Selected, versioned JSONL event contract for this local CLI. */
   protocol: RuntimeEventProtocolSchema;
   /** JSONL stream launch args; ends with the prompt flag (`-p`). */
@@ -334,6 +336,7 @@ export function runtimeEventProtocolSchemas(value: unknown): RuntimeEventProtoco
 export function copilotStreamSpec(
   clientVersion?: string | null,
   compatibleEventProtocols?: unknown,
+  launchCommand?: { command: string; fixedArgs: string[] },
 ): CopilotStreamSpec | null {
   const runtime = REGISTRY_RUNTIMES.find((entry) => entry.id === "copilot");
   if (!runtime || !runtime.capabilities.stream) return null;
@@ -374,6 +377,7 @@ export function copilotStreamSpec(
   if (!protocol) return null;
   return {
     executable: adapter.executable,
+    ...(launchCommand ? { launchCommand } : {}),
     protocol,
     prefixArgs,
     sessionIdFlag:

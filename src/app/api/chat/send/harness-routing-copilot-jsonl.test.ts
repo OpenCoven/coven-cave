@@ -86,7 +86,7 @@ assert.deepEqual(
   "remote Copilot routing keeps the remote generic execution path",
 );
 
-let resolveProbe!: (value: { version: string }) => void;
+let resolveProbe!: (value: { version: string; launchCommand: { command: string; fixedArgs: string[] } }) => void;
 let resolveRegistry!: (value: { eventProtocols: unknown[] }) => void;
 let probeStarted = false;
 let registryStarted = false;
@@ -104,9 +104,15 @@ const preparedDirect = prepareCopilotChatRouting({
 });
 assert.equal(probeStarted, true, "the route preparation starts the version probe");
 assert.equal(registryStarted, true, "the route preparation starts registry resolution without awaiting the probe");
-resolveProbe({ version: "1.0.70" });
+resolveProbe({ version: "1.0.70", launchCommand: { command: "node", fixedArgs: ["copilot-entry.js"] } });
 resolveRegistry({ eventProtocols: [] });
-assert.equal((await preparedDirect).mode, "direct-jsonl", "a supported mocked runtime selects the direct JSONL route");
+const preparedDirectResult = await preparedDirect;
+assert.equal(preparedDirectResult.mode, "direct-jsonl", "a supported mocked runtime selects the direct JSONL route");
+assert.deepEqual(
+  preparedDirectResult.spec?.launchCommand,
+  { command: "node", fixedArgs: ["copilot-entry.js"] },
+  "the direct route reuses the exact bounded-probe launcher instead of discovering one while streaming",
+);
 
 const preparedFallback = await prepareCopilotChatRouting({
   harness: "copilot",
