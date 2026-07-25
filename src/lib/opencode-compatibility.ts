@@ -1,6 +1,5 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
-import path from "node:path";
-import { caveHome } from "./coven-paths.ts";
+import { homedir } from "node:os";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 type RegistryFs = Pick<typeof import("node:fs/promises"), "mkdir" | "open" | "readFile" | "rename" | "rm" | "stat">;
@@ -612,13 +611,23 @@ export function verifyOpenCodeSchemaBundle(
 
 type CachedBundle = { checkedAt: number; bundle: OpenCodeSchemaBundle; verifiedKeyId?: string };
 
+/** Runtime-only path construction deliberately avoids importing coven-paths:
+ * its dynamic filesystem joins are application inputs to Turbopack's tracer. */
+function localPathChild(parent: string, child: string): string {
+  const separator = process.platform === "win32" ? "\\" : "/";
+  return `${parent.replace(/[\\/]+$/, "")}${separator}${child}`;
+}
+
 function cachePath(): string {
   // The registry cache is mutable per-user state, never an application asset.
-  return path.join(/* turbopackIgnore: true */ caveHome(), CACHE_FILE);
+  const covenRoot = process.env.COVEN_HOME || localPathChild(homedir(), ".coven");
+  const caveRoot = process.env.COVEN_CAVE_HOME || localPathChild(covenRoot, "cave");
+  return localPathChild(caveRoot, CACHE_FILE);
 }
 
 function localPathParent(file: string): string {
-  return path.dirname(/* turbopackIgnore: true */ file);
+  const slash = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
+  return slash > 0 ? file.slice(0, slash) : ".";
 }
 
 function cacheTrustPath(file: string): string {
