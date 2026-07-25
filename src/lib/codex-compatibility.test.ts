@@ -125,6 +125,9 @@ assert.doesNotMatch(JSON.stringify(controls.events), /never render/, "unknown pr
 const unarmedDottedJson = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"invoice.created","value":"assistant JSON"}\n', selected.schema);
 assert.equal(unarmedDottedJson.events.length, 0, "dotted JSON remains prose until a Codex protocol boundary is confirmed");
 assert.equal(unarmedDottedJson.passthrough, '{"type":"invoice.created","value":"assistant JSON"}\n', "captured output preserves ordinary JSON with dotted types before a valid preamble");
+const untrustedMarkerJson = new CodexJsonlDecoder({ trustThreadPreamble: true, trustCodexMarker: false }).push('codex\n{"type":"invoice.created","value":"assistant JSON"}\n', selected.schema);
+assert.equal(untrustedMarkerJson.events.length, 0, "an unauthenticated codex prose line cannot arm protocol parsing");
+assert.equal(untrustedMarkerJson.passthrough, 'codex\n{"type":"invoice.created","value":"assistant JSON"}\n', "assistant prose and following dotted JSON remain verbatim without transport provenance");
 const preamblelessControls = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"error","message":"never render"}\n{"type":"item.started","item":{"id":"secret-call","type":"command_execution","arguments":"never render"}}\n', selected.schema);
 assert.equal(preamblelessControls.passthrough, "", "trusted captured-pipe control frames are quarantined before thread startup");
 assert.equal(preamblelessControls.events.filter((event) => event.kind === "unknown").length, 2, "preamble-less control frames become only shape diagnostics");

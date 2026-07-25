@@ -278,8 +278,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /let codexDecoder = binding\.harness === "codex" \? new CodexJsonlDecoder\(\{ trustThreadPreamble: true \}\) : null/,
-  "Codex JSONL decoding trusts a thread preamble only on the captured-pipe transport",
+  /let codexDecoder = binding\.harness === "codex" \? new CodexJsonlDecoder\(\{ trustThreadPreamble: true, trustCodexMarker: false \}\) : null/,
+  "Codex JSONL decoding requires a validated preamble instead of trusting assistant-authored marker text",
 );
 
 assert.match(
