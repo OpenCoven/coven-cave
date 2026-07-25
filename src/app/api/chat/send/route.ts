@@ -1293,6 +1293,9 @@ export async function POST(req: Request) {
   // UUID for new native sessions so a stopped first turn can still be saved
   // and resumed instead of disappearing with the unreceived end frame.
   let grokSessionHint: string | null = null;
+  // Set only when the current OpenCode attempt forwards a native token.
+  // Fresh compatibility fallback must not retain a prior session by accident.
+  let openCodeNativeResumeUsed = false;
   // `promptOverride` lets the transparent resume-retry (below) prime a fresh
   // harness session with replayed conversation history — without it the retry
   // forks a context-free session and the familiar loses the thread.
@@ -1362,6 +1365,9 @@ export async function POST(req: Request) {
       });
     }
     if (openCodeDirect) {
+      // Reset for each attempt: a later fresh-session retry must not preserve
+      // the native token from an earlier failed compatibility launch.
+      openCodeNativeResumeUsed = false;
       // The selected schema is capability based, never a version threshold.
       // If JSON is unavailable, preserve plain chat instead of launching with
       // an unsupported flag and losing the whole reply.
@@ -1373,7 +1379,10 @@ export async function POST(req: Request) {
           ...(launch.structuredOutput.value === undefined ? [] : [launch.structuredOutput.value]),
           ...launch.requiredFlags,
         );
-        if (resumeSessionId && launch.sessionOption) a.push(launch.sessionOption, resumeSessionId);
+        if (resumeSessionId && launch.sessionOption) {
+          a.push(launch.sessionOption, resumeSessionId);
+          openCodeNativeResumeUsed = true;
+        }
       } else if (resumeSessionId) {
         // Plain output can still resume a native session. Forward only the
         // exact argument-taking option confirmed by `run --help`; never guess
@@ -1385,7 +1394,10 @@ export async function POST(req: Request) {
           : options.includes("--resume") && valueOptions.includes("--resume")
             ? "--resume"
             : null;
-        if (sessionOption) a.push(sessionOption, resumeSessionId);
+        if (sessionOption) {
+          a.push(sessionOption, resumeSessionId);
+          openCodeNativeResumeUsed = true;
+        }
       }
       if (forwardModel) a.push("--model", forwardModel);
       a.push(prompt);
@@ -1625,7 +1637,8 @@ export async function POST(req: Request) {
       // `coven run` at startup, so the turn ends with no assistant text.
       // Detected from stderr; healed (manifest quarantined) and retried below.
       let adapterConflict: BuiltinAdapterConflict | null = null;
-      let openCodeCompatibilityNoticeSent = false;
+      let openCodeCompatibilityHealthNoticeSent = false;
+      let openCodeProtocolQuarantineNoticeSent = false;
       let openCodeModelRejected = false;
 
       // Model parity: the harness echoes its resolved model on the init/system
@@ -1930,8 +1943,8 @@ export async function POST(req: Request) {
             // as assistant output: tool progress and provider errors often
             // carry those fields and may contain secrets or file contents.
             quarantineOpenCodeSchema(openCodeCompatibility?.schema);
-            if (!openCodeCompatibilityNoticeSent) {
-              openCodeCompatibilityNoticeSent = true;
+            if (!openCodeProtocolQuarantineNoticeSent) {
+              openCodeProtocolQuarantineNoticeSent = true;
               pushProgress(
                 "opencode-compatibility",
                 "OpenCode sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
@@ -1946,8 +1959,8 @@ export async function POST(req: Request) {
           // persisted error tail or any user-visible diagnostic.
             recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
           quarantineOpenCodeSchema(openCodeCompatibility?.schema);
-          if (!openCodeCompatibilityNoticeSent) {
-            openCodeCompatibilityNoticeSent = true;
+          if (!openCodeProtocolQuarantineNoticeSent) {
+            openCodeProtocolQuarantineNoticeSent = true;
             pushProgress(
               "opencode-compatibility",
               "OpenCode sent a malformed event; future turns will use safe plain chat until a compatible schema is available",
@@ -1965,8 +1978,8 @@ export async function POST(req: Request) {
         // leak into bubble text.
         const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
         if (!line) return;
-        if (openCodeDirect && !openCodeCompatibilityNoticeSent && openCodeCompatibility?.diagnostic) {
-          openCodeCompatibilityNoticeSent = true;
+        if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
+          openCodeCompatibilityHealthNoticeSent = true;
           const diagnostic = openCodeCompatibility.diagnostic === "json-format-unavailable"
             ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
             : openCodeCompatibility.diagnostic === "no-compatible-schema"
@@ -1974,7 +1987,7 @@ export async function POST(req: Request) {
               : openCodeCompatibility.diagnostic === "schema-quarantined"
                 ? "OpenCode's structured event protocol was quarantined; continuing without tool activity"
               : openCodeCompatibility.diagnostic === "cached-schema-unavailable"
-                ? "OpenCode's compatibility registry is unavailable; using the shipped compatible parser"
+                ? "OpenCode's compatibility registry is unavailable; continuing in plain chat without tool activity"
               : openCodeCompatibility.bundleSource === "built-in"
                 ? "OpenCode schema refresh was not trusted; using the shipped compatible parser"
                 : "OpenCode schema refresh was not trusted; using the last known compatible parser";
@@ -2329,8 +2342,8 @@ export async function POST(req: Request) {
       const turnSpawnStartMs = Date.now();
       // A compatibility decision is meaningful even when the CLI exits before
       // stdout. Announce it before spawning instead of relying on handleLine.
-      if (openCodeDirect && !openCodeCompatibilityNoticeSent && openCodeCompatibility?.diagnostic) {
-        openCodeCompatibilityNoticeSent = true;
+      if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
+        openCodeCompatibilityHealthNoticeSent = true;
         const diagnostic = openCodeCompatibility.diagnostic === "json-format-unavailable"
           ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
           : openCodeCompatibility.diagnostic === "no-compatible-schema"
@@ -2338,7 +2351,7 @@ export async function POST(req: Request) {
             : openCodeCompatibility.diagnostic === "schema-quarantined"
               ? "OpenCode's structured event protocol was quarantined; continuing without tool activity"
             : openCodeCompatibility.diagnostic === "cached-schema-unavailable"
-              ? "OpenCode's compatibility registry is unavailable; using the shipped compatible parser"
+              ? "OpenCode's compatibility registry is unavailable; continuing in plain chat without tool activity"
             : openCodeCompatibility.bundleSource === "built-in"
               ? "OpenCode schema refresh was not trusted; using the shipped compatible parser"
               : "OpenCode schema refresh was not trusted; using the last known compatible parser";
@@ -2557,9 +2570,12 @@ export async function POST(req: Request) {
       const harnessSessionId = grokDirect
         ? grokSessionId
         : openCodeDirect
-          // Plain output has no new native id to announce, but a native id
-          // used to resume this turn remains valid for its next resume.
-          ? openCodeSessionId ?? existingConversation?.harnessSessionId ?? (!existingConversation ? body.sessionId : undefined)
+          // Plain output has no new native id to announce, but a token is
+          // reusable only when this attempt actually forwarded it. A fresh
+          // compatibility fallback must invalidate an older native session.
+          ? openCodeSessionId ?? (openCodeNativeResumeUsed
+            ? existingConversation?.harnessSessionId ?? (!existingConversation ? body.sessionId : undefined)
+            : undefined)
           : sessionId;
       // OpenCode's JSON event protocol does not echo the selected model. Its
       // direct argv proves the selection was forwarded, while a successful

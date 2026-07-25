@@ -32,8 +32,8 @@ assert.match(
 );
 assert.match(
   route,
-  /let openCodeSessionId: string \| null = null;[\s\S]*?onSession: \(nativeSessionId\) => \{[\s\S]*?openCodeSessionId = nativeSessionId;[\s\S]*?if \(!sessionId\) announceSession\(nativeSessionId\);[\s\S]*?openCodeSessionId \?\? existingConversation\?\.harnessSessionId/,
-  "every structured OpenCode session event updates native resume state without replacing Cave's stable session id",
+  /let openCodeNativeResumeUsed = false;[\s\S]*?openCodeNativeResumeUsed = false;[\s\S]*?openCodeNativeResumeUsed = true;[\s\S]*?let openCodeSessionId: string \| null = null;[\s\S]*?onSession: \(nativeSessionId\) => \{[\s\S]*?openCodeSessionId = nativeSessionId;[\s\S]*?if \(!sessionId\) announceSession\(nativeSessionId\);[\s\S]*?openCodeSessionId \?\? \(openCodeNativeResumeUsed/,
+  "OpenCode preserves a native token only when this attempt actually resumed it, while event tokens remain separate from Cave's stable session id",
 );
 assert.match(
   route,
@@ -85,6 +85,16 @@ assert.match(
   /import \{[\s\S]*?quarantineOpenCodeSchema,[\s\S]*?onOther: \(ev, rawEvent\) => \{[\s\S]*?quarantineOpenCodeSchema\(openCodeCompatibility\?\.schema\)/,
   "an unknown OpenCode envelope quarantines its schema for future turns without replaying the current tool-capable request",
 );
+assert.match(
+  route,
+  /openCodeCompatibilityHealthNoticeSent[\s\S]*?openCodeProtocolQuarantineNoticeSent/,
+  "registry-health and parser-quarantine diagnostics are independently surfaced in the affected turn",
+);
+assert.match(
+  route,
+  /compatibility registry is unavailable; continuing in plain chat without tool activity/,
+  "an unavailable expired registry accurately reports plain fallback rather than a parser that is not active",
+);
 assert.doesNotMatch(
   route,
   /openCodePlainFallback|openCodeStructuredIncompatibility|structured-stream-quarantined/,
@@ -122,8 +132,8 @@ assert.match(
 );
 assert.match(
   route,
-  /const harnessSessionId = grokDirect[\s\S]*?: openCodeDirect[\s\S]*?openCodeSessionId \?\? existingConversation\?\.harnessSessionId \?\? \(!existingConversation \? body\.sessionId : undefined\)/,
-  "a plain OpenCode turn retains the native id it used to resume without mistaking Cave's stable id for a new native token",
+  /const harnessSessionId = grokDirect[\s\S]*?: openCodeDirect[\s\S]*?openCodeSessionId \?\? \(openCodeNativeResumeUsed[\s\S]*?existingConversation\?\.harnessSessionId[\s\S]*?: undefined\)/,
+  "a plain OpenCode turn retains a native id only when that token was actually used for the current launch",
 );
 assert.match(
   route,

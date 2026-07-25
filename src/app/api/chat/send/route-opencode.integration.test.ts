@@ -1,13 +1,16 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import path from "node:path";
 
 // This test runs the actual route against a temporary OpenCode command shim.
 // It deliberately covers the boundary the source-shape test cannot: capability
 // probing, selected argv, JSONL dispatch, SSE output, and persisted resume id.
-const home = await mkdtemp(path.join(tmpdir(), "cave-opencode-route-"));
+// The route correctly rejects project roots outside the local home directory.
+// Keep this fixture below that root on Linux as well as Windows so it reaches
+// the OpenCode launch path instead of the project-scope guard.
+const home = await mkdtemp(path.join(homedir(), "cave-opencode-route-"));
 const bin = path.join(home, "bin");
 const familiarWorkspace = path.join(home, "familiars", "opal");
 await mkdir(bin, { recursive: true });
