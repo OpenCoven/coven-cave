@@ -120,12 +120,26 @@ export const CODEX_TEXT_ONLY_FALLBACK_SCHEMA: CodexEventSchema = {
 
 type ParsedVersion = { core: [number, number, number]; prerelease: string[] | null };
 
+const SEMVER_CORE = "(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)";
+const SEMVER_PRERELEASE_IDENTIFIER = "(?:0|[1-9]\\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)";
+const SEMVER_TOKEN = `${SEMVER_CORE}(?:-${SEMVER_PRERELEASE_IDENTIFIER}(?:\\.${SEMVER_PRERELEASE_IDENTIFIER})*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?`;
+const SEMVER_TOKEN_RE = new RegExp(`^(?:${SEMVER_TOKEN})$`);
+const SEMVER_OUTPUT_RE = new RegExp(`(?:^|[^0-9A-Za-z.-])v?(${SEMVER_TOKEN})(?=$|[^0-9A-Za-z.-])`);
+
+function hasSafeSemVerNumbers(version: string): boolean {
+  const [core] = version.split(/[-+]/, 1);
+  if (!core || core.split(".").some((part) => !Number.isSafeInteger(Number(part)))) return false;
+  const prerelease = /-([^+]+)/.exec(version)?.[1]?.split(".");
+  return !prerelease?.some((part) => /^\d+$/.test(part) && !Number.isSafeInteger(Number(part)));
+}
+
 export function parseCodexVersionOutput(output: string | null): string | null {
   if (!output) return null;
   // The version must end at a complete semver token. `\b` alone accepts the
   // first three components of malformed values such as `0.145.0.1`, because
   // the dot creates a word boundary after the patch component.
-  return /(?:^|[^0-9A-Za-z.-])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?=$|[^0-9A-Za-z.-])/.exec(output)?.[1] ?? null;
+  const candidate = SEMVER_OUTPUT_RE.exec(output)?.[1] ?? null;
+  return candidate && hasSafeSemVerNumbers(candidate) ? candidate : null;
 }
 
 function parsedVersion(version: string | null): ParsedVersion | null {
@@ -133,9 +147,12 @@ function parsedVersion(version: string | null): ParsedVersion | null {
   if (!parsed) return null;
   const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(parsed);
   if (!match) return null;
+  if (!SEMVER_TOKEN_RE.test(parsed)) return null;
+  const core = [Number(match[1]), Number(match[2]), Number(match[3])] as const;
+  if (core.some((part) => !Number.isSafeInteger(part))) return null;
   const prerelease = match[4] ? match[4].split(".") : null;
-  if (prerelease?.some((entry) => !entry || !/^[0-9A-Za-z-]+$/.test(entry))) return null;
-  return { core: [Number(match[1]), Number(match[2]), Number(match[3])], prerelease };
+  if (prerelease?.some((entry) => !entry || !/^[0-9A-Za-z-]+$/.test(entry) || (/^\d+$/.test(entry) && !Number.isSafeInteger(Number(entry))))) return null;
+  return { core: [...core], prerelease };
 }
 
 function compareVersions(left: string, right: string): number {
@@ -680,7 +697,13 @@ function startCodexRuntimeDiscovery(
     return report;
   });
   codexProbeCache = {
-    report: cached?.report ?? { version: null, capabilities: { jsonEvents: false, resume: false } },
+    // A stale report may describe an executable that has been replaced since
+    // the last probe. Do not select its schema while the refresh is pending:
+    // the text-only fallback is safer than parsing a newly upgraded runtime
+    // with an expired protocol contract.
+    report: !cached || cached.expiresAt <= now
+      ? { version: null, capabilities: { jsonEvents: false, resume: false } }
+      : cached.report,
     expiresAt: now + timeout,
     pending,
   };
@@ -702,8 +725,9 @@ export function peekCachedCodexRuntime(
   const cached = codexProbeCache;
   if (!cached || cached.expiresAt <= now) {
     void startCodexRuntimeDiscovery(command, timeout, env, now);
+    return { version: null, capabilities: { jsonEvents: false, resume: false } };
   }
-  return cached?.report ?? { version: null, capabilities: { jsonEvents: false, resume: false } };
+  return cached.report;
 }
 
 export type CodexStreamEvent =
@@ -838,7 +862,7 @@ export class CodexJsonlDecoder {
           // Plain JSON examples such as `{ "type": "example" }` remain
           // passthrough, while future frames such as `rate_limits.updated`
           // cannot leak runtime metadata or tool payloads into the transcript.
-          || ((this.protocolArmed || this.protocolActive || this.options.trustThreadPreamble === true) && rawType.includes("."))
+          || ((this.protocolArmed || this.protocolActive) && rawType.includes("."))
         );
         const thread = record(frame?.thread);
         const sessionId = typeof frame?.thread_id === "string"
@@ -847,15 +871,18 @@ export class CodexJsonlDecoder {
             ? thread.id
             : null;
         const validThreadPreamble = rawType === "thread.started" && !!sessionId;
-        // The `codex` marker is an unambiguous transport boundary. Consume
-        // malformed first frames after it as shape-only diagnostics instead
-        // of passing their tool/control payload through as assistant prose.
-        // The Windows captured-pipe transport marks its bytes as trusted at
-        // construction, so it receives the same protection even if its first
-        // thread.started frame is malformed. Decoders without either transport
-        // proof still leave ordinary JSON/code examples untouched.
-        const protocolFrame = (this.protocolArmed || this.options.trustThreadPreamble === true)
-          && (protocolType || reservedProtocolType);
+        // The `codex` marker is an unambiguous transport boundary. On the
+        // marker-free captured-pipe path, only a complete `thread.started`
+        // preamble establishes the boundary; before that, JSON belongs to the
+        // assistant so requested JSON/code examples remain visible.
+        // A marker is transport proof. The marker-free captured-pipe path
+        // instead needs a complete, valid `thread.started` preamble before it
+        // owns later JSON records. In particular, do not let an assistant's
+        // ordinary `{ type: "invoice.created" }` JSON response become an
+        // unsupported protocol frame merely because it has a dotted type.
+        const protocolFrame = this.protocolArmed || this.protocolActive
+          ? protocolType || reservedProtocolType
+          : this.options.trustThreadPreamble === true && validThreadPreamble;
         if (protocolFrame) {
           if (validThreadPreamble) this.protocolActive = true;
           const event = parseCodexStreamEvent(parsed, schema) ?? { kind: "unknown" as const, fingerprint: "unmapped-frame" };
@@ -864,7 +891,7 @@ export class CodexJsonlDecoder {
           continue;
         }
       } catch {
-        if ((this.protocolActive || this.options.trustThreadPreamble === true) && /"type"\s*:\s*"[^"\\.\s]+(?:\.[^"\\.\s]+)+"/.test(line)) {
+        if ((this.protocolArmed || this.protocolActive) && /"type"\s*:\s*"[^"\\.\s]+(?:\.[^"\\.\s]+)+"/.test(line)) {
           const event: CodexStreamEvent = { kind: "unknown", fingerprint: "malformed-jsonl" };
           events.push(event);
           tokens.push(event);

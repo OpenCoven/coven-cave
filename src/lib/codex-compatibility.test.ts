@@ -35,6 +35,10 @@ assert.equal(resolveCodexSchema({ version: "0.145.0", capabilities: { jsonEvents
 assert.equal(resolveCodexSchema({ version: "0.145.0-beta.1", capabilities: { jsonEvents: true, resume: true } }).ok, false, "prerelease clients fail closed until a prerelease schema is conformance-tested");
 assert.equal(resolveCodexSchema({ version: "codex-cli 0.145.0.1", capabilities: { jsonEvents: true, resume: true } }).ok, false, "malformed four-component version output never selects a three-component schema");
 assert.equal(parseCodexVersionOutput("codex-cli 0.145.0.1"), null, "runtime discovery does not truncate a malformed four-component version");
+assert.equal(parseCodexVersionOutput("codex-cli 0.145.00"), null, "runtime discovery rejects padded patch versions");
+assert.equal(parseCodexVersionOutput("codex-cli 00.145.0"), null, "runtime discovery rejects padded major versions");
+assert.equal(parseCodexVersionOutput("codex-cli 999999999999999999999.145.0"), null, "runtime discovery rejects unsafe integer version components");
+assert.equal(parseCodexVersionOutput("codex-cli 0.145.0-beta.01"), null, "runtime discovery rejects padded numeric prerelease identifiers");
 
 const registryOverride = {
   ...selected.schema,
@@ -101,14 +105,9 @@ const controls = protectedFrames.push('{"type":"turn.completed","secret":"never 
 assert.equal(controls.passthrough, "", "control and malformed protocol frames never reach assistant passthrough");
 assert.equal(controls.events.filter((event) => event.kind === "unknown").length, 5, "malformed, error, and future protocol frames surface only shape-only diagnostics");
 assert.doesNotMatch(JSON.stringify(controls.events), /never render/, "unknown protocol payloads never reach diagnostics");
-const malformedFirstFrame = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"thread.started","thread_id":42,"secret":"never render"}\n{"type":"item.started","item":{"arguments":"never render"}}\n{"type":"rate_limits.updated","secret":"never render"}\n', selected.schema);
-assert.equal(malformedFirstFrame.passthrough, "", "a malformed first captured-pipe protocol frame never leaks into assistant prose");
-assert.equal(malformedFirstFrame.events.filter((event) => event.kind === "unknown").length, 3, "trusted malformed and future frames are retained only as shape diagnostics");
-assert.doesNotMatch(JSON.stringify(malformedFirstFrame.events), /never render/, "a malformed preamble never includes protocol payloads in diagnostics");
-const syntacticallyMalformedFirstFrame = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"thread.started","thread_id":"thread-live","secret":"never render"\n', selected.schema);
-assert.equal(syntacticallyMalformedFirstFrame.passthrough, "", "a syntactically malformed first captured-pipe frame never leaks into assistant prose");
-assert.equal(syntacticallyMalformedFirstFrame.events[0]?.kind, "unknown", "a malformed captured-pipe frame emits only a shape diagnostic");
-assert.doesNotMatch(JSON.stringify(syntacticallyMalformedFirstFrame.events), /never render/, "a malformed captured-pipe diagnostic never includes protocol payloads");
+const unarmedDottedJson = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"invoice.created","value":"assistant JSON"}\n', selected.schema);
+assert.equal(unarmedDottedJson.events.length, 0, "dotted JSON remains prose until a Codex protocol boundary is confirmed");
+assert.equal(unarmedDottedJson.passthrough, '{"type":"invoice.created","value":"assistant JSON"}\n', "captured output preserves ordinary JSON with dotted types before a valid preamble");
 const registrySchema = { ...selected.schema, eventTypes: [...selected.schema.eventTypes, "response.started"] };
 const registryFrames = new CodexJsonlDecoder().push('codex\n{"type":"thread.started","thread":{"id":"thread-nested"}}\n{"type":"response.started","secret":"never render"}\n', registrySchema);
 assert.deepEqual(registryFrames.events.map((event) => event.kind), ["session", "unknown"], "nested thread ids and registry-only event names are consumed by the selected schema");
@@ -127,6 +126,10 @@ assert.deepEqual(
   ["session", "tool_start", "tool_end", "text"],
   "trusted captured-pipe JSONL starts from Codex's real marker-free thread.started frame",
 );
+const capturedUnknownAfterPreamble = capturedPipe.push('{"type":"invoice.created","secret":"never render"}\n', selected.schema);
+assert.equal(capturedUnknownAfterPreamble.passthrough, "", "unknown dotted frames are quarantined after the captured Codex preamble");
+assert.equal(capturedUnknownAfterPreamble.events[0]?.kind, "unknown");
+assert.doesNotMatch(JSON.stringify(capturedUnknownAfterPreamble.events), /never render/, "active-stream unknown diagnostics remain shape-only");
 const probe = codexProbeEnv({ PATH: "safe-path", HOME: "safe-home", OPENAI_API_KEY: "secret", VAULT_TOKEN: "secret", NODE_ENV: "test" });
 assert.equal(probe.PATH, "safe-path");
 assert.equal(probe.OPENAI_API_KEY, undefined, "provider credentials never reach a capability probe");
