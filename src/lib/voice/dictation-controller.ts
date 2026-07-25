@@ -30,7 +30,9 @@ export type DictationController = {
  *  Apple's dictation service (requireOnDevice false): it is the OS-level
  *  dictation UX users already expect. */
 export async function resolveDictationEars(): Promise<SpeechEarsFactory | null> {
-  const preferred = await resolvePreferredEars().catch(() => undefined);
+  // Composer dictation does not own a MediaStream, so use its existing native
+  // or browser engines rather than the call-only Whisper capture adapter.
+  const preferred = await resolvePreferredEars({ allowSidecar: false }).catch(() => undefined);
   if (preferred) return preferred.factory;
   return createWebSpeechEars();
 }

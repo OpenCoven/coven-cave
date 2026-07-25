@@ -15,19 +15,29 @@ const view = readFileSync(new URL("./board-view.tsx", import.meta.url), "utf8");
 assert.match(inspector, /projects: CaveProject\[\];/, "inspector Props declares a projects list");
 assert.match(
   inspector,
-  /value=\{card\.projectId \?\? ""\}/,
-  "inspector project select is bound to the card's projectId (empty when unset)",
+  /value=\{projectPickerReady \? card\.projectId \?\? "" : ""\}/,
+  "inspector project select is bound to the card's projectId once its familiar-scoped result is ready",
 );
 assert.match(
   inspector,
-  /onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}familiarId: null,[\s\S]{0,180}sessionId: null,[\s\S]{0,180}\}\)/,
-  "changing the inspector project picker clears the old familiar and session before persisting the new project root",
+  /onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}sessionId: null,[\s\S]{0,180}\}\)/,
+  "changing the inspector project picker retains the authorized familiar but unlinks its prior session",
 );
 assert.match(inspector, /\{ value: "", label: "No project" \}/, "inspector offers a No-project option");
 assert.match(
   inspector,
-  /projects\.map\(\(project\) => \(\{ value: project\.id, label: project\.name \}\)\)/,
-  "inspector lists every known project by id/name",
+  /useProjects\(\{ familiarId: card\.familiarId, enabled: Boolean\(card\.familiarId\) \}\)/,
+  "inspector fetches a familiar-scoped project list when a familiar was selected first",
+);
+assert.match(
+  inspector,
+  /accessibleProjects\.map\(\(project\) => \(\{ value: project\.id, label: project\.name \}\)\)/,
+  "inspector lists only projects the preselected familiar can access",
+);
+assert.match(
+  inspector,
+  /value=\{projectPickerReady \? card\.projectId \?\? "" : ""\}[\s\S]{0,1400}disabled=\{!projectPickerReady\}/,
+  "inspector suppresses stale global project options while the familiar-scoped lookup is loading",
 );
 assert.match(
   inspector,
@@ -73,8 +83,23 @@ assert.match(
 assert.match(newCard, /projectId: string \| null;/, "NewCardDraft carries projectId");
 assert.match(
   newCard,
-  /useProjects\(\{ enabled: open \}\)/,
-  "new-card modal loads the project list before choosing a familiar",
+  /useProjects\(\{ familiarId, enabled: open \}\)/,
+  "new-card modal scopes projects when a familiar is already selected",
+);
+assert.match(
+  newCard,
+  /const projectPickerReady = isProjectPickerReady\(\{[\s\S]{0,200}opening,[\s\S]{0,200}loadedSuccessfully: projectsLoaded,[\s\S]{0,200}loading: projectsLoading/,
+  "new-card modal fails closed until the current familiar scope completes after opening",
+);
+assert.match(
+  newCard,
+  /value=\{projectPickerReady \? projectId \?\? "" : ""\}[\s\S]{0,1200}disabled=\{!projectPickerReady\}/,
+  "new-card modal disables the project picker instead of exposing a prior familiar's projects",
+);
+assert.match(
+  newCard,
+  /const projectSelectionValid = !projectId \|\| \(projectPickerReady && selectedProject !== null\);[\s\S]{0,1800}if \(!title\.trim\(\) \|\| busy \|\| !projectSelectionValid\) return;[\s\S]{0,3000}disabled=\{!title\.trim\(\) \|\| busy \|\| !projectSelectionValid\}/,
+  "new-card modal cannot create an unverified retained project with a null cwd",
 );
 assert.match(newCard, /setProjectId\(null\)/, "new-card modal resets projectId when reopened");
 assert.match(
@@ -98,8 +123,8 @@ assert.match(
 );
 assert.match(
   newCard,
-  /onChange=\{\(v\) => \{[\s\S]{0,700}setProjectId\(v \|\| null\);[\s\S]{0,180}setFamiliarId\(null\);[\s\S]{0,180}setSessionId\(null\);/,
-  "changing a new task's project immediately clears the prior familiar while its authorized roster loads",
+  /onChange=\{\(v\) => \{[\s\S]{0,700}setProjectId\(v \|\| null\);[\s\S]{0,180}setSessionId\(null\);/,
+  "changing a new task's accessible project retains the familiar and unlinks its prior session",
 );
 assert.match(
   newCard,

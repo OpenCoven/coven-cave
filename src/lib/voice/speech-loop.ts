@@ -155,7 +155,9 @@ export type SpeechEars = {
   close(): void;
 };
 
-export type SpeechEarsFactory = (handlers: SpeechEarsHandlers) => SpeechEars;
+/** The loop supplies its microphone stream so WebView ears can share the
+ *  same permission and mute policy. Existing ears deliberately ignore it. */
+export type SpeechEarsFactory = (handlers: SpeechEarsHandlers, mic?: MediaStream) => SpeechEars;
 
 /** WebSpeech ears — SpeechRecognition where the WebView has it (Chromium
  *  web builds). Returns null when this window has no engine. */
@@ -266,7 +268,7 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     onError: (code, hint) => {
       if (!closed) callbacks.onError(new VoiceConnectError(code, hint));
     },
-  });
+  }, mic);
 
   const listen = () => {
     if (closed || muted || speaking) return;

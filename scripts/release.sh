@@ -367,6 +367,10 @@ echo "    found: $APP_PATH"
 # release instead of shipping that.
 require_file "$APP_PATH/Contents/Resources/resources/node/bin/node"
 echo "    bundled Node runtime present"
+WHISPER_CLI="$APP_PATH/Contents/Resources/resources/whisper/whisper-cli"
+require_file "$WHISPER_CLI"
+"$WHISPER_CLI" --version >/dev/null
+echo "    bundled Whisper runtime present"
 
 echo "==> Signing every native binary inside the bundle"
 # Apple deprecated --deep; sign inner native binaries explicitly so each one

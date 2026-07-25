@@ -64,8 +64,14 @@ export interface LiveSession {
  *  - "native-dictation": macOS SFSpeechRecognizer via Apple's dictation
  *    service (no local model for the language).
  *  - "web-speech": the browser's SpeechRecognition (Chromium's is a cloud
- *    service). */
-export type VoiceEarsEngine = "native-on-device" | "native-dictation" | "web-speech";
+ *    service).
+ *  - "sidecar-whisper": a downloaded whisper.cpp model running in Cave's
+ *    local sidecar; audio never leaves this device. */
+export type VoiceEarsEngine =
+  | "sidecar-whisper"
+  | "native-on-device"
+  | "native-dictation"
+  | "web-speech";
 
 /**
  * Connection-phase error: `message` stays a stable machine code (e.g.

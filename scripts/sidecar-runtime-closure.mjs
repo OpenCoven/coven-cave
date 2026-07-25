@@ -127,7 +127,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // ([id]/files/[key]) traces two more chunks; the PR merge tree measured
   // 5,683 on Windows. Retain the ten-file buffer without relaxing the byte
   // ceiling.
-  fileCount: 5_693,
+  // 2026-07-24 (local Whisper STT): the local-origin transcription endpoint
+  // and its sidecar runner trace at 5,694 on Linux and 5,696 on Windows.
+  // Retain the established ten-file cross-platform buffer.
+  fileCount: 5_706,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

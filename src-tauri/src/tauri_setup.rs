@@ -141,6 +141,11 @@ fn webview_probe_report(report: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(desktop)]
+    if let Some(code) = run_sidecar_daemon_if_requested() {
+        std::process::exit(code);
+    }
+
     #[cfg(all(desktop, target_os = "windows"))]
     if let Some(code) = windows_process_job::run_gated_child_if_requested() {
         std::process::exit(code);
@@ -229,6 +234,8 @@ pub fn run() {
     #[cfg(desktop)]
     let sidecar_process = Arc::new(Mutex::new(None));
     #[cfg(desktop)]
+    let reachability_runtime = Arc::new(DesktopReachabilityRuntime::default());
+    #[cfg(desktop)]
     let builder = builder
         .invoke_handler(tauri::generate_handler![
             pty::pty_start,
@@ -258,6 +265,8 @@ pub fn run() {
             speech::speech_stt_start,
             speech::speech_stt_finish,
             speech::speech_stt_stop,
+            desktop_reachability_status,
+            desktop_reachability_configure,
             #[cfg(target_os = "windows")]
             sidecar_startup_status,
             #[cfg(target_os = "windows")]
@@ -266,6 +275,7 @@ pub fn run() {
             cancel_sidecar_startup,
         ])
         .manage(SidecarState(Arc::clone(&sidecar_process)))
+        .manage(Arc::clone(&reachability_runtime))
         .manage(browser::BrowserLifecycleState::default());
     #[cfg(all(desktop, target_os = "windows"))]
     let builder = builder.manage(Arc::new(SidecarStartupControl::new()));
@@ -287,7 +297,12 @@ pub fn run() {
                 )?;
             }
 
+            // A translocated app exits here, before it can persist a
+            // LaunchAgent that points at the temporary DMG/quarantine path.
+            check_app_translocation();
+
             app.handle().plugin(tauri_plugin_notification::init())?;
+            prepare_gui_reachability(app.handle())?;
 
             // Desktop auto-update: updater checks/downloads/installs signed
             // release artifacts; process provides relaunch() after install.
@@ -306,8 +321,6 @@ pub fn run() {
             };
             app.handle().plugin(updater_builder.build())?;
             app.handle().plugin(tauri_plugin_process::init())?;
-
-            check_app_translocation();
 
             // Dev builds: when the configured dev server (tauri.conf.json
             // `build.devUrl` — `pnpm dev`) is live, point the main webview
@@ -602,12 +615,21 @@ pub fn run() {
 
             if let tauri::WindowEvent::Destroyed = event {
                 if window.label() == "main" {
-                    if let Some(state) = window.app_handle().try_state::<SidecarState>() {
-                        if let Err(error) = state.stop() {
-                            log::warn!(
-                                "[cave] could not stop sidecar during window teardown: {error}"
-                            );
-                        }
+                    let sidecar_stopped = match window.app_handle().try_state::<SidecarState>() {
+                        Some(state) => match state.stop() {
+                            Ok(()) => true,
+                            Err(error) => {
+                                log::warn!(
+                                    "[cave] could not stop sidecar during window teardown; retaining GUI ownership: {error}"
+                                );
+                                false
+                            }
+                        },
+                        None => true,
+                    };
+                    if sidecar_stopped {
+                        sidecar_reachability_stopped(window.app_handle());
+                        handoff_to_background_daemon(window.app_handle());
                     }
                 }
             }

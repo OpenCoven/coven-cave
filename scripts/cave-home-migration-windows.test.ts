@@ -108,6 +108,9 @@ try {
 
   // Persistent Windows EPERM while publishing candidate directories must stop
   // at the documented deadline and remove every contender-owned candidate.
+  // GitHub's Windows filesystem can consume most of a 150ms deadline in the
+  // first directory operation, before the retry loop gets a second turn.
+  const retryTimeoutMs = 500;
   const candidateFailureHome = path.join(root, "candidate-eperm", ".coven");
   process.env.COVEN_HOME = candidateFailureHome;
   const candidateFailureCave = path.join(candidateFailureHome, "cave");
@@ -125,7 +128,7 @@ try {
   };
   await assert.rejects(
     migrateCaveHome({
-      lockTimeoutMs: 500,
+      lockTimeoutMs: retryTimeoutMs,
       lockNow: () => candidateClock,
       lockCandidateRename: persistentEperm,
     }),
