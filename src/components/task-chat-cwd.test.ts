@@ -149,8 +149,8 @@ assert.doesNotMatch(
 );
 assert.match(
   boardInspector,
-  /<StandardSelect[\s\S]{0,120}label="Project"[\s\S]{0,260}value=\{card\.projectId \?\? ""\}[\s\S]{0,1000}\{ value: "", label: "No project" \}[\s\S]{0,160}\.\.\.projects\.map\(\(project\) => \(\{ value: project\.id, label: project\.name \}\)\)/,
-  "The task project picker should render the persisted project registry through the shared select",
+  /<StandardSelect[\s\S]{0,120}label="Project"[\s\S]{0,260}value=\{projectPickerReady \? card\.projectId \?\? "" : ""\}[\s\S]{0,1000}options=\{projectOptions\}[\s\S]{0,180}disabled=\{!projectPickerReady\}/,
+  "The task project picker should use the guarded scoped-project options through the shared select",
 );
 assert.doesNotMatch(
   boardInspector,
