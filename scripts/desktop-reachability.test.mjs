@@ -108,6 +108,11 @@ assert.match(
 );
 assert.match(
   reachability,
+  /launch_agent_reconciliation_required[\s\S]*previous\.daemon_mode != next\.daemon_mode/,
+  "sleep policy updates must not replace an already enabled LaunchAgent",
+);
+assert.match(
+  reachability,
   /let ownership = acquire_reachability_ownership_lease\(&app_data_dir\)\?[\s\S]*gui_is_active\(&app_data_dir\)[\s\S]*let mut child[\s\S]*write_private_json\(&state_path, &state\)[\s\S]*drop\(ownership\)/,
   "a daemon must recheck GUI ownership and persist its child before releasing the handoff lease",
 );
@@ -186,6 +191,12 @@ assert.match(settings, /label="Keep Mac awake for phone"/);
 assert.match(settings, /label="Only keep awake on power"/);
 assert.match(settings, /label="Background availability"/);
 assert.match(settings, /aria-label=\{[\s\S]*Keep Mac awake for phone/);
+const reachabilityGroup = settings.indexOf('<SettingsGroup label="Keep this Mac reachable">');
+const phoneWriteAccessGroup = settings.indexOf('<SettingsGroup label="Phone write access">');
+assert.ok(
+  reachabilityGroup !== -1 && phoneWriteAccessGroup !== -1 && reachabilityGroup < phoneWriteAccessGroup,
+  "desktop reachability must remain before Phone write access in the Phone settings flow",
+);
 assert.match(
   bridge,
   /desktop_reachability_configure/,
@@ -209,6 +220,11 @@ assert.match(
   uninstall,
   /for \(\(attempt = 0; attempt < 50; attempt \+= 1\)\)[\s\S]*kill -KILL/,
   "uninstall must wait for the sidecar after launchd is unloaded before removing app paths",
+);
+assert.match(
+  uninstall,
+  /launch_agent_is_absent[\s\S]*could not verify \$\{label\} is absent from launchd[\s\S]*return 1/,
+  "uninstall must abort before deleting app paths when launchd cannot be verified absent",
 );
 assert.match(
   uninstall,

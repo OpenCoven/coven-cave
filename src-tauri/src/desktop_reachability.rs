@@ -328,6 +328,14 @@ fn read_reachability_config(path: &Path) -> DesktopReachabilityConfig {
 }
 
 #[cfg(desktop)]
+fn launch_agent_reconciliation_required(
+    previous: &DesktopReachabilityConfig,
+    next: &DesktopReachabilityConfig,
+) -> bool {
+    previous.daemon_mode != next.daemon_mode
+}
+
+#[cfg(desktop)]
 fn write_private_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     let parent = path
         .parent()
@@ -1336,7 +1344,13 @@ pub(super) fn desktop_reachability_configure(
         let config_path = app_data_dir.join(REACHABILITY_CONFIG_FILE);
         let previous = read_reachability_config(&config_path);
         write_private_json(&config_path, &config)?;
-        let launch_agent_result = if config.daemon_mode && background_availability_supported() {
+        // Sleep-policy changes do not alter the LaunchAgent. Avoid replacing a
+        // healthy background service merely because an unrelated option was
+        // toggled; this also preserves the prior service if launchd is
+        // temporarily unavailable.
+        let launch_agent_result = if !launch_agent_reconciliation_required(&previous, &config) {
+            Ok(())
+        } else if config.daemon_mode && background_availability_supported() {
             install_launch_agent(&app, &app_data_dir)
         } else if config.daemon_mode {
             suspend_background_launch_agent(&app_data_dir)
@@ -1742,6 +1756,26 @@ mod tests {
         assert!(power_assertion_is_effective(true, true));
         assert!(!power_assertion_is_effective(true, false));
         assert!(power_assertion_is_effective(false, false));
+    }
+
+    #[test]
+    fn sleep_policy_changes_do_not_replace_an_enabled_launch_agent() {
+        let enabled = DesktopReachabilityConfig {
+            daemon_mode: true,
+            ..DesktopReachabilityConfig::default()
+        };
+        let changed_sleep_policy = DesktopReachabilityConfig {
+            prevent_sleep: true,
+            ..enabled.clone()
+        };
+        assert!(!launch_agent_reconciliation_required(
+            &enabled,
+            &changed_sleep_policy
+        ));
+        assert!(launch_agent_reconciliation_required(
+            &enabled,
+            &DesktopReachabilityConfig::default()
+        ));
     }
 
     #[test]

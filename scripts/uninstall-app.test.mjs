@@ -243,12 +243,11 @@ if (process.platform !== "win32") {
     TMPDIR: path.join(home, "tmp"),
   });
 
-  assert.equal(result.status, 0, result.stderr);
+  assert.notEqual(result.status, 0, "uninstall must abort when launchd cannot be unloaded");
   assert.match(result.stdout, /timed out after 1s/);
-  assert.match(result.stdout, /Diagnostics:/);
-  assert.match(result.stdout, /Diagnostics copied to clipboard/);
-  assert.match(await readFile(copiedDiagnostics, "utf8"), /timed out after 1s/);
-  await assert.rejects(access(plist), "uninstall should remove the background availability LaunchAgent");
+  assert.match(result.stdout, /launchd still owns ai\.opencoven\.cave/);
+  await access(plist);
+  assert.equal(existsSync(copiedDiagnostics), false, "aborted uninstall must not report diagnostics copy success");
 }
 
 console.log("uninstall-app.test.mjs: ok");
