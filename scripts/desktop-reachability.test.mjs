@@ -166,6 +166,11 @@ assert.match(
   "uninstall must wait for the sidecar after launchd is unloaded before removing app paths",
 );
 assert.match(
+  uninstall,
+  /"identity"[\s\S]*ps -p "\$sidecar_pid" -o lstart= -o comm=[\s\S]*current_identity" == "\$sidecar_identity"/,
+  "uninstall must validate the recorded process identity before signalling a sidecar PID",
+);
+assert.match(
   docs,
   /Tailscale cannot wake a sleeping Mac[\s\S]*Bonjour\s+sleep proxy is limited to local-network mDNS/,
   "mobile documentation must state the wake-on-LAN limitation honestly",

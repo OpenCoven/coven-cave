@@ -190,14 +190,21 @@ stop_recorded_reachability_sidecar() {
   [[ -f "$state_path" ]] || return 0
 
   # launchd has already been booted out before this runs. Still require a
-  # numeric PID and the packaged server entrypoint before signalling anything,
-  # so a stale PID can never target an unrelated user process during uninstall.
-  local sidecar_pid
+  # matching process identity before signalling anything, so a stale PID can
+  # never target an unrelated CovenCave server during uninstall.
+  local sidecar_pid sidecar_identity
   sidecar_pid="$(sed -nE 's/.*"pid"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$state_path" | head -n 1)"
+  sidecar_identity="$(sed -nE 's/.*"identity"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "$state_path" | head -n 1)"
   [[ "$sidecar_pid" =~ ^[0-9]+$ ]] || return 0
-  local command_line
-  command_line="$(ps -p "$sidecar_pid" -o command= 2>/dev/null || true)"
-  [[ "$command_line" == *"/resources/server/server.mjs"* ]] || return 0
+  [[ -n "$sidecar_identity" ]] || return 0
+
+  recorded_reachability_sidecar_matches() {
+    local current_identity
+    current_identity="$(ps -p "$sidecar_pid" -o lstart= -o comm= 2>/dev/null | sed 's/^[[:space:]]*//' || true)"
+    [[ "$current_identity" == "$sidecar_identity" ]]
+  }
+
+  recorded_reachability_sidecar_matches || return 0
 
   log "Stopping recorded background CovenCave sidecar ${sidecar_pid} after unloading launchd..."
   run kill -TERM "$sidecar_pid" || true
@@ -205,15 +212,14 @@ stop_recorded_reachability_sidecar() {
   [[ "$EXECUTE" == "1" ]] || return 0
   local attempt
   for ((attempt = 0; attempt < 50; attempt += 1)); do
-    command_line="$(ps -p "$sidecar_pid" -o command= 2>/dev/null || true)"
-    [[ "$command_line" == *"/resources/server/server.mjs"* ]] || return 0
+    recorded_reachability_sidecar_matches || return 0
     sleep 0.1
   done
+  recorded_reachability_sidecar_matches || return 0
   log "warning: background sidecar ${sidecar_pid} did not exit after TERM; sending KILL"
   run kill -KILL "$sidecar_pid" || true
   for ((attempt = 0; attempt < 10; attempt += 1)); do
-    command_line="$(ps -p "$sidecar_pid" -o command= 2>/dev/null || true)"
-    [[ "$command_line" == *"/resources/server/server.mjs"* ]] || return 0
+    recorded_reachability_sidecar_matches || return 0
     sleep 0.1
   done
   log "warning: background sidecar ${sidecar_pid} is still present after KILL"

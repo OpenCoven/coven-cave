@@ -105,6 +105,33 @@ function run(args, env = {}) {
 
 {
   const home = mkdtempSync(path.join(tmpdir(), "coven-cave-uninstall-home-"));
+  const appSupport = path.join(home, "Library", "Application Support", "ai.opencoven.cave");
+  const bin = path.join(home, "bin");
+  mkdirSync(appSupport, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    path.join(appSupport, "desktop-daemon-state.json"),
+    JSON.stringify({ pid: 4242, identity: "old daemon identity", port: 3000 }),
+  );
+  writeFileSync(
+    path.join(bin, "ps"),
+    "#!/usr/bin/env bash\nprintf 'new process identity\\n'\n",
+    { mode: 0o755 },
+  );
+
+  const result = run([], {
+    HOME: home,
+    OSTYPE: "darwin22",
+    PATH: `${bin}:${process.env.PATH}`,
+    TMPDIR: path.join(home, "tmp"),
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout, /Stopping recorded background CovenCave sidecar/);
+}
+
+{
+  const home = mkdtempSync(path.join(tmpdir(), "coven-cave-uninstall-home-"));
   const stateRoot = path.join(home, ".state");
   const covenHome = path.join(home, ".coven");
   mkdirSync(path.join(stateRoot, "coven-cave"), { recursive: true });
