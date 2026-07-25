@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { stat } from "node:fs/promises";
+import path from "node:path";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
@@ -14,7 +16,7 @@ let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let hermesModelFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
-let openCodeCapabilitiesProbe: { until: number; value: Promise<OpenCodeRunCapabilities> } | null = null;
+let openCodeCapabilitiesProbe: { until: number; identity: string; value: Promise<OpenCodeRunCapabilities> } | null = null;
 const OPENCODE_CAPABILITY_PROBE_TTL_MS = 60_000;
 
 function probeHelp(
@@ -125,11 +127,38 @@ function declaredRunOptions(help: string): string[] {
 
 function declaredNoValueRunOptions(help: string, options: string[]): string[] {
   return options.filter((option) => {
-    const line = help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b([^\\n]*)$`, "m"))?.[1] ?? "";
-    // An argument placeholder or equals syntax means the schema cannot safely
-    // forward this as a no-value flag, even if it is declared by the client.
-    return !/[<\[=]/.test(line);
+    // A valueless option is either alone or followed by a conventional
+    // two-space help-description column. A single following token (for
+    // example `--event-stream MODE`) is ambiguous and therefore unsupported.
+    const line = help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b(?=$|\\s{2,})([^\\n]*)$`, "m"))?.[1];
+    return line !== undefined && !/[<\[=]/.test(line);
   });
+}
+
+/**
+ * Identifies the executable the next OpenCode spawn will resolve. The PATH
+ * lookup is repeated before using a cached capability probe so an in-place
+ * upgrade, reinstall, or PATH change cannot reuse stale argv evidence.
+ */
+export async function openCodeExecutableIdentity(
+  env = openCodeSpawnEnv(),
+  platform: NodeJS.Platform = process.platform,
+): Promise<string> {
+  const pathValue = env.PATH ?? env.Path ?? "";
+  const names = platform === "win32" ? ["opencode.cmd", "opencode.exe", "opencode.bat", "opencode"] : ["opencode"];
+  for (const directory of pathValue.split(path.delimiter).filter(Boolean)) {
+    for (const name of names) {
+      const candidate = path.join(directory, name);
+      try {
+        const info = await stat(candidate);
+        if (info.isFile()) return `${candidate}\0${info.size}\0${info.mtimeMs}`;
+      } catch {
+        // Continue through PATH; an unresolved launcher is still fingerprinted
+        // below so a later install changes the cache key.
+      }
+    }
+  }
+  return `unresolved\0${platform}\0${pathValue}`;
 }
 
 function advertisedFormatProtocols(help: string): string[] {
@@ -225,8 +254,9 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
  * The version is retained for support diagnostics only; it never gates a
  * schema because vendors can backport or change protocol behavior.
  */
-export function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
-  if (openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until) {
+export async function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
+  const identity = await openCodeExecutableIdentity();
+  if (openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.identity === identity) {
     return openCodeCapabilitiesProbe.value;
   }
   const value = (async () => {
@@ -245,6 +275,6 @@ export function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
     if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], noValueOptions: [], structuredOutputs: [] };
     return parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
   })();
-  openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, value };
+  openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, identity, value };
   return value;
 }

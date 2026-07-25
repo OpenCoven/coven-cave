@@ -107,8 +107,8 @@ assert.match(
 );
 assert.match(
   route,
-  /const openCodeFreshSessionForCompatibility = Boolean\([\s\S]*?openCodeUnrecordedResume[\s\S]*?Boolean\(existingConversation && \([\s\S]*?!openCodeCompatibility\?\.capabilities\.session[\s\S]*?\|\| !existingConversation\.harnessSessionId[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
-  "OpenCode replays Cave context only when a native resume option or recorded native token is unavailable",
+  /const openCodeNativeResumeSupported = openCodeCompatibility\?\.mode === "structured"[\s\S]*?schema\?\.launch\.sessionOption[\s\S]*?const openCodeFreshSessionForCompatibility = Boolean\([\s\S]*?!openCodeNativeResumeSupported[\s\S]*?buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  "OpenCode replays Cave context when the selected schema cannot launch a native resume",
 );
 assert.match(
   route,
@@ -137,8 +137,8 @@ assert.match(
 );
 assert.match(
   capabilities,
-  /export function openCodeRunCapabilities\([^)]*\)[\s\S]*?\["--version"\][\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
-  "OpenCode discovers feature support and records version only for diagnostics",
+  /export async function openCodeRunCapabilities\([^)]*\)[\s\S]*?openCodeExecutableIdentity\(\)[\s\S]*?\["--version"\][\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
+  "OpenCode discovers feature support from the current executable and records version only for diagnostics",
 );
 
 console.log("opencode harness routing tests passed");

@@ -1444,12 +1444,12 @@ export async function POST(req: Request) {
     openCodeDirect && body.sessionId && (
       openCodeUnrecordedResume
       || Boolean(existingConversation && (
-        !openCodeCompatibility?.capabilities.session
+        !openCodeNativeResumeSupported
         || !existingConversation.harnessSessionId
       ))
     ),
   );
-  const openCodeSessionUnavailable = !openCodeCompatibility?.capabilities.session;
+  const openCodeSessionUnavailable = !openCodeNativeResumeSupported;
   const openCodeCompatibilityRetry = openCodeFreshSessionForCompatibility
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
