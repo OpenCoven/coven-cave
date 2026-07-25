@@ -788,7 +788,17 @@ export class CodexJsonlDecoder {
         // frame must not be persisted as assistant JSON (where it can carry
         // control metadata or tool payloads). Ordinary JSON such as
         // `{ "type": "example" }` remains passthrough.
-        const reservedProtocolType = !!rawType && (/^(?:thread|turn|item|response)\./.test(rawType) || rawType === "error");
+        const reservedProtocolType = !!rawType && (
+          /^(?:thread|turn|item|response)\./.test(rawType)
+          || rawType === "error"
+          // After the stream's thread preamble has established Codex JSONL
+          // ownership, a dotted `type` is a protocol envelope even when the
+          // currently selected schema does not know that event family yet.
+          // Plain JSON examples such as `{ "type": "example" }` remain
+          // passthrough, while future frames such as `rate_limits.updated`
+          // cannot leak runtime metadata or tool payloads into the transcript.
+          || (this.protocolActive && rawType.includes("."))
+        );
         const thread = record(frame?.thread);
         const sessionId = typeof frame?.thread_id === "string"
           ? frame.thread_id
@@ -807,7 +817,7 @@ export class CodexJsonlDecoder {
           continue;
         }
       } catch {
-        if (this.protocolActive && /^\s*\{\s*"type"\s*:\s*"(?:thread|turn|item|response)\.|^\s*\{\s*"type"\s*:\s*"error"/.test(line)) {
+        if (this.protocolActive && /^\s*\{\s*"type"\s*:\s*"(?:[^"\\]+\.)+[^"\\]+"/.test(line)) {
           const event: CodexStreamEvent = { kind: "unknown", fingerprint: "malformed-jsonl" };
           events.push(event);
           tokens.push(event);
