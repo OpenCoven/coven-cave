@@ -124,6 +124,24 @@ function optionTakesExplicitValue(help: string, option: string): boolean {
   return /<[^>\n]+>|\[[^\]\n]+\]|=\S+/.test(synopsis);
 }
 
+/** Extract bracketed enum bodies in one pass. Help output is runtime-provided,
+ * so this deliberately avoids nested quantified regexes on the chat path. */
+function bracketEnumerations(text: string): string[] {
+  const closingFor: Record<string, string> = { "<": ">", "[": "]", "{": "}" };
+  const enumerations: string[] = [];
+  for (let index = 0; index < text.length; index++) {
+    const closing = closingFor[text[index]];
+    if (!closing) continue;
+    const start = index + 1;
+    while (index < text.length && text[index] !== closing && text[index] !== "\n" && text[index] !== "\r") index++;
+    if (text[index] === closing) {
+      const enumeration = text.slice(start, index);
+      if (enumeration.includes(",") || enumeration.includes("|")) enumerations.push(enumeration);
+    }
+  }
+  return enumerations;
+}
+
 function advertisedStructuredOutputs(help: string): Array<{ option: string; values: string[] }> {
   return declaredRunOptions(help).flatMap((option) => {
     if (!optionTakesExplicitValue(help, option)) return [];
@@ -132,7 +150,7 @@ function advertisedStructuredOutputs(help: string): Array<{ option: string; valu
     // evidence to an explicit enum in the synopsis or to an option-local
     // `format:`/`values:`/`choices:` metadata list.
     const enumerations = [
-      ...[...stanza.matchAll(/[<{[]([^}>\]\n]*(?:[,|][^}>\]\n]*)+)[}>\]]/g)].map((match) => match[1]),
+      ...bracketEnumerations(stanza),
       ...[...stanza.matchAll(/\b(?:output\s+)?(?:format|values?|choices?)\s*:\s*([^\r\n]+)/gi)].map((match) => match[1]),
     ];
     const values = [...new Set(enumerations.flatMap((enumeration) => enumeration.match(/\bjson(?:[._-][a-z0-9]+)*\b/gi) ?? []).map((value) => value.toLowerCase()))];

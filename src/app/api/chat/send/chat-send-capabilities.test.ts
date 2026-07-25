@@ -62,6 +62,10 @@ assert.deepEqual(
 );
 assert.deepEqual(proseOnlyJson.protocols, ["json"], "only the independently declared boolean JSON switch contributes a protocol");
 
+const malformedEnumStartedAt = Date.now();
+parseOpenCodeRunCapabilitiesHelp(`--format <${"item,".repeat(12_000)}`, "3.3.1");
+assert.ok(Date.now() - malformedEnumStartedAt < 1_000, "malformed format enums are scanned in bounded linear time");
+
 const resumeCapabilities = parseOpenCodeRunCapabilitiesHelp(`
   --format <format>             Output format: text, json
   --resume                        Resume the most recent session
