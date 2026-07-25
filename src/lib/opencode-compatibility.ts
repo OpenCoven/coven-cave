@@ -170,6 +170,10 @@ const MAX_SCHEMA_BUNDLE_BYTES = 256 * 1024;
 // after the wrapper is written.
 const MAX_SCHEMA_CACHE_RECORD_BYTES = 512 * 1024;
 const MAX_TRUST_ANCHOR_JOURNAL_ENTRIES = 16;
+// A journal is local mutable state.  Never enumerate an attacker-created
+// directory without a ceiling: the cache reader runs on every compatibility
+// decision and must fail closed rather than retain an unbounded filename list.
+const MAX_TRUST_ANCHOR_JOURNAL_DIRECTORY_ENTRIES = MAX_TRUST_ANCHOR_JOURNAL_ENTRIES * 2;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const CACHE_FILE = "opencode-schema-bundle-v1.json";
 const REFRESH_TIMEOUT_MS = 5_000;
@@ -668,6 +672,35 @@ function newestAnchorJournalEntries(entries: string[]): string[] {
 }
 
 /**
+ * `readdir` materializes an entire directory before the existing retention
+ * logic can trim it. Use the streaming directory handle instead and treat an
+ * overfull journal as a trust failure; selecting a partial listing could miss
+ * its true high-water sequence and permit a downgrade.
+ */
+async function boundedTrustAnchorJournalEntries(anchorFile: string): Promise<string[]> {
+  let directory: Awaited<ReturnType<RegistryFs["opendir"]>>;
+  try {
+    directory = await requireRegistryFs().opendir(/* turbopackIgnore: true */ cacheTrustAnchorJournalPath(anchorFile));
+  } catch {
+    return [];
+  }
+  const entries: string[] = [];
+  let count = 0;
+  try {
+    for await (const entry of directory) {
+      count += 1;
+      if (count > MAX_TRUST_ANCHOR_JOURNAL_DIRECTORY_ENTRIES) {
+        throw new CacheTrustConflictError("too many schema trust-anchor journal entries");
+      }
+      if (entry.isFile()) entries.push(entry.name);
+    }
+    return entries;
+  } finally {
+    await directory.close().catch(() => undefined);
+  }
+}
+
+/**
  * Registry cache paths are per-user runtime state. Keep the atomic writer on
  * the same lazy filesystem boundary as the reader: importing the shared
  * writer statically makes Next trace dynamic cache paths as app assets.
@@ -847,12 +880,7 @@ async function readTrustedAnchorJournal(
   publicKey: string | OpenCodeRegistryKeyring,
   now: number,
 ): Promise<CachedBundle[]> {
-  let entries: string[];
-  try {
-    entries = await requireRegistryFs().readdir(/* turbopackIgnore: true */ cacheTrustAnchorJournalPath(anchorFile));
-  } catch {
-    return [];
-  }
+  const entries = await boundedTrustAnchorJournalEntries(anchorFile);
   // A stale writer can leave a lower immutable record after a newer writer
   // commits. Resolve only a bounded newest window; valid registry sequences
   // are safe integers, so filename ordering is an exact high-water ordering.
@@ -865,12 +893,7 @@ async function readTrustedAnchorJournal(
 }
 
 async function pruneTrustAnchorJournal(anchorFile: string): Promise<void> {
-  let entries: string[];
-  try {
-    entries = await requireRegistryFs().readdir(/* turbopackIgnore: true */ cacheTrustAnchorJournalPath(anchorFile));
-  } catch {
-    return;
-  }
+  const entries = await boundedTrustAnchorJournalEntries(anchorFile);
   const retained = new Set(newestAnchorJournalEntries(entries));
   await Promise.all(entries
     .filter((entry) => /^\d{1,16}-[a-f0-9]{64}\.json$/.test(entry) && !retained.has(entry))

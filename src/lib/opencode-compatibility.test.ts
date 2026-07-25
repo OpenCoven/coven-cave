@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -159,6 +159,25 @@ assert.equal(
   4,
   "a reclaimed stale writer cannot roll the append-only trust anchor back after a newer commit",
 );
+
+const overfullJournalFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-overfull-journal-")), "bundle.json");
+const overfullJournalDirectory = `${overfullJournalFile}.anchor.journal`;
+await mkdir(overfullJournalDirectory, { recursive: true });
+await Promise.all(Array.from({ length: 33 }, (_, index) => writeFile(path.join(overfullJournalDirectory, `junk-${index}`), "x")));
+let overfullJournalFetched = false;
+const overfullJournal = await loadOpenCodeSchemaBundle({
+  cacheFile: overfullJournalFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now,
+  fetch: async () => {
+    overfullJournalFetched = true;
+    return new Response(JSON.stringify(signed), { status: 200 });
+  },
+});
+assert.equal(overfullJournal.source, "built-in", "an overfull trust journal fails closed without scanning an unbounded directory");
+assert.equal(overfullJournal.diagnostic, "schema-registry-refresh-rejected");
+assert.equal(overfullJournalFetched, false, "an overfull trust journal is rejected before network refresh");
 
 const unsignedSignedRollback = { ...unsigned, sequence: 1 };
 const signedRollback = {
