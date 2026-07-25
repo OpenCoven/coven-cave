@@ -134,9 +134,9 @@ assert.equal(unarmedDottedJson.passthrough, '{"type":"invoice.created","value":"
 const untrustedMarkerJson = new CodexJsonlDecoder({ trustThreadPreamble: true, trustCodexMarker: false }).push('codex\n{"type":"invoice.created","value":"assistant JSON"}\n', selected.schema);
 assert.equal(untrustedMarkerJson.events.length, 0, "an unauthenticated codex prose line cannot arm protocol parsing");
 assert.equal(untrustedMarkerJson.passthrough, 'codex\n{"type":"invoice.created","value":"assistant JSON"}\n', "assistant prose and following dotted JSON remain verbatim without transport provenance");
-const preamblelessControls = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"error","message":"never render"}\n{"type":"item.started","item":{"id":"secret-call","type":"command_execution","arguments":"never render"}}\n', selected.schema);
+const preamblelessControls = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"error","message":"never render"}\n{"type":"item.started","item":{"id":"secret-call","type":"command_execution","arguments":"never render"}}\n{"type":"rate_limits.updated","remaining":0,"secret":"never render"}\n', selected.schema);
 assert.equal(preamblelessControls.passthrough, "", "trusted captured-pipe control frames are quarantined before thread startup");
-assert.equal(preamblelessControls.events.filter((event) => event.kind === "unknown").length, 2, "preamble-less control frames become only shape diagnostics");
+assert.equal(preamblelessControls.events.filter((event) => event.kind === "unknown").length, 3, "preamble-less control frames become only shape diagnostics");
 assert.doesNotMatch(JSON.stringify(preamblelessControls.events), /never render|secret-call/, "preamble-less diagnostics contain no protocol payloads");
 const registrySchema = { ...selected.schema, eventTypes: [...selected.schema.eventTypes, "response.started"] };
 const registryFrames = new CodexJsonlDecoder().push('codex\n{"type":"thread.started","thread":{"id":"thread-nested"}}\n{"type":"response.started","secret":"never render"}\n', registrySchema);
@@ -192,7 +192,7 @@ for (const [version, expectedEvents] of [["0.144.2", 3], ["0.145.0", 6]] as cons
 }
 
 const unsignedPayload = {
-  provenance: { registry: "OpenCoven/coven-runtimes" as const, revision: "abc", fetchedAt: "2026-07-24T00:00:00.000Z", expiresAt: "2026-07-25T00:00:00.000Z" },
+  provenance: { registry: "OpenCoven/coven-runtimes" as const, revision: "abc", sequence: 1, fetchedAt: "2026-07-24T00:00:00.000Z", expiresAt: "2026-07-25T00:00:00.000Z" },
   schemas: CODEX_BOOTSTRAP_SCHEMAS,
 };
 const document = { ...unsignedPayload, contentHash: schemaContentHash(unsignedPayload), signature: { keyId: "test", value: "verified-by-host" } };
@@ -201,6 +201,7 @@ assert.equal(validateCodexSchemaDocument(document, new Date("2026-07-24T12:00:00
 assert.equal(validateCodexSchemaDocument({ ...document, contentHash: "0".repeat(64) }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "hash corruption is rejected");
 assert.equal(validateCodexSchemaDocument({ ...document, provenance: { ...document.provenance, expiresAt: "2026-07-24T00:00:00.000Z" } }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "expired schemas are rejected");
 assert.equal(validateCodexSchemaDocument({ ...document, provenance: { ...document.provenance, fetchedAt: "not-a-date" } }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "invalid provenance timestamps are rejected");
+assert.equal(validateCodexSchemaDocument({ ...document, provenance: { ...document.provenance, sequence: -1 } }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "negative registry checkpoints are rejected");
 assert.equal(validateCodexSchemaDocument({ ...document, provenance: { ...document.provenance, fetchedAt: "2026-07-25T00:06:00.000Z" } }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "far-future registry documents cannot freeze normal updates");
 assert.equal(validateCodexSchemaDocument({ ...document, schemas: [document.schemas[0], document.schemas[0]] }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "duplicate schema ids are rejected");
 const reorderedPayload = {
@@ -216,7 +217,7 @@ const reorderedPayload = {
     schemaVersion: schema.schemaVersion,
     id: schema.id,
   })),
-  provenance: { expiresAt: unsignedPayload.provenance.expiresAt, fetchedAt: unsignedPayload.provenance.fetchedAt, revision: "abc", registry: "OpenCoven/coven-runtimes" as const },
+  provenance: { expiresAt: unsignedPayload.provenance.expiresAt, fetchedAt: unsignedPayload.provenance.fetchedAt, sequence: 1, revision: "abc", registry: "OpenCoven/coven-runtimes" as const },
 };
 assert.equal(schemaContentHash(reorderedPayload), schemaContentHash(unsignedPayload), "schema hashing is stable across equivalent key orderings");
 const cache = new CodexSchemaCache();
@@ -225,6 +226,9 @@ assert.equal(cache.offer({ ...document, provenance: { ...document.provenance, fe
 const sameTimestampPayload = { ...unsignedPayload, provenance: { ...unsignedPayload.provenance, revision: "replayed" } };
 const sameTimestampDocument = { ...sameTimestampPayload, contentHash: schemaContentHash(sameTimestampPayload), signature: document.signature };
 assert.equal(cache.offer(sameTimestampDocument, { verifySignature: () => true, now: new Date("2026-07-24T12:00:00.000Z") }), false, "same-timestamp documents cannot replace LKG by replay");
+const reissuedOldPayload = { ...unsignedPayload, provenance: { ...unsignedPayload.provenance, revision: "reissued-old", fetchedAt: "2026-07-24T23:00:00.000Z" } };
+const reissuedOldDocument = { ...reissuedOldPayload, contentHash: schemaContentHash(reissuedOldPayload), signature: document.signature };
+assert.equal(cache.offer(reissuedOldDocument, { verifySignature: () => true, now: new Date("2026-07-24T12:00:00.000Z") }), false, "a later timestamp cannot reissue a different payload at an accepted checkpoint");
 assert.equal(cache.offer(document, { verifySignature: () => false, now: new Date("2026-07-24T12:00:00.000Z") }), false, "host signature verification is required before caching");
 
 const cacheDir = await mkdtemp(path.join(tmpdir(), "coven-codex-schema-"));
@@ -233,12 +237,15 @@ try {
   const verify = (candidate: typeof document) => candidate.signature.value === "verified-by-host";
   assert.equal(await writeCodexSchemaCache(cachePath, document, verify, new Date("2026-07-24T12:00:00.000Z")), true, "verified schemas persist atomically as last-known-good");
   assert.equal((await readCodexSchemaCache(cachePath, verify, new Date("2026-07-24T12:00:00.000Z")))?.contentHash, document.contentHash);
-  const newerPayload = { ...unsignedPayload, provenance: { ...unsignedPayload.provenance, revision: "newer", fetchedAt: "2026-07-24T11:00:00.000Z" } };
+  const newerPayload = { ...unsignedPayload, provenance: { ...unsignedPayload.provenance, revision: "newer", sequence: 2, fetchedAt: "2026-07-24T11:00:00.000Z" } };
   const newerDocument = { ...newerPayload, contentHash: schemaContentHash(newerPayload), signature: document.signature };
-  const olderPayload = { ...unsignedPayload, provenance: { ...unsignedPayload.provenance, revision: "older", fetchedAt: "2026-07-24T10:00:00.000Z" } };
+  const olderPayload = { ...unsignedPayload, provenance: { ...unsignedPayload.provenance, revision: "older", sequence: 1, fetchedAt: "2026-07-24T10:00:00.000Z" } };
   const olderDocument = { ...olderPayload, contentHash: schemaContentHash(olderPayload), signature: document.signature };
   assert.equal(await writeCodexSchemaCache(cachePath, newerDocument, verify, new Date("2026-07-24T12:00:00.000Z")), true, "a newer verified document replaces LKG");
   assert.equal(await writeCodexSchemaCache(cachePath, olderDocument, verify, new Date("2026-07-24T12:00:00.000Z")), false, "an older verified filesystem document cannot roll back LKG");
+  const laterReissuePayload = { ...olderPayload, provenance: { ...olderPayload.provenance, revision: "later-old", fetchedAt: "2026-07-24T11:30:00.000Z" } };
+  const laterReissueDocument = { ...laterReissuePayload, contentHash: schemaContentHash(laterReissuePayload), signature: document.signature };
+  assert.equal(await writeCodexSchemaCache(cachePath, laterReissueDocument, verify, new Date("2026-07-24T12:00:00.000Z")), false, "a later-dated lower checkpoint cannot roll back filesystem LKG");
   assert.equal(await writeCodexSchemaCache(cachePath, olderDocument, verify, new Date("2026-07-24T10:30:00.000Z")), false, "a backward clock correction cannot erase the newer cache watermark before rejecting an older replay");
   assert.equal((await readCodexSchemaCache(cachePath, verify, new Date("2026-07-24T12:00:00.000Z")))?.provenance.revision, "newer", "the newest verified filesystem document remains cached");
   const expiredNewerPayload = {

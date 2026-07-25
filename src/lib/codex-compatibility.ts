@@ -59,6 +59,8 @@ export type CodexSchemaDocument = {
   provenance: {
     registry: "OpenCoven/coven-runtimes";
     revision: string;
+    /** Signed, strictly increasing registry checkpoint. */
+    sequence: number;
     fetchedAt: string;
     expiresAt: string;
   };
@@ -255,6 +257,8 @@ export function validateCodexSchemaDocument(
     typeof value.provenance.revision !== "string" ||
     value.provenance.revision.length === 0 ||
     value.provenance.revision.length > MAX_SCHEMA_STRING_LENGTH ||
+    !Number.isSafeInteger(value.provenance.sequence) ||
+    value.provenance.sequence < 0 ||
     !Array.isArray(value.schemas) ||
     value.schemas.length === 0 ||
     value.schemas.length > MAX_SCHEMAS_PER_DOCUMENT ||
@@ -309,13 +313,16 @@ export class CodexSchemaCache {
 export type CodexSchemaSignatureVerifier = (value: CodexSchemaDocument) => boolean;
 
 function compareSchemaDocumentFreshness(left: CodexSchemaDocument, right: CodexSchemaDocument): number {
+  const sequence = left.provenance.sequence - right.provenance.sequence;
+  if (sequence !== 0) return sequence;
+  // The sequence is the authenticated anti-rollback checkpoint. A publisher
+  // must never reissue an older payload under a later wall-clock timestamp:
+  // clocks can be coarse or corrected backwards, while the signed sequence
+  // is monotonic across documents.
+  if (left.contentHash !== right.contentHash) return -1;
   const issued = Date.parse(left.provenance.fetchedAt) - Date.parse(right.provenance.fetchedAt);
   if (issued !== 0) return issued;
-  if (left.contentHash === right.contentHash) return 0;
-  // Coarse registry clocks make two revisions with the same issue time
-  // ambiguous. Refuse replacement rather than guessing an ordering and
-  // letting a replayed document replace last-known-good state.
-  return -1;
+  return 0;
 }
 
 const cacheWriteQueues = new Map<string, Promise<void>>();
@@ -918,7 +925,7 @@ export class CodexJsonlDecoder {
         // control metadata or tool payloads). Ordinary JSON such as
         // `{ "type": "example" }` remains passthrough.
         const reservedProtocolType = !!rawType && (
-          /^(?:thread|turn|item|response)\./.test(rawType)
+          /^(?:thread|turn|item|response|rate_limits)\./.test(rawType)
           || rawType === "error"
           // Once Codex's own marker has established JSONL ownership (or a
           // trusted thread preamble has done so), a dotted `type` is a
@@ -963,7 +970,7 @@ export class CodexJsonlDecoder {
         }
       } catch {
         if ((this.protocolArmed || this.protocolActive || this.options.trustThreadPreamble === true)
-          && /"type"\s*:\s*"(?:(?:thread|turn|item|response)\.[^"\\.\s]+|error)"/.test(line)) {
+          && /"type"\s*:\s*"(?:(?:thread|turn|item|response|rate_limits)\.[^"\\.\s]+|error)"/.test(line)) {
           const event: CodexStreamEvent = { kind: "unknown", fingerprint: "malformed-jsonl" };
           events.push(event);
           tokens.push(event);
