@@ -10,7 +10,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdir, open, readFile, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
@@ -18,6 +18,7 @@ import { writeJsonAtomic } from "./atomic-write.ts";
 const REGISTRY_REPO = "OpenCoven/coven-runtimes" as const;
 const INDEX_PATH = "crates/coven-runtime-registry/canonical/index.json";
 const CACHE_TTL_MS = 24 * 60 * 60_000;
+const CACHE_LOCK_STALE_MS = 30_000;
 
 type AdapterEntry = { version: string; yanked?: boolean; adapter: unknown };
 type CanonicalIndex = { format: string; runtimes: Record<string, AdapterEntry[]> };
@@ -43,12 +44,20 @@ export type RuntimeCompatibilityOptions = {
   ttlMs?: number;
 };
 
-type Semver = { major: number; minor: number; patch: number; prerelease: string[] | null };
+type Semver = { major: string; minor: string; patch: string; prerelease: string[] | null };
+const SEMVER_NUMBER = "(?:0|[1-9]\\d*)";
 
 function versionParts(value: string): Semver | null {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(value);
+  const match = new RegExp(`^(${SEMVER_NUMBER})\\.(${SEMVER_NUMBER})\\.(${SEMVER_NUMBER})(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$`).exec(value);
   if (!match) return null;
-  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]), prerelease: match[4]?.split(".") ?? null };
+  const prerelease = match[4]?.split(".") ?? null;
+  if (prerelease?.some((identifier) => /^0\d+$/.test(identifier))) return null;
+  return { major: match[1]!, minor: match[2]!, patch: match[3]!, prerelease };
+}
+
+function compareNumericIdentifier(left: string, right: string): number {
+  if (left.length !== right.length) return left.length - right.length;
+  return left.localeCompare(right);
 }
 
 function compareVersions(left: string, right: string): number | null {
@@ -56,7 +65,7 @@ function compareVersions(left: string, right: string): number | null {
   const b = versionParts(right);
   if (!a || !b) return null;
   for (const key of ["major", "minor", "patch"] as const) {
-    if (a[key] !== b[key]) return a[key] - b[key];
+    if (a[key] !== b[key]) return compareNumericIdentifier(a[key], b[key]);
   }
   if (a.prerelease === null && b.prerelease === null) return 0;
   if (a.prerelease === null) return 1;
@@ -67,7 +76,7 @@ function compareVersions(left: string, right: string): number | null {
     if (leftId === rightId) continue;
     const leftNumeric = /^\d+$/.test(leftId);
     const rightNumeric = /^\d+$/.test(rightId);
-    if (leftNumeric && rightNumeric) return Number(leftId) - Number(rightId);
+    if (leftNumeric && rightNumeric) return compareNumericIdentifier(leftId, rightId);
     if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
     return leftId.localeCompare(rightId);
   }
@@ -211,6 +220,19 @@ export async function refreshRuntimeCompatibility(
   }
 }
 
+async function reclaimStaleCacheLock(lockPath: string): Promise<boolean> {
+  try {
+    const info = await stat(/* turbopackIgnore: true */ lockPath);
+    if (Date.now() - info.mtimeMs < CACHE_LOCK_STALE_MS) return false;
+    await rm(/* turbopackIgnore: true */ lockPath, { force: true });
+    return true;
+  } catch (error) {
+    // A concurrent owner may have released the lock between the failed open
+    // and this check. Retry acquisition rather than treating it as a failure.
+    return (error as NodeJS.ErrnoException).code === "ENOENT";
+  }
+}
+
 /** A small cross-process lock: failure to acquire it retains LKG, never races a downgrade. */
 async function withCacheLock<T>(target: string, action: () => Promise<T>): Promise<T | null> {
   const lockPath = `${target}.lock`;
@@ -221,6 +243,7 @@ async function withCacheLock<T>(target: string, action: () => Promise<T>): Promi
       break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;
+      if (await reclaimStaleCacheLock(lockPath)) continue;
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
     }
   }

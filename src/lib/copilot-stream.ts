@@ -124,27 +124,35 @@ export const COPILOT_EVENT_PROTOCOL_SCHEMAS: RuntimeEventProtocolSchema[] = [
   },
 ];
 
-type Semver = { major: number; minor: number; patch: number; prerelease: string | null };
+type Semver = { major: string; minor: string; patch: string; prerelease: string | null };
+const SEMVER_NUMBER = "(?:0|[1-9]\\d*)";
+const SEMVER_TOKEN = `${SEMVER_NUMBER}\\.${SEMVER_NUMBER}\\.${SEMVER_NUMBER}`;
 
 /** Parse only a complete, documented Copilot version line. */
 export function parseRuntimeClientVersion(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (lines.length !== 1) return null;
-  const match = /^(?:copilot(?: cli)?(?: version)?\s+v?|v)?(\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$/i.exec(lines[0]!);
+  const match = new RegExp(`^(?:copilot(?: cli)?(?: version)?\\s+v?|v)?(${SEMVER_TOKEN}(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?)$`, "i").exec(lines[0]!);
   if (!match) return null;
   return match[1]!;
 }
 
 function semver(value: string): Semver | null {
-  const match = value.match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);
+  const match = new RegExp(`^(${SEMVER_NUMBER})\\.(${SEMVER_NUMBER})\\.(${SEMVER_NUMBER})(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$`).exec(value);
   if (!match) return null;
+  if (match[4]?.split(".").some((id) => /^0\d+$/.test(id))) return null;
   return {
-    major: Number(match[1]),
-    minor: Number(match[2]),
-    patch: Number(match[3]),
+    major: match[1]!,
+    minor: match[2]!,
+    patch: match[3]!,
     prerelease: match[4] ?? null,
   };
+}
+
+function compareNumericSemverIdentifier(a: string, b: string): number {
+  if (a.length !== b.length) return a.length - b.length;
+  return a.localeCompare(b);
 }
 
 /** Positive when `a` is newer than `b`; release versions sort after prereleases. */
@@ -153,7 +161,7 @@ export function compareRuntimeClientVersions(a: string, b: string): number | nul
   const pb = semver(b);
   if (!pa || !pb) return null;
   for (const key of ["major", "minor", "patch"] as const) {
-    if (pa[key] !== pb[key]) return pa[key] - pb[key];
+    if (pa[key] !== pb[key]) return compareNumericSemverIdentifier(pa[key], pb[key]);
   }
   if (pa.prerelease === pb.prerelease) return 0;
   if (!pa.prerelease) return 1;
@@ -167,7 +175,7 @@ export function compareRuntimeClientVersions(a: string, b: string): number | nul
     if (a === b) continue;
     const numericA = /^\d+$/.test(a);
     const numericB = /^\d+$/.test(b);
-    if (numericA && numericB) return Number(a) - Number(b);
+    if (numericA && numericB) return compareNumericSemverIdentifier(a, b);
     if (numericA !== numericB) return numericA ? -1 : 1;
     return a.localeCompare(b);
   }
@@ -638,12 +646,12 @@ export class CopilotTextAssembler {
   delta(messageId: string, text: string): string {
     const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null };
     if (state.fullText !== null || !text) return "";
-    let append = text;
-    if (state.deltaText.endsWith(text) || state.deltaText.includes(text)) append = "";
-    else if (text.startsWith(state.deltaText)) append = text.slice(state.deltaText.length);
-    state.deltaText += append;
+    // Deltas are incremental chunks; equal neighboring chunks are legitimate
+    // text. Without a schema-declared frame id we must preserve each one and
+    // reconcile only against the authoritative full message.
+    state.deltaText += text;
     this.messages.set(messageId, state);
-    return append;
+    return text;
   }
 
   message(messageId: string, content: string): string {

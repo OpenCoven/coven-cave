@@ -59,8 +59,10 @@ assert.equal(parseRuntimeClientVersion("copilot version 1.0.70"), "1.0.70");
 assert.equal(parseRuntimeClientVersion("Copilot CLI v2.4.0"), "2.4.0");
 assert.equal(parseRuntimeClientVersion("warning only"), null);
 assert.equal(parseRuntimeClientVersion("copilot version 1.0.70.1"), null, "invalid trailing version syntax fails closed");
+assert.equal(parseRuntimeClientVersion("copilot version 01.0.0"), null, "leading-zero SemVer identifiers fail closed");
 assert.equal(parseRuntimeClientVersion("dependency version 1.0.70\ncopilot version 2.0.0"), null, "ambiguous output fails closed");
-assert.equal(compareRuntimeClientVersions("1.0.70", "1.0.9"), 61);
+assert.ok((compareRuntimeClientVersions("1.0.70", "1.0.9") ?? 0) > 0);
+assert.equal(compareRuntimeClientVersions("9007199254740993.0.0", "9007199254740992.0.0"), 1, "large SemVer identifiers retain exact precedence");
 assert.equal(compareRuntimeClientVersions("1.0.0-rc.1", "1.0.0"), -1);
 assert.equal(selectRuntimeEventProtocol("0.9.9"), null, "pre-protocol clients fail closed");
 assert.equal(selectRuntimeEventProtocol("1.0.70")?.id, "copilot-jsonl-v1");
@@ -468,6 +470,10 @@ assert.deepEqual(
     "a final message shorter than its streamed deltas never duplicates",
   );
   assert.equal(text.delta("m", "world"), "", "deltas arriving after the authoritative full frame are ignored");
+
+  assert.equal(text.delta("repeat", "ha"), "ha");
+  assert.equal(text.delta("repeat", "ha"), "ha", "equal neighboring deltas are valid assistant text, not replays");
+  assert.equal(text.message("repeat", "haha"), "", "the full message reconciles repeated streamed chunks without duplication");
 
   text.reset();
   assert.equal(text.message("m", "fresh"), "fresh", "reset clears per-attempt state");

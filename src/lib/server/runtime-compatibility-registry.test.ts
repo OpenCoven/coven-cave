@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -91,13 +91,25 @@ try {
   assert.ok(higher?.runtimeVersion === "3.0.0" || lower?.runtimeVersion === "3.0.0");
   assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "3.0.0", "concurrent refreshes cannot downgrade LKG");
 
+  const staleLockPath = `${cachePath}.lock`;
+  await writeFile(staleLockPath, "interrupted refresh", "utf8");
+  const staleAt = new Date(Date.now() - 31_000);
+  await utimes(staleLockPath, staleAt, staleAt);
+  const reclaimed = await refreshRuntimeCompatibility("copilot", {
+    cachePath,
+    now: new Date(at.getTime() + 3_500),
+    fetchImpl: async () => response(index("4.0.0")),
+  });
+  assert.equal(reclaimed?.runtimeVersion, "4.0.0", "a crashed process's stale cache lock is reclaimed before refresh");
+  assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "4.0.0");
+
   const corrupt = await refreshRuntimeCompatibility("copilot", {
     cachePath,
     now: new Date(at.getTime() + 3_000),
     fetchImpl: async () => response(index("3.0.0"), "0".repeat(40)),
   });
   assert.equal(corrupt, null, "a mismatched Git blob hash is rejected before parsing");
-  assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "3.0.0", "failed refresh preserves last-known-good data");
+  assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "4.0.0", "failed refresh preserves last-known-good data");
 
   const expired = await resolveRuntimeCompatibility("copilot", {
     cachePath,
