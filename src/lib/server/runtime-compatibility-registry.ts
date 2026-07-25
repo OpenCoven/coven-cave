@@ -275,13 +275,35 @@ async function reclaimStaleCacheLock(lockPath: string): Promise<boolean> {
   }
 }
 
+/** Release only the exact lock file this process created. */
+async function releaseCacheLock(
+  lockPath: string,
+  owner: { dev: number; ino: number },
+  token: string,
+): Promise<void> {
+  try {
+    const [current, currentToken] = await Promise.all([
+      stat(/* turbopackIgnore: true */ lockPath),
+      readFile(/* turbopackIgnore: true */ lockPath, "utf8"),
+    ]);
+    // A stale-lock reclaimer may have atomically renamed our file and let a
+    // new owner acquire this path. Never unlink that replacement lock.
+    if (owner.dev !== current.dev || owner.ino !== current.ino || currentToken !== token) return;
+    await rm(/* turbopackIgnore: true */ lockPath, { force: true });
+  } catch {
+    // The lock was already released or reclaimed. It is not ours to remove.
+  }
+}
+
 /** A small cross-process lock: failure to acquire it retains LKG, never races a downgrade. */
 async function withCacheLock<T>(target: string, action: () => Promise<T>): Promise<T | null> {
   const lockPath = `${target}.lock`;
   let handle: Awaited<ReturnType<typeof open>> | null = null;
+  const token = randomUUID();
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
       handle = await open(/* turbopackIgnore: true */ lockPath, "wx", 0o600);
+      await handle.writeFile(token, "utf8");
       break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;
@@ -293,8 +315,9 @@ async function withCacheLock<T>(target: string, action: () => Promise<T>): Promi
   try {
     return await action();
   } finally {
+    const owner = await handle.stat().catch(() => null);
     await handle.close().catch(() => {});
-    await rm(/* turbopackIgnore: true */ lockPath, { force: true }).catch(() => {});
+    if (owner) await releaseCacheLock(lockPath, owner, token);
   }
 }
 
