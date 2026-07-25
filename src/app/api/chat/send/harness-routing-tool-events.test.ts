@@ -156,6 +156,11 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /child\.on\("error"[\s\S]*?if \(cliTerminalHandled\) return;[\s\S]*?cliTerminalHandled = true;[\s\S]*?child\.on\("close"[\s\S]*?if \(cliTerminalHandled\) return;/,
+  "a spawn error followed by close must have one terminal owner, avoiding duplicate transcript writes and done events",
+);
+assert.match(
+  chatRoute,
   /settleOpenClawTools\(unsettledToolMessage\)[\s\S]*?toPersistedTools\(openClawTools\.snapshot\(\), 0\)[\s\S]*?persistedOpenClawTools \? \{ tools: persistedOpenClawTools \} : \{\}/,
   "OpenClaw tool cards must survive reload through the saved assistant turn",
 );
