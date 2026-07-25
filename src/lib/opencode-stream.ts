@@ -150,9 +150,18 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   if (eventTypes(schema, "ignored", ["step_start", "step_finish"]).includes(eventType)) {
     // Lifecycle/control frames are deliberately non-renderable. The selected
     // schema nevertheless authorizes their label, so retain its session token:
-    // OpenCode emits it on step_start before terminal text/tool frames.
+    // OpenCode emits it on step_start before terminal text/tool frames. If a
+    // future client reuses a lifecycle label for an otherwise schema-authorized
+    // text payload, preserve that assistant text but quarantine the profile;
+    // silently dropping it would corrupt the transcript during a protocol
+    // transition.
     const lifecyclePayload = record(part);
     const carriesText = valueAt(lifecyclePayload, shapeAliases(schema, "text", ["text", "content"])) !== undefined;
+    const lifecycleTextEnvelope = textEnvelope(event, schema);
+    const lifecycleText = stringAt(lifecycleTextEnvelope, ...shapeAliases(schema, "text", ["text", "content"]));
+    if (lifecycleText !== undefined && hasExpectedPayloadKind(lifecycleTextEnvelope, schema, "text")) {
+      return { kind: "text", sessionId, text: lifecycleText, diagnostic: "unknown-event" };
+    }
     return sessionId && !carriesText ? { kind: "ignore", sessionId } : { kind: "ignore" };
   }
   if (eventTypes(schema, "error", ["error"]).includes(eventType)) {
