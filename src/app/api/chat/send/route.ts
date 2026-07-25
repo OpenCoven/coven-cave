@@ -115,6 +115,7 @@ import {
   cleanModelId,
   modelApplicationForHarness,
   modelApplicationFromRun,
+  modelRejectionInError,
   resolveChatModelState,
   type ChatModelState,
 } from "@/lib/chat-model-state";
@@ -1563,6 +1564,12 @@ export async function POST(req: Request) {
       // Detected from stderr; healed (manifest quarantined) and retried below.
       let adapterConflict: BuiltinAdapterConflict | null = null;
       let openCodeCompatibilityNoticeSent = false;
+      // Once an unknown structured envelope appears, retaining later tool
+      // frames would mix an unverified lifecycle with a known one. Continue
+      // decoding text only for this turn instead of showing potentially wrong
+      // tool activity.
+      let openCodeToolActivityDisabled = false;
+      let openCodeModelRejected = false;
 
       // Model parity: the harness echoes its resolved model on the init/system
       // stream event. Capturing it lets the application state render honestly as
@@ -1799,6 +1806,7 @@ export async function POST(req: Request) {
             return;
           }
           if (ev.kind === "tool") {
+            if (openCodeToolActivityDisabled) return;
             boundarySentinel?.observe(ev.name, ev.input);
             const started = toolTracker.envelopeToolUse(
               ev.id,
@@ -1816,6 +1824,7 @@ export async function POST(req: Request) {
             return;
           }
           if (ev.kind === "tool_start") {
+            if (openCodeToolActivityDisabled) return;
             boundarySentinel?.observe(ev.name, ev.input);
             const started = toolTracker.envelopeToolUse(
               ev.id,
@@ -1829,6 +1838,7 @@ export async function POST(req: Request) {
             return;
           }
           if (ev.kind === "tool_end") {
+            if (openCodeToolActivityDisabled) return;
             const ended = toolTracker.envelopeToolResult(
               ev.id,
               typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
@@ -1838,14 +1848,19 @@ export async function POST(req: Request) {
             return;
           }
           if (ev.kind === "error") {
-            // This is an explicit error envelope, so preserve even messages
-            // such as "Selected model is unavailable" that do not match the
-            // generic stderr-like keyword filter.
-            recordStdoutErrorTail(ev.message, true);
+            // This is an explicit error envelope, so retain its error state
+            // even if its message does not match the generic stderr filter.
+            // Error envelopes are provider-controlled and can repeat prompts,
+            // paths, command output, or credentials. Retain only the model
+            // rejection classification needed for response metadata; never
+            // copy their message into a persisted/user-visible diagnostic.
+            openCodeModelRejected ||= modelRejectionInError(ev.message);
+            recordStdoutErrorTail("OpenCode reported an error event", true);
             result = { ...result, is_error: true };
             return;
           }
           if (ev.kind === "other") {
+            openCodeToolActivityDisabled = true;
             // A future envelope can still carry assistant text even when its
             // event label is unknown. Preserve that safe textual field while
             // disabling only the unsupported structured activity.
@@ -1867,6 +1882,7 @@ export async function POST(req: Request) {
           // Structured-mode stdout can contain a malformed future event with
           // arbitrary tool payloads. Do not feed that raw line into the
           // persisted error tail or any user-visible diagnostic.
+          openCodeToolActivityDisabled = true;
           recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
           if (!openCodeCompatibilityNoticeSent) {
             openCodeCompatibilityNoticeSent = true;
@@ -2279,6 +2295,8 @@ export async function POST(req: Request) {
         result = {};
         toolTracker = new ToolCallTracker();
         openCodeCompatibilityNoticeSent = false;
+        openCodeToolActivityDisabled = false;
+        openCodeModelRejected = false;
         copilotText.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
@@ -2319,6 +2337,8 @@ export async function POST(req: Request) {
         result = {};
         toolTracker = new ToolCallTracker();
         openCodeCompatibilityNoticeSent = false;
+        openCodeToolActivityDisabled = false;
+        openCodeModelRejected = false;
         copilotText.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
@@ -2455,7 +2475,7 @@ export async function POST(req: Request) {
           modelApplicationFromRun({
             confirmedModel: forwardModel,
             isError: result.is_error === true,
-            errorText: [...stderrTail, ...stdoutErrTail].join("\n"),
+            errorText: openCodeModelRejected ? "model unavailable" : [...stderrTail, ...stdoutErrTail].join("\n"),
           }),
         );
         if (!result.is_error) responseMetadata.confirmedModel = forwardModel;

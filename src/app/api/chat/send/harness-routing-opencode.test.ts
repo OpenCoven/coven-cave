@@ -57,8 +57,18 @@ assert.match(
 );
 assert.match(
   route,
-  /openCodeDirect && forwardModel[\s\S]*?modelApplicationFromRun\([\s\S]*?isError: result\.is_error === true,[\s\S]*?errorText: \[\.\.\.stderrTail, \.\.\.stdoutErrTail\]\.join\("\\n"\)/,
-  "OpenCode marks model-specific failed runs as rejected instead of confirming the forwarded model",
+  /openCodeDirect && forwardModel[\s\S]*?modelApplicationFromRun\([\s\S]*?isError: result\.is_error === true,[\s\S]*?errorText: openCodeModelRejected \? "model unavailable" : \[\.\.\.stderrTail, \.\.\.stdoutErrTail\]\.join\("\\n"\)/,
+  "OpenCode marks model-specific failed runs as rejected without retaining raw JSON error messages",
+);
+assert.match(
+  route,
+  /openCodeModelRejected \|\|= modelRejectionInError\(ev\.message\);[\s\S]*?recordStdoutErrorTail\("OpenCode reported an error event", true\)/,
+  "structured OpenCode error payloads are classified but never copied into user-visible diagnostics",
+);
+assert.match(
+  route,
+  /let openCodeToolActivityDisabled = false;[\s\S]*?if \(ev\.kind === "tool"\) \{\s*if \(openCodeToolActivityDisabled\) return;[\s\S]*?if \(ev\.kind === "other"\) \{\s*openCodeToolActivityDisabled = true;/,
+  "an unknown OpenCode envelope disables subsequent structured tool activity for the turn",
 );
 assert.match(
   route,
@@ -67,8 +77,8 @@ assert.match(
 );
 assert.match(
   route,
-  /ev\.kind === "error"[\s\S]*?recordStdoutErrorTail\(ev\.message, true\)/,
-  "structured OpenCode errors retain model-rejection details even when they lack generic error keywords",
+  /ev\.kind === "error"[\s\S]*?openCodeModelRejected \|\|= modelRejectionInError\(ev\.message\);[\s\S]*?recordStdoutErrorTail\("OpenCode reported an error event", true\)/,
+  "structured OpenCode errors retain model-rejection state without retaining provider-controlled details",
 );
 assert.match(
   route,

@@ -11,6 +11,7 @@ import {
   redactedOpenCodeEventFingerprint,
   resolveOpenCodeCompatibility,
   selectOpenCodeSchema,
+  isOpenCodeSchemaBundle,
 } from "./opencode-compatibility.ts";
 
 const now = Date.parse("2026-07-24T12:00:00.000Z");
@@ -90,6 +91,34 @@ assert.equal(
   selectOpenCodeSchema([broadSchema, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]], { version: "current", json: true, model: false, session: true })?.id,
   "opencode-run-json-v1",
   "the most specific schema wins independently of registry ordering",
+);
+
+assert.equal(isOpenCodeSchemaBundle({ ...unsigned, schemas: [] }, now), false, "empty signed bundles cannot replace a working parser set");
+assert.equal(isOpenCodeSchemaBundle({
+  ...unsigned,
+  schemas: [{
+    ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+    requires: { json: true, session: true, futureCapability: true },
+  }],
+}, now), false, "unknown requirement keys cannot bypass schema matching");
+assert.equal(isOpenCodeSchemaBundle({
+  ...unsigned,
+  schemas: [{
+    ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+    eventTypes: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].eventTypes, toolEnd: [] },
+  }],
+}, now), false, "incomplete event mappings cannot be selected as structured parsers");
+
+const ed448 = generateKeyPairSync("ed448");
+const ed448PublicPem = ed448.publicKey.export({ type: "spki", format: "pem" }).toString();
+const ed448Signature = sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(unsigned)), ed448.privateKey).toString("base64");
+assert.equal(
+  (await import("./opencode-compatibility.ts")).verifyOpenCodeSchemaBundle({
+    ...unsigned,
+    signature: { algorithm: "ed25519", value: ed448Signature },
+  }, ed448PublicPem, now),
+  false,
+  "an Ed448 key cannot be relabeled as an Ed25519 registry key",
 );
 assert.equal(
   selectOpenCodeSchema([broadSchema, { ...broadSchema, id: "broad-duplicate" }], { version: "current", json: true, model: false, session: true }),

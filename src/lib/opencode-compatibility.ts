@@ -127,10 +127,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isEventSchema(value: unknown): value is OpenCodeEventSchema {
   if (!isRecord(value) || typeof value.id !== "string" || value.id.length === 0 || value.id.length > 128 || !isRecord(value.eventTypes) || !isRecord(value.requires)) return false;
+  if (!Object.keys(value.requires).every((key) => key === "json" || key === "session" || key === "model")) return false;
   if (value.requires.json !== true || (value.requires.session !== undefined && typeof value.requires.session !== "boolean") || (value.requires.model !== undefined && typeof value.requires.model !== "boolean")) return false;
   const eventKeys = ["text", "toolStart", "toolEnd", "toolComplete", "error"];
   const eventTypes = value.eventTypes;
-  if (Object.keys(eventTypes).length !== eventKeys.length || !eventKeys.every((key) => Array.isArray(eventTypes[key]) && eventTypes[key].every((type: unknown) => typeof type === "string" && type.length > 0 && type.length <= 80))) return false;
+  if (Object.keys(eventTypes).length !== eventKeys.length || !eventKeys.every((key) => Array.isArray(eventTypes[key]) && eventTypes[key].length > 0 && eventTypes[key].length <= 32 && eventTypes[key].every((type: unknown) => typeof type === "string" && type.length > 0 && type.length <= 80))) return false;
   return true;
 }
 
@@ -163,7 +164,7 @@ export function selectOpenCodeSchema(
 
 export function isOpenCodeSchemaBundle(value: unknown, now = Date.now()): value is OpenCodeSchemaBundle {
   if (!isRecord(value) || value.format !== 1 || value.runtime !== "opencode") return false;
-  if (typeof value.sequence !== "number" || !Number.isSafeInteger(value.sequence) || value.sequence < 1 || !Array.isArray(value.schemas) || !value.schemas.every(isEventSchema)) return false;
+  if (typeof value.sequence !== "number" || !Number.isSafeInteger(value.sequence) || value.sequence < 1 || !Array.isArray(value.schemas) || value.schemas.length === 0 || value.schemas.length > 64 || !value.schemas.every(isEventSchema)) return false;
   const issuedAt = Date.parse(String(value.issuedAt));
   const expiresAt = Date.parse(String(value.expiresAt));
   if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) || issuedAt > now || expiresAt <= now) return false;
@@ -171,10 +172,12 @@ export function isOpenCodeSchemaBundle(value: unknown, now = Date.now()): value 
   // selection for the corresponding client capabilities. Reject it at the
   // signed-bundle boundary, before it can affect a chat turn.
   const profiles = new Set<string>();
+  const ids = new Set<string>();
   for (const schema of value.schemas) {
-    const profile = JSON.stringify(schema.requires);
-    if (profiles.has(profile)) return false;
+    const profile = stableJson(schema.requires);
+    if (profiles.has(profile) || ids.has(schema.id)) return false;
     profiles.add(profile);
+    ids.add(schema.id);
   }
   return true;
 }
@@ -200,7 +203,9 @@ export function verifyOpenCodeSchemaBundle(bundle: unknown, publicKey: string, n
     if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) return false;
     const signature = Buffer.from(encoded, "base64");
     if (!signature.length || signature.toString("base64") !== encoded) return false;
-    return verify(null, Buffer.from(openCodeSchemaBundleSigningPayload(bundle)), createPublicKey(publicKey), signature);
+    const key = createPublicKey(publicKey);
+    if (key.asymmetricKeyType !== "ed25519") return false;
+    return verify(null, Buffer.from(openCodeSchemaBundleSigningPayload(bundle)), key, signature);
   } catch {
     return false;
   }
