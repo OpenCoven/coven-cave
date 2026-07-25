@@ -10,6 +10,10 @@ import {
   runPiper,
   type PiperRunner,
 } from "../../../../../lib/voice/local-tts-server.ts";
+import {
+  JsonBodyTooLargeError,
+  parseBoundedJsonBody,
+} from "../../../../../lib/voice/bounded-json.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,45 +28,6 @@ type LocalTtsRouteDependencies = {
   readiness?: (voiceName: string) => Promise<SpeechModelReadiness | null>;
   piper?: PiperRunner;
 };
-
-class LocalTtsBodyTooLargeError extends Error {}
-
-async function parseLocalTtsJsonBody(req: Request): Promise<unknown> {
-  const contentLength = req.headers.get("content-length");
-  if (contentLength) {
-    const declaredBytes = Number(contentLength);
-    if (Number.isSafeInteger(declaredBytes) && declaredBytes > LOCAL_TTS_MAX_BODY_BYTES) {
-      throw new LocalTtsBodyTooLargeError();
-    }
-  }
-
-  const reader = req.body?.getReader();
-  if (!reader) throw new SyntaxError("Request body is empty");
-  const chunks: Uint8Array[] = [];
-  let receivedBytes = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      receivedBytes += value.byteLength;
-      if (receivedBytes > LOCAL_TTS_MAX_BODY_BYTES) {
-        await reader.cancel();
-        throw new LocalTtsBodyTooLargeError();
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const bytes = new Uint8Array(receivedBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-}
 
 async function defaultReadiness(
   voiceName: string,
@@ -87,9 +52,9 @@ export async function handleLocalTtsPost(
   }
   let body: unknown;
   try {
-    body = await parseLocalTtsJsonBody(req);
+    body = await parseBoundedJsonBody(req, LOCAL_TTS_MAX_BODY_BYTES);
   } catch (error) {
-    if (error instanceof LocalTtsBodyTooLargeError) {
+    if (error instanceof JsonBodyTooLargeError) {
       return NextResponse.json(
         { ok: false, error: "payload_too_large" },
         { status: 413 },

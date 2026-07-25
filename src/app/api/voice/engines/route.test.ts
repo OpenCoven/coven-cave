@@ -44,6 +44,22 @@ test("GET /api/voice/engines advertises readonly readiness and management endpoi
 
 test("download endpoints start only registered model jobs and expose polling state", async () => {
   await withCovenHome("downloads", async () => {
+    const malformed = await postDownload(new Request("http://test/api/voice/engines/downloads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "null",
+    }));
+    assert.equal(malformed.status, 400);
+    assert.equal((await json(malformed as Response)).error, "invalid_request");
+
+    const tooLarge = await postDownload(new Request("http://test/api/voice/engines/downloads", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": "4097" },
+      body: JSON.stringify({ modelId: "not-in-registry" }),
+    }));
+    assert.equal(tooLarge.status, 413);
+    assert.equal((await json(tooLarge as Response)).error, "payload_too_large");
+
     const missingRes = await postDownload(new Request("http://test/api/voice/engines/downloads", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -72,6 +88,14 @@ test("model removal endpoint rejects malformed and unknown model requests", asyn
       body: "{",
     }));
     assert.equal(invalid.status, 400);
+
+    const malformedShape = await deleteModel(new Request("http://test/api/voice/engines/models", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ modelId: "not-in-registry", unexpected: true }),
+    }));
+    assert.equal(malformedShape.status, 400);
+    assert.equal((await json(malformedShape as Response)).error, "invalid_request");
 
     const unknown = await deleteModel(new Request("http://test/api/voice/engines/models", {
       method: "DELETE",
