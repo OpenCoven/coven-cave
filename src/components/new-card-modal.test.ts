@@ -40,6 +40,11 @@ assert.match(
 );
 assert.match(
   modal,
+  /const projectSelectionValid = !projectId \|\| \(projectPickerReady && selectedProject !== null\);[\s\S]{0,1800}if \(!title\.trim\(\) \|\| busy \|\| !projectSelectionValid\) return;[\s\S]{0,3000}disabled=\{!title\.trim\(\) \|\| busy \|\| !projectSelectionValid\}/,
+  "new-card modal cannot create a selected project without a verified current-scope cwd",
+);
+assert.match(
+  modal,
   /useProjectFamiliars\(\{ projectId, enabled: open \}\)/,
   "new-card modal fetches familiars scoped to the selected project, only while open",
 );

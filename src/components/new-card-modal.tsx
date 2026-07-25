@@ -149,6 +149,10 @@ export function NewCardModal({
         { value: "", label: "No project" },
         ...projects.map((project) => ({ value: project.id, label: project.name })),
       ];
+  // A familiar change can leave a previously selected projectId in local form
+  // state while the newly scoped list settles. Never create a card with that
+  // unverified id and a null/stale cwd.
+  const projectSelectionValid = !projectId || (projectPickerReady && selectedProject !== null);
   const familiarPickerReady = !projectId || (eligibleFamiliarsLoaded && !eligibleFamiliarsLoading);
   const familiarOptions = !projectId
     ? [
@@ -171,7 +175,7 @@ export function NewCardModal({
           ];
 
   const create = async () => {
-    if (!title.trim() || busy || (projectId && !projectPickerReady)) return;
+    if (!title.trim() || busy || !projectSelectionValid) return;
     setBusy(true);
     setError(null);
     try {
@@ -248,7 +252,7 @@ export function NewCardModal({
           <Button
             variant="primary"
             onClick={create}
-            disabled={!title.trim() || busy || (projectId !== null && !projectPickerReady)}
+            disabled={!title.trim() || busy || !projectSelectionValid}
           >
             {busy ? "Creating…" : "Create"}
           </Button>
