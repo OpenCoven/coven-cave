@@ -215,6 +215,7 @@ assert.equal(
         ignored: [],
         text: ["message"],
         toolStart: [],
+        toolProgress: [],
         toolEnd: [],
         toolComplete: [],
         error: [],
@@ -562,6 +563,18 @@ const oversized = await loadOpenCodeSchemaBundle({
 assert.equal(oversized.source, "cache");
 assert.equal(oversized.diagnostic, "schema-registry-refresh-rejected", "oversized refreshes preserve the cache and report the rejected update");
 assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 2);
+
+const oversizedCacheFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-oversized-cache-")), "bundle.json");
+await writeFile(oversizedCacheFile, "x".repeat(300 * 1024));
+const oversizedCache = await loadOpenCodeSchemaBundle({
+  cacheFile: oversizedCacheFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now,
+  fetch: async () => { throw new Error("offline"); },
+});
+assert.equal(oversizedCache.source, "built-in", "an oversized local cache is never read into memory or selected");
+assert.equal(oversizedCache.diagnostic, "schema-registry-refresh-rejected");
 
 const stalled = await loadOpenCodeSchemaBundle({
   cacheFile: path.join(path.dirname(cacheFile), "stalled-body.json"),

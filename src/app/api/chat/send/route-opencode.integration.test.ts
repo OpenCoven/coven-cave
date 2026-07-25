@@ -48,6 +48,11 @@ const launcher = process.platform === "win32"
 await writeFile(path.join(bin, executable), launcher, { mode: 0o755 });
 
 try {
+  // Other route modules can initialize Cave's augmented PATH before this
+  // fixture installs its shim. Reset that process-local cache so the probe
+  // and spawned turn resolve the same temporary OpenCode executable.
+  const { refreshCovenBin } = await import("@/lib/coven-bin");
+  refreshCovenBin();
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");

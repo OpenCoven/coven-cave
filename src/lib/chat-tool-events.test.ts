@@ -21,6 +21,30 @@ assert.deepEqual(
   "reconciled OpenCode calls persist their stable id and terminal output for reload/resume",
 );
 
+const progress = new ToolCallTracker(() => 1_000);
+assert.equal(progress.envelopeToolProgress("progress_1", "queued"), null, "progress before a start never creates a nameless bubble");
+assert.ok(progress.envelopeToolUse("progress_1", "read"));
+assert.deepEqual(
+  progress.consumePendingEnvelopeProgress("progress_1"),
+  { id: "progress_1", name: "read", output: "queued", status: "running" },
+  "reordered progress updates the later start under its stable id",
+);
+assert.deepEqual(
+  progress.envelopeToolProgress("progress_1", "halfway"),
+  { id: "progress_1", name: "read", output: "halfway", status: "running" },
+  "progress after a start updates the same running bubble without settling it",
+);
+assert.deepEqual(
+  progress.snapshot(),
+  [{ id: "progress_1", name: "read", input: undefined, output: "halfway", status: "running" }],
+  "a progress-only lifecycle remains explicitly running until a result arrives",
+);
+assert.deepEqual(
+  toPersistedTools(progress.snapshot(), 0),
+  [{ id: "progress_1", name: "read", output: "halfway\n[tool did not settle before the turn ended]", status: "error" }],
+  "a progress-only lifecycle is recovered as a terminal error instead of persisting an infinite spinner",
+);
+
 const oversized = new ToolCallTracker(() => 1_000);
 assert.equal(oversized.envelopeToolResult("call_large", "x".repeat(100_000), false), null);
 const largeStart = oversized.envelopeToolUse("call_large", "read");

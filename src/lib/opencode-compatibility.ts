@@ -37,6 +37,8 @@ export type OpenCodeEventSchema = {
     ignored: string[];
     text: string[];
     toolStart: string[];
+    /** Nonterminal output/status updates for an already-announced tool call. */
+    toolProgress: string[];
     toolEnd: string[];
     toolComplete: string[];
     error: string[];
@@ -196,6 +198,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
         // selected legacy profile so an evolved stream fails closed instead of
         // being mistaken for trusted tool activity.
         toolStart: [],
+        toolProgress: [],
         toolEnd: [],
         toolComplete: ["tool_use"],
         error: ["error"],
@@ -226,6 +229,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
         ignored: ["step_start", "step_finish", "reasoning"],
         text: ["message", "assistant_text"],
         toolStart: ["tool"],
+        toolProgress: [],
         toolEnd: ["tool_output"],
         toolComplete: ["tool_call"],
         error: ["error", "failed"],
@@ -330,7 +334,7 @@ function isEventSchema(value: unknown): value is OpenCodeEventSchema {
   if (!hasValidLaunch(value.launch, value.requires)) return false;
   if (!Object.keys(value.requires).every((key) => key === "json" || key === "session" || key === "model" || key === "protocol")) return false;
   if (value.requires.json !== true || (value.requires.session !== undefined && typeof value.requires.session !== "boolean") || (value.requires.model !== undefined && typeof value.requires.model !== "boolean") || (value.requires.protocol !== undefined && (typeof value.requires.protocol !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(value.requires.protocol)))) return false;
-  const eventKeys: Array<keyof OpenCodeEventSchema["eventTypes"]> = ["ignored", "text", "toolStart", "toolEnd", "toolComplete", "error"];
+  const eventKeys: Array<keyof OpenCodeEventSchema["eventTypes"]> = ["ignored", "text", "toolStart", "toolProgress", "toolEnd", "toolComplete", "error"];
   // `isRecord` deliberately narrows external JSON to unknown values. Keep that
   // boundary while validating, then use the internal shape for the duplicate
   // label checks below.
@@ -526,6 +530,27 @@ function cacheTrustPath(file: string): string {
 }
 
 /**
+ * The cache is writable local state, so do not let a corrupt or maliciously
+ * enlarged file bypass the registry response limit and exhaust process memory
+ * before signature verification. Reading from one open handle also bounds the
+ * bytes consumed if the pathname is atomically replaced while it is read.
+ */
+async function readBoundedCacheFile(file: string): Promise<string | null> {
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    handle = await open(file, "r");
+    const bytes = Buffer.allocUnsafe(MAX_SCHEMA_BUNDLE_BYTES + 1);
+    const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
+    if (bytesRead > MAX_SCHEMA_BUNDLE_BYTES) return null;
+    return bytes.toString("utf8", 0, bytesRead);
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+/**
  * Expired bundles are never selected for parsing, but their verified identity
  * remains a trust floor. Without it, expiry would create a downgrade window
  * where a signed lower sequence (or rewritten equal sequence) could replace
@@ -533,8 +558,8 @@ function cacheTrustPath(file: string): string {
  */
 async function readTrustedCacheRecord(file: string, publicKey: string | OpenCodeRegistryKeyring, now: number): Promise<CachedBundle | null> {
   try {
-    const raw = await readFile(file, "utf8");
-    if (Buffer.byteLength(raw, "utf8") > MAX_SCHEMA_BUNDLE_BYTES) return null;
+    const raw = await readBoundedCacheFile(file);
+    if (raw === null) return null;
     const cached = JSON.parse(raw) as CachedBundle;
     if (
       !isRecord(cached)

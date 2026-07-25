@@ -1916,8 +1916,17 @@ export async function POST(req: Request) {
               assistantText.length,
             );
             if (started) push({ kind: "tool_use", ...started });
+            const reorderedProgress = toolTracker.consumePendingEnvelopeProgress(ev.id);
+            if (reorderedProgress) push({ kind: "tool_use", ...reorderedProgress });
             const reorderedEnd = toolTracker.consumePendingEnvelopeResult(ev.id);
             if (reorderedEnd) push({ kind: "tool_use", ...reorderedEnd });
+          },
+          onToolProgress: (ev) => {
+            const progress = toolTracker.envelopeToolProgress(
+              ev.id,
+              typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
+            );
+            if (progress) push({ kind: "tool_use", ...progress });
           },
           onToolEnd: (ev) => {
             const ended = toolTracker.envelopeToolResult(

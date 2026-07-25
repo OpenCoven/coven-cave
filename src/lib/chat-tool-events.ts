@@ -131,6 +131,9 @@ export class ToolCallTracker {
   /** Terminal envelopes can precede starts after a reconnect or CLI flush. */
   private pendingEnvelopeResults = new Map<string, { output: string | undefined; isError: boolean; bytes: number; receivedAt: number }>();
   private pendingEnvelopeResultBytes = 0;
+  /** Progress can race a start frame, but never creates a nameless bubble. */
+  private pendingEnvelopeProgress = new Map<string, { output: string | undefined; bytes: number; receivedAt: number }>();
+  private pendingEnvelopeProgressBytes = 0;
   /** Final state of every call this tracker has emitted, by stream id —
    *  insertion-ordered, so snapshot() preserves call order for persistence. */
   private recorded = new Map<string, RecordedToolEvent>();
@@ -161,6 +164,21 @@ export class ToolCallTracker {
     for (const [id, pending] of this.pendingEnvelopeResults) {
       if (pending.receivedAt >= oldestAllowed) break;
       this.dropPendingEnvelopeResult(id);
+    }
+  }
+
+  private dropPendingEnvelopeProgress(id: string): void {
+    const pending = this.pendingEnvelopeProgress.get(id);
+    if (!pending) return;
+    this.pendingEnvelopeProgress.delete(id);
+    this.pendingEnvelopeProgressBytes -= pending.bytes;
+  }
+
+  private prunePendingEnvelopeProgress(): void {
+    const oldestAllowed = this.now() - PENDING_TOOL_RESULT_TTL_MS;
+    for (const [id, pending] of this.pendingEnvelopeProgress) {
+      if (pending.receivedAt >= oldestAllowed) break;
+      this.dropPendingEnvelopeProgress(id);
     }
   }
 
@@ -280,6 +298,7 @@ export class ToolCallTracker {
    */
   envelopeToolUse(id: string, name: string, input?: string, textOffset?: number): ToolStreamEvent | null {
     this.prunePendingEnvelopeResults();
+    this.prunePendingEnvelopeProgress();
     if (utf8Bytes(id) > 512 || utf8Bytes(name) > 512 || this.byEnvelopeId.has(id) || this.settledEnvelopeIds.has(id)) return null;
     if (this.byEnvelopeId.size >= MAX_OPEN_ENVELOPE_CALLS) return null;
     const queue = this.queueFor(name);
@@ -318,6 +337,43 @@ export class ToolCallTracker {
     if (!pending) return null;
     this.dropPendingEnvelopeResult(toolUseId);
     return this.envelopeToolResult(toolUseId, pending.output, pending.isError);
+  }
+
+  /** Apply the most recent reordered progress update after a tool start. */
+  consumePendingEnvelopeProgress(toolUseId: string): ToolStreamEvent | null {
+    this.prunePendingEnvelopeProgress();
+    const pending = this.pendingEnvelopeProgress.get(toolUseId);
+    if (!pending) return null;
+    this.dropPendingEnvelopeProgress(toolUseId);
+    return this.envelopeToolProgress(toolUseId, pending.output);
+  }
+
+  /**
+   * A nonterminal tool update shares the running bubble's stable id. Progress
+   * without a start is retained briefly for a genuine reordered stream, but
+   * cannot create a nameless or permanently running bubble on its own.
+   */
+  envelopeToolProgress(toolUseId: string, output: string | undefined): ToolStreamEvent | null {
+    this.prunePendingEnvelopeProgress();
+    if (utf8Bytes(toolUseId) > 512 || this.settledEnvelopeIds.has(toolUseId)) return null;
+    const boundedOutput = capLiveToolPayload(output, LIVE_TOOL_OUTPUT_CAP);
+    const pendingBytes = utf8Bytes(boundedOutput);
+    const call = this.byEnvelopeId.get(toolUseId);
+    if (!call) {
+      if (pendingBytes > MAX_PENDING_TOOL_RESULT_BYTES) return null;
+      if (this.pendingEnvelopeProgress.has(toolUseId)) this.dropPendingEnvelopeProgress(toolUseId);
+      while (this.pendingEnvelopeProgress.size >= MAX_PENDING_TOOL_RESULTS || (this.pendingEnvelopeProgressBytes + pendingBytes > MAX_PENDING_TOOL_RESULT_BYTES && this.pendingEnvelopeProgress.size)) {
+        const oldest = this.pendingEnvelopeProgress.keys().next().value;
+        if (!oldest) break;
+        this.dropPendingEnvelopeProgress(oldest);
+      }
+      this.pendingEnvelopeProgress.set(toolUseId, { output: boundedOutput, bytes: pendingBytes, receivedAt: this.now() });
+      this.pendingEnvelopeProgressBytes += pendingBytes;
+      return null;
+    }
+    const ev: ToolStreamEvent = { id: call.id, name: call.name, output: boundedOutput, status: "running" };
+    this.record(ev);
+    return ev;
   }
 
   /**

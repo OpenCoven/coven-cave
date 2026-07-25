@@ -178,6 +178,31 @@ assert.deepEqual(
   { kind: "tool_start", sessionId: "ses_legacy", id: "legacy_1", name: "Read", input: { path: "README.md" } },
   "the legacy profile keeps stable ids for a split tool lifecycle",
 );
+const progressSchema = {
+  ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[1],
+  id: "opencode-progress-v2",
+  eventTypes: {
+    ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[1].eventTypes,
+    toolProgress: ["tool_progress"],
+  },
+};
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool_progress", sessionId: "ses_progress", data: { toolCallId: "progress_1", state: { output: "read 50%" } } },
+    progressSchema,
+  ),
+  { kind: "tool_progress", sessionId: "ses_progress", id: "progress_1", output: "read 50%" },
+  "a signed schema can identify a nonterminal progress frame without treating it as a start or result",
+);
+{
+  const progress: string[] = [];
+  handleOpenCodeJsonLine(
+    JSON.stringify({ type: "tool_progress", data: { toolCallId: "progress_dispatch", state: { output: "working" } } }),
+    progressSchema,
+    { onToolProgress: (event) => progress.push(`${event.id}:${String(event.output)}`) },
+  );
+  assert.deepEqual(progress, ["progress_dispatch:working"], "JSONL dispatch forwards declared tool progress separately from terminal results");
+}
 const shapedSchema = {
   ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   id: "opencode-run-json-shaped-v2",

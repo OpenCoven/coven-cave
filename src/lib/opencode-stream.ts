@@ -4,6 +4,7 @@ export type OpenCodeRunEvent =
   | { kind: "ignore"; sessionId?: string }
   | { kind: "text"; sessionId?: string; text: string }
   | { kind: "tool_start"; sessionId?: string; id: string; name: string; input: unknown }
+  | { kind: "tool_progress"; sessionId?: string; id: string; output: unknown }
   | { kind: "tool_end"; sessionId?: string; id: string; output: unknown; isError: boolean }
   | { kind: "tool"; sessionId?: string; id: string; name: string; input: unknown; output: unknown; isError: boolean }
   | { kind: "error"; sessionId?: string; message: string }
@@ -14,6 +15,7 @@ export type OpenCodeJsonLineHandlers = {
   onText?: (event: Extract<OpenCodeRunEvent, { kind: "text" }>) => void;
   onTool?: (event: Extract<OpenCodeRunEvent, { kind: "tool" }>) => void;
   onToolStart?: (event: Extract<OpenCodeRunEvent, { kind: "tool_start" }>) => void;
+  onToolProgress?: (event: Extract<OpenCodeRunEvent, { kind: "tool_progress" }>) => void;
   onToolEnd?: (event: Extract<OpenCodeRunEvent, { kind: "tool_end" }>) => void;
   onError?: (event: Extract<OpenCodeRunEvent, { kind: "error" }>) => void;
   onOther?: (event: Extract<OpenCodeRunEvent, { kind: "other" }>, rawEvent: unknown) => void;
@@ -153,10 +155,15 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   const state = record(valueAt(toolPart, stateAliases)) ?? record(valueAt(event, stateAliases));
   const id = toolId(event, toolPart, schema);
   const toolStartTypes = eventTypes(schema, "toolStart", ["tool_start"]);
+  const toolProgressTypes = eventTypes(schema, "toolProgress", []);
   const toolEndTypes = eventTypes(schema, "toolEnd", ["tool_result"]);
   const toolCompleteTypes = eventTypes(schema, "toolComplete", ["tool_use"]);
   if (toolStartTypes.includes(eventType) && id && toolPart && !terminalToolState(state, toolPart, schema)) {
     return { kind: "tool_start", sessionId, id, name: stringAt(toolPart, ...shapeAliases(schema, "name", ["tool", "name"])) ?? "tool", input: valueAt(state, shapeAliases(schema, "input", ["input"])) ?? valueAt(toolPart, shapeAliases(schema, "input", ["input"])) ?? {} };
+  }
+  if (toolProgressTypes.includes(eventType) && id && toolPart && !terminalToolState(state, toolPart, schema)) {
+    const output = shapeAliases(schema, "output", ["output"]);
+    return { kind: "tool_progress", sessionId, id, output: valueAt(state, output) ?? valueAt(toolPart, output) ?? "" };
   }
   if (toolEndTypes.includes(eventType) && id && toolPart) {
     const output = shapeAliases(schema, "output", ["output"]);
@@ -185,6 +192,7 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   const knownType = [
     ...eventTypes(schema, "text", ["text"]),
     ...toolStartTypes,
+    ...toolProgressTypes,
     ...toolEndTypes,
     ...toolCompleteTypes,
     ...eventTypes(schema, "error", ["error"]),
@@ -218,6 +226,7 @@ export function handleOpenCodeJsonLine(
       case "text": handlers.onText?.(event); return;
       case "tool": handlers.onTool?.(event); return;
       case "tool_start": handlers.onToolStart?.(event); return;
+      case "tool_progress": handlers.onToolProgress?.(event); return;
       case "tool_end": handlers.onToolEnd?.(event); return;
       case "error": handlers.onError?.(event); return;
       case "other": handlers.onOther?.(event, rawEvent); return;
