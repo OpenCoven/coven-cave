@@ -1044,6 +1044,7 @@ export const SUITES = {
     "src/app/api/capabilities/route.test.ts",
     "src/app/api/workflows/route.test.ts",
     "src/app/api/workflows/run/route.test.ts",
+    "src/app/api/workflows/run/copilot-engine-gate.test.ts",
     "src/app/api/flows/run/route.test.ts",
     "src/app/api/research/missions/route.test.ts",
     "src/app/api/research/missions/[id]/route.test.ts",

@@ -735,3 +735,41 @@ export class CopilotTextAssembler {
     this.messages.clear();
   }
 }
+
+/**
+ * Owns the aggregate transcript for interleaved Copilot message IDs. A final
+ * full frame can correct one message without dropping another message that
+ * arrived later on the wire. Order is fixed at each message's first frame;
+ * content is always replaced by the authoritative full frame when present.
+ */
+export class CopilotMessageTranscript {
+  private order: string[] = [];
+  private content = new Map<string, string>();
+
+  appendDelta(messageId: string, text: string): string {
+    this.ensure(messageId);
+    this.content.set(messageId, `${this.content.get(messageId) ?? ""}${text}`);
+    return this.text;
+  }
+
+  setMessage(messageId: string, text: string): string {
+    this.ensure(messageId);
+    this.content.set(messageId, text);
+    return this.text;
+  }
+
+  get text(): string {
+    return this.order.map((messageId) => this.content.get(messageId) ?? "").join("");
+  }
+
+  reset(): void {
+    this.order = [];
+    this.content.clear();
+  }
+
+  private ensure(messageId: string): void {
+    if (this.content.has(messageId)) return;
+    this.order.push(messageId);
+    this.content.set(messageId, "");
+  }
+}

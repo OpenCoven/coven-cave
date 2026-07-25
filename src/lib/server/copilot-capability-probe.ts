@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { realpath, stat } from "node:fs/promises";
+import { delimiter, isAbsolute, join } from "node:path";
 import { parseRuntimeClientVersion } from "../copilot-stream.ts";
 
 export type CopilotCapabilityProbe = {
@@ -13,16 +15,51 @@ const CACHE_MS = 5 * 60_000;
 const TIMEOUT_MS = 2_500;
 
 /**
+ * A command name is not a stable runtime identity: a global npm upgrade can
+ * replace its shim target without changing `copilot` itself. Include the
+ * resolved file metadata in the short-lived cache key so a changed binary is
+ * probed before it can select an old JSONL schema.
+ */
+async function binaryIdentity(executable: string): Promise<string> {
+  const pathValue = process.env.PATH ?? "";
+  const extensions = process.platform === "win32"
+    ? ["", ...(process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";")]
+    : [""];
+  const candidates = isAbsolute(executable)
+    ? [executable]
+    : pathValue.split(delimiter).filter(Boolean).flatMap((directory) =>
+      extensions.map((extension) => join(directory, `${executable}${extension}`)),
+    );
+  for (const candidate of candidates) {
+    try {
+      const [resolved, metadata] = await Promise.all([realpath(candidate), stat(candidate)]);
+      return `${resolved}:${metadata.dev}:${metadata.ino}:${metadata.size}:${metadata.mtimeMs}:${metadata.ctimeMs}`;
+    } catch {
+      // Keep looking: PATH can contain missing, protected, or stale entries.
+    }
+  }
+  // PATH remains part of the unresolved identity so a PATH change still
+  // invalidates the negative cache entry.
+  return `unresolved:${executable}:${pathValue}`;
+}
+
+/**
  * Probe only `copilot --version`, cache the normalized result briefly, and
  * deliberately discard stdout/stderr.  This is the runtime-version boundary
  * for schema selection: no version means no direct JSONL parser guess.
  */
 export async function probeCopilotCapability(
   executable = "copilot",
-  options: { now?: () => number; spawnImpl?: typeof spawn } = {},
+  options: {
+    now?: () => number;
+    spawnImpl?: typeof spawn;
+    binaryIdentity?: (executable: string) => Promise<string>;
+  } = {},
 ): Promise<CopilotCapabilityProbe> {
   const now = options.now ?? Date.now;
-  const cached = cache.get(executable);
+  const identity = await (options.binaryIdentity ?? binaryIdentity)(executable);
+  const cacheKey = `${executable}\u0000${identity}`;
+  const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > now()) return cached.value;
   const childSpawn = options.spawnImpl ?? spawn;
   const value = await new Promise<CopilotCapabilityProbe>((resolve) => {
@@ -77,7 +114,7 @@ export async function probeCopilotCapability(
       settle(version ? { version } : { version: null, diagnostic: "version-unparseable" });
     });
   });
-  cache.set(executable, { value, expiresAt: now() + CACHE_MS });
+  cache.set(cacheKey, { value, expiresAt: now() + CACHE_MS });
   return value;
 }
 

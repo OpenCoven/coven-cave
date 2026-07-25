@@ -7,7 +7,7 @@ import {
   setSessionTitle,
 } from "@/lib/cave-config";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
-import { copilotStreamSpec } from "@/lib/copilot-stream";
+import { copilotStreamSpec, type RuntimeEventProtocolSchema } from "@/lib/copilot-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
@@ -22,6 +22,7 @@ import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
 import { workflowRunBlockReason, type WorkflowSummary } from "@/lib/workflows";
+import { runWorkflowEngineAfterCopilotGate } from "./copilot-engine-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -100,10 +101,10 @@ async function maybeQueueOfflineWorkflow(body: RunBody, workflow: WorkflowSummar
  * bypass the local Copilot stream compatibility gate that protects session
  * workflows and flows. Remote/Hub bindings remain owned by their host.
  */
-async function localCopilotWorkflowCompatibilityFailure(
+async function usesLocalCopilotWorkflowRuntime(
   body: RunBody,
   workflow: WorkflowSummary | null,
-): Promise<NextResponse | null> {
+): Promise<boolean> {
   const config = await loadConfig();
   const familiarId = body.familiarId ?? workflow?.familiar ?? null;
   const binding = familiarId
@@ -111,17 +112,7 @@ async function localCopilotWorkflowCompatibilityFailure(
     : { harness: config.defaults.harness, model: config.defaults.model };
   const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
   const hubAuthority = config.multiHost?.mode === "hub";
-  if (binding.harness !== "copilot" || sshBound || hubAuthority) return null;
-
-  const [capability, compatibility] = await Promise.all([
-    probeCopilotCapability(),
-    resolveRuntimeCompatibility("copilot"),
-  ]);
-  if (copilotStreamSpec(capability.version, compatibility?.eventProtocols)) return null;
-  return NextResponse.json(
-    { ok: false, error: "This Copilot CLI version is not compatible with Cave workflow execution. Update the Copilot runtime schema or CLI." },
-    { status: 409 },
-  );
+  return binding.harness === "copilot" && !sshBound && !hubAuthority;
 }
 
 /**
@@ -168,15 +159,28 @@ export async function POST(req: Request) {
 
   // Resolve this before the native-engine probe: an engine-capable daemon is
   // still not allowed to launch an unversioned local Copilot protocol.
-  const copilotCompatibilityFailure = await localCopilotWorkflowCompatibilityFailure(body, gateWorkflow);
-  if (copilotCompatibilityFailure) return copilotCompatibilityFailure;
-
   // 1. Native daemon engine first (forward-compatible).
-  const engine = await callDaemon<DaemonRunResponse>({
-    method: "POST",
-    path: "/api/v1/workflows/run",
-    body,
+  const engineAttempt = await runWorkflowEngineAfterCopilotGate({
+    localCopilot: await usesLocalCopilotWorkflowRuntime(body, gateWorkflow),
+    probe: probeCopilotCapability,
+    resolveCompatibility: () => resolveRuntimeCompatibility("copilot"),
+    selectSpec: (version, protocols) => copilotStreamSpec(
+      version,
+      Array.isArray(protocols) ? protocols as RuntimeEventProtocolSchema[] : undefined,
+    ),
+    runEngine: () => callDaemon<DaemonRunResponse>({
+      method: "POST",
+      path: "/api/v1/workflows/run",
+      body,
+    }),
   });
+  if (engineAttempt.blocked) {
+    return NextResponse.json(
+      { ok: false, error: "This Copilot CLI version is not compatible with Cave workflow execution. Update the Copilot runtime schema or CLI." },
+      { status: 409 },
+    );
+  }
+  const engine = engineAttempt.engine;
 
   if (engine.ok) {
     const data = engine.data ?? { ok: true };

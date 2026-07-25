@@ -13,6 +13,7 @@ import {
   copilotIdentityPreamble,
   copilotProtocolDiagnostic,
   copilotStreamSpec,
+  CopilotMessageTranscript,
   CopilotTextAssembler,
   COPILOT_EVENT_PROTOCOL_SCHEMAS,
   parseRuntimeClientVersion,
@@ -570,6 +571,17 @@ assert.equal(
 
   text.reset();
   assert.equal(text.message("m", "fresh"), "fresh", "reset clears per-attempt state");
+}
+
+{
+  const transcript = new CopilotMessageTranscript();
+  transcript.appendDelta("first", "Hello old");
+  transcript.appendDelta("later", " and later");
+  assert.equal(
+    transcript.setMessage("first", "Hello new"),
+    "Hello new and later",
+    "a corrected earlier message retains interleaved later message text",
+  );
 }
 
 console.log("copilot-stream: ok");

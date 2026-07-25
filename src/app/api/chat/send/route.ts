@@ -50,6 +50,7 @@ import {
   buildCopilotStreamArgs,
   copilotIdentityPreamble,
   copilotProtocolDiagnostic,
+  CopilotMessageTranscript,
   CopilotTextAssembler,
   parseCopilotChatEvent,
 } from "@/lib/copilot-stream";
@@ -1585,6 +1586,7 @@ export async function POST(req: Request) {
       // Dedups copilot's streamed text deltas against the full-content
       // assistant.message frame that follows them.
       const copilotText = new CopilotTextAssembler();
+      const copilotTranscript = new CopilotMessageTranscript();
       // A changed Copilot tool event must be visible, but diagnostics must
       // remain bounded and never include the event payload (which can contain
       // prompts, paths, or tool output). One status row per safe code avoids
@@ -1707,7 +1709,7 @@ export async function POST(req: Request) {
               case "text_delta": {
                 const text = copilotText.delta(ev.messageId, ev.text, ev.frameId);
                 if (text) {
-                  assistantText += text;
+                  assistantText = copilotTranscript.appendDelta(ev.messageId, text);
                   push({ kind: "assistant_chunk", text });
                 }
                 break;
@@ -1715,17 +1717,21 @@ export async function POST(req: Request) {
               case "message": {
                 const text = copilotText.message(ev.messageId, ev.content);
                 const replacement = copilotText.takeReplacement(ev.messageId);
+                const correctedText = copilotTranscript.setMessage(ev.messageId, ev.content);
                 if (replacement) {
-                  // The full message is authoritative over replayed/reordered
-                  // deltas. This message's deltas are normally the assistant
-                  // tail; replace the live text and persist the corrected form.
-                  assistantText = assistantText.endsWith(replacement.previous)
-                    ? `${assistantText.slice(0, -replacement.previous.length)}${replacement.content}`
-                    : replacement.content;
+                  // A full frame corrects only its own message. Rebuild from
+                  // per-message spans so an interleaved later message survives.
+                  assistantText = correctedText;
                   push({ kind: "assistant_replace", text: assistantText });
                 } else if (text) {
-                  assistantText += text;
-                  push({ kind: "assistant_chunk", text });
+                  if (assistantText === correctedText) {
+                    push({ kind: "assistant_chunk", text });
+                  } else {
+                    assistantText = correctedText;
+                    push({ kind: "assistant_replace", text: assistantText });
+                  }
+                } else {
+                  assistantText = correctedText;
                 }
                 // Tool requests announce calls before execution starts; the
                 // tracker links the later execution_start onto the same id.
@@ -2273,6 +2279,7 @@ export async function POST(req: Request) {
         toolTracker = new ToolCallTracker();
         pendingCopilotToolCompletions = new Map();
         copilotText.reset();
+        copilotTranscript.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         resumeFailed = false;
@@ -2313,6 +2320,7 @@ export async function POST(req: Request) {
         toolTracker = new ToolCallTracker();
         pendingCopilotToolCompletions = new Map();
         copilotText.reset();
+        copilotTranscript.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         resumeFailed = false;
