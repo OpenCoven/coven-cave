@@ -254,8 +254,12 @@ test("clean release runners have resource glob placeholders", async () => {
   assert.match(
     gitignore,
     /!src-tauri\/resources\/whisper\/placeholder\.txt/,
-    /!src-tauri\/resources\/piper\/placeholder\.txt/,
     "Whisper placeholder must be tracked so resources/whisper/**/* matches in clean CI",
+  );
+  assert.match(
+    gitignore,
+    /!src-tauri\/resources\/piper\/placeholder\.txt/,
+    "Piper placeholder must be tracked so resources/piper/**/* matches in clean CI",
   );
 });
 

@@ -108,6 +108,14 @@ export const SPEECH_MODEL_REGISTRY: readonly SpeechModelRegistryEntry[] = [
 const jobs = new Map<string, SpeechModelDownloadJob>();
 const cancelledDownloadJobs = new Set<string>();
 const downloadAbortControllers = new Map<string, AbortController>();
+// A removal can race the asynchronous readiness probe that precedes job
+// registration. Incrementing this generation lets the starter observe that
+// removal and avoid creating an untracked download which could republish.
+const modelRemovalGenerations = new Map<string, number>();
+
+function modelRemovalGeneration(modelId: string): number {
+  return modelRemovalGenerations.get(modelId) ?? 0;
+}
 
 export function speechModelsRoot(): string {
   return path.join(/* turbopackIgnore: true */ covenHome(), "voice-models");
@@ -479,10 +487,25 @@ export async function startSpeechModelDownload(
   modelId: string,
   fetchImpl: typeof fetch = fetch,
   root = speechModelsRoot(),
-): Promise<{ job: SpeechModelDownloadJob; started: boolean; alreadyReady?: boolean } | { error: "unknown_model" }> {
+): Promise<{ job: SpeechModelDownloadJob; started: boolean; alreadyReady?: boolean; cancelled?: boolean } | { error: "unknown_model" }> {
   const model = speechModelById(modelId);
   if (!model) return { error: "unknown_model" };
+  const removalGeneration = modelRemovalGeneration(model.id);
   const ready = await speechModelReadiness(model, root);
+  if (modelRemovalGeneration(model.id) !== removalGeneration) {
+    const now = new Date().toISOString();
+    const job = putJob({
+      id: `cancelled-${model.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      modelId: model.id,
+      status: "cancelled",
+      receivedBytes: 0,
+      totalBytes: model.sizeBytes + (model.companion?.sizeBytes ?? 0),
+      startedAt: now,
+      updatedAt: now,
+      ready: false,
+    });
+    return { job: cloneJob(job), started: false, cancelled: true };
+  }
   if (ready.ready) {
     const now = new Date().toISOString();
     const job = putJob({
@@ -516,6 +539,7 @@ export async function startSpeechModelDownload(
 export async function removeSpeechModel(modelId: string, root = speechModelsRoot()): Promise<"removed" | "missing" | "unknown_model"> {
   const model = speechModelById(modelId);
   if (!model) return "unknown_model";
+  modelRemovalGenerations.set(model.id, modelRemovalGeneration(model.id) + 1);
   const cancelled = cancelSpeechModelDownloads(modelId);
   const modelPath = speechModelPath(model, root);
   const modelDir = path.dirname(modelPath);

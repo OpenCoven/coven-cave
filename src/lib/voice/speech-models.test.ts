@@ -286,6 +286,31 @@ test("removeSpeechModel removes only the allow-listed registry model directory",
   await rm(root, { recursive: true, force: true });
 });
 
+test("removal wins a download request still awaiting its readiness probe", async () => {
+  const root = testRoot("remove-before-job");
+  await rm(root, { recursive: true, force: true });
+  const model = SPEECH_MODEL_REGISTRY[0];
+  let fetchCalls = 0;
+  const starting = startSpeechModelDownload(model.id, async () => {
+    fetchCalls += 1;
+    return new Response("unexpected");
+  }, root);
+
+  // startSpeechModelDownload yields while checking readiness. Removal during
+  // that gap must stop the delayed starter from creating a new publisher.
+  assert.equal(await removeSpeechModel(model.id, root), "missing");
+  const result = await starting;
+
+  assert.ok("job" in result);
+  assert.equal(result.started, false);
+  assert.equal(result.cancelled, true);
+  assert.equal(getSpeechModelDownloadJob(result.job.id)?.status, "cancelled");
+  assert.equal(getSpeechModelDownloadJob(result.job.id)?.ready, false);
+  assert.equal(fetchCalls, 0);
+  await assert.rejects(stat(speechModelPath(model, root)), /ENOENT/);
+  await rm(root, { recursive: true, force: true });
+});
+
 test("removing a running download cancels it before it can publish", async () => {
   const root = testRoot("remove-running");
   await rm(root, { recursive: true, force: true });
