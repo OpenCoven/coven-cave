@@ -187,6 +187,16 @@ assert.match(
 );
 assert.match(
   route,
+  /let openCodeStructuredProtocolQuarantined = false;[\s\S]*?openCodeStructuredProtocolQuarantined = true/,
+  "a malformed or unknown frame latches the active structured stream into quarantine",
+);
+assert.match(
+  route,
+  /if \(openCodeStructuredProtocolQuarantined\) \{[\s\S]*?never allow later frames to create tools, results, or sessions[\s\S]*?handleOpenCodeJsonLine\(line, openCodeCompatibility\?\.schema, \{[\s\S]*?onText: \(ev\)/,
+  "the current stream disables structured tool/session callbacks after quarantine while retaining only schema-validated text",
+);
+assert.match(
+  route,
   /const MAX_OPENCODE_JSONL_FRAME_BYTES = 256 \* 1024;[\s\S]*?let discardingOpenCodeFrame = false;[\s\S]*?Buffer\.byteLength\(jsonBuf, "utf8"\) > MAX_OPENCODE_JSONL_FRAME_BYTES[\s\S]*?discardingOpenCodeFrame = true;[\s\S]*?oversized-jsonl-event/,
   "unterminated OpenCode JSONL frames are bounded, discarded through their newline, and quarantined without retaining provider payloads",
 );

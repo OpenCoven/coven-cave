@@ -172,6 +172,11 @@ export function redactedOpenCodeEventFingerprint(value: unknown): string {
 }
 
 const MAX_SCHEMA_BUNDLE_BYTES = 256 * 1024;
+// Cached records wrap a verified bundle with timestamps/key metadata and are
+// pretty-printed for recoverability. Keep their read cap independently
+// bounded, but large enough that every accepted remote bundle remains usable
+// after the wrapper is written.
+const MAX_SCHEMA_CACHE_RECORD_BYTES = 512 * 1024;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const CACHE_FILE = "opencode-schema-bundle-v1.json";
 const REFRESH_TIMEOUT_MS = 5_000;
@@ -653,9 +658,9 @@ async function readBoundedCacheFile(file: string): Promise<string | null> {
   let handle: Awaited<ReturnType<RegistryFs["open"]>> | null = null;
   try {
     handle = await requireRegistryFs().open(file, "r");
-    const bytes = Buffer.allocUnsafe(MAX_SCHEMA_BUNDLE_BYTES + 1);
+    const bytes = Buffer.allocUnsafe(MAX_SCHEMA_CACHE_RECORD_BYTES + 1);
     const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
-    if (bytesRead > MAX_SCHEMA_BUNDLE_BYTES) return null;
+    if (bytesRead > MAX_SCHEMA_CACHE_RECORD_BYTES) return null;
     return bytes.toString("utf8", 0, bytesRead);
   } catch {
     return null;

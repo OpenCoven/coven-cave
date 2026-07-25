@@ -1662,6 +1662,7 @@ export async function POST(req: Request) {
       let adapterConflict: BuiltinAdapterConflict | null = null;
       let openCodeCompatibilityHealthNoticeSent = false;
       let openCodeProtocolQuarantineNoticeSent = false;
+      let openCodeStructuredProtocolQuarantined = false;
       let openCodeModelRejected = false;
       const quarantineOpenCodeProtocol = (
         label: string,
@@ -1670,6 +1671,7 @@ export async function POST(req: Request) {
         // Structured-mode stdout can contain arbitrary tool payloads. Keep the
         // error tail and persisted diagnostic value-free.
         recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
+        openCodeStructuredProtocolQuarantined = true;
         quarantineOpenCodeSchema(openCodeCompatibility?.schema);
         if (openCodeProtocolQuarantineNoticeSent) return;
         openCodeProtocolQuarantineNoticeSent = true;
@@ -1915,6 +1917,19 @@ export async function POST(req: Request) {
         // JSON would incorrectly quarantine an otherwise compatible stream.
         const normalized = resolveBackspaces(stripAnsi(line)).trim();
         if (/^permission requested\b[\s\S]*\bauto-rejecting\b/i.test(normalized)) return;
+        if (openCodeStructuredProtocolQuarantined) {
+          // The schema has already proven incompatible in this stream. Keep
+          // only text that still satisfies its explicit envelope/kind contract;
+          // never allow later frames to create tools, results, or sessions.
+          handleOpenCodeJsonLine(line, openCodeCompatibility?.schema, {
+            onText: (ev) => {
+              const text = ev.text.endsWith("\n") ? ev.text : `${ev.text}\n`;
+              assistantText += text;
+              push({ kind: "assistant_chunk", text });
+            },
+          });
+          return;
+        }
         handleOpenCodeJsonLine(line, openCodeCompatibility?.schema, {
           onSession: (nativeSessionId) => {
             openCodeSessionId = nativeSessionId;
@@ -1993,6 +2008,7 @@ export async function POST(req: Request) {
             // Do not treat arbitrary `text`/`content` on an unknown envelope
             // as assistant output: tool progress and provider errors often
             // carry those fields and may contain secrets or file contents.
+            openCodeStructuredProtocolQuarantined = true;
             quarantineOpenCodeSchema(openCodeCompatibility?.schema);
             if (!openCodeProtocolQuarantineNoticeSent) {
               openCodeProtocolQuarantineNoticeSent = true;
