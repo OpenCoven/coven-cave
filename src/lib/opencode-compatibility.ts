@@ -1,4 +1,5 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 
 type RegistryFs = Record<string, (...args: any[]) => Promise<any>>;
@@ -8,14 +9,11 @@ type RegistryFs = Record<string, (...args: any[]) => Promise<any>>;
 // otherwise follows its dynamic cache paths and traces the entire repository.
 const registryFs = (() => {
   try {
-    // Avoid `Function` here: Turbopack treats dynamic code evaluation as an
-    // unconstrained module boundary and traces the whole project into the
-    // standalone sidecar. The computed member and module names keep this
-    // runtime-only without presenting the filesystem builtin to its tracer.
-    const loadBuiltin = (process as typeof process & Record<string, unknown>)["getBuiltin" + "Module"] as
-      | ((id: string) => RegistryFs | undefined)
-      | undefined;
-    return loadBuiltin?.(["node:fs", "promises"].join("/"));
+    // Keep the runtime-only builtin opaque to Turbopack's static evaluator;
+    // otherwise it sees filesystem calls with runtime paths and copies the
+    // repository into the desktop sidecar.
+    const fsPromisesBuiltin = Buffer.from("bm9kZTpmcy9wcm9taXNlcw==", "base64").toString("utf8");
+    return createRequire(import.meta.url)(fsPromisesBuiltin) as RegistryFs;
   } catch {
     return undefined;
   }
