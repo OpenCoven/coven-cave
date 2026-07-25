@@ -1368,7 +1368,11 @@ export async function POST(req: Request) {
       const a = ["run"];
       if (openCodeCompatibility?.mode === "structured") {
         const launch = openCodeCompatibility.schema!.launch;
-        a.push(launch.structuredOutput.option, launch.structuredOutput.value, ...launch.requiredFlags);
+        a.push(
+          launch.structuredOutput.option,
+          ...(launch.structuredOutput.value === undefined ? [] : [launch.structuredOutput.value]),
+          ...launch.requiredFlags,
+        );
         if (resumeSessionId && launch.sessionOption) a.push(launch.sessionOption, resumeSessionId);
       } else if (resumeSessionId) {
         // Plain output can still resume a native session. Forward only the

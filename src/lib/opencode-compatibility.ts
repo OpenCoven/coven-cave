@@ -15,6 +15,8 @@ export type OpenCodeRunCapabilities = {
   options?: string[];
   /** Declared run flags that take no value and are safe to forward verbatim. */
   noValueOptions?: string[];
+  /** Declared valueless switches that explicitly request a JSON protocol. */
+  structuredSwitches?: Array<{ option: string; protocols: string[] }>;
   structuredOutputs?: Array<{ option: string; values: string[] }>;
 };
 
@@ -51,6 +53,8 @@ export type OpenCodeEventSchema = {
     };
     /** Envelope(s) explicitly trusted to carry assistant text. */
     textEnvelope?: OpenCodeEnvelopePath[];
+    /** Envelope(s) that carry the stable tool-call id; defaults to payload/root. */
+    idEnvelope?: OpenCodeEnvelopePath[];
     sessionId: string[];
     id: string[];
     name: string[];
@@ -65,7 +69,7 @@ export type OpenCodeEventSchema = {
   };
   /** Bounded argv contract, confirmed against the installed client's help. */
   launch: {
-    structuredOutput: { option: string; value: string };
+    structuredOutput: { option: string; value?: string };
     sessionOption?: "--session" | "--resume";
     requiredFlags: string[];
   };
@@ -257,8 +261,10 @@ function hasValidShape(value: unknown): boolean {
     && fields.length > 0
     && fields.length <= 4
     && fields.every(hasValidEnvelopePath);
-  if (!Object.keys(value).every((key) => key === "envelope" || key === "textEnvelope" || key === "discriminator" || aliasKeys.includes(key))) return false;
-  if (!envelopeFields(value.envelope) || (value.textEnvelope !== undefined && !envelopeFields(value.textEnvelope))) return false;
+  if (!Object.keys(value).every((key) => key === "envelope" || key === "textEnvelope" || key === "idEnvelope" || key === "discriminator" || aliasKeys.includes(key))) return false;
+  if (!envelopeFields(value.envelope)
+    || (value.textEnvelope !== undefined && !envelopeFields(value.textEnvelope))
+    || (value.idEnvelope !== undefined && !envelopeFields(value.idEnvelope))) return false;
   if (!isRecord(value.discriminator)
     || !Object.keys(value.discriminator).every((key) => key === "envelope" || key === "field")
     || !hasValidEnvelopePath(value.discriminator.envelope)
@@ -290,8 +296,12 @@ function hasValidLaunch(value: unknown, requires: Record<string, unknown>): bool
   if (!isRecord(structuredOutput)) return false;
   if (!Object.keys(structuredOutput).every((key) => key === "option" || key === "value")) return false;
   if (!safeStructuredLaunchOption(structuredOutput.option)) return false;
-  if (typeof structuredOutput.value !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(structuredOutput.value)) return false;
-  if (structuredOutput.value !== (typeof requires.protocol === "string" ? requires.protocol : "json")) return false;
+  if (structuredOutput.value !== undefined && (typeof structuredOutput.value !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(structuredOutput.value))) return false;
+  if (structuredOutput.value !== undefined && structuredOutput.value !== (typeof requires.protocol === "string" ? requires.protocol : "json")) return false;
+  // A switch without a value must still be tied to a protocol-specific
+  // requirement; otherwise a signed schema could turn any valueless CLI flag
+  // into a structured-output request.
+  if (structuredOutput.value === undefined && (typeof requires.protocol !== "string" || !structuredOutput.option.toLowerCase().includes("json"))) return false;
   if (value.sessionOption !== undefined && value.sessionOption !== "--session" && value.sessionOption !== "--resume") return false;
   if (requires.session === true && value.sessionOption === undefined) return false;
   return value.requiredFlags.length <= SAFE_STRUCTURED_REQUIRED_FLAGS.size
@@ -353,7 +363,10 @@ function schemaMatches(schema: OpenCodeEventSchema, capabilities: OpenCodeRunCap
   const protocols = capabilities.protocols ?? (capabilities.json ? ["json"] : []);
   if (schema.requires.protocol !== undefined && !protocols.includes(schema.requires.protocol)) return false;
   const structuredOutputs = capabilities.structuredOutputs ?? [{ option: "--format", values: protocols }];
-  if (!structuredOutputs.some((output) => output.option === schema.launch.structuredOutput.option && output.values.includes(schema.launch.structuredOutput.value))) return false;
+  const structuredSwitches = capabilities.structuredSwitches ?? [];
+  if (schema.launch.structuredOutput.value === undefined) {
+    if (!structuredSwitches.some((output) => output.option === schema.launch.structuredOutput.option && output.protocols.includes(schema.requires.protocol ?? "json"))) return false;
+  } else if (!structuredOutputs.some((output) => output.option === schema.launch.structuredOutput.option && output.values.includes(schema.launch.structuredOutput.value!))) return false;
   const options = new Set(capabilities.options ?? ["--format", "--output", "--session", "--resume", "--model"]);
   if (!options.has(schema.launch.structuredOutput.option)) return false;
   if (schema.launch.sessionOption && !options.has(schema.launch.sessionOption)) return false;

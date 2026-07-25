@@ -113,8 +113,20 @@ function optionStanza(help: string, option: string): string {
   return help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b[^\\n]*(?:\\n(?!\\s*(?:-[A-Za-z],?\\s+)?--)[^\\n]*){0,2}`, "im"))?.[0] ?? "";
 }
 
+function optionTakesExplicitValue(help: string, option: string): boolean {
+  // Do not infer a value from prose such as "Emit JSON". We only forward an
+  // argv value after the option synopsis itself declares one. Bare positional
+  // words are deliberately ambiguous (for example `--event-stream MODE`).
+  const synopsis = optionStanza(help, option)
+    .split(/\r?\n/)
+    .find((line) => line.includes(option))
+    ?? "";
+  return /<[^>\n]+>|\[[^\]\n]+\]|=\S+/.test(synopsis);
+}
+
 function advertisedStructuredOutputs(help: string): Array<{ option: string; values: string[] }> {
   return declaredRunOptions(help).flatMap((option) => {
+    if (!optionTakesExplicitValue(help, option)) return [];
     const stanza = optionStanza(help, option);
     const values = [...new Set((stanza.match(/\bjson(?:[._-][a-z0-9]+)*\b/gi) ?? []).map((value) => value.toLowerCase()))];
     return values.length ? [{ option, values }] : [];
@@ -132,6 +144,22 @@ function declaredNoValueRunOptions(help: string, options: string[]): string[] {
     // example `--event-stream MODE`) is ambiguous and therefore unsupported.
     const line = help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b(?=$|\\s{2,})([^\\n]*)$`, "m"))?.[1];
     return line !== undefined && !/[<\[=]/.test(line);
+  });
+}
+
+function jsonProtocolForSwitch(option: string): string | null {
+  const marker = option.slice(2).toLowerCase().split("-");
+  const jsonAt = marker.findIndex((part) => part === "json");
+  if (jsonAt < 0) return null;
+  const suffix = marker.slice(jsonAt + 1);
+  return suffix.length ? `json-${suffix.join("-")}` : "json";
+}
+
+function advertisedStructuredSwitches(options: string[], noValueOptions: string[]): Array<{ option: string; protocols: string[] }> {
+  const valueless = new Set(noValueOptions);
+  return options.flatMap((option) => {
+    const protocol = valueless.has(option) ? jsonProtocolForSwitch(option) : null;
+    return protocol ? [{ option, protocols: [protocol] }] : [];
   });
 }
 
@@ -170,11 +198,14 @@ export async function openCodeExecutableIdentity(
   return `unresolved\0${platform}\0${pathValue}`;
 }
 
-function advertisedFormatProtocols(help: string): string[] {
-  const outputs = advertisedStructuredOutputs(help);
+function advertisedFormatProtocols(
+  outputs: Array<{ option: string; values: string[] }>,
+  switches: Array<{ option: string; protocols: string[] }>,
+): string[] {
   // A protocol marker is useful only when the CLI advertises it as an output
-  // format. Do not derive it from version strings or arbitrary help prose.
-  return [...new Set(outputs.flatMap((output) => output.values))];
+  // format or an explicit valueless JSON switch. Do not derive it from version
+  // strings or arbitrary help prose.
+  return [...new Set([...outputs.flatMap((output) => output.values), ...switches.flatMap((output) => output.protocols)])];
 }
 
 /**
@@ -187,13 +218,14 @@ export function parseOpenCodeRunCapabilitiesHelp(help: string, version: string |
   const options = declaredRunOptions(help);
   const noValueOptions = declaredNoValueRunOptions(help, options);
   const structuredOutputs = advertisedStructuredOutputs(help);
-  const protocols = advertisedFormatProtocols(help);
+  const structuredSwitches = advertisedStructuredSwitches(options, noValueOptions);
+  const protocols = advertisedFormatProtocols(structuredOutputs, structuredSwitches);
   const json = protocols.some((protocol) => protocol === "json" || protocol.startsWith("json-") || protocol.startsWith("json_"));
   return {
     version,
-    // Only accept JSON when it appears in the `--format` option's own
-    // stanza. A stray "JSON" in a banner or another option's description
-    // must not make us launch an unsupported `--format json` command.
+    // Only accept JSON when an option explicitly documents either its value
+    // syntax or a valueless JSON switch. A stray "JSON" in a banner or
+    // another option's description cannot make us launch unsupported argv.
     json,
     model: options.includes("--model"),
     session: options.includes("--session") || options.includes("--resume"),
@@ -204,6 +236,7 @@ export function parseOpenCodeRunCapabilitiesHelp(help: string, version: string |
     protocols,
     options,
     noValueOptions,
+    structuredSwitches,
     structuredOutputs,
   };
 }
@@ -286,7 +319,7 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
     // Partial, timed-out, non-zero, or oversized help is never capability
     // evidence. Probe again after the short TTL instead of risking an argv
     // that the installed client does not accept.
-    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], noValueOptions: [], structuredOutputs: [] };
+    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], noValueOptions: [], structuredSwitches: [], structuredOutputs: [] };
     return parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
   })();
   openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, identity, value };

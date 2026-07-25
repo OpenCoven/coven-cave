@@ -17,8 +17,13 @@ assert.match(
 );
 assert.match(
   route,
-  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?const launch = openCodeCompatibility\.schema!\.launch;[\s\S]*?a\.push\(launch\.structuredOutput\.option, launch\.structuredOutput\.value, \.\.\.launch\.requiredFlags\);[\s\S]*?launch\.sessionOption[\s\S]*?options\.includes\("--session"\)[\s\S]*?options\.includes\("--resume"\)[\s\S]*?if \(forwardModel\)/,
+  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?const launch = openCodeCompatibility\.schema!\.launch;[\s\S]*?a\.push\([\s\S]*?launch\.structuredOutput\.option,[\s\S]*?launch\.requiredFlags[\s\S]*?launch\.sessionOption[\s\S]*?options\.includes\("--session"\)[\s\S]*?options\.includes\("--resume"\)[\s\S]*?if \(forwardModel\)/,
   "OpenCode uses selected structured syntax and only a help-confirmed plain-mode resume option rather than a version threshold",
+);
+assert.match(
+  route,
+  /\.\.\.\(launch\.structuredOutput\.value === undefined \? \[\] : \[launch\.structuredOutput\.value\]\)/,
+  "a signed valueless structured switch is forwarded without inventing a json argument",
 );
 assert.match(
   route,

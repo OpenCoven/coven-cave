@@ -31,6 +31,26 @@ assert.deepEqual(
   "an unbracketed positional token after a flag is ambiguous and cannot be launched without a value",
 );
 
+const booleanJson = parseOpenCodeRunCapabilitiesHelp(`
+  --json                         Emit JSON events
+  --event-json-v2                Emit JSON v2 events
+  --format <format>              Output format: text
+`, "3.2.0");
+assert.deepEqual(
+  booleanJson.structuredOutputs,
+  [],
+  "a boolean JSON switch is never mis-recorded as an option that accepts the literal json value",
+);
+assert.deepEqual(
+  booleanJson.structuredSwitches,
+  [
+    { option: "--json", protocols: ["json"] },
+    { option: "--event-json-v2", protocols: ["json-v2"] },
+  ],
+  "explicit valueless JSON switches retain their independently probed launch contract",
+);
+assert.deepEqual(booleanJson.protocols, ["json", "json-v2"]);
+
 const launcherA = await mkdtemp(path.join(tmpdir(), "cave-opencode-launch-a-"));
 const launcherB = await mkdtemp(path.join(tmpdir(), "cave-opencode-launch-b-"));
 const executable = process.platform === "win32" ? "opencode.cmd" : "opencode";

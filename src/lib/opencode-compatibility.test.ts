@@ -314,6 +314,29 @@ assert.equal(
   "structured-switch",
   "a structured switch is selected only after its option and JSON value are observed in run help",
 );
+const booleanStructuredCapabilities = {
+  version: "3.1.0",
+  json: true,
+  model: false,
+  session: false,
+  protocols: ["json-v2"],
+  options: ["--event-json-v2"],
+  noValueOptions: ["--event-json-v2"],
+  structuredOutputs: [],
+  structuredSwitches: [{ option: "--event-json-v2", protocols: ["json-v2"] }],
+};
+const booleanStructuredSchema = {
+  ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  id: "boolean-structured-switch",
+  requires: { json: true as const, protocol: "json-v2" },
+  launch: { structuredOutput: { option: "--event-json-v2" }, requiredFlags: [] },
+};
+assert.equal(isOpenCodeSchemaBundle({ ...unsigned, schemas: [booleanStructuredSchema] }, now), true);
+assert.equal(
+  selectOpenCodeSchema([booleanStructuredSchema], booleanStructuredCapabilities)?.id,
+  "boolean-structured-switch",
+  "a valueless structured switch is selected only after that exact switch is observed in run help",
+);
 const framingSchema = {
   ...structuredSwitchSchema,
   id: "structured-framing",

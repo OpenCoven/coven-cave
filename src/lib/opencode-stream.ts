@@ -31,7 +31,7 @@ function stringAt(recordValue: Record<string, unknown> | null, ...keys: string[]
   return undefined;
 }
 
-type ShapeAlias = Exclude<keyof NonNullable<OpenCodeEventSchema["shape"]>, "envelope" | "textEnvelope" | "discriminator">;
+type ShapeAlias = Exclude<keyof NonNullable<OpenCodeEventSchema["shape"]>, "envelope" | "textEnvelope" | "idEnvelope" | "discriminator">;
 
 function shapeAliases(schema: OpenCodeEventSchema | undefined, key: ShapeAlias, defaults: string[]): string[] {
   const aliases = schema?.shape?.[key];
@@ -76,8 +76,15 @@ function eventTypes(schema: OpenCodeEventSchema | undefined, kind: keyof OpenCod
   return schema ? schema.eventTypes[kind] : defaults;
 }
 
-function toolId(part: Record<string, unknown> | null, schema?: OpenCodeEventSchema): string | null {
-  return stringAt(part, ...shapeAliases(schema, "id", ["id", "callID", "callId", "toolCallId", "tool_call_id"])) ?? null;
+function toolId(event: Record<string, unknown>, part: Record<string, unknown> | null, schema?: OpenCodeEventSchema): string | null {
+  const aliases = shapeAliases(schema, "id", ["id", "callID", "callId", "toolCallId", "tool_call_id"]);
+  // A signed protocol may keep payload fields nested while placing its stable
+  // call ID on the root transport envelope. `idEnvelope` makes that choice
+  // explicit; legacy profiles retain their observed payload-then-root order.
+  const idSource = schema?.shape?.idEnvelope
+    ? envelope(event, schema.shape.idEnvelope)
+    : part;
+  return stringAt(idSource, ...aliases) ?? (!schema?.shape?.idEnvelope ? stringAt(event, ...aliases) : undefined) ?? null;
 }
 
 function toolStatus(state: Record<string, unknown> | null, part: Record<string, unknown> | null, schema?: OpenCodeEventSchema): string | undefined {
@@ -140,7 +147,7 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   }
   const stateAliases = shapeAliases(schema, "state", ["state"]);
   const state = record(valueAt(part, stateAliases)) ?? record(valueAt(event, stateAliases));
-  const id = toolId(part, schema);
+  const id = toolId(event, part, schema);
   const toolStartTypes = eventTypes(schema, "toolStart", ["tool_start"]);
   const toolEndTypes = eventTypes(schema, "toolEnd", ["tool_result"]);
   const toolCompleteTypes = eventTypes(schema, "toolComplete", ["tool_use"]);

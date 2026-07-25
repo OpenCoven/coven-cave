@@ -200,4 +200,25 @@ assert.deepEqual(
   { kind: "tool", sessionId: "ses_v2", id: "call_v2", name: "Read", input: { path: "README.md" }, output: "ok", isError: false },
   "a signed schema resolves envelope-native sessions as well as bounded future fields and terminal states",
 );
+const rootIdSchema = {
+  ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  id: "opencode-root-id-v2",
+  eventTypes: {
+    ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].eventTypes,
+    toolComplete: ["tool"],
+  },
+  shape: {
+    ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].shape,
+    envelope: ["part"],
+    idEnvelope: ["root"],
+  },
+};
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool", callID: "root_call_1", part: { tool: "Read", state: { input: { path: "README.md" }, output: "ok", status: "completed" } } },
+    rootIdSchema,
+  ),
+  { kind: "tool", sessionId: undefined, id: "root_call_1", name: "Read", input: { path: "README.md" }, output: "ok", isError: false },
+  "a signed schema can read a root tool ID while retaining a nested payload envelope",
+);
 console.log("opencode-stream.test.ts: ok");
