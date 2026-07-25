@@ -7,6 +7,7 @@ import path from "node:path";
 import {
   BUILTIN_OPENCODE_SCHEMA_BUNDLE,
   loadOpenCodeSchemaBundle,
+  openCodeSchemaBundlePayloadHash,
   openCodeSchemaBundleSigningPayload,
   redactedOpenCodeEventFingerprint,
   resolveOpenCodeCompatibility,
@@ -45,6 +46,28 @@ const remote = await loadOpenCodeSchemaBundle({
 assert.equal(remote.source, "remote");
 assert.equal(remote.bundle.sequence, 2);
 assert.match(await readFile(cacheFile, "utf8"), /"sequence": 2/, "accepted bundles are atomically cached");
+
+const checkpointReplayFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-checkpoint-replay-")), "bundle.json");
+const checkpointReplay = await loadOpenCodeSchemaBundle({
+  cacheFile: checkpointReplayFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  checkpoint: { sequence: 2, payloadHash: "0".repeat(64) },
+  now: () => now,
+  fetch: async () => new Response(JSON.stringify(signed), { status: 200 }),
+});
+assert.equal(checkpointReplay.source, "built-in", "a release checkpoint rejects a same-sequence payload rewrite on first use");
+assert.equal(checkpointReplay.diagnostic, "schema-registry-refresh-rejected");
+const checkpointAcceptedFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-checkpoint-accepted-")), "bundle.json");
+const checkpointAccepted = await loadOpenCodeSchemaBundle({
+  cacheFile: checkpointAcceptedFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  checkpoint: { sequence: 2, payloadHash: openCodeSchemaBundlePayloadHash(signed) },
+  now: () => now,
+  fetch: async () => new Response(JSON.stringify(signed), { status: 200 }),
+});
+assert.equal(checkpointAccepted.source, "remote", "a release checkpoint admits exactly its canonical signed payload");
 
 const unsignedSignedRollback = { ...unsigned, sequence: 1 };
 const signedRollback = {

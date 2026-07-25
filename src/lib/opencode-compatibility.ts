@@ -25,6 +25,8 @@ export type OpenCodeRunCapabilities = {
 /** A direct field or a bounded two-segment envelope path. */
 export type OpenCodeEnvelopePath = string | [string, string];
 export type OpenCodeRegistryKeyring = Record<string, string>;
+/** Immutable release checkpoint used to prevent first-use registry replays. */
+export type OpenCodeRegistryCheckpoint = { sequence: number; payloadHash: string };
 
 export type OpenCodeEventSchema = {
   id: string;
@@ -531,6 +533,10 @@ export function openCodeSchemaBundleSigningPayload(bundle: OpenCodeSchemaBundle)
   return stableJson(unsigned);
 }
 
+export function openCodeSchemaBundlePayloadHash(bundle: OpenCodeSchemaBundle): string {
+  return createHash("sha256").update(openCodeSchemaBundleSigningPayload(bundle), "utf8").digest("hex");
+}
+
 function meetsOpenCodeRegistryGenesisFloor(bundle: OpenCodeSchemaBundle): boolean {
   if (bundle.sequence < OPENCODE_REGISTRY_GENESIS_SEQUENCE) return false;
   // Sequence 1 is a pinned genesis payload, not a registry-controlled slot.
@@ -538,6 +544,16 @@ function meetsOpenCodeRegistryGenesisFloor(bundle: OpenCodeSchemaBundle): boolea
   // behavior after the cache has been cleared or corrupted.
   return bundle.sequence !== OPENCODE_REGISTRY_GENESIS_SEQUENCE
     || openCodeSchemaBundleSigningPayload(bundle) === openCodeSchemaBundleSigningPayload(BUILTIN_OPENCODE_SCHEMA_BUNDLE);
+}
+
+function meetsOpenCodeRegistryCheckpoint(
+  bundle: OpenCodeSchemaBundle,
+  checkpoint: OpenCodeRegistryCheckpoint | undefined,
+): boolean {
+  if (!checkpoint) return true;
+  if (bundle.sequence < checkpoint.sequence) return false;
+  return bundle.sequence !== checkpoint.sequence
+    || openCodeSchemaBundlePayloadHash(bundle) === checkpoint.payloadHash;
 }
 
 export function verifyOpenCodeSchemaBundle(
@@ -818,6 +834,8 @@ export type OpenCodeSchemaBundleSource = {
   publicKey?: string;
   /** Bounded active-plus-previous keyring for staged registry-key rotation. */
   publicKeys?: OpenCodeRegistryKeyring;
+  /** Release-pinned minimum registry sequence and canonical payload hash. */
+  checkpoint?: OpenCodeRegistryCheckpoint;
   fetch?: typeof fetch;
   now?: () => number;
   cacheFile?: string;
@@ -831,6 +849,7 @@ export type OpenCodeSchemaBundleSource = {
 const PACKAGED_REGISTRY_URL = process.env.NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_URL;
 const PACKAGED_REGISTRY_PUBLIC_KEY = process.env.NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY;
 const PACKAGED_REGISTRY_PUBLIC_KEYS = process.env.NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS;
+const PACKAGED_REGISTRY_CHECKPOINT = process.env.NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_CHECKPOINT;
 
 function parseKeyring(value: string | undefined): OpenCodeRegistryKeyring | undefined {
   if (!value) return undefined;
@@ -857,20 +876,45 @@ function registryKeyring(source: OpenCodeSchemaBundleSource): OpenCodeRegistryKe
   return single ? { legacy: single } : undefined;
 }
 
+function parseRegistryCheckpoint(value: string | undefined): OpenCodeRegistryCheckpoint | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed)
+      && Object.keys(parsed).length === 2
+      && typeof parsed.sequence === "number"
+      && Number.isSafeInteger(parsed.sequence)
+      && parsed.sequence >= OPENCODE_REGISTRY_GENESIS_SEQUENCE
+      && typeof parsed.payloadHash === "string"
+      && /^[a-f0-9]{64}$/.test(parsed.payloadHash)
+      ? { sequence: parsed.sequence, payloadHash: parsed.payloadHash }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function registryUrl(source: OpenCodeSchemaBundleSource): string | undefined {
   return source.url
     ?? PACKAGED_REGISTRY_URL
     ?? (process.env.NODE_ENV === "production" ? undefined : process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_URL);
 }
 
-function schemaRefreshKey(file: string, url: string, publicKeys: OpenCodeRegistryKeyring): string {
-  return createHash("sha256").update(`${file}\0${url}\0${stableJson(publicKeys)}`).digest("hex");
+function registryCheckpoint(source: OpenCodeSchemaBundleSource): OpenCodeRegistryCheckpoint | undefined {
+  if (source.checkpoint) return source.checkpoint;
+  return parseRegistryCheckpoint(PACKAGED_REGISTRY_CHECKPOINT)
+    ?? (process.env.NODE_ENV === "production" ? undefined : parseRegistryCheckpoint(process.env.COVEN_OPENCODE_SCHEMA_REGISTRY_CHECKPOINT));
+}
+
+function schemaRefreshKey(file: string, url: string, publicKeys: OpenCodeRegistryKeyring, checkpoint: OpenCodeRegistryCheckpoint | undefined): string {
+  return createHash("sha256").update(`${file}\0${url}\0${stableJson(publicKeys)}\0${stableJson(checkpoint ?? null)}`).digest("hex");
 }
 
 async function refreshOpenCodeSchemaBundle(
   file: string,
   url: string,
   publicKeys: OpenCodeRegistryKeyring,
+  checkpoint: OpenCodeRegistryCheckpoint | undefined,
   fetcher: typeof fetch,
   now: number,
   refreshTimeoutMs?: number,
@@ -879,6 +923,7 @@ async function refreshOpenCodeSchemaBundle(
   const remote = JSON.parse(raw) as unknown;
   if (!verifyOpenCodeSchemaBundle(remote, publicKeys, now)) throw new Error("invalid schema signature");
   if (!meetsOpenCodeRegistryGenesisFloor(remote)) throw new Error("schema registry genesis mismatch");
+  if (!meetsOpenCodeRegistryCheckpoint(remote, checkpoint)) throw new Error("schema registry checkpoint mismatch");
   if (Object.keys(publicKeys).length > 1 && remote.keyId === undefined) throw new Error("missing schema signing key id");
   const cachedTrust = await readCachedTrustState(file, publicKeys, now);
   if (cachedTrust && remote.sequence < cachedTrust.bundle.sequence) throw new Error("schema rollback");
@@ -944,7 +989,14 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   const file = source.cacheFile ?? cachePath();
   const url = registryUrl(source);
   const publicKeys = registryKeyring(source);
+  const checkpoint = registryCheckpoint(source);
   if (!url || !publicKeys) return { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in" };
+  // Packaged releases require a current checkpoint before their first remote
+  // fetch. A missing build-time value fails safely to the bundled parser;
+  // explicit source injection remains available for tests and local dev.
+  if (process.env.NODE_ENV === "production" && source.checkpoint === undefined && !checkpoint) {
+    return { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "schema-registry-refresh-rejected" };
+  }
 
   const cached = await readVerifiedCache(file, publicKeys, now);
   // An expired signed cache cannot parse a turn, but it records that this
@@ -954,7 +1006,7 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   const cacheTrust = cached ?? await readCachedTrustState(file, publicKeys, now);
   const cacheFresh = cached && now - cached.checkedAt < CACHE_TTL_MS;
   if (cacheFresh) return { bundle: cached.bundle, source: "cache" };
-  const key = schemaRefreshKey(file, url, publicKeys);
+  const key = schemaRefreshKey(file, url, publicKeys, checkpoint);
   if ((refreshRetryAt.get(key) ?? 0) > now) {
     return cached
       ? { bundle: cached.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" }
@@ -964,7 +1016,7 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   }
   const refresh = startSchemaRefresh(
     key,
-    () => refreshOpenCodeSchemaBundle(file, url, publicKeys, source.fetch ?? fetch, now, source.refreshTimeoutMs),
+    () => refreshOpenCodeSchemaBundle(file, url, publicKeys, checkpoint, source.fetch ?? fetch, now, source.refreshTimeoutMs),
     now,
   );
   try {
