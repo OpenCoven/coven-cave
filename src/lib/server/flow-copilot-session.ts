@@ -120,6 +120,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
   const pendingToolCompletions = new Map<string, { output: string | undefined; isError: boolean }>();
   const MAX_PENDING_TOOL_COMPLETIONS = 64;
   const compatibilityDiagnostics = new Map<string, string>();
+  let protocolReportedFailure = false;
 
   const rememberPendingToolCompletion = (
     toolCallId: string,
@@ -156,8 +157,18 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       if (append) deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + append);
     } else if (event.kind === "message") {
       // The final frame carries the complete content — prefer it over deltas.
+      const messageEntries = [...deltaByMessage.entries()];
+      const messageIndex = messageEntries.findIndex(([id]) => id === event.messageId);
+      const previousContent = deltaByMessage.get(event.messageId) ?? "";
+      const messageStart = messageEntries
+        .slice(0, Math.max(0, messageIndex))
+        .reduce((length, [, content]) => length + content.length + 1, 0);
       textAssembler.message(event.messageId, event.content);
       deltaByMessage.set(event.messageId, event.content);
+      toolTracker.rebaseTextOffsets(
+        messageStart + previousContent.length,
+        event.content.length - previousContent.length,
+      );
       if (event.malformedToolRequests) {
         compatibilityDiagnostics.set(
           "malformed-tool-event",
@@ -189,8 +200,12 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       }
     } else if (event.kind === "tool_end") {
       if (!toolTracker.envelopeToolResult(event.toolCallId, event.output, event.isError)) {
-        rememberPendingToolCompletion(event.toolCallId, { output: event.output, isError: event.isError });
+        if (!toolTracker.hasSettledEnvelopeId(event.toolCallId)) {
+          rememberPendingToolCompletion(event.toolCallId, { output: event.output, isError: event.isError });
+        }
       }
+    } else if (event.kind === "result") {
+      protocolReportedFailure ||= event.isError;
     }
   });
 
@@ -224,8 +239,12 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       // Any non-zero (or missing) exit code is an error — even with partial
       // output, the run didn't finish cleanly and the diagnostics must not
       // be dropped. Captured text is preserved ahead of the exit note.
-      const failed = code !== 0;
-      const exitNote = failed ? `Copilot exited with code ${code ?? "?"}.` : "";
+      const failed = code !== 0 || protocolReportedFailure;
+      const exitNote = code !== 0
+        ? `Copilot exited with code ${code ?? "?"}.`
+        : protocolReportedFailure
+          ? "Copilot reported a failed result."
+          : "";
       const finishedAt = new Date().toISOString();
       const text = [assistantText, ...compatibilityDiagnostics.values(), exitNote].filter(Boolean).join("\n\n");
       void (async () => {

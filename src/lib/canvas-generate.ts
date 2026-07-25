@@ -129,6 +129,10 @@ export async function generateArtifactCode(opts: {
             text += ev.text ?? "";
             opts.onText?.(text);
             break;
+          case "assistant_replace":
+            text = ev.text ?? "";
+            opts.onText?.(text);
+            break;
           case "session":
             sessionId = ev.sessionId ?? sessionId;
             break;

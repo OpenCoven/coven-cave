@@ -6,7 +6,21 @@
 // capability probe; direct chat/flow launch reuses the resolved command.
 
 import { spawn } from "node:child_process";
+import { realpath } from "node:fs/promises";
+import { delimiter, isAbsolute, join } from "node:path";
 import { covenLaunchCommandForBinary, pickWindowsLauncher, type CovenLaunchCommand } from "./coven-bin.ts";
+
+async function pathCopilotLauncher(binary: string, env?: NodeJS.ProcessEnv): Promise<string> {
+  if (isAbsolute(binary)) return binary;
+  for (const directory of (env?.PATH ?? "").split(delimiter).filter(Boolean)) {
+    try {
+      return await realpath(join(directory, binary));
+    } catch {
+      // Keep searching PATH; a later entry may be the executable launcher.
+    }
+  }
+  return binary;
+}
 
 async function windowsCopilotLauncher(binary: string, timeoutMs: number, env?: NodeJS.ProcessEnv): Promise<string> {
   if (/\.(?:cmd|bat|exe|com)$/i.test(binary)) return binary;
@@ -50,6 +64,6 @@ export async function resolveCopilotLaunchCommand(
   const platform = options.platform ?? process.platform;
   const launcher = platform === "win32"
     ? await windowsCopilotLauncher(binary, options.timeoutMs ?? 1_500, options.env)
-    : binary;
+    : await pathCopilotLauncher(binary, options.env);
   return covenLaunchCommandForBinary(launcher, platform);
 }

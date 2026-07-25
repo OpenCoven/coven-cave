@@ -11,6 +11,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
+import { hostname } from "node:os";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import { runtimeEventProtocolSchemas } from "../copilot-stream.ts";
@@ -23,6 +24,37 @@ const CACHE_LOCK_STALE_MS = 30_000;
 const IN_FLIGHT_REFRESHES = new Map<string, Promise<RuntimeCompatibilitySnapshot | null>>();
 const FETCH_IDENTITIES = new WeakMap<FetchLike, number>();
 let nextFetchIdentity = 1;
+
+type CacheLockMetadata = { token: string; pid: number; host: string };
+
+function cacheLockMetadata(token: string): CacheLockMetadata {
+  return { token, pid: process.pid, host: hostname() };
+}
+
+function cacheLockToken(content: string): string {
+  try {
+    const parsed = JSON.parse(content) as Partial<CacheLockMetadata>;
+    return typeof parsed.token === "string" ? parsed.token : content;
+  } catch {
+    // Locks written by a previous Cave build remain reclaimable after expiry.
+    return content;
+  }
+}
+
+function activeLocalCacheLockOwner(content: string): boolean {
+  try {
+    const parsed = JSON.parse(content) as Partial<CacheLockMetadata>;
+    if (parsed.host !== hostname() || !Number.isSafeInteger(parsed.pid) || parsed.pid! <= 0) return false;
+    try {
+      process.kill(parsed.pid!, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+}
 
 type AdapterEntry = { version: string; yanked?: boolean; adapter: unknown };
 type CanonicalIndex = { format: string; runtimes: Record<string, AdapterEntry[]> };
@@ -282,6 +314,11 @@ async function reclaimStaleCacheLock(lockPath: string): Promise<boolean> {
   try {
     const info = await stat(/* turbopackIgnore: true */ lockPath);
     if (Date.now() - info.mtimeMs < CACHE_LOCK_STALE_MS) return false;
+    const contents = await readFile(/* turbopackIgnore: true */ lockPath, "utf8");
+    // A delayed or network-paused owner can outlive its mtime. Never steal
+    // from a still-live local process: it may already have selected a snapshot
+    // and must retain ownership through the final atomic publication.
+    if (activeLocalCacheLockOwner(contents)) return false;
     // Rename, rather than unlinking, so a reclaimer never deletes a lock
     // acquired by another process between its stale check and cleanup.
     const quarantine = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
@@ -310,7 +347,7 @@ async function releaseCacheLock(
     ]);
     // A stale-lock reclaimer may have atomically renamed our file and let a
     // new owner acquire this path. Never unlink that replacement lock.
-    if (owner.dev !== current.dev || owner.ino !== current.ino || currentToken !== token) return;
+    if (owner.dev !== current.dev || owner.ino !== current.ino || cacheLockToken(currentToken) !== token) return;
     await rm(/* turbopackIgnore: true */ lockPath, { force: true });
   } catch {
     // The lock was already released or reclaimed. It is not ours to remove.
@@ -328,7 +365,7 @@ async function ownsCacheLock(
       stat(/* turbopackIgnore: true */ lockPath),
       readFile(/* turbopackIgnore: true */ lockPath, "utf8"),
     ]);
-    return owner.dev === current.dev && owner.ino === current.ino && currentToken === token;
+    return owner.dev === current.dev && owner.ino === current.ino && cacheLockToken(currentToken) === token;
   } catch {
     return false;
   }
@@ -345,7 +382,7 @@ async function withCacheLock<T>(
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
       handle = await open(/* turbopackIgnore: true */ lockPath, "wx", 0o600);
-      await handle.writeFile(token, "utf8");
+      await handle.writeFile(JSON.stringify(cacheLockMetadata(token)), "utf8");
       break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;

@@ -175,3 +175,23 @@ process.exit(3);
   assert.match(assistant.text, /Copilot exited with code 3\./);
   assert.doesNotMatch(assistant.text, /boom: model backend dropped/, "raw CLI stderr is never persisted");
 });
+
+test("a protocol failure result marks a zero-exit flow run as failed", async () => {
+  const RESULT_FAILURE = join(TMP, "fake-copilot-result-failure.js");
+  writeFileSync(RESULT_FAILURE, `
+console.log(JSON.stringify({ type: "assistant.message", data: { messageId: "m1", content: "the CLI reported a failure" } }));
+console.log(JSON.stringify({ type: "result", sessionId: "result-failure", exitCode: 1, usage: { durationMs: 12 } }));
+`);
+  const { sessionId, done } = startCopilotFlowRun({
+    spec: SPEC,
+    prompt: "hello",
+    projectRoot: TMP,
+    familiarId: null,
+    spawnCommand: { command: process.execPath, fixedArgs: [RESULT_FAILURE] },
+  });
+  await done;
+  const conv = JSON.parse(readFileSync(join(TMP, ".coven", "cave", "conversations", `${sessionId}.json`), "utf8"));
+  const assistant = conv.turns.find((turn) => turn.role === "assistant");
+  assert.ok(assistant.isError, "a protocol-reported failure is not persisted as successful");
+  assert.match(assistant.text, /Copilot reported a failed result\./);
+});

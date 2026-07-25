@@ -304,9 +304,14 @@ function runtimeEventProtocolSchema(value: unknown): RuntimeEventProtocolSchema 
   const fields = record(candidate.fields);
   if (!eventTypes || !fields) return null;
   const normalizedEventTypes = {} as RuntimeEventProtocolSchema["eventTypes"];
+  const seenEventAliases = new Set<string>();
   for (const key of EVENT_TYPE_KEYS) {
     const aliases = stringArray(eventTypes[key]);
     if (!aliases?.length || aliases.some((alias) => !alias)) return null;
+    for (const alias of aliases) {
+      if (seenEventAliases.has(alias)) return null;
+      seenEventAliases.add(alias);
+    }
     normalizedEventTypes[key] = aliases;
   }
   const normalizedFields = {} as RuntimeEventProtocolSchema["fields"];
@@ -317,6 +322,7 @@ function runtimeEventProtocolSchema(value: unknown): RuntimeEventProtocolSchema 
   }
   const ignoredEventTypes = stringArray(candidate.ignoredEventTypes);
   if (!ignoredEventTypes) return null;
+  if (ignoredEventTypes.some((type) => seenEventAliases.has(type))) return null;
   return { id: candidate.id, runtime: "copilot", eventTypeFields, diagnosticEventPrefixes, minClientVersion, maxClientVersionExclusive, eventTypes: normalizedEventTypes, ignoredEventTypes, fields: normalizedFields };
 }
 
@@ -669,14 +675,17 @@ export function parseCopilotChatEvent(
       };
   }
   if (typeIs(type, protocol.eventTypes.result)) {
-      const exitCode = field(ev, protocol.fields.exitCode);
+      // Legacy v1 result fields are top-level. Future schemas may move the
+      // complete result envelope under their declared data field instead.
+      const resultSource = record(field(ev, protocol.fields.data)) ?? ev;
+      const exitCode = field(resultSource, protocol.fields.exitCode);
       if (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode)) return null;
-      const usage = record(field(ev, protocol.fields.usage));
+      const usage = record(field(resultSource, protocol.fields.usage));
       const duration = field(usage, protocol.fields.durationMs);
       const durationMs = typeof duration === "number" ? duration : undefined;
       return {
         kind: "result",
-        sessionId: textField(ev, protocol.fields.sessionId),
+        sessionId: textField(resultSource, protocol.fields.sessionId),
         isError: exitCode !== 0,
         durationMs,
       };
@@ -714,7 +723,14 @@ export class CopilotTextAssembler {
 
   message(messageId: string, content: string): string {
     const state = this.messages.get(messageId) ?? { deltaText: "", fullText: null, seenFrameIds: new Set<string>(), replacement: null };
-    if (state.fullText !== null) return "";
+    if (state.fullText !== null) {
+      if (state.fullText !== content) {
+        state.replacement = { previous: state.fullText, content };
+        state.fullText = content;
+        this.messages.set(messageId, state);
+      }
+      return "";
+    }
     state.fullText = content;
     this.messages.set(messageId, state);
     // Normal streams have a full frame that starts with all already-emitted
@@ -771,6 +787,10 @@ export class CopilotMessageTranscript {
   offset(messageId: string): number {
     const index = this.order.indexOf(messageId);
     return index < 0 ? this.text.length : this.order.slice(0, index).reduce((sum, id) => sum + (this.content.get(id) ?? "").length, 0);
+  }
+
+  messageLength(messageId: string): number {
+    return this.content.get(messageId)?.length ?? 0;
   }
 
   get text(): string {

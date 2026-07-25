@@ -282,6 +282,11 @@ export class ToolCallTracker {
     this.record(ev);
     return ev;
   }
+
+  /** True after an envelope completion has already been recorded. */
+  hasSettledEnvelopeId(id: string): boolean {
+    return this.settledEnvelopeIds.has(id);
+  }
 }
 
 /** Caps for persisted tool payloads — chips are tiny; expandable payloads are

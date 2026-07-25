@@ -1738,15 +1738,19 @@ export async function POST(req: Request) {
                 const text = copilotText.message(ev.messageId, ev.content);
                 const replacement = copilotText.takeReplacement(ev.messageId);
                 const correctionStart = copilotTranscript.offset(ev.messageId);
+                const previousMessageLength = copilotTranscript.messageLength(ev.messageId);
                 const correctedText = copilotTranscript.setMessage(ev.messageId, ev.content);
+                // Tools can be announced after a delta but before this final
+                // frame. Shift later tool positions for every length change,
+                // including the normal "append suffix" confirmation path.
+                toolTracker.rebaseTextOffsets(
+                  correctionStart + previousMessageLength,
+                  ev.content.length - previousMessageLength,
+                );
                 if (replacement) {
                   // A full frame corrects only its own message. Rebuild from
                   // per-message spans so an interleaved later message survives.
                   assistantText = correctedText;
-                  toolTracker.rebaseTextOffsets(
-                    correctionStart + replacement.previous.length,
-                    replacement.content.length - replacement.previous.length,
-                  );
                   push({ kind: "assistant_replace", text: assistantText });
                 } else if (text) {
                   if (assistantText === correctedText) {
@@ -1798,7 +1802,7 @@ export async function POST(req: Request) {
                   ev.isError,
                 );
                 if (toolEv) push({ kind: "tool_use", ...toolEv });
-                else {
+                else if (!toolTracker.hasSettledEnvelopeId(ev.toolCallId)) {
                   rememberPendingCopilotToolCompletion(ev.toolCallId, {
                     output: ev.output,
                     isError: ev.isError,
@@ -2260,8 +2264,13 @@ export async function POST(req: Request) {
             // failed invocation for a successful model application below.
             if ((openCodeDirect || copilotStream) && code !== 0) {
               result = { ...result, is_error: true };
-              if (copilotStream) {
-                stderrTail.length = 0;
+            }
+            // Copilot JSONL stderr can contain raw prompt or tool payloads on
+            // a successful malformed stream too. Its only user-facing
+            // diagnostics are fixed/redacted protocol messages.
+            if (copilotStream) {
+              stderrTail.length = 0;
+              if (code !== 0) {
                 stdoutErrTail.length = 0;
                 stdoutErrTail.push("Copilot exited before completing its response.");
               }

@@ -3,8 +3,8 @@ import { realpath, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, join } from "node:path";
 import { parseRuntimeClientVersion } from "../copilot-stream.ts";
 import { resolveCopilotLaunchCommand } from "../copilot-bin.ts";
-import type { CovenLaunchCommand } from "../coven-bin.ts";
-import { harnessSpawnEnv } from "../harness-spawn-env.ts";
+import { scrubSidecarInternalEnv, type CovenLaunchCommand } from "../coven-bin.ts";
+import { loadVaultMap } from "../vault.ts";
 
 export type CopilotCapabilityProbe = {
   version: string | null;
@@ -23,6 +23,18 @@ type ProbeCacheEntry = {
 const cache = new Map<string, ProbeCacheEntry>();
 const CACHE_MS = 5 * 60_000;
 const TIMEOUT_MS = 2_500;
+
+/**
+ * Capability discovery has no familiar context and must never execute an
+ * arbitrary PATH launcher with shared or vault-managed credentials. It also
+ * deliberately avoids covenSpawnEnv's synchronous login-shell discovery: the
+ * entire probe decision stays within TIMEOUT_MS on cold POSIX starts.
+ */
+function probeSpawnEnv(): NodeJS.ProcessEnv {
+  const env = scrubSidecarInternalEnv({ ...process.env });
+  for (const key of Object.keys(loadVaultMap(true))) delete env[key];
+  return env;
+}
 
 /**
  * A command name is not a stable runtime identity: a global npm upgrade can
@@ -93,7 +105,7 @@ export async function probeCopilotCapability(
 ): Promise<CopilotCapabilityProbe> {
   const now = options.now ?? Date.now;
   const deadline = Date.now() + TIMEOUT_MS;
-  const probeEnv = harnessSpawnEnv(null);
+  const probeEnv = probeSpawnEnv();
   // Cache by command name plus PATH, then validate the *previously launched*
   // command's binary/script metadata. This keeps normal turns off `where`
   // while invalidating immediately when an npm shim target is updated.

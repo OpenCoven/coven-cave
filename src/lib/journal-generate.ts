@@ -85,6 +85,10 @@ export async function generateReflection(opts: {
           text += ev.text ?? "";
           opts.onText?.(text);
           break;
+        case "assistant_replace":
+          text = ev.text ?? "";
+          opts.onText?.(text);
+          break;
         case "done":
           if (ev.isError) error = error ?? "the familiar reported an error";
           break;

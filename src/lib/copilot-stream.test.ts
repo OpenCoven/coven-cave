@@ -160,6 +160,22 @@ assert.deepEqual(
   { kind: "tool_end", toolCallId: "new-tool", output: "denied", isError: true, model: undefined },
   "schema aliases normalize a changed event envelope into the same tool lifecycle",
 );
+assert.deepEqual(
+  parseCopilotChatEvent(
+    { type: "run.finished", payload: { exit_code: 7, session_id: "v2-session", usage: { duration_ms: 44 } } },
+    V2_SCHEMA,
+  ),
+  { kind: "result", sessionId: "v2-session", isError: true, durationMs: 44 },
+  "schema-selected result envelopes preserve failure state and duration",
+);
+assert.deepEqual(
+  runtimeEventProtocolSchemas([{
+    ...V2_SCHEMA,
+    eventTypes: { ...V2_SCHEMA.eventTypes, toolEnd: ["tool.started"] },
+  }]),
+  [],
+  "overlapping lifecycle event aliases are rejected before they can select a parser",
+);
 const alternateDiscriminatorSchema = { ...V2_SCHEMA, eventTypeFields: ["event"] };
 assert.deepEqual(
   parseCopilotChatEvent(
@@ -551,6 +567,12 @@ assert.equal(
     "a message with no prior deltas contributes its full content",
   );
   assert.equal(text.message("solo", "No deltas came first."), "", "repeats add nothing");
+  assert.equal(text.message("solo", "Corrected full text."), "", "a changed replay is emitted through replacement");
+  assert.deepEqual(
+    text.takeReplacement("solo"),
+    { previous: "No deltas came first.", content: "Corrected full text." },
+    "a later authoritative full frame corrects an earlier full frame",
+  );
   assert.equal(text.delta("solo", "No deltas came first."), "", "a delayed replay after a full message never duplicates text");
 
   assert.equal(text.delta("m", "Hello "), "Hello ", "deltas stream before an authoritative full frame arrives");
