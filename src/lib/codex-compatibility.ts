@@ -427,6 +427,37 @@ const DEFAULT_CODEX_SCHEMA_REGISTRY_URL = "https://raw.githubusercontent.com/Ope
 const schemaRefreshes = new Map<string, { checkedAt: number; pending: Promise<void> | null }>();
 
 /**
+ * Fetch's `response.json()` buffers an arbitrarily large body before schema
+ * validation gets a chance to apply the document cap. Keep the transport
+ * bounded too: a bad registry response must retain LKG rather than consume a
+ * chat server's memory while it is being parsed.
+ */
+export async function readBoundedCodexSchemaResponse(response: Response): Promise<unknown> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_SCHEMA_DOCUMENT_BYTES) {
+    throw new Error("schema registry response exceeds the document limit");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("schema registry response has no body");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_SCHEMA_DOCUMENT_BYTES) {
+        throw new Error("schema registry response exceeds the document limit");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return JSON.parse(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8"));
+}
+
+/**
  * Versioned OpenCoven registry signing roots. These public Ed25519 keys are
  * pinned in the shipped client so a stock installation can verify a future
  * registry document before any deployment environment is configured.
@@ -519,7 +550,7 @@ export async function productionCodexSchemaSources(options: {
           cache: "no-store",
         });
         if (!response.ok) throw new Error(`registry fetch failed: ${response.status}`);
-        return response.json();
+        return readBoundedCodexSchemaResponse(response);
       },
       verifier,
     ).then(() => undefined).finally(() => {

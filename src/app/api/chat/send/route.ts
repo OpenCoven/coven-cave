@@ -2369,6 +2369,14 @@ export async function POST(req: Request) {
       // own cancelled state and is gone. A bare transport abort (signal loss,
       // closed tab) is NOT a cancel: the turn ran to completion and persists
       // as a normal reply the client recovers on resync.
+      // A process can exit after announcing a tool but before it emits the
+      // matching completed/failed item (including an interrupted JSONL
+      // stream). Settle those live bubbles now; persistence uses the same
+      // tracker snapshot and must agree with the final SSE state.
+      for (const toolEvent of toolTracker.settleOpenCalls()) {
+        push({ kind: "tool_use", ...toolEvent });
+      }
+
       const cancelledByUser = runHandle.stopRequested;
       if (cancelledByUser) {
         if (!assistantText.trim()) assistantText = "(cancelled)";

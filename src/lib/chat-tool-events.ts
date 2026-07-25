@@ -272,6 +272,31 @@ export class ToolCallTracker {
     this.record(ev);
     return ev;
   }
+
+  /**
+   * Settle calls that the harness left open when its stream ended. Without an
+   * explicit terminal event the live UI otherwise retains a running spinner
+   * until the conversation is reloaded, even though persistence correctly
+   * coerces the same call to an error.
+   */
+  settleOpenCalls(output = "[tool did not settle before the turn ended]"): ToolStreamEvent[] {
+    const calls = Array.from(this.open.values()).flat();
+    const settled: ToolStreamEvent[] = [];
+    for (const call of calls) {
+      const durationMs = this.now() - call.startedAt;
+      this.settle(call);
+      const ev: ToolStreamEvent = {
+        id: call.id,
+        name: call.name,
+        output,
+        status: "error",
+        durationMs,
+      };
+      this.record(ev);
+      settled.push(ev);
+    }
+    return settled;
+  }
 }
 
 /** Caps for persisted tool payloads — chips are tiny; expandable payloads are

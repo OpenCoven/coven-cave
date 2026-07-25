@@ -12,6 +12,7 @@ import {
   codexSchemaSignatureVerifierFromEnv,
   parseCodexStreamEvent,
   productionCodexSchemaSources,
+  readBoundedCodexSchemaResponse,
   resolveCodexSchema,
   readCodexSchemaCache,
   refreshCodexSchemaCache,
@@ -120,6 +121,21 @@ assert.equal(probe.PATH, "safe-path");
 assert.equal(probe.OPENAI_API_KEY, undefined, "provider credentials never reach a capability probe");
 assert.equal(probe.VAULT_TOKEN, undefined, "vault credentials never reach a capability probe");
 assert.ok(Object.keys(CODEX_SCHEMA_TRUSTED_KEYS).length > 0, "stock installs ship a versioned registry trust root");
+await assert.rejects(
+  readBoundedCodexSchemaResponse(new Response("{}", { headers: { "content-length": "1048577" } })),
+  /exceeds the document limit/,
+  "an oversized registry response is rejected before response.json can buffer it",
+);
+await assert.rejects(
+  readBoundedCodexSchemaResponse(new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(1_048_577));
+      controller.close();
+    },
+  }))),
+  /exceeds the document limit/,
+  "a registry which lies about Content-Length is still bounded while streaming",
+);
 
 for (const [version, expectedEvents] of [["0.144.2", 3], ["0.145.0", 6]] as const) {
   const fixtureSchema = resolveCodexSchema({ version, capabilities: { jsonEvents: true, resume: true } });

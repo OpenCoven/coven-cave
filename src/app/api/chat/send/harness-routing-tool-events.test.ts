@@ -519,6 +519,29 @@ assert.match(
 }
 
 {
+  // A terminated JSONL stream must settle the same live id that started the
+  // bubble; otherwise the client spinner stays running until a reload.
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  tracker.envelopeToolUse("codex-open", "Bash", '{"command":"pwd"}', 3);
+  t = 400;
+  const [settled] = tracker.settleOpenCalls();
+  assert.deepEqual(
+    settled,
+    {
+      id: "codex-open",
+      name: "Bash",
+      output: "[tool did not settle before the turn ended]",
+      status: "error",
+      durationMs: 400,
+    },
+    "an unterminated tool becomes a terminal error with its original stream id",
+  );
+  assert.equal(tracker.settleOpenCalls().length, 0, "terminal settlement is idempotent");
+  assert.equal(tracker.snapshot()[0]?.status, "error", "the settled state is what persistence sees");
+}
+
+{
   // Hook + envelope describing the same call must record ONE entry.
   const tracker = new ToolCallTracker(() => 0);
   tracker.hookStart("Bash", undefined, 5);
