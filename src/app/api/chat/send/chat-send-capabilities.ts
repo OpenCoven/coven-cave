@@ -18,6 +18,13 @@ let hermesModelFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
 let openCodeCapabilitiesProbe: { until: number; identity: string; value: Promise<OpenCodeRunCapabilities> } | null = null;
 const OPENCODE_CAPABILITY_PROBE_TTL_MS = 60_000;
+const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 2_500;
+const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
+
+/** PowerShell/npm shims can be delayed by cold start or Defender scanning. */
+export function openCodeCapabilityProbeTimeoutMs(platform: NodeJS.Platform = process.platform): number {
+  return platform === "win32" ? WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS : DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS;
+}
 
 function probeHelp(
   command: string,
@@ -49,7 +56,7 @@ function probeHelp(
           // The capability is unsupported when the probe cannot complete.
         }
         done(false);
-      }, 2500);
+      }, openCodeCapabilityProbeTimeoutMs());
       child.on("close", () => {
         clearTimeout(timeout);
         done(matches(output));
@@ -93,7 +100,7 @@ function probeOutput(command: string, args: string[], env = harnessSpawnEnv(), i
       const timeout = setTimeout(() => {
         try { child.kill("SIGTERM"); } catch { /* Probe failures are capabilities=false. */ }
         done(false);
-      }, 2500);
+      }, openCodeCapabilityProbeTimeoutMs());
       child.on("close", (code) => { clearTimeout(timeout); done(code === 0 && !overflowed); });
       child.on("error", () => { clearTimeout(timeout); done(false); });
     } catch {

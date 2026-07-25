@@ -1400,7 +1400,9 @@ export async function POST(req: Request) {
         }
       }
       if (forwardModel) a.push("--model", forwardModel);
-      a.push(prompt);
+      // Prompts are untrusted data. Keep a flag-shaped prompt from overriding
+      // the capability-confirmed OpenCode argv above (for example `--format`).
+      a.push("--", prompt);
       return a;
     }
     const a = ["run", binding.harness, "--stream-json"];

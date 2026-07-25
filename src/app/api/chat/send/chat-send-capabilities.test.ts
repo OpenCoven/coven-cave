@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { openCodeExecutableIdentity, parseOpenCodeRunCapabilitiesHelp } from "./chat-send-capabilities.ts";
+import { openCodeCapabilityProbeTimeoutMs, openCodeExecutableIdentity, parseOpenCodeRunCapabilitiesHelp } from "./chat-send-capabilities.ts";
+
+assert.equal(openCodeCapabilityProbeTimeoutMs("linux"), 2_500, "non-Windows capability probes retain the short bounded deadline");
+assert.equal(openCodeCapabilityProbeTimeoutMs("win32"), 6_000, "Windows PowerShell/npm launchers receive a bounded cold-start allowance");
 
 const capabilities = parseOpenCodeRunCapabilitiesHelp(`
   --structured-output <format>  Output format: text, json-v3
