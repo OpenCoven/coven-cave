@@ -10,7 +10,6 @@ function fail(message) {
   console.error(`::error::${message}`);
   process.exitCode = 1;
 }
-
 if (!url || !publicKey) {
   fail("OpenCode compatibility registry URL and Ed25519 public key must be configured for every desktop release.");
 } else {
@@ -21,4 +20,3 @@ if (!url || !publicKey) {
     fail(`Invalid OpenCode compatibility registry configuration: ${error instanceof Error ? error.message : "unknown error"}`);
   }
 }
-

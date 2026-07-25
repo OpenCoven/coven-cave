@@ -18,4 +18,3 @@ Development and test processes may inject `COVEN_OPENCODE_SCHEMA_REGISTRY_URL` a
 The registry publisher owns the private signing key; it must never be placed in Cave, the release workflow, logs, or issue text. Publish an immutable bundle for each increasing `sequence`, with canonical RFC 3339 UTC timestamps and the detached Ed25519 signature over the bundle payload. Cave rejects rewrites at an existing sequence and lower sequences even after a cache entry expires.
 
 To rotate a key, publish a Cave release carrying the new public key before publishing bundles signed only by that key. Keep the prior key available to the registry publisher until clients on the preceding Cave release have a supported migration path; an emergency rotation requires a Cave release first. Record the registry endpoint, public-key fingerprint, owner, and rotation date in the release checklist.
-
