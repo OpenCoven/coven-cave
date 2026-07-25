@@ -1,14 +1,21 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { homedir } from "node:os";
 
-type RegistryFs = Pick<typeof import("node:fs/promises"), "mkdir" | "open" | "readFile" | "readdir" | "rename" | "rm" | "stat">;
+type RegistryFs = Record<string, (...args: any[]) => Promise<any>>;
 
-// The registry cache is per-user runtime state. Resolve its Node built-in at
-// runtime so Next's file tracer cannot mistake its dynamic paths for packaged
-// application inputs and copy the repository into the desktop sidecar.
-const registryFs = (process as typeof process & {
-  getBuiltinModule?: (id: "node:fs/promises") => RegistryFs | undefined;
-}).getBuiltinModule?.("node:fs/promises");
+// The registry cache is per-user runtime state, never a packaged input. Keep
+// Node's filesystem module behind a runtime-only boundary: TurboPack/NFT
+// otherwise follows its dynamic cache paths and traces the entire repository.
+const registryFs = (() => {
+  try {
+    const loadBuiltin = Function("return process.getBuiltinModule")() as
+      | ((id: string) => RegistryFs | undefined)
+      | undefined;
+    return loadBuiltin?.(["node:fs", "promises"].join("/"));
+  } catch {
+    return undefined;
+  }
+})();
 
 function requireRegistryFs(): RegistryFs {
   if (!registryFs) throw new Error("node fs promises unavailable");
