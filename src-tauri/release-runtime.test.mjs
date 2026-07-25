@@ -179,6 +179,11 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   );
   assert.match(whisperBundleScript, /f049fff95a089aa9969deb009cdd4892b3e74916/, "macOS must build the pinned Whisper release commit");
   assert.match(whisperBundleScript, /CMAKE_INSTALL_RPATH='@loader_path'/, "macOS Whisper must resolve copied dylibs relative to its executable");
+  assert.match(
+    whisperBundleScript,
+    /-type f -o -type l[\s\S]*?\.dylib' -exec cp -P/,
+    "macOS Whisper staging must preserve dylib SONAME links",
+  );
   assert.doesNotMatch(whisperBundleScript, /install_name_tool -add_rpath/, "macOS Whisper must not add a duplicate CMake-provided rpath");
   assert.match(whisperBundleScript, /cp -P/, "Linux Whisper staging must preserve SONAME links");
   assert.match(whisperBundleScript, /checksum mismatch/, "Whisper artifact downloads must be hash-verified");
