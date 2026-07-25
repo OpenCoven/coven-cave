@@ -1579,7 +1579,10 @@ export async function POST(req: Request) {
       // Keep a text-only decoder even if the installed version has no schema:
       // new clients can still deliver a completed agent_message without
       // exposing undocumented tool/control payloads as transcript text.
-      let codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
+      // Outer `output` frames can contain ordinary assistant prose. They do
+      // not authenticate a literal `codex` line, so only a valid marker-free
+      // thread preamble may establish protocol ownership on this route.
+      let codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true, trustCodexMarker: false }) : null;
       let codexUnknownShapeReported = false;
       let codexHarnessSessionId: string | null = null;
 
@@ -2313,7 +2316,7 @@ export async function POST(req: Request) {
         settleToolCallsBeforeRetry();
         toolTracker = new ToolCallTracker();
         copilotText.reset();
-        codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
+        codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true, trustCodexMarker: false }) : null;
         codexUnknownShapeReported = false;
         codexHarnessSessionId = null;
         stderrTail.length = 0;
@@ -2356,7 +2359,7 @@ export async function POST(req: Request) {
         settleToolCallsBeforeRetry();
         toolTracker = new ToolCallTracker();
         copilotText.reset();
-        codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
+        codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true, trustCodexMarker: false }) : null;
         codexUnknownShapeReported = false;
         codexHarnessSessionId = null;
         stderrTail.length = 0;

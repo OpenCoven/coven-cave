@@ -855,7 +855,7 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
       kind: "tool_end",
       id: item.id,
       name,
-      input,
+      ...(input !== undefined ? { input } : {}),
       output: safeOutput(item.aggregated_output ?? item.output ?? item.error),
       isError,
     };
@@ -875,9 +875,9 @@ export class CodexJsonlDecoder {
   // transport explicitly says these bytes came from Codex's JSONL pipe.
   private protocolArmed = false;
   private protocolActive = false;
-  private readonly options: { trustThreadPreamble?: boolean };
+  private readonly options: { trustThreadPreamble?: boolean; trustCodexMarker?: boolean };
 
-  constructor(options: { trustThreadPreamble?: boolean } = {}) {
+  constructor(options: { trustThreadPreamble?: boolean; trustCodexMarker?: boolean } = {}) {
     this.options = options;
   }
 
@@ -895,11 +895,13 @@ export class CodexJsonlDecoder {
     for (const line of lines) {
       if (!line) continue;
       if (line.trim().toLowerCase() === "codex") {
-        this.protocolArmed = true;
-        // This is a transport/startup marker, never assistant prose. It is
-        // intentionally consumed here instead of relying on text heuristics
-        // downstream to hide it.
-        continue;
+        if (this.options.trustCodexMarker !== false) {
+          this.protocolArmed = true;
+          // This is a transport/startup marker, never assistant prose. It is
+          // intentionally consumed here instead of relying on text heuristics
+          // downstream to hide it.
+          continue;
+        }
       }
       try {
         const parsed = JSON.parse(line) as unknown;
