@@ -8,6 +8,7 @@ const PIPER_TIMEOUT_MS = 60_000;
 const MAX_AUDIO_BYTES = 32 * 1024 * 1024;
 const MAX_STDERR_CHARS = 8_000;
 const PIPER_PROBE_TIMEOUT_MS = 3_000;
+const PIPER_PROBE_TERMINATION_GRACE_MS = 1_000;
 const PIPER_FILE_CHECK_INTERVAL_MS = 100;
 const PIPER_TERMINATION_GRACE_MS = 1_000;
 const PIPER_FORCE_KILL_SETTLE_MS = 1_000;
@@ -75,43 +76,6 @@ export function piperExecutable(env: NodeJS.ProcessEnv = process.env): string | 
   return env.COVEN_CAVE_BUNDLE === "1" ? null : "piper";
 }
 
-/** Probe the controlled, minimal environment used for synthesis. */
-export async function piperRuntimeAvailability(): Promise<PiperRuntimeAvailability> {
-  if (piperAvailability && Date.now() - piperAvailability.checkedAt < PIPER_PROBE_TIMEOUT_MS) {
-    return piperAvailability.value;
-  }
-  const executable = piperExecutable();
-  if (!executable) {
-    return {
-      available: false,
-      hint: "The bundled Piper runtime is missing. Reinstall CovenCave before selecting a Piper voice.",
-    };
-  }
-  const value = await new Promise<PiperRuntimeAvailability>((resolve) => {
-    const child = spawn(executable, ["--help"], {
-      env: piperSpawnEnv(),
-      stdio: "ignore",
-      windowsHide: true,
-    });
-    const timeout = setTimeout(() => {
-      child.kill();
-      resolve({ available: false, hint: "Piper did not respond. Install the supported local Piper runtime." });
-    }, PIPER_PROBE_TIMEOUT_MS);
-    child.once("error", () => {
-      clearTimeout(timeout);
-      resolve({ available: false, hint: "Install the local Piper runtime before selecting a Piper voice." });
-    });
-    child.once("close", (code) => {
-      clearTimeout(timeout);
-      resolve(code === 0
-        ? { available: true }
-        : { available: false, hint: "The local Piper runtime is unavailable. Check its installation." });
-    });
-  });
-  piperAvailability = { checkedAt: Date.now(), value };
-  return value;
-}
-
 type PiperSpawn = typeof spawn;
 
 type PiperTiming = {
@@ -127,6 +91,87 @@ const defaultPiperTiming: PiperTiming = {
   terminationGraceMs: PIPER_TERMINATION_GRACE_MS,
   forceKillSettleMs: PIPER_FORCE_KILL_SETTLE_MS,
 };
+
+/** Probe Piper with the same bounded termination policy as synthesis. */
+export async function probePiperRuntime(
+  executable: string,
+  dependencies: {
+    spawnImpl?: PiperSpawn;
+    timeoutMs?: number;
+    terminationGraceMs?: number;
+  } = {},
+): Promise<PiperRuntimeAvailability> {
+  const spawnImpl = dependencies.spawnImpl ?? spawn;
+  const timeoutMs = dependencies.timeoutMs ?? PIPER_PROBE_TIMEOUT_MS;
+  const terminationGraceMs =
+    dependencies.terminationGraceMs ?? PIPER_PROBE_TERMINATION_GRACE_MS;
+  return new Promise<PiperRuntimeAvailability>((resolve) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (value: PiperRuntimeAvailability) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      resolve(value);
+    };
+    let child: ChildProcess;
+    try {
+      child = spawnImpl(executable, ["--help"], {
+        env: piperSpawnEnv(),
+        stdio: "ignore",
+        windowsHide: true,
+      });
+    } catch {
+      finish({ available: false, hint: "Install the local Piper runtime before selecting a Piper voice." });
+      return;
+    }
+    timeout = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        // A concurrent close is handled by its event below.
+      }
+      // A corrupted runtime can ignore SIGTERM on POSIX. Escalate before
+      // reporting it unavailable so repeated catalog refreshes cannot leak
+      // background Piper probes.
+      forceKillTimer = setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // The process may have exited while the timer was pending.
+        }
+        finish({ available: false, hint: "Piper did not respond. Install the supported local Piper runtime." });
+      }, terminationGraceMs);
+    }, timeoutMs);
+    child.once("error", () => {
+      finish({ available: false, hint: "Install the local Piper runtime before selecting a Piper voice." });
+    });
+    child.once("close", (code) => {
+      finish(code === 0
+        ? { available: true }
+        : { available: false, hint: "The local Piper runtime is unavailable. Check its installation." });
+    });
+  });
+}
+
+/** Probe the controlled, minimal environment used for synthesis. */
+export async function piperRuntimeAvailability(): Promise<PiperRuntimeAvailability> {
+  if (piperAvailability && Date.now() - piperAvailability.checkedAt < PIPER_PROBE_TIMEOUT_MS) {
+    return piperAvailability.value;
+  }
+  const executable = piperExecutable();
+  if (!executable) {
+    return {
+      available: false,
+      hint: "The bundled Piper runtime is missing. Reinstall CovenCave before selecting a Piper voice.",
+    };
+  }
+  const value = await probePiperRuntime(executable);
+  piperAvailability = { checkedAt: Date.now(), value };
+  return value;
+}
 
 export async function runPiperWithDependencies(
   modelPath: string,

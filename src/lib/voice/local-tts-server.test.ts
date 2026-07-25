@@ -11,6 +11,7 @@ import {
   LocalTtsSynthesisError,
   piperExecutable,
   piperSpawnEnv,
+  probePiperRuntime,
   runPiperWithDependencies,
 } from "./local-tts-server.ts";
 
@@ -179,6 +180,28 @@ test("Piper runner force-kills a process that never closes after timeout", async
     }),
     (error) => error instanceof LocalTtsSynthesisError && error.code === "local_tts_failed",
   );
+  assert.deepEqual(signals, [undefined, "SIGKILL"]);
+});
+
+test("Piper availability probe force-kills a runtime that ignores its timeout", async () => {
+  const signals = [];
+  const hangingProbe = () => {
+    const child = new EventEmitter();
+    child.kill = (signal) => {
+      signals.push(signal);
+      return true;
+    };
+    return child;
+  };
+
+  const availability = await probePiperRuntime("piper", {
+    spawnImpl: hangingProbe,
+    timeoutMs: 5,
+    terminationGraceMs: 5,
+  });
+
+  assert.equal(availability.available, false);
+  assert.match(availability.hint, /did not respond/i);
   assert.deepEqual(signals, [undefined, "SIGKILL"]);
 });
 

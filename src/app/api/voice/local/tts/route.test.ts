@@ -60,6 +60,20 @@ test("POST local TTS validates JSON, text, and local voice ids", async () => {
     ).status,
     400,
   );
+  let runnerCalled = false;
+  const unregistered = await handleLocalTtsPost(
+    request({ text: "hello", voiceName: "piper-not-in-the-registry" }),
+    {
+      readiness: async () => readyVoice,
+      piper: async () => {
+        runnerCalled = true;
+        return new Uint8Array([82, 73, 70, 70]);
+      },
+    },
+  );
+  assert.equal(unregistered.status, 400);
+  assert.equal((await unregistered.json()).error, "invalid_voice_name");
+  assert.equal(runnerCalled, false);
   const extraField = await handleLocalTtsPost(
     request({ text: "hello", voiceName: readyVoice.id, modelPath: "C:\\untrusted.onnx" }),
   );
@@ -167,11 +181,10 @@ test("POST local TTS rejects unknown, unready, and unsupported-engine voices", a
   assert.equal((await unready.json()).error, "local_voice_not_ready");
 
   const unsupported = await handleLocalTtsPost(
-    request({ text: "hello", voiceName: "kokoro-af-heart" }),
+    request({ text: "hello", voiceName: readyVoice.id }),
     {
       readiness: async () => ({
         ...readyVoice,
-        id: "kokoro-af-heart",
         engine: "kokoro",
       }),
     },

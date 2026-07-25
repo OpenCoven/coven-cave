@@ -134,6 +134,16 @@ export async function handleLocalTtsPost(
       { status: 400 },
     );
   }
+  // Engine-shaped names are not sufficient: only the reviewed registry may
+  // reach a local runner. This keeps stale or crafted ids from becoming an
+  // implicit model allow-list when more local engines are added later.
+  const registeredVoice = speechModelById(voiceName);
+  if (!registeredVoice || registeredVoice.kind !== "tts") {
+    return NextResponse.json(
+      { ok: false, error: "invalid_voice_name" },
+      { status: 400 },
+    );
+  }
 
   try {
     return await withSpeechModelUse(voiceName, async () => {
