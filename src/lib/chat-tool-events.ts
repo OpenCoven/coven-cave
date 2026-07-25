@@ -256,10 +256,24 @@ export class ToolCallTracker {
     toolUseId: string,
     output: string | undefined,
     isError: boolean,
+    fallback?: { name: string; input?: string; textOffset?: number },
   ): ToolStreamEvent | null {
     if (this.settledEnvelopeIds.has(toolUseId)) return null;
     const call = this.byEnvelopeId.get(toolUseId);
-    if (!call) return null;
+    if (!call) {
+      // Some runtimes can reject a call before they emit its start frame. Keep
+      // that terminal failure visible rather than silently dropping it; the
+      // native id remains the stable key for a later duplicate terminal frame.
+      if (!fallback) return null;
+      const started = this.envelopeToolUse(
+        toolUseId,
+        fallback.name,
+        fallback.input,
+        fallback.textOffset,
+      );
+      if (!started) return null;
+      return this.envelopeToolResult(toolUseId, output, isError);
+    }
     const durationMs = this.now() - call.startedAt;
     this.settle(call);
     const ev: ToolStreamEvent = {

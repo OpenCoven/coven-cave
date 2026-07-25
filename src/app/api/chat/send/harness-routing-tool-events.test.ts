@@ -542,6 +542,31 @@ assert.match(
 }
 
 {
+  // A Codex tool can fail before the runtime writes its start frame (for
+  // example, while validating its sandbox). Preserve a terminal bubble keyed
+  // by the native id instead of silently dropping that failure.
+  const tracker = new ToolCallTracker(() => 0);
+  const failed = tracker.envelopeToolResult(
+    "codex-preflight-failure",
+    "permission denied",
+    true,
+    { name: "Bash", input: '{"command":"pwd"}', textOffset: 2 },
+  );
+  assert.deepEqual(failed, {
+    id: "codex-preflight-failure",
+    name: "Bash",
+    output: "permission denied",
+    status: "error",
+    durationMs: 0,
+  });
+  assert.equal(
+    tracker.envelopeToolResult("codex-preflight-failure", "duplicate", true, { name: "Bash" }),
+    null,
+    "a duplicate terminal frame must not reopen an already failed tool",
+  );
+}
+
+{
   // Hook + envelope describing the same call must record ONE entry.
   const tracker = new ToolCallTracker(() => 0);
   tracker.hookStart("Bash", undefined, 5);

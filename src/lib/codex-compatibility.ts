@@ -786,7 +786,7 @@ export type CodexStreamEvent =
   | { kind: "text"; text: string }
   | { kind: "session"; sessionId: string }
   | { kind: "tool_start"; id: string; name: string; input?: unknown }
-  | { kind: "tool_end"; id: string; output?: string; isError: boolean }
+  | { kind: "tool_end"; id: string; name: string; input?: unknown; output?: string; isError: boolean }
   | { kind: "unknown"; fingerprint: string }
   | { kind: "ignored" };
 
@@ -838,7 +838,11 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
   }
   if (typeof item.id !== "string" || typeof item.type !== "string" || !schema.toolItemTypes.includes(item.type)) return { kind: "unknown", fingerprint: eventFingerprint(event) };
   const name = typeof item.name === "string" ? item.name : item.type === "command_execution" ? "Bash" : item.type;
-  const input = item.arguments ?? item.input ?? (item.type === "command_execution" ? { command: item.command } : undefined);
+  const input = item.arguments
+    ?? item.input
+    ?? (item.type === "command_execution" && typeof item.command === "string"
+      ? { command: item.command }
+      : undefined);
   if (event.type === "item.started" || event.type === "item.updated") return { kind: "tool_start", id: item.id, name, input };
   if (event.type === "item.completed" || event.type === "item.failed") {
     const exitCode = typeof item.exit_code === "number"
@@ -847,7 +851,14 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
         ? item.exitCode
         : null;
     const isError = event.type === "item.failed" || item.status === "failed" || (exitCode !== null && Number.isFinite(exitCode) && exitCode !== 0);
-    return { kind: "tool_end", id: item.id, output: safeOutput(item.aggregated_output ?? item.output ?? item.error), isError };
+    return {
+      kind: "tool_end",
+      id: item.id,
+      name,
+      input,
+      output: safeOutput(item.aggregated_output ?? item.output ?? item.error),
+      isError,
+    };
   }
   return null;
 }

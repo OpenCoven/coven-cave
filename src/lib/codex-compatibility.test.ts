@@ -72,7 +72,13 @@ assert.equal(!ambiguousSameMinimum.ok && ambiguousSameMinimum.reason, "invalid-s
 const start = parseCodexStreamEvent({ type: "item.started", item: { id: "call-a", type: "command_execution", command: "pwd" } }, selected.schema);
 assert.deepEqual(start, { kind: "tool_start", id: "call-a", name: "Bash", input: { command: "pwd" } });
 const end = parseCodexStreamEvent({ type: "item.completed", item: { id: "call-a", type: "command_execution", aggregated_output: "C:/safe" } }, selected.schema);
-assert.deepEqual(end, { kind: "tool_end", id: "call-a", output: "C:/safe", isError: false });
+assert.deepEqual(end, {
+  kind: "tool_end",
+  id: "call-a",
+  name: "Bash",
+  output: "C:/safe",
+  isError: false,
+});
 const failed = parseCodexStreamEvent({ type: "item.failed", item: { id: "call-a", type: "command_execution", error: "failed" } }, selected.schema);
 assert.equal(failed?.kind, "tool_end");
 assert.equal(failed?.kind === "tool_end" && failed.isError, true);

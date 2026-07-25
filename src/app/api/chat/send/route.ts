@@ -1692,6 +1692,11 @@ export async function POST(req: Request) {
                 event.id,
                 event.output,
                 event.isError,
+                {
+                  name: event.name,
+                  input: formatToolInputValue(event.input),
+                  textOffset: assistantText.length,
+                },
               );
               if (toolEvent) push({ kind: "tool_use", ...toolEvent });
               break;
