@@ -53,7 +53,7 @@ assert.deepEqual(
     { type: "step_start", sessionID: "ses_123", part: { id: "step_1" } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),
-  { kind: "ignore" },
+  { kind: "ignore", sessionId: "ses_123" },
   "current OpenCode step-start frames are lifecycle metadata, not compatibility failures",
 );
 assert.deepEqual(
@@ -61,7 +61,7 @@ assert.deepEqual(
     { type: "step_finish", sessionID: "ses_123", part: { id: "step_1" } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),
-  { kind: "ignore" },
+  { kind: "ignore", sessionId: "ses_123" },
   "current OpenCode step-finish frames are lifecycle metadata, not compatibility failures",
 );
 assert.deepEqual(
@@ -79,7 +79,7 @@ assert.deepEqual(
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
     { onSession: (id) => sessions.push(id) },
   );
-  assert.deepEqual(sessions, [], "ignored lifecycle frames cannot overwrite the persisted native resume token");
+  assert.deepEqual(sessions, ["ses_injected"], "a signed lifecycle frame preserves the native session for an interrupted-run resume");
 }
 assert.deepEqual(
   parseOpenCodeRunEvent(

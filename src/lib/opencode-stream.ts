@@ -148,10 +148,10 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   const eventType = stringAt(envelope(event, [discriminator.envelope]), discriminator.field);
   if (!eventType) return { kind: "other", sessionId, diagnostic: "malformed-event" };
   if (eventTypes(schema, "ignored", ["step_start", "step_finish"]).includes(eventType)) {
-    // Lifecycle/control frames are deliberately non-renderable. Their root
-    // fields are not a signed payload envelope, so they must never update a
-    // persisted native resume token.
-    return { kind: "ignore" };
+    // Lifecycle/control frames are deliberately non-renderable. The selected
+    // schema nevertheless authorizes their label, so retain its session token:
+    // OpenCode emits it on step_start before terminal text/tool frames.
+    return typeof record(part)?.id === "string" ? { kind: "ignore", sessionId } : { kind: "ignore" };
   }
   if (eventTypes(schema, "error", ["error"]).includes(eventType)) {
     const errorValue = valueAt(part, shapeAliases(schema, "error", ["error"])) ?? event.error;
