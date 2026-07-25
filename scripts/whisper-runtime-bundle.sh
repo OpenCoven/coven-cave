@@ -123,7 +123,10 @@ stage_macos() {
     -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
   cmake --build "$source/build" --target whisper-cli --parallel 2
   cp "$source/build/bin/whisper-cli" "$DEST/whisper-cli"
-  find "$source/build/bin" -maxdepth 1 -type f -name '*.dylib' -exec cp {} "$DEST/" \;
+  # Preserve the versioned dylibs and their SONAME links. whisper-cli loads
+  # names such as libwhisper.1.dylib through @rpath, not just the concrete
+  # versioned file, after the temporary build tree has been removed.
+  find "$source/build/bin" -maxdepth 1 \( -type f -o -type l \) -name '*.dylib' -exec cp -P {} "$DEST/" \;
   chmod 755 "$DEST/whisper-cli"
 }
 

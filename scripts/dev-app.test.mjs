@@ -9,6 +9,12 @@ const source = readFileSync(
 
 assert.match(
   source,
+  /source scripts\/whisper-runtime-dev-env\.sh/,
+  "the development launcher must stage and export Whisper before starting Tauri",
+);
+
+assert.match(
+  source,
   /MINGW\*\|MSYS\*\|CYGWIN\*\) before_dev_command="set HOSTNAME=127\.0\.0\.1&& set PORT=\$\{dev_port\}&& pnpm dev"/,
   "Windows Tauri launches must bind loopback and use cmd.exe's set syntax",
 );

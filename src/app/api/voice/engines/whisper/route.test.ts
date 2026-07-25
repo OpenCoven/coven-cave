@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { POST } from "./route.ts";
+import { normalizeWhisperLanguage, POST } from "./route.ts";
 
 function request(form: FormData, host = "localhost", bounded = true) {
   return new Request(`http://${host}/api/voice/engines/whisper`, {
@@ -45,4 +45,11 @@ test("Whisper endpoint rejects multipart bodies without a declared bound", async
   const response = await POST(request(form, "localhost", false));
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error, "invalid_audio");
+});
+
+test("Whisper endpoint normalizes browser locale tags to CLI language IDs", () => {
+  assert.equal(normalizeWhisperLanguage("fr-FR"), "fr");
+  assert.equal(normalizeWhisperLanguage("ZH_hant"), "zh");
+  assert.equal(normalizeWhisperLanguage("not a locale"), "auto");
+  assert.equal(normalizeWhisperLanguage(null), "auto");
 });

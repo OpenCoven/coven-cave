@@ -123,11 +123,13 @@ async function readNativeHost(...modules) {
 }
 
 test("release bundle includes and prefers bundled Node and Whisper runtimes", async () => {
-  const [tauriConfig, windowsConfig, bundleScript, whisperBundleScript, launcher] = await Promise.all([
+  const [tauriConfig, windowsConfig, bundleScript, whisperBundleScript, devWhisperEnv, devServerScript, launcher] = await Promise.all([
     readFile(new URL("./tauri.conf.json", import.meta.url), "utf8"),
     readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8"),
     readFile(new URL("../scripts/whisper-runtime-bundle.sh", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/whisper-runtime-dev-env.sh", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/dev-server-with-whisper.sh", import.meta.url), "utf8"),
     readNativeHost("sidecar_discovery.rs", "sidecar_startup.rs"),
   ]);
 
@@ -154,6 +156,14 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     "sidecar resources must be generated before Tauri validates bundle resource globs",
   );
   assert.match(
+    tauriConfig,
+    /"beforeDevCommand": "bash scripts\/dev-server-with-whisper\.sh"/,
+    "direct Tauri development launches must stage and export the mandatory Whisper runtime",
+  );
+  assert.match(devServerScript, /source scripts\/whisper-runtime-dev-env\.sh/, "direct Tauri development must load the Whisper environment");
+  assert.match(devWhisperEnv, /whisper-runtime-bundle\.sh/, "development must stage the bundled Whisper runtime");
+  assert.match(devWhisperEnv, /export COVEN_WHISPER_CPP_BIN=/, "development must export the bundled Whisper executable to Next");
+  assert.match(
     bundleScript,
     /BUNDLED_NODE_DIR=/,
     "sidecar bundle script must stage the runner Node binary",
@@ -174,6 +184,11 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   );
   assert.match(whisperBundleScript, /f049fff95a089aa9969deb009cdd4892b3e74916/, "macOS must build the pinned Whisper release commit");
   assert.match(whisperBundleScript, /CMAKE_INSTALL_RPATH='@loader_path'/, "macOS Whisper must resolve copied dylibs relative to its executable");
+  assert.match(
+    whisperBundleScript,
+    /-type f -o -type l[\s\S]*?\.dylib' -exec cp -P/,
+    "macOS Whisper staging must preserve dylib SONAME links",
+  );
   assert.doesNotMatch(whisperBundleScript, /install_name_tool -add_rpath/, "macOS Whisper must not add a duplicate CMake-provided rpath");
   assert.match(whisperBundleScript, /cp -P/, "Linux Whisper staging must preserve SONAME links");
   assert.match(whisperBundleScript, /checksum mismatch/, "Whisper artifact downloads must be hash-verified");

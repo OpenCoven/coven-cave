@@ -13,6 +13,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# The desktop shell may need its bundled sidecar before the dev server is
+# reachable. Source the helper so the Next process inherits its absolute CLI.
+source scripts/whisper-runtime-dev-env.sh
+
 port_is_listening() {
   node -e "const net=require('net');const s=net.connect({host:'127.0.0.1',port:Number(process.argv[1])});s.setTimeout(300);s.on('connect',()=>process.exit(0));s.on('timeout',()=>process.exit(1));s.on('error',()=>process.exit(1));" "$1"
 }

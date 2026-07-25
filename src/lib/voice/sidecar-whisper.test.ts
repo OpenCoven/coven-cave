@@ -18,6 +18,7 @@ import {
   sidecarWhisperAvailable,
   WHISPER_SAMPLE_RATE,
   whisperModelSupportsLocale,
+  normalizeWhisperLanguage,
 } from "./sidecar-whisper-ears.ts";
 
 const cacheRoot = path.join(process.cwd(), "node_modules", ".cache", "coven-cave-tests", "sidecar-whisper");
@@ -138,6 +139,8 @@ test("English-only Whisper models do not claim non-English locales", async () =>
   assert.equal(await sidecarWhisperAvailable(englishModel, "en-US"), true);
   assert.equal(await sidecarWhisperAvailable(englishModel, "fr-FR"), false);
   assert.equal(whisperModelSupportsLocale("whisper-small", "fr-FR"), true, "multilingual models may auto-detect French");
+  assert.equal(normalizeWhisperLanguage("fr-FR"), "fr");
+  assert.equal(normalizeWhisperLanguage("not a locale"), "auto");
 });
 
 function fakeTimers() {
@@ -326,12 +329,16 @@ test("voice activity drops leading silence before sending the final Whisper WAV"
   }
   globalThis.window = { AudioContext };
   let wavBytes = 0;
+  let language = "";
   const ears = createSidecarWhisperEars({
     stabilityMs: 1,
     maxUtteranceMs: 99,
+    locale: "fr-FR",
     fetchImpl: async (_url, init) => {
-      const audio = (init.body as FormData).get("audio") as Blob;
+      const form = init.body as FormData;
+      const audio = form.get("audio") as Blob;
       wavBytes = audio.size;
+      language = String(form.get("lang"));
       return new Response(JSON.stringify({ ok: true, session: 1, kind: "final", text: "heard" }));
     },
     setTimeout: timers.setTimeout,
@@ -348,6 +355,7 @@ test("voice activity drops leading silence before sending the final Whisper WAV"
       44 + 2 * Math.round(4_096 * WHISPER_SAMPLE_RATE / 48_000),
       "the final WAV contains the voiced buffer but not the preceding silent buffer",
     );
+    assert.equal(language, "fr", "capture sends the primary language to Whisper");
   } finally {
     ears.close();
     globalThis.window = priorWindow;
