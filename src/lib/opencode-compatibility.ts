@@ -737,8 +737,14 @@ async function readCachedTrustState(
   const trustedBackup = backup && meetsOpenCodeRegistryCheckpoint(backup.bundle, checkpoint) ? backup : null;
   if (!trustedPrimary) return trustedBackup;
   if (!trustedBackup) return trustedPrimary;
-  // The sidecar is written before the replaceable cache payload. At an equal
-  // sequence it is the durable floor if a torn/manual primary differs.
+  // The sidecar is written before the replaceable cache payload, so it wins
+  // only after a strict sequence advance. Equal sequences must be byte-for-
+  // byte identical signed contracts; choosing either one would let a copied
+  // or rewritten cache define parser behavior without a remote comparison.
+  if (
+    trustedPrimary.bundle.sequence === trustedBackup.bundle.sequence
+    && openCodeSchemaBundleSigningPayload(trustedPrimary.bundle) !== openCodeSchemaBundleSigningPayload(trustedBackup.bundle)
+  ) return null;
   return trustedBackup.bundle.sequence >= trustedPrimary.bundle.sequence ? trustedBackup : trustedPrimary;
 }
 

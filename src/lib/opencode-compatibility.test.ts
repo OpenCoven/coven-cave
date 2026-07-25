@@ -172,6 +172,27 @@ assert.equal(
   "the durable trust floor is not overwritten by the rejected rollback",
 );
 
+const equalSequenceConflictFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-equal-conflict-")), "bundle.json");
+const unsignedEqualSequenceRewrite = { ...unsigned, expiresAt: "2026-11-24T00:00:00.000Z" };
+const signedEqualSequenceRewrite = {
+  ...unsignedEqualSequenceRewrite,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(unsignedEqualSequenceRewrite)), privateKey).toString("base64"),
+  },
+};
+await writeFile(equalSequenceConflictFile, JSON.stringify({ checkedAt: now, bundle: signed }));
+await writeFile(`${equalSequenceConflictFile}.trust`, JSON.stringify({ checkedAt: now, bundle: signedEqualSequenceRewrite }));
+const equalSequenceConflict = await loadOpenCodeSchemaBundle({
+  cacheFile: equalSequenceConflictFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now,
+  fetch: async () => { throw new Error("offline"); },
+});
+assert.equal(equalSequenceConflict.source, "built-in", "conflicting equal-sequence cache records fail closed while offline");
+assert.equal(equalSequenceConflict.diagnostic, "schema-registry-refresh-rejected");
+
 const offline = await loadOpenCodeSchemaBundle({
   cacheFile,
   publicKey: publicPem,
