@@ -386,8 +386,8 @@ assert.match(
 // Native (coven) path: same stable-identity contract.
 assert.match(
   chatRoute,
-  /const resumeTarget = body\.startNewConversation && !existingConversation\s*\? null\s*:\s*body\.sessionId\s*\? existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
-  "A reserved Board conversation starts fresh once, then resumes with the harness's latest session id",
+  /const resumeTarget = body\.startNewConversation && !existingConversation\s*\? null\s*:\s*body\.sessionId\s*\? openCodeDirect\s*\? existingConversation\?\.harnessSessionId \?\? null\s*:\s*existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
+  "OpenCode resumes only a native session token; other harnesses retain the stable conversation-id fallback",
 );
 assert.match(
   chatRoute,

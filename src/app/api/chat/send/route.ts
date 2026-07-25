@@ -67,7 +67,7 @@ import {
   redactedOpenCodeEventFingerprint,
   resolveOpenCodeCompatibility,
 } from "@/lib/opencode-compatibility";
-import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
+import { handleOpenCodeJsonLine } from "@/lib/opencode-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
@@ -1366,9 +1366,11 @@ export async function POST(req: Request) {
       // an unsupported flag and losing the whole reply.
       const a = ["run"];
       if (openCodeCompatibility?.mode === "structured") {
-        a.push("--format", openCodeCompatibility.schema?.requires.protocol ?? "json");
+        const launch = openCodeCompatibility.schema!.launch;
+        a.push(launch.structuredOutput.option, launch.structuredOutput.value, ...launch.requiredFlags);
+        if (resumeSessionId && launch.sessionOption) a.push(launch.sessionOption, resumeSessionId);
       }
-      if (resumeSessionId && openCodeCompatibility?.capabilities.session) a.push("--session", resumeSessionId);
+      else if (resumeSessionId && openCodeCompatibility?.capabilities.session) a.push("--session", resumeSessionId);
       if (forwardModel) a.push("--model", forwardModel);
       a.push(prompt);
       return a;
@@ -1810,18 +1812,16 @@ export async function POST(req: Request) {
           push({ kind: "assistant_chunk", text });
           return;
         }
-        try {
-          const rawEvent = JSON.parse(line);
-          const ev = parseOpenCodeRunEvent(rawEvent, openCodeCompatibility?.schema);
-          if (ev.sessionId && !sessionId) announceSession(ev.sessionId);
-          if (ev.kind === "ignore") return;
-          if (ev.kind === "text") {
+        handleOpenCodeJsonLine(line, openCodeCompatibility?.schema, {
+          onSession: (nativeSessionId) => {
+            if (!sessionId) announceSession(nativeSessionId);
+          },
+          onText: (ev) => {
             const text = ev.text.endsWith("\n") ? ev.text : `${ev.text}\n`;
             assistantText += text;
             push({ kind: "assistant_chunk", text });
-            return;
-          }
-          if (ev.kind === "tool") {
+          },
+          onTool: (ev) => {
             boundarySentinel?.observe(ev.name, ev.input);
             const started = toolTracker.envelopeToolUse(
               ev.id,
@@ -1836,9 +1836,8 @@ export async function POST(req: Request) {
               ev.isError,
             );
             if (ended) push({ kind: "tool_use", ...ended });
-            return;
-          }
-          if (ev.kind === "tool_start") {
+          },
+          onToolStart: (ev) => {
             boundarySentinel?.observe(ev.name, ev.input);
             const started = toolTracker.envelopeToolUse(
               ev.id,
@@ -1849,18 +1848,16 @@ export async function POST(req: Request) {
             if (started) push({ kind: "tool_use", ...started });
             const reorderedEnd = toolTracker.consumePendingEnvelopeResult(ev.id);
             if (reorderedEnd) push({ kind: "tool_use", ...reorderedEnd });
-            return;
-          }
-          if (ev.kind === "tool_end") {
+          },
+          onToolEnd: (ev) => {
             const ended = toolTracker.envelopeToolResult(
               ev.id,
               typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
               ev.isError,
             );
             if (ended) push({ kind: "tool_use", ...ended });
-            return;
-          }
-          if (ev.kind === "error") {
+          },
+          onError: (ev) => {
             // This is an explicit error envelope, so retain its error state
             // even if its message does not match the generic stderr filter.
             // Error envelopes are provider-controlled and can repeat prompts,
@@ -1870,9 +1867,8 @@ export async function POST(req: Request) {
             openCodeModelRejected ||= modelRejectionInError(ev.message);
             recordStdoutErrorTail("OpenCode reported an error event", true);
             result = { ...result, is_error: true };
-            return;
-          }
-          if (ev.kind === "other") {
+          },
+          onOther: (ev, rawEvent) => {
             // Do not treat arbitrary `text`/`content` on an unknown envelope
             // as assistant output: tool progress and provider errors often
             // carry those fields and may contain secrets or file contents.
@@ -1885,8 +1881,8 @@ export async function POST(req: Request) {
                 `${ev.diagnostic ?? "unknown-event"}:${redactedOpenCodeEventFingerprint(rawEvent)}`,
               );
             }
-          }
-        } catch {
+          },
+          onMalformedJson: () => {
           // Structured-mode stdout can contain a malformed future event with
           // arbitrary tool payloads. Do not feed that raw line into the
           // persisted error tail or any user-visible diagnostic.
@@ -1900,7 +1896,8 @@ export async function POST(req: Request) {
               "malformed-json-event",
             );
           }
-        }
+          },
+        });
       };
 
       const handleLine = (rawLine: string) => {
@@ -1916,8 +1913,10 @@ export async function POST(req: Request) {
             : openCodeCompatibility.diagnostic === "no-compatible-schema"
               ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
               : openCodeCompatibility.diagnostic === "cached-schema-unavailable"
-                ? "OpenCode's compatibility registry is unavailable; continuing without tool activity"
-              : "OpenCode schema refresh was not trusted; using the last known compatible parser";
+                ? "OpenCode's compatibility registry is unavailable; using the shipped compatible parser"
+              : openCodeCompatibility.bundleSource === "built-in"
+                ? "OpenCode schema refresh was not trusted; using the shipped compatible parser"
+                : "OpenCode schema refresh was not trusted; using the last known compatible parser";
           pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
         }
         if (RESUME_ERR_RE.test(line)) resumeFailed = true;
@@ -2276,8 +2275,10 @@ export async function POST(req: Request) {
           : openCodeCompatibility.diagnostic === "no-compatible-schema"
             ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
             : openCodeCompatibility.diagnostic === "cached-schema-unavailable"
-              ? "OpenCode's compatibility registry is unavailable; continuing without tool activity"
-            : "OpenCode schema refresh was not trusted; using the last known compatible parser";
+              ? "OpenCode's compatibility registry is unavailable; using the shipped compatible parser"
+            : openCodeCompatibility.bundleSource === "built-in"
+              ? "OpenCode schema refresh was not trusted; using the shipped compatible parser"
+              : "OpenCode schema refresh was not trusted; using the last known compatible parser";
         pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
       }
       if (openCodeFreshSessionForCompatibility) {
@@ -2322,7 +2323,6 @@ export async function POST(req: Request) {
         jsonBuf = "";
         result = {};
         toolTracker = new ToolCallTracker();
-        openCodeCompatibilityNoticeSent = false;
         openCodeModelRejected = false;
         copilotText.reset();
         stderrTail.length = 0;
@@ -2363,7 +2363,6 @@ export async function POST(req: Request) {
         jsonBuf = "";
         result = {};
         toolTracker = new ToolCallTracker();
-        openCodeCompatibilityNoticeSent = false;
         openCodeModelRejected = false;
         copilotText.reset();
         stderrTail.length = 0;

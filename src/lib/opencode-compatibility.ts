@@ -11,6 +11,9 @@ export type OpenCodeRunCapabilities = {
   session: boolean;
   /** Explicit, documented structured-output format values from `run --help`. */
   protocols: string[];
+  /** Declared `run` option names and structured-output option/value pairs. */
+  options?: string[];
+  structuredOutputs?: Array<{ option: "--format" | "--output"; values: string[] }>;
 };
 
 export type OpenCodeEventSchema = {
@@ -33,6 +36,8 @@ export type OpenCodeEventSchema = {
    */
   shape: {
     envelope: Array<"part" | "data" | "payload" | "root">;
+    /** Envelope(s) explicitly trusted to carry assistant text. */
+    textEnvelope?: Array<"part" | "data" | "payload" | "root">;
     sessionId: string[];
     id: string[];
     name: string[];
@@ -44,6 +49,12 @@ export type OpenCodeEventSchema = {
     status: string[];
     terminalStates: string[];
     errorStates: string[];
+  };
+  /** Bounded argv contract, confirmed against the installed client's help. */
+  launch: {
+    structuredOutput: { option: "--format" | "--output"; value: string };
+    sessionOption?: "--session" | "--resume";
+    requiredFlags: string[];
   };
 };
 
@@ -139,12 +150,14 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
       },
       shape: {
         envelope: ["part", "data", "root"],
+        textEnvelope: ["part", "data"],
         sessionId: ["sessionID", "sessionId", "session_id"],
         id: ["id", "callID", "callId", "toolCallId", "tool_call_id"],
         name: ["tool", "name"], text: ["text", "content"], state: ["state"], input: ["input"], output: ["output"], error: ["error"], status: ["status"],
         terminalStates: ["completed", "complete", "error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
         errorStates: ["error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
       },
+      launch: { structuredOutput: { option: "--format", value: "json" }, sessionOption: "--session", requiredFlags: [] },
     },
     {
       // Earlier and preview clients used generic tool envelopes. Keeping this
@@ -161,12 +174,14 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
       },
       shape: {
         envelope: ["part", "data", "root"],
+        textEnvelope: ["part", "data"],
         sessionId: ["sessionID", "sessionId", "session_id"],
         id: ["id", "callID", "callId", "toolCallId", "tool_call_id"],
         name: ["tool", "name"], text: ["text", "content"], state: ["state"], input: ["input"], output: ["output"], error: ["error"], status: ["status"],
         terminalStates: ["completed", "complete", "error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
         errorStates: ["error", "failed", "cancelled", "canceled", "aborted", "interrupted", "timeout", "timed_out"],
       },
+      launch: { structuredOutput: { option: "--format", value: "json" }, requiredFlags: [] },
     },
   ],
 };
@@ -185,14 +200,33 @@ function hasBoundedAliases(value: unknown): value is string[] {
 function hasValidShape(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const aliasKeys = ["sessionId", "id", "name", "text", "state", "input", "output", "error", "status", "terminalStates", "errorStates"];
-  if (!Object.keys(value).every((key) => key === "envelope" || aliasKeys.includes(key))) return false;
-  if (!Array.isArray(value.envelope) || value.envelope.length === 0 || value.envelope.length > 4 || !value.envelope.includes("root") || !value.envelope.every((field) => field === "part" || field === "data" || field === "payload" || field === "root")) return false;
+  const envelopeFields = (fields: unknown, requireRoot: boolean): fields is Array<"part" | "data" | "payload" | "root"> =>
+    Array.isArray(fields)
+    && fields.length > 0
+    && fields.length <= 4
+    && (!requireRoot || fields.includes("root"))
+    && fields.every((field) => field === "part" || field === "data" || field === "payload" || field === "root");
+  if (!Object.keys(value).every((key) => key === "envelope" || key === "textEnvelope" || aliasKeys.includes(key))) return false;
+  if (!envelopeFields(value.envelope, true) || (value.textEnvelope !== undefined && !envelopeFields(value.textEnvelope, false))) return false;
   return aliasKeys.every((key) => hasBoundedAliases(value[key]));
+}
+
+function hasValidLaunch(value: unknown, requires: Record<string, unknown>): boolean {
+  if (!isRecord(value) || !Array.isArray(value.requiredFlags)) return false;
+  const structuredOutput = value.structuredOutput;
+  if (!isRecord(structuredOutput)) return false;
+  if (structuredOutput.option !== "--format" && structuredOutput.option !== "--output") return false;
+  if (typeof structuredOutput.value !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(structuredOutput.value)) return false;
+  if (structuredOutput.value !== requires.protocol && structuredOutput.value !== "json") return false;
+  if (value.sessionOption !== undefined && value.sessionOption !== "--session" && value.sessionOption !== "--resume") return false;
+  if (requires.session === true && value.sessionOption === undefined) return false;
+  return value.requiredFlags.length <= 12 && value.requiredFlags.every((flag) => typeof flag === "string" && /^--[a-z][a-z0-9-]{0,63}$/i.test(flag) && flag !== structuredOutput.option && flag !== value.sessionOption && flag !== "--model");
 }
 
 function isEventSchema(value: unknown): value is OpenCodeEventSchema {
   if (!isRecord(value) || typeof value.id !== "string" || value.id.length === 0 || value.id.length > 128 || !isRecord(value.eventTypes) || !isRecord(value.requires)) return false;
   if (!hasValidShape(value.shape)) return false;
+  if (!hasValidLaunch(value.launch, value.requires)) return false;
   if (!Object.keys(value.requires).every((key) => key === "json" || key === "session" || key === "model" || key === "protocol")) return false;
   if (value.requires.json !== true || (value.requires.session !== undefined && typeof value.requires.session !== "boolean") || (value.requires.model !== undefined && typeof value.requires.model !== "boolean") || (value.requires.protocol !== undefined && (typeof value.requires.protocol !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(value.requires.protocol)))) return false;
   const eventKeys: Array<keyof OpenCodeEventSchema["eventTypes"]> = ["ignored", "text", "toolStart", "toolEnd", "toolComplete", "error"];
@@ -224,6 +258,12 @@ function schemaMatches(schema: OpenCodeEventSchema, capabilities: OpenCodeRunCap
   // surface is the v1 `json` protocol. New probes always populate this list.
   const protocols = capabilities.protocols ?? (capabilities.json ? ["json"] : []);
   if (schema.requires.protocol !== undefined && !protocols.includes(schema.requires.protocol)) return false;
+  const structuredOutputs = capabilities.structuredOutputs ?? [{ option: "--format" as const, values: protocols }];
+  if (!structuredOutputs.some((output) => output.option === schema.launch.structuredOutput.option && output.values.includes(schema.launch.structuredOutput.value))) return false;
+  const options = new Set(capabilities.options ?? ["--format", "--output", "--session", "--resume", "--model"]);
+  if (!options.has(schema.launch.structuredOutput.option)) return false;
+  if (schema.launch.sessionOption && !options.has(schema.launch.sessionOption)) return false;
+  if (schema.launch.requiredFlags.some((flag) => !options.has(flag))) return false;
   return true;
 }
 
@@ -255,6 +295,13 @@ function parseCanonicalTimestamp(value: unknown): number | null {
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value ? timestamp : null;
 }
 
+function requirementsOverlap(left: OpenCodeEventSchema, right: OpenCodeEventSchema): boolean {
+  const compatible = <T>(a: T | undefined, b: T | undefined) => a === undefined || b === undefined || a === b;
+  return compatible(left.requires.session, right.requires.session)
+    && compatible(left.requires.model, right.requires.model)
+    && compatible(left.requires.protocol, right.requires.protocol);
+}
+
 export function isOpenCodeSchemaBundle(
   value: unknown,
   now = Date.now(),
@@ -268,12 +315,13 @@ export function isOpenCodeSchemaBundle(
   // A duplicated requirement profile would be an ambiguous same-specificity
   // selection for the corresponding client capabilities. Reject it at the
   // signed-bundle boundary, before it can affect a chat turn.
-  const profiles = new Set<string>();
   const ids = new Set<string>();
-  for (const schema of value.schemas) {
-    const profile = stableJson(schema.requires);
-    if (profiles.has(profile) || ids.has(schema.id)) return false;
-    profiles.add(profile);
+  for (let index = 0; index < value.schemas.length; index += 1) {
+    const schema = value.schemas[index];
+    if (ids.has(schema.id)) return false;
+    for (const prior of value.schemas.slice(0, index)) {
+      if (schemaSpecificity(schema) === schemaSpecificity(prior) && requirementsOverlap(schema, prior)) return false;
+    }
     ids.add(schema.id);
   }
   return true;
@@ -367,21 +415,31 @@ async function readResponseTextLimited(response: Response): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-async function fetchSchemaBundle(url: string, fetcher: typeof fetch): Promise<Response> {
+async function fetchSchemaBundle(url: string, fetcher: typeof fetch, timeoutMs = REFRESH_TIMEOUT_MS): Promise<string> {
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timedOut = new Promise<never>((_, reject) => {
+  let response: Response | undefined;
+  let deadlineElapsed = false;
+  const deadline = new Promise<never>((_, reject) => {
     timeout = setTimeout(() => {
+      deadlineElapsed = true;
       controller.abort();
+      void response?.body?.cancel().catch(() => undefined);
       reject(new Error("schema registry refresh timed out"));
-    }, REFRESH_TIMEOUT_MS);
+    }, timeoutMs);
   });
   try {
-    // Test and embedding fetch shims are not required to honor AbortSignal;
-    // racing the timeout prevents a hung registry from delaying a chat turn.
+    // The deadline covers response headers *and* body consumption. Test and
+    // embedding fetch shims are not required to honor AbortSignal, so race the
+    // full operation as well as aborting the platform fetch/body stream.
     return await Promise.race([
-      fetcher(url, { headers: { accept: "application/json" }, signal: controller.signal }),
-      timedOut,
+      (async () => {
+        response = await fetcher(url, { headers: { accept: "application/json" }, signal: controller.signal });
+        if (deadlineElapsed) throw new Error("schema registry refresh timed out");
+        if (!response.ok) throw new Error("untrusted schema bundle");
+        return readResponseTextLimited(response);
+      })(),
+      deadline,
     ]);
   } finally {
     if (timeout) clearTimeout(timeout);
@@ -479,6 +537,8 @@ export type OpenCodeSchemaBundleSource = {
   fetch?: typeof fetch;
   now?: () => number;
   cacheFile?: string;
+  /** Test-only bounded deadline for the complete fetch and body read. */
+  refreshTimeoutMs?: number;
 };
 
 // Release builds inject these public values at compile time. Server-side
@@ -497,10 +557,9 @@ async function refreshOpenCodeSchemaBundle(
   publicKey: string,
   fetcher: typeof fetch,
   now: number,
+  refreshTimeoutMs?: number,
 ): Promise<LoadedOpenCodeSchemaBundle> {
-  const response = await fetchSchemaBundle(url, fetcher);
-  const raw = await readResponseTextLimited(response);
-  if (!response.ok) throw new Error("untrusted schema bundle");
+  const raw = await fetchSchemaBundle(url, fetcher, refreshTimeoutMs);
   const remote = JSON.parse(raw) as unknown;
   if (!verifyOpenCodeSchemaBundle(remote, publicKey, now)) throw new Error("invalid schema signature");
   const cachedTrust = await readCachedTrustState(file, publicKey, now);
@@ -567,17 +626,24 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   if (!url || !publicKey) return { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in" };
 
   const cached = await readVerifiedCache(file, publicKey, now);
+  // An expired signed cache cannot parse a turn, but it records that this
+  // client previously trusted a newer registry contract. Do not silently
+  // regress to the compiled parser if refresh fails; a first offline launch
+  // without any cache can still use that source-trusted baseline.
+  const cacheTrust = cached ?? await readCachedTrustState(file, publicKey, now);
   const cacheFresh = cached && now - cached.checkedAt < CACHE_TTL_MS;
   if (cacheFresh) return { bundle: cached.bundle, source: "cache" };
   const key = schemaRefreshKey(file, url, publicKey);
   if ((refreshRetryAt.get(key) ?? 0) > now) {
     return cached
       ? { bundle: cached.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" }
-      : { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "cached-schema-unavailable" };
+      : cacheTrust
+        ? { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "cached-schema-unavailable" }
+        : { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "schema-registry-refresh-rejected" };
   }
   const refresh = startSchemaRefresh(
     key,
-    () => refreshOpenCodeSchemaBundle(file, url, publicKey, source.fetch ?? fetch, now),
+    () => refreshOpenCodeSchemaBundle(file, url, publicKey, source.fetch ?? fetch, now, source.refreshTimeoutMs),
     now,
   );
   if (cached) {
@@ -589,7 +655,9 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
   try {
     return await refresh;
   } catch {
-    return { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "cached-schema-unavailable" };
+    return cacheTrust
+      ? { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "cached-schema-unavailable" }
+      : { bundle: BUILTIN_OPENCODE_SCHEMA_BUNDLE, source: "built-in", diagnostic: "schema-registry-refresh-rejected" };
   }
 }
 
@@ -606,15 +674,18 @@ export async function resolveOpenCodeCompatibility(
     };
   }
   const loaded = await loadOpenCodeSchemaBundle(source);
-  // A configured registry with no currently verified cache must not silently
-  // fall back to a potentially older compiled parser. Keep plain chat until a
-  // signed schema for this client can be verified again.
-  if (loaded.diagnostic === "cached-schema-unavailable") {
+  // The compiled baseline remains a safe first-launch fallback while it is
+  // within its own explicit validity window. Once that baseline expires, do
+  // not extend an old parser merely because a remote cache is unavailable.
+  if (
+    loaded.diagnostic === "cached-schema-unavailable"
+    && Date.parse(BUILTIN_OPENCODE_SCHEMA_BUNDLE.expiresAt) <= (source?.now?.() ?? Date.now())
+  ) {
     return {
       mode: "plain",
       capabilities,
       bundleSource: loaded.source,
-      diagnostic: "cached-schema-unavailable",
+      diagnostic: loaded.diagnostic,
     };
   }
   const schema = selectOpenCodeSchema(loaded.bundle.schemas, capabilities);
@@ -631,6 +702,9 @@ export async function resolveOpenCodeCompatibility(
     capabilities,
     schema,
     bundleSource: loaded.source,
+    // The shipped parser is a source-trusted offline baseline. A failed
+    // registry refresh must not remove otherwise compatible tool activity,
+    // but callers still surface the value-free recovery state.
     diagnostic: loaded.diagnostic,
   };
 }

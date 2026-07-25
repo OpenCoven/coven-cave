@@ -1,11 +1,44 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { BUILTIN_OPENCODE_SCHEMA_BUNDLE } from "./opencode-compatibility.ts";
-import { parseOpenCodeRunEvent } from "./opencode-stream.ts";
+import { handleOpenCodeJsonLine, parseOpenCodeRunEvent } from "./opencode-stream.ts";
 
 assert.deepEqual(
   parseOpenCodeRunEvent({ type: "text", sessionID: "ses_123", part: { text: "Hello" } }),
   { kind: "text", sessionId: "ses_123", text: "Hello" },
+);
+{
+  const sessions: string[] = [];
+  const text: string[] = [];
+  const toolIds: string[] = [];
+  const diagnostics: string[] = [];
+  handleOpenCodeJsonLine(
+    JSON.stringify({ type: "text", sessionID: "ses_live", part: { text: "live reply" } }),
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+    { onSession: (id) => sessions.push(id), onText: (event) => text.push(event.text), onTool: (event) => toolIds.push(event.id), onOther: (event) => diagnostics.push(event.diagnostic ?? "other") },
+  );
+  handleOpenCodeJsonLine(
+    JSON.stringify({ type: "tool_use", sessionID: "ses_live", part: { id: "tool_live", tool: "Read", state: { output: "ok" } } }),
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+    { onSession: (id) => sessions.push(id), onText: (event) => text.push(event.text), onTool: (event) => toolIds.push(event.id), onOther: (event) => diagnostics.push(event.diagnostic ?? "other") },
+  );
+  handleOpenCodeJsonLine(
+    JSON.stringify({ type: "text", sessionID: "ses_live", text: "hostile root text" }),
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+    { onSession: (id) => sessions.push(id), onText: (event) => text.push(event.text), onTool: (event) => toolIds.push(event.id), onOther: (event) => diagnostics.push(event.diagnostic ?? "other") },
+  );
+  assert.deepEqual(sessions, ["ses_live", "ses_live", "ses_live"], "JSONL dispatch adopts the native session before handling each frame");
+  assert.deepEqual(text, ["live reply"], "only schema-authorized text reaches the route callback");
+  assert.deepEqual(toolIds, ["tool_live"], "terminal tool frames retain their upstream call id");
+  assert.deepEqual(diagnostics, ["malformed-event"], "hostile frames reach the diagnostic path instead of assistant text");
+}
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "text", sessionID: "ses_123", text: "provider-controlled root field" },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "other", sessionId: "ses_123", diagnostic: "malformed-event" },
+  "a text label cannot promote root payload fields unless its signed profile explicitly authorizes a root text envelope",
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
@@ -41,6 +74,7 @@ assert.deepEqual(
       shape: {
         ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].shape,
         envelope: ["payload"],
+        textEnvelope: ["payload"],
         sessionId: ["session"],
         text: ["body"],
       },
@@ -188,10 +222,10 @@ const shapedSchema = {
 };
 assert.deepEqual(
   parseOpenCodeRunEvent(
-    { type: "tool", session: "ses_v2", payload: { call_id: "call_v2", tool_name: "Read", phase: { state: "done", arguments: { path: "README.md" }, result: "ok" } } },
+    { type: "tool", payload: { session: "ses_v2", call_id: "call_v2", tool_name: "Read", phase: { state: "done", arguments: { path: "README.md" }, result: "ok" } } },
     shapedSchema,
   ),
   { kind: "tool", sessionId: "ses_v2", id: "call_v2", name: "Read", input: { path: "README.md" }, output: "ok", isError: false },
-  "a signed schema can map bounded future envelope fields and terminal states",
+  "a signed schema resolves envelope-native sessions as well as bounded future fields and terminal states",
 );
 console.log("opencode-stream.test.ts: ok");

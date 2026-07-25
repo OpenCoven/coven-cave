@@ -86,11 +86,26 @@ const missingSession = await resolveOpenCodeCompatibility({ version: "1.2.3", js
 assert.equal(missingSession.mode, "structured");
 assert.equal(missingSession.schema?.id, "opencode-run-json-legacy", "older compatible schemas coexist without client version gates");
 
+const offlineBaseline = await resolveOpenCodeCompatibility(
+  { version: "current", json: true, model: false, session: true, protocols: ["json"] },
+  {
+    cacheFile: path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-baseline-")), "bundle.json"),
+    publicKey: publicPem,
+    url: "https://registry.invalid/opencode.json",
+    now: () => now,
+    fetch: async () => { throw new Error("offline"); },
+  },
+);
+assert.equal(offlineBaseline.mode, "structured", "a first offline launch keeps the shipped matching parser usable");
+assert.equal(offlineBaseline.bundleSource, "built-in");
+assert.equal(offlineBaseline.diagnostic, "schema-registry-refresh-rejected", "the built-in recovery remains visible to the user");
+
 const broadSchema = { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], id: "broad", requires: { json: true as const } };
 const protocolV2Schema = {
   ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   id: "opencode-run-json-v2",
   requires: { json: true as const, session: true, protocol: "json-v2" },
+  launch: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].launch, structuredOutput: { option: "--format" as const, value: "json-v2" } },
 };
 assert.equal(
   selectOpenCodeSchema([BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], protocolV2Schema], { version: "current", json: true, model: false, session: true, protocols: ["json-v2"] })?.id,
@@ -104,6 +119,22 @@ assert.equal(
 );
 
 assert.equal(isOpenCodeSchemaBundle({ ...unsigned, schemas: [] }, now), false, "empty signed bundles cannot replace a working parser set");
+const protocolOnlySchema = {
+  ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  id: "protocol-only",
+  requires: { json: true as const, protocol: "json" },
+  launch: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].launch, sessionOption: undefined },
+};
+const sessionOnlySchema = {
+  ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  id: "session-only",
+  requires: { json: true as const, session: true },
+};
+assert.equal(
+  isOpenCodeSchemaBundle({ ...unsigned, schemas: [protocolOnlySchema, sessionOnlySchema] }, now),
+  false,
+  "distinct equal-specificity requirements that match one client are rejected before caching",
+);
 assert.equal(
   isOpenCodeSchemaBundle({ ...unsigned, schemas: [{ ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], shape: undefined }] }, now),
   false,
@@ -185,6 +216,17 @@ assert.equal(oversized.source, "cache");
 assert.equal(oversized.diagnostic, undefined, "oversized refreshes preserve and immediately serve the verified cache");
 assert.equal((JSON.parse(await readFile(cacheFile, "utf8")) as { bundle: { sequence: number } }).bundle.sequence, 2);
 
+const stalled = await loadOpenCodeSchemaBundle({
+  cacheFile: path.join(path.dirname(cacheFile), "stalled-body.json"),
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now,
+  refreshTimeoutMs: 10,
+  fetch: async () => new Response(new ReadableStream<Uint8Array>({ start() {} }), { status: 200 }),
+});
+assert.equal(stalled.source, "built-in", "a response body that stalls after headers fails closed within the refresh deadline");
+assert.equal(stalled.diagnostic, "schema-registry-refresh-rejected");
+
 const unsignedSequence3 = { ...unsigned, sequence: 3 };
 const signedSequence3 = {
   ...unsignedSequence3,
@@ -245,7 +287,7 @@ const expiredRemoteOnly = await resolveOpenCodeCompatibility(
     fetch: async () => { throw new Error("offline"); },
   },
 );
-assert.equal(expiredRemoteOnly.mode, "plain", "an expired remote-only cache cannot silently select an older built-in JSON parser");
+assert.equal(expiredRemoteOnly.mode, "plain", "an expired remote cache never extends an expired shipped parser");
 assert.equal(expiredRemoteOnly.diagnostic, "cached-schema-unavailable");
 
 const expiredSigned = { ...signedSequence3, expiresAt: "2026-12-24T00:00:00.000Z", signature: { ...signedSequence3.signature } };

@@ -100,18 +100,34 @@ function probeOutput(command: string, args: string[], env = harnessSpawnEnv(), i
   });
 }
 
-function hasRunOption(help: string, flag: "--model" | "--session"): boolean {
+function hasRunOption(help: string, flag: string): boolean {
   // Only option-definition lines count. Mentions in examples, migration notes,
   // or another command's help text are not evidence that `opencode run` takes
   // this flag.
   return new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${flag}\\b(?:\\s|=|,|$)`, "m").test(help);
 }
 
+function optionStanza(help: string, option: "--format" | "--output"): string {
+  return help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b[^\\n]*(?:\\n(?!\\s*(?:-[A-Za-z],?\\s+)?--)[^\\n]*){0,2}`, "im"))?.[0] ?? "";
+}
+
+function advertisedStructuredOutputs(help: string): Array<{ option: "--format" | "--output"; values: string[] }> {
+  return (["--format", "--output"] as const).flatMap((option) => {
+    const stanza = optionStanza(help, option);
+    const values = [...new Set((stanza.match(/\bjson(?:[._-][a-z0-9]+)*\b/gi) ?? []).map((value) => value.toLowerCase()))];
+    return values.length ? [{ option, values }] : [];
+  });
+}
+
+function declaredRunOptions(help: string): string[] {
+  return [...new Set([...help.matchAll(/^\s*(?:-[A-Za-z],?\s+)?(--[A-Za-z][A-Za-z0-9-]*)\b/gm)].map((match) => match[1]))];
+}
+
 function advertisedFormatProtocols(help: string): string[] {
-  const stanza = help.match(/^\s*(?:-[A-Za-z],?\s+)?--format\b[^\n]*(?:\n(?!\s*(?:-[A-Za-z],?\s+)?--)[^\n]*){0,2}/im)?.[0] ?? "";
+  const outputs = advertisedStructuredOutputs(help);
   // A protocol marker is useful only when the CLI advertises it as an output
   // format. Do not derive it from version strings or arbitrary help prose.
-  return [...new Set((stanza.match(/\bjson(?:[._-][a-z0-9]+)*\b/gi) ?? []).map((value) => value.toLowerCase()))];
+  return [...new Set(outputs.flatMap((output) => output.values))];
 }
 
 /** Capability probes are cached because old Coven CLIs reject unknown flags. */
@@ -186,8 +202,10 @@ export function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
     // Partial, timed-out, non-zero, or oversized help is never capability
     // evidence. Probe again after the short TTL instead of risking an argv
     // that the installed client does not accept.
-    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [] };
+    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], structuredOutputs: [] };
     const help = helpProbe.output;
+    const options = declaredRunOptions(help);
+    const structuredOutputs = advertisedStructuredOutputs(help);
     const protocols = advertisedFormatProtocols(help);
     const json = protocols.some((protocol) => protocol === "json" || protocol.startsWith("json-") || protocol.startsWith("json_"));
     return {
@@ -196,13 +214,15 @@ export function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
       // stanza. A stray "JSON" in a banner or another option's description
       // must not make us launch an unsupported `--format json` command.
       json,
-      model: hasRunOption(help, "--model"),
-      session: hasRunOption(help, "--session"),
+      model: options.includes("--model"),
+      session: options.includes("--session") || options.includes("--resume"),
       // The documented format value is an independently observed protocol
       // marker. Future formats (for example json-v2) must be explicitly
       // advertised and selected by a matching schema; we never infer them
       // from the installed version string.
       protocols,
+      options,
+      structuredOutputs,
     };
   })();
   openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, value };

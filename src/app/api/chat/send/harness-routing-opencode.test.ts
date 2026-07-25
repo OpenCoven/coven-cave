@@ -12,12 +12,12 @@ assert.match(
 );
 assert.match(
   route,
-  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?a\.push\("--format", openCodeCompatibility\.schema\?\.requires\.protocol \?\? "json"\);[\s\S]*?openCodeCompatibility\?\.capabilities\.session[\s\S]*?a\.push\("--session", resumeSessionId\);/,
-  "OpenCode uses discovered JSON and session capabilities rather than a version threshold",
+  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?const launch = openCodeCompatibility\.schema!\.launch;[\s\S]*?a\.push\(launch\.structuredOutput\.option, launch\.structuredOutput\.value, \.\.\.launch\.requiredFlags\);[\s\S]*?launch\.sessionOption[\s\S]*?else if \(resumeSessionId && openCodeCompatibility\?\.capabilities\.session\) a\.push\("--session", resumeSessionId\);/,
+  "OpenCode uses the selected schema's discovered structured-output and session argv contract rather than a version threshold",
 );
 assert.match(
   route,
-  /const rawEvent = JSON\.parse\(line\);[\s\S]*?parseOpenCodeRunEvent\(rawEvent, openCodeCompatibility\?\.schema\);[\s\S]*?announceSession\(ev\.sessionId\);/,
+  /handleOpenCodeJsonLine\(line, openCodeCompatibility\?\.schema, \{[\s\S]*?onSession: \(nativeSessionId\) => \{[\s\S]*?announceSession\(nativeSessionId\);/,
   "the first structured OpenCode event persists its minted session id",
 );
 assert.match(
@@ -62,18 +62,18 @@ assert.match(
 );
 assert.match(
   route,
-  /openCodeModelRejected \|\|= modelRejectionInError\(ev\.message\);[\s\S]*?recordStdoutErrorTail\("OpenCode reported an error event", true\)/,
+  /onError: \(ev\) => \{[\s\S]*?openCodeModelRejected \|\|= modelRejectionInError\(ev\.message\);[\s\S]*?recordStdoutErrorTail\("OpenCode reported an error event", true\)/,
   "structured OpenCode error payloads are classified but never copied into user-visible diagnostics",
 );
 assert.match(
   route,
-  /if \(ev\.kind === "other"\) \{[\s\S]*?unrecognized event; that event was skipped while compatible tool activity continues/,
+  /onOther: \(ev, rawEvent\) => \{[\s\S]*?unrecognized event; that event was skipped while compatible tool activity continues/,
   "an unknown OpenCode envelope is skipped without suppressing later compatible tool activity",
 );
 assert.match(
   route,
-  /parseOpenCodeRunEvent\(rawEvent, openCodeCompatibility\?\.schema\);[\s\S]*?if \(ev\.kind === "ignore"\) return;[\s\S]*?if \(ev\.kind === "text"\)/,
-  "documented non-renderable OpenCode lifecycle frames are ignored before tool activity is evaluated",
+  /import \{ handleOpenCodeJsonLine \} from "@\/lib\/opencode-stream";[\s\S]*?handleOpenCodeJsonLine\(line, openCodeCompatibility\?\.schema,/,
+  "the route uses the behavioral JSONL handler, whose lifecycle-frame behavior is covered by its focused test",
 );
 assert.match(
   route,
@@ -82,7 +82,7 @@ assert.match(
 );
 assert.match(
   route,
-  /ev\.kind === "error"[\s\S]*?openCodeModelRejected \|\|= modelRejectionInError\(ev\.message\);[\s\S]*?recordStdoutErrorTail\("OpenCode reported an error event", true\)/,
+  /onError: \(ev\) => \{[\s\S]*?openCodeModelRejected \|\|= modelRejectionInError\(ev\.message\);[\s\S]*?recordStdoutErrorTail\("OpenCode reported an error event", true\)/,
   "structured OpenCode errors retain model-rejection state without retaining provider-controlled details",
 );
 assert.match(
@@ -107,7 +107,7 @@ assert.match(
 );
 assert.match(
   route,
-  /ev\.kind === "tool_start"[\s\S]*?envelopeToolUse[\s\S]*?ev\.kind === "tool_end"[\s\S]*?envelopeToolResult/,
+  /onToolStart: \(ev\) => \{[\s\S]*?envelopeToolUse[\s\S]*?onToolEnd: \(ev\) => \{[\s\S]*?envelopeToolResult/,
   "split tool lifecycle frames preserve the stable bubble id across progress and result",
 );
 assert.match(
@@ -122,7 +122,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const handleOpenCodeLine[\s\S]*?catch \{[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)/,
+  /const handleOpenCodeLine[\s\S]*?onMalformedJson: \(\) => \{[\s\S]*?recordStdoutErrorTail\("OpenCode emitted a malformed JSON event", true\)/,
   "malformed structured OpenCode events never copy their raw payload into diagnostics",
 );
 assert.match(

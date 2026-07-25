@@ -9,6 +9,17 @@ export type OpenCodeRunEvent =
   | { kind: "error"; sessionId?: string; message: string }
   | { kind: "other"; sessionId?: string; diagnostic?: "unknown-event" | "malformed-event" };
 
+export type OpenCodeJsonLineHandlers = {
+  onSession?: (sessionId: string) => void;
+  onText?: (event: Extract<OpenCodeRunEvent, { kind: "text" }>) => void;
+  onTool?: (event: Extract<OpenCodeRunEvent, { kind: "tool" }>) => void;
+  onToolStart?: (event: Extract<OpenCodeRunEvent, { kind: "tool_start" }>) => void;
+  onToolEnd?: (event: Extract<OpenCodeRunEvent, { kind: "tool_end" }>) => void;
+  onError?: (event: Extract<OpenCodeRunEvent, { kind: "error" }>) => void;
+  onOther?: (event: Extract<OpenCodeRunEvent, { kind: "other" }>, rawEvent: unknown) => void;
+  onMalformedJson?: () => void;
+};
+
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -20,7 +31,7 @@ function stringAt(recordValue: Record<string, unknown> | null, ...keys: string[]
   return undefined;
 }
 
-type ShapeAlias = Exclude<keyof NonNullable<OpenCodeEventSchema["shape"]>, "envelope">;
+type ShapeAlias = Exclude<keyof NonNullable<OpenCodeEventSchema["shape"]>, "envelope" | "textEnvelope">;
 
 function shapeAliases(schema: OpenCodeEventSchema | undefined, key: ShapeAlias, defaults: string[]): string[] {
   const aliases = schema?.shape?.[key];
@@ -32,14 +43,26 @@ function valueAt(recordValue: Record<string, unknown> | null, keys: string[]): u
   return undefined;
 }
 
-function envelope(event: Record<string, unknown>, schema: OpenCodeEventSchema | undefined): Record<string, unknown> | null {
-  const envelopes = schema?.shape?.envelope ?? ["part", "data", "root"];
+function envelope(
+  event: Record<string, unknown>,
+  envelopes: Array<"part" | "data" | "payload" | "root">,
+): Record<string, unknown> | null {
   for (const field of envelopes) {
     if (field === "root") return event;
     const candidate = record(event[field]);
     if (candidate) return candidate;
   }
   return null;
+}
+
+function textEnvelope(event: Record<string, unknown>, schema: OpenCodeEventSchema | undefined): Record<string, unknown> | null {
+  // Root is deliberately excluded by default. A signed profile must opt in
+  // with `textEnvelope: ["root"]` before provider-controlled root fields can
+  // become assistant text; generic envelopes may still use root for tools.
+  const envelopes = schema?.shape?.textEnvelope
+    ?? schema?.shape?.envelope.filter((field) => field !== "root")
+    ?? ["part", "data"];
+  return envelope(event, envelopes);
 }
 
 function eventTypes(schema: OpenCodeEventSchema | undefined, kind: keyof OpenCodeEventSchema["eventTypes"], defaults: string[]): string[] {
@@ -78,7 +101,11 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   if (!event || typeof event.type !== "string") {
     return { kind: "other", diagnostic: "malformed-event" };
   }
-  const sessionId = stringAt(event, ...shapeAliases(schema, "sessionId", ["sessionID", "sessionId", "session_id"]));
+  const part = envelope(event, schema?.shape?.envelope ?? ["part", "data", "root"]);
+  const sessionAliases = shapeAliases(schema, "sessionId", ["sessionID", "sessionId", "session_id"]);
+  // Protocol revisions may keep the native session on the declared payload.
+  // Prefer that envelope, then preserve the legacy root-level fallback.
+  const sessionId = stringAt(part, ...sessionAliases) ?? stringAt(event, ...sessionAliases);
   if (eventTypes(schema, "ignored", ["step_start", "step_finish"]).includes(event.type)) {
     return { kind: "ignore", sessionId };
   }
@@ -98,9 +125,8 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
   // OpenCode has emitted both a nested `part` envelope and a root-level
   // `{ type: "tool", callID, state }` envelope. The selected schema decides
   // which event labels are trusted; this only reads either observed shape.
-  const part = envelope(event, schema) ?? event;
   const textAliases = shapeAliases(schema, "text", ["text", "content"]);
-  const text = stringAt(part, ...textAliases) ?? stringAt(event, ...textAliases);
+  const text = stringAt(textEnvelope(event, schema), ...textAliases);
   if (eventTypes(schema, "text", ["text"]).includes(event.type) && text !== undefined) {
     return { kind: "text", sessionId, text };
   }
@@ -149,4 +175,32 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
     sessionId,
     diagnostic: knownType ? "malformed-event" : "unknown-event",
   };
+}
+
+/**
+ * Parse and dispatch one JSONL frame using a selected compatibility schema.
+ * Keeping this boundary independent of the HTTP route makes the same
+ * session/payload safety contract executable in focused tests.
+ */
+export function handleOpenCodeJsonLine(
+  line: string,
+  schema: OpenCodeEventSchema | undefined,
+  handlers: OpenCodeJsonLineHandlers,
+): void {
+  try {
+    const rawEvent = JSON.parse(line) as unknown;
+    const event = parseOpenCodeRunEvent(rawEvent, schema);
+    if (event.sessionId) handlers.onSession?.(event.sessionId);
+    switch (event.kind) {
+      case "ignore": return;
+      case "text": handlers.onText?.(event); return;
+      case "tool": handlers.onTool?.(event); return;
+      case "tool_start": handlers.onToolStart?.(event); return;
+      case "tool_end": handlers.onToolEnd?.(event); return;
+      case "error": handlers.onError?.(event); return;
+      case "other": handlers.onOther?.(event, rawEvent); return;
+    }
+  } catch {
+    handlers.onMalformedJson?.();
+  }
 }
