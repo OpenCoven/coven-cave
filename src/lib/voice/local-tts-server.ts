@@ -136,9 +136,11 @@ export async function runPiperWithDependencies(
     spawnImpl?: PiperSpawn;
     executable?: string | null;
     timing?: Partial<PiperTiming>;
+    removeImpl?: typeof rm;
   } = {},
 ): Promise<Uint8Array> {
   const spawnImpl = dependencies.spawnImpl ?? spawn;
+  const removeImpl = dependencies.removeImpl ?? rm;
   const timing = { ...defaultPiperTiming, ...dependencies.timing };
   const executable = dependencies.executable ?? piperExecutable();
   if (!executable) {
@@ -146,6 +148,13 @@ export async function runPiperWithDependencies(
       "local_tts_engine_unavailable",
       "The bundled Piper runtime is missing. Reinstall CovenCave before selecting a Piper voice.",
     );
+  }
+  // Piper consumes stdin line-by-line. Collapse all user whitespace before
+  // adding the one protocol newline so a streamed response cannot become
+  // multiple synthesis requests writing to the same WAV path.
+  const utterance = text.replace(/\s+/gu, " ").trim();
+  if (!utterance) {
+    throw new LocalTtsSynthesisError("local_tts_failed", "Piper received an empty utterance.");
   }
   const outputDirectory = await mkdtemp(
     path.join(/* turbopackIgnore: true */ os.tmpdir(), "coven-piper-"),
@@ -251,10 +260,7 @@ export async function runPiperWithDependencies(
       else signal?.addEventListener("abort", abort, { once: true });
       // Piper reads one utterance per stdin line. Do not pass text as argv:
       // that path is rejected by Piper's argument parser.
-      // Piper consumes stdin one line at a time. Keep a streamed markdown or
-      // list response as one utterance rather than overwriting its WAV once
-      // for every embedded newline.
-      child.stdin?.end(`${text.replace(/[\r\n]+/g, " ")}\n`);
+      child.stdin?.end(`${utterance}\n`);
     });
 
     const info = await stat(/* turbopackIgnore: true */ outputPath);
@@ -263,7 +269,15 @@ export async function runPiperWithDependencies(
     }
     return new Uint8Array(await readFile(/* turbopackIgnore: true */ outputPath));
   } finally {
-    await rm(/* turbopackIgnore: true */ outputDirectory, { recursive: true, force: true }).catch(() => undefined);
+    // Windows may retain a WAV handle briefly after a terminated child exits.
+    // Retry transient locks so cancelled conversational audio is not left in
+    // the shared temp directory.
+    await removeImpl(/* turbopackIgnore: true */ outputDirectory, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100,
+    }).catch(() => undefined);
   }
 }
 

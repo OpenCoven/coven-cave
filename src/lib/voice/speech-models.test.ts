@@ -362,6 +362,51 @@ test("removing a running download cancels it before it can publish", async () =>
   await rm(root, { recursive: true, force: true });
 });
 
+test("a replacement waits for removal to reap the cancelled writer", async () => {
+  const root = testRoot("remove-replacement-barrier");
+  await rm(root, { recursive: true, force: true });
+  const model = SPEECH_MODEL_REGISTRY[0];
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+  let firstAborted = false;
+  let fetchCalls = 0;
+  let markFirstFetch: (() => void) | undefined;
+  const firstFetch = new Promise<void>((resolve) => { markFirstFetch = resolve; });
+  const fetchImpl = async (_url: string | URL, init?: RequestInit) => {
+    fetchCalls += 1;
+    if (fetchCalls === 1) {
+      init?.signal?.addEventListener("abort", () => {
+        firstAborted = true;
+        controller?.error(new Error("aborted"));
+      }, { once: true });
+      markFirstFetch?.();
+      return new Response(new ReadableStream({
+        start(next) {
+          controller = next;
+          next.enqueue(new TextEncoder().encode("partial"));
+        },
+      }), { headers: { "content-length": String(model.sizeBytes) } });
+    }
+    assert.equal(firstAborted, true, "replacement cannot start before removal aborts the old writer");
+    throw new Error("second download intentionally stops after the barrier check");
+  };
+
+  const first = await startSpeechModelDownload(model.id, fetchImpl as typeof fetch, root);
+  assert.ok("job" in first && first.started);
+  await firstFetch;
+  const removal = removeSpeechModel(model.id, root);
+  const replacement = startSpeechModelDownload(model.id, fetchImpl as typeof fetch, root);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(fetchCalls, 1, "replacement waits while removal owns the model directory");
+  await removal;
+  const second = await replacement;
+  assert.ok("job" in second && second.started);
+  for (let attempt = 0; attempt < 20 && fetchCalls < 2; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(fetchCalls, 2);
+  await rm(root, { recursive: true, force: true });
+});
+
 test("removing a model after publication cannot leave its download ready", async () => {
   const root = testRoot("remove-after-publish");
   await rm(root, { recursive: true, force: true });

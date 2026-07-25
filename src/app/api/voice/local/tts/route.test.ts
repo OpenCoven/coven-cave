@@ -60,6 +60,19 @@ test("POST local TTS validates JSON, text, and local voice ids", async () => {
     ).status,
     400,
   );
+  const extraField = await handleLocalTtsPost(
+    request({ text: "hello", voiceName: readyVoice.id, modelPath: "C:\\untrusted.onnx" }),
+  );
+  assert.equal(extraField.status, 400);
+  assert.equal((await extraField.json()).error, "invalid_request");
+  assert.equal(
+    (await handleLocalTtsPost(new Request("http://test/api/voice/local/tts", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: JSON.stringify({ text: "hello", voiceName: readyVoice.id }),
+    }))).status,
+    415,
+  );
 });
 
 test("POST local TTS bounds declared and streamed request bodies before JSON parsing", async () => {

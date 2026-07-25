@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { existsSync, statSync, writeFileSync } from "node:fs";
+import { rm as remove } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -36,6 +37,7 @@ test("Piper runner sends text on stdin and cleans its bounded WAV output", async
   let options = null;
   let stdin = "";
   let outputDirectory = null;
+  let cleanupOptions = null;
   const fakeRunner = (receivedCommand, receivedArgs, receivedOptions) => {
     command = receivedCommand;
     argv = receivedArgs;
@@ -66,7 +68,13 @@ test("Piper runner sends text on stdin and cleans its bounded WAV output", async
     "verified-voice.onnx",
     "Hello from Piper.",
     undefined,
-    { spawnImpl: fakeRunner },
+    {
+      spawnImpl: fakeRunner,
+      removeImpl: async (target, options) => {
+        cleanupOptions = options;
+        return remove(target, options);
+      },
+    },
   );
 
   assert.equal(command, "piper");
@@ -77,9 +85,15 @@ test("Piper runner sends text on stdin and cleans its bounded WAV output", async
   assert.deepEqual([...wav], [82, 73, 70, 70]);
   assert.ok(outputDirectory);
   assert.equal(existsSync(outputDirectory), false, "the private audio directory is removed");
+  assert.deepEqual(cleanupOptions, {
+    recursive: true,
+    force: true,
+    maxRetries: 3,
+    retryDelay: 100,
+  });
 });
 
-test("Piper runner sends multiline text as one utterance", async () => {
+test("Piper runner sends normalized multiline text as one utterance", async () => {
   let stdin = "";
   const fakeRunner = (_command, args) => {
     const child = new EventEmitter();
@@ -94,10 +108,21 @@ test("Piper runner sends multiline text as one utterance", async () => {
     });
     return child;
   };
-  await runPiperWithDependencies("voice.onnx", "First line\r\nSecond line\nThird line", undefined, {
+  await runPiperWithDependencies("voice.onnx", "  First line\r\nSecond\tline\nThird line  ", undefined, {
     spawnImpl: fakeRunner,
   });
   assert.equal(stdin, "First line Second line Third line\n");
+});
+
+test("Piper runner rejects an empty normalized utterance before spawning", async () => {
+  let spawned = false;
+  await assert.rejects(
+    () => runPiperWithDependencies("voice.onnx", " \n\t ", undefined, {
+      spawnImpl: () => { spawned = true; throw new Error("must not spawn"); },
+    }),
+    (error) => error instanceof LocalTtsSynthesisError && error.code === "local_tts_failed",
+  );
+  assert.equal(spawned, false);
 });
 
 test("Piper runner force-kills a process that never closes after timeout", async () => {

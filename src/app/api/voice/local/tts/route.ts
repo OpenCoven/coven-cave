@@ -77,6 +77,10 @@ export async function handleLocalTtsPost(
   req: Request,
   dependencies: LocalTtsRouteDependencies = {},
 ): Promise<Response> {
+  const contentType = req.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.startsWith("application/json")) {
+    return NextResponse.json({ ok: false, error: "unsupported_media_type" }, { status: 415 });
+  }
   let body: unknown;
   try {
     body = await parseLocalTtsJsonBody(req);
@@ -102,6 +106,9 @@ export async function handleLocalTtsPost(
     );
   }
   const requestBody = body as { text?: unknown; voiceName?: unknown };
+  if (Object.keys(requestBody).some((key) => key !== "text" && key !== "voiceName")) {
+    return NextResponse.json({ ok: false, error: "invalid_request" }, { status: 400 });
+  }
   const text = typeof requestBody.text === "string" ? requestBody.text.trim() : "";
   const voiceName =
     typeof requestBody.voiceName === "string" ? requestBody.voiceName.trim() : "";

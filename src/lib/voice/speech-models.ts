@@ -112,6 +112,11 @@ const downloadAbortControllers = new Map<string, AbortController>();
 // registration. Incrementing this generation lets the starter observe that
 // removal and avoid creating an untracked download which could republish.
 const modelRemovalGenerations = new Map<string, number>();
+// Removal is also a publication barrier. A replacement must not start until
+// every cancelled writer has released its staging directory and can no longer
+// delete a just-published replacement during cancellation cleanup.
+const downloadTasks = new Map<string, Promise<void>>();
+const modelRemovals = new Map<string, Promise<"removed" | "missing">>();
 
 function modelRemovalGeneration(modelId: string): number {
   return modelRemovalGenerations.get(modelId) ?? 0;
@@ -490,9 +495,17 @@ export async function startSpeechModelDownload(
 ): Promise<{ job: SpeechModelDownloadJob; started: boolean; alreadyReady?: boolean; cancelled?: boolean } | { error: "unknown_model" }> {
   const model = speechModelById(modelId);
   if (!model) return { error: "unknown_model" };
+  const removal = modelRemovals.get(model.id);
+  if (removal) {
+    await removal;
+    return startSpeechModelDownload(modelId, fetchImpl, root);
+  }
   const removalGeneration = modelRemovalGeneration(model.id);
   const ready = await speechModelReadiness(model, root);
-  if (modelRemovalGeneration(model.id) !== removalGeneration) {
+  if (
+    modelRemovalGeneration(model.id) !== removalGeneration ||
+    modelRemovals.has(model.id)
+  ) {
     const now = new Date().toISOString();
     const job = putJob({
       id: `cancelled-${model.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -532,24 +545,44 @@ export async function startSpeechModelDownload(
     startedAt: now,
     updatedAt: now,
   });
-  void runSpeechModelDownload(model, job, fetchImpl, root);
+  const task = runSpeechModelDownload(model, job, fetchImpl, root);
+  downloadTasks.set(job.id, task);
+  void task.then(
+    () => { downloadTasks.delete(job.id); },
+    () => { downloadTasks.delete(job.id); },
+  );
   return { job: cloneJob(job), started: true };
 }
 
 export async function removeSpeechModel(modelId: string, root = speechModelsRoot()): Promise<"removed" | "missing" | "unknown_model"> {
   const model = speechModelById(modelId);
   if (!model) return "unknown_model";
+  const existing = modelRemovals.get(model.id);
+  if (existing) return existing;
   modelRemovalGenerations.set(model.id, modelRemovalGeneration(model.id) + 1);
-  const cancelled = cancelSpeechModelDownloads(modelId);
-  const modelPath = speechModelPath(model, root);
-  const modelDir = path.dirname(modelPath);
-  try {
-    await rm(/* turbopackIgnore: true */ modelDir, { recursive: true, force: false });
-    return "removed";
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return cancelled ? "removed" : "missing";
+  let task: Promise<"removed" | "missing">;
+  task = (async () => {
+    const cancelled = cancelSpeechModelDownloads(model.id);
+    const activeTasks = [...downloadTasks.entries()]
+      .filter(([jobId]) => jobs.get(jobId)?.modelId === model.id)
+      .map(([, running]) => running);
+    await Promise.allSettled(activeTasks);
+    const modelPath = speechModelPath(model, root);
+    const modelDir = path.dirname(modelPath);
+    try {
+      await rm(/* turbopackIgnore: true */ modelDir, { recursive: true, force: false });
+      return "removed";
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return cancelled ? "removed" : "missing";
+      }
+      throw error;
     }
-    throw error;
+  })();
+  modelRemovals.set(model.id, task);
+  try {
+    return await task;
+  } finally {
+    if (modelRemovals.get(model.id) === task) modelRemovals.delete(model.id);
   }
 }
