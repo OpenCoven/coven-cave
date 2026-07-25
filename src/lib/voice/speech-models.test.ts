@@ -370,14 +370,16 @@ test("a replacement waits for removal to reap the cancelled writer", async () =>
   let firstAborted = false;
   let fetchCalls = 0;
   let markFirstFetch: (() => void) | undefined;
+  let markFirstAbort: (() => void) | undefined;
   const firstFetch = new Promise<void>((resolve) => { markFirstFetch = resolve; });
+  const firstAbort = new Promise<void>((resolve) => { markFirstAbort = resolve; });
   const fetchImpl = async (_url: string | URL, init?: RequestInit) => {
     fetchCalls += 1;
     if (fetchCalls === 1) {
-      init?.signal?.addEventListener("abort", () => {
-        firstAborted = true;
-        controller?.error(new Error("aborted"));
-      }, { once: true });
+        init?.signal?.addEventListener("abort", () => {
+          firstAborted = true;
+          markFirstAbort?.();
+        }, { once: true });
       markFirstFetch?.();
       return new Response(new ReadableStream({
         start(next) {
@@ -394,9 +396,11 @@ test("a replacement waits for removal to reap the cancelled writer", async () =>
   assert.ok("job" in first && first.started);
   await firstFetch;
   const removal = removeSpeechModel(model.id, root);
+  await firstAbort;
   const replacement = startSpeechModelDownload(model.id, fetchImpl as typeof fetch, root);
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(fetchCalls, 1, "replacement waits while removal owns the model directory");
+  controller?.error(new Error("aborted"));
   await removal;
   const second = await replacement;
   assert.ok("job" in second && second.started);
