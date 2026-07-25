@@ -94,16 +94,32 @@ function terminateProbeProcessTree(child: ChildProcessWithoutNullStreams): Promi
     });
   }
   return new Promise((resolve) => {
+    let settled = false;
+    let killer: ReturnType<typeof spawn> | null = null;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      resolve();
+    };
+    // `taskkill` is itself an external process. If Windows is wedged while
+    // walking the tree, do not turn a bounded capability probe into an
+    // indefinitely blocked chat request.
+    const deadline = setTimeout(() => {
+      try { killer?.kill("SIGTERM"); } catch { /* Best effort. */ }
+      try { child.kill("SIGTERM"); } catch { /* Best effort. */ }
+      finish();
+    }, openCodeProbeCleanupGraceMs());
     try {
-      const killer = spawn(treeKill.command, treeKill.args, { stdio: "ignore", windowsHide: true });
+      killer = spawn(treeKill.command, treeKill.args, { stdio: "ignore", windowsHide: true });
       killer.once("error", () => {
         try { child.kill("SIGTERM"); } catch { /* Best-effort fallback. */ }
-        resolve();
+        finish();
       });
-      killer.once("close", () => resolve());
+      killer.once("close", finish);
     } catch {
       try { child.kill("SIGTERM"); } catch { /* Best-effort fallback. */ }
-      resolve();
+      finish();
     }
   });
 }
