@@ -221,7 +221,8 @@ assert.ok(address && typeof address !== "string");
 const receivedFrames = [];
 let gatewaySocket;
 let connectRequests = 0;
-let subscriptionRequests = 0;
+let sessionEventsSubscriptionRequests = 0;
+let messageSubscriptionRequests = 0;
 gateway.on("connection", (socket) => {
   gatewaySocket = socket;
   // A pre-auth event must never be rendered, even if it happens to look like
@@ -244,8 +245,13 @@ gateway.on("connection", (socket) => {
       });
       socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: hello }));
     }
+    if (request.method === "sessions.subscribe") {
+      sessionEventsSubscriptionRequests += 1;
+      assert.deepEqual(request.params, {});
+      socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: { subscribed: true } }));
+    }
     if (request.method === "sessions.messages.subscribe") {
-      subscriptionRequests += 1;
+      messageSubscriptionRequests += 1;
       assert.deepEqual(request.params, { key: gatewaySessionKey, agentId: "nova" });
       socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: {} }));
       socket.send(JSON.stringify(startFrame));
@@ -284,7 +290,8 @@ try {
   });
   assert.equal(subscription.active, true);
   assert.equal(connectRequests, 1, "a replayed challenge must not repeat the authenticated connect request");
-  assert.equal(subscriptionRequests, 1, "a replayed handshake must not duplicate the session subscription");
+  assert.equal(sessionEventsSubscriptionRequests, 1, "a replayed handshake must not duplicate the session-event subscription");
+  assert.equal(messageSubscriptionRequests, 1, "the selected-session message subscription is requested once after session events subscribe");
   await Promise.race([
     eventsReceived,
     new Promise((_, reject) => setTimeout(() => reject(new Error("Gateway tool lifecycle was not observed")), 1_000)),

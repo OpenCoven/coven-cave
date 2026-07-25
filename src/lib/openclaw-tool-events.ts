@@ -14,7 +14,7 @@ import { writeFileAtomic } from "./server/atomic-write.ts";
 export const OPENCLAW_TOOL_PROTOCOL_ADAPTERS = [
   {
     protocol: 4,
-    requiredMethods: ["sessions.messages.subscribe"],
+    requiredMethods: ["sessions.subscribe", "sessions.messages.subscribe"],
     requiredEvents: ["session.tool"],
     // `features.capabilities` is a Gateway server-capability list; tool-events
     // is instead a client capability negotiated in connect.params.caps.
@@ -58,6 +58,10 @@ function strings(value: unknown): string[] | null {
 
 function positiveSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function nonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 function safeServerVersion(value: unknown): value is string {
@@ -146,8 +150,8 @@ export type OpenClawGatewayToolEvent = {
   input?: string;
   output?: string;
   isError: boolean;
-  seq?: number;
-  timestamp?: number;
+  seq: number;
+  timestamp: number;
 };
 
 /**
@@ -186,7 +190,9 @@ export function normalizeOpenClawGatewayToolEvent(
     (phase !== "start" && phase !== "update" && phase !== "result") ||
     (data.isError !== undefined && typeof data.isError !== "boolean") ||
     // A terminal frame without an explicit outcome must not fabricate success.
-    (phase === "result" && typeof data.isError !== "boolean")
+    (phase === "result" && typeof data.isError !== "boolean") ||
+    !nonNegativeSafeInteger(seq) ||
+    !nonNegativeSafeInteger(timestamp)
   ) {
     return null;
   }
@@ -204,8 +210,8 @@ export function normalizeOpenClawGatewayToolEvent(
     ...(phase === "start" ? { input: boundedToolText(data.args, formatToolInputValue) } : {}),
     ...(output ? { output } : {}),
     isError: data.isError === true,
-    ...(typeof seq === "number" && Number.isSafeInteger(seq) && seq >= 0 ? { seq } : {}),
-    ...(typeof timestamp === "number" && Number.isSafeInteger(timestamp) && timestamp >= 0 ? { timestamp } : {}),
+    seq,
+    timestamp,
   };
 }
 
@@ -456,8 +462,10 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
   let disconnected = false;
   let connectRequested = false;
   let handshakeAccepted = false;
-  let subscriptionRequested = false;
-  let subscriptionId = "";
+  let sessionEventsSubscriptionRequested = false;
+  let sessionEventsSubscriptionId = "";
+  let messageSubscriptionRequested = false;
+  let messageSubscriptionId = "";
   let maxInboundFrameBytes = MAX_PREAUTH_FRAME_BYTES;
   let maxBufferedBytes = MAX_GATEWAY_FRAME_BYTES;
   let tickIntervalMs: number | undefined;
@@ -550,6 +558,10 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
         frame = JSON.parse(rawText) as GatewayResponse & { event?: unknown };
       } catch {
         options.onDiagnostic?.({ code: "gateway_invalid_frame" });
+        if (connected) {
+          notifyDisconnect();
+          close();
+        }
         return;
       }
       armTickWatchdog();
@@ -617,17 +629,17 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
             expiresAt: observedAt + CACHE_TTL_MS,
           }).catch(() => undefined);
         }
-        subscriptionId = "cave-openclaw-subscribe";
-        subscriptionRequested = true;
+        sessionEventsSubscriptionId = "cave-openclaw-session-events-subscribe";
+        sessionEventsSubscriptionRequested = true;
         const subscriptionRequest = JSON.stringify({
           type: "req",
-          id: subscriptionId,
-          method: "sessions.messages.subscribe",
-          params: { key: options.sessionKey, agentId: options.agentId },
+          id: sessionEventsSubscriptionId,
+          method: "sessions.subscribe",
+          params: {},
         });
         if (
           Buffer.byteLength(subscriptionRequest, "utf8") > maxInboundFrameBytes ||
-          socket.bufferedAmount > maxBufferedBytes
+          socket.bufferedAmount + Buffer.byteLength(subscriptionRequest, "utf8") > maxBufferedBytes
         ) {
           close();
           finish(fallback("gateway_policy_exceeded", compatibility));
@@ -636,8 +648,34 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
         socket.send(subscriptionRequest);
         return;
       }
-      if (frame.type === "res" && frame.id === subscriptionId) {
-        if (closed || !subscriptionRequested || connected) return;
+      if (frame.type === "res" && frame.id === sessionEventsSubscriptionId) {
+        if (closed || !sessionEventsSubscriptionRequested || !sessionEventsSubscriptionId || messageSubscriptionRequested) return;
+        if (frame.ok !== true) {
+          close();
+          finish(fallback("gateway_session_events_subscription_rejected"));
+          return;
+        }
+        messageSubscriptionId = "cave-openclaw-session-messages-subscribe";
+        messageSubscriptionRequested = true;
+        const subscriptionRequest = JSON.stringify({
+          type: "req",
+          id: messageSubscriptionId,
+          method: "sessions.messages.subscribe",
+          params: { key: options.sessionKey, agentId: options.agentId },
+        });
+        if (
+          Buffer.byteLength(subscriptionRequest, "utf8") > maxInboundFrameBytes ||
+          socket.bufferedAmount + Buffer.byteLength(subscriptionRequest, "utf8") > maxBufferedBytes
+        ) {
+          close();
+          finish(fallback("gateway_policy_exceeded", negotiatedCompatibility));
+          return;
+        }
+        socket.send(subscriptionRequest);
+        return;
+      }
+      if (frame.type === "res" && frame.id === messageSubscriptionId) {
+        if (closed || !messageSubscriptionRequested || !messageSubscriptionId || connected) return;
         if (frame.ok !== true) {
           close();
           finish(fallback("gateway_subscription_rejected"));
