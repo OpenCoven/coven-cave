@@ -241,6 +241,17 @@ export async function runPiperWithDependencies(
       child.stderr?.on("data", (chunk: string) => {
         if (stderr.length < MAX_STDERR_CHARS) stderr += chunk.slice(0, MAX_STDERR_CHARS - stderr.length);
       });
+      // A child that exits while its input is flushing can emit EPIPE on the
+      // stdin stream without emitting a process-level error. Consume it here
+      // so the sidecar fails this request instead of an unhandled stream error
+      // taking down the Node process.
+      child.stdin?.once("error", (error: Error) => {
+        if (terminating) return finish(terminating);
+        finish(new LocalTtsSynthesisError(
+          "local_tts_failed",
+          `Piper input stream failed (${error.message}).`,
+        ));
+      });
       child.on("error", (error: NodeJS.ErrnoException) => {
         if (terminating) return finish(terminating);
         finish(error.code === "ENOENT"

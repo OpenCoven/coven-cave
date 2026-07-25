@@ -125,6 +125,29 @@ test("Piper runner rejects an empty normalized utterance before spawning", async
   assert.equal(spawned, false);
 });
 
+test("Piper runner turns a broken stdin pipe into a synthesis failure", async () => {
+  const brokenPipeRunner = () => {
+    const child = new EventEmitter();
+    child.stdin = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => true;
+    child.stdin.on("finish", () => {
+      queueMicrotask(() => child.stdin.emit("error", new Error("EPIPE")));
+    });
+    return child;
+  };
+
+  await assert.rejects(
+    () => runPiperWithDependencies("voice.onnx", "Hello locally.", undefined, {
+      spawnImpl: brokenPipeRunner,
+    }),
+    (error) =>
+      error instanceof LocalTtsSynthesisError &&
+      error.code === "local_tts_failed" &&
+      error.message.includes("EPIPE"),
+  );
+});
+
 test("Piper runner force-kills a process that never closes after timeout", async () => {
   const signals = [];
   const hangingRunner = () => {
