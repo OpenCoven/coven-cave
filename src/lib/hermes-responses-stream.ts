@@ -209,10 +209,12 @@ export class HermesSseDecoder {
       }
       this.eventName = "";
       this.data = [];
-    } else if (line.startsWith("event:")) {
-      this.eventName = line.slice("event:".length).trim();
-    } else if (line.startsWith("data:")) {
-      this.data.push(line.slice("data:".length).replace(/^ /, ""));
+    } else {
+      const colon = line.indexOf(":");
+      const field = colon < 0 ? line : line.slice(0, colon);
+      const value = colon < 0 ? "" : line.slice(colon + 1).replace(/^ /, "");
+      if (field === "event") this.eventName = value;
+      else if (field === "data") this.data.push(value);
     }
   }
 
@@ -273,6 +275,16 @@ function isLiteralLoopbackHost(host: string): boolean {
   return octets.length === 4 &&
     octets[0] === "127" &&
     octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255);
+}
+
+/** Hermes's pre-stream 404 omits param/code but has this stable diagnostic.
+ * Callers must additionally require HTTP 404 before treating it as resumable. */
+export function isHermesMissingPreviousResponseError(payload: unknown): boolean {
+  const value = record(payload);
+  if (!value) return false;
+  const response = record(value.response);
+  const error = record(response?.error) ?? record(value.error) ?? value;
+  return /^Previous response not found:\s*\S/i.test(string(error.message) ?? "");
 }
 
 /** Remote Hermes servers cannot read Cave's temporary image files. */

@@ -68,6 +68,7 @@ import {
   HermesSseDecoder,
   hermesApiConfig,
   hermesApiCanAccessLocalFiles,
+  isHermesMissingPreviousResponseError,
   hermesResponsesUrl,
   isHermesInvalidPreviousResponseIdError,
   parseHermesResponsesEvent,
@@ -2081,7 +2082,11 @@ export async function POST(req: Request) {
             const apiError = !response.ok && /\bapplication\/json\b/i.test(contentType)
               ? await response.json().catch(() => undefined)
               : undefined;
-            if (previousResponseId && isHermesInvalidPreviousResponseIdError(apiError)) {
+            if (
+              previousResponseId &&
+              (isHermesInvalidPreviousResponseIdError(apiError) ||
+                (response.status === 404 && isHermesMissingPreviousResponseError(apiError)))
+            ) {
               resumeFailed = true;
             }
             result = { ...result, is_error: true };

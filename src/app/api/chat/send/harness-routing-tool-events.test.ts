@@ -162,6 +162,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /response\.status === 404 && isHermesMissingPreviousResponseError\(apiError\)/,
+  "Hermes's documented missing previous-response 404 must use the safe fresh-session retry",
+);
+
+assert.match(
+  chatRoute,
   /event\.isError && previousResponseId && event\.invalidPreviousResponseId[\s\S]*?previousResponseId && event\.invalidPreviousResponseId/,
   "streamed model and tool failures must not retry unless they explicitly reject the previous Responses id",
 );

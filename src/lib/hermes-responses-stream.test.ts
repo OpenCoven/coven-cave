@@ -6,6 +6,7 @@ import {
   hermesApiCanAccessLocalFiles,
   hermesResponsesUrl,
   isHermesInvalidPreviousResponseIdError,
+  isHermesMissingPreviousResponseError,
   parseHermesResponsesEvent,
 } from "./hermes-responses-stream.ts";
 
@@ -44,6 +45,10 @@ test("Hermes Responses events normalise text, calls, output, session, and comple
   );
   assert.equal(
     isHermesInvalidPreviousResponseIdError({ error: { code: "previous_response_not_found" } }),
+    true,
+  );
+  assert.equal(
+    isHermesMissingPreviousResponseError({ error: { message: "Previous response not found: resp-evicted" } }),
     true,
   );
   assert.deepEqual(
@@ -116,6 +121,12 @@ test("SSE decoder handles arbitrary chunk boundaries and multi-line data", () =>
     { event: "one", data: "1" },
   ]);
   assert.deepEqual(crOnly.finish(), [{ event: "two", data: "2" }]);
+
+  const bareFields = new HermesSseDecoder();
+  assert.deepEqual(bareFields.push("event: stale\nevent\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n"), [
+    { event: "", data: "{\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}" },
+  ]);
+  assert.deepEqual(bareFields.push("data\n\n"), [{ event: "", data: "" }]);
 });
 
 test("structured transport is opt-in and refuses non-HTTP endpoint values", () => {
