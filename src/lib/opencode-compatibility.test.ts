@@ -215,7 +215,6 @@ assert.equal(
         ignored: [],
         text: ["message"],
         toolStart: [],
-        toolProgress: [],
         toolEnd: [],
         toolComplete: [],
         error: [],
@@ -475,6 +474,13 @@ assert.equal(isOpenCodeSchemaBundle({
     launch: { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0].launch, requiredFlags: ["--auto"] },
   }],
 }, now), false, "a signed registry cannot add permission-affecting launch flags");
+assert.equal(isOpenCodeSchemaBundle({
+  ...unsigned,
+  schemas: [{
+    ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+    eventTypes: { ignored: [], text: ["text"], toolStart: [], toolEnd: [], toolComplete: [], error: [] },
+  }],
+}, now), true, "a signed registry bundle from before tool-progress support remains valid");
 
 const previousKey = generateKeyPairSync("ed25519");
 const nextKey = generateKeyPairSync("ed25519");

@@ -37,8 +37,9 @@ export type OpenCodeEventSchema = {
     ignored: string[];
     text: string[];
     toolStart: string[];
-    /** Nonterminal output/status updates for an already-announced tool call. */
-    toolProgress: string[];
+    /** Nonterminal output/status updates for an already-announced tool call.
+     * Optional so pre-progress signed registry bundles remain valid. */
+    toolProgress?: string[];
     toolEnd: string[];
     toolComplete: string[];
     error: string[];
@@ -334,12 +335,18 @@ function isEventSchema(value: unknown): value is OpenCodeEventSchema {
   if (!hasValidLaunch(value.launch, value.requires)) return false;
   if (!Object.keys(value.requires).every((key) => key === "json" || key === "session" || key === "model" || key === "protocol")) return false;
   if (value.requires.json !== true || (value.requires.session !== undefined && typeof value.requires.session !== "boolean") || (value.requires.model !== undefined && typeof value.requires.model !== "boolean") || (value.requires.protocol !== undefined && (typeof value.requires.protocol !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(value.requires.protocol)))) return false;
-  const eventKeys: Array<keyof OpenCodeEventSchema["eventTypes"]> = ["ignored", "text", "toolStart", "toolProgress", "toolEnd", "toolComplete", "error"];
+  const requiredEventKeys: Array<keyof OpenCodeEventSchema["eventTypes"]> = ["ignored", "text", "toolStart", "toolEnd", "toolComplete", "error"];
   // `isRecord` deliberately narrows external JSON to unknown values. Keep that
   // boundary while validating, then use the internal shape for the duplicate
   // label checks below.
   const eventTypes = value.eventTypes as unknown as OpenCodeEventSchema["eventTypes"];
-  if (Object.keys(eventTypes).length !== eventKeys.length || !eventKeys.every((key) => {
+  const optionalProgressEventKeys: Array<keyof OpenCodeEventSchema["eventTypes"]> =
+    eventTypes.toolProgress === undefined ? [] : ["toolProgress"];
+  const eventKeys = [...requiredEventKeys, ...optionalProgressEventKeys];
+  if (
+    !Object.keys(eventTypes).every((key) => requiredEventKeys.includes(key as keyof OpenCodeEventSchema["eventTypes"]) || key === "toolProgress")
+    || !requiredEventKeys.every((key) => Object.hasOwn(eventTypes, key))
+    || !eventKeys.every((key) => {
     const labels = eventTypes[key];
     // Text is the only universal structured-output contract. Every other
     // category is protocol-shape optional: a text-only client has no tool
@@ -351,7 +358,7 @@ function isEventSchema(value: unknown): value is OpenCodeEventSchema {
       && (mayBeEmpty || labels.length > 0)
       && labels.length <= 32
       && labels.every((type: unknown) => typeof type === "string" && type.length > 0 && type.length <= 80);
-  })) return false;
+    })) return false;
   // Event dispatch is category-first, so a label can never safely represent
   // two phases. Reject every cross-category overlap, including start/end,
   // instead of relying on parser order to resolve a publisher mistake.

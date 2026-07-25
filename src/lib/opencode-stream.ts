@@ -75,7 +75,7 @@ function eventTypes(schema: OpenCodeEventSchema | undefined, kind: keyof OpenCod
   // tool-complete frame), so falling back here could revive a label that a
   // registry deliberately retired. Defaults are only for legacy callers with
   // no schema.
-  return schema ? schema.eventTypes[kind] : defaults;
+  return schema?.eventTypes[kind] ?? defaults;
 }
 
 function toolId(event: Record<string, unknown>, part: Record<string, unknown> | null, schema?: OpenCodeEventSchema): string | null {
