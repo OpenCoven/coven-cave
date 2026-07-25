@@ -371,14 +371,23 @@ export function createSidecarWhisperEars(options: TimerOptions = {}): SpeechEars
       processor.onaudioprocess = (event) => {
         if (closed || current !== session) return;
         const input = event.inputBuffer.getChannelData(0);
-        chunks.push(input.slice());
-        if (rms(input) < threshold) return;
+        const chunk = input.slice();
+        if (rms(input) < threshold) {
+          chunks.push(chunk);
+          return;
+        }
         if (!hasSpeech) {
           hasSpeech = true;
+          // The initial-silence timer may have retained PCM while waiting for
+          // VAD. Drop it when speech begins so the utterance cap bounds the
+          // actual WAV sent to Whisper, rather than silence plus speech.
+          chunks = [chunk];
           if (initialSilenceTimer !== null) { unschedule(initialSilenceTimer); initialSilenceTimer = null; }
           // The full cap applies to the utterance, not to time spent waiting
           // for someone to start speaking.
           utteranceCapTimer = schedule(() => finish(session), maxUtteranceMs);
+        } else {
+          chunks.push(chunk);
         }
         if (stabilityTimer !== null) unschedule(stabilityTimer);
         stabilityTimer = schedule(() => finish(session), stabilityMs);

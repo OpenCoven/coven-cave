@@ -38,13 +38,27 @@ download_verified() {
 }
 
 stage_linux() {
-  local archive="$WORK/whisper.tar.gz"
+  local archive="$WORK/whisper.tar.gz" archive_name archive_sha source
+  case "$(uname -m)" in
+    x86_64|amd64)
+      archive_name="whisper-bin-ubuntu-x64.tar.gz"
+      archive_sha="f3bf3b4369a99b54665b0f19b88483b30de27f25963b0414235dea03198515c5"
+      ;;
+    aarch64|arm64)
+      archive_name="whisper-bin-ubuntu-arm64.tar.gz"
+      archive_sha="e0b66cd551ff6f2a28fabe3c6e89691eea037bb76833493abb9a71ca788994b3"
+      ;;
+    *)
+      echo "ERROR: no bundled Whisper runtime for Linux architecture $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
   download_verified \
-    "$RELEASE_URL/whisper-bin-ubuntu-x64.tar.gz" \
-    "f3bf3b4369a99b54665b0f19b88483b30de27f25963b0414235dea03198515c5" \
+    "$RELEASE_URL/$archive_name" \
+    "$archive_sha" \
     "$archive"
   tar -xzf "$archive" -C "$WORK"
-  local source="$WORK/whisper-bin-ubuntu-x64"
+  source="$WORK/${archive_name%.tar.gz}"
   cp -L "$source/whisper-cli" "$DEST/whisper-cli"
   # Preserve both the versioned ELF files and their SONAME links (for example
   # libwhisper.so.1 -> libwhisper.so.1.9.1). The binary requests the SONAME,

@@ -16,6 +16,7 @@ import {
   encodePcmWav,
   resampleMonoPcm,
   sidecarWhisperAvailable,
+  WHISPER_SAMPLE_RATE,
 } from "./sidecar-whisper-ears.ts";
 
 const cacheRoot = path.join(process.cwd(), "node_modules", ".cache", "coven-cave-tests", "sidecar-whisper");
@@ -261,6 +262,51 @@ test("voice activity receives a full utterance cap after initial silence", () =>
     processors[0].onaudioprocess({ inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.1) } });
     const utteranceTimer = timers.pendingIds(99)[0];
     assert.notEqual(utteranceTimer, initialTimer, "speech replaces the initial-silence timer with a full utterance cap");
+  } finally {
+    ears.close();
+    globalThis.window = priorWindow;
+  }
+});
+
+test("voice activity drops leading silence before sending the final Whisper WAV", async () => {
+  const priorWindow = globalThis.window;
+  const timers = fakeTimers();
+  const processors = [];
+  class AudioContext {
+    sampleRate = 48_000;
+    state = "running";
+    destination = {};
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createBiquadFilter() { return { connect() {}, disconnect() {}, type: "", frequency: { value: 0 }, Q: { value: 0 } }; }
+    createScriptProcessor() { const processor = { connect() {}, disconnect() {}, onaudioprocess: null }; processors.push(processor); return processor; }
+    createGain() { return { connect() {}, disconnect() {}, gain: { value: 1 } }; }
+    resume() { return Promise.resolve(); }
+    close() { this.state = "closed"; return Promise.resolve(); }
+  }
+  globalThis.window = { AudioContext };
+  let wavBytes = 0;
+  const ears = createSidecarWhisperEars({
+    stabilityMs: 1,
+    maxUtteranceMs: 99,
+    fetchImpl: async (_url, init) => {
+      const audio = (init.body as FormData).get("audio") as Blob;
+      wavBytes = audio.size;
+      return new Response(JSON.stringify({ ok: true, session: 1, kind: "final", text: "heard" }));
+    },
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+  })({ onPartial() {}, onFinal() {}, onError() {} }, {});
+  try {
+    ears.listen();
+    processors[0].onaudioprocess({ inputBuffer: { getChannelData: () => new Float32Array(4_096) } });
+    processors[0].onaudioprocess({ inputBuffer: { getChannelData: () => new Float32Array(4_096).fill(0.1) } });
+    timers.fire(1);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      wavBytes,
+      44 + 2 * Math.round(4_096 * WHISPER_SAMPLE_RATE / 48_000),
+      "the final WAV contains the voiced buffer but not the preceding silent buffer",
+    );
   } finally {
     ears.close();
     globalThis.window = priorWindow;

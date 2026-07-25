@@ -167,6 +167,11 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   assert.match(whisperBundleScript, /whisper-bin-x64\.zip/, "Windows must stage a pinned Whisper CLI archive");
   assert.match(whisperBundleScript, /MSVCP140\.dll.*VCRUNTIME140\.dll.*VCRUNTIME140_1\.dll.*VCOMP140\.dll/, "Windows must ship Whisper's app-local MSVC runtime");
   assert.match(whisperBundleScript, /whisper-bin-ubuntu-x64\.tar\.gz/, "Linux must stage a pinned Whisper CLI archive");
+  assert.match(
+    whisperBundleScript,
+    /aarch64\|arm64\)[\s\S]*?whisper-bin-ubuntu-arm64\.tar\.gz[\s\S]*?e0b66cd551ff6f2a28fabe3c6e89691eea037bb76833493abb9a71ca788994b3/,
+    "Linux ARM64 must stage and verify its matching Whisper CLI archive",
+  );
   assert.match(whisperBundleScript, /f049fff95a089aa9969deb009cdd4892b3e74916/, "macOS must build the pinned Whisper release commit");
   assert.match(whisperBundleScript, /CMAKE_INSTALL_RPATH='@loader_path'/, "macOS Whisper must resolve copied dylibs relative to its executable");
   assert.doesNotMatch(whisperBundleScript, /install_name_tool -add_rpath/, "macOS Whisper must not add a duplicate CMake-provided rpath");
