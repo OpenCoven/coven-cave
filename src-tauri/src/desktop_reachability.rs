@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+#[cfg(all(desktop, target_os = "macos"))]
+use std::sync::OnceLock;
 
 #[cfg(desktop)]
 const REACHABILITY_CONFIG_FILE: &str = "desktop-reachability.json";
@@ -27,12 +29,17 @@ const MOBILE_PAIRED_FILE: &str = "mobile-paired.json";
 const POWER_MONITOR_INTERVAL: Duration = Duration::from_secs(5);
 #[cfg(desktop)]
 const SERVE_REPAIR_INTERVAL: Duration = Duration::from_secs(30);
+#[cfg(all(desktop, target_os = "macos"))]
+const SERVE_REPAIR_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[cfg(desktop)]
 const DAEMON_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[cfg(all(desktop, target_os = "macos"))]
 static DAEMON_SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(all(desktop, target_os = "macos"))]
+static SERVE_REPAIR_STATE: OnceLock<Mutex<ServeRepairState>> = OnceLock::new();
 
 #[cfg(desktop)]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -86,6 +93,13 @@ struct DaemonSidecarState {
     #[serde(flatten)]
     lease: ProcessLease,
     port: u16,
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+#[derive(Default)]
+struct ServeRepairState {
+    running: bool,
+    pending_port: Option<u16>,
 }
 
 /// An advisory lock shared by GUI startup and the launchd daemon. Holding it
@@ -400,32 +414,95 @@ pub(super) fn repair_tailscale_serve_for_port(port: u16) {
     if !mobile_mode_enabled() {
         return;
     }
-    thread::spawn(move || {
-        let args = serve_arguments(port);
-        match Command::new(tailscale_binary())
-            .args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .output()
-        {
-            Ok(output) if output.status.success() => {
+    let state = SERVE_REPAIR_STATE.get_or_init(|| Mutex::new(ServeRepairState::default()));
+    let should_spawn = {
+        let mut state = match state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        state.pending_port = Some(port);
+        if state.running {
+            false
+        } else {
+            state.running = true;
+            true
+        }
+    };
+    if should_spawn {
+        thread::spawn(run_queued_tailscale_serve_repairs);
+    }
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn run_queued_tailscale_serve_repairs() {
+    let state = SERVE_REPAIR_STATE.get_or_init(|| Mutex::new(ServeRepairState::default()));
+    loop {
+        let port = {
+            let mut state = match state.lock() {
+                Ok(state) => state,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            match state.pending_port.take() {
+                Some(port) => port,
+                None => {
+                    state.running = false;
+                    return;
+                }
+            }
+        };
+        run_tailscale_serve_repair(port);
+    }
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn run_tailscale_serve_repair(port: u16) {
+    let args = serve_arguments(port);
+    let mut child = match Command::new(tailscale_binary())
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => {
+            log::warn!("[cave] could not launch Tailscale Serve repair for port {port}: {error}");
+            return;
+        }
+    };
+    let deadline = Instant::now() + SERVE_REPAIR_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => {
                 log::info!("[cave] Tailscale Serve points at 127.0.0.1:{port}");
+                return;
             }
-            Ok(output) => {
-                let detail = String::from_utf8_lossy(&output.stderr);
+            Ok(Some(status)) => {
                 log::warn!(
-                    "[cave] could not repair Tailscale Serve for port {port}: {}",
-                    detail.trim()
+                    "[cave] could not repair Tailscale Serve for port {port}: exited with {status}"
                 );
+                return;
             }
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                log::warn!(
+                    "[cave] Tailscale Serve repair for port {port} timed out after {}s",
+                    SERVE_REPAIR_TIMEOUT.as_secs()
+                );
+                return;
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(100)),
             Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
                 log::warn!(
-                    "[cave] could not launch Tailscale Serve repair for port {port}: {error}"
+                    "[cave] could not wait for Tailscale Serve repair for port {port}: {error}"
                 );
+                return;
             }
         }
-    });
+    }
 }
 
 #[cfg(all(desktop, not(target_os = "macos")))]

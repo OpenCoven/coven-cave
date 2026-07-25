@@ -132,6 +132,16 @@ assert.match(
   "Serve repair must use the actual selected loopback port",
 );
 assert.match(
+  reachability,
+  /SERVE_REPAIR_STATE[\s\S]*pending_port[\s\S]*thread::spawn\(run_queued_tailscale_serve_repairs\)/,
+  "Serve repairs must coalesce through one worker instead of spawning indefinitely",
+);
+assert.match(
+  reachability,
+  /SERVE_REPAIR_TIMEOUT[\s\S]*child\.try_wait\(\)[\s\S]*child\.kill\(\)[\s\S]*timed out/,
+  "a stalled Tailscale Serve command must be killed after a bounded timeout",
+);
+assert.match(
   mobileScript,
   /exec env PORT="\$free" bash "\$SELF" "\$COMMAND"/,
   "the dev mobile runner must carry its fallback port into Serve setup",
