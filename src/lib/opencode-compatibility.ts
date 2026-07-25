@@ -9,12 +9,14 @@ export type OpenCodeRunCapabilities = {
   json: boolean;
   model: boolean;
   session: boolean;
+  /** Explicit, documented structured-output format values from `run --help`. */
+  protocols: string[];
 };
 
 export type OpenCodeEventSchema = {
   id: string;
   /** A schema is selected only when every advertised requirement is met. */
-  requires: { json: true; session?: boolean; model?: boolean };
+  requires: { json: true; session?: boolean; model?: boolean; protocol?: string };
   eventTypes: {
     text: string[];
     toolStart: string[];
@@ -96,7 +98,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
   schemas: [
     {
       id: "opencode-run-json-v1",
-      requires: { json: true, session: true },
+      requires: { json: true, session: true, protocol: "json" },
       eventTypes: {
         text: ["text"],
         toolStart: ["tool_start", "tool"],
@@ -109,7 +111,7 @@ export const BUILTIN_OPENCODE_SCHEMA_BUNDLE: OpenCodeSchemaBundle = {
       // Earlier and preview clients used generic tool envelopes. Keeping this
       // separate lets a signed registry retire it without a code release.
       id: "opencode-run-json-legacy",
-      requires: { json: true, session: false },
+      requires: { json: true, session: false, protocol: "json" },
       eventTypes: {
         text: ["message", "assistant_text"],
         toolStart: ["tool"],
@@ -127,11 +129,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isEventSchema(value: unknown): value is OpenCodeEventSchema {
   if (!isRecord(value) || typeof value.id !== "string" || value.id.length === 0 || value.id.length > 128 || !isRecord(value.eventTypes) || !isRecord(value.requires)) return false;
-  if (!Object.keys(value.requires).every((key) => key === "json" || key === "session" || key === "model")) return false;
-  if (value.requires.json !== true || (value.requires.session !== undefined && typeof value.requires.session !== "boolean") || (value.requires.model !== undefined && typeof value.requires.model !== "boolean")) return false;
-  const eventKeys = ["text", "toolStart", "toolEnd", "toolComplete", "error"];
-  const eventTypes = value.eventTypes;
+  if (!Object.keys(value.requires).every((key) => key === "json" || key === "session" || key === "model" || key === "protocol")) return false;
+  if (value.requires.json !== true || (value.requires.session !== undefined && typeof value.requires.session !== "boolean") || (value.requires.model !== undefined && typeof value.requires.model !== "boolean") || (value.requires.protocol !== undefined && (typeof value.requires.protocol !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(value.requires.protocol)))) return false;
+  const eventKeys: Array<keyof OpenCodeEventSchema["eventTypes"]> = ["text", "toolStart", "toolEnd", "toolComplete", "error"];
+  // `isRecord` deliberately narrows external JSON to unknown values. Keep that
+  // boundary while validating, then use the internal shape for the duplicate
+  // label checks below.
+  const eventTypes = value.eventTypes as unknown as OpenCodeEventSchema["eventTypes"];
   if (Object.keys(eventTypes).length !== eventKeys.length || !eventKeys.every((key) => Array.isArray(eventTypes[key]) && eventTypes[key].length > 0 && eventTypes[key].length <= 32 && eventTypes[key].every((type: unknown) => typeof type === "string" && type.length > 0 && type.length <= 80))) return false;
+  const nonToolLabels = new Set<string>();
+  for (const key of ["text", "error", "toolEnd"] as const) {
+    for (const label of eventTypes[key] as unknown[]) {
+      if (nonToolLabels.has(label as string)) return false;
+      nonToolLabels.add(label as string);
+    }
+  }
+  const toolLabels = [
+    ...(eventTypes.toolStart as string[]),
+    ...(eventTypes.toolComplete as string[]),
+  ];
+  if (toolLabels.some((label) => nonToolLabels.has(label))) return false;
   return true;
 }
 
@@ -139,11 +156,15 @@ function schemaMatches(schema: OpenCodeEventSchema, capabilities: OpenCodeRunCap
   if (!capabilities.json) return false;
   if (schema.requires.session !== undefined && schema.requires.session !== capabilities.session) return false;
   if (schema.requires.model !== undefined && schema.requires.model !== capabilities.model) return false;
+  // Older callers/tests did not carry protocol markers; their documented JSON
+  // surface is the v1 `json` protocol. New probes always populate this list.
+  const protocols = capabilities.protocols ?? (capabilities.json ? ["json"] : []);
+  if (schema.requires.protocol !== undefined && !protocols.includes(schema.requires.protocol)) return false;
   return true;
 }
 
 function schemaSpecificity(schema: OpenCodeEventSchema): number {
-  return Number(schema.requires.session !== undefined) + Number(schema.requires.model !== undefined);
+  return Number(schema.requires.session !== undefined) + Number(schema.requires.model !== undefined) + Number(schema.requires.protocol !== undefined);
 }
 
 /**
@@ -416,13 +437,24 @@ export async function resolveOpenCodeCompatibility(
   capabilities: OpenCodeRunCapabilities,
   source?: OpenCodeSchemaBundleSource,
 ): Promise<OpenCodeCompatibility> {
-  const loaded = await loadOpenCodeSchemaBundle(source);
   if (!capabilities.json) {
     return {
       mode: "plain",
       capabilities,
-      bundleSource: loaded.source,
+      bundleSource: "built-in",
       diagnostic: "json-format-unavailable",
+    };
+  }
+  const loaded = await loadOpenCodeSchemaBundle(source);
+  // A configured registry with no currently verified cache must not silently
+  // fall back to a potentially older compiled parser. Keep plain chat until a
+  // signed schema for this client can be verified again.
+  if (loaded.diagnostic === "cached-schema-unavailable") {
+    return {
+      mode: "plain",
+      capabilities,
+      bundleSource: loaded.source,
+      diagnostic: "cached-schema-unavailable",
     };
   }
   const schema = selectOpenCodeSchema(loaded.bundle.schemas, capabilities);

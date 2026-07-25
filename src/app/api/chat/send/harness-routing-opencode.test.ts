@@ -12,7 +12,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?a\.push\("--format", "json"\);[\s\S]*?openCodeCompatibility\?\.capabilities\.session[\s\S]*?a\.push\("--session", resumeSessionId\);/,
+  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?a\.push\("--format", openCodeCompatibility\.schema\?\.requires\.protocol \?\? "json"\);[\s\S]*?openCodeCompatibility\?\.capabilities\.session[\s\S]*?a\.push\("--session", resumeSessionId\);/,
   "OpenCode uses discovered JSON and session capabilities rather than a version threshold",
 );
 assert.match(
@@ -102,7 +102,7 @@ assert.match(
 );
 assert.match(
   route,
-  /opencode-compatibility[\s\S]*?unrecognized tool event[\s\S]*?redactedOpenCodeEventFingerprint\(rawEvent\)/,
+  /opencode-compatibility[\s\S]*?unrecognized event[\s\S]*?redactedOpenCodeEventFingerprint\(rawEvent\)/,
   "unknown future event shapes surface a safe visible diagnostic",
 );
 assert.match(

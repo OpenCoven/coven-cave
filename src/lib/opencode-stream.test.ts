@@ -43,6 +43,14 @@ assert.deepEqual(
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(
+    { type: "tool_result", id: "tool_failed", error: "permission denied" },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "tool_end", sessionId: undefined, id: "tool_failed", output: "permission denied", isError: true },
+  "root-level terminal errors settle a failed tool rather than an empty success",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
     { type: "tool", sessionID: "ses_123", callID: "call_1", tool: "bash", state: { input: { command: "pwd" }, status: "running" } },
     BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
   ),
@@ -66,14 +74,19 @@ assert.deepEqual(
   "terminal tool failures preserve a safe partial error output",
 );
 assert.deepEqual(
+  parseOpenCodeRunEvent({ type: "tool_use", part: { id: "prt_statusless", tool: "bash", state: { input: { command: "pwd" }, output: "ok" } } }),
+  { kind: "tool", sessionId: undefined, id: "prt_statusless", name: "bash", input: { command: "pwd" }, output: "ok", isError: false },
+  "legacy terminal snapshots preserve output even when status is omitted",
+);
+assert.deepEqual(
   parseOpenCodeRunEvent({ type: "tool_use", part: { tool: "Read" } }),
   { kind: "other", sessionId: undefined, diagnostic: "malformed-event" },
   "missing tool ids never create random, non-resumable bubbles",
 );
 assert.deepEqual(
   parseOpenCodeRunEvent({ type: "future_text_delta", data: { text: "Still show this reply" } }),
-  { kind: "other", sessionId: undefined, diagnostic: "unknown-event", text: "Still show this reply" },
-  "unknown future envelopes retain safe assistant text while disabling tool activity",
+  { kind: "other", sessionId: undefined, diagnostic: "unknown-event" },
+  "unknown envelopes never promote arbitrary payload text into assistant output",
 );
 assert.equal(
   parseOpenCodeRunEvent({ type: "tool", callID: "failed_1", tool: "bash", state: { status: "FAILED" } }, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]).kind,
@@ -84,6 +97,14 @@ assert.equal(
   (parseOpenCodeRunEvent({ type: "tool", callID: "failed_1", tool: "bash", state: { status: "FAILED" } }, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]) as { isError: boolean }).isError,
   true,
   "case variants of error statuses do not render successful tool bubbles",
+);
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "tool", callID: "cancelled_1", tool: "bash", state: { status: "CANCELLED" } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "tool", sessionId: undefined, id: "cancelled_1", name: "bash", input: {}, output: "", isError: true },
+  "cancelled terminal states settle the upstream tool as an error",
 );
 assert.deepEqual(
   parseOpenCodeRunEvent(["future", "envelope"]),

@@ -6,7 +6,7 @@ export type OpenCodeRunEvent =
   | { kind: "tool_end"; sessionId?: string; id: string; output: unknown; isError: boolean }
   | { kind: "tool"; sessionId?: string; id: string; name: string; input: unknown; output: unknown; isError: boolean }
   | { kind: "error"; sessionId?: string; message: string }
-  | { kind: "other"; sessionId?: string; diagnostic?: "unknown-event" | "malformed-event"; text?: string };
+  | { kind: "other"; sessionId?: string; diagnostic?: "unknown-event" | "malformed-event" };
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -29,12 +29,12 @@ function toolId(part: Record<string, unknown> | null): string | null {
 
 function terminalToolState(state: Record<string, unknown> | null): boolean {
   const status = stringAt(state, "status")?.toLowerCase();
-  return status === "completed" || status === "complete" || status === "error" || status === "failed";
+  return status === "completed" || status === "complete" || status === "error" || status === "failed" || status === "cancelled" || status === "canceled" || status === "aborted" || status === "interrupted" || status === "timeout" || status === "timed_out";
 }
 
-function toolStateIsError(state: Record<string, unknown> | null): boolean {
+function toolStateIsError(state: Record<string, unknown> | null, part?: Record<string, unknown> | null): boolean {
   const status = stringAt(state, "status")?.toLowerCase();
-  return status === "error" || status === "failed" || Boolean(state?.error);
+  return status === "error" || status === "failed" || status === "cancelled" || status === "canceled" || status === "aborted" || status === "interrupted" || status === "timeout" || status === "timed_out" || Boolean(state?.error) || Boolean(part?.error);
 }
 
 /** Decode OpenCode's `run --format json` envelope without trusting its fields. */
@@ -74,10 +74,13 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
     return { kind: "tool_start", sessionId, id, name: stringAt(part, "tool", "name") ?? "tool", input: state?.input ?? part?.input ?? {} };
   }
   if (toolEndTypes.includes(event.type) && id) {
-    return { kind: "tool_end", sessionId, id, output: state?.output ?? state?.error ?? part?.output ?? "", isError: toolStateIsError(state) };
+    return { kind: "tool_end", sessionId, id, output: state?.output ?? state?.error ?? part?.output ?? part?.error ?? "", isError: toolStateIsError(state, part) };
   }
   if (toolCompleteTypes.includes(event.type) && id && part) {
-    if (!terminalToolState(state)) {
+    // Legacy `tool_use` frames were terminal snapshots and some omit a
+    // status entirely. Their output/error is the durable terminal signal.
+    const hasTerminalPayload = state?.output !== undefined || state?.error !== undefined || part?.output !== undefined;
+    if (!terminalToolState(state) && !hasTerminalPayload) {
       return { kind: "tool_start", sessionId, id, name: stringAt(part, "tool", "name") ?? "tool", input: state?.input ?? part?.input ?? {} };
     }
     return {
@@ -86,8 +89,8 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
       id,
       name: stringAt(part, "tool", "name") ?? "tool",
       input: state?.input ?? {},
-      output: state?.output ?? state?.error ?? "",
-      isError: toolStateIsError(state),
+      output: state?.output ?? state?.error ?? part?.output ?? part?.error ?? "",
+      isError: toolStateIsError(state, part),
     };
   }
   const knownType = [
@@ -101,6 +104,5 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
     kind: "other",
     sessionId,
     diagnostic: knownType ? "malformed-event" : "unknown-event",
-    ...(text === undefined ? {} : { text }),
   };
 }

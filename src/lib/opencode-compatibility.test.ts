@@ -76,19 +76,43 @@ const rejectedRollback = await loadOpenCodeSchemaBundle({
 assert.equal(rejectedRollback.source, "cache");
 assert.equal(rejectedRollback.diagnostic, "schema-registry-refresh-rejected", "rollback never overwrites cache");
 
-const plain = await resolveOpenCodeCompatibility({ version: "9.9.9", json: false, model: true, session: true });
+const plain = await resolveOpenCodeCompatibility({ version: "9.9.9", json: false, model: true, session: true, protocols: [] });
 assert.equal(plain.mode, "plain");
 assert.equal(plain.diagnostic, "json-format-unavailable", "capabilities, not version thresholds, decide fallback");
-const structured = await resolveOpenCodeCompatibility({ version: null, json: true, model: false, session: true });
+const structured = await resolveOpenCodeCompatibility({ version: null, json: true, model: false, session: true, protocols: ["json"] });
 assert.equal(structured.mode, "structured");
 assert.equal(structured.schema?.id, "opencode-run-json-v1", "new schemas are chosen by observed capabilities, not a version threshold");
-const missingSession = await resolveOpenCodeCompatibility({ version: "1.2.3", json: true, model: true, session: false });
+const missingSession = await resolveOpenCodeCompatibility({ version: "1.2.3", json: true, model: true, session: false, protocols: ["json"] });
 assert.equal(missingSession.mode, "structured");
 assert.equal(missingSession.schema?.id, "opencode-run-json-legacy", "older compatible schemas coexist without client version gates");
 
+await writeFile(cacheFile, JSON.stringify({ checkedAt: now, bundle: signed }));
+const expiredRemoteOnly = await resolveOpenCodeCompatibility(
+  { version: "2.0.0", json: true, model: true, session: true },
+  {
+    cacheFile,
+    publicKey: publicPem,
+    url: "https://registry.invalid/opencode.json",
+    now: () => Date.parse("2031-01-01T00:00:00.000Z"),
+    fetch: async () => { throw new Error("offline"); },
+  },
+);
+assert.equal(expiredRemoteOnly.mode, "plain", "an expired remote-only cache cannot silently select an older built-in JSON parser");
+assert.equal(expiredRemoteOnly.diagnostic, "cached-schema-unavailable");
+
 const broadSchema = { ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], id: "broad", requires: { json: true as const } };
+const protocolV2Schema = {
+  ...BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  id: "opencode-run-json-v2",
+  requires: { json: true as const, session: true, protocol: "json-v2" },
+};
 assert.equal(
-  selectOpenCodeSchema([broadSchema, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]], { version: "current", json: true, model: false, session: true })?.id,
+  selectOpenCodeSchema([BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0], protocolV2Schema], { version: "current", json: true, model: false, session: true, protocols: ["json-v2"] })?.id,
+  "opencode-run-json-v2",
+  "same-flag schema variants select only through their advertised protocol marker",
+);
+assert.equal(
+  selectOpenCodeSchema([broadSchema, BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0]], { version: "current", json: true, model: false, session: true, protocols: ["json"] })?.id,
   "opencode-run-json-v1",
   "the most specific schema wins independently of registry ordering",
 );
@@ -121,7 +145,7 @@ assert.equal(
   "an Ed448 key cannot be relabeled as an Ed25519 registry key",
 );
 assert.equal(
-  selectOpenCodeSchema([broadSchema, { ...broadSchema, id: "broad-duplicate" }], { version: "current", json: true, model: false, session: true }),
+  selectOpenCodeSchema([broadSchema, { ...broadSchema, id: "broad-duplicate" }], { version: "current", json: true, model: false, session: true, protocols: ["json"] }),
   null,
   "equally-specific overlapping schemas fail closed instead of depending on array order",
 );

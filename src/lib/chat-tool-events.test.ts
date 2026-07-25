@@ -21,4 +21,11 @@ assert.deepEqual(
   "reconciled OpenCode calls persist their stable id and terminal output for reload/resume",
 );
 
+const oversized = new ToolCallTracker(() => 1_000);
+assert.equal(oversized.envelopeToolResult("call_large", "x".repeat(100_000), false), null);
+const largeStart = oversized.envelopeToolUse("call_large", "read");
+assert.ok(largeStart, "a bounded deferred result still reconciles once its start arrives");
+const largeEnd = oversized.consumePendingEnvelopeResult("call_large");
+assert.ok((largeEnd?.output.length ?? 0) <= 16_100, "reordered results are capped before tracker and SSE retention");
+
 console.log("chat-tool-events.test.ts: ok");

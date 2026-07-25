@@ -62,15 +62,17 @@ function probeHelp(
   });
 }
 
-function probeOutput(command: string, args: string[], env = harnessSpawnEnv(), input?: string): Promise<string> {
-  return new Promise<string>((resolve) => {
+type ProbeOutput = { output: string; complete: boolean };
+
+function probeOutput(command: string, args: string[], env = harnessSpawnEnv(), input?: string): Promise<ProbeOutput> {
+  return new Promise<ProbeOutput>((resolve) => {
     let output = "";
     const MAX_PROBE_OUTPUT = 64 * 1024;
     let settled = false;
-    const done = () => {
+    const done = (complete: boolean) => {
       if (settled) return;
       settled = true;
-      resolve(output);
+      resolve({ output, complete });
     };
     try {
       const child = spawn(command, args, {
@@ -78,22 +80,38 @@ function probeOutput(command: string, args: string[], env = harnessSpawnEnv(), i
         stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
       }) as ChildProcessWithoutNullStreams;
       if (input !== undefined) writeOpenCodeLaunchInput(child, { command, args, input });
+      let overflowed = false;
       const append = (chunk: Buffer) => {
-        if (output.length >= MAX_PROBE_OUTPUT) return;
+        if (output.length >= MAX_PROBE_OUTPUT) { overflowed = true; return; }
         output += chunk.toString().slice(0, MAX_PROBE_OUTPUT - output.length);
+        if (output.length >= MAX_PROBE_OUTPUT) overflowed = true;
       };
       child.stdout.on("data", append);
       child.stderr.on("data", append);
       const timeout = setTimeout(() => {
         try { child.kill("SIGTERM"); } catch { /* Probe failures are capabilities=false. */ }
-        done();
+        done(false);
       }, 2500);
-      child.on("close", () => { clearTimeout(timeout); done(); });
-      child.on("error", () => { clearTimeout(timeout); done(); });
+      child.on("close", (code) => { clearTimeout(timeout); done(code === 0 && !overflowed); });
+      child.on("error", () => { clearTimeout(timeout); done(false); });
     } catch {
-      done();
+      done(false);
     }
   });
+}
+
+function hasRunOption(help: string, flag: "--model" | "--session"): boolean {
+  // Only option-definition lines count. Mentions in examples, migration notes,
+  // or another command's help text are not evidence that `opencode run` takes
+  // this flag.
+  return new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${flag}\\b(?:\\s|=|,|$)`, "m").test(help);
+}
+
+function advertisedFormatProtocols(help: string): string[] {
+  const stanza = help.match(/^\s*(?:-[A-Za-z],?\s+)?--format\b[^\n]*(?:\n(?!\s*(?:-[A-Za-z],?\s+)?--)[^\n]*){0,2}/im)?.[0] ?? "";
+  // A protocol marker is useful only when the CLI advertises it as an output
+  // format. Do not derive it from version strings or arbitrary help prose.
+  return [...new Set((stanza.match(/\bjson(?:[._-][a-z0-9]+)*\b/gi) ?? []).map((value) => value.toLowerCase()))];
 }
 
 /** Capability probes are cached because old Coven CLIs reject unknown flags. */
@@ -158,19 +176,33 @@ export function openCodeRunCapabilities(): Promise<OpenCodeRunCapabilities> {
   const value = (async () => {
     const helpLaunch = openCodeLaunch(["run", "--help"]);
     const versionLaunch = openCodeLaunch(["--version"]);
-    const [help, versionOutput] = await Promise.all([
+    const [helpProbe, versionProbe] = await Promise.all([
       probeOutput(helpLaunch.command, helpLaunch.args, openCodeSpawnEnv(), helpLaunch.input),
       probeOutput(versionLaunch.command, versionLaunch.args, openCodeSpawnEnv(), versionLaunch.input),
     ]);
-    const version = versionOutput.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null;
+    const version = versionProbe.complete
+      ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null
+      : null;
+    // Partial, timed-out, non-zero, or oversized help is never capability
+    // evidence. Probe again after the short TTL instead of risking an argv
+    // that the installed client does not accept.
+    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [] };
+    const help = helpProbe.output;
+    const protocols = advertisedFormatProtocols(help);
+    const json = protocols.some((protocol) => protocol === "json" || protocol.startsWith("json-") || protocol.startsWith("json_"));
     return {
       version,
       // Only accept JSON when it appears in the `--format` option's own
       // stanza. A stray "JSON" in a banner or another option's description
       // must not make us launch an unsupported `--format json` command.
-      json: /(?:^|\n)\s*--format(?:[=\s][^\n]*)?(?:\n(?!\s*--)[^\n]*){0,2}\bjson\b/im.test(help),
-      model: /(^|\s)--model(?![\w-])/m.test(help),
-      session: /(^|\s)--session(?![\w-])/m.test(help),
+      json,
+      model: hasRunOption(help, "--model"),
+      session: hasRunOption(help, "--session"),
+      // The documented format value is an independently observed protocol
+      // marker. Future formats (for example json-v2) must be explicitly
+      // advertised and selected by a matching schema; we never infer them
+      // from the installed version string.
+      protocols,
     };
   })();
   openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, value };

@@ -1365,7 +1365,9 @@ export async function POST(req: Request) {
       // If JSON is unavailable, preserve plain chat instead of launching with
       // an unsupported flag and losing the whole reply.
       const a = ["run"];
-      if (openCodeCompatibility?.mode === "structured") a.push("--format", "json");
+      if (openCodeCompatibility?.mode === "structured") {
+        a.push("--format", openCodeCompatibility.schema?.requires.protocol ?? "json");
+      }
       if (resumeSessionId && openCodeCompatibility?.capabilities.session) a.push("--session", resumeSessionId);
       if (forwardModel) a.push("--model", forwardModel);
       a.push(prompt);
@@ -1394,7 +1396,9 @@ export async function POST(req: Request) {
   const resumeTarget = body.startNewConversation && !existingConversation
     ? null
     : body.sessionId
-      ? existingConversation?.harnessSessionId ?? body.sessionId
+      ? openCodeDirect
+        ? existingConversation?.harnessSessionId ?? null
+        : existingConversation?.harnessSessionId ?? body.sessionId
       : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
   // the profile used for the previous native session and transparently start a
@@ -1413,10 +1417,7 @@ export async function POST(req: Request) {
   // at Cave's saved session id. Start a fresh native session with recent
   // transcript context instead; the in-stream notice makes this explicit.
   const openCodeFreshSessionForCompatibility = Boolean(
-    openCodeDirect && resumeTarget && (
-      openCodeCompatibility?.mode !== "structured" ||
-      !openCodeCompatibility.capabilities.session
-    ),
+    openCodeDirect && resumeTarget && !openCodeCompatibility?.capabilities.session,
   );
   const openCodeCompatibilityRetry = openCodeFreshSessionForCompatibility
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
@@ -1861,18 +1862,14 @@ export async function POST(req: Request) {
           }
           if (ev.kind === "other") {
             openCodeToolActivityDisabled = true;
-            // A future envelope can still carry assistant text even when its
-            // event label is unknown. Preserve that safe textual field while
-            // disabling only the unsupported structured activity.
-            if (ev.text) {
-              assistantText += ev.text;
-              push({ kind: "assistant_chunk", text: ev.text });
-            }
+            // Do not treat arbitrary `text`/`content` on an unknown envelope
+            // as assistant output: tool progress and provider errors often
+            // carry those fields and may contain secrets or file contents.
             if (!openCodeCompatibilityNoticeSent) {
               openCodeCompatibilityNoticeSent = true;
               pushProgress(
                 "opencode-compatibility",
-                "OpenCode sent an unrecognized tool event; continuing with assistant text",
+                "OpenCode sent an unrecognized event; tool activity was disabled for this turn",
                 "error",
                 `${ev.diagnostic ?? "unknown-event"}:${redactedOpenCodeEventFingerprint(rawEvent)}`,
               );
@@ -1888,7 +1885,7 @@ export async function POST(req: Request) {
             openCodeCompatibilityNoticeSent = true;
             pushProgress(
               "opencode-compatibility",
-              "OpenCode sent a malformed event; continuing with assistant text",
+              "OpenCode sent a malformed event; tool activity was disabled for this turn",
               "error",
               "malformed-json-event",
             );
@@ -1908,6 +1905,8 @@ export async function POST(req: Request) {
             ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
             : openCodeCompatibility.diagnostic === "no-compatible-schema"
               ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
+              : openCodeCompatibility.diagnostic === "cached-schema-unavailable"
+                ? "OpenCode's compatibility registry is unavailable; continuing without tool activity"
               : "OpenCode schema refresh was not trusted; using the last known compatible parser";
           pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
         }
@@ -2258,10 +2257,25 @@ export async function POST(req: Request) {
 
       // First attempt — uses --continue if body.sessionId was set.
       const turnSpawnStartMs = Date.now();
+      // A compatibility decision is meaningful even when the CLI exits before
+      // stdout. Announce it before spawning instead of relying on handleLine.
+      if (openCodeDirect && !openCodeCompatibilityNoticeSent && openCodeCompatibility?.diagnostic) {
+        openCodeCompatibilityNoticeSent = true;
+        const diagnostic = openCodeCompatibility.diagnostic === "json-format-unavailable"
+          ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
+          : openCodeCompatibility.diagnostic === "no-compatible-schema"
+            ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
+            : openCodeCompatibility.diagnostic === "cached-schema-unavailable"
+              ? "OpenCode's compatibility registry is unavailable; continuing without tool activity"
+            : "OpenCode schema refresh was not trusted; using the last known compatible parser";
+        pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
+      }
       if (openCodeFreshSessionForCompatibility) {
         pushProgress(
           "opencode-compatibility",
-          "This OpenCode client cannot resume sessions; replaying recent context in a fresh chat",
+          openCodeCompatibilityRetry?.replayedHistory
+            ? "This OpenCode client cannot resume sessions; replaying recent context in a fresh chat"
+            : "This OpenCode client cannot resume sessions; starting a fresh chat",
           "error",
           "session-unavailable",
         );

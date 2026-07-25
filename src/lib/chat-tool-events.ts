@@ -34,6 +34,19 @@ export type ToolStreamEvent = {
  *  (mirrors the chat UI's textOffset for chronological interleaving). */
 export type RecordedToolEvent = ToolStreamEvent & { textOffset?: number };
 
+/** Live tool payloads are bounded before SSE, tracker retention, and
+ * persistence. A local CLI is still an untrusted producer. */
+export const LIVE_TOOL_INPUT_CAP = 8_000;
+export const LIVE_TOOL_OUTPUT_CAP = 16_000;
+const MAX_PENDING_TOOL_RESULTS = 100;
+const MAX_PENDING_TOOL_RESULT_BYTES = 64_000;
+const MAX_OPEN_ENVELOPE_CALLS = 200;
+
+export function capLiveToolPayload(value: string | undefined, cap: number): string | undefined {
+  if (value === undefined || value.length <= cap) return value;
+  return `${value.slice(0, cap)}\n[tool payload truncated]`;
+}
+
 /** Pretty-print a raw JSON payload string; fall back to the raw text. */
 export function formatToolPayload(raw: string): string | undefined {
   if (!raw) return undefined;
@@ -104,6 +117,7 @@ export class ToolCallTracker {
   private settledEnvelopeIds = new Set<string>();
   /** Terminal envelopes can precede starts after a reconnect or CLI flush. */
   private pendingEnvelopeResults = new Map<string, { output: string | undefined; isError: boolean }>();
+  private pendingEnvelopeResultBytes = 0;
   /** Final state of every call this tracker has emitted, by stream id —
    *  insertion-ordered, so snapshot() preserves call order for persistence. */
   private recorded = new Map<string, RecordedToolEvent>();
@@ -135,10 +149,15 @@ export class ToolCallTracker {
   }
 
   private record(ev: ToolStreamEvent, textOffset?: number): void {
+    const bounded: ToolStreamEvent = {
+      ...ev,
+      ...(ev.input !== undefined ? { input: capLiveToolPayload(ev.input, LIVE_TOOL_INPUT_CAP) } : {}),
+      ...(ev.output !== undefined ? { output: capLiveToolPayload(ev.output, LIVE_TOOL_OUTPUT_CAP) } : {}),
+    };
     const prev = this.recorded.get(ev.id);
     if (!prev) {
       this.recorded.set(ev.id, {
-        ...ev,
+        ...bounded,
         ...(textOffset !== undefined ? { textOffset } : {}),
       });
       return;
@@ -147,8 +166,8 @@ export class ToolCallTracker {
     // original input win (mirrors the chat UI's upsert-by-id semantics).
     this.recorded.set(ev.id, {
       ...prev,
-      ...ev,
-      input: prev.input ?? ev.input,
+      ...bounded,
+      input: prev.input ?? bounded.input,
       ...(prev.textOffset !== undefined
         ? { textOffset: prev.textOffset }
         : textOffset !== undefined
@@ -219,7 +238,8 @@ export class ToolCallTracker {
    * linked to the hook's id instead, so later tool_result blocks dedup).
    */
   envelopeToolUse(id: string, name: string, input?: string, textOffset?: number): ToolStreamEvent | null {
-    if (this.byEnvelopeId.has(id) || this.settledEnvelopeIds.has(id)) return null;
+    if (id.length > 512 || this.byEnvelopeId.has(id) || this.settledEnvelopeIds.has(id)) return null;
+    if (this.byEnvelopeId.size >= MAX_OPEN_ENVELOPE_CALLS) return null;
     const queue = this.queueFor(name);
     // A hook pre may have surfaced this call already under a minted id. Link
     // the native id to the oldest unlinked hook call rather than emitting a
@@ -244,7 +264,7 @@ export class ToolCallTracker {
     };
     queue.push(call);
     this.byEnvelopeId.set(id, call);
-    const ev: ToolStreamEvent = { id, name, input, status: "running" };
+    const ev: ToolStreamEvent = { id, name, input: capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP), status: "running" };
     this.record(ev, textOffset);
     return ev;
   }
@@ -254,6 +274,7 @@ export class ToolCallTracker {
     const pending = this.pendingEnvelopeResults.get(toolUseId);
     if (!pending) return null;
     this.pendingEnvelopeResults.delete(toolUseId);
+    this.pendingEnvelopeResultBytes -= pending.output?.length ?? 0;
     return this.envelopeToolResult(toolUseId, pending.output, pending.isError);
   }
 
@@ -269,7 +290,8 @@ export class ToolCallTracker {
     output: string | undefined,
     isError: boolean,
   ): ToolStreamEvent | null {
-    if (this.settledEnvelopeIds.has(toolUseId)) return null;
+    if (toolUseId.length > 512 || this.settledEnvelopeIds.has(toolUseId)) return null;
+    const boundedOutput = capLiveToolPayload(output, LIVE_TOOL_OUTPUT_CAP);
     const call = this.byEnvelopeId.get(toolUseId);
     if (!call) {
       // A malformed stream must not turn arbitrary unmatched ids into an
@@ -278,11 +300,24 @@ export class ToolCallTracker {
       // The first terminal frame wins just like an already-settled result;
       // retransmits before the start frame must not replace its output.
       if (this.pendingEnvelopeResults.has(toolUseId)) return null;
-      if (this.pendingEnvelopeResults.size >= 100) {
+      if (this.pendingEnvelopeResults.size >= MAX_PENDING_TOOL_RESULTS) {
         const oldest = this.pendingEnvelopeResults.keys().next().value;
-        if (oldest) this.pendingEnvelopeResults.delete(oldest);
+        if (oldest) {
+          const dropped = this.pendingEnvelopeResults.get(oldest);
+          this.pendingEnvelopeResultBytes -= dropped?.output?.length ?? 0;
+          this.pendingEnvelopeResults.delete(oldest);
+        }
       }
-      this.pendingEnvelopeResults.set(toolUseId, { output, isError });
+      while (this.pendingEnvelopeResultBytes + (boundedOutput?.length ?? 0) > MAX_PENDING_TOOL_RESULT_BYTES && this.pendingEnvelopeResults.size) {
+        const oldest = this.pendingEnvelopeResults.keys().next().value;
+        if (!oldest) break;
+        const dropped = this.pendingEnvelopeResults.get(oldest);
+        this.pendingEnvelopeResultBytes -= dropped?.output?.length ?? 0;
+        this.pendingEnvelopeResults.delete(oldest);
+      }
+      if ((boundedOutput?.length ?? 0) > MAX_PENDING_TOOL_RESULT_BYTES) return null;
+      this.pendingEnvelopeResults.set(toolUseId, { output: boundedOutput, isError });
+      this.pendingEnvelopeResultBytes += boundedOutput?.length ?? 0;
       return null;
     }
     const durationMs = this.now() - call.startedAt;
@@ -290,7 +325,7 @@ export class ToolCallTracker {
     const ev: ToolStreamEvent = {
       id: call.id,
       name: call.name,
-      output,
+      output: boundedOutput,
       status: isError ? "error" : "ok",
       durationMs,
     };
