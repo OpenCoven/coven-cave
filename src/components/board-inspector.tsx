@@ -45,6 +45,7 @@ import type { CardPatch } from "@/lib/board-card-ops";
 import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
 import { BoardInspectorDebug } from "@/components/board-inspector-debug";
 import { useProjectFamiliars } from "@/lib/use-project-familiars";
+import { useProjects } from "@/lib/use-projects";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -1179,6 +1180,28 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
     loading: eligibleFamiliarsLoading,
     loadedSuccessfully: eligibleFamiliarsLoaded,
   } = useProjectFamiliars({ projectId: card.projectId ?? null });
+  // Cards can already have a familiar before their project is chosen (for
+  // example after an inline familiar assignment). In that direction, only
+  // expose projects the familiar can actually use for session launch.
+  const {
+    projects: accessibleProjects,
+    loading: accessibleProjectsLoading,
+    loadedSuccessfully: accessibleProjectsLoaded,
+  } = useProjects({ familiarId: card.familiarId, enabled: Boolean(card.familiarId) });
+  const projectPickerReady = !card.familiarId || (accessibleProjectsLoaded && !accessibleProjectsLoading);
+  const projectOptions = !card.familiarId
+    ? [
+        { value: "", label: "No project" },
+        ...projects.map((project) => ({ value: project.id, label: project.name })),
+      ]
+    : accessibleProjectsLoading
+      ? [{ value: "", label: "Loading accessible projects…", disabled: true }]
+      : !accessibleProjectsLoaded
+        ? [{ value: "", label: "Could not load accessible projects", disabled: true }]
+        : [
+            { value: "", label: "No project" },
+            ...accessibleProjects.map((project) => ({ value: project.id, label: project.name })),
+          ];
 
   // Preserve an assignment that remains authorized, but fail closed if a
   // project edit makes the card's familiar ineligible for its task launch.
@@ -1330,24 +1353,21 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 <StandardSelect
                   label="Project"
                   className="board-drawer-field-select board-drawer-field-select--styled"
-                  value={card.projectId ?? ""}
+                  value={projectPickerReady ? card.projectId ?? "" : ""}
                   onChange={(next) => {
-                    const selectedProject = projects.find((project) => project.id === next) ?? null;
-                    // A Project → Familiar assignment is only valid after the
-                    // target project's authorized roster resolves. Clear an
-                    // existing familiar immediately so Start work cannot race
-                    // that lookup with the old project's assignment.
+                    const selectedProject = (card.familiarId ? accessibleProjects : projects)
+                      .find((project) => project.id === next) ?? null;
+                    // A familiar-first project list is server-scoped to that
+                    // familiar's session-launch access, so keep the valid
+                    // assignment. Its linked session may use another project.
                     onPatch(card.id, {
                       projectId: selectedProject?.id ?? null,
                       cwd: selectedProject?.root ?? null,
-                      familiarId: null,
                       sessionId: null,
                     });
                   }}
-                  options={[
-                    { value: "", label: "No project" },
-                    ...projects.map((project) => ({ value: project.id, label: project.name })),
-                  ]}
+                  options={projectOptions}
+                  disabled={!projectPickerReady}
                   showCaret={false}
                 />
                 <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />

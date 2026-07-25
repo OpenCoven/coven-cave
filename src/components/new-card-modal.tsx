@@ -74,11 +74,10 @@ export function NewCardModal({
   const [error, setError] = useState<string | null>(null);
   const coarse = useIsCoarsePointer();
 
-  // Project-backed familiar choices are fetched server-side with the
-  // session-launch access requirement, matching the final launch
-  // authorization boundary. Unscoped cards retain the complete roster so
-  // users can deliberately choose the installed harness/runtime they need.
-  const { projects, loading: projectsLoading } = useProjects({ enabled: open });
+  // When the modal opens with a familiar already selected (such as from a
+  // familiar swimlane), only offer projects that familiar can launch work in.
+  // Project-first selection remains supported when no familiar is set.
+  const { projects, loading: projectsLoading } = useProjects({ familiarId, enabled: open });
   const {
     familiars: eligibleFamiliars,
     loading: eligibleFamiliarsLoading,
@@ -262,12 +261,10 @@ export function NewCardModal({
           <Select
             value={projectId ?? ""}
             onChange={(v) => {
-              // A project change invalidates the prior familiar scope until
-              // the project-authorized roster has loaded. Do not let a quick
-              // submit carry the modal's default/previous familiar into an
-              // unrelated project.
+              // With a familiar already selected, this list is server-scoped
+              // to its session-launch access, so the familiar remains valid.
+              // The linked session can still belong to another project.
               setProjectId(v || null);
-              setFamiliarId(null);
               setSessionId(null);
             }}
             options={[
