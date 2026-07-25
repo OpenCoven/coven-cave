@@ -741,9 +741,8 @@ async function readCachedTrustState(
     readTrustedCacheRecord(cacheTrustPath(file), publicKey, now),
     readTrustedCacheRecord(trustAnchorFile, publicKey, now),
   ]);
-  const trusted = [primary, backup, anchor].filter((cached): cached is CachedBundle =>
-    Boolean(cached) && meetsOpenCodeRegistryCheckpoint(cached.bundle, checkpoint),
-  );
+  const candidates = [primary, backup, anchor].filter((cached): cached is CachedBundle => cached !== null);
+  const trusted = candidates.filter((cached) => meetsOpenCodeRegistryCheckpoint(cached.bundle, checkpoint));
   if (!trusted.length) return null;
   const highestSequence = Math.max(...trusted.map((cached) => cached.bundle.sequence));
   const highest = trusted.filter((cached) => cached.bundle.sequence === highestSequence);
@@ -1079,7 +1078,7 @@ export async function loadOpenCodeSchemaBundle(source: OpenCodeSchemaBundleSourc
     // invocation captured `cached` but before its refresh lost the cache lock
     // to a rollback rejection. Re-read first so this turn cannot regress to
     // the stale parser that initiated the race.
-    const current = await readVerifiedCache(file, publicKeys, now, checkpoint);
+    const current = await readVerifiedCache(file, publicKeys, now, checkpoint, trustAnchorFile);
     if (current && (!cached || current.bundle.sequence >= cached.bundle.sequence)) {
       return { bundle: current.bundle, source: "cache", diagnostic: "schema-registry-refresh-rejected" };
     }

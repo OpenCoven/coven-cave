@@ -36,9 +36,9 @@ const proseOperand = parseOpenCodeRunCapabilitiesHelp(`
 assert.equal(proseOperand.json, false, "an operand-looking token in an option description never confirms a value-taking format flag");
 assert.deepEqual(proseOperand.valueOptions, [], "only the option syntax column can prove that OpenCode accepts an argv value");
 
-const wrappedYargs = parseOpenCodeRunCapabilitiesHelp(`
+const currentYargsHelp = parseOpenCodeRunCapabilitiesHelp(`
   --format                       Select output format
-                                  [string] [choices: "text", "json"]
+                                  [string] [choices: "default", "json"]
   --session                      Resume a named session
                                   [string]
   --model                        Select a model
@@ -46,9 +46,11 @@ const wrappedYargs = parseOpenCodeRunCapabilitiesHelp(`
   --event-stream                 Configure event framing
                                   [string]
 `, "1.18.5");
-assert.equal(wrappedYargs.json, true, "wrapped yargs choices confirm JSON output without treating prose as syntax");
-assert.deepEqual(wrappedYargs.valueOptions, ["--format", "--session", "--model", "--event-stream"], "wrapped yargs type annotations confirm value-taking options");
-assert.deepEqual(wrappedYargs.noValueOptions, [], "a wrapped yargs value annotation never becomes evidence for a valueless launch flag");
+assert.equal(currentYargsHelp.json, true, "current yargs choices confirm JSON output without treating prose as syntax");
+assert.equal(currentYargsHelp.session, true, "current yargs string metadata confirms native session support");
+assert.equal(currentYargsHelp.model, true, "current yargs string metadata confirms model forwarding support");
+assert.deepEqual(currentYargsHelp.valueOptions, ["--format", "--session", "--model", "--event-stream"], "wrapped yargs type annotations confirm value-taking options");
+assert.deepEqual(currentYargsHelp.noValueOptions, [], "a wrapped yargs value annotation never becomes evidence for a valueless launch flag");
 
 const toolEventsOutput = parseOpenCodeRunCapabilitiesHelp(`
   --format <format>             Output format: text, json

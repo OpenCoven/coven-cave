@@ -110,6 +110,36 @@ const checkpointUpgrade = await loadOpenCodeSchemaBundle({
 });
 assert.equal(checkpointUpgrade.source, "remote", "a later signed checkpoint replaces an older cache after a release upgrade");
 
+const unsignedAnchorSequence4 = { ...unsigned, sequence: 4 };
+const signedAnchorSequence4 = {
+  ...unsignedAnchorSequence4,
+  signature: {
+    algorithm: "ed25519" as const,
+    value: sign(null, Buffer.from(openCodeSchemaBundleSigningPayload(unsignedAnchorSequence4)), privateKey).toString("base64"),
+  },
+};
+const durableAnchorCacheFile = path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-durable-anchor-")), "bundle.json");
+const anchoredSequence4 = await loadOpenCodeSchemaBundle({
+  cacheFile: durableAnchorCacheFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now,
+  fetch: async () => new Response(JSON.stringify(signedAnchorSequence4), { status: 200 }),
+});
+assert.equal(anchoredSequence4.bundle.sequence, 4);
+await rm(durableAnchorCacheFile, { force: true });
+await rm(`${durableAnchorCacheFile}.trust`, { force: true });
+const recoveredFromAnchor = await loadOpenCodeSchemaBundle({
+  cacheFile: durableAnchorCacheFile,
+  publicKey: publicPem,
+  url: "https://registry.invalid/opencode.json",
+  now: () => now + 7 * 60 * 60 * 1000,
+  fetch: async () => new Response(JSON.stringify(signedCheckpointAdvance), { status: 200 }),
+});
+assert.equal(recoveredFromAnchor.bundle.sequence, 4, "the independent trust anchor rejects an older signed registry replay after both cache records are lost");
+assert.equal(recoveredFromAnchor.source, "cache");
+assert.equal(recoveredFromAnchor.diagnostic, "schema-registry-refresh-rejected");
+
 const unsignedSignedRollback = { ...unsigned, sequence: 1 };
 const signedRollback = {
   ...unsignedSignedRollback,
