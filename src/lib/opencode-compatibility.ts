@@ -1,7 +1,20 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+
+type RegistryFs = Pick<typeof import("node:fs/promises"), "mkdir" | "open" | "readFile" | "rename" | "rm" | "stat">;
+
+// The registry cache is per-user runtime state. Resolve its Node built-in at
+// runtime so Next's file tracer cannot mistake its dynamic paths for packaged
+// application inputs and copy the repository into the desktop sidecar.
+const registryFs = (process as typeof process & {
+  getBuiltinModule?: (id: "node:fs/promises") => RegistryFs | undefined;
+}).getBuiltinModule?.("node:fs/promises");
+
+function requireRegistryFs(): RegistryFs {
+  if (!registryFs) throw new Error("node fs promises unavailable");
+  return registryFs;
+}
 
 export type OpenCodeRunCapabilities = {
   version: string | null;
@@ -637,9 +650,9 @@ function cacheTrustAnchorPath(file: string): string {
  * bytes consumed if the pathname is atomically replaced while it is read.
  */
 async function readBoundedCacheFile(file: string): Promise<string | null> {
-  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  let handle: Awaited<ReturnType<RegistryFs["open"]>> | null = null;
   try {
-    handle = await open(/* turbopackIgnore: true */ file, "r");
+    handle = await requireRegistryFs().open(file, "r");
     const bytes = Buffer.allocUnsafe(MAX_SCHEMA_BUNDLE_BYTES + 1);
     const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
     if (bytesRead > MAX_SCHEMA_BUNDLE_BYTES) return null;
@@ -739,7 +752,7 @@ async function fetchSchemaBundle(url: string, fetcher: typeof fetch, timeoutMs =
  */
 async function staleLockCanBeReclaimed(lock: string): Promise<boolean> {
   try {
-    const info = await stat(/* turbopackIgnore: true */ lock);
+    const info = await requireRegistryFs().stat(lock);
     // A PID is not a durable process identity: after a crash it can be reused
     // by an unrelated long-running process. The lock is therefore a bounded
     // lease, not a liveness claim. Release ownership remains token-checked,
@@ -830,8 +843,8 @@ async function releaseCacheLock(lock: string, ownerToken: string): Promise<void>
     // Never unlink a lock that was reclaimed and replaced after an unusually
     // slow filesystem operation. The unique token makes release ownership
     // explicit across processes and antivirus/filesystem stalls.
-    if ((await readFile(/* turbopackIgnore: true */ lock, "utf8")) !== ownerToken) return;
-    await rm(/* turbopackIgnore: true */ lock, { force: true });
+    if ((await requireRegistryFs().readFile(lock, "utf8")) !== ownerToken) return;
+    await requireRegistryFs().rm(lock, { force: true });
   } catch {
     // A concurrent stale-lock recovery or shutdown already cleaned it up.
   }
@@ -839,16 +852,16 @@ async function releaseCacheLock(lock: string, ownerToken: string): Promise<void>
 
 async function withCacheWriteLock<T>(file: string, callback: (assertOwner: () => Promise<void>) => Promise<T>): Promise<T | null> {
   const lock = `${file}.lock`;
-  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  let handle: Awaited<ReturnType<RegistryFs["open"]>> | null = null;
   const ownerToken = `${process.pid}:${randomBytes(16).toString("hex")}`;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const acquired = await open(/* turbopackIgnore: true */ lock, "wx", 0o600);
+      const acquired = await requireRegistryFs().open(lock, "wx", 0o600);
       try {
         await acquired.writeFile(ownerToken);
       } catch (error) {
         await acquired.close().catch(() => undefined);
-        await rm(/* turbopackIgnore: true */ lock, { force: true }).catch(() => undefined);
+        await requireRegistryFs().rm(lock, { force: true }).catch(() => undefined);
         throw error;
       }
       handle = acquired;
@@ -859,8 +872,8 @@ async function withCacheWriteLock<T>(file: string, callback: (assertOwner: () =>
       // delete a newly acquired lock between its stale check and this cleanup.
       const stale = `${lock}.${process.pid}.${randomBytes(6).toString("hex")}.stale`;
       try {
-        await rename(/* turbopackIgnore: true */ lock, stale);
-        await rm(/* turbopackIgnore: true */ stale, { force: true });
+        await requireRegistryFs().rename(lock, stale);
+        await requireRegistryFs().rm(stale, { force: true });
       } catch {
         return null;
       }
@@ -869,7 +882,7 @@ async function withCacheWriteLock<T>(file: string, callback: (assertOwner: () =>
   if (!handle) return null;
   const assertOwner = async () => {
     try {
-      if ((await readFile(/* turbopackIgnore: true */ lock, "utf8")) !== ownerToken) {
+      if ((await requireRegistryFs().readFile(lock, "utf8")) !== ownerToken) {
         throw new CacheWriterPendingError("schema cache lock ownership changed");
       }
     } catch (error) {
@@ -901,7 +914,7 @@ async function waitForConcurrentCacheWriter(
     latest = await readVerifiedCache(file, publicKeys, now, checkpoint, trustAnchorFile);
     if (latest && latest.bundle.sequence >= minimumSequence) return latest;
     try {
-      await stat(/* turbopackIgnore: true */ lock);
+      await requireRegistryFs().stat(lock);
     } catch {
       // Lock release follows the atomic write, so one final verified read sees
       // the owner's result without trusting its in-progress payload.
@@ -1013,7 +1026,7 @@ async function refreshOpenCodeSchemaBundle(
   if (Object.keys(publicKeys).length > 1 && remote.keyId === undefined) throw new Error("missing schema signing key id");
   const cachedTrust = await readCachedTrustState(file, publicKeys, now, checkpoint, trustAnchorFile);
   if (cachedTrust && remote.sequence < cachedTrust.bundle.sequence) throw new Error("schema rollback");
-  await mkdir(/* turbopackIgnore: true */ localPathParent(file), { recursive: true });
+  await requireRegistryFs().mkdir(localPathParent(file), { recursive: true });
   const writeResult = await withCacheWriteLock(file, async (assertLockOwner) => {
     // Re-read after acquiring the lock. Another process may have refreshed
     // while this request was in flight, and the cache must never move back.

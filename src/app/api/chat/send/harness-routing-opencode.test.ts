@@ -192,7 +192,7 @@ assert.match(
 );
 assert.match(
   capabilities,
-  /export async function openCodeRunCapabilities\(familiarId\?[^)]*\)[\s\S]*?const env = openCodeSpawnEnv\(familiarId\);[\s\S]*?const versionLaunch = openCodeLaunch\(\["--version"\]\);[\s\S]*?probeOutput\(helpLaunch\.command, helpLaunch\.args, env[\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
+  /export async function openCodeRunCapabilities\(familiarId\?[^)]*\)[\s\S]*?const env = openCodeSpawnEnv\(familiarId\);[\s\S]*?probeOpenCodeRunContract\(env\)[\s\S]*?openCodeCapabilityIdentity\(helpProbe\.output, versionProbe\.output\)[\s\S]*?json:[\s\S]*?model:[\s\S]*?session:/,
   "OpenCode discovers feature support from the scoped executable environment and records version only for diagnostics",
 );
 assert.match(

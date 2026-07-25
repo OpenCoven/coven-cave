@@ -318,13 +318,20 @@ export function openCodeCapabilityIdentity(help: string, version: string): strin
     .digest("hex");
 }
 
-export async function openCodeExecutableIdentity(env = openCodeSpawnEnv()): Promise<string> {
+type OpenCodeRunContractProbe = { helpProbe: ProbeOutput; versionProbe: ProbeOutput };
+
+async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCodeRunContractProbe> {
   const helpLaunch = openCodeLaunch(["run", "--help"]);
   const versionLaunch = openCodeLaunch(["--version"]);
   const [helpProbe, versionProbe] = await Promise.all([
     probeOutput(helpLaunch.command, helpLaunch.args, env, helpLaunch.input),
     probeOutput(versionLaunch.command, versionLaunch.args, env, versionLaunch.input),
   ]);
+  return { helpProbe, versionProbe };
+}
+
+export async function openCodeExecutableIdentity(env = openCodeSpawnEnv()): Promise<string> {
+  const { helpProbe, versionProbe } = await probeOpenCodeRunContract(env);
   // Never cache a transient failure: a just-installed or updating executable
   // must be retried on the next turn rather than pinned for the TTL.
   if (!helpProbe.complete || !versionProbe.complete) return `unverified:${Date.now()}`;
@@ -442,27 +449,29 @@ export async function openCodeRunCapabilities(familiarId?: string): Promise<Open
   // without filesystem inspection of machine-local PATH entries.
   const env = openCodeSpawnEnv(familiarId);
   const cacheable = openCodeCapabilityProbeCacheable();
-  const executableIdentity = cacheable ? await openCodeExecutableIdentity(env) : "uncached-windows-launcher";
+  // Probe once and reuse the verified contract for both cache validation and
+  // capability parsing. Re-probing after calculating the fingerprint would
+  // double launch latency and could select flags from a different executable.
+  const { helpProbe, versionProbe } = await probeOpenCodeRunContract(env);
+  const executableIdentity = cacheable
+    ? helpProbe.complete && versionProbe.complete
+      ? openCodeCapabilityIdentity(helpProbe.output, versionProbe.output)
+      : `unverified:${Date.now()}`
+    : "uncached-windows-launcher";
   const identity = `${familiarId ?? "default"}\0${executableIdentity}`;
   if (cacheable && openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.identity === identity) {
     return openCodeCapabilitiesProbe.value;
   }
-  const value = (async () => {
-    const helpLaunch = openCodeLaunch(["run", "--help"]);
-    const versionLaunch = openCodeLaunch(["--version"]);
-    const [helpProbe, versionProbe] = await Promise.all([
-      probeOutput(helpLaunch.command, helpLaunch.args, env, helpLaunch.input),
-      probeOutput(versionLaunch.command, versionLaunch.args, env, versionLaunch.input),
-    ]);
-    const version = versionProbe.complete
-      ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null
-      : null;
-    // Partial, timed-out, non-zero, or oversized help is never capability
-    // evidence. Probe again after the short TTL instead of risking an argv
-    // that the installed client does not accept.
-    if (!helpProbe.complete) return { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], endOfOptions: false, structuredSwitches: [], structuredOutputs: [] };
-    return parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
-  })();
+  const version = versionProbe.complete
+    ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null
+    : null;
+  // Partial, timed-out, non-zero, or oversized help is never capability
+  // evidence. Probe again after the short TTL instead of risking an argv
+  // that the installed client does not accept.
+  const capabilities = !helpProbe.complete
+    ? { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], endOfOptions: false, structuredSwitches: [], structuredOutputs: [] }
+    : parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
+  const value = Promise.resolve(capabilities);
   if (cacheable) openCodeCapabilitiesProbe = { until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS, identity, value };
   return value;
 }
