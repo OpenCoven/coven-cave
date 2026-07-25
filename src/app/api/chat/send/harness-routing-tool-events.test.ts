@@ -284,6 +284,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /const codexDirect = !sshRuntime && binding\.harness === "codex" && codexCompatibility\?\.ok === true;[\s\S]*?\["exec", "--json", "--skip-git-repo-check", "--color", "never"\][\s\S]*?command: "codex", args: spawnArgs/,
+  "a selected local Codex schema launches the CLI's authenticated native JSONL pipe instead of inventing an outer attestation",
+);
+
+assert.match(
+  chatRoute,
   /Codex emitted an unsupported tool event; continuing in plain chat/,
   "unknown Codex shapes surface a visible plain-chat compatibility diagnostic",
 );

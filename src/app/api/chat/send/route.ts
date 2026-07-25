@@ -949,8 +949,14 @@ export async function POST(req: Request) {
         await productionCodexSchemaSources(),
       )
       : null;
+  // A selected local schema enables Codex's own documented JSONL pipe. This
+  // is an authenticated process channel, unlike unmarked `coven run` output
+  // text which may simply be an assistant-authored JSON/code response.
+  const codexDirect = !sshRuntime && binding.harness === "codex" && codexCompatibility?.ok === true;
   const modelForwardingEnabled =
-    hermesDirect
+    codexDirect
+      ? true
+      : hermesDirect
       ? await hermesChatSupportsModel()
       : openCodeDirect
         ? await openCodeRunSupportsModel()
@@ -959,18 +965,22 @@ export async function POST(req: Request) {
   // Grok and OpenCode are direct integrations, so neither may wait on coven
   // capability probes for flags it does not execute.
   const permissionForwardingEnabled =
-    !openCodeDirect &&
-    binding.harness !== "openclaw" &&
-    binding.harness !== "grok" &&
-    (await covenRunSupportsPermission());
+    codexDirect || (
+      !openCodeDirect &&
+      binding.harness !== "openclaw" &&
+      binding.harness !== "grok" &&
+      (await covenRunSupportsPermission())
+    );
   // Same gating for directory grants (`--add-dir`). Without forwarding, the
   // granted roots listed in the runtime-scope preamble are prompt-text-only
   // and the harness denies every access to them.
   const addDirForwardingEnabled =
-    !openCodeDirect &&
-    binding.harness !== "openclaw" &&
-    binding.harness !== "grok" &&
-    (await covenRunSupportsAddDir());
+    codexDirect || (
+      !openCodeDirect &&
+      binding.harness !== "openclaw" &&
+      binding.harness !== "grok" &&
+      (await covenRunSupportsAddDir())
+    );
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
     config,
@@ -1346,6 +1356,18 @@ export async function POST(req: Request) {
         addDirs: grantDirs,
       });
     }
+    if (codexDirect) {
+      const a = resumeSessionId
+        ? ["exec", "resume", "--json", resumeSessionId]
+        : ["exec", "--json", "--skip-git-repo-check", "--color", "never"];
+      if (forwardModel) a.push("--model", forwardModel);
+      if (!resumeSessionId && forwardPermission) a.push("--sandbox", forwardPermission === "read-only" ? "read-only" : "workspace-write");
+      if (!resumeSessionId) {
+        for (const dir of forwardAddDirs) a.push("--add-dir", dir);
+      }
+      a.push(prompt);
+      return a;
+    }
     if (hermesDirect) {
       const a = ["chat", "--source", "coven", "-Q"];
       if (resumeSessionId) a.push("--resume", resumeSessionId);
@@ -1582,7 +1604,9 @@ export async function POST(req: Request) {
       // An outer `output` frame can carry ordinary assistant JSON/code. Only
       // a documented `codex_jsonl: true` transport flag authorizes native
       // Codex frame parsing; payload shape alone must never mint a resume id.
-      let codexDecoder: CodexJsonlDecoder | null = null;
+      let codexDecoder: CodexJsonlDecoder | null = codexDirect
+        ? new CodexJsonlDecoder({ trustThreadPreamble: true })
+        : null;
       let codexUnknownShapeReported = false;
       let codexHarnessSessionId: string | null = null;
 
@@ -1938,6 +1962,10 @@ export async function POST(req: Request) {
         if (!line) return;
         if (RESUME_ERR_RE.test(line)) resumeFailed = true;
         const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
+        if (codexDirect) {
+          handleCodexEvents(`${line}\n`);
+          return;
+        }
         if (copilotStream) {
           handleCopilotLine(line, isJson);
           return;
@@ -2171,8 +2199,10 @@ export async function POST(req: Request) {
                       }
                     : covenLaunchCommand();
                 const openCodeLaunchCommand = openCodeDirect ? openCodeLaunch(spawnArgs) : null;
-                const command = openCodeLaunchCommand
-                  ?? { command: launch.command, args: [...launch.fixedArgs, ...spawnArgs] };
+                const command = codexDirect
+                  ? { command: "codex", args: spawnArgs }
+                  : openCodeLaunchCommand
+                    ?? { command: launch.command, args: [...launch.fixedArgs, ...spawnArgs] };
                 const child = spawn(command.command, command.args, {
                   // Spawn IN the familiar's workspace when no project root was
                   // supplied, so coven's project-root resolver picks that dir as
@@ -2189,6 +2219,7 @@ export async function POST(req: Request) {
                   env: openCodeDirect
                     ? openCodeSpawnEnv(body.familiarId)
                     : harnessSpawnEnv(body.familiarId),
+                  windowsHide: true,
                 }) as ChildProcessWithoutNullStreams;
                 if (openCodeLaunchCommand) {
                   writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
@@ -2248,6 +2279,8 @@ export async function POST(req: Request) {
                       ? "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again."
                       : grokDirect
                         ? "Grok Build CLI not found on PATH. Install Grok Build, sign in with `grok`, then try again."
+                      : codexDirect
+                        ? "Codex CLI not found on PATH. Install it with `npm install -g @openai/codex`, then try again."
                       : openCodeDirect
                         ? "OpenCode CLI not found on PATH. Install it with `npm install -g opencode-ai`, then try again."
                       : hermesDirect
@@ -2267,7 +2300,7 @@ export async function POST(req: Request) {
             // OpenCode normally emits a JSON error envelope, but older CLI
             // builds can exit non-zero with only stderr. Do not mistake that
             // failed invocation for a successful model application below.
-            if (openCodeDirect && code !== 0) {
+            if ((openCodeDirect || codexDirect) && code !== 0) {
               result = { ...result, is_error: true };
             }
             pushProgress(
@@ -2326,7 +2359,7 @@ export async function POST(req: Request) {
         settleToolCallsBeforeRetry();
         toolTracker = new ToolCallTracker();
         copilotText.reset();
-        codexDecoder = null;
+        codexDecoder = codexDirect ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
         codexUnknownShapeReported = false;
         codexHarnessSessionId = null;
         stderrTail.length = 0;
@@ -2369,7 +2402,7 @@ export async function POST(req: Request) {
         settleToolCallsBeforeRetry();
         toolTracker = new ToolCallTracker();
         copilotText.reset();
-        codexDecoder = null;
+        codexDecoder = codexDirect ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
         codexUnknownShapeReported = false;
         codexHarnessSessionId = null;
         stderrTail.length = 0;

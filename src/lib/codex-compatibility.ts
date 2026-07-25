@@ -23,7 +23,6 @@ const MAX_ITEM_TYPES_PER_SCHEMA = 64;
 const MAX_SCHEMA_STRING_LENGTH = 160;
 const MAX_SCHEMA_FUTURE_SKEW_MS = 5 * 60_000;
 const CACHE_LOCK_TIMEOUT_MS = 2_000;
-const CACHE_LOCK_STALE_MS = 30_000;
 const CACHE_LOCK_RETRY_MS = 25;
 
 export type CodexCapabilities = {
@@ -125,6 +124,21 @@ export const CODEX_TEXT_ONLY_FALLBACK_SCHEMA: CodexEventSchema = {
   toolItemTypes: [],
   textItemTypes: ["agent_message"],
 };
+
+// Signed registry documents may tune compatible item types and version
+// ranges, but cannot redefine lifecycle meanings. That would require new
+// validated parser code, not a data-only compatibility update.
+const SUPPORTED_CODEX_EVENT_TYPES = new Set([
+  "thread.started",
+  "turn.started",
+  "turn.completed",
+  "turn.failed",
+  "item.started",
+  "item.updated",
+  "item.completed",
+  "item.failed",
+  "error",
+]);
 
 type ParsedVersion = { core: [number, number, number]; prerelease: string[] | null };
 
@@ -231,6 +245,7 @@ export function isValidCodexSchema(schema: unknown): schema is CodexEventSchema 
   ) return false;
   if (
     !isStringArray(value.eventTypes, MAX_EVENT_TYPES_PER_SCHEMA)
+    || !value.eventTypes.every((eventType) => SUPPORTED_CODEX_EVENT_TYPES.has(eventType))
     || !isStringArray(value.toolItemTypes, MAX_ITEM_TYPES_PER_SCHEMA)
     || !isStringArray(value.textItemTypes, MAX_ITEM_TYPES_PER_SCHEMA)
   ) return false;
@@ -349,8 +364,8 @@ async function waitForCacheLock(ms: number): Promise<void> {
 /**
  * The in-process queue prevents local contention; this lock protects the
  * shared per-user cache when two Cave processes refresh at the same time.
- * A stale lock is recoverable after a crashed writer, while a live lock only
- * causes the later refresh to retain the existing last-known-good document.
+ * Stale locks deliberately fail closed: deleting a lock after observing it is
+ * non-atomic and could remove a replacement writer's live ownership token.
  */
 async function acquireCacheWriteLock(cachePath: string): Promise<(() => Promise<void>) | null> {
   const lockPath = `${cachePath}.lock`;
@@ -373,17 +388,6 @@ async function acquireCacheWriteLock(cachePath: string): Promise<(() => Promise<
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : null;
       if (code !== "EEXIST") return null;
-      try {
-        const observed = await readFile(lockPath, "utf8");
-        if (Date.now() - (await stat(lockPath)).mtimeMs > CACHE_LOCK_STALE_MS) {
-          // Re-read immediately before removal: if a live writer replaced the
-          // stale file, its ownership token changes and its lock is preserved.
-          if ((await readFile(lockPath, "utf8")) === observed) await unlink(lockPath);
-          continue;
-        }
-      } catch {
-        // Another process released/replaced the lock between stat and unlink.
-      }
       await waitForCacheLock(CACHE_LOCK_RETRY_MS);
     }
   }

@@ -216,6 +216,7 @@ assert.equal(validateCodexSchemaDocument({ ...document, provenance: { ...documen
 assert.equal(validateCodexSchemaDocument({ ...document, provenance: { ...document.provenance, sequence: -1 } }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "negative registry checkpoints are rejected");
 assert.equal(validateCodexSchemaDocument({ ...document, provenance: { ...document.provenance, fetchedAt: "2026-07-25T00:06:00.000Z" } }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "far-future registry documents cannot freeze normal updates");
 assert.equal(validateCodexSchemaDocument({ ...document, schemas: [document.schemas[0], document.schemas[0]] }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "duplicate schema ids are rejected");
+assert.equal(validateCodexSchemaDocument({ ...document, schemas: [{ ...document.schemas[0], eventTypes: [...document.schemas[0].eventTypes, "item.finalized"] }] }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "registry schemas cannot redefine lifecycle event names without parser support");
 const reorderedPayload = {
   schemas: CODEX_BOOTSTRAP_SCHEMAS.map((schema) => ({
     textItemTypes: schema.textItemTypes,
