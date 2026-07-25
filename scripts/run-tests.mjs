@@ -1266,6 +1266,7 @@ const STRIP_TYPES_MJS = new Set([
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
   "src/lib/familiar-workspace-sessions.test.ts",
+  "src/lib/use-projects-scope-transition.test.ts",
   "scripts/cave-home-migration-windows.test.ts",
   "src/lib/bento-dashboard.test.ts",
   "src/lib/omnigent/ward-preflight.test.ts",
