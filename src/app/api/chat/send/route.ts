@@ -702,23 +702,17 @@ function openClawChatResponse(args: {
             assistantText = extractOpenClawText(parsed);
             isError = isError || parsed.status === "error";
           } catch {
-            // Never persist raw malformed JSONL: tool inputs and outputs can
-            // contain prompts, paths, or secrets. Keep diagnostics fixed and
-            // redacted just like other protocol-drift reporting.
-            const code = "malformed-jsonl";
-            if (!copilotProtocolDiagnosticCodes.has(code)) {
-              copilotProtocolDiagnosticCodes.add(code);
-              push({
-                kind: "progress",
-                id: `copilot-protocol-${code}`,
-                label: "Copilot tool activity needs an update",
-                detail: "Copilot emitted a malformed protocol frame.",
-                status: "error",
-              });
-            }
-            recordStdoutErrorTail("Copilot emitted a malformed protocol frame.", true);
-            return;
-            if (!cancelledByUser) assistantText = stdout.trim();
+            // Never persist raw bridge output: it can contain prompts, paths,
+            // or secrets. Keep the fixed diagnostic, then fall through to the
+            // normal close/finalization path.
+            isError = true;
+            assistantText = "The OpenClaw bridge emitted an invalid response.";
+            pushProgress(
+              "openclaw-protocol",
+              "OpenClaw response was malformed",
+              "error",
+              "The bridge emitted an invalid response.",
+            );
           }
         }
         if (gatewaySessionId) {
@@ -1786,7 +1780,22 @@ export async function POST(req: Request) {
             }
             return;
           } catch {
-            /* not valid JSON after all — fall through to the error tail */
+            // Never persist raw malformed JSONL: tool inputs and outputs can
+            // contain prompts, paths, or secrets. Keep diagnostics fixed and
+            // redacted just like other protocol-drift reporting.
+            const code = "malformed-jsonl";
+            if (!copilotProtocolDiagnosticCodes.has(code)) {
+              copilotProtocolDiagnosticCodes.add(code);
+              push({
+                kind: "progress",
+                id: `copilot-protocol-${code}`,
+                label: "Copilot tool activity needs an update",
+                detail: "Copilot emitted a malformed protocol frame.",
+                status: "error",
+              });
+            }
+            recordStdoutErrorTail("Copilot emitted a malformed protocol frame.", true);
+            return;
           }
         }
         recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
