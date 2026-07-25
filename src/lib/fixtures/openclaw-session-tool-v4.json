@@ -5,7 +5,7 @@
     "protocol": 4,
     "server": { "version": "2026.7.24", "connId": "conn-fixture" },
     "features": {
-      "methods": ["sessions.messages.subscribe", "chat.send"],
+      "methods": ["sessions.subscribe", "sessions.messages.subscribe", "chat.send"],
       "events": ["session.tool", "chat"]
     },
     "snapshot": {},

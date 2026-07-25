@@ -14,10 +14,11 @@ import { writeFileAtomic } from "./server/atomic-write.ts";
 export const OPENCLAW_TOOL_PROTOCOL_ADAPTERS = [
   {
     protocol: 4,
-    // `sessions.messages.subscribe` is the scoped Gateway API. Do not require
-    // the older broad `sessions.subscribe` surface: it is neither needed to
-    // observe this turn nor present in every otherwise-compatible Gateway.
-    requiredMethods: ["sessions.messages.subscribe"],
+    // `session.tool` is delivered to the session-event subscription, while
+    // `sessions.messages.subscribe` is the per-session transcript stream used
+    // to confirm the canonical key. Both acknowledgements are required before
+    // this adapter treats the observer as live.
+    requiredMethods: ["sessions.subscribe", "sessions.messages.subscribe"],
     requiredEvents: ["session.tool"],
     // `features.capabilities` is a Gateway server-capability list; tool-events
     // is instead a client capability negotiated in connect.params.caps.
@@ -579,6 +580,8 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
   let disconnected = false;
   let connectRequested = false;
   let handshakeAccepted = false;
+  let sessionSubscriptionRequested = false;
+  let sessionSubscriptionId = "";
   let messageSubscriptionRequested = false;
   let messageSubscriptionId = "";
   let maxInboundFrameBytes = MAX_PREAUTH_FRAME_BYTES;
@@ -639,6 +642,34 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
       finished = true;
       clearTimeout(timer);
       resolve(value);
+    };
+    const sendSubscriptionRequest = (
+      id: string,
+      method: "sessions.subscribe" | "sessions.messages.subscribe",
+      params?: { key: string; agentId: string },
+    ): boolean => {
+      const request = JSON.stringify({
+        type: "req",
+        id,
+        method,
+        ...(params ? { params } : {}),
+      });
+      if (
+        Buffer.byteLength(request, "utf8") > maxInboundFrameBytes ||
+        socket.bufferedAmount + Buffer.byteLength(request, "utf8") > maxBufferedBytes
+      ) {
+        close();
+        finish(fallback("gateway_policy_exceeded", negotiatedCompatibility));
+        return false;
+      }
+      try {
+        socket.send(request);
+        return true;
+      } catch {
+        close();
+        finish(fallback("gateway_unavailable", negotiatedCompatibility));
+        return false;
+      }
     };
     socket.on("error", () => {
       if (closed) return;
@@ -733,7 +764,10 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
               client: { id: "gateway-client", version: process.env.npm_package_version ?? "unknown", platform: process.platform, mode: "backend" },
               role: "operator",
               scopes: ["operator.read"],
-              caps: ["tool-events"],
+              // The tool card itself needs `tool-events`; the mirrored
+              // `session.tool` lifecycle is delivered only to a session-scoped
+              // observer, so advertise both documented capabilities.
+              caps: ["tool-events", "session-scoped-events"],
               commands: [],
               permissions: {},
               auth: { token: config.token },
@@ -783,28 +817,25 @@ export async function subscribeOpenClawGatewayToolEvents(options: {
             expiresAt: observedAt + CACHE_TTL_MS,
           }).catch(() => undefined);
         }
-        messageSubscriptionId = "cave-openclaw-session-messages-subscribe";
-        messageSubscriptionRequested = true;
-        const subscriptionRequest = JSON.stringify({
-          type: "req",
-          id: messageSubscriptionId,
-          method: "sessions.messages.subscribe",
-          params: { key: options.sessionKey, agentId: options.agentId },
-        });
-        if (
-          Buffer.byteLength(subscriptionRequest, "utf8") > maxInboundFrameBytes ||
-          socket.bufferedAmount + Buffer.byteLength(subscriptionRequest, "utf8") > maxBufferedBytes
-        ) {
+        sessionSubscriptionId = "cave-openclaw-sessions-subscribe";
+        sessionSubscriptionRequested = true;
+        sendSubscriptionRequest(sessionSubscriptionId, "sessions.subscribe");
+        return;
+      }
+      if (frame.type === "res" && frame.id === sessionSubscriptionId) {
+        if (closed || !sessionSubscriptionRequested || !sessionSubscriptionId || messageSubscriptionRequested) return;
+        const acknowledgement = frame.payload as { subscribed?: unknown } | null;
+        if (frame.ok !== true || !acknowledgement || acknowledgement.subscribed !== true) {
           close();
-          finish(fallback("gateway_policy_exceeded", negotiatedCompatibility));
+          finish(fallback("gateway_session_subscription_rejected"));
           return;
         }
-        try {
-          socket.send(subscriptionRequest);
-        } catch {
-          close();
-          finish(fallback("gateway_unavailable", negotiatedCompatibility));
-        }
+        messageSubscriptionId = "cave-openclaw-session-messages-subscribe";
+        messageSubscriptionRequested = true;
+        sendSubscriptionRequest(messageSubscriptionId, "sessions.messages.subscribe", {
+          key: options.sessionKey,
+          agentId: options.agentId,
+        });
         return;
       }
       if (frame.type === "res" && frame.id === messageSubscriptionId) {

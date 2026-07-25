@@ -260,6 +260,7 @@ assert.ok(address && typeof address !== "string");
 const receivedFrames = [];
 let gatewaySocket;
 let connectRequests = 0;
+let sessionSubscriptionRequests = 0;
 let messageSubscriptionRequests = 0;
 const devicePair = generateKeyPairSync("ed25519");
 const devicePublicJwk = createPublicKey(devicePair.privateKey).export({ format: "jwk" });
@@ -277,7 +278,7 @@ gateway.on("connection", (socket) => {
     const request = JSON.parse(raw.toString());
     if (request.method === "connect") {
       connectRequests += 1;
-      assert.deepEqual(request.params.caps, ["tool-events"]);
+      assert.deepEqual(request.params.caps, ["tool-events", "session-scoped-events"]);
       assert.deepEqual(request.params.scopes, ["operator.read"]);
       assert.deepEqual(request.params.auth, { token: "fixture-token" });
       assert.deepEqual(request.params.client, {
@@ -317,6 +318,11 @@ gateway.on("connection", (socket) => {
         "the Gateway-facing proof must verify against the advertised Ed25519 public key",
       );
       socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: hello }));
+    }
+    if (request.method === "sessions.subscribe") {
+      sessionSubscriptionRequests += 1;
+      assert.equal(request.params, undefined);
+      socket.send(JSON.stringify({ type: "res", id: request.id, ok: true, payload: { subscribed: true } }));
     }
     if (request.method === "sessions.messages.subscribe") {
       messageSubscriptionRequests += 1;
@@ -385,6 +391,7 @@ try {
   });
   assert.equal(subscription.active, true);
   assert.equal(connectRequests, 1, "a replayed challenge must not repeat the authenticated connect request");
+  assert.equal(sessionSubscriptionRequests, 1, "the session event subscription is requested once after the authenticated handshake");
   assert.equal(messageSubscriptionRequests, 1, "the selected-session message subscription is requested once after the authenticated handshake");
   await Promise.race([
     eventsReceived,
