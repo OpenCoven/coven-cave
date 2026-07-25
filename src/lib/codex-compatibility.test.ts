@@ -94,9 +94,9 @@ const mixed = new CodexJsonlDecoder().push(
 assert.deepEqual(mixed.tokens.map((token) => token.kind), ["session", "tool_start", "passthrough"], "the transport marker arms ordered mixed prose and JSONL records");
 const protectedFrames = new CodexJsonlDecoder();
 protectedFrames.push('codex\n{"type":"thread.started","thread_id":"thread-protected"}\n', selected.schema);
-const controls = protectedFrames.push('{"type":"turn.completed","secret":"never render"}\n{"type":"error","message":"never render"}\n{"type":"item.started","secret":"never render"}\n{"type":"item.delta","item":{"arguments":"never render"}}\n', selected.schema);
-assert.equal(controls.passthrough, "", "control and malformed protocol frames never reach assistant passthrough");
-assert.equal(controls.events.filter((event) => event.kind === "unknown").length, 3, "malformed, error, and future reserved frames surface only shape-only diagnostics");
+  const controls = protectedFrames.push('{"type":"turn.completed","secret":"never render"}\n{"type":"error","message":"never render"}\n{"type":"item.started","secret":"never render"}\n{"type":"item.delta","item":{"arguments":"never render"}}\n{"type":"response.completed","secret":"never render"}\n', selected.schema);
+  assert.equal(controls.passthrough, "", "control and malformed protocol frames never reach assistant passthrough");
+  assert.equal(controls.events.filter((event) => event.kind === "unknown").length, 4, "malformed, error, and future reserved frames surface only shape-only diagnostics");
 assert.doesNotMatch(JSON.stringify(controls.events), /never render/, "unknown protocol payloads never reach diagnostics");
 const registrySchema = { ...selected.schema, eventTypes: [...selected.schema.eventTypes, "response.started"] };
 const registryFrames = new CodexJsonlDecoder().push('codex\n{"type":"thread.started","thread":{"id":"thread-nested"}}\n{"type":"response.started","secret":"never render"}\n', registrySchema);

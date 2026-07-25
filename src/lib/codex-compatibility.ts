@@ -782,7 +782,13 @@ export class CodexJsonlDecoder {
         // armed this transport, consume every selected-schema frame instead
         // of leaking a harmless new control event as assistant JSON.
         const protocolType = !!rawType && schema.eventTypes.includes(rawType);
-        const reservedProtocolType = !!rawType && (/^(?:thread|turn|item)\./.test(rawType) || rawType === "error");
+        // Keep protocol families reserved once a trusted thread preamble has
+        // selected this stream. In particular, a newer Codex can add a
+        // `response.*` control frame before Cave has a schema for it; that
+        // frame must not be persisted as assistant JSON (where it can carry
+        // control metadata or tool payloads). Ordinary JSON such as
+        // `{ "type": "example" }` remains passthrough.
+        const reservedProtocolType = !!rawType && (/^(?:thread|turn|item|response)\./.test(rawType) || rawType === "error");
         const thread = record(frame?.thread);
         const sessionId = typeof frame?.thread_id === "string"
           ? frame.thread_id
@@ -801,7 +807,7 @@ export class CodexJsonlDecoder {
           continue;
         }
       } catch {
-        if (this.protocolActive && /^\s*\{\s*"type"\s*:\s*"(?:thread|turn|item)\.|^\s*\{\s*"type"\s*:\s*"error"/.test(line)) {
+        if (this.protocolActive && /^\s*\{\s*"type"\s*:\s*"(?:thread|turn|item|response)\.|^\s*\{\s*"type"\s*:\s*"error"/.test(line)) {
           const event: CodexStreamEvent = { kind: "unknown", fingerprint: "malformed-jsonl" };
           events.push(event);
           tokens.push(event);
