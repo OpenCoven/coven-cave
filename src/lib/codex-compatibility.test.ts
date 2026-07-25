@@ -134,6 +134,9 @@ assert.doesNotMatch(JSON.stringify(controls.events), /never render/, "unknown pr
 const unarmedDottedJson = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"invoice.created","value":"assistant JSON"}\n', selected.schema);
 assert.equal(unarmedDottedJson.events.length, 0, "dotted JSON remains prose until a Codex protocol boundary is confirmed");
 assert.equal(unarmedDottedJson.passthrough, '{"type":"invoice.created","value":"assistant JSON"}\n', "captured output preserves ordinary JSON with dotted types before a valid preamble");
+const unmarkedCapturedJson = new CodexJsonlDecoder({ trustCodexMarker: false }).push('{"type":"error","message":"assistant JSON"}\n{"type":"thread.started","thread_id":"assistant-example"}\n', selected.schema);
+assert.equal(unmarkedCapturedJson.events.length, 0, "unattested captured output never treats JSON examples as Codex control frames");
+assert.equal(unmarkedCapturedJson.passthrough, '{"type":"error","message":"assistant JSON"}\n{"type":"thread.started","thread_id":"assistant-example"}\n', "unattested thread-shaped JSON remains verbatim assistant content");
 const untrustedMarkerJson = new CodexJsonlDecoder({ trustThreadPreamble: true, trustCodexMarker: false }).push('codex\n{"type":"invoice.created","value":"assistant JSON"}\n', selected.schema);
 assert.equal(untrustedMarkerJson.events.length, 0, "an unauthenticated codex prose line cannot arm protocol parsing");
 assert.equal(untrustedMarkerJson.passthrough, 'codex\n{"type":"invoice.created","value":"assistant JSON"}\n', "assistant prose and following dotted JSON remain verbatim without transport provenance");

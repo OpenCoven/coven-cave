@@ -1579,10 +1579,10 @@ export async function POST(req: Request) {
       // Keep a text-only decoder even if the installed version has no schema:
       // new clients can still deliver a completed agent_message without
       // exposing undocumented tool/control payloads as transcript text.
-      // Outer `output` frames can contain ordinary assistant prose. They do
-      // not authenticate a literal `codex` line, so only a valid marker-free
-      // thread preamble may establish protocol ownership on this route.
-      let codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true, trustCodexMarker: false }) : null;
+      // An outer `output` frame can carry ordinary assistant JSON/code. Only
+      // a documented `codex_jsonl: true` transport flag authorizes native
+      // Codex frame parsing; payload shape alone must never mint a resume id.
+      let codexDecoder: CodexJsonlDecoder | null = null;
       let codexUnknownShapeReported = false;
       let codexHarnessSessionId: string | null = null;
 
@@ -1962,6 +1962,8 @@ export async function POST(req: Request) {
               total_cost_usd?: number;
               usage?: unknown;
               text?: string;
+              /** Explicit Coven adapter attestation for native Codex JSONL. */
+              codex_jsonl?: boolean;
               message?: {
                 content?: Array<{
                   type?: string;
@@ -1999,13 +2001,15 @@ export async function POST(req: Request) {
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
             } else if (ev.type === "output" && typeof ev.text === "string") {
-              // Coven's Windows captured-piped Codex path wraps transcript
-              // bytes as stream-json `output` events so stdout remains a
-              // valid JSONL protocol. Preserve the original chunk boundaries:
-              // AssistantFilter buffers partial lines and exposes only the
-              // assistant phase after stripping Codex's startup transcript.
+              // Captured stdout is also where a user-requested JSON/code
+              // response arrives. Decode only an adapter-attested native
+              // channel, never a thread-shaped JSON value in ordinary text.
               const cleaned = resolveBackspaces(stripAnsi(ev.text));
-              const passthrough = binding.harness === "codex"
+              const trustedCodexJsonl = binding.harness === "codex" && ev.codex_jsonl === true;
+              if (trustedCodexJsonl && !codexDecoder) {
+                codexDecoder = new CodexJsonlDecoder({ trustThreadPreamble: true });
+              }
+              const passthrough = trustedCodexJsonl
                 ? handleCodexEvents(cleaned)
                 : cleaned;
               recordStdoutErrorTail(passthrough);
@@ -2322,7 +2326,7 @@ export async function POST(req: Request) {
         settleToolCallsBeforeRetry();
         toolTracker = new ToolCallTracker();
         copilotText.reset();
-        codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true, trustCodexMarker: false }) : null;
+        codexDecoder = null;
         codexUnknownShapeReported = false;
         codexHarnessSessionId = null;
         stderrTail.length = 0;
@@ -2365,7 +2369,7 @@ export async function POST(req: Request) {
         settleToolCallsBeforeRetry();
         toolTracker = new ToolCallTracker();
         copilotText.reset();
-        codexDecoder = binding.harness === "codex" ? new CodexJsonlDecoder({ trustThreadPreamble: true, trustCodexMarker: false }) : null;
+        codexDecoder = null;
         codexUnknownShapeReported = false;
         codexHarnessSessionId = null;
         stderrTail.length = 0;

@@ -278,8 +278,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /let codexDecoder = binding\.harness === "codex" \? new CodexJsonlDecoder\(\{ trustThreadPreamble: true, trustCodexMarker: false \}\) : null/,
-  "Codex JSONL decoding requires a validated preamble instead of trusting assistant-authored marker text",
+  /const trustedCodexJsonl = binding\.harness === "codex" && ev\.codex_jsonl === true;[\s\S]*?new CodexJsonlDecoder\(\{ trustThreadPreamble: true \}\)/,
+  "Codex JSONL decoding requires an explicit adapter transport attestation, not assistant-authored payload shape",
 );
 
 assert.match(
@@ -318,7 +318,7 @@ assert.match(
   assert.ok(resolution.ok, "fixture runtime resolves a Codex schema");
   if (!resolution.ok) throw new Error("fixture schema unavailable");
 
-  const decoder = new CodexJsonlDecoder();
+  const decoder = new CodexJsonlDecoder({ trustThreadPreamble: true });
   const tracker = new ToolCallTracker(() => 0);
   const sse: Array<{ kind: string; id?: string; status?: string; text?: string }> = [];
   let text = "";
