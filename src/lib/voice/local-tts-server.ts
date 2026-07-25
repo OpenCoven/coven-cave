@@ -246,8 +246,8 @@ export async function runPiperWithDependencies(
       // so the sidecar fails this request instead of an unhandled stream error
       // taking down the Node process.
       child.stdin?.once("error", (error: Error) => {
-        if (terminating) return finish(terminating);
-        finish(new LocalTtsSynthesisError(
+        if (terminating) return;
+        terminate(new LocalTtsSynthesisError(
           "local_tts_failed",
           `Piper input stream failed (${error.message}).`,
         ));

@@ -126,11 +126,16 @@ test("Piper runner rejects an empty normalized utterance before spawning", async
 });
 
 test("Piper runner turns a broken stdin pipe into a synthesis failure", async () => {
+  let killed = false;
   const brokenPipeRunner = () => {
     const child = new EventEmitter();
     child.stdin = new PassThrough();
     child.stderr = new PassThrough();
-    child.kill = () => true;
+    child.kill = () => {
+      killed = true;
+      queueMicrotask(() => child.emit("close", null));
+      return true;
+    };
     child.stdin.on("finish", () => {
       queueMicrotask(() => child.stdin.emit("error", new Error("EPIPE")));
     });
@@ -146,6 +151,7 @@ test("Piper runner turns a broken stdin pipe into a synthesis failure", async ()
       error.code === "local_tts_failed" &&
       error.message.includes("EPIPE"),
   );
+  assert.equal(killed, true, "a broken input pipe terminates the Piper child before cleanup");
 });
 
 test("Piper runner force-kills a process that never closes after timeout", async () => {
