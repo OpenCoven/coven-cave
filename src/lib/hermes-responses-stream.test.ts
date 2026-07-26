@@ -20,6 +20,10 @@ test("Hermes Responses events normalise text, calls, output, session, and comple
     { kind: "text", text: "hello" },
   );
   assert.deepEqual(
+    parseHermesResponsesEvent("message", { type: "response.output_text.delta", delta: "wrapped" }),
+    { kind: "text", text: "wrapped" },
+  );
+  assert.deepEqual(
     parseHermesResponsesEvent("response.output_item.added", {
       item: { type: "function_call", call_id: "call-1", name: "shell", arguments: { command: "pwd" } },
     }),
@@ -28,6 +32,18 @@ test("Hermes Responses events normalise text, calls, output, session, and comple
   assert.deepEqual(
     parseHermesResponsesEvent("response.function_call_output", { call_id: "call-1", output: "C:/repo" }),
     { kind: "tool_end", id: "call-1", output: "C:/repo", isError: false },
+  );
+  assert.deepEqual(
+    parseHermesResponsesEvent("response.output_item.done", {
+      item: { call_id: "call-failed", status: "failed", error: { message: "denied" } },
+    }),
+    { kind: "tool_end", id: "call-failed", output: { message: "denied" }, isError: true },
+  );
+  assert.deepEqual(
+    parseHermesResponsesEvent("response.output_item.done", {
+      item: { call_id: "call-item-error", error: { message: "blocked" } },
+    }),
+    { kind: "tool_end", id: "call-item-error", output: { message: "blocked" }, isError: true },
   );
   assert.deepEqual(
     parseHermesResponsesEvent("response.completed", { response: { id: "resp-terminal" } }),
@@ -68,6 +84,10 @@ test("Hermes Responses events normalise text, calls, output, session, and comple
       item: { id: "item-1", type: "function_call", call_id: "call-1", name: "shell", arguments: "" },
     }),
     { kind: "tool_start", id: "call-1", itemId: "item-1", name: "shell", input: "" },
+  );
+  assert.deepEqual(
+    parseHermesResponsesEvent("response.created", { response: { id: "../../unsafe" } }),
+    { kind: "error", message: "Hermes API protocol error: invalid response id" },
   );
 });
 
@@ -131,23 +151,28 @@ test("SSE decoder handles arbitrary chunk boundaries and multi-line data", () =>
 
 test("structured transport is opt-in and refuses non-HTTP endpoint values", () => {
   assert.equal(hermesApiConfig({}), null);
+  assert.equal(hermesApiConfig({ HERMES_API_URL: "https://hermes.example.test" }), null);
+  assert.equal(hermesApiConfig({ HERMES_API_URL: "https://hermes.example.test", HERMES_API_KEY: "bad\nkey" }), null);
   assert.equal(hermesApiConfig({ HERMES_API_URL: "file:///tmp/hermes" }), null);
   assert.equal(hermesApiConfig({ HERMES_API_URL: "http://hermes.example.test:8080" }), null);
   assert.equal(hermesApiConfig({ HERMES_API_URL: "http://192.168.1.20:8080" }), null);
   assert.equal(hermesApiConfig({ HERMES_API_URL: "https://user:token@example.test" }), null);
   assert.equal(hermesApiConfig({ HERMES_API_URL: "https://example.test?api_key=token" }), null);
-  assert.deepEqual(hermesApiConfig({ HERMES_API_URL: "https://hermes.example.test:8443" }), {
+  assert.deepEqual(hermesApiConfig({ HERMES_API_URL: "https://hermes.example.test:8443", HERMES_API_KEY: "scoped" }), {
     baseUrl: "https://hermes.example.test:8443",
+    apiKey: "scoped",
   });
-  assert.deepEqual(hermesApiConfig({ HERMES_API_URL: "http://[::1]:8080" }), {
+  assert.deepEqual(hermesApiConfig({ HERMES_API_URL: "http://[::1]:8080", HERMES_API_KEY: "scoped" }), {
     baseUrl: "http://[::1]:8080",
+    apiKey: "scoped",
   });
-  assert.equal(hermesApiCanAccessLocalFiles({ baseUrl: "https://hermes.example.test" }), false);
-  assert.equal(hermesApiCanAccessLocalFiles({ baseUrl: "http://127.0.0.1:8080" }), true);
+  assert.equal(hermesApiCanAccessLocalFiles({ baseUrl: "https://hermes.example.test", apiKey: "scoped" }), false);
+  assert.equal(hermesApiCanAccessLocalFiles({ baseUrl: "http://127.0.0.1:8080", apiKey: "scoped" }), true);
   assert.deepEqual(hermesApiConfig({ HERMES_API_URL: "http://127.0.0.1:8080/", HERMES_API_KEY: " scoped " }), {
     baseUrl: "http://127.0.0.1:8080",
     apiKey: "scoped",
   });
-  assert.equal(hermesResponsesUrl({ baseUrl: "http://127.0.0.1:8080" }), "http://127.0.0.1:8080/v1/responses");
-  assert.equal(hermesResponsesUrl({ baseUrl: "http://127.0.0.1:8080/v1" }), "http://127.0.0.1:8080/v1/responses");
+  assert.equal(hermesResponsesUrl({ baseUrl: "http://127.0.0.1:8080", apiKey: "scoped" }), "http://127.0.0.1:8080/v1/responses");
+  assert.equal(hermesResponsesUrl({ baseUrl: "http://127.0.0.1:8080/v1", apiKey: "scoped" }), "http://127.0.0.1:8080/v1/responses");
+  assert.equal(hermesResponsesUrl({ baseUrl: "http://127.0.0.1:8080/v1/responses", apiKey: "scoped" }), "http://127.0.0.1:8080/v1/responses");
 });

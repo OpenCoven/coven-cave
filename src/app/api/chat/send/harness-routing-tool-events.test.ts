@@ -216,8 +216,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /flattenToolResultContent\(event\.output\) \?\? formatToolInputValue\(event\.output\)/,
-  "structured Hermes function output must display supported text blocks rather than protocol JSON",
+  /redactSecretsDeep\(event\.output\)[\s\S]*?flattenToolResultContent\(safeOutput\) \?\? formatToolInputValue\(safeOutput\)/,
+  "structured Hermes function output must display supported text blocks without exposing tool-supplied credentials",
 );
 
 assert.match(

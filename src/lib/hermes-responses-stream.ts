@@ -33,7 +33,20 @@ function string(value: unknown): string | undefined {
 
 function responseId(value: unknown): string | undefined {
   const root = record(value);
-  return string(root?.response_id) ?? string(record(root?.response)?.id) ?? string(root?.id);
+  const id = string(root?.response_id) ?? string(record(root?.response)?.id) ?? string(root?.id);
+  return id && isSafeHermesResponseId(id) ? id : undefined;
+}
+
+/** Response ids become Cave conversation ids for first API turns, so they
+ * must be safe to use as a local transcript filename. */
+export function isSafeHermesResponseId(id: string): boolean {
+  return id.length <= 240 && id !== "." && id !== ".." && !/[\\/\0]/.test(id);
+}
+
+function hasUnsafeResponseId(value: unknown): boolean {
+  const root = record(value);
+  const id = string(root?.response_id) ?? string(record(root?.response)?.id) ?? string(root?.id);
+  return Boolean(id && !isSafeHermesResponseId(id));
 }
 
 function toolId(value: RecordValue): string | undefined {
@@ -60,7 +73,15 @@ function toolInput(value: RecordValue): unknown {
 
 function toolOutput(value: RecordValue): unknown {
   const item = record(value.item);
-  return value.output ?? value.result ?? item?.output ?? item?.result;
+  return value.output ?? value.result ?? item?.output ?? item?.result ?? item?.error ?? value.error;
+}
+
+function toolFailed(value: RecordValue, item: RecordValue | null): boolean {
+  const failedStatuses = new Set(["error", "failed", "cancelled", "canceled", "incomplete"]);
+  const hasError = (error: unknown) => error !== undefined && error !== null && error !== false;
+  return hasError(value.error) || hasError(item?.error) ||
+    failedStatuses.has(string(value.status) ?? "") ||
+    failedStatuses.has(string(item?.status) ?? "");
 }
 
 /** A fresh retry is safe only when the API explicitly rejects the stored
@@ -78,11 +99,32 @@ export function isHermesInvalidPreviousResponseIdError(payload: unknown): boolea
     code === "previous_response_not_found";
 }
 
+/** Unknown named extension frames may lawfully carry non-JSON keepalive text. */
+export function isHermesResponsesEventName(eventName: string): boolean {
+  return new Set([
+    "response.output_text.delta", "response.text.delta", "response.created", "response.in_progress",
+    "response.function_call_arguments.delta", "response.function_call_arguments.done",
+    "response.output_item.added", "response.output_item.done", "response.function_call_output",
+    "response.completed", "response.failed", "response.incomplete", "hermes.tool.progress",
+    "hermes.tool.completed", "error",
+  ]).has(eventName);
+}
+
 /** Parse one complete SSE frame. Unknown/future frame types are safely ignored. */
 export function parseHermesResponsesEvent(eventName: string, payload: unknown): HermesResponsesEvent {
   const value = record(payload);
   if (!value) return { kind: "ignore" };
-  const type = eventName || string(value.type) || "";
+  // `message` is SSE's default event type. Servers may send it explicitly
+  // while carrying the actual Responses name in the JSON payload.
+  const type = !eventName || eventName === "message" ? string(value.type) || "" : eventName;
+
+  if (
+    (type === "response.created" || type === "response.in_progress" ||
+      type === "response.completed" || type === "response.failed" || type === "response.incomplete") &&
+    hasUnsafeResponseId(value)
+  ) {
+    return { kind: "error", message: "Hermes API protocol error: invalid response id" };
+  }
 
   if (type === "response.output_text.delta" || type === "response.text.delta") {
     const text = string(value.delta) ?? string(value.text);
@@ -132,7 +174,7 @@ export function parseHermesResponsesEvent(eventName: string, payload: unknown): 
     const name = toolName(value);
     const status = string(value.status);
     if (id && (status === "completed" || status === "complete" || status === "error" || status === "failed")) {
-      return { kind: "tool_end", id, output: toolOutput(value), isError: status === "error" || status === "failed" };
+      return { kind: "tool_end", id, output: toolOutput(value), isError: toolFailed(value, record(value.item)) };
     }
     return id && name
       ? { kind: "tool_start", id, name, input: toolInput(value), ...(toolItemId(value) ? { itemId: toolItemId(value) } : {}) }
@@ -153,14 +195,15 @@ export function parseHermesResponsesEvent(eventName: string, payload: unknown): 
     if (
       type === "response.output_item.done" &&
       string(item?.type) === "function_call" &&
-      toolOutput(value) === undefined
+      toolOutput(value) === undefined &&
+      !toolFailed(value, item)
     ) {
       const name = toolName(value);
       return name
         ? { kind: "tool_start", id, name, input: toolInput(value), ...(toolItemId(value) ? { itemId: toolItemId(value) } : {}) }
         : { kind: "ignore" };
     }
-    const failed = value.error === true || string(value.status) === "error" || string(value.status) === "failed";
+    const failed = toolFailed(value, item);
     return { kind: "tool_end", id, output: toolOutput(value), isError: failed };
   }
 
@@ -262,7 +305,7 @@ export class HermesSseDecoder {
   }
 }
 
-export type HermesApiConfig = { baseUrl: string; apiKey?: string };
+export type HermesApiConfig = { baseUrl: string; apiKey: string };
 
 /** Plain HTTP is only safe for a numeric loopback listener. Do not resolve
  * names here: a hostname such as `localhost` can be redirected by local DNS or
@@ -307,7 +350,10 @@ export function hermesApiConfig(
   env: Partial<Record<"HERMES_API_URL" | "HERMES_API_KEY", string | undefined>>,
 ): HermesApiConfig | null {
   const raw = env.HERMES_API_URL?.trim();
-  if (!raw) return null;
+  const apiKey = env.HERMES_API_KEY?.trim();
+  // Invalid configuration must select the unchanged CLI fallback rather than
+  // letting fetch echo a malformed authorization value in an error message.
+  if (!raw || !apiKey || /[\0-\x1F\x7F]/.test(apiKey)) return null;
   try {
     const url = new URL(raw);
     if (
@@ -320,7 +366,7 @@ export function hermesApiConfig(
     ) return null;
     return {
       baseUrl: url.toString().replace(/\/$/, ""),
-      ...(env.HERMES_API_KEY?.trim() ? { apiKey: env.HERMES_API_KEY.trim() } : {}),
+      apiKey,
     };
   } catch {
     return null;
@@ -329,5 +375,6 @@ export function hermesApiConfig(
 
 /** Accept either the server origin or an already-versioned `/v1` base URL. */
 export function hermesResponsesUrl(config: HermesApiConfig): string {
-  return `${config.baseUrl.endsWith("/v1") ? config.baseUrl : `${config.baseUrl}/v1`}/responses`;
+  const baseUrl = config.baseUrl.replace(/\/v1\/responses$/, "");
+  return `${baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`}/responses`;
 }
