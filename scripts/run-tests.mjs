@@ -188,7 +188,6 @@ export const SUITES = {
     "src/lib/server/backup-archive.test.ts",
     "src/lib/server/backup-sync.test.ts",
     "src/lib/server/role-crafts.test.ts",
-  "src/lib/server/backup-archive.test.ts",
     "src/app/api/marketplace/crafts-routes.test.ts",
     "src/app/api/roles/crafts-route.test.ts",
     "src/lib/rss.test.ts",
