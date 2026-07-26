@@ -19,12 +19,76 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// Composed while the desktop was unreachable; waiting for reconnect.
     /// Optional so messages persisted before offline compose still decode.
     var queued: Bool?
+    /// Per-send response controls. Optional so snapshots written before the
+    /// controls shipped remain decodable and replay with current defaults.
+    var reasoningEffort: ChatThinkingEffort?
+    var responseSpeed: ChatResponseSpeed?
+    /// Explicit model selected for this turn. Persisted so offline replay and
+    /// retry preserve the user's choice.
+    var modelOverride: String?
+    /// A group turn can fan out through different familiar/session defaults.
+    /// Done metadata records the honest retry model for each reply target.
+    var modelOverridesByFamiliar: [String: String]?
+    /// Wire scope retained only while a queued message waits to send. Optional
+    /// for snapshots written before turn-scoped model binding shipped.
+    var modelOverrideScope: ChatModelOverrideScope?
     /// Agent working steps (tool calls / progress lines) surfaced while this
     /// assistant reply streamed. Optional so older persisted messages decode.
     var activity: [ActivityStep]?
 
     var isQueued: Bool { queued == true }
     var activitySteps: [ActivityStep] { activity ?? [] }
+}
+
+extension DisplayMessage {
+    mutating func recordRetryModel(_ model: String?, for familiarId: String) {
+        guard let model = model?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !model.isEmpty else { return }
+        var models = modelOverridesByFamiliar ?? [:]
+        models[familiarId] = model
+        modelOverridesByFamiliar = models
+    }
+
+    func retryModel(for familiarId: String) -> String? {
+        modelOverridesByFamiliar?[familiarId] ?? modelOverride
+    }
+
+    /// Rebuild one persisted server turn without dropping response controls
+    /// that retry depends on.
+    static func restored(from turn: ChatTurn, familiarId: String?) -> DisplayMessage {
+        let role = Role(rawValue: turn.role) ?? .assistant
+        return DisplayMessage(
+            role: role,
+            familiarId: role == .assistant ? familiarId : nil,
+            text: turn.text,
+            isError: turn.isError ?? false,
+            reasoningEffort: turn.reasoningEffort,
+            responseSpeed: turn.responseSpeed,
+            modelOverride: turn.modelOverride,
+            modelOverridesByFamiliar: turn.modelOverride.flatMap { model in
+                familiarId.map { [$0: model] }
+            },
+            activity: role == .assistant
+                ? ActivityFold.steps(fromTools: turn.tools) : nil
+        )
+    }
+
+    /// Copy transcript content under a fresh message id while retaining the
+    /// controls needed to retry the copied turn faithfully.
+    static func duplicate(of message: DisplayMessage) -> DisplayMessage {
+        DisplayMessage(
+            role: message.role,
+            familiarId: message.familiarId,
+            text: message.text,
+            isError: message.isError,
+            attachmentDataUrls: message.attachmentDataUrls,
+            reasoningEffort: message.reasoningEffort,
+            responseSpeed: message.responseSpeed,
+            modelOverride: message.modelOverride,
+            modelOverridesByFamiliar: message.modelOverridesByFamiliar,
+            activity: message.activity
+        )
+    }
 }
 
 /// Plain Codable snapshot used for on-disk persistence.
@@ -34,6 +98,9 @@ struct ThreadSnapshot: Codable, Identifiable, Equatable {
     var familiarIds: [String]
     var sessionIds: [String: String]
     var messages: [DisplayMessage]
+    /// A model chosen before this thread has a server session. Optional so
+    /// snapshots written before model selection shipped still decode.
+    var pendingModelOverride: String?
     var updatedAt: Date
     /// Optional so snapshots written before archiving existed still decode.
     var archived: Bool?
@@ -57,6 +124,8 @@ final class ChatThread: Identifiable, Hashable {
     var title: String
     var familiarIds: [String]
     var sessionIds: [String: String]
+    /// Thread-owned so two unsent chats never share a view-local model choice.
+    var pendingModelOverride: String?
     /// Structural changes (append/insert/remove/replace — here or from
     /// AppModel) re-derive the transcript rows and id index. Streamed text
     /// deltas go through `mutate`, which updates one row in place instead.
@@ -83,19 +152,22 @@ final class ChatThread: Identifiable, Hashable {
          title: String,
          familiarIds: [String],
          sessionIds: [String: String] = [:],
-         messages: [DisplayMessage] = []) {
+         messages: [DisplayMessage] = [],
+         pendingModelOverride: String? = nil) {
         self.id = id
         self.title = title
         self.familiarIds = familiarIds
         self.sessionIds = sessionIds
         self.messages = messages
+        self.pendingModelOverride = pendingModelOverride
         self.updatedAt = Date()
         rebuildTranscript()  // didSet doesn't fire during init
     }
 
     convenience init(snapshot s: ThreadSnapshot) {
         self.init(id: s.id, title: s.title, familiarIds: s.familiarIds,
-                  sessionIds: s.sessionIds, messages: s.messages)
+                  sessionIds: s.sessionIds, messages: s.messages,
+                  pendingModelOverride: s.pendingModelOverride)
         self.updatedAt = s.updatedAt
         self.archived = s.archived ?? false
         self.pinned = s.pinned ?? false
@@ -105,6 +177,7 @@ final class ChatThread: Identifiable, Hashable {
     var snapshot: ThreadSnapshot {
         ThreadSnapshot(id: id, title: title, familiarIds: familiarIds,
                        sessionIds: sessionIds, messages: messages,
+                       pendingModelOverride: pendingModelOverride,
                        updatedAt: updatedAt, archived: archived, pinned: pinned, muted: muted)
     }
 
@@ -115,6 +188,10 @@ final class ChatThread: Identifiable, Hashable {
     /// the ask but sends a fuller instruction).
     func send(_ text: String, displayText: String? = nil,
               attachments: [CaveClient.ChatAttachment] = [],
+              reasoningEffort: ChatThinkingEffort = .high,
+              responseSpeed: ChatResponseSpeed = .fast,
+              modelOverride: String? = nil,
+              modelOverrideScope: ChatModelOverrideScope? = nil,
               client: CaveClient, onChange: @escaping () -> Void) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // An image with no caption is a valid prompt (the familiar reads it).
@@ -123,8 +200,12 @@ final class ChatThread: Identifiable, Hashable {
             $0.isEmpty ? nil : $0
         } ?? trimmed
 
-        let userMessage = DisplayMessage(role: .user, familiarId: nil, text: shown,
-                                         attachmentDataUrls: attachments.map(\.dataUrl))
+        let userMessage = DisplayMessage(
+            role: .user, familiarId: nil, text: shown,
+            attachmentDataUrls: attachments.map(\.dataUrl),
+            reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
+            modelOverride: modelOverride,
+            modelOverrideScope: modelOverrideScope)
         messages.append(userMessage)
         updatedAt = Date()
         onChange()
@@ -137,6 +218,12 @@ final class ChatThread: Identifiable, Hashable {
             Task { await self.stream(familiarId: familiarId, prompt: trimmed,
                                      attachments: attachments, into: messageId,
                                      userMessageId: userMessage.id,
+                                     reasoningEffort: reasoningEffort,
+                                     responseSpeed: responseSpeed,
+                                     modelOverride: modelOverride,
+                                     modelOverrideScope: modelOverride.flatMap {
+                                         _ in modelOverrideScope ?? .session
+                                     },
                                      client: client, onChange: onChange) }
         }
     }
@@ -145,11 +232,19 @@ final class ChatThread: Identifiable, Hashable {
     /// message — no placeholder bubbles, nothing touches the network. It
     /// persists with the thread and `replayQueued` sends it on the next
     /// reconnect. Prose only: slash commands never route here.
-    func enqueue(_ text: String, attachments: [CaveClient.ChatAttachment] = []) {
+    func enqueue(_ text: String, attachments: [CaveClient.ChatAttachment] = [],
+                 reasoningEffort: ChatThinkingEffort = .high,
+                 responseSpeed: ChatResponseSpeed = .fast,
+                 modelOverride: String? = nil,
+                 modelOverrideScope: ChatModelOverrideScope? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }
-        var message = DisplayMessage(role: .user, familiarId: nil, text: trimmed,
-                                     attachmentDataUrls: attachments.map(\.dataUrl))
+        var message = DisplayMessage(
+            role: .user, familiarId: nil, text: trimmed,
+            attachmentDataUrls: attachments.map(\.dataUrl),
+            reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
+            modelOverride: modelOverride,
+            modelOverrideScope: modelOverrideScope)
         message.queued = true
         messages.append(message)
         updatedAt = Date()
@@ -170,6 +265,8 @@ final class ChatThread: Identifiable, Hashable {
             let queuedId = queuedMessage.id
             let prompt = queuedMessage.text
             let attachments = Self.attachments(fromDataUrls: queuedMessage.attachmentDataUrls)
+            let reasoningEffort = queuedMessage.reasoningEffort ?? .high
+            let responseSpeed = queuedMessage.responseSpeed ?? .fast
             mutate(queuedId) { $0.queued = false }
             updatedAt = Date()
             onChange()
@@ -187,7 +284,14 @@ final class ChatThread: Identifiable, Hashable {
                 messages.insert(placeholder, at: insertAt)
                 await stream(familiarId: familiarId, prompt: prompt,
                              attachments: attachments, into: placeholder.id,
-                             userMessageId: queuedId, client: client, onChange: onChange)
+                             userMessageId: queuedId,
+                             reasoningEffort: reasoningEffort,
+                             responseSpeed: responseSpeed,
+                             modelOverride: queuedMessage.modelOverride,
+                             modelOverrideScope: queuedMessage.modelOverride.flatMap {
+                                 _ in queuedMessage.modelOverrideScope ?? .session
+                             },
+                             client: client, onChange: onChange)
                 // Re-queued mid-replay (offline again) — stop; don't spin.
                 if messages.first(where: { $0.id == queuedId })?.isQueued == true { return }
             }
@@ -209,13 +313,20 @@ final class ChatThread: Identifiable, Hashable {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }),
               messages[idx].role == .assistant,
               let familiarId = messages[idx].familiarId else { return }
-        let prompt = messages[..<idx].last(where: { $0.role == .user })?.text ?? ""
+        let source = messages[..<idx].last(where: { $0.role == .user })
+        let prompt = source?.text ?? ""
+        let retryModel = source?.retryModel(for: familiarId)
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         mutate(messageId) { $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil }
         updatedAt = Date()
         onChange()
         Task { await self.stream(familiarId: familiarId, prompt: prompt,
-                                 into: messageId, client: client, onChange: onChange) }
+                                 into: messageId,
+                                 reasoningEffort: source?.reasoningEffort ?? .high,
+                                 responseSpeed: source?.responseSpeed ?? .fast,
+                                 modelOverride: retryModel,
+                                 modelOverrideScope: retryModel == nil ? nil : .nextMessage,
+                                 client: client, onChange: onChange) }
     }
 
     /// Append an inline system note (slash-command output) and return its id so
@@ -254,13 +365,7 @@ final class ChatThread: Identifiable, Hashable {
               let sessionId = sessionIds[familiarId] else { return }
         guard let convo = try await client.conversation(sessionId: sessionId) else { return }
         messages = convo.turns.map { turn in
-            let role = DisplayMessage.Role(rawValue: turn.role) ?? .assistant
-            return DisplayMessage(role: role,
-                                  familiarId: role == .assistant ? familiarId : nil,
-                                  text: turn.text,
-                                  isError: turn.isError ?? false,
-                                  activity: role == .assistant
-                                      ? ActivityFold.steps(fromTools: turn.tools) : nil)
+            DisplayMessage.restored(from: turn, familiarId: familiarId)
         }
         updatedAt = Date()
     }
@@ -291,6 +396,10 @@ final class ChatThread: Identifiable, Hashable {
     private func stream(familiarId: String, prompt: String,
                         attachments: [CaveClient.ChatAttachment] = [], into messageId: String,
                         userMessageId: String? = nil,
+                        reasoningEffort: ChatThinkingEffort = .high,
+                        responseSpeed: ChatResponseSpeed = .fast,
+                        modelOverride: String? = nil,
+                        modelOverrideScope: ChatModelOverrideScope? = nil,
                         client: CaveClient, onChange: @escaping () -> Void) async {
         // Per-send token: the server keys its resumable run buffer under this
         // (cave-h40l), so even a brand-new chat (no sessionId yet) can
@@ -301,7 +410,11 @@ final class ChatThread: Identifiable, Hashable {
         let body = CaveClient.SendBody(familiarId: familiarId, prompt: prompt,
                                        sessionId: sessionIds[familiarId],
                                        attachments: attachments.isEmpty ? nil : attachments,
-                                       runId: runId)
+                                       runId: runId,
+                                       reasoningEffort: reasoningEffort,
+                                       responseSpeed: responseSpeed,
+                                       modelOverride: modelOverride,
+                                       modelOverrideScope: modelOverrideScope)
         var receivedAnyEvent = false
         // Resume cursor: the last applied frame's SSE id (run-buffer seq).
         var cursor = 0
@@ -311,6 +424,7 @@ final class ChatThread: Identifiable, Hashable {
             for try await frame in client.sendStream(body) {
                 receivedAnyEvent = true
                 apply(frame.event, into: messageId, familiarId: familiarId,
+                      userMessageId: userMessageId,
                       sawDone: &sawDone, coalescer: coalescer, onChange: onChange)
                 if let id = frame.id { cursor = id }
             }
@@ -331,12 +445,15 @@ final class ChatThread: Identifiable, Hashable {
             flush(coalescer, into: messageId, onChange: onChange)
             let resumed = await resumeInterruptedStream(runId: runId, cursor: cursor,
                                                         into: messageId, familiarId: familiarId,
+                                                        userMessageId: userMessageId,
                                                         sawDone: &sawDone, coalescer: coalescer,
                                                         client: client, onChange: onChange)
             var recovered = resumed
             if !recovered {
                 recovered = await resyncInterruptedTurn(familiarId: familiarId, prompt: prompt,
-                                                        into: messageId, client: client)
+                                                        into: messageId,
+                                                        userMessageId: userMessageId,
+                                                        client: client)
             }
             if !recovered {
                 if let userMessageId, !receivedAnyEvent, Self.isOfflineTransportError(error) {
@@ -367,6 +484,7 @@ final class ChatThread: Identifiable, Hashable {
     /// Apply one stream event to the thread — shared by the original send
     /// stream and the mid-turn resume stream so both render identically.
     private func apply(_ event: StreamEvent, into messageId: String, familiarId: String,
+                       userMessageId: String?,
                        sawDone: inout Bool, coalescer: StreamCoalescer, onChange: @escaping () -> Void) {
         switch event {
         case .session(let sid):
@@ -387,9 +505,12 @@ final class ChatThread: Identifiable, Hashable {
             flush(coalescer, into: messageId, onChange: onChange)
             mutate(messageId) { $0.text = text; $0.streaming = true }
             onChange()
-        case .done(let isError, let sid):
+        case .done(let isError, let sid, let retryModel):
             if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
             flush(coalescer, into: messageId, onChange: onChange)
+            if let userMessageId {
+                mutate(userMessageId) { $0.recordRetryModel(retryModel, for: familiarId) }
+            }
             mutate(messageId) {
                 $0.streaming = false
                 if isError { $0.isError = true }
@@ -448,7 +569,8 @@ final class ChatThread: Identifiable, Hashable {
     /// re-established). Returns true when the bubble finished live; false
     /// falls back to the post-hoc transcript resync.
     private func resumeInterruptedStream(runId: String, cursor: Int, into messageId: String,
-                                         familiarId: String, sawDone: inout Bool,
+                                         familiarId: String, userMessageId: String?,
+                                         sawDone: inout Bool,
                                          coalescer: StreamCoalescer,
                                          client: CaveClient, onChange: @escaping () -> Void) async -> Bool {
         var nextCursor = cursor
@@ -459,6 +581,7 @@ final class ChatThread: Identifiable, Hashable {
             do {
                 for try await frame in client.resumeStream(runId: runId, cursor: nextCursor) {
                     apply(frame.event, into: messageId, familiarId: familiarId,
+                          userMessageId: userMessageId,
                           sawDone: &sawDone, coalescer: coalescer, onChange: onChange)
                     if let id = frame.id { nextCursor = id }
                 }
@@ -491,6 +614,7 @@ final class ChatThread: Identifiable, Hashable {
     /// belongs to an older exchange) and the caller falls back to the error
     /// path. Returns true when the bubble recovered.
     private func resyncInterruptedTurn(familiarId: String, prompt: String, into messageId: String,
+                                       userMessageId: String?,
                                        client: CaveClient) async -> Bool {
         guard let sessionId = sessionIds[familiarId], !sessionId.isEmpty else { return false }
         // Give the server a beat to flush the transcript after the drop.
@@ -502,6 +626,11 @@ final class ChatThread: Identifiable, Hashable {
         else { return false }
         let streamed = messages.first(where: { $0.id == messageId })?.text ?? ""
         guard !reply.text.isEmpty, reply.text.hasPrefix(streamed) else { return false }
+        if let userMessageId {
+            mutate(userMessageId) {
+                $0.recordRetryModel(convo.turns[lastUser].modelOverride, for: familiarId)
+            }
+        }
         mutate(messageId) {
             $0.text = reply.text
             $0.isError = reply.isError ?? false

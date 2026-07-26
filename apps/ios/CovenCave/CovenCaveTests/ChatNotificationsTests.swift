@@ -74,4 +74,17 @@ final class ChatNotificationsTests: XCTestCase {
             XCTAssertNil(ChatNotifications.threadId(fromDeepLink: url), raw)
         }
     }
+
+    @MainActor
+    func testColdNotificationTapWaitsForOpenHandler() throws {
+        let delegate = CaveNotificationDelegate()
+        let url = try XCTUnwrap(URL(string: "covencave://thread/cold-notification"))
+        var opened: URL?
+
+        delegate.open(url)
+        XCTAssertNil(opened)
+
+        delegate.onOpen = { opened = $0 }
+        XCTAssertEqual(opened, url)
+    }
 }

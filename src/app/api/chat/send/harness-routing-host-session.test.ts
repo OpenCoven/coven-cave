@@ -326,13 +326,13 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /persistSendModelIntent\(conv, args\.body, args\.modelState\)/,
-  "OpenClaw transcript persistence should save direct session-scoped model intent",
+  /persistSendModelIntent\(\s*conv,\s*args\.body,\s*args\.modelState,\s*args\.initialModelIntent,\s*\)/,
+  "OpenClaw transcript persistence should guard session model intent against a newer mid-stream PATCH",
 );
 assert.match(
   chatRoute,
-  /persistSendModelIntent\(conv, body, modelState\)/,
-  "Native transcript persistence should save direct session-scoped model intent",
+  /persistSendModelIntent\(\s*conv,\s*body,\s*modelState,\s*existingConversation\?\.modelIntent\?\.model \?\? null,\s*\)/,
+  "Native transcript persistence should guard session model intent against a newer mid-stream PATCH",
 );
 assert.match(
   chatRoute,
@@ -389,6 +389,20 @@ assert.match(
   modelHelpers,
   /const speed = normalizeResponseSpeed\(body\.responseSpeed\)/,
   "Chat send model helpers should continue accepting responseSpeed from all composer send bodies",
+);
+assert.match(
+  modelHelpers,
+  /export function persistedTurnControls\([\s\S]*reasoningEffort: normalizeReasoningEffort\(body\.reasoningEffort\),[\s\S]*responseSpeed: normalizeResponseSpeed\(body\.responseSpeed\),[\s\S]*cleanModelId\(retryModel\)/,
+  "Completed user turns should retain normalized controls and only a confirmed or routed retry model",
+);
+assert.equal(
+  (
+    chatRoute.match(
+      /\.\.\.persistedTurnControls\((?:args\.body|body), responseMetadata\.retryModel\)/g,
+    ) ?? []
+  ).length,
+  4,
+  "OpenClaw and native stub plus transcript writers should persist retry controls",
 );
 assert.match(
   chatRoute,

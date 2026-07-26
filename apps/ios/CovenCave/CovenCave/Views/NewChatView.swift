@@ -94,7 +94,7 @@ struct NewChatView: View {
         let ids = app.familiars.map(\.id).filter { selected.contains($0) }
         guard !ids.isEmpty else { return }
         let thread = ids.count == 1
-            ? app.directThread(for: ids[0])
+            ? app.startFreshThread(familiarIds: ids)
             : app.createGroup(familiarIds: ids, title: groupName)
         onStart(thread)
     }

@@ -121,7 +121,11 @@ final class AgentActivityTests: XCTestCase {
     func testNonActivityEventsReportNoChange() {
         XCTAssertNil(ActivityFold.fold([], event: .assistantChunk(text: "hi")))
         XCTAssertNil(ActivityFold.fold([], event: .session(sessionId: "s")))
-        XCTAssertNil(ActivityFold.fold([], event: .done(isError: false, sessionId: nil)))
+        XCTAssertNil(ActivityFold.fold([], event: .done(
+            isError: false,
+            sessionId: nil,
+            retryModel: nil
+        )))
     }
 
     // MARK: - Caps

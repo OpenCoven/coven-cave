@@ -17,7 +17,7 @@ struct RunningTasksValueProvider: ControlValueProvider {
     }
 }
 
-/// Show how many tasks are running and open the Tasks tab.
+/// Show how many tasks are running and open the Tasks destination.
 struct TasksControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(
@@ -29,6 +29,6 @@ struct TasksControl: ControlWidget {
             }
         }
         .displayName("Coven Tasks")
-        .description("See running tasks and open the Tasks tab.")
+        .description("See running tasks and open the Tasks destination.")
     }
 }

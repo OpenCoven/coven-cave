@@ -3,13 +3,13 @@ import Network
 import Observation
 import WidgetKit
 
-/// The bottom tabs. Lifted out of the view so slash commands (`/board`,
-/// `/chats`) can drive tab selection from anywhere.
+/// The primary destinations. Lifted out of the drawer shell so slash commands
+/// (`/board`, `/chats`) can drive selection from anywhere.
 enum AppTab: String, CaseIterable { case chats, tasks, terminal, settings }
 
 extension AppTab {
-    static let barTabs: [AppTab] = [.chats, .tasks, .terminal, .settings]
-    static let shortcutOrder: [AppTab] = barTabs
+    static let drawerDestinations: [AppTab] = [.chats, .tasks, .terminal, .settings]
+    static let shortcutOrder: [AppTab] = drawerDestinations
 }
 
 /// A transient confirmation banner shown over the chat after a command runs.
@@ -54,7 +54,7 @@ final class AppModel {
         }
     }
     /// Stamped each time the state ENTERS `.connected`. RootView uses it to
-    /// show a brief "Connected" confirmation over the freshly mounted tabs
+    /// show a brief "Connected" confirmation over the freshly mounted shell
     /// when pairing just succeeded, so the connect screen's success isn't an
     /// abrupt teleport.
     private(set) var connectedAt: Date?
@@ -73,14 +73,24 @@ final class AppModel {
     var familiarOrder: [String] = []
 
     var threads: [ChatThread] = []
+    /// Process-lifetime launch intent. It survives destination remounts until a
+    /// matching hydrated thread can be opened, then is consumed exactly once.
+    var launchThreadId: String?
+
+    #if DEBUG
+    /// Process-lifetime marker for the deterministic cold-connection preview.
+    /// The app lifecycle uses it to skip only live connection work.
+    var isConnectingPreview = false
+    #endif
 
     // MARK: - Cross-view command routing
 
-    /// The selected bottom tab. Bound by `MainTabView`; set by `/board` / `/chats`.
+    /// The selected primary destination. Mounted by `MainShellView`; set by
+    /// drawer actions, deep links, and `/board` / `/chats`.
     var selectedTab: AppTab = {
         #if DEBUG
         // Snapshot hook: `simctl launch … --ui-tab settings` boots straight
-        // into a tab (incl. hidden ones) for screenshot automation.
+        // into a destination for screenshot automation.
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "--ui-tab"), i + 1 < args.count,
            let tab = AppTab(rawValue: args[i + 1]) {
@@ -97,6 +107,13 @@ final class AppModel {
     /// A task the user asked to open from a chat. `TasksView` observes this,
     /// pushes the card, and clears it (mirrors `threadToOpen`).
     var cardToOpen: BoardCard?
+
+    /// Global Claude Design navigation. Any top-level surface can open the
+    /// shared drawer; one-shot requests let its Search/Chat actions hand off to
+    /// the Chats split view without coupling the drawer to local view state.
+    var navigationDrawerOpen = false
+    var newChatRequested = false
+    var chatSearchRequested = false
 
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
@@ -121,7 +138,18 @@ final class AppModel {
         threadToOpen = thread
     }
 
-    /// Ask the Tasks tab to open a card's detail (switches to Tasks first).
+    /// Consume the launch-thread intent only after its thread is available.
+    /// A delayed thread restore leaves the id pending for `ChatsHomeView` to
+    /// retry when hydration publishes its matching thread.
+    func consumeLaunchThreadIntent() -> ChatThread? {
+        guard let launchThreadId,
+              let thread = threads.first(where: { $0.id == launchThreadId })
+        else { return nil }
+        self.launchThreadId = nil
+        return thread
+    }
+
+    /// Ask the Tasks destination to open a card's detail (selects Tasks first).
     func requestOpenTask(_ card: BoardCard) {
         selectedTab = .tasks
         cardToOpen = card
@@ -157,7 +185,7 @@ final class AppModel {
     var remindersError: String?
     var remindersLoaded = false
 
-    // MARK: - Developer tab
+    // MARK: - Developer surface
 
     /// Configured project roots, shared across the Code and Terminal surfaces.
     var projects: [ProjectInfo] = []
@@ -270,6 +298,26 @@ final class AppModel {
 
     init() {
         connection = CaveConnection.load()
+        launchThreadId = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"]
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-connecting") {
+            connection = CaveConnection(host: "cave-desktop.example")
+            connectionState = .checking
+            isConnectingPreview = true
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        // Deterministic native screenshot fixture for the canonical empty-chat
+        // surface. Launch with `--ui-preview-empty-chat` and
+        // `CAVE_OPEN_THREAD=ui-preview-empty-chat`; release builds never carry
+        // fixture state and the preview never touches the saved thread store.
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-empty-chat") {
+            configureEmptyChatPreview()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+        #endif
         // Threads hydrate off-main via the store — no file I/O in init.
         Task { await self.hydrateThreads() }
         loadCardLinks()
@@ -278,6 +326,100 @@ final class AppModel {
         if connection != nil { connectionState = .checking }
         ChatTurnNotifier.shared.app = self
     }
+
+    #if DEBUG
+    private func configureEmptyChatPreview() {
+        connection = nil
+        familiars = [
+            Familiar(
+                id: "nyx",
+                displayName: "Nyx",
+                role: "Code familiar",
+                description: "Keeps implementation work moving.",
+                pronouns: nil,
+                color: nil,
+                status: "active",
+                harness: "codex",
+                model: "gpt-5.6",
+                icon: "moon.stars.fill",
+                avatarUrl: nil,
+                activeSessions: 1,
+                memoryFreshness: "Fresh"
+            ),
+        ]
+
+        func card(
+            id: String,
+            title: String,
+            status: CardStatus,
+            priority: CardPriority,
+            number: Int
+        ) -> BoardCard {
+            BoardCard(
+                id: id,
+                title: title,
+                notes: nil,
+                statusRaw: status.rawValue,
+                priorityRaw: priority.rawValue,
+                familiarId: "nyx",
+                projectId: "coven-app",
+                sessionId: nil,
+                labels: nil,
+                startDate: nil,
+                endDate: nil,
+                createdAt: nil,
+                updatedAt: nil,
+                needsHuman: nil,
+                steps: nil,
+                github: [
+                    CardGitHubLink(
+                        id: "pr-\(number)",
+                        kind: "pr",
+                        repo: "OpenCoven/coven-cave",
+                        number: number,
+                        title: title,
+                        url: "https://github.com/OpenCoven/coven-cave/pull/\(number)",
+                        state: "open"
+                    ),
+                ]
+            )
+        }
+
+        tasks = [
+            card(
+                id: "cold-launch",
+                title: "cold-launch bug",
+                status: .running,
+                priority: .urgent,
+                number: 128
+            ),
+            card(
+                id: "drawer-fidelity",
+                title: "navigation fidelity",
+                status: .running,
+                priority: .high,
+                number: 129
+            ),
+            card(
+                id: "plugin-setup",
+                title: "plugin setup",
+                status: .blocked,
+                priority: .medium,
+                number: 130
+            ),
+        ]
+        tasksLoaded = true
+        sessionsLoaded = true
+        threads = [
+            ChatThread(
+                id: "ui-preview-empty-chat",
+                title: "Chat with Nyx on Jul 26",
+                familiarIds: ["nyx"]
+            ),
+        ]
+        connectionState = .connected
+    }
+    #endif
 
     func familiar(_ id: String) -> Familiar? {
         familiars.first { $0.id == id }
@@ -466,7 +608,7 @@ final class AppModel {
         tasks[idx] = card
     }
 
-    // MARK: - Developer tab actions
+    // MARK: - Developer surface actions
 
     func loadProjects() async {
         guard let client else { return }
@@ -538,9 +680,9 @@ final class AppModel {
         // covencave://thread/<id> — a chat notification / Live Activity tap
         // jumps straight into its thread via the existing one-shot intent.
         if let threadId = ChatNotifications.threadId(fromDeepLink: url) {
-            if let thread = threads.first(where: { $0.id == threadId }) {
-                requestOpen(thread)
-            }
+            launchThreadId = threadId
+            selectedTab = .chats
+            if let thread = consumeLaunchThreadIntent() { requestOpen(thread) }
             return
         }
         guard let target = DeepLink(rawValue: url.host ?? "") else { return }
@@ -703,13 +845,13 @@ final class AppModel {
 
     /// Quiet: the state only changes on an outcome, so a healthy path change
     /// (Wi-Fi ↔ LTE) doesn't blink the UI through `.checking` — which would
-    /// flash the reconnect pill over perfectly good tabs.
+    /// flash the reconnect pill over a perfectly good primary destination.
     func recoverConnectionInBackground() async {
         guard connection != nil else { connectionState = .unconfigured; return }
         await refreshConnection(reloadLoadedSurfaces: true, quiet: true)
     }
 
-    /// Any surface holds real data — the tab tree is worth keeping mounted
+    /// Any surface holds real data — the primary shell is worth keeping mounted
     /// through a connection drop (RootView shows the reconnect pill over it
     /// instead of tearing down to the Connect screen).
     var hasLoadedSurfaces: Bool {
@@ -1163,7 +1305,7 @@ final class AppModel {
         if changed { persistFamiliarViews() }
     }
 
-    /// Drag-reorder familiars in the Chats tab; persists the new order.
+    /// Drag-reorder familiars in the Chats destination; persists the new order.
     func moveFamiliar(fromOffsets source: IndexSet, toOffset destination: Int) {
         familiars.move(fromOffsets: source, toOffset: destination)
         familiarOrder = familiars.map(\.id)
@@ -1386,15 +1528,9 @@ final class AppModel {
     private func loadHistory(into thread: ChatThread, sessionId: String) async {
         guard let client, thread.messages.isEmpty,
               let convo = try? await client.conversation(sessionId: sessionId) else { return }
-        let assignee = thread.familiarIds.first
+        let assignee = thread.familiarIds.first ?? convo.familiarId
         thread.messages = convo.turns.map { turn in
-            let role = DisplayMessage.Role(rawValue: turn.role) ?? .assistant
-            return DisplayMessage(role: role,
-                                  familiarId: role == .assistant ? assignee : nil,
-                                  text: turn.text,
-                                  isError: turn.isError ?? false,
-                                  activity: role == .assistant
-                                      ? ActivityFold.steps(fromTools: turn.tools) : nil)
+            DisplayMessage.restored(from: turn, familiarId: assignee)
         }
         persistThreads()
     }
@@ -1426,7 +1562,10 @@ final class AppModel {
     /// single familiar (direct) or several (group).
     func startFreshThread(familiarIds: [String], title: String? = nil) -> ChatThread {
         let names = familiarIds.compactMap { familiar($0)?.displayName ?? $0 }
-        let derived = (title?.isEmpty == false) ? title! : names.joined(separator: ", ")
+        let date = Date.now.formatted(.dateTime.month(.abbreviated).day())
+        let derived = (title?.isEmpty == false)
+            ? title!
+            : "Chat with \(names.joined(separator: ", ")) on \(date)"
         let thread = ChatThread(title: derived, familiarIds: familiarIds)
         threads.insert(thread, at: 0)
         persistThreads()
@@ -1552,10 +1691,7 @@ final class AppModel {
     @discardableResult
     func duplicateThread(_ thread: ChatThread) -> ChatThread {
         let copiedMessages = thread.messages.map { message in
-            DisplayMessage(role: message.role, familiarId: message.familiarId,
-                           text: message.text, isError: message.isError,
-                           attachmentDataUrls: message.attachmentDataUrls,
-                           activity: message.activity)
+            DisplayMessage.duplicate(of: message)
         }
         let copy = ChatThread(title: "\(thread.title) (copy)",
                               familiarIds: thread.familiarIds,

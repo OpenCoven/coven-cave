@@ -9,7 +9,7 @@ enum StreamEvent {
     case assistantReplace(text: String)
     case progress(id: String?, label: String, detail: String?, status: String?, durationMs: Int?)
     case toolUse(id: String?, name: String, input: String?, output: String?, status: String?, durationMs: Int?)
-    case done(isError: Bool, sessionId: String?)
+    case done(isError: Bool, sessionId: String?, retryModel: String?)
     case error(message: String)
     case unknown(kind: String)
 
@@ -47,9 +47,11 @@ enum StreamEvent {
                 durationMs: obj["durationMs"] as? Int
             )
         case "done":
+            let responseMetadata = obj["responseMetadata"] as? [String: Any]
             return .done(
                 isError: obj["isError"] as? Bool ?? false,
-                sessionId: obj["sessionId"] as? String
+                sessionId: obj["sessionId"] as? String,
+                retryModel: responseMetadata?["retryModel"] as? String
             )
         case "error":
             return .error(message: obj["message"] as? String ?? "Unknown error")
