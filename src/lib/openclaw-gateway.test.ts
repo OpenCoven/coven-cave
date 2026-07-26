@@ -282,8 +282,9 @@ if (gappedDispatch.kind === "accepted") {
 assert.deepEqual(gappedEvents, [{ kind: "error", message: "Gateway event sequence gap" }]);
 
 // A reconnect is not an excuse to trust an event before the documented
-// session subscription returns. The queued frame is accepted only after the
-// re-subscription succeeds.
+// session subscription returns. A callback delivered while the old socket is
+// closed has no transport-generation provenance, so it is dropped rather
+// than being replayed after the next subscription succeeds.
 let reconnectOptions;
 let releaseFirstResubscribe;
 let releaseSecondResubscribe;
@@ -372,8 +373,14 @@ await Promise.resolve();
 await Promise.resolve();
 assert.deepEqual(
   reconnectEvents,
+  [],
+  "a frame delivered after transport close is never replayed on the reconnected stream",
+);
+reconnectOptions.onEvent?.({ type: "event", event: "chat", payload: { ...delta, seq: 0 } });
+assert.deepEqual(
+  reconnectEvents,
   [{ kind: "delta", text: "Hello", replace: false }],
-  "the queued frame is projected after re-subscription succeeds",
+  "a new frame is projected only after re-subscription succeeds",
 );
 reconnectOptions.onEvent?.({
   type: "event",

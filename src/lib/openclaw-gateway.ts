@@ -210,8 +210,18 @@ export async function dispatchOpenClawGatewayTurn(args: {
   };
 
   const processChatEvent = (payload: unknown) => {
-    if (!expectedRunId || !streamReady || settled) {
+    if (settled) return;
+    // Until `chat.send` returns, events cannot yet be correlated to a Cave
+    // turn. Hold a bounded set so an accepted response can bind them to its
+    // run id. Once a run has been accepted, however, a disconnect or a
+    // reconnect subscription gap is a hard fence: an event callback has no
+    // transport-generation provenance, so accepting it after the next hello
+    // could expose a late frame buffered by the old socket.
+    if (!expectedRunId) {
       if (queuedChatEvents.length < 128) queuedChatEvents.push(payload);
+      return;
+    }
+    if (!streamReady) {
       return;
     }
     const event = normalizeOpenClawGatewayChatEvent(payload, {
