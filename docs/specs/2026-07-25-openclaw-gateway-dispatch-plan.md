@@ -52,8 +52,11 @@ reason to guess a field shape.
    a per-run high-water sequence, reject replay, reload history on a forward
    gap, and never treat an unknown event as liveness.
 6. On terminal chat state, persist the response and reconciled tool cards. On
-   cancellation, abort the exact `runId`, close the stream, and settle only its
-   unfinished cards.
+   cancellation, first persist a per-run `cancelled` terminal fence, then abort
+   the exact `runId`, close the stream, and settle only its unfinished cards.
+   Every event, reconciliation, and persistence path checks that fence: a
+   queued or late result for that run may not replace cancelled card or turn
+   state with success.
 7. Before a `chat.send` acknowledgement, resolve an ambiguous dispatch using
    its idempotency key and authoritative Gateway status/history. Start the CLI
    fallback only after acceptance is disproven; a lost acknowledgement is not
