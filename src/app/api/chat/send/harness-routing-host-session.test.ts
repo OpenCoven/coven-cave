@@ -77,8 +77,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?await hermesChatSupportsModel\(\)/,
-  "Hermes model forwarding must probe its direct CLI instead of assuming the coven-run capability applies",
+  /const hermesModelCapability\s*=[\s\S]*?probe:\s*hermesChatSupportsModel[\s\S]*?const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?\(hermesModelCapability \?\? false\)/,
+  "Hermes model forwarding must consume its ready-plan-gated direct CLI probe instead of assuming the coven-run capability applies",
 );
 
 assert.match(
@@ -110,8 +110,8 @@ assert.doesNotMatch(
 // the flag; "full" stays implicit so the harness keeps its default sandbox.
 assert.match(
   chatRoute,
-  /covenRunSupportsPermission\(\)/,
-  "route capability-probes coven run --permission before forwarding",
+  /probeCovenCapability\(covenRunSupportsPermission\)/,
+  "route capability-probes coven run --permission through the ready-plan gate before forwarding",
 );
 assert.match(
   chatRoute,

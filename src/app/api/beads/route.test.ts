@@ -1,7 +1,15 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { refreshCovenSpawnEnv } from "@/lib/coven-bin";
@@ -37,6 +45,7 @@ try {
   ]);
   execFileSync("git", ["init", "-q"], { cwd: projectA });
   execFileSync("git", ["init", "-q"], { cwd: projectB });
+  const canonicalProjectA = await realpath(projectA);
   await writeFile(
     projectsPath,
     JSON.stringify({
@@ -74,11 +83,11 @@ fi
   ]) {
     const response = await beads.GET(localRequest(url));
     assert.equal(response.status, 200, await response.clone().text());
-    assert.equal((await response.json()).projectRoot, projectA);
+    assert.equal((await response.json()).projectRoot, canonicalProjectA);
   }
   const prResponse = await prs.GET(localRequest(`http://127.0.0.1/api/beads/prs?projectRoot=${root}`));
   assert.equal(prResponse.status, 200);
-  assert.equal((await prResponse.json()).projectRoot, projectA);
+  assert.equal((await prResponse.json()).projectRoot, canonicalProjectA);
 
   const mutations = [
     { action: "claim", id: "cave-shared" },
@@ -94,7 +103,7 @@ fi
       body: JSON.stringify({ ...body, projectRoot: projectA }),
     }));
     assert.equal(response.status, 200, `${body.action} is scoped to selected project A`);
-    assert.equal((await response.json()).projectRoot, projectA);
+    assert.equal((await response.json()).projectRoot, canonicalProjectA);
   }
 
   const commands = (await readFile(commandLog, "utf8"))
@@ -104,9 +113,13 @@ fi
   assert.ok(commands.some((entry) => entry.command === "gh"), "PR bridge invokes gh through the selected repository");
   assert.ok(commands.filter((entry) => entry.command === "bd").length >= 7, "list, detail, and every Queue mutation invoke bd");
   for (const command of commands) {
-    assert.equal(command.cwd, projectA, `${command.command} never falls back to unrelated process.cwd() or project B`);
+    assert.equal(command.cwd, canonicalProjectA, `${command.command} never falls back to unrelated process.cwd() or project B`);
     if (command.command === "bd") {
-      assert.equal(command.beadsDir, path.join(projectA, ".beads"), "Beads mutations stay inside selected project A");
+      assert.equal(
+        command.beadsDir,
+        path.join(canonicalProjectA, ".beads"),
+        "Beads mutations stay inside selected project A",
+      );
     }
   }
 } finally {
