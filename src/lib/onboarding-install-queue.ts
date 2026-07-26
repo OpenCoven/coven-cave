@@ -11,7 +11,7 @@
  * these functions hold only the decision logic so it stays unit-testable.
  */
 
-export type InstallLaneKind = "npm" | "script";
+export type InstallLaneKind = "managed-node" | "npm";
 
 /**
  * Should an install for a target be queued (wait) instead of started now?
@@ -28,7 +28,7 @@ export function shouldQueueInstall(opts: {
   /** How many targets are already queued. */
   queuedCount: number;
 }): boolean {
-  if (opts.kind !== "npm") return false;
+  if (opts.kind !== "npm" && opts.kind !== "managed-node") return false;
   return opts.npmBusy || opts.inFlight || opts.queuedCount > 0;
 }
 
@@ -59,5 +59,5 @@ export function nextDrainTarget<T>(
  * re-queue and let the drain retry it, rather than surfacing an error.
  */
 export function shouldRequeueOn409(kind: InstallLaneKind, httpStatus: number): boolean {
-  return httpStatus === 409 && kind === "npm";
+  return httpStatus === 409 && (kind === "npm" || kind === "managed-node");
 }

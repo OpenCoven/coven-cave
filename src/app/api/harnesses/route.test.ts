@@ -22,6 +22,11 @@ assert.match(
 );
 assert.match(
   source,
+  /const env =\s*id === "opencode" \? openCodeSpawnEnv\(null\) : harnessSpawnEnv\(null\);[\s\S]*?const launch = openCodeLaunch\(\[\], process\.platform, env\);/,
+  "OpenCode availability derives its Windows PowerShell host from the same scoped environment it probes",
+);
+assert.match(
+  source,
   /if \(id === "codex"\) \{[\s\S]*?await probeCodexRuntimeAvailability\(\{[\s\S]*?launch: covenLaunchCommand\(\),[\s\S]*?env,[\s\S]*?\}\)/,
   "Codex status uses the resolved Coven launch plan and its scoped spawn environment",
 );
