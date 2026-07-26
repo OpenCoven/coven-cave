@@ -16,8 +16,6 @@ import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
-import { OverflowMenu } from "@/components/ui/overflow-menu";
-import { PopoverItem } from "@/components/ui/popover";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { familiarInScope } from "@/lib/familiar-multiselect";
@@ -1123,49 +1121,22 @@ export function BoardView({
             </button>
           </div>
 
-          {/* Redesign: Select-multiple and Delete-selected are first-class
-              toolbar verbs (visible icon buttons), not overflow items. Delete
-              routes through an inline confirm popover. Select/delete apply to
-              the kanban + table surfaces (the gantt has no row selection). */}
+          {/* Redesign: Select-multiple is a first-class toolbar verb (a
+              visible icon button), not an overflow item. It applies to the
+              kanban + table surfaces (the gantt has no row selection). */}
           {!isMobile && (viewMode === "kanban" || viewMode === "table") ? (
-            <>
-              <button
-                type="button"
-                className={`board-icon-btn${cardSelect.selectMode ? " board-icon-btn--active" : ""}`}
-                title="Select multiple"
-                aria-pressed={cardSelect.selectMode}
-                onClick={() => cardSelect.setSelectMode(!cardSelect.selectMode)}
-              >
-                <Icon name="ph:check-square" width={16} />
-                {cardSelect.selectMode && selectionCount > 0 ? (
-                  <span className="board-icon-btn-count">{selectionCount}</span>
-                ) : null}
-              </button>
-              <div className="board-icon-wrap">
-                <button
-                  type="button"
-                  className={`board-icon-btn${hasSelection ? " board-icon-btn--danger" : ""}`}
-                  title="Delete selected"
-                  disabled={!hasSelection}
-                  onClick={() => { if (hasSelection) setToolbarDeleteConfirm(true); }}
-                >
-                  <Icon name="ph:trash" width={16} />
-                </button>
-                {toolbarDeleteConfirm && hasSelection ? (
-                  <>
-                    <div className="board-confirm-scrim" onClick={() => setToolbarDeleteConfirm(false)} />
-                    <div className="board-confirm-pop" role="dialog" aria-label="Confirm delete tasks">
-                      <div className="board-confirm-title">Delete {selectionCount} {selectionCount === 1 ? "task" : "tasks"}?</div>
-                      <div className="board-confirm-desc">This removes them from the queue. Undo is available briefly.</div>
-                      <div className="board-confirm-actions">
-                        <button type="button" className="board-toolbar-btn" onClick={() => setToolbarDeleteConfirm(false)}>Cancel</button>
-                        <button type="button" className="board-confirm-delete" onClick={() => { bulkDelete(); setToolbarDeleteConfirm(false); }}>Delete</button>
-                      </div>
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            </>
+            <button
+              type="button"
+              className={`board-icon-btn${cardSelect.selectMode ? " board-icon-btn--active" : ""}`}
+              title="Select multiple"
+              aria-pressed={cardSelect.selectMode}
+              onClick={() => cardSelect.setSelectMode(!cardSelect.selectMode)}
+            >
+              <Icon name="ph:check-square" width={16} />
+              {cardSelect.selectMode && selectionCount > 0 ? (
+                <span className="board-icon-btn-count">{selectionCount}</span>
+              ) : null}
+            </button>
           ) : null}
 
           {/* Redesign: Filter dropdown narrows by the grouped dimension. */}
@@ -1184,8 +1155,12 @@ export function BoardView({
             />
           ) : null}
 
-          {/* Clear-done stays reachable for table/gantt (the kanban Done column
-              also exposes it inline). Occasional verb → compact overflow. */}
+          {/* The trash button owns both destructive verbs: in select mode it
+              deletes the selection (inline confirm popover); otherwise it
+              clears the done tasks in view (the confirm group replaces it
+              while deciding). That keeps clear-done reachable on every
+              surface — table/gantt/phone included — without an overflow menu;
+              the kanban Done column also exposes it inline. */}
           {clearConfirm ? (
             <div className="board-clear-confirm" role="group" aria-label="Confirm clear done tasks">
               <button
@@ -1205,17 +1180,36 @@ export function BoardView({
               </button>
             </div>
           ) : (
-            <OverflowMenu ariaLabel="More task actions">
-              <PopoverItem
-                icon="ph:trash"
-                danger
-                disabled={doneCards.length === 0}
-                onSelect={() => setClearConfirm(true)}
-                title="Remove all done tasks in view"
+            <div className="board-icon-wrap">
+              <button
+                type="button"
+                className={`board-icon-btn${hasSelection ? " board-icon-btn--danger" : ""}`}
+                title={cardSelect.selectMode ? "Delete selected" : "Clear done"}
+                disabled={cardSelect.selectMode ? !hasSelection : doneCards.length === 0}
+                onClick={() => {
+                  if (cardSelect.selectMode) {
+                    if (hasSelection) setToolbarDeleteConfirm(true);
+                  } else if (doneCards.length > 0) {
+                    setClearConfirm(true);
+                  }
+                }}
               >
-                Clear done
-              </PopoverItem>
-            </OverflowMenu>
+                <Icon name="ph:trash" width={16} />
+              </button>
+              {toolbarDeleteConfirm && hasSelection ? (
+                <>
+                  <div className="board-confirm-scrim" onClick={() => setToolbarDeleteConfirm(false)} />
+                  <div className="board-confirm-pop" role="dialog" aria-label="Confirm delete tasks">
+                    <div className="board-confirm-title">Delete {selectionCount} {selectionCount === 1 ? "task" : "tasks"}?</div>
+                    <div className="board-confirm-desc">This removes them from the queue. Undo is available briefly.</div>
+                    <div className="board-confirm-actions">
+                      <button type="button" className="board-toolbar-btn" onClick={() => setToolbarDeleteConfirm(false)}>Cancel</button>
+                      <button type="button" className="board-confirm-delete" onClick={() => { bulkDelete(); setToolbarDeleteConfirm(false); }}>Delete</button>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
           )}
 
           <button
