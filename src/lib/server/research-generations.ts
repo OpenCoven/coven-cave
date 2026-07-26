@@ -7,8 +7,10 @@
  * back to the mission's newest published/working markdown artifact when no
  * primary-lineage ref exists — see pickGenerationSourceArtifact) plus the
  * mission's own phase/step structure. Every content string either comes from
- * the artifact/mission fields verbatim or is pure structure ("graph TD",
- * slide numbering, "1/4" thread markers) — nothing is invented.
+ * the artifact/mission fields verbatim or is pure structure/provenance
+ * boilerplate ("graph TD", slide numbering, "1/4" thread markers, the blog
+ * and thread provenance lines naming the artifact and run) — no facts are
+ * invented.
  *
  * The optional `directions` field is stored verbatim on the record so the UI
  * can display it and a future generation pipeline can consume it, but it is
@@ -27,6 +29,7 @@ import {
   isResearchGenerationStatus,
   isValidResearchGenerationFamiliarId,
   RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH,
+  RESEARCH_THREAD_POST_MAX_CHARS,
   type CreateResearchGenerationInput,
   type ResearchGeneration,
   type ResearchGenerationContent,
@@ -356,6 +359,19 @@ const MAX_THREAD_POSTS = 8;
 const MAX_INFOGRAPHIC_STATS = 12;
 const MAX_DIAGRAM_SECTIONS = 8;
 
+/**
+ * Word-boundary clamp to the social post budget. Mechanical truncation only —
+ * the ellipsis marks the cut, nothing is rephrased. Cutting mid-word is
+ * avoided unless the first word alone would blow half the budget.
+ */
+function clampThreadPostText(text: string): string {
+  if (text.length <= RESEARCH_THREAD_POST_MAX_CHARS) return text;
+  const slice = text.slice(0, RESEARCH_THREAD_POST_MAX_CHARS - 1);
+  const lastSpace = slice.lastIndexOf(" ");
+  const cut = lastSpace > RESEARCH_THREAD_POST_MAX_CHARS / 2 ? slice.slice(0, lastSpace) : slice;
+  return `${cut.trimEnd()}…`;
+}
+
 export type GenerationDraftSource = {
   mission: Pick<ResearchMission, "id" | "title" | "iterations">;
   artifact: Pick<ResearchArtifactRef, "key" | "title">;
@@ -385,11 +401,19 @@ export function draftSlidesContent(source: GenerationDraftSource): ResearchGener
   return { kind: "slides", slides };
 }
 
-/** Hook from the mission title + key claims from headings and bold lines. */
+/**
+ * Thread: hook from the mission title, claims from bold lines and headings,
+ * extra section bullets while room remains, then a provenance closer naming
+ * the artifact and run (the same fixed-boilerplate-plus-verbatim-titles shape
+ * as the blog draft's provenance line). Every post is clamped to the social
+ * budget at a word boundary.
+ */
 export function draftThreadContent(source: GenerationDraftSource): ResearchGenerationContent {
   const { sections } = extractMarkdownSections(source.markdown);
   const claims: string[] = [];
-  const seen = new Set<string>();
+  // Seed with the hook so a bold line or heading repeating the mission title
+  // can't produce a duplicate post.
+  const seen = new Set<string>([source.mission.title]);
   const push = (text: string) => {
     if (text && !seen.has(text)) {
       seen.add(text);
@@ -401,7 +425,17 @@ export function draftThreadContent(source: GenerationDraftSource): ResearchGener
     const headline = section.bullets[0] ?? section.firstLine;
     push(headline ? `${section.title} — ${headline}` : section.title);
   }
-  const texts = [source.mission.title, ...claims].slice(0, MAX_THREAD_POSTS);
+  // Fill any remaining room with the sections' other bullets, in document
+  // order — more of the artifact's own words, never padding.
+  for (const section of sections) {
+    for (const bullet of section.bullets.slice(1)) push(bullet);
+  }
+  const closer = `Full findings: “${source.artifact.title}” — from the research run “${source.mission.title}”.`;
+  const texts = [
+    source.mission.title,
+    ...claims.slice(0, Math.max(0, MAX_THREAD_POSTS - 2)),
+    closer,
+  ].map(clampThreadPostText);
   const posts: ResearchGenerationThreadPost[] = texts.map((text, index) => ({
     pre: `${index + 1}/${texts.length}`,
     text,

@@ -34,6 +34,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { copyText } from "@/lib/clipboard";
 import {
   RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH,
+  RESEARCH_THREAD_POST_MAX_CHARS,
   type ResearchGeneration,
   type ResearchGenerationKind,
   type ResearchGenerationMediaKind,
@@ -112,7 +113,7 @@ export const STUDIO_MEDIA_PRESENTATION: Record<
  * pickSourceArtifact rule (server/research-generations.ts): a markdown
  * artifact that is published or still working — rejected never qualifies.
  * Creating against anything else earns the POST's 409, which we surface, but
- * the chips should not offer dead ends in the first place.
+ * the source dropdown should not offer dead ends in the first place.
  */
 export function missionHasMarkdownArtifact(
   mission: Pick<ResearchMission, "artifacts">,
@@ -126,6 +127,22 @@ export function missionHasMarkdownArtifact(
 
 export function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * Rendered mermaid diagram — the exact pipeline chat messages use.
+ * MarkdownBlock renders the ```mermaid fence via @create-markdown/preview-mermaid
+ * (lazy singleton, app theme variables), and the shared post-render wiring
+ * (useWireCopyButtons → wireMermaidDiagrams) adds the expand affordance that
+ * opens the fullscreen zoom/pan viewer. Render failures fall back to the
+ * plugin's own error placeholder — never a blank box.
+ */
+export function StudioMermaidDiagram({ mermaid }: { mermaid: string }) {
+  return (
+    <div className="research-studio__diagram">
+      <MarkdownBlock text={`\`\`\`mermaid\n${mermaid}\n\`\`\``} />
+    </div>
+  );
 }
 
 /** Display title. Real data only: the blog draft's first heading, the slide
@@ -385,26 +402,27 @@ export function GenerationConfigModal({
       </header>
       <div className="research-studio-modal__body">
         <div className="research-studio-config__sources">
-          <span className="research-studio-config__label" id="research-studio-config-source-label">
-            Source
-          </span>
-          <div
-            className="research-studio__chips"
-            role="group"
-            aria-labelledby="research-studio-config-source-label"
+          <label
+            className="research-studio-config__label"
+            htmlFor="research-studio-config-source"
+          >
+            Research run
+          </label>
+          <select
+            id="research-studio-config-source"
+            className="research-studio__select"
+            value={selectedSourceId ?? ""}
+            onChange={(event) => onSelectSource(event.target.value)}
           >
             {sources.map((source) => (
-              <button
-                key={source.id}
-                type="button"
-                className="research-studio__chip"
-                aria-pressed={source.id === selectedSourceId}
-                onClick={() => onSelectSource(source.id)}
-              >
+              <option key={source.id} value={source.id}>
                 {source.title}
-              </button>
+              </option>
             ))}
-          </div>
+          </select>
+          <span className="research-studio-config__hint">
+            The draft extracts from this run&rsquo;s newest markdown artifact.
+          </span>
         </div>
         <div className="research-studio-config__field">
           <label className="research-studio-config__label" htmlFor="research-studio-directions">
@@ -575,13 +593,23 @@ export function GenerationViewerModal({
 
   const points =
     content?.kind === "thread"
-      ? { label: "Thread", rows: content.posts.map((post) => ({ pre: post.pre, text: post.text })) }
+      ? {
+          label: "Thread",
+          rows: content.posts.map((post) => ({
+            pre: post.pre,
+            text: post.text,
+            // Post length against the social budget — honest posting aid, and
+            // the count is real data, not decoration.
+            note: `${post.text.length}/${RESEARCH_THREAD_POST_MAX_CHARS}`,
+          })),
+        }
       : content?.kind === "infographic"
         ? {
             label: "Stat sheet",
             rows: content.stats.map((stat) => ({
               pre: stat.value,
               text: stat.context,
+              note: null,
             })),
           }
         : null;
@@ -634,9 +662,13 @@ export function GenerationViewerModal({
         {content?.kind === "slides" ? <SlidesViewer generation={generation} /> : null}
 
         {content?.kind === "diagram" ? (
-          <div className="research-studio-viewer__code-wrap">
-            <span className="research-studio-viewer__label">Mermaid source</span>
-            <pre className="research-studio__code">{content.mermaid}</pre>
+          <div className="research-studio-viewer__diagram">
+            <span className="research-studio-viewer__label">Diagram</span>
+            <StudioMermaidDiagram mermaid={content.mermaid} />
+            <details className="research-studio-viewer__code-details">
+              <summary>Mermaid source</summary>
+              <pre className="research-studio__code">{content.mermaid}</pre>
+            </details>
           </div>
         ) : null}
 
@@ -667,7 +699,12 @@ export function GenerationViewerModal({
               {points.rows.map((row, rowIndex) => (
                 <li key={rowIndex} className="research-studio-viewer__point">
                   <span className="research-studio-viewer__point-pre">{row.pre}</span>
-                  <span className="research-studio-viewer__point-text">{row.text}</span>
+                  <span className="research-studio-viewer__point-text">
+                    {row.text}
+                    {row.note ? (
+                      <span className="research-studio-viewer__point-note">{row.note}</span>
+                    ) : null}
+                  </span>
                   <button
                     type="button"
                     className="research-studio-act research-studio-act--tiny"
