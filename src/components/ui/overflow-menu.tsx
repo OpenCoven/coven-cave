@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { IconName } from "@/lib/icon";
 import { IconButton, type IconButtonProps } from "./icon-button";
 import { Popover, PopoverBody, type PopoverProps } from "./popover";
+
+const ENABLED_MENU_ITEM_SELECTOR =
+  '[role="menuitem"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemradio"]:not(:disabled):not([aria-disabled="true"])';
 
 export type OverflowMenuProps = {
   /** Accessible name for both the trigger and the menu (e.g. "More actions"). */
@@ -40,6 +43,66 @@ export function OverflowMenu({
 }: OverflowMenuProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const keyboardOpenRequested = useRef(false);
+
+  const getEnabledItems = useCallback(
+    () =>
+      Array.from(
+        menuRef.current?.querySelectorAll<HTMLElement>(ENABLED_MENU_ITEM_SELECTOR) ?? [],
+      ),
+    [],
+  );
+
+  const focusFirstEnabledItem = useCallback(() => {
+    keyboardOpenRequested.current = false;
+    getEnabledItems()[0]?.focus();
+  }, [getEnabledItems]);
+
+  // The menu is portaled, so keyboard focus must wait until its DOM has mounted.
+  // Pointer-opened menus keep focus on the trigger for the light-dismiss pattern.
+  useEffect(() => {
+    if (!open || !keyboardOpenRequested.current) return;
+    const focusFrame = requestAnimationFrame(focusFirstEnabledItem);
+    return () => cancelAnimationFrame(focusFrame);
+  }, [focusFirstEnabledItem, open]);
+
+  const onTriggerKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+        keyboardOpenRequested.current = true;
+        e.stopPropagation();
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (open) {
+          requestAnimationFrame(focusFirstEnabledItem);
+        } else {
+          setOpen(true);
+        }
+      }
+    },
+    [focusFirstEnabledItem, open],
+  );
+
+  const onBodyKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+      const items = getEnabledItems();
+      if (items.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+      let nextIndex: number;
+      if (e.key === "Home") nextIndex = 0;
+      else if (e.key === "End") nextIndex = items.length - 1;
+      else if (e.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+      else nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+      items[nextIndex]?.focus();
+    },
+    [getEnabledItems],
+  );
 
   // Close after any enabled menuitem is activated, without asking every
   // consumer to thread a close() through their onSelect handlers.
@@ -66,6 +129,10 @@ export function OverflowMenu({
         aria-pressed={undefined}
         active={open}
         disabled={disabled}
+        onPointerDown={() => {
+          keyboardOpenRequested.current = false;
+        }}
+        onKeyDown={onTriggerKeyDown}
         onClick={() => setOpen((v) => !v)}
       />
       <Popover
@@ -76,7 +143,7 @@ export function OverflowMenu({
         minWidth={minWidth}
         ariaLabel={ariaLabel}
       >
-        <div onClick={onBodyClick}>
+        <div ref={menuRef} onClick={onBodyClick} onKeyDown={onBodyKeyDown}>
           <PopoverBody role="menu" ariaLabel={ariaLabel}>
             {children}
           </PopoverBody>

@@ -24,6 +24,37 @@ assert.match(src, /role="menu"/, "popover body announces as a menu");
 assert.match(src, /from "\.\/popover"/, "reuses the shared Popover scaffold");
 assert.match(src, /from "\.\/icon-button"/, "reuses the shared IconButton trigger");
 
+// Keyboard-open intent must move focus into the portaled menu after mount.
+// Pointer-opened menus retain the existing light-dismiss convention and leave
+// focus on the trigger.
+assert.match(
+  src,
+  /e\.key === "Enter"[\s\S]*e\.key === " "[\s\S]*e\.key === "ArrowDown"/,
+  "Enter, Space, and ArrowDown mark keyboard-open intent",
+);
+assert.match(
+  src,
+  /onPointerDown=[\s\S]{0,120}keyboardOpenRequested\.current = false/,
+  "pointer opening does not request menu focus",
+);
+assert.match(
+  src,
+  /requestAnimationFrame\(focusFirstEnabledItem\)/,
+  "keyboard opening focuses the first enabled menuitem after the portal mounts",
+);
+assert.match(
+  src,
+  /ENABLED_MENU_ITEM_SELECTOR[\s\S]*menuitem[\s\S]*:disabled[\s\S]*menuitemradio[\s\S]*:disabled/,
+  "focus and navigation target only enabled menuitems",
+);
+
+// Once focus is in the menu, arrow keys wrap over enabled items and Home/End
+// jump to the boundaries. Escape remains absent here because Popover owns it.
+assert.match(src, /"ArrowDown"[\s\S]*"ArrowUp"[\s\S]*"Home"[\s\S]*"End"/, "menu handles standard navigation keys");
+assert.match(src, /querySelectorAll<HTMLElement>\(ENABLED_MENU_ITEM_SELECTOR\)/, "navigation skips disabled menuitems");
+assert.match(src, /% items\.length/, "arrow-key navigation wraps");
+assert.match(src, /items\[nextIndex\]\?\.focus\(\)/, "menu navigation moves DOM focus");
+
 // Selecting any enabled menuitem closes the menu without each consumer wiring
 // a close() through onSelect. Disabled items must NOT close it.
 assert.match(
