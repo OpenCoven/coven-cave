@@ -19,7 +19,7 @@ test("GitHub is removed from the Settings catalog, search, and shell", () => {
 });
 
 test("Code owns the organization settings trigger and popover", () => {
-  assert.match(codeView, /import \{ GithubOrganizationSettings \} from "\.\/settings-github"/);
+  assert.match(codeView, /import \{ GithubOrganizationSettings \} from "@\/components\/settings-github"/);
   assert.match(codeView, /<GithubOrganizationSettings \/>/);
   assert.match(section, /export function GithubOrganizationSettings\(\)/);
   assert.match(section, /<IconButton[\s\S]*aria-label="GitHub organization settings"/);
@@ -35,6 +35,16 @@ test("the Code popover reads and writes the org scope preference", () => {
   assert.match(section, /useAppPreferences\(\)\.github\.orgScope/);
   assert.match(section, /updateAppPreferences\(\{ github: \{ orgScope: \[\] \} \}\)/); // reset to all
   assert.match(section, /updateAppPreferences\(\{ github: \{ orgScope: next \} \}\)/); // toggle
+  assert.match(
+    section,
+    /if \(scoped\) return;[\s\S]*?load\.status === "loading"[\s\S]*?announce\("GitHub organizations are still loading", "polite"\);[\s\S]*?return;/,
+    "Selected is a no-op for an existing scope and announces while memberships are still loading",
+  );
+  assert.match(
+    section,
+    /if \(memberships\.length === 0\) \{[\s\S]*?announce\([\s\S]*?,\s*"polite",?\s*\);[\s\S]*?return;/,
+    "Selected never writes an empty scope when memberships are unavailable",
+  );
   assert.match(section, /<Segmented/);
 });
 

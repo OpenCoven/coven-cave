@@ -99,12 +99,30 @@ export function GithubOrganizationSettings() {
         // Move focus to the stable mode control instead of dropping it to body.
         focusScopeControl();
       } else {
+        // Clicking the already-active segment must not replace a persisted
+        // scope with the transient empty membership list used while loading.
+        if (scoped) return;
+        if (load.status === "loading") {
+          announce("GitHub organizations are still loading", "polite");
+          return;
+        }
+        if (memberships.length === 0) {
+          announce(
+            load.status === "unauthed"
+              ? "Connect GitHub to choose specific organizations"
+              : load.status === "error"
+                ? "Couldn’t read your GitHub organizations"
+                : "No GitHub organizations are available to select",
+            "polite",
+          );
+          return;
+        }
         // Enter subset mode seeded with every membership selected, so nothing
         // disappears until the operator unchecks something.
         updateAppPreferences({ github: { orgScope: normalizeOrgScope(memberships) } });
       }
     },
-    [memberships, announce, focusScopeControl],
+    [memberships, scoped, load.status, announce, focusScopeControl],
   );
 
   const toggleOrg = useCallback(

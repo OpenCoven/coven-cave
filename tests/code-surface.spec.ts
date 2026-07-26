@@ -171,8 +171,13 @@ test.describe("code surface (Coding familiar's room)", () => {
     test.skip(!!isMobile, "desktop project supplies the narrow viewport explicitly");
     await page.setViewportSize({ width: 320, height: 700 });
     await base(page);
-    await page.route("**/api/github/activity**", (route) =>
-      route.fulfill({
+    let releaseMemberships = () => {};
+    const membershipsReady = new Promise<void>((resolve) => {
+      releaseMemberships = resolve;
+    });
+    await page.route("**/api/github/activity**", async (route) => {
+      await membershipsReady;
+      await route.fulfill({
         json: {
           ok: true,
           authed: true,
@@ -180,8 +185,8 @@ test.describe("code surface (Coding familiar's room)", () => {
           organizations: ["OpenCoven"],
           items: [],
         },
-      }),
-    );
+      });
+    });
     await page.goto("/?mode=code");
 
     const sessionsTab = page.getByRole("tab", { name: "Sessions" });
@@ -213,7 +218,14 @@ test.describe("code surface (Coding familiar's room)", () => {
       await popover.evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
 
-    await popover.getByRole("button", { name: "GitHub organization scope: Selected" }).click();
+    const selected = popover.getByRole("button", { name: "GitHub organization scope: Selected" });
+    await selected.click();
+    await expect(all).toHaveAttribute("aria-pressed", "true");
+    await expect(selected).toHaveAttribute("aria-pressed", "false");
+
+    releaseMemberships();
+    await expect(popover.getByText(/Every organization is included/)).toBeVisible();
+    await selected.click();
     const checkbox = popover.getByRole("checkbox", { name: /OpenCoven/ });
     await expect(checkbox).toBeChecked();
     await checkbox.click();
