@@ -228,8 +228,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*togglePanel\(navRef\.current\)/,
-  "left panel toggles from the resolved left-panel shortcut",
+  /const toggleDesktopNav = \(\) => \{[\s\S]*?panel\.isCollapsed\(\)[\s\S]*?panel\.expand\(\);[\s\S]*?setNavOpen\(true\);[\s\S]*?panel\.collapse\(\);[\s\S]*?setNavOpen\(false\);[\s\S]*?matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*?else toggleDesktopNav\(\)/,
+  "left panel shortcut toggles the resolved panel and synchronizes its visible state",
 );
 assert.doesNotMatch(
   shell,
