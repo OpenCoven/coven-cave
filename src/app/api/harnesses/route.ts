@@ -24,6 +24,7 @@ import {
   type CopilotRuntimeLaunch,
 } from "@/lib/server/copilot-runtime-launch";
 import {
+  evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   summarizeRuntimeAvailability,
   type RuntimeAvailabilitySummary,
@@ -124,6 +125,18 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
     };
   }
   const launch = covenLaunchCommand();
+  if (id === "claude") {
+    // The chat route launches Claude through `coven run`, so readiness means
+    // both the outer Coven command and Claude in that same scoped env exist.
+    return {
+      availability: summarizeRuntimeAvailability(evaluateCovenBackedRuntimeAvailability({
+        runner: "claude",
+        covenCommand: launch.command,
+        env,
+        unresolvedCovenWindowsShim: launch.unresolvedWindowsShim === true,
+      })),
+    };
+  }
   return {
     availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
       runner: "coven",

@@ -68,6 +68,16 @@ assert.doesNotMatch(
 
 assert.match(
   source,
+  /if \(id === "claude"\) \{[\s\S]*?evaluateCovenBackedRuntimeAvailability\(\{[\s\S]*?runner: "claude",[\s\S]*?covenCommand: launch\.command,[\s\S]*?env,[\s\S]*?unresolvedCovenWindowsShim: launch\.unresolvedWindowsShim === true/,
+  "Claude runtime status must share the Coven-plus-Claude availability plan used by native chat",
+);
+assert.match(
+  source,
+  /const env =\s*id === "opencode" \? openCodeSpawnEnv\(null\) : harnessSpawnEnv\(null\);[\s\S]*?id === "claude"[\s\S]*?env,/,
+  "Claude status probes the same scoped harness environment shape as a local chat launch",
+);
+assert.match(
+  source,
   /resolveCopilotRuntimeLaunch\(stream\.executable,\s*\{\s*spawnEnv: \(\) => harnessSpawnEnv\(null\)/,
   "Copilot status must resolve the same direct launcher in the shared harness environment as chat send",
 );

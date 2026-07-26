@@ -76,8 +76,11 @@ import {
   probeCodexRuntimeAvailability,
 } from "@/lib/codex-runtime-availability";
 import {
+  evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
+  missingRunnerMessage,
+  RUNTIME_AVAILABILITY_ERROR_CODES,
   type DirectRunnerId,
   type RuntimeAvailability,
 } from "@/lib/runtime-availability";
@@ -1352,10 +1355,21 @@ export async function POST(req: Request) {
       });
     } else {
       const env = harnessSpawnEnv(body.familiarId);
+      const launch = covenLaunchCommand();
       localRuntimePlan = createLocalRuntimePlan({
         runner: "coven",
-        launch: covenLaunchCommand(),
+        launch,
         env,
+        availability:
+          binding.harness === "claude"
+            ? evaluateCovenBackedRuntimeAvailability({
+                runner: "claude",
+                covenCommand: launch.command,
+                env,
+                unresolvedCovenWindowsShim:
+                  launch.unresolvedWindowsShim === true,
+              })
+            : undefined,
       });
     }
   }
@@ -3454,6 +3468,7 @@ export async function POST(req: Request) {
         return new Promise((resolve) => {
           const attemptStartedAt = Date.now();
           let discardingOpenCodeFrame = false;
+          let claudeInnerLaunchMissing = false;
           pushProgress(
             "harness-start",
             `Starting ${binding.harness}`,
@@ -3475,9 +3490,13 @@ export async function POST(req: Request) {
                 ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
                 : err.message
               : localLaunchError.message;
+            const launchCode =
+              !sshRuntime && err.code === "ENOENT" && binding.harness === "claude"
+                ? RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing
+                : localLaunchError.code;
             result.is_error = true;
             launchFailure ??= {
-              code: sshRuntime ? err.code ?? "runtime_launch_failed" : localLaunchError.code,
+              code: sshRuntime ? err.code ?? "runtime_launch_failed" : launchCode,
               message: launchError,
             };
             pushProgress(
@@ -3489,7 +3508,7 @@ export async function POST(req: Request) {
             );
             push({
               kind: "error",
-              ...(sshRuntime ? (err.code ? { code: err.code } : {}) : { code: localLaunchError.code }),
+              ...(sshRuntime ? (err.code ? { code: err.code } : {}) : { code: launchCode }),
               message: launchError,
             });
           };
@@ -3543,16 +3562,25 @@ export async function POST(req: Request) {
                 // binary cannot drift into the empty-output/auth diagnostic.
                 const availability =
                   localPlan.availability.state === "ready"
-                    ? evaluateRuntimeAvailability({
-                        runner: localPlan.runner,
-                        command: localPlan.command,
-                        env: localPlan.env,
-                        requiredFiles: localPlan.requiredFiles,
-                        unresolvedWindowsShim:
-                          localPlan.unresolvedWindowsShim === true,
-                        powerShellHostedCommand:
-                          localPlan.powerShellHostedCommand,
-                      })
+                    ? binding.harness === "claude"
+                      ? evaluateCovenBackedRuntimeAvailability({
+                          runner: "claude",
+                          covenCommand: localPlan.command,
+                          env: localPlan.env,
+                          unresolvedCovenWindowsShim:
+                            localPlan.unresolvedWindowsShim === true,
+                          requiredCovenFiles: localPlan.requiredFiles,
+                        })
+                      : evaluateRuntimeAvailability({
+                          runner: localPlan.runner,
+                          command: localPlan.command,
+                          env: localPlan.env,
+                          requiredFiles: localPlan.requiredFiles,
+                          unresolvedWindowsShim:
+                            localPlan.unresolvedWindowsShim === true,
+                          powerShellHostedCommand:
+                            localPlan.powerShellHostedCommand,
+                        })
                     : localPlan.availability;
                 if (availability.state !== "ready") {
                   launchFailure = { code: availability.code, message: availability.message };
@@ -3592,8 +3620,13 @@ export async function POST(req: Request) {
                     localPlan.runner,
                     (error as NodeJS.ErrnoException).code,
                   );
+                  const code =
+                    (error as NodeJS.ErrnoException).code === "ENOENT"
+                    && binding.harness === "claude"
+                      ? RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing
+                      : launchError.code;
                   result.is_error = true;
-                  launchFailure = launchError;
+                  launchFailure = { code, message: launchError.message };
                   pushProgress(
                     "harness-start",
                     `${binding.harness} failed to start`,
@@ -3601,7 +3634,7 @@ export async function POST(req: Request) {
                     launchError.message,
                     Date.now() - attemptStartedAt,
                   );
-                  push({ kind: "error", code: launchError.code, message: launchError.message });
+                  push({ kind: "error", code, message: launchError.message });
                   return null;
                 }
                 if (openCodeLaunchCommand) {
@@ -3711,6 +3744,8 @@ export async function POST(req: Request) {
               if (binding.harness !== "claude") {
                 stderrTail.push(trimmed);
                 if (stderrTail.length > STDERR_KEEP) stderrTail.shift();
+              } else if (/(?:spawn\s+claude\s+ENOENT|claude:\s*command not found|command not found:\s*claude)/i.test(trimmed)) {
+                claudeInnerLaunchMissing = true;
               }
             }
           });
@@ -3738,6 +3773,19 @@ export async function POST(req: Request) {
             // failed invocation for a successful model application below.
             if ((openCodeDirect || copilotStream || grokDirect) && code !== 0) {
               result = { ...result, is_error: true };
+            }
+            if (binding.harness === "claude" && claudeInnerLaunchMissing) {
+              const message = missingRunnerMessage("claude");
+              result = { ...result, is_error: true };
+              launchFailure ??= {
+                code: RUNTIME_AVAILABILITY_ERROR_CODES.claude_missing,
+                message,
+              };
+              push({
+                kind: "error",
+                code: RUNTIME_AVAILABILITY_ERROR_CODES.claude_missing,
+                message,
+              });
             }
             // Copilot JSONL stderr can contain raw prompt or tool payloads on
             // a successful malformed stream too. Its only user-facing
