@@ -52,7 +52,6 @@ import {
   PAGE_BUDGETS,
   WORD_TARGETS,
   type Outline,
-  type OutlinePage,
   type PageDoc,
   type Scale,
 } from "../src/lib/covenwiki-generate.ts";

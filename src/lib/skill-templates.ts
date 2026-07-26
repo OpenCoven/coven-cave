@@ -2,7 +2,7 @@
  * Skill templates — the Build tab's starter gallery
  * (docs/authoring-assist.md §1, cave-6ptj).
  *
- * Templates are pure prefill data (the AUTOMATION_TEMPLATES stance): one per
+ * Templates are pure prefill data: one per
  * skill *kind*, with instructions written in the prompt-pack
  * `{{placeholder|default}}` grammar so inserting one drops straight into the
  * Tab-fill flow (src/lib/prompt-placeholders.ts). Built-ins merge with

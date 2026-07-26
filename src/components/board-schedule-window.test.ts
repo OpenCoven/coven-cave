@@ -15,7 +15,15 @@ const view = [
   readFileSync("src/components/board-view-display.tsx", "utf8"),
 ].join("\n");
 const gantt = readFileSync("src/components/board-gantt.tsx", "utf8");
-const styles = readFileSync("src/styles/board.css", "utf8");
+const styles = [
+  "chrome-table.css",
+  "kanban-inspector.css",
+  "github-list.css",
+  "github-detail.css",
+  "mobile-card-stack.css",
+  "gantt-fallbacks.css",
+].map((name) => readFileSync(`src/styles/board/${name}`, "utf8")).join("\n");
+const surfacePreferences = readFileSync("src/lib/surface-preference-specs.ts", "utf8");
 
 assert.match(boardTypes, /startDate\?: string \| null/, "Task cards persist an optional start date");
 assert.match(boardTypes, /endDate\?: string \| null/, "Task cards persist an optional end date");
@@ -46,7 +54,7 @@ assert.match(table, /key: "endDate"[\s\S]*?label: "End"/, "Table has an end-date
 assert.match(table, /formatBoardDate\(card\.startDate\)/, "Table renders formatted start dates");
 assert.match(table, /formatBoardDate\(card\.endDate\)/, "Table renders formatted end dates");
 assert.match(stack, /scheduleLabel\(card\.startDate, card\.endDate\)[\s\S]*?board-card-stack__row-schedule/, "Mobile task rows show schedule windows");
-assert.match(view, /type ViewMode = "kanban" \| "table" \| "gantt"/, "BoardView includes Gantt as the third view mode");
+assert.match(surfacePreferences, /viewMode: enumSpec\("board\.viewMode", "kanban", \["kanban", "table", "gantt"\] as const\)/, "BoardView preferences include Gantt as the third view mode");
 assert.match(view, /<BoardGantt cards=\{filtered\}/, "BoardView renders the Gantt view");
 assert.match(gantt, /export function BoardGantt/, "BoardGantt component exists");
 assert.match(gantt, /startDate/, "BoardGantt reads start dates");

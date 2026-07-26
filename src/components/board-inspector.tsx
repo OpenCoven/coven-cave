@@ -25,7 +25,6 @@ import {
   taskAsanaLinkFromAsanaItem,
 } from "@/lib/task-asana";
 import { Icon } from "@/lib/icon";
-import { useCopy } from "@/lib/use-copy";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";

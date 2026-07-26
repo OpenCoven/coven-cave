@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState, useCallback, useImperativeHandle } from "react";
 import { Icon } from "@/lib/icon";
-import { IconButton } from "@/components/ui/icon-button";
 import { BrowserQuickOpen } from "@/components/browser-quick-open";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import { withNativeBrowserSequence } from "@/lib/native-browser-lifecycle";
@@ -75,7 +74,7 @@ export type BrowserPaneHandle = {
 // The imperative handle rides a regular `handleRef` prop (not an element ref):
 // BrowserPane loads through next/dynamic (lazy-surfaces), whose wrapper does
 // not forward element refs — a plain prop crosses the boundary losslessly.
-export function BrowserPane({ label = "default", activeFamiliarId = null, active = true, handleRef, navigationRequest = null, onNavigationConsumed }: { label?: string; activeFamiliarId?: string | null; active?: boolean; handleRef?: React.Ref<BrowserPaneHandle>; navigationRequest?: BrowserNavigationRequest | null; onNavigationConsumed?: (request: BrowserNavigationRequest) => void }) {
+export function BrowserPane({ label = "default", active = true, handleRef, navigationRequest = null, onNavigationConsumed }: { label?: string; active?: boolean; handleRef?: React.Ref<BrowserPaneHandle>; navigationRequest?: BrowserNavigationRequest | null; onNavigationConsumed?: (request: BrowserNavigationRequest) => void }) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [bridge, setBridge] = useState<TauriBrowserBridge | null>(null);

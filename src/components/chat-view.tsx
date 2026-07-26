@@ -5,7 +5,6 @@ import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
 import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { FeedbackContext } from "@/lib/message-feedback";
 import { matchesStopPhrase, readStopPhrase } from "@/lib/stop-phrase";
@@ -94,7 +93,6 @@ import { startOmnigentRunFromBrowser } from "@/lib/omnigent/browser-run";
 import type { ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerActionsMenu } from "@/components/composer-actions-menu";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
 import { resolveModelArg, formatModelList } from "@/lib/slash-model";
 import {
@@ -1390,7 +1388,6 @@ function MetaLine({
   familiar,
   projectRoot,
   onSessionsChanged,
-  onBack,
   children,
 }: {
   session: SessionRow | null;
@@ -1409,7 +1406,6 @@ function MetaLine({
   familiar: Familiar;
   projectRoot?: string;
   onSessionsChanged?: () => void;
-  onBack?: () => void;
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1585,7 +1581,6 @@ function MobileChatContextMenu({
   historyState,
   daemonRunning,
   projectRoot,
-  onOpenTask,
   onOpenDebug,
 }: {
   familiar: Familiar;
@@ -1594,7 +1589,6 @@ function MobileChatContextMenu({
   historyState: ChatHistoryState;
   daemonRunning?: boolean;
   projectRoot?: string;
-  onOpenTask?: (cardId: string) => void;
   onOpenDebug?: () => void;
 }) {
   const github = linkedContext?.github ?? [];
@@ -5588,7 +5582,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             linkedContext={linkedContext}
             historyState={historyState}
             projectRoot={projectRoot}
-            onOpenTask={onOpenTask}
             onOpenDebug={sessionId ? () => setDebugModalOpen(true) : undefined}
           />
         </div>
@@ -5611,7 +5604,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           familiar={familiar}
           projectRoot={projectRoot}
           onSessionsChanged={onSessionsChanged}
-          onBack={onBack}
         >
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab

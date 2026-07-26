@@ -12,7 +12,6 @@ import "@/styles/home-composer.css";
 
 import {
   type KeyboardEvent,
-  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -199,7 +198,7 @@ export function HomeComposer({
   // confusing state. Archived familiars stay reachable from Familiar Studio
   // Lifecycle (unarchive there) but should never appear in fresh-session
   // surfaces.
-  const { visibleFamiliars, selectedFamiliarId, selectedFamiliar } = useMemo(
+  const { selectedFamiliarId, selectedFamiliar } = useMemo(
     () => resolveHomeComposerFamiliar(familiars, activeFamiliarId, archivedFamiliars),
     [familiars, activeFamiliarId, archivedFamiliars],
   );
@@ -408,7 +407,7 @@ export function HomeComposer({
   const taskOrigin: HomeTaskOrigin | null = null;
 
   // Auto-grow textarea — chat-composer sizing, shared hook (use-autogrow-textarea).
-  const { resize: autoGrow } = useAutogrowTextarea(textareaRef, text, {
+  useAutogrowTextarea(textareaRef, text, {
     fallbackMaxHeight: HOME_COMPOSER_MAX_HEIGHT,
   });
 

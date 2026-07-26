@@ -28,8 +28,6 @@ import type {
   CaveHomeReconciliationStatus,
   MigrationJournal,
   MigrationJournalEntry,
-  ReconciliationAction,
-  ReconciliationDecision,
   ReconciliationLockDiagnostic,
   ReconciliationOptions,
   ReconciliationStrategy,
@@ -1383,7 +1381,6 @@ async function reconcileDirectory(
   legacyInfo: PathInfo,
   canonicalInfo: PathInfo,
   result: CaveHomeReconciliationResult,
-  options: ReconciliationOptions,
 ): Promise<{ outcome: MergeOutcome; files: number; collisions: number }> {
   if (legacyInfo.kind !== "dir" || canonicalInfo.kind !== "dir") return { outcome: { ok: false, summary: "Path types differ and require review." }, files: 0, collisions: 0 };
   let files = 0;
@@ -1669,7 +1666,7 @@ async function reconcileEntry(
     // canonical storage. Do not resurrect it until the user explicitly asks
     // to merge the two directory snapshots.
     merged = options.action === "merge"
-      ? (await reconcileDirectory(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, result, options)).outcome
+      ? (await reconcileDirectory(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, result)).outcome
       : { ok: false, summary: "Directory entries differ and require an explicit merge or whole-directory choice." };
   }
   else if (
