@@ -1447,7 +1447,7 @@ export function GrimoireView({
               <button
                 type="button"
                 onClick={() => openDoc({ kind: "knowledge-new" })}
-                className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                className="focus-ring inline-flex h-[26px] flex-none items-center gap-1 whitespace-nowrap rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
               >
                 <Icon name="ph:plus" width={11} aria-hidden />
                 Blank entry
