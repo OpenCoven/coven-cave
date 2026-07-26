@@ -112,8 +112,13 @@ assert.match(
 );
 assert.doesNotMatch(
   route,
-  /openCodePlainFallback|openCodeStructuredIncompatibility|structured-stream-quarantined/,
-  "an incompatible structured request is never replayed as a plain retry",
+  /openCodeStructuredIncompatibility|structured-stream-quarantined/,
+  "an incompatible structured request is never replayed as an unbounded plain retry",
+);
+assert.match(
+  route,
+  /const openCodePlainFallback = openCodeDirect && openCodeCompatibility\?\.mode === "plain";[\s\S]*?if \(openCodePlainFallback && RESUME_ERR_RE\.test\(line\)\) \{[\s\S]*?resumeFailed = true;[\s\S]*?return;/,
+  "a documented missing native session on plain OpenCode stdout is discarded before the one fresh-session replay retry",
 );
 assert.match(
   route,

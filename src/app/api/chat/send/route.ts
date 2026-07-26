@@ -937,6 +937,18 @@ export async function POST(req: Request) {
   // harness uses coven run's capability probe.
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
+  // Cave's Read-only control is a security promise, not a prompt hint.
+  // OpenCode's one-shot CLI exposes no read-only/sandbox flag, so do not even
+  // run its capability probes with the familiar-scoped credentials here.
+  if (openCodeDirect && body.permissionMode === "read") {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "OpenCode does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
   const openCodeCompatibility = openCodeDirect
     ? await resolveOpenCodeCompatibility(await openCodeRunCapabilities(body.familiarId))
     : null;
@@ -1004,19 +1016,6 @@ export async function POST(req: Request) {
     );
   }
   await ensureAdapterManifestScaffold(binding.harness);
-  // Cave's Read-only control is a security promise, not a prompt hint.
-  // OpenCode's one-shot CLI exposes no read-only/sandbox flag, so spawning it
-  // directly would let its configured permissions write to the workspace.
-  // Refuse this combination until OpenCode offers an enforceable equivalent.
-  if (openCodeDirect && body.permissionMode === "read") {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: "OpenCode does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
-      }),
-      { status: 501, headers: { "content-type": "application/json" } },
-    );
-  }
   if (sshRuntime && binding.harness === "openclaw") {
     return new Response(
       JSON.stringify({
@@ -2059,7 +2058,15 @@ export async function POST(req: Request) {
                 : "OpenCode schema refresh was not trusted; using the last known compatible parser";
           pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
         }
-        if (RESUME_ERR_RE.test(line)) resumeFailed = true;
+        const openCodePlainFallback = openCodeDirect && openCodeCompatibility?.mode === "plain";
+        // Plain OpenCode has no structured error envelope. A documented
+        // missing-session line on stdout is a failed native resume, not
+        // assistant content: discard it and take the existing replay retry.
+        if (openCodePlainFallback && RESUME_ERR_RE.test(line)) {
+          resumeFailed = true;
+          return;
+        }
+        if (!openCodePlainFallback && RESUME_ERR_RE.test(line)) resumeFailed = true;
         const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
         if (copilotStream) {
           handleCopilotLine(line, isJson);
