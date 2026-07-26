@@ -77,7 +77,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const hermesModelCapability\s*=[\s\S]*?probe:\s*hermesChatSupportsModel[\s\S]*?const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?\(hermesModelCapability \?\? false\)/,
+  /const hermesModelCapability\s*=[\s\S]*?probe:\s*(?:\(\)\s*=>\s*)?hermesChatSupportsModel[\s\S]*?const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?\(hermesModelCapability \?\? false\)/,
   "Hermes model forwarding must consume its ready-plan-gated direct CLI probe instead of assuming the coven-run capability applies",
 );
 
@@ -95,8 +95,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /command: process\.platform === "win32" \? "hermes\.exe" : "hermes"/,
-  "Hermes direct chat must use the Windows executable name on Windows",
+  /const launch = resolveHermesLaunch\([\s\S]*?command: launch\.state === "ready" \? launch\.command : process\.platform === "win32" \? "hermes\.exe" : "hermes"/,
+  "Hermes direct chat must retain the resolved native executable on Windows",
 );
 
 assert.doesNotMatch(
@@ -630,7 +630,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /pushProgress\(\s*"harness-start",\s*`Starting \$\{binding\.harness\}`,\s*"running"[\s\S]*pushProgress\(\s*"harness-start",\s*`\$\{binding\.harness\} exited`,\s*"done"/,
+  /pushProgress\(\s*"harness-start",\s*`Starting \$\{binding\.harness\}`,\s*"running"[\s\S]*pushProgress\(\s*"harness-start",\s*`\$\{binding\.harness\} exited`,\s*(?:hermesAttemptFailed \? "error" : )?"done"/,
   "Coven harness streams should show process start and exit progress",
 );
 
