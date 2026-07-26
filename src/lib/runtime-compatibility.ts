@@ -40,8 +40,9 @@ export type CompatibilityResolution =
   | { kind: "fallback"; reason: "probe-failed" | "unsupported-version" | "missing-capability" | "invalid-profile" };
 
 // Keep the token bounded on both sides: accepting the first three components
-// of `2.1.179.1` would select a profile for a malformed/unknown CLI version.
-const SEMVER = /(?:^|[^\d.])(\d+)\.(\d+)(?:\.(\d+))?(?![\d.])/;
+// of `2.1.179.1` or `2.1.179-unreviewed` would select a profile for an
+// unknown CLI version.
+const SEMVER = /(?:^|\s)v?(\d+)\.(\d+)(?:\.(\d+))?(?=\s|$)/;
 
 function semver(value: string): [number, number, number] | null {
   const found = value.match(SEMVER);

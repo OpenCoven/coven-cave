@@ -43,6 +43,11 @@ assert.deepEqual(
   { kind: "fallback", reason: "unsupported-version" },
   "a malformed four-component version must not select the three-component v2 profile",
 );
+assert.deepEqual(
+  resolveRuntimeCompatibility({ ...current, version: "2.1.179-unreviewed" }, CLAUDE_COMPATIBILITY_PROFILES, NOW),
+  { kind: "fallback", reason: "unsupported-version" },
+  "a prerelease or suffixed version must not inherit a profile for the released CLI",
+);
 
 const tampered = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
 tampered.eventTypes.toolUse = "arbitrary-remote-event";
