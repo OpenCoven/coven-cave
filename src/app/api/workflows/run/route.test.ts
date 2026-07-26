@@ -15,13 +15,13 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 assert.match(source, /rejectNonLocalRequest\(req\)/, "run route must reject non-local requests");
 assert.match(source, /readJsonBody<RunBody>\(req, MAX_SESSION_JSON_BYTES\)/, "run route must read the body through the bounded guard");
 
-// Daemon-first: the native engine is still tried before anything local.
+// Native engine routing remains available for non-local-Copilot bindings.
 assert.match(source, /path:\s*"\/api\/v1\/workflows\/run"/, "run route probes the native daemon engine first");
 assert.match(source, /executor:\s*"engine"/, "a native-engine run is tagged executor: engine");
 assert.match(
   source,
-  /runWorkflowEngineAfterCopilotGate\([\s\S]*?localCopilot:\s*await usesLocalCopilotWorkflowRuntime[\s\S]*?runEngine:\s*\(\)\s*=>\s*callDaemon<DaemonRunResponse>/,
-  "the engine call itself is wrapped by the local Copilot gate; behavioral coverage verifies supported, SSH, hub, and blocked cases",
+  /if \(await usesLocalCopilotWorkflowRuntime\(body, gateWorkflow\)\) \{\s*return runViaSession\(body\);\s*\}[\s\S]*?runWorkflowEngineAfterCopilotGate\([\s\S]*?localCopilot:\s*false[\s\S]*?runEngine:\s*\(\)\s*=>\s*callDaemon<DaemonRunResponse>/,
+  "local Copilot bypasses the separately configured daemon engine and takes the directly probed session path",
 );
 
 // 404 (reachable, no engine) → the session executor runs it for real.

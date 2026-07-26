@@ -60,9 +60,9 @@ assert.deepEqual(
     model: null,
     permissionMode: "full",
     addDirs: [],
-  }).slice(0, 4),
-  ["--output-format", "json", "--stream", "on"],
-  "the direct routing decision carries the reviewed JSONL launch contract",
+  }).slice(0, 5),
+  ["--allow-all", "--output-format", "json", "--stream", "on"],
+  "the direct full-mode routing decision keeps its approval flag before the reviewed JSONL launch contract",
 );
 
 for (const capabilityVersion of [null, "1.0.70.1", "0.9.9", "2.0.0", "2.0.0-rc.1"]) {
