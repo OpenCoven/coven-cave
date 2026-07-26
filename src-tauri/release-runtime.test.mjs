@@ -207,8 +207,33 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   assert.match(launcher, /LD_LIBRARY_PATH/, "Linux sidecars must load Whisper's bundled shared libraries");
   assert.match(
     launcher,
+    /if !cfg!\(debug_assertions\) && !piper\.is_file\(\)/,
+    "only packaged builds may fail startup when the managed Piper runtime is missing",
+  );
+  assert.match(
+    launcher,
+    /command\.env_remove\("COVEN_CAVE_BUNDLE"\)/,
+    "development must leave the Node runner free to use its explicit/PATH Piper fallback",
+  );
+  assert.match(
+    launcher,
     /sidecar_archive::prepare_sidecar_runtime\(app, &resource_dir\)/,
     "Windows launcher must prepare the verified runtime cache before starting Node",
+  );
+});
+
+test("macOS reachability daemon uses the managed Piper runtime", async () => {
+  const daemon = await readNativeHost("desktop_reachability.rs");
+
+  assert.match(
+    daemon,
+    /let piper = bundled_piper_path\(&resource_dir\);[\s\S]{0,240}if !piper\.is_file\(\)/,
+    "the background sidecar must reject a missing managed Piper resource",
+  );
+  assert.match(
+    daemon,
+    /\.env\("COVEN_PIPER_BIN", &piper\)/,
+    "the background sidecar must pass its managed Piper path to local TTS",
   );
 });
 
@@ -220,6 +245,7 @@ test("clean release runners have resource glob placeholders", async () => {
     access(new URL("./resources/server-archive/placeholder.txt", import.meta.url)),
     access(new URL("./resources/node/placeholder.txt", import.meta.url)),
     access(new URL("./resources/whisper/placeholder.txt", import.meta.url)),
+    access(new URL("./resources/piper/placeholder.txt", import.meta.url)),
   ]);
 
   assert.match(
@@ -244,6 +270,11 @@ test("clean release runners have resource glob placeholders", async () => {
     gitignore,
     /!src-tauri\/resources\/whisper\/placeholder\.txt/,
     "Whisper placeholder must be tracked so resources/whisper/**/* matches in clean CI",
+  );
+  assert.match(
+    gitignore,
+    /!src-tauri\/resources\/piper\/placeholder\.txt/,
+    "Piper placeholder must be tracked so resources/piper/**/* matches in clean CI",
   );
 });
 

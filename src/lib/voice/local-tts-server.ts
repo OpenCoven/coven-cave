@@ -1,0 +1,364 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
+import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+const PIPER_TIMEOUT_MS = 60_000;
+const MAX_AUDIO_BYTES = 32 * 1024 * 1024;
+const MAX_STDERR_CHARS = 8_000;
+const PIPER_PROBE_TIMEOUT_MS = 3_000;
+const PIPER_PROBE_TERMINATION_GRACE_MS = 1_000;
+const PIPER_FILE_CHECK_INTERVAL_MS = 100;
+const PIPER_TERMINATION_GRACE_MS = 1_000;
+const PIPER_FORCE_KILL_SETTLE_MS = 1_000;
+
+/**
+ * Piper has no reason to receive the sidecar's provider credentials. Start
+ * from an empty environment and retain only the OS variables required to find
+ * and execute a local binary. In particular, never pass a user's Vault/API
+ * keys to a PATH-resolved executable.
+ */
+export function piperSpawnEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
+  const keys = platform === "win32"
+    ? ["PATH", "Path", "PATHEXT", "SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "USERPROFILE", "LANG", "LC_ALL", "LC_CTYPE"]
+    : ["PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_CTYPE"];
+  return Object.fromEntries(
+    keys.flatMap((key) =>
+      env[key] === undefined ? [] : [[key, env[key]]],
+    ),
+  ) as NodeJS.ProcessEnv;
+}
+
+export class LocalTtsSynthesisError extends Error {
+  readonly code:
+    | "local_tts_engine_unavailable"
+    | "local_tts_failed"
+    | "local_tts_cancelled";
+
+  constructor(
+    code:
+      | "local_tts_engine_unavailable"
+      | "local_tts_failed"
+      | "local_tts_cancelled",
+    message: string,
+  ) {
+    super(message);
+    this.name = "LocalTtsSynthesisError";
+    this.code = code;
+  }
+}
+
+export type PiperRunner = (
+  modelPath: string,
+  text: string,
+  signal?: AbortSignal,
+) => Promise<Uint8Array>;
+
+export type PiperRuntimeAvailability = {
+  available: boolean;
+  hint?: string;
+};
+
+let piperAvailability: { checkedAt: number; value: PiperRuntimeAvailability } | null = null;
+
+/**
+ * Desktop releases set COVEN_PIPER_BIN to the signed app resource before the
+ * Node sidecar starts. Development may explicitly set it too; PATH is only a
+ * development fallback so a packaged app never executes an arbitrary binary.
+ */
+export function piperExecutable(env: NodeJS.ProcessEnv = process.env): string | null {
+  const configured = env.COVEN_PIPER_BIN?.trim();
+  if (configured) return existsSync(configured) ? configured : null;
+  return env.COVEN_CAVE_BUNDLE === "1" ? null : "piper";
+}
+
+type PiperSpawn = typeof spawn;
+
+type PiperTiming = {
+  timeoutMs: number;
+  fileCheckIntervalMs: number;
+  terminationGraceMs: number;
+  forceKillSettleMs: number;
+};
+
+const defaultPiperTiming: PiperTiming = {
+  timeoutMs: PIPER_TIMEOUT_MS,
+  fileCheckIntervalMs: PIPER_FILE_CHECK_INTERVAL_MS,
+  terminationGraceMs: PIPER_TERMINATION_GRACE_MS,
+  forceKillSettleMs: PIPER_FORCE_KILL_SETTLE_MS,
+};
+
+/** Probe Piper with the same bounded termination policy as synthesis. */
+export async function probePiperRuntime(
+  executable: string,
+  dependencies: {
+    spawnImpl?: PiperSpawn;
+    timeoutMs?: number;
+    terminationGraceMs?: number;
+  } = {},
+): Promise<PiperRuntimeAvailability> {
+  const spawnImpl = dependencies.spawnImpl ?? spawn;
+  const timeoutMs = dependencies.timeoutMs ?? PIPER_PROBE_TIMEOUT_MS;
+  const terminationGraceMs =
+    dependencies.terminationGraceMs ?? PIPER_PROBE_TERMINATION_GRACE_MS;
+  return new Promise<PiperRuntimeAvailability>((resolve) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+    let terminating = false;
+    const finish = (value: PiperRuntimeAvailability) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      resolve(value);
+    };
+    let child: ChildProcess;
+    try {
+      child = spawnImpl(executable, ["--help"], {
+        env: piperSpawnEnv(),
+        stdio: "ignore",
+        windowsHide: true,
+      });
+    } catch {
+      finish({ available: false, hint: "Install the local Piper runtime before selecting a Piper voice." });
+      return;
+    }
+    timeout = setTimeout(() => {
+      terminating = true;
+      try {
+        child.kill();
+      } catch {
+        // A concurrent close is handled by its event below.
+      }
+      // A corrupted runtime can ignore SIGTERM on POSIX. Escalate before
+      // reporting it unavailable so repeated catalog refreshes cannot leak
+      // background Piper probes.
+      forceKillTimer = setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // The process may have exited while the timer was pending.
+        }
+        finish({ available: false, hint: "Piper did not respond. Install the supported local Piper runtime." });
+      }, terminationGraceMs);
+    }, timeoutMs);
+    child.once("error", () => {
+      finish(terminating
+        ? { available: false, hint: "Piper did not respond. Install the supported local Piper runtime." }
+        : { available: false, hint: "Install the local Piper runtime before selecting a Piper voice." });
+    });
+    child.once("close", (code) => {
+      finish(terminating
+        ? { available: false, hint: "Piper did not respond. Install the supported local Piper runtime." }
+        : code === 0
+          ? { available: true }
+          : { available: false, hint: "The local Piper runtime is unavailable. Check its installation." });
+    });
+  });
+}
+
+/** Probe the controlled, minimal environment used for synthesis. */
+export async function piperRuntimeAvailability(): Promise<PiperRuntimeAvailability> {
+  if (piperAvailability && Date.now() - piperAvailability.checkedAt < PIPER_PROBE_TIMEOUT_MS) {
+    return piperAvailability.value;
+  }
+  const executable = piperExecutable();
+  if (!executable) {
+    return {
+      available: false,
+      hint: "The bundled Piper runtime is missing. Reinstall CovenCave before selecting a Piper voice.",
+    };
+  }
+  const value = await probePiperRuntime(executable);
+  piperAvailability = { checkedAt: Date.now(), value };
+  return value;
+}
+
+export async function runPiperWithDependencies(
+  modelPath: string,
+  text: string,
+  signal?: AbortSignal,
+  dependencies: {
+    spawnImpl?: PiperSpawn;
+    executable?: string | null;
+    timing?: Partial<PiperTiming>;
+    removeImpl?: typeof rm;
+  } = {},
+): Promise<Uint8Array> {
+  const spawnImpl = dependencies.spawnImpl ?? spawn;
+  const removeImpl = dependencies.removeImpl ?? rm;
+  const timing = { ...defaultPiperTiming, ...dependencies.timing };
+  const executable = dependencies.executable ?? piperExecutable();
+  if (!executable) {
+    throw new LocalTtsSynthesisError(
+      "local_tts_engine_unavailable",
+      "The bundled Piper runtime is missing. Reinstall CovenCave before selecting a Piper voice.",
+    );
+  }
+  // Piper consumes stdin line-by-line. Collapse all user whitespace before
+  // adding the one protocol newline so a streamed response cannot become
+  // multiple synthesis requests writing to the same WAV path.
+  const utterance = text.replace(/\s+/gu, " ").trim();
+  if (!utterance) {
+    throw new LocalTtsSynthesisError("local_tts_failed", "Piper received an empty utterance.");
+  }
+  const outputDirectory = await mkdtemp(
+    path.join(/* turbopackIgnore: true */ os.tmpdir(), "coven-piper-"),
+  );
+  const outputPath = path.join(/* turbopackIgnore: true */ outputDirectory, "speech.wav");
+  try {
+    // mkdtemp creates a private directory on POSIX; chmod makes that privacy
+    // boundary explicit before Piper receives a path to write conversational
+    // audio into. Windows ignores POSIX permission bits safely.
+    await chmod(/* turbopackIgnore: true */ outputDirectory, 0o700);
+    await new Promise<void>((resolve, reject) => {
+      // Piper's Windows/macOS/Linux archives keep espeak-ng-data beside the
+      // executable. The sidecar runs from resources/server, so leaving this to
+      // Piper's cwd-relative default makes every packaged voice fail to
+      // phonemize despite the bundled runtime being present.
+      const bundledEspeakData = path.join(
+        /* turbopackIgnore: true */ path.dirname(executable),
+        "espeak-ng-data",
+      );
+      const args = ["-m", modelPath, "-f", outputPath];
+      if (existsSync(bundledEspeakData)) {
+        args.push("--espeak_data", bundledEspeakData);
+      }
+      const child: ChildProcess = spawnImpl(executable, args, {
+        env: piperSpawnEnv(),
+        stdio: ["pipe", "ignore", "pipe"],
+        windowsHide: true,
+      });
+      let stderr = "";
+      let settled = false;
+      let terminating: LocalTtsSynthesisError | null = null;
+      let checkingFile = false;
+      let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+      let forceSettleTimer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        clearInterval(fileCheck);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
+        if (forceSettleTimer) clearTimeout(forceSettleTimer);
+        signal?.removeEventListener("abort", abort);
+        if (error) reject(error);
+        else resolve();
+      };
+      const terminate = (error: LocalTtsSynthesisError) => {
+        if (terminating) return;
+        terminating = error;
+        child.stdin?.destroy();
+        try {
+          child.kill();
+        } catch {
+          // The child may have exited between the timeout and termination.
+        }
+        // SIGTERM can be ignored. Escalate, then settle even if a broken
+        // process never emits close so the request and temp-file cleanup do
+        // not outlive the configured timeout indefinitely.
+        forceKillTimer = setTimeout(() => {
+          if (settled) return;
+          try {
+            child.kill("SIGKILL");
+          } catch {
+            // The close event or final settle timer handles an exited child.
+          }
+          forceSettleTimer = setTimeout(
+            () => finish(error),
+            timing.forceKillSettleMs,
+          );
+        }, timing.terminationGraceMs);
+      };
+      const abort = () => terminate(new LocalTtsSynthesisError(
+        "local_tts_cancelled",
+        "Local speech synthesis was cancelled.",
+      ));
+      const timeout = setTimeout(() => terminate(new LocalTtsSynthesisError(
+        "local_tts_failed",
+        "Piper took too long to synthesize this utterance.",
+      )), timing.timeoutMs);
+      const fileCheck = setInterval(() => {
+        if (checkingFile || terminating) return;
+        checkingFile = true;
+        void stat(/* turbopackIgnore: true */ outputPath)
+          .then((info) => {
+            if (info.size > MAX_AUDIO_BYTES) {
+              terminate(new LocalTtsSynthesisError(
+                "local_tts_failed",
+                "Piper produced oversized audio.",
+              ));
+            }
+          })
+          .catch(() => undefined)
+          .finally(() => { checkingFile = false; });
+      }, timing.fileCheckIntervalMs);
+
+      child.stderr?.setEncoding("utf8");
+      child.stderr?.on("data", (chunk: string) => {
+        if (stderr.length < MAX_STDERR_CHARS) stderr += chunk.slice(0, MAX_STDERR_CHARS - stderr.length);
+      });
+      // A child that exits while its input is flushing can emit EPIPE on the
+      // stdin stream without emitting a process-level error. Consume it here
+      // so the sidecar fails this request instead of an unhandled stream error
+      // taking down the Node process.
+      child.stdin?.once("error", (error: Error) => {
+        if (terminating) return;
+        terminate(new LocalTtsSynthesisError(
+          "local_tts_failed",
+          `Piper input stream failed (${error.message}).`,
+        ));
+      });
+      child.on("error", (error: NodeJS.ErrnoException) => {
+        if (terminating) return finish(terminating);
+        finish(error.code === "ENOENT"
+          ? new LocalTtsSynthesisError("local_tts_engine_unavailable", "The local Piper runtime isn't available. Install it before selecting a Piper voice.")
+          : new LocalTtsSynthesisError("local_tts_failed", `Piper couldn't start (${error.message}).`));
+      });
+      child.on("close", (code) => {
+        if (terminating) return finish(terminating);
+        if (code === 0) return finish();
+        const detail = stderr.trim();
+        finish(new LocalTtsSynthesisError(
+          "local_tts_failed",
+          detail ? `Piper failed: ${detail}` : `Piper exited with code ${code ?? "unknown"}.`,
+        ));
+      });
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
+      // Piper reads one utterance per stdin line. Do not pass text as argv:
+      // that path is rejected by Piper's argument parser.
+      child.stdin?.end(`${utterance}\n`);
+    });
+
+    const info = await stat(/* turbopackIgnore: true */ outputPath);
+    if (!info.isFile() || info.size === 0 || info.size > MAX_AUDIO_BYTES) {
+      throw new LocalTtsSynthesisError("local_tts_failed", "Piper returned invalid or oversized audio.");
+    }
+    return new Uint8Array(await readFile(/* turbopackIgnore: true */ outputPath));
+  } finally {
+    // Windows may retain a WAV handle briefly after a terminated child exits.
+    // Retry transient locks so cancelled conversational audio is not left in
+    // the shared temp directory.
+    await removeImpl(/* turbopackIgnore: true */ outputDirectory, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100,
+    }).catch(() => undefined);
+  }
+}
+
+/**
+ * Run Piper as a local child of the Node sidecar. Packaged builds use the
+ * signed resource path injected by the desktop launcher.
+ */
+export const runPiper: PiperRunner = async (modelPath, text, signal) => {
+  return runPiperWithDependencies(modelPath, text, signal);
+};

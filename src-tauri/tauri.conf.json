@@ -44,7 +44,8 @@
     "resources": [
       "resources/server/**/*",
       "resources/node/**/*",
-      "resources/whisper/**/*"
+      "resources/whisper/**/*",
+      "resources/piper/**/*"
     ],
     "icon": [
       "icons/32x32.png",

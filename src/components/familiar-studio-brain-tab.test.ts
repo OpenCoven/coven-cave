@@ -205,6 +205,91 @@ assert.match(
   /\.familiar-studio-brain__voice-preview\s*\{/,
   "the preview button has dedicated styling beside the voice select",
 );
+assert.match(
+  source,
+  /previewAbortRef\.current\?\.abort\(\)[\s\S]{0,100}previewAbortRef\.current = null/,
+  "stopping a preview aborts local synthesis instead of only ignoring its result",
+);
+assert.match(
+  source,
+  /signal: localPreviewAbort\?\.signal/,
+  "local preview synthesis carries its abort signal to the sidecar endpoint",
+);
+assert.match(
+  source,
+  /fetch\("\/api\/voice\/engines"/,
+  "local voice choices load from the sidecar engine-readiness endpoint",
+);
+assert.match(
+  source,
+  /const controller = new AbortController\(\);[\s\S]{0,300}LOCAL_VOICE_CATALOG_TIMEOUT_MS[\s\S]{0,300}fetch\("\/api\/voice\/engines", \{[\s\S]{0,100}cache: "no-store",[\s\S]{0,100}signal: controller\.signal,[\s\S]{0,100}\}\)/,
+  "local voice catalog loading has a bounded, non-cached abortable request",
+);
+assert.match(
+  source,
+  /window\.clearTimeout\(timeout\);[\s\S]{0,100}controller\.abort\(\);/,
+  "leaving the local voice picker aborts its readiness request",
+);
+assert.match(
+  source,
+  /voice\?\.ready === true[\s\S]{0,120}voice\?\.verified === true[\s\S]{0,120}voice\.engine === "piper"[\s\S]{0,80}piperAvailable/,
+  "only verified Piper voices with an available runner become selectable",
+);
+assert.match(
+  source,
+  /const piperAvailable = piper\?\.available === true;[\s\S]{0,100}const piperUnavailable = !piperAvailable/,
+  "a missing or malformed runtime report must not make a Piper voice selectable",
+);
+assert.match(
+  source,
+  /options=\{localVoiceOptions\}/,
+  "Familiar Studio renders ready Piper voices in the Voice picker",
+);
+assert.match(
+  source,
+  /\) : localProviderSelected \? \(/,
+  "Local voice configuration keeps the restricted picker while readiness loads or fails, so an arbitrary piper- id cannot be entered through the system-voice fallback",
+);
+assert.match(
+  source,
+  /localProviderSelected &&\s*localCatalogReady &&\s*isLocalTtsVoiceName\(draftVoiceName\)/,
+  "A saved local voice is called unavailable only after a completed catalog check, not while refresh is still loading",
+);
+assert.match(
+  source,
+  /fetch\("\/api\/voice\/local\/tts"/,
+  "local voice previews use the same authenticated sidecar TTS endpoint as calls",
+);
+assert.match(
+  source,
+  /audio\.onerror = \(\) => \{[\s\S]{0,160}stopVoicePreview\(\);[\s\S]{0,280}Couldn't play the local voice preview\./,
+  "failed local audio decoding cleans up playback and gives an actionable preview error",
+);
+assert.match(
+  source,
+  /No local voices downloaded — open Settings to add one, or use the system default\./,
+  "the empty local catalog gives a concrete next step and preserves the system fallback",
+);
+assert.match(
+  source,
+  /localVoiceCatalog\.status === "error"[\s\S]{0,800}<Button[\s\S]{0,500}status: "idle"[\s\S]{0,300}Retry/,
+  "local voice readiness failures expose a real retry action",
+);
+assert.match(
+  source,
+  /setLocalVoiceCatalog\(\(catalog\) => \(\{[\s\S]{0,100}status: "idle"[\s\S]{0,200}setLocalVoiceCatalogAttempt[\s\S]{0,300}Refresh local voices/,
+  "refresh invalidates a ready local catalog before triggering a new readiness request",
+);
+assert.match(
+  source,
+  /setLocalVoiceCatalog\(\{ status: "loading", voices: \[\] \}\)/,
+  "a pending catalog probe must not leave a stale local voice selectable",
+);
+assert.match(
+  source,
+  /setLocalVoiceCatalogAttempt\([\s\S]{0,240}addEventListener\("cave:voice-engines-refresh", refreshLocalVoices\)/,
+  "model downloads and removals invalidate an open Studio voice picker",
+);
 
 console.log("familiar-studio-brain-tab.test.ts: ok");
 

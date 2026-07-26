@@ -140,6 +140,20 @@ pub(super) fn start_sidecar_runtime(
         )
     })?;
     log::info!("[cave] using node at {}", node.display());
+    let piper = bundled_piper_path(&resource_dir);
+    if !cfg!(debug_assertions) && !piper.is_file() {
+        return Err(SidecarStartError::Failed(format!(
+            "bundled Piper runtime not found at {}",
+            piper.display()
+        )));
+    }
+    if piper.is_file() {
+        log::info!("[cave] using bundled Piper at {}", piper.display());
+    } else {
+        log::warn!(
+            "[cave] bundled Piper is unavailable in development; local voices will use an explicit COVEN_PIPER_BIN or PATH fallback"
+        );
+    }
     let whisper_cli = find_bundled_whisper_cli(&resource_dir).ok_or_else(|| {
         SidecarStartError::Failed(
             "Could not find the bundled local Whisper runtime. Reinstall CovenCave or contact support."
@@ -246,10 +260,20 @@ pub(super) fn start_sidecar_runtime(
         .env("PORT", port.to_string())
         .env("HOSTNAME", "127.0.0.1")
         .env("NODE_ENV", "production")
-        .env("COVEN_CAVE_BUNDLE", "1")
         .env("COVEN_WHISPER_CPP_BIN", &whisper_cli)
         .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
         .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token);
+
+    if cfg!(debug_assertions) {
+        // Development uses the explicit COVEN_PIPER_BIN/PATH fallback from the
+        // Node runner. A clean checkout has only the resource placeholder.
+        command.env_remove("COVEN_CAVE_BUNDLE");
+    } else {
+        command.env("COVEN_CAVE_BUNDLE", "1");
+    }
+    if piper.is_file() {
+        command.env("COVEN_PIPER_BIN", node_arg_path(&piper));
+    }
 
     // Ubuntu's pinned whisper.cpp archive keeps its shared objects next to the
     // CLI. Constrain the loader path to that bundled directory so the local
