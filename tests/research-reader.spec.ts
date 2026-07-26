@@ -88,7 +88,9 @@ async function openReader(page: Page) {
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: FAMILIAR_ID, display_name: "Rida", role: "Researcher", status: "active", icon: "ph:sparkle-fill" }] } }),
   );
-  await page.route(/\/api\/roles(\?|$)/, (route) => route.fulfill({ json: { ok: true, roles: [] } }));
+  await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+  await page.route(/\/api\/roles(\?|$)/, (route) => route.fulfill({ json: { roles: [] } }));
+  await page.route(/\/api\/research\/missions\?/, (route) => route.fulfill({ json: { ok: true, missions: [COMPLETED_MISSION] } }));
   await page.route("**/api/research/links", (route) => route.fulfill({ json: { ok: true, links: [] } }));
   await page.route(/\/api\/research\/generations/, (route) => route.fulfill({ json: { ok: true, generations: [] } }));
   // The artifact file route feeds the reader its findings markdown.

@@ -127,11 +127,13 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
   const [focusTable, setFocusTable] = useState<Extract<FindingsBlock, { kind: "table" }> | null>(null);
   const [tip, setTip] = useState<{ id: string; title: string; meta: string; label: string; tone: "ok" | "warn" | "muted"; left: number; top: number } | null>(null);
 
+  // A remount opens fresh, but if the markdown/sources change in place (same
+  // reader instance), re-open every section and reset the active anchor so the
+  // contents rail and collapse state track the new document.
   useEffect(() => {
     setOpenSections(new Set(doc.sections.map((section) => section.id)));
     setActiveSection(doc.sections[0]?.id ?? null);
   }, [doc.sections]);
-  const [tip, setTip] = useState<{ id: string; title: string; meta: string; label: string; tone: "ok" | "warn" | "muted"; left: number; top: number } | null>(null);
 
   const closeFocusOrReader = () => {
     if (focusTable) setFocusTable(null);
@@ -235,7 +237,11 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
   const exportPdf = () => {
     if (typeof window !== "undefined") window.print();
   };
+  const openUrl = (url: string | undefined) => {
+    if (!url) return;
+    if (onOpenUrl) onOpenUrl(url);
     else window.open(url, "_blank", "noopener,noreferrer");
+  };
   const cite = async (source: ResearchSourceRef) => {
     const ok = await copyText(citationText(source));
     announce(ok ? "Citation copied." : "Citation could not be copied.");
@@ -495,6 +501,17 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
         onMouseLeave={() => setHoverKey(null)}
       >
         <button className="rr-src__toggle focus-ring" type="button" aria-expanded={open} onClick={() => toggleCard(source.id)}>
+          <div className="rr-src__head">
+            <span className={`rr-sref${refTone}`}>{source.id}</span>
+            <span className={`rr-srcstat rr-srcstat--${card.statusTone}`}>
+              <i className="rr-srcstat__dot" aria-hidden />
+              {card.statusLabel}
+            </span>
+            <CaretDown />
+          </div>
+          <div className="rr-src__title">{source.title}</div>
+          <div className="rr-src__meta">{card.meta}</div>
+        </button>
         {open ? (
           <div className="rr-srcdetail">
             {source.claim ? <div className="rr-sd-quote">“{source.claim}”</div> : null}
@@ -764,7 +781,16 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
       </div>
 
       {focusTable ? (
+        <div className="rr-kroverlay" role="presentation" onClick={() => setFocusTable(null)}>
           <div className="rr-kroverlay-card" role="dialog" aria-modal="true" tabIndex={-1} aria-label="Key results" onClick={(event) => event.stopPropagation()}>
+            <div className="rr-kroverlay__head">
+              <div>
+                <div className="rr-kroverlay__title">Key results</div>
+                <div className="rr-kroverlay__sub">{focusTable.rows.length} findings · reference table</div>
+              </div>
+              <button className="rr-iconbtn focus-ring" type="button" aria-label="Close" onClick={() => setFocusTable(null)}>
+                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9}><path d="M6 6l12 12M18 6 6 18" /></svg>
+              </button>
             </div>
             {renderTable(focusTable)}
           </div>
