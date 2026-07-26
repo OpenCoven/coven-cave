@@ -1,5 +1,4 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createHash } from "node:crypto";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
@@ -15,12 +14,9 @@ let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let hermesModelFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
-let openCodeCapabilitiesProbe: { until: number; executableIdentity: string; scope: string; value: Promise<OpenCodeRunCapabilities> } | null = null;
-const OPENCODE_CAPABILITY_PROBE_TTL_MS = 60_000;
 const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 2_500;
 const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
 const OPENCODE_PROBE_CLEANUP_GRACE_MS = 1_000;
-const OPENCODE_IDENTITY_PROBE_TIMEOUT_MS = 750;
 
 /** PowerShell/npm shims can be delayed by cold start or Defender scanning. */
 export function openCodeCapabilityProbeTimeoutMs(platform: NodeJS.Platform = process.platform): number {
@@ -32,10 +28,12 @@ export function openCodeProbeCleanupGraceMs(): number {
   return OPENCODE_PROBE_CLEANUP_GRACE_MS;
 }
 
-/** Windows launchers can be stable shims whose downstream target changes.
- * Do not reuse their help-derived argv evidence between turns. */
+/** The help text is the executable contract, and an installed OpenCode may
+ * change that contract without changing its version or PATH entry. Re-probe
+ * every turn rather than launching from stale argv evidence. */
 export function openCodeCapabilityProbeCacheable(platform: NodeJS.Platform = process.platform): boolean {
-  return platform !== "win32";
+  void platform;
+  return false;
 }
 
 /** Capability output can be configured per familiar through its scoped
@@ -51,10 +49,6 @@ export function openCodeProbeSpawnOptions(
   platform: NodeJS.Platform = process.platform,
 ): { detached: boolean } {
   return { detached: platform !== "win32" };
-}
-
-export function openCodeExecutableIdentityLookupTimeoutMs(): number {
-  return OPENCODE_IDENTITY_PROBE_TIMEOUT_MS;
 }
 
 /** `taskkill /T` is required because killing the PowerShell launcher alone
@@ -363,29 +357,7 @@ function advertisedStructuredSwitches(options: string[], noValueOptions: string[
   });
 }
 
-/** Fingerprint a verified help/version contract for diagnostics and tests. */
-export function openCodeCapabilityIdentity(help: string, version: string): string {
-  return createHash("sha256")
-    .update(help)
-    .update("\0")
-    .update(version)
-    .digest("hex");
-}
-
 type OpenCodeRunContractProbe = { helpProbe: ProbeOutput; versionProbe: ProbeOutput };
-
-type OpenCodeVersionProbe = (env: NodeJS.ProcessEnv) => Promise<ProbeOutput>;
-
-function probeOpenCodeVersion(env: NodeJS.ProcessEnv): Promise<ProbeOutput> {
-  const launch = openCodeLaunch(["--version"]);
-  return probeOutput(
-    launch.command,
-    launch.args,
-    env,
-    launch.input,
-    OPENCODE_IDENTITY_PROBE_TIMEOUT_MS,
-  );
-}
 
 async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCodeRunContractProbe> {
   const helpLaunch = openCodeLaunch(["run", "--help"]);
@@ -395,29 +367,6 @@ async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCod
     probeOutput(versionLaunch.command, versionLaunch.args, env, versionLaunch.input),
   ]);
   return { helpProbe, versionProbe };
-}
-
-/**
- * A short `--version` launch establishes the runtime identity before the
- * cache is consulted. It avoids filesystem PATH traversal, which TurboPack
- * would otherwise trace into the packaged standalone server.
- */
-export async function openCodeExecutableIdentity(
-  env = openCodeSpawnEnv(),
-  _platform: NodeJS.Platform = process.platform,
-  versionProbe: OpenCodeVersionProbe = probeOpenCodeVersion,
-): Promise<string> {
-  void _platform;
-  const result = await versionProbe(env);
-  if (result.complete && result.output.trim()) {
-    return openCodeCapabilityIdentity(
-      `${env.PATH ?? env.Path ?? ""}\0${env.PATHEXT ?? ""}`,
-      result.output.trim(),
-    );
-  }
-  // An unresolved version is never retained across turns: installation or a
-  // PATH update becomes visible immediately without keeping failed evidence.
-  return `unresolved:${Date.now()}`;
 }
 
 function advertisedFormatProtocols(
@@ -525,42 +474,21 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
  * The version is retained for support diagnostics only; it never gates a
  * schema because vendors can backport or change protocol behavior.
  */
-export async function openCodeRunCapabilities(familiarId?: string): Promise<OpenCodeRunCapabilities> {
-  // The executable identity uses exactly the scoped environment that will
-  // execute the chat turn, but is intentionally much cheaper than `--help`.
+export async function openCodeRunCapabilities(
+  familiarId?: string,
+  probeRunContract: (env: NodeJS.ProcessEnv) => Promise<OpenCodeRunContractProbe> = probeOpenCodeRunContract,
+): Promise<OpenCodeRunCapabilities> {
+  // Probe the exact scoped environment used for this chat turn. A version
+  // string alone is not a safe cache key: package managers and shims can
+  // replace a CLI in place while preserving both PATH and `--version`.
   const env = openCodeSpawnEnv(familiarId);
-  const cacheable = openCodeCapabilityProbeCacheable();
-  const executableIdentity = cacheable ? await openCodeExecutableIdentity(env) : "uncached-windows-launcher";
-  const scope = openCodeCapabilityProbeScope(familiarId);
-  if (cacheable && openCodeCapabilitiesProbe && Date.now() < openCodeCapabilitiesProbe.until && openCodeCapabilitiesProbe.executableIdentity === executableIdentity && openCodeCapabilitiesProbe.scope === scope) {
-    return openCodeCapabilitiesProbe.value;
-  }
-  const value = (async () => {
-    const { helpProbe, versionProbe } = await probeOpenCodeRunContract(env);
-    const version = versionProbe.complete
-      ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null
-      : null;
-    // Partial, timed-out, non-zero, or oversized help is never capability
-    // evidence. Probe again after the short TTL instead of risking an argv
-    // that the installed client does not accept.
-    const capabilities = !helpProbe.complete
-      ? { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], endOfOptions: false, structuredSwitches: [], structuredOutputs: [] }
-      : parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
-    // The help surface is the actual argv/event contract. Include its
-    // fingerprint in any retained entry so an in-place shim replacement with
-    // the same version can never reuse stale capability evidence.
-    const contractIdentity = helpProbe.complete
-      ? openCodeCapabilityIdentity(helpProbe.output, versionProbe.output)
-      : `unresolved:${Date.now()}`;
-    if (cacheable && !contractIdentity.startsWith("unresolved:")) {
-      openCodeCapabilitiesProbe = {
-        until: Date.now() + OPENCODE_CAPABILITY_PROBE_TTL_MS,
-        executableIdentity,
-        scope,
-        value: Promise.resolve(capabilities),
-      };
-    }
-    return capabilities;
-  })();
-  return value;
+  const { helpProbe, versionProbe } = await probeRunContract(env);
+  const version = versionProbe.complete
+    ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null
+    : null;
+  // Partial, timed-out, non-zero, or oversized help is never capability
+  // evidence. Re-probe on the next turn instead of risking unsupported argv.
+  return !helpProbe.complete
+    ? { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], endOfOptions: false, structuredSwitches: [], structuredOutputs: [] }
+    : parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
 }

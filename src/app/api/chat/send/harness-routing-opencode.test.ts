@@ -210,15 +210,10 @@ assert.match(
   /const handleOpenCodeLine = \(line: string\) => \{[\s\S]*?const plainText = resolveBackspaces\(stripAnsi\(line\)\);[\s\S]*?if \(openCodeCompatibility\?\.mode === "plain"\)[\s\S]*?return;[\s\S]*?permission requested[\s\S]*?plainText\.trim\(\)/,
   "plain OpenCode fallback preserves unframed assistant text while structured JSON filters the known control notice",
 );
-assert.match(
+assert.doesNotMatch(
   capabilities,
-  /export async function openCodeRunCapabilities\(familiarId\?[^)]*\)[\s\S]*?const env = openCodeSpawnEnv\(familiarId\);[\s\S]*?await openCodeExecutableIdentity\(env\)[\s\S]*?probeOpenCodeRunContract\(env\)[\s\S]*?json:[\s\S]*?model:[\s\S]*?session:[\s\S]*?contractIdentity[\s\S]*?openCodeCapabilityIdentity\(helpProbe\.output, versionProbe\.output\)/,
-  "OpenCode fingerprints the completed scoped help contract before retaining capability evidence",
-);
-assert.match(
-  capabilities,
-  /openCodeExecutableIdentity/,
-  "capability discovery fingerprints the launched OpenCode contract without walking machine-local PATH entries",
+  /openCodeCapabilitiesProbe/,
+  "OpenCode must not retain capability evidence that could be stale after an in-place same-version CLI upgrade; chat-send-capabilities tests this behavior with two probes",
 );
 
 console.log("opencode harness routing tests passed");

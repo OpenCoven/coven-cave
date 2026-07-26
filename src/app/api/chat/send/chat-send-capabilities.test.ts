@@ -1,22 +1,20 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
-  openCodeCapabilityIdentity,
   openCodeCapabilityProbeCacheable,
   openCodeCapabilityProbeScope,
   openCodeCapabilityProbeTimeoutMs,
-  openCodeExecutableIdentityLookupTimeoutMs,
   openCodeProbeCleanupGraceMs,
   openCodeProbeSpawnOptions,
   openCodeProbeTreeKillCommand,
-  openCodeExecutableIdentity,
+  openCodeRunCapabilities,
   parseOpenCodeRunCapabilitiesHelp,
 } from "./chat-send-capabilities.ts";
 
 assert.equal(openCodeCapabilityProbeTimeoutMs("linux"), 2_500, "non-Windows capability probes retain the short bounded deadline");
 assert.equal(openCodeCapabilityProbeTimeoutMs("win32"), 6_000, "Windows PowerShell/npm launchers receive a bounded cold-start allowance");
 assert.equal(openCodeProbeCleanupGraceMs(), 1_000, "timed-out probe cleanup has a short final deadline so chat can fall back");
-assert.equal(openCodeCapabilityProbeCacheable("linux"), true, "direct Unix executable identity supports a short capability cache");
+assert.equal(openCodeCapabilityProbeCacheable("linux"), false, "POSIX clients are reprobed rather than reusing a same-version help contract");
 assert.equal(openCodeCapabilityProbeCacheable("win32"), false, "Windows launcher shims are reprobed rather than reusing stale downstream capability evidence");
 assert.notEqual(
   openCodeCapabilityProbeScope("opal"),
@@ -26,29 +24,16 @@ assert.notEqual(
 assert.equal(openCodeCapabilityProbeScope(), "default", "the unscoped probe cache has a stable explicit scope");
 assert.deepEqual(openCodeProbeSpawnOptions("linux"), { detached: true }, "POSIX OpenCode probes create an isolated process group that timeout cleanup can terminate");
 assert.deepEqual(openCodeProbeSpawnOptions("win32"), { detached: false }, "Windows probes rely on taskkill's explicit process-tree cleanup rather than a detached process group");
-assert.notEqual(
-  openCodeCapabilityIdentity("--format [json]", "1.0.0"),
-  openCodeCapabilityIdentity("--format [json-v2]", "1.0.0"),
-  "a changed executable help contract invalidates cached capability evidence even when its version remains unchanged",
-);
-const firstIdentity = await openCodeExecutableIdentity(
-  { PATH: "/first-runtime" },
-  "linux",
-  async () => ({ complete: true, output: "opencode 1.0.0" }),
-);
-const secondIdentity = await openCodeExecutableIdentity(
-  { PATH: "/replacement-runtime" },
-  "linux",
-  async () => ({ complete: true, output: "opencode 1.1.0" }),
-);
-assert.notEqual(firstIdentity, secondIdentity, "a changed executable identity invalidates cached capability evidence before help is reused");
-const unresolvedIdentity = await openCodeExecutableIdentity(
-  { PATH: "/unreachable" },
-  "linux",
-  async () => ({ complete: false, output: "" }),
-);
-assert.match(unresolvedIdentity, /^unresolved:/, "a failed runtime identity probe is never cached");
-assert.equal(openCodeExecutableIdentityLookupTimeoutMs(), 750, "runtime identity probes have a short bounded deadline");
+const firstCapabilities = await openCodeRunCapabilities("probe-fixture", async () => ({
+  helpProbe: { complete: true, output: "  --format <format>  Output format: text, json\n" },
+  versionProbe: { complete: true, output: "opencode 1.0.0" },
+}));
+const replacementCapabilities = await openCodeRunCapabilities("probe-fixture", async () => ({
+  helpProbe: { complete: true, output: "  --format <format>  Output format: text\n" },
+  versionProbe: { complete: true, output: "opencode 1.0.0" },
+}));
+assert.equal(firstCapabilities.json, true);
+assert.equal(replacementCapabilities.json, false, "an in-place same-version CLI replacement is reprobed before Cave chooses JSON argv");
 assert.deepEqual(
   openCodeProbeTreeKillCommand(4242, "win32"),
   { command: "taskkill.exe", args: ["/PID", "4242", "/T", "/F"] },
@@ -162,6 +147,6 @@ assert.equal(resumeCapabilities.session, true);
 assert.deepEqual(resumeCapabilities.valueOptions, ["--format", "--session"], "only session options with an explicit argument can receive Cave's native session id");
 
 assert.equal(openCodeCapabilityProbeCacheable("win32"), false, "Windows re-probes every turn because a shim target can change in place");
-assert.equal(openCodeCapabilityProbeCacheable("linux"), true, "other platforms retain the bounded sixty-second capability cache");
+assert.equal(openCodeCapabilityProbeCacheable("linux"), false, "POSIX re-probes every turn because a same-version shim can change its help contract");
 
 console.log("chat-send-capabilities.test.ts: ok");
