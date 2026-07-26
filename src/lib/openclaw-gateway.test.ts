@@ -111,6 +111,33 @@ assert.deepEqual(
   "an environment token alone must never activate a write-capable Gateway dispatch",
 );
 
+let stoppedAfterStartupFailure = false;
+const startupFailure = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "hello",
+  idempotencyKey: "cave-request-startup-failure",
+  env: { OPENCLAW_GATEWAY_DISPATCH: "1", OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789" },
+  onEvent: () => assert.fail("a Gateway that fails to start must not emit events"),
+  clientFactory: () => ({
+    start() {
+      throw new Error("Gateway client startup failed");
+    },
+    stop() {
+      stoppedAfterStartupFailure = true;
+    },
+    async request() {
+      assert.fail("a Gateway that failed to start must not dispatch");
+    },
+  }),
+});
+assert.deepEqual(
+  startupFailure,
+  { kind: "unavailable", reason: "Gateway client startup failed" },
+  "a pre-dispatch client startup failure retains the CLI fallback",
+);
+assert.equal(stoppedAfterStartupFailure, true, "a partially started Gateway client is stopped before fallback");
+
 // The direct dispatcher is tested through the same official-client callback
 // contract that production uses: it waits for hello and subscription, binds
 // the acknowledged run id, and ignores a foreign run with the same session.

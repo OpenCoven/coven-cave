@@ -179,7 +179,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
   const url = env[GATEWAY_URL_ENV];
   if (!nonEmptyString(url)) return { kind: "unavailable", reason: "Gateway URL is not configured" };
 
-  let client: GatewayClientPort;
+  let client!: GatewayClientPort;
   let helloResolve: (() => void) | undefined;
   let helloReject: ((error: Error) => void) | undefined;
   let connected = false;
@@ -369,10 +369,13 @@ export async function dispatchOpenClawGatewayTurn(args: {
       client.stop();
     },
   };
-  client = args.clientFactory?.(clientOptions) ?? new GatewayClient(clientOptions);
-
-  client.start();
   try {
+    // Construction and `start()` are both pre-dispatch compatibility steps.
+    // Treat a malformed endpoint or a host-client startup failure exactly like
+    // a failed hello so the caller can retain the CLI fallback before any
+    // `chat.send` request might have left Cave.
+    client = args.clientFactory?.(clientOptions) ?? new GatewayClient(clientOptions);
+    client.start();
     await withTimeout(hello, STARTUP_TIMEOUT_MS, "Gateway did not complete its authenticated hello");
     // A reconnect can arrive while the initial subscription is in flight.
     // Retry until the completion belongs to the latest authenticated hello;
@@ -387,7 +390,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
       }
     }
   } catch (error) {
-    client.stop();
+    client?.stop();
     return { kind: "unavailable", reason: error instanceof Error ? error.message : "Gateway is unavailable" };
   }
 
