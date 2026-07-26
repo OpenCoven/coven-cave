@@ -340,10 +340,10 @@ load_or_create_token() {
   export ACCESS_TOKEN
 }
 
-# Sidecar auth token for the native iOS app (persisted per state dir / running server). Distinct from the mobile
-# ACCESS token above: this one populates COVEN_CAVE_AUTH_TOKEN, which gates /api/ (proxy.ts) and which the
-# in-app SidecarAuthBridge expects via ?covenCaveToken=. Stored in its own file so the access-token reuse guards
-# stay independent.
+# Legacy stale-state sentinel: SIDECAR_TOKEN_FILE was written by older builds that ran a sidecar-gated server
+# (populating COVEN_CAVE_AUTH_TOKEN / SidecarAuthBridge). That mode and load_or_create_sidecar_token have been
+# removed. The file is kept as a detection marker only — its presence signals that the port is occupied by an
+# older-style run — and is deleted on app-mode start and on stop.
 ensure_tailscale() {
   need node
   need "$TAILSCALE_BIN"
@@ -422,6 +422,7 @@ start_next_server() {
         exit 1
       fi
       require_recorded_server
+      load_or_create_token
       echo "CovenCave native-app server is already listening on ${HOST}:${PORT}."
       return 0
     fi
