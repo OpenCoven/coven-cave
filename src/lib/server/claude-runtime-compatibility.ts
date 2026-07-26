@@ -166,8 +166,22 @@ export async function refreshClaudeCompatibilityProfiles(
     path?: string;
     writeWatermark?: (path: string, value: ProfileCacheWatermark) => Promise<void>;
     watermarkPath?: string;
+    read?: (path: string) => Promise<string>;
+    readWatermark?: (path: string) => Promise<string>;
   } = {},
 ): Promise<boolean> {
+  // A refresh can be the first compatibility operation after startup. Load the
+  // durable high-water mark before evaluating its candidate set; otherwise a
+  // stale process could overwrite a newer on-disk watermark with an older,
+  // still-valid signed snapshot.
+  if (!profileCacheLoaded) {
+    await loadClaudeCompatibilityCache({
+      read: dependencies.read,
+      path: dependencies.path,
+      readWatermark: dependencies.readWatermark,
+      watermarkPath: dependencies.watermarkPath,
+    });
+  }
   let accepted = false;
   const refresh = async () => {
     // Do not publish the freshly accepted set until its replacement file is

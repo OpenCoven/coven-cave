@@ -248,4 +248,25 @@ assert.deepEqual(
   "a rejected cache behind a durable high-water mark must not silently select an older bundled profile",
 );
 
+// A registry refresh may be the first request that touches compatibility state
+// after a restart. It must load the durable watermark before deciding whether
+// an otherwise-valid snapshot is an allowed replacement.
+resetClaudeCompatibilityCacheForTest();
+let downgradedCacheWritten = false;
+let downgradedWatermarkWritten = false;
+assert.equal(
+  await refreshClaudeCompatibilityProfiles(CLAUDE_COMPATIBILITY_PROFILES, {
+    path: "higher-cache",
+    read: async () => JSON.stringify({ schemaVersion: 1, profiles: [...CLAUDE_COMPATIBILITY_PROFILES, signedV3] }),
+    watermarkPath: "higher-watermark",
+    readWatermark: async () => JSON.stringify({ schemaVersion: 1, maxSequence: signedV3.sequence }),
+    write: async () => { downgradedCacheWritten = true; },
+    writeWatermark: async () => { downgradedWatermarkWritten = true; },
+  }),
+  false,
+  "the first refresh after restart must not overwrite a newer durable profile snapshot",
+);
+assert.equal(downgradedCacheWritten, false);
+assert.equal(downgradedWatermarkWritten, false);
+
 console.log("claude-runtime-compatibility: ok");
