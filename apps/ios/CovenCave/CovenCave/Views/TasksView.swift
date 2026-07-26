@@ -387,7 +387,7 @@ struct TasksView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
         .themedListBackground()
     }
 
