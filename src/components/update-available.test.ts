@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { prepareNativeUpdate } from "../lib/native-update-preparation.ts";
 import {
+  NativeUpdateCheckSequence,
   adoptNativeUpdateResult,
   NativeUpdateCoordinator,
 } from "../lib/native-update-coordinator.ts";
@@ -126,13 +127,18 @@ assert.match(src, /Native updater unavailable/, "settings row distinguishes nati
 assert.match(src, /Retry native update/, "settings row makes retrying native update the primary recovery action");
 assert.match(
   src,
-  /if \([\s\S]*checkInFlight\.current[\s\S]*activeCancellation\.current[\s\S]*preparedUpdate\.current[\s\S]*\)\s*return false;/,
+  /if \([\s\S]*checkSequence\.inFlight[\s\S]*activeCancellation\.current[\s\S]*preparedUpdate\.current[\s\S]*installInFlight\.current[\s\S]*\)\s*return false;/,
   "an external update check cannot replace checking, preparing, or prepared row state",
 );
 assert.match(
   src,
   /onCheckAvailabilityChange\?\.\([\s\S]*state\.phase !== "checking"[\s\S]*state\.phase !== "prepared"/,
   "the row tells the hero when checking is safe so the hero action can be disabled",
+);
+assert.match(
+  src,
+  /nativeUpdateCoordinator\.subscribe\([\s\S]*checkSequence\.supersede\(\)[\s\S]*setState/,
+  "a newer coordinator snapshot supersedes any older row-local check before rendering",
 );
 
 // Banner: the native updater is the recommended install path. A native check
@@ -266,6 +272,26 @@ function mockUpdate(version = "9.9.9") {
     },
     closeCalls: () => closeCalls,
   };
+}
+
+{
+  const sequence = new NativeUpdateCheckSequence();
+  const staleCheck = sequence.begin();
+  let rendered = "checking";
+  sequence.supersede();
+  rendered = "v2 available";
+  if (sequence.settle(staleCheck)) rendered = "current";
+
+  assert.equal(
+    rendered,
+    "v2 available",
+    "a stale local check cannot overwrite the newer coordinator-rendered result",
+  );
+  assert.equal(sequence.inFlight, false, "superseding a check immediately re-enables a fresh check");
+  const freshCheck = sequence.begin();
+  assert.equal(sequence.inFlight, true);
+  assert.equal(sequence.settle(freshCheck), true, "the next unsuperseded check can settle normally");
+  assert.equal(sequence.inFlight, false);
 }
 
 {

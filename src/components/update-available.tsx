@@ -29,6 +29,7 @@ import {
   type PreparationProgress,
 } from "@/lib/native-update-preparation";
 import {
+  NativeUpdateCheckSequence,
   adoptNativeUpdateResult,
   nativeUpdateCoordinator,
 } from "@/lib/native-update-coordinator";
@@ -530,25 +531,22 @@ export function UpdateSettingsRow({
   const preparedUpdate = useRef<NativeUpdateHandle | null>(null);
   const owner = useRef(Symbol("update-settings")).current;
   const lastKnown = useRef<LastKnownUpdate | null>(null);
-  const checkSequence = useRef(0);
-  const checkInFlight = useRef(false);
+  const checkSequence = useRef(new NativeUpdateCheckSequence()).current;
   const installInFlight = useRef(false);
 
   const check = useCallback(() => {
     if (
-      checkInFlight.current ||
+      checkSequence.inFlight ||
       activeCancellation.current ||
       preparedUpdate.current ||
       installInFlight.current
     )
       return false;
-    checkInFlight.current = true;
-    const sequence = ++checkSequence.current;
+    const sequence = checkSequence.begin();
     setState({ phase: "checking" });
     void resolveUpdate(owner)
       .then((r) => {
-        checkInFlight.current = false;
-        if (sequence !== checkSequence.current) return;
+        if (!checkSequence.settle(sequence)) return;
         if (!mounted.current) {
           if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
           return;
@@ -583,8 +581,7 @@ export function UpdateSettingsRow({
         }
       })
       .catch((error) => {
-        checkInFlight.current = false;
-        if (sequence !== checkSequence.current || !mounted.current) return;
+        if (!checkSequence.settle(sequence) || !mounted.current) return;
         setState({
           phase: "unavailable",
           message: errorMessage(error, "Update check failed"),
@@ -592,7 +589,7 @@ export function UpdateSettingsRow({
         });
       });
     return true;
-  }, []);
+  }, [checkSequence, owner]);
 
   useImperativeHandle(actionRef, () => ({ check }), [check]);
 
@@ -610,6 +607,7 @@ export function UpdateSettingsRow({
     mounted.current = true;
     const unsubscribe = nativeUpdateCoordinator.subscribe((snapshot) => {
       if (!mounted.current || activeCancellation.current || preparedUpdate.current) return;
+      checkSequence.supersede();
       if (snapshot.update) {
         lastKnown.current = {
           kind: "available",
@@ -638,7 +636,7 @@ export function UpdateSettingsRow({
         void nativeUpdateCoordinator.release(owner);
       }
     };
-  }, [check]);
+  }, [check, checkSequence, owner]);
 
   const prepare = (update: NativeUpdateHandle, version: string) => {
     if (activeCancellation.current || preparedUpdate.current) return;
@@ -879,7 +877,9 @@ export function UpdateSettingsRow({
   return (
     <div className="settings-about-update-row flex items-center justify-between gap-4 px-4 py-3">
       <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">Updates</span>
-      <div className="flex items-center gap-2">{control}</div>
+      <div className="settings-about-update-actions flex items-center gap-2">
+        {control}
+      </div>
     </div>
   );
 }
