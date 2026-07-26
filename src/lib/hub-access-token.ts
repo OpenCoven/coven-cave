@@ -1,4 +1,8 @@
-import { getLocalEncryptedSecret, setLocalEncryptedSecret } from "./local-encrypted-vault.ts";
+import {
+  deleteLocalEncryptedSecret,
+  getLocalEncryptedSecret,
+  setLocalEncryptedSecret,
+} from "./local-encrypted-vault.ts";
 
 /**
  * Hub access token custody (cave-1v95, persistence P0).
@@ -13,6 +17,56 @@ import { getLocalEncryptedSecret, setLocalEncryptedSecret } from "./local-encryp
  * before anything touches disk.
  */
 export const HUB_ACCESS_TOKEN_KEY = "COVEN_CAVE_HUB_ACCESS_TOKEN";
+
+type StoredHubAccessToken = {
+  v: 1;
+  origin: string;
+  token: string;
+};
+
+type DecodedHubAccessToken =
+  | { kind: "bound"; value: StoredHubAccessToken }
+  | { kind: "legacy"; token: string }
+  | { kind: "invalid" };
+
+function hubAccessTokenOrigin(rawUrl: string): string | null {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+  try {
+    return new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`).origin;
+  } catch {
+    return null;
+  }
+}
+
+function decodeStoredHubAccessToken(value: string | null): DecodedHubAccessToken | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { kind: "legacy", token: trimmed };
+  }
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    (parsed as Partial<StoredHubAccessToken>).v === 1 &&
+    typeof (parsed as Partial<StoredHubAccessToken>).origin === "string" &&
+    typeof (parsed as Partial<StoredHubAccessToken>).token === "string"
+  ) {
+    const origin = hubAccessTokenOrigin((parsed as StoredHubAccessToken).origin);
+    const token = (parsed as StoredHubAccessToken).token.trim();
+    if (origin && token) {
+      return { kind: "bound", value: { v: 1, origin, token } };
+    }
+  }
+  return { kind: "invalid" };
+}
+
+function serializeStoredHubAccessToken(origin: string, token: string): string {
+  return JSON.stringify({ v: 1, origin, token } satisfies StoredHubAccessToken);
+}
 
 /** Split an embedded `coven_access_token` out of a hub URL. Pure: returns the
  *  URL unchanged (and no token) when there is nothing to split — including
@@ -36,30 +90,71 @@ export function splitHubAccessToken(rawUrl: string): { url: string; token?: stri
   return { url: cleaned.replace(/\?$/, ""), token };
 }
 
-/** The hub access token from its out-of-config homes: explicit env override
- *  first, then the local encrypted vault. Values are trimmed; blank custody
- *  resolves to null rather than a truthy-but-invalid credential. */
-export function storedHubAccessToken(): string | null {
+/** Resolve the hub access token from its out-of-config homes. The explicit
+ *  env override is intentionally global; vaulted custody is returned only
+ *  when its stored origin matches the requested hub. */
+export function storedHubAccessToken(rawUrl: string): string | null {
   const env = process.env[HUB_ACCESS_TOKEN_KEY]?.trim();
   if (env) return env;
+  const origin = hubAccessTokenOrigin(rawUrl);
+  if (!origin) return null;
   try {
-    return getLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY)?.trim() || null;
+    const stored = decodeStoredHubAccessToken(
+      getLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY),
+    );
+    return stored?.kind === "bound" && stored.value.origin === origin
+      ? stored.value.token
+      : null;
   } catch {
     return null;
   }
 }
 
-/** Persist the hub access token to the local encrypted vault (0600 key file,
- *  AES-256-GCM store — see local-encrypted-vault.ts). Trims first and refuses
- *  blank values, so a caller can never park an invalid truthy credential.
- *  Best-effort: a vault write failure must not take config saves down with
- *  it; the caller keeps the embedded token in that case. Returns whether the
- *  token is stored. */
-export function rememberHubAccessToken(token: string): boolean {
+/** Persist the hub access token and its canonical origin to the local
+ *  encrypted vault (0600 key file, AES-256-GCM store — see
+ *  local-encrypted-vault.ts). Best-effort: a vault write failure must not
+ *  take config saves down with it; the caller keeps the embedded token in
+ *  that case. Returns whether the token is stored. */
+export function rememberHubAccessToken(token: string, rawUrl: string): boolean {
   const trimmed = token.trim();
-  if (!trimmed) return false;
+  const origin = hubAccessTokenOrigin(rawUrl);
+  if (!trimmed || !origin) return false;
   try {
-    setLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY, trimmed);
+    setLocalEncryptedSecret(
+      HUB_ACCESS_TOKEN_KEY,
+      serializeStoredHubAccessToken(origin, trimmed),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Reconcile vaulted custody with the configured hub origin.
+ *
+ * The pre-origin format was the raw token string. Config load/save is the
+ * only trusted migration boundary: it binds that legacy value once to the
+ * currently configured origin. A versioned token for another origin is
+ * removed instead of being forwarded to the new hub.
+ */
+export function reconcileHubAccessTokenForOrigin(rawUrl: string): boolean {
+  const origin = hubAccessTokenOrigin(rawUrl);
+  if (!origin) return false;
+  try {
+    const stored = decodeStoredHubAccessToken(
+      getLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY),
+    );
+    if (!stored) return false;
+    if (stored.kind === "legacy") {
+      setLocalEncryptedSecret(
+        HUB_ACCESS_TOKEN_KEY,
+        serializeStoredHubAccessToken(origin, stored.token),
+      );
+      return true;
+    }
+    if (stored.kind === "bound" && stored.value.origin === origin) return false;
+    deleteLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY);
     return true;
   } catch {
     return false;

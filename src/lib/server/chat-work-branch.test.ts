@@ -68,8 +68,8 @@ const captures = sendRoute.match(
 );
 assert.equal(
   captures?.length,
-  2,
-  "both saveConversation paths (OpenClaw bridge + coven-run) must record the work branch",
+  3,
+  "all saveConversation paths (OpenClaw Gateway, bridge, and coven-run) must record the work branch",
 );
 
 console.log("chat-work-branch.test.ts: all assertions passed");
