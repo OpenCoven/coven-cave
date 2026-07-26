@@ -1673,7 +1673,7 @@ function PrerequisiteSummary({ prerequisites }: { prerequisites: OnboardingPrere
                       <Icon
                         name={passed ? "ph:check-circle-fill" : unknown ? "ph:question" : "ph:warning-fill"}
                         className={passed ? "mt-0.5 shrink-0 text-[var(--color-success)]" : "mt-0.5 shrink-0 text-[var(--color-warning)]"}
-                        aria-hidden="true"
+                        aria-hidden={true}
                       />
                       <span>
                         <strong className="font-medium text-[var(--text-primary)]">{entry.label}:</strong>{" "}
