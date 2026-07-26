@@ -372,4 +372,18 @@ assert.match(
   "retry is a no-op while the action is already in flight (no stacked requests)",
 );
 
+// A failed Codex adapter probe is not proof that the executable is missing.
+// Setup must surface the exact availability remediation rather than offering a
+// misleading generic install card.
+assert.match(
+  source,
+  /const availabilityIssue = adapter\.availability\?\.state && adapter\.availability\.state !== "ready"/,
+  "runtime cards distinguish launch availability from executable installation",
+);
+assert.match(
+  source,
+  /\{availabilityIssue\?\.message \? \([\s\S]{0,600}?role="alert"[\s\S]{0,600}?\{availabilityIssue\.message\}[\s\S]{0,600}?\) : !adapter\.installed \? \(/,
+  "an unavailable runtime shows its probe remediation before the generic install action",
+);
+
 console.log("onboarding-polish.test.ts: ok");
