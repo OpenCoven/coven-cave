@@ -319,8 +319,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const selectedCodexDirect = codexCompatibility\?\.ok === true;[\s\S]*?codexCompatibility\.report\.capabilities\.resume[\s\S]*?\["exec", "--json", "--skip-git-repo-check", "--color", "never"\][\s\S]*?command: codexLaunch\.command,[\s\S]*?\.\.\.codexLaunch\.fixedArgs/,
-  "a selected, resume-capable local Codex schema launches the CLI's authenticated native JSONL pipe instead of inventing an outer attestation",
+  /const selectedCodexDirect = codexCompatibility\?\.ok === true;[\s\S]*?const codexCapabilities = codexCompatibility\?\.ok === true[\s\S]*?codexCapabilities\?\.skipGitRepoCheck === true[\s\S]*?codexCapabilities\.resumeJson === true[\s\S]*?\["exec", "resume", "--json"\][\s\S]*?codexCapabilities\?\.color === true[\s\S]*?codexCapabilities\?\.resumeSkipGitRepoCheck === true[\s\S]*?command: codexLaunch\.command,[\s\S]*?\.\.\.codexLaunch\.fixedArgs/,
+  "a selected local Codex schema launches its authenticated native JSONL pipe only after probing the fresh and resume argv contracts",
 );
 
 assert.match(
@@ -333,6 +333,12 @@ assert.match(
   chatRoute,
   /Codex emitted an unsupported tool event; continuing in plain chat/,
   "unknown Codex shapes surface a visible plain-chat compatibility diagnostic",
+);
+
+assert.match(
+  chatRoute,
+  /const safeDirectCodexFailure = binding\.harness === "codex" && codexDirect;[\s\S]*?const tailSource = safeDirectCodexFailure \? \[\] : \(stderrTail\.length \? stderrTail : stdoutErrTail\);[\s\S]*?_The Codex CLI failed/,
+  "direct Codex failures use a payload-free transcript diagnostic instead of raw stderr",
 );
 
 assert.match(

@@ -978,6 +978,9 @@ export async function POST(req: Request) {
   // Coven route for that case, where it can retain its established fallback
   // behavior without turning a path or resume id into shell syntax.
   const selectedCodexDirect = codexCompatibility?.ok === true;
+  const codexCapabilities = codexCompatibility?.ok === true
+    ? codexCompatibility.report.capabilities
+    : null;
   // Codex 0.145's `exec resume` does not accept the fresh-session sandbox or
   // directory-grant flags.  Do not silently drop them (which could resume a
   // broader prior sandbox): retain the established generic runner whenever a
@@ -987,13 +990,19 @@ export async function POST(req: Request) {
   );
   const codexDirect = selectedCodexDirect
     && !codexLaunch?.unresolvedWindowsShim
+    // Preserve Cave's documented non-Git workspace contract. If a future
+    // CLI removes this flag, retain the established generic adapter instead
+    // of guessing that direct argv is still equivalent.
+    && codexCapabilities?.skipGitRepoCheck === true
+    && !(body.permissionMode === "read" && codexCapabilities?.sandbox !== true)
     && (!resumeTarget || (
-      codexCompatibility.report.capabilities.resume
+      codexCapabilities?.resume
+      && codexCapabilities.resumeJson === true
       && !codexResumeNeedsGenericFallback
     ));
   const modelForwardingEnabled =
     codexDirect
-      ? true
+      ? codexCapabilities?.model === true
       : hermesDirect
       ? await hermesChatSupportsModel()
       : openCodeDirect
@@ -1003,7 +1012,7 @@ export async function POST(req: Request) {
   // Grok and OpenCode are direct integrations, so neither may wait on coven
   // capability probes for flags it does not execute.
   const permissionForwardingEnabled =
-    codexDirect || (
+    (codexDirect && codexCapabilities?.sandbox === true) || (
       !openCodeDirect &&
       binding.harness !== "openclaw" &&
       binding.harness !== "grok" &&
@@ -1013,7 +1022,7 @@ export async function POST(req: Request) {
   // granted roots listed in the runtime-scope preamble are prompt-text-only
   // and the harness denies every access to them.
   const addDirForwardingEnabled =
-    codexDirect || (
+    (codexDirect && codexCapabilities?.addDir === true) || (
       !openCodeDirect &&
       binding.harness !== "openclaw" &&
       binding.harness !== "grok" &&
@@ -1396,9 +1405,11 @@ export async function POST(req: Request) {
     }
     if (codexDirect) {
       const a = resumeSessionId
-        ? ["exec", "resume", "--json", "--skip-git-repo-check"]
-        : ["exec", "--json", "--skip-git-repo-check", "--color", "never"];
-      if (forwardModel) a.push("--model", forwardModel);
+        ? ["exec", "resume", "--json"]
+        : ["exec", "--json", "--skip-git-repo-check"];
+      if (!resumeSessionId && codexCapabilities?.color === true) a.push("--color", "never");
+      if (resumeSessionId && codexCapabilities?.resumeSkipGitRepoCheck === true) a.push("--skip-git-repo-check");
+      if (forwardModel && (!resumeSessionId ? codexCapabilities?.model === true : codexCapabilities?.resumeModel === true)) a.push("--model", forwardModel);
       // The resume subcommand accepts neither --sandbox nor --add-dir on
       // supported Codex releases. `codexDirect` above only admits resume when
       // Cave has no such constraints to forward.
@@ -2512,12 +2523,18 @@ export async function POST(req: Request) {
         const harness = binding.harness;
         const durMs = result.duration_ms;
         const durSuffix = durMs != null ? ` in ${durMs}ms` : "";
-        const tailSource = stderrTail.length ? stderrTail : stdoutErrTail;
+        // Direct Codex receives the user prompt and granted directories as
+        // argv/stdin. Its stderr can echo either, so it is never chat-safe.
+        // Keep the raw tail only in the protected process diagnostics path.
+        const safeDirectCodexFailure = binding.harness === "codex" && codexDirect;
+        const tailSource = safeDirectCodexFailure ? [] : (stderrTail.length ? stderrTail : stdoutErrTail);
         const tailBlock = tailSource.length
           ? `\n\n\`\`\`\n${tailSource.slice(-5).join("\n")}\n\`\`\``
           : "";
         const diagnostic = result.is_error
-          ? `_The "${harness}" harness errored${durSuffix} and returned no text._${tailBlock || "\n\nNo error output captured. Try `/doctor` for diagnostics."}`
+          ? safeDirectCodexFailure
+            ? `_The Codex CLI failed${durSuffix} before returning assistant text._\n\nCheck Codex sign-in and configuration with \`/doctor\`, then try again.`
+            : `_The "${harness}" harness errored${durSuffix} and returned no text._${tailBlock || "\n\nNo error output captured. Try `/doctor` for diagnostics."}`
           : `_The "${harness}" harness completed${durSuffix} but produced no output._\n\nUsually this means the CLI is installed but not authenticated to a provider. Try \`/doctor\`, re-run \`coven\`'s sign-in (\`codex login\` / Claude API key), or check the harness logs.${tailBlock}`;
         pushProgress("assistant-output", "No assistant text returned", "error", harness, durMs);
         assistantText = diagnostic;

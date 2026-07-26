@@ -9,6 +9,7 @@ import {
   CodexJsonlDecoder,
   CodexSchemaCache,
   codexProbeEnv,
+  discoverCodexRuntime,
   codexSchemaSignatureVerifierFromEnv,
   parseCodexVersionOutput,
   parseCodexStreamEvent,
@@ -107,6 +108,21 @@ assert.equal(
   parseCodexStreamEvent({ type: "item.completed", item: { id: "collab-a", type: "collab_tool_call", output: "ok" } }, selected.schema)?.kind,
   "tool_end",
   "the observed collaboration tool item type is part of the bootstrap schema",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "item.started", item: { id: "file-a", type: "file_change", changes: [{ path: "src/app.ts", kind: "update" }] } }, selected.schema),
+  { kind: "tool_start", id: "file-a", name: "file_change", input: { changes: [{ path: "src/app.ts", kind: "update" }] } },
+  "file-change lifecycle bubbles retain their observed change input",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "item.started", item: { id: "search-a", type: "web_search", query: "Codex CLI", action: "search" } }, selected.schema),
+  { kind: "tool_start", id: "search-a", name: "web_search", input: { query: "Codex CLI", action: "search" } },
+  "web-search lifecycle bubbles retain query and action",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "item.started", item: { id: "collab-input-a", type: "collab_tool_call", tool: "delegate", prompt: "summarize" } }, selected.schema),
+  { kind: "tool_start", id: "collab-input-a", name: "delegate", input: { tool: "delegate", prompt: "summarize" } },
+  "collaboration lifecycle bubbles retain the actual tool and prompt",
 );
 const hugeOutput = parseCodexStreamEvent({ type: "item.completed", item: { id: "large-a", type: "command_execution", aggregated_output: "x".repeat(20_000) } }, selected.schema);
 assert.equal(hugeOutput?.kind === "tool_end" && hugeOutput.output?.includes("[output truncated]"), true, "tool display output is bounded before live SSE emission");
@@ -253,6 +269,16 @@ assert.equal(validateCodexSchemaDocument({ ...document, provenance: { ...documen
 assert.equal(validateCodexSchemaDocument({ ...document, schemas: [document.schemas[0], document.schemas[0]] }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "duplicate schema ids are rejected");
 assert.equal(validateCodexSchemaDocument({ ...document, schemas: [{ ...document.schemas[0], eventTypes: [...document.schemas[0].eventTypes, "item.finalized"] }] }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "registry schemas cannot redefine lifecycle event names without parser support");
 assert.equal(validateCodexSchemaDocument({ ...document, schemas: [{ ...document.schemas[0], toolItemTypes: [...document.schemas[0].toolItemTypes, "agent_message"] }] }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "schema item types cannot be both transcript text and tool activity");
+let deeplyNestedUnknown: Record<string, unknown> = { leaf: true };
+for (let depth = 0; depth < 64; depth += 1) deeplyNestedUnknown = { nested: deeplyNestedUnknown };
+assert.equal(
+  validateCodexSchemaDocument(
+    { ...document, schemas: [{ ...document.schemas[0], unknown: deeplyNestedUnknown }] },
+    new Date("2026-07-24T12:00:00.000Z"),
+  ).ok,
+  false,
+  "deep untrusted schema extensions fail validation without recursive canonicalization exhaustion",
+);
 const reorderedPayload = {
   schemas: CODEX_BOOTSTRAP_SCHEMAS.map((schema) => ({
     textItemTypes: schema.textItemTypes,
@@ -295,6 +321,39 @@ try {
   );
 } finally {
   await rm(codexShimDir, { recursive: true, force: true });
+}
+
+const codexProbeDir = await mkdtemp(path.join(tmpdir(), "coven-codex-probe-"));
+try {
+  const probeScript = path.join(codexProbeDir, "fake-codex.mjs");
+  await writeFile(probeScript, [
+    "const args = process.argv.slice(2);",
+    "if (args.includes('--version')) console.log('codex-cli 0.145.0');",
+    "else if (args.join(' ') === 'exec --help') console.log('--json\\nresume\\n--model\\n--skip-git-repo-check');",
+    "else if (args.join(' ') === 'exec resume --help') console.log('--json');",
+  ].join("\n"));
+  const probed = await discoverCodexRuntime({ command: process.execPath, fixedArgs: [probeScript] });
+  assert.deepEqual(
+    probed,
+    {
+      version: "0.145.0",
+      capabilities: {
+        jsonEvents: true,
+        resume: true,
+        model: true,
+        sandbox: false,
+        addDir: false,
+        skipGitRepoCheck: true,
+        color: false,
+        resumeJson: true,
+        resumeModel: false,
+        resumeSkipGitRepoCheck: false,
+      },
+    },
+    "fresh and resume help contracts are probed independently before direct argv is selected",
+  );
+} finally {
+  await rm(codexProbeDir, { recursive: true, force: true });
 }
 
 const cacheDir = await mkdtemp(path.join(tmpdir(), "coven-codex-schema-"));

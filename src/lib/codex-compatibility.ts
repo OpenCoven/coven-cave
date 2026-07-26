@@ -26,12 +26,26 @@ const CACHE_LOCK_TIMEOUT_MS = 2_000;
 const CACHE_LOCK_RETRY_MS = 25;
 const MAX_TOOL_DISPLAY_CHARS = 16_384;
 const MAX_JSONL_PENDING_CHARS = 256 * 1024;
+// Canonicalization runs before signature verification, so it needs its own
+// structural limits instead of relying only on the transport byte cap.
+const MAX_SCHEMA_CANONICAL_DEPTH = 40;
+const MAX_SCHEMA_CANONICAL_NODES = 20_000;
 const CODEX_SCHEMA_REGISTRY_ORIGIN = "https://raw.githubusercontent.com";
 const CODEX_SCHEMA_REGISTRY_PATH_PREFIX = "/OpenCoven/coven-runtimes/";
 
 export type CodexCapabilities = {
   jsonEvents: boolean;
   resume: boolean;
+  /** Fresh `codex exec` flags observed in its own help contract. */
+  model?: boolean;
+  sandbox?: boolean;
+  addDir?: boolean;
+  skipGitRepoCheck?: boolean;
+  color?: boolean;
+  /** `codex exec resume` is a distinct argv contract. */
+  resumeJson?: boolean;
+  resumeModel?: boolean;
+  resumeSkipGitRepoCheck?: boolean;
 };
 
 export type CodexRuntimeReport = {
@@ -206,12 +220,21 @@ function compareVersions(left: string, right: string): number {
   return a.prerelease.length - b.prerelease.length;
 }
 
-function canonicalJson(value: unknown): string {
+function canonicalJson(
+  value: unknown,
+  state: { nodes: number } = { nodes: 0 },
+  depth = 0,
+): string {
+  if (depth > MAX_SCHEMA_CANONICAL_DEPTH || ++state.nodes > MAX_SCHEMA_CANONICAL_NODES) {
+    throw new RangeError("schema payload exceeds canonicalization limits");
+  }
   if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalJson(entry, state, depth + 1)).join(",")}]`;
+  }
   const object = record(value);
   if (!object) throw new TypeError("schema payload must be JSON data");
-  return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(",")}}`;
+  return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key], state, depth + 1)}`).join(",")}}`;
 }
 
 function canonicalSchemaPayload(document: Pick<CodexSchemaDocument, "provenance" | "schemas">): string {
@@ -222,7 +245,13 @@ function canonicalSchemaPayload(document: Pick<CodexSchemaDocument, "provenance"
 }
 
 export function schemaContentHash(document: Pick<CodexSchemaDocument, "provenance" | "schemas">): string {
-  return createHash("sha256").update(canonicalSchemaPayload(document)).digest("hex");
+  try {
+    return createHash("sha256").update(canonicalSchemaPayload(document)).digest("hex");
+  } catch {
+    // Treat an over-complex untrusted shape exactly like a non-matching hash;
+    // callers must not surface it or allow it to replace last-known-good.
+    return "";
+  }
 }
 
 function isStringArray(value: unknown, maxEntries: number): value is string[] {
@@ -873,13 +902,35 @@ export async function discoverCodexRuntime(
     // by this module (never request-supplied), so Node's shell bridge is used
     // only there to let Windows resolve the shim safely.
     const windowsShim = process.platform === "win32" && (target.command === "codex" || /\.(cmd|bat)$/i.test(target.command));
-    const [{ stdout: versionOut, stderr: versionErr }, { stdout: helpOut, stderr: helpErr }] = await Promise.all([
+    const [{ stdout: versionOut, stderr: versionErr }, { stdout: helpOut, stderr: helpErr }, resumeHelpResult] = await Promise.all([
       execFileAsync(target.command, [...target.fixedArgs, "--version"], { timeout, windowsHide: true, env, shell: windowsShim }),
       execFileAsync(target.command, [...target.fixedArgs, "exec", "--help"], { timeout, windowsHide: true, env, shell: windowsShim }),
+      // Older CLIs legitimately lack `resume`; that must not turn an
+      // otherwise usable fresh-session discovery into an unavailable report.
+      execFileAsync(target.command, [...target.fixedArgs, "exec", "resume", "--help"], { timeout, windowsHide: true, env, shell: windowsShim })
+        .catch(() => ({ stdout: "", stderr: "" })),
     ]);
     const version = parseCodexVersionOutput(`${versionOut}\n${versionErr}`);
     const help = `${helpOut}\n${helpErr}`;
-    return { version, capabilities: { jsonEvents: /(?:^|\s)--json(?:\s|$)/m.test(help), resume: /\bresume\b/i.test(help) } };
+    const resumeHelp = `${resumeHelpResult.stdout}\n${resumeHelpResult.stderr}`;
+    // The option names below are fixed literals maintained in this module;
+    // none originates in a registry document or request.
+    const option = (text: string, name: string) => new RegExp(`(?:^|\\s)${name}(?:\\s|,|$)`, "m").test(text);
+    return {
+      version,
+      capabilities: {
+        jsonEvents: option(help, "--json"),
+        resume: /\bresume\b/i.test(help),
+        model: option(help, "--model"),
+        sandbox: option(help, "--sandbox"),
+        addDir: option(help, "--add-dir"),
+        skipGitRepoCheck: option(help, "--skip-git-repo-check"),
+        color: option(help, "--color"),
+        resumeJson: option(resumeHelp, "--json"),
+        resumeModel: option(resumeHelp, "--model"),
+        resumeSkipGitRepoCheck: option(resumeHelp, "--skip-git-repo-check"),
+      },
+    };
   } catch {
     return { version: null, capabilities: { jsonEvents: false, resume: false } };
   }
@@ -1020,14 +1071,25 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
     && typeof item.tool === "string" && item.tool
     ? `${typeof item.server === "string" && item.server ? `${item.server}.` : ""}${item.tool}`
     : null;
+  const collabName = item.type === "collab_tool_call"
+    && typeof item.tool === "string" && item.tool
+    ? item.tool
+    : null;
   const name = typeof item.name === "string" && item.name
     ? item.name
-    : mcpName ?? (item.type === "command_execution" ? "Bash" : item.type);
+    : mcpName ?? collabName ?? (item.type === "command_execution" ? "Bash" : item.type);
+  const selectedInput = item.type === "file_change" && item.changes !== undefined
+    ? { changes: item.changes }
+    : item.type === "web_search" && (item.query !== undefined || item.action !== undefined)
+      ? { ...(item.query !== undefined ? { query: item.query } : {}), ...(item.action !== undefined ? { action: item.action } : {}) }
+      : item.type === "collab_tool_call" && (item.tool !== undefined || item.prompt !== undefined)
+        ? { ...(item.tool !== undefined ? { tool: item.tool } : {}), ...(item.prompt !== undefined ? { prompt: item.prompt } : {}) }
+        : undefined;
   const input = item.arguments
     ?? item.input
     ?? (item.type === "command_execution" && typeof item.command === "string"
       ? { command: item.command }
-      : undefined);
+      : selectedInput);
   if (event.type === "item.started" || event.type === "item.updated") return { kind: "tool_start", id: item.id, name, input };
   if (event.type === "item.completed" || event.type === "item.failed") {
     const exitCode = typeof item.exit_code === "number"
