@@ -14,8 +14,20 @@ const globals = readFileSync(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const shellResponsiveCss = readFileSync(
+  new URL("../styles/globals/shell-responsive.css", import.meta.url),
+  "utf8",
+);
 const dashboardCssUrl = new URL("../styles/dashboard.css", import.meta.url);
 const dashboardCss = existsSync(dashboardCssUrl) ? readFileSync(dashboardCssUrl, "utf8") : "";
+const aboutSource = readFileSync(
+  new URL("./settings-about.tsx", import.meta.url),
+  "utf8",
+);
+const aboutCss = readFileSync(
+  new URL("../styles/settings-about.css", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -63,7 +75,7 @@ assert.match(
   "Settings back control should expose a mobile hit-area hook",
 );
 assert.match(
-  globals,
+  shellResponsiveCss,
   /@media \(max-width: 767px\) \{[\s\S]*\.settings-back-button\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Settings mobile back control should meet the shared touch target",
 );
@@ -147,9 +159,14 @@ assert.match(
   "Mobile setup guide link should use the shared Settings action touch target",
 );
 assert.match(
-  source,
-  /className="settings-touch-action[\s\S]*\{l\.label\}/,
-  "About external links should use the shared Settings action touch target",
+  aboutSource,
+  /settings-about-link-card[\s\S]*focus-ring/,
+  "About external cards should keep the shared keyboard focus treatment",
+);
+assert.match(
+  aboutCss,
+  /@media \(hover: none\) and \(pointer: coarse\)[\s\S]*\.settings-about-link-card[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "About external cards should meet the shared touch-target floor on coarse pointers",
 );
 // Settings section nav exposes the active section to assistive tech.
 assert.match(
