@@ -2061,10 +2061,11 @@ export async function POST(req: Request) {
         // render a tool block. Hooks are still discarded by AssistantFilter
         // below, so this is purely additive.
         const toolMatch = trimmed.match(TOOL_HOOK_RE);
-        // Claude hook lines can contain complete tool inputs or outputs. Do
-        // not retain one in the generic empty-response diagnostic, even when
-        // the tool profile is unavailable and no bubble is emitted.
-        if (!(binding.harness === "claude" && (toolMatch || trimmed.startsWith("hook:")))) {
+        // Claude stdout can contain complete tool inputs or outputs, including
+        // on unrecognised non-hook lines. Do not retain any Claude stdout in
+        // the generic empty-response diagnostic, even when the profile is
+        // unavailable and no bubble is emitted.
+        if (binding.harness !== "claude") {
           recordStdoutErrorTail(cleaned);
         }
         if (toolMatch && claudeToolsEnabled) {
