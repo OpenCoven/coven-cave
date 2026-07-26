@@ -151,6 +151,17 @@ assert.deepEqual(
   { kind: "error", sessionId: "ses_123", message: "Selected model is unavailable" },
   "OpenCode nests command errors under error.data.message",
 );
+{
+  const sessions: string[] = [];
+  const errors: string[] = [];
+  handleOpenCodeJsonLine(
+    JSON.stringify({ type: "error", sessionID: "ses_untrusted_error", error: { message: "session failed" } }),
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+    { onSession: (id) => sessions.push(id), onError: (event) => errors.push(event.message) },
+  );
+  assert.deepEqual(errors, ["session failed"], "a declared error frame still reaches failure handling");
+  assert.deepEqual(sessions, [], "a provider-controlled error envelope cannot overwrite the native resume token");
+}
 assert.deepEqual(
   parseOpenCodeRunEvent(
     { type: "tool_start", sessionId: "ses_123", data: { id: "tool_1", name: "Read", state: { input: { path: "README.md" } } } },

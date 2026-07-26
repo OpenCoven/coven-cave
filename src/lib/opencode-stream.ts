@@ -273,7 +273,14 @@ export function handleOpenCodeJsonLine(
     // An unknown label can still return safe signed-envelope text for the
     // current transcript, but its session-shaped field remains untrusted: it
     // must not poison the native resume token for a later turn.
-    const trustedSession = event.kind !== "other" && !(event.kind === "text" && event.diagnostic === "unknown-event");
+    // Error payloads are provider-controlled and an error frame is never a
+    // successful native-session handshake. Keeping its session-looking field
+    // would let a schema-compatible but evolved error envelope overwrite the
+    // next turn's resume target. Lifecycle/text/tool frames remain the only
+    // trusted sources of a native session token.
+    const trustedSession = event.kind !== "other"
+      && event.kind !== "error"
+      && !(event.kind === "text" && event.diagnostic === "unknown-event");
     if (trustedSession && event.sessionId) handlers.onSession?.(event.sessionId);
     switch (event.kind) {
       case "ignore": return;
