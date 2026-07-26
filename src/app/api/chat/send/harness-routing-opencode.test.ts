@@ -52,7 +52,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const openCodeLaunchCommand = openCodeDirect \? openCodeLaunch\(spawnArgs\) : null;[\s\S]*?const spawnEnv = openCodeDirect\s*\? openCodeSpawnEnv\(body\.familiarId\)\s*: harnessSpawnEnv\(body\.familiarId\);[\s\S]*?const child = spawn\(command\.command, command\.args, \{[\s\S]*?env: spawnEnv,[\s\S]*?writeOpenCodeLaunchInput\(child, openCodeLaunchCommand\)/,
+  /const openCodeLaunchCommand = openCodeDirect \? openCodeLaunch\(spawnArgs\) : null;[\s\S]*?const spawnEnv = openCodeDirect\s*\? openCodeSpawnEnv\(body\.familiarId\)\s*: codexDirect && codexHarnessEnv\s*\? codexHarnessEnv\s*: harnessSpawnEnv\(body\.familiarId\);[\s\S]*?const child = spawn\(command\.command, command\.args, \{[\s\S]*?env: spawnEnv,[\s\S]*?writeOpenCodeLaunchInput\(child, openCodeLaunchCommand\)/,
   "OpenCode uses its Windows-safe launcher, passes its argv over stdin, and keeps the scoped WSL-compatible spawn environment that the availability gate probed",
 );
 assert.match(
