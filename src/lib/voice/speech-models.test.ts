@@ -141,6 +141,50 @@ test("Piper Amy registry metadata matches the reviewed pinned artifact", () => {
   );
 });
 
+// The signature-voice roster (cave-vony): every entry pins the reviewed
+// artifact at the same vetted piper-voices revision as Amy, and only
+// redistribution-safe licenses ship (CC BY-NC-SA and custom-licensed voices
+// were rejected during vetting).
+test("signature voice roster pins reviewed artifacts with vetted licenses", () => {
+  const roster = [
+    {
+      id: "piper-alba-medium-en-gb",
+      sha256: "401369c4a81d09fdd86c32c5c864440811dbdcc66466cde2d64f7133a66ad03b",
+      companionSha256: "aa965a2f02ecced632c2694e1fc72bbff6d65f265fab567ca945918c73dd89f4",
+      license: "CC-BY-4.0",
+    },
+    {
+      id: "piper-joe-medium-en-us",
+      sha256: "58afce0321b8d9c46d7cdf9c16500cc55a793b4220212dba6b70fb788b3baf06",
+      companionSha256: "3d6d5410b3795cb1950595247ef8f06190719e6fdbfa3a2356d8ec368e1aad33",
+      license: "CC0-1.0",
+    },
+    {
+      id: "piper-kristin-medium-en-us",
+      sha256: "5849957f929cbf720c258f8458692d6103fff2f0e3d3b19c8259474bb06a18d4",
+      companionSha256: "5681426d4aead22195de70531eeeeddb46493cfaffc5764b2ea3db73428b651c",
+      license: "Public domain (LibriVox dataset)",
+    },
+  ];
+  for (const expected of roster) {
+    const entry = SPEECH_MODEL_REGISTRY.find((model) => model.id === expected.id);
+    assert.ok(entry, `${expected.id} is registered`);
+    assert.equal(entry.engine, "piper");
+    assert.equal(entry.kind, "tts");
+    assert.equal(entry.sha256, expected.sha256);
+    assert.equal(entry.license, expected.license);
+    // Voice ids double as local TTS voiceNames — they must satisfy the
+    // route's validation pattern or the voice can never synthesize.
+    assert.match(entry.id, /^(?:piper|kokoro)-[a-z0-9][a-z0-9-]*$/);
+    // Piper needs the config beside the weights; an entry without its
+    // companion would advertise an unusable voice.
+    assert.equal(entry.companion?.sha256, expected.companionSha256);
+    // Same pinned revision as Amy: artifacts can't drift under re-review.
+    assert.match(entry.url, /\/resolve\/0d907f158acc877ddeebcbf827659ee13bea8bcd\//);
+    assert.match(entry.companion?.url ?? "", /\/resolve\/0d907f158acc877ddeebcbf827659ee13bea8bcd\//);
+  }
+});
+
 test("Piper readiness requires its verified config companion", async () => {
   const root = testRoot("companion");
   await rm(root, { recursive: true, force: true });

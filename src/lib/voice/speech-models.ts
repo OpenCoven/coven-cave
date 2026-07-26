@@ -103,6 +103,60 @@ export const SPEECH_MODEL_REGISTRY: readonly SpeechModelRegistryEntry[] = [
       fileName: "en_US-amy-medium.onnx.json",
     },
   },
+  // Signature voice roster (cave-vony): only license-vetted voices ship here.
+  // Rejected during vetting: ryan/hfc_male/hfc_female (CC BY-NC-SA datasets),
+  // lessac (custom Blizzard license).
+  {
+    id: "piper-alba-medium-en-gb",
+    name: "Piper Alba medium en_GB",
+    engine: "piper",
+    kind: "tts",
+    url: "https://huggingface.co/rhasspy/piper-voices/resolve/0d907f158acc877ddeebcbf827659ee13bea8bcd/en/en_GB/alba/medium/en_GB-alba-medium.onnx",
+    sha256: "401369c4a81d09fdd86c32c5c864440811dbdcc66466cde2d64f7133a66ad03b",
+    sizeBytes: 63_201_294,
+    license: "CC-BY-4.0",
+    fileName: "en_GB-alba-medium.onnx",
+    companion: {
+      url: "https://huggingface.co/rhasspy/piper-voices/resolve/0d907f158acc877ddeebcbf827659ee13bea8bcd/en/en_GB/alba/medium/en_GB-alba-medium.onnx.json",
+      sha256: "aa965a2f02ecced632c2694e1fc72bbff6d65f265fab567ca945918c73dd89f4",
+      sizeBytes: 4_888,
+      fileName: "en_GB-alba-medium.onnx.json",
+    },
+  },
+  {
+    id: "piper-joe-medium-en-us",
+    name: "Piper Joe medium en_US",
+    engine: "piper",
+    kind: "tts",
+    url: "https://huggingface.co/rhasspy/piper-voices/resolve/0d907f158acc877ddeebcbf827659ee13bea8bcd/en/en_US/joe/medium/en_US-joe-medium.onnx",
+    sha256: "58afce0321b8d9c46d7cdf9c16500cc55a793b4220212dba6b70fb788b3baf06",
+    sizeBytes: 63_201_294,
+    license: "CC0-1.0",
+    fileName: "en_US-joe-medium.onnx",
+    companion: {
+      url: "https://huggingface.co/rhasspy/piper-voices/resolve/0d907f158acc877ddeebcbf827659ee13bea8bcd/en/en_US/joe/medium/en_US-joe-medium.onnx.json",
+      sha256: "3d6d5410b3795cb1950595247ef8f06190719e6fdbfa3a2356d8ec368e1aad33",
+      sizeBytes: 4_794,
+      fileName: "en_US-joe-medium.onnx.json",
+    },
+  },
+  {
+    id: "piper-kristin-medium-en-us",
+    name: "Piper Kristin medium en_US",
+    engine: "piper",
+    kind: "tts",
+    url: "https://huggingface.co/rhasspy/piper-voices/resolve/0d907f158acc877ddeebcbf827659ee13bea8bcd/en/en_US/kristin/medium/en_US-kristin-medium.onnx",
+    sha256: "5849957f929cbf720c258f8458692d6103fff2f0e3d3b19c8259474bb06a18d4",
+    sizeBytes: 63_531_379,
+    license: "Public domain (LibriVox dataset)",
+    fileName: "en_US-kristin-medium.onnx",
+    companion: {
+      url: "https://huggingface.co/rhasspy/piper-voices/resolve/0d907f158acc877ddeebcbf827659ee13bea8bcd/en/en_US/kristin/medium/en_US-kristin-medium.onnx.json",
+      sha256: "5681426d4aead22195de70531eeeeddb46493cfaffc5764b2ea3db73428b651c",
+      sizeBytes: 4_968,
+      fileName: "en_US-kristin-medium.onnx.json",
+    },
+  },
 ] as const;
 
 const jobs = new Map<string, SpeechModelDownloadJob>();

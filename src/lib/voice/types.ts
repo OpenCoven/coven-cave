@@ -56,6 +56,10 @@ export interface LiveSession {
    *  providers (cave-vpe1). Cloud realtime sessions (their model IS the
    *  ears) leave it unset. */
   earsEngine?: VoiceEarsEngine;
+  /** Which synthesis engine this call's mouth speaks through, for loop-based
+   *  providers (cave-vony). Cloud realtime sessions (their model IS the
+   *  mouth) leave it unset. */
+  mouthEngine?: VoiceMouthEngine;
 }
 
 /** Recognition engine behind a speech-loop call's ears:
@@ -72,6 +76,16 @@ export type VoiceEarsEngine =
   | "native-on-device"
   | "native-dictation"
   | "web-speech";
+
+/** Synthesis engine behind a speech-loop call's mouth (cave-vony):
+ *  - "sidecar-piper": a downloaded Piper voice rendered by Cave's local
+ *    sidecar; audio never leaves this device.
+ *  - "elevenlabs": ElevenLabs cloud TTS.
+ *  - "system-synth": the platform's speechSynthesis voices. */
+export type VoiceMouthEngine =
+  | "sidecar-piper"
+  | "elevenlabs"
+  | "system-synth";
 
 /**
  * Connection-phase error: `message` stays a stable machine code (e.g.

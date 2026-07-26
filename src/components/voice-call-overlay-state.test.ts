@@ -60,15 +60,19 @@ test("CONNECTED carries the ears engine label for the live UI (cave-vpe1)", () =
     type: "CONNECTED",
     startedAt: Date.now(),
     earsEngine: "native-on-device",
+    mouthEngine: "sidecar-piper",
   });
   assert.equal(next.state, "live");
   assert.equal(next.earsEngine, "native-on-device");
+  // The mouth engine rides the same event for badge parity (cave-vony).
+  assert.equal(next.mouthEngine, "sidecar-piper");
   // Realtime providers report no ears mode — the field simply stays unset.
   const bare = reduce(
     { ...initialState, state: "connecting", callId: "c1" },
     { type: "CONNECTED", startedAt: 1 },
   );
   assert.equal(bare.earsEngine, undefined);
+  assert.equal(bare.mouthEngine, undefined);
 });
 
 test("connecting → closed on CLOSE_REQUEST (clean cancel, no error)", () => {

@@ -145,8 +145,8 @@ assert.match(
 // dictation/browser modes tell the user their audio rides a service.
 assert.match(
   component,
-  /dispatch\(\{\s*type:\s*"CONNECTED",\s*startedAt:\s*Date\.now\(\),\s*earsEngine:\s*live\.earsEngine\s*\}\)/,
-  "CONNECTED carries the LiveSession's ears engine into call state",
+  /dispatch\(\{\s*type:\s*"CONNECTED",\s*startedAt:\s*Date\.now\(\),\s*earsEngine:\s*live\.earsEngine,\s*mouthEngine:\s*live\.mouthEngine\s*\}\)/,
+  "CONNECTED carries the LiveSession's ears and mouth engines into call state",
 );
 assert.match(
   component,
@@ -155,8 +155,18 @@ assert.match(
 );
 assert.match(
   component,
+  /state\.state === "live" && state\.mouthEngine && \(/,
+  "live calls render the mouth-engine badge when a loop provider reports one (cave-vony)",
+);
+assert.match(
+  component,
   /case "native-on-device": return "Hearing on-device";[\s\S]{0,120}case "native-dictation": return "Hearing via Apple dictation";[\s\S]{0,120}case "web-speech": return "Hearing via browser speech";/,
   "every ears engine mode has an honest human label",
+);
+assert.match(
+  component,
+  /case "sidecar-piper": return "Speaking via local Piper";[\s\S]{0,120}case "elevenlabs": return "Speaking via ElevenLabs";[\s\S]{0,120}case "system-synth": return "Speaking via system voice";/,
+  "every mouth engine mode has an honest human label (cave-vony)",
 );
 assert.match(
   component,
