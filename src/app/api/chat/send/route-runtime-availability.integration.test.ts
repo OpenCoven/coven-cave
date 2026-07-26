@@ -299,21 +299,41 @@ try {
   // the exact local CLI plan is absent.
   {
     const { clearCopilotCapabilityProbeCache } = await import("@/lib/server/copilot-capability-probe");
+    const { REGISTRY_RUNTIMES } = await import("@/lib/runtime-registry.gen");
+    const copilotRuntime = REGISTRY_RUNTIMES.find((runtime) => runtime.id === "copilot");
+    const copilotAdapter = copilotRuntime?.adapterManifest?.adapters?.find(
+      (adapter) => adapter.id === "copilot",
+    );
+    assert.ok(copilotAdapter, "the accepted Copilot manifest supplies the direct launch fixture");
+    const previousCopilotExecutable = copilotAdapter.executable;
+    // Cave intentionally reconstructs a desktop-safe PATH from login-shell
+    // and well-known install directories, so PATH="" does not prove absence
+    // on a developer machine with Copilot installed. Pin this integration
+    // case to an absolute missing command, just as the Grok cases above do.
+    copilotAdapter.executable = path.join(
+      bin,
+      process.platform === "win32" ? "missing-copilot.exe" : "missing-copilot",
+    );
     process.env.PATH = "";
     refreshCovenBin();
     refreshCovenSpawnEnv();
     clearCopilotCapabilityProbeCache();
-    await saveConfig({ familiars: { opal: { harness: "copilot" } } });
-    const response = await POST(new Request("http://localhost/api/chat/send", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ familiarId: "opal", prompt: "copilot preflight", projectRoot: familiarWorkspace }),
-    }));
-    const { body, events } = await readSse(response);
-    const error = events.find((event) => event.kind === "error");
-    assert.equal(error?.code, "runtime_missing");
-    assert.match(String(error?.message), /copilot CLI not found on PATH/i);
-    assertNoFabricatedAssistantResponse(body, events);
+    try {
+      await saveConfig({ familiars: { opal: { harness: "copilot" } } });
+      const response = await POST(new Request("http://localhost/api/chat/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ familiarId: "opal", prompt: "copilot preflight", projectRoot: familiarWorkspace }),
+      }));
+      const { body, events } = await readSse(response);
+      const error = events.find((event) => event.kind === "error");
+      assert.equal(error?.code, "runtime_missing");
+      assert.match(String(error?.message), /copilot CLI not found on PATH/i);
+      assertNoFabricatedAssistantResponse(body, events);
+    } finally {
+      copilotAdapter.executable = previousCopilotExecutable;
+      clearCopilotCapabilityProbeCache();
+    }
   }
 } finally {
   process.env.COVEN_HOME = previousHome;

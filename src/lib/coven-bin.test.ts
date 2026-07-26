@@ -561,6 +561,26 @@ assert.deepEqual(
   "Windows npm .cmd shims launch through node plus the shim target script",
 );
 
+const nativeShimTarget = path.join(
+  npmShimDir,
+  "node_modules",
+  "opencode-ai",
+  "bin",
+  "opencode.exe",
+);
+await mkdir(path.dirname(nativeShimTarget), { recursive: true });
+await writeFile(nativeShimTarget, "native executable fixture");
+const nativeShim = path.join(npmShimDir, "opencode.cmd");
+await writeFile(
+  nativeShim,
+  '"%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe" %*\r\n',
+);
+assert.deepEqual(
+  covenLaunchCommandForBinary(nativeShim, "win32"),
+  { command: nativeShimTarget, fixedArgs: [] },
+  "Windows npm shims that target native executables bypass cmd.exe and preserve argv",
+);
+
 const covenCodeShimDir = await mkdtemp(path.join(os.tmpdir(), "coven-code-npm-shim-"));
 const covenCodeShimScript = path.join(covenCodeShimDir, "node_modules", "@opencoven", "coven-code", "bin", "coven-code");
 await mkdir(path.dirname(covenCodeShimScript), { recursive: true });

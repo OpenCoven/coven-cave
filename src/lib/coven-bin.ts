@@ -249,8 +249,9 @@ function candidateBinNames(): string[] {
  * write three launchers per package (an extensionless POSIX script, a .cmd
  * shim, and a .ps1), and `where` lists the extensionless one first — but a
  * bare Windows spawn() can only execute .exe/.com, and a .cmd needs
- * covenLaunchCommandForBinary() to convert it into a direct `node <script>`
- * spawn. Keep the order emitted by `where`, though: it reflects PATH
+ * covenLaunchCommandForBinary() to resolve its package target into a direct
+ * native or `node <script>` spawn. Keep the order emitted by `where`, though:
+ * it reflects PATH
  * precedence. Picking a later .exe over an earlier npm .cmd shim can launch a
  * stale or unrelated executable after an update.
  */
@@ -447,7 +448,7 @@ function windowsShimTargetFromFile(shimPath: string): string | null {
   return null;
 }
 
-export function covenLaunchCommandForBinary(
+export function windowsShimLaunchCommandForBinary(
   binary: string,
   platform: NodeJS.Platform = process.platform,
 ): CovenLaunchCommand {
@@ -459,7 +460,17 @@ export function covenLaunchCommandForBinary(
   if (!script) {
     return { command: binary, fixedArgs: [], unresolvedWindowsShim: true };
   }
+  if (/\.(?:exe|com)$/i.test(script)) {
+    return { command: script, fixedArgs: [] };
+  }
   return { command: process.execPath, fixedArgs: [script] };
+}
+
+export function covenLaunchCommandForBinary(
+  binary: string,
+  platform: NodeJS.Platform = process.platform,
+): CovenLaunchCommand {
+  return windowsShimLaunchCommandForBinary(binary, platform);
 }
 
 export function covenLaunchCommand(): CovenLaunchCommand {
