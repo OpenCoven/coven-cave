@@ -204,8 +204,23 @@ try {
     env: { Path: "C:\\bin" },
     platform: "win32",
     statFile: (candidate) => candidate === "C:\\bin\\node.exe" || candidate === "C:\\bin\\copilot-entry.js",
+    readableFile: (candidate) => candidate === "C:\\bin\\copilot-entry.js",
   });
   assert.equal(requiredArtifactReady.state, "ready", "a complete direct launch plan is ready");
+
+  const statOnlyArtifact = evaluateRuntimeAvailability({
+    runner: "copilot",
+    command: "node.exe",
+    requiredFiles: [path.join(scratch, "missing-required-artifact.js")],
+    env: { Path: "C:\\bin" },
+    platform: "win32",
+    statFile: () => true,
+  });
+  assert.equal(
+    statOnlyArtifact.state,
+    "unlaunchable",
+    "a command stat double cannot silently stand in for required-artifact readability",
+  );
 
   const requiredArtifactUnreadable = evaluateRuntimeAvailability({
     runner: "copilot",
@@ -422,6 +437,7 @@ try {
     platform: "win32",
     requiredFiles: [openCodeTarget],
     statFile: winStats([nodeHost, openCodeTarget]),
+    readableFile: winStats([openCodeTarget]),
   });
   assert.equal(
     openCodeWinReady.state,
@@ -436,6 +452,7 @@ try {
     platform: "win32",
     requiredFiles: [openCodeTarget],
     statFile: winStats([nodeHost]),
+    readableFile: winStats([]),
   });
   assert.equal(
     openCodeTargetGone.state,
