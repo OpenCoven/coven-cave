@@ -13,10 +13,12 @@ import {
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import {
   isOpenCodeLaunchSpawnable,
+  openCodeAvailabilityProbe,
   openCodeLaunch,
   openCodeSpawnEnv,
 } from "@/lib/opencode-bin";
 import type { OpenCodeRunCapabilities } from "@/lib/opencode-compatibility";
+import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
@@ -393,6 +395,8 @@ async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCod
   if (
     !isOpenCodeLaunchSpawnable(helpLaunch)
     || !isOpenCodeLaunchSpawnable(versionLaunch)
+    || evaluateRuntimeAvailability(openCodeAvailabilityProbe(helpLaunch, env)).state !== "ready"
+    || evaluateRuntimeAvailability(openCodeAvailabilityProbe(versionLaunch, env)).state !== "ready"
   ) {
     return {
       helpProbe: { output: "", complete: false },
@@ -612,7 +616,12 @@ export function hermesChatSupportsModel(): Promise<boolean> {
 export function openCodeRunSupportsModel(): Promise<boolean> {
   const env = openCodeSpawnEnv();
   const launch = openCodeLaunch(["run", "--help"], process.platform, env);
-  if (!isOpenCodeLaunchSpawnable(launch)) return Promise.resolve(false);
+  if (
+    !isOpenCodeLaunchSpawnable(launch)
+    || evaluateRuntimeAvailability(openCodeAvailabilityProbe(launch, env)).state !== "ready"
+  ) {
+    return Promise.resolve(false);
+  }
   return (openCodeModelFlagProbe ??= probeHelp(
     launch.command,
     launch.args,

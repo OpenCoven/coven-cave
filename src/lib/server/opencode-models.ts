@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
 import {
-  isOpenCodeLaunchSpawnable,
+  openCodeAvailabilityProbe,
   openCodeLaunch,
   openCodeSpawnEnv,
 } from "@/lib/opencode-bin";
 import { parseOpenCodeModels } from "@/lib/opencode-models";
+import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 import type { RuntimeModelOption } from "@/lib/runtime-models";
 
 const MODEL_LIST_TIMEOUT_MS = 8_000;
@@ -22,7 +23,7 @@ export function listOpenCodeModels(familiarId?: string | null): Promise<RuntimeM
     try {
       const env = openCodeSpawnEnv(familiarId);
       const launch = openCodeLaunch(["models"], process.platform, env);
-      if (!isOpenCodeLaunchSpawnable(launch)) {
+      if (evaluateRuntimeAvailability(openCodeAvailabilityProbe(launch, env)).state !== "ready") {
         done([]);
         return;
       }

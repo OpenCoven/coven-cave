@@ -20,7 +20,7 @@ assert.match(
 );
 assert.match(
   serverSource,
-  /const launch = openCodeLaunch\([\s\S]*?if \(!isOpenCodeLaunchSpawnable\(launch\)\)[\s\S]*?done\(\[\]\);[\s\S]*?return;[\s\S]*?const child = spawn/,
-  "model discovery refuses unresolved Windows shims and failed launch resolutions before spawn",
+  /const launch = openCodeLaunch\([\s\S]*?evaluateRuntimeAvailability\(openCodeAvailabilityProbe\(launch, env\)\)\.state !== "ready"[\s\S]*?done\(\[\]\);[\s\S]*?return;[\s\S]*?const child = spawn/,
+  "model discovery passively verifies the exact command and required launch files before spawn",
 );
 console.log("opencode-models.test.ts: ok");

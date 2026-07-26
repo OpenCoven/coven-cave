@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -16,6 +16,19 @@ import {
   openCodeRunCapabilities,
   parseOpenCodeRunCapabilitiesHelp,
 } from "./chat-send-capabilities.ts";
+
+const capabilitiesSource = readFileSync(new URL("./chat-send-capabilities.ts", import.meta.url), "utf8");
+
+assert.match(
+  capabilitiesSource,
+  /probeOpenCodeRunContract[\s\S]*?evaluateRuntimeAvailability\(openCodeAvailabilityProbe\(helpLaunch, env\)\)\.state !== "ready"[\s\S]*?evaluateRuntimeAvailability\(openCodeAvailabilityProbe\(versionLaunch, env\)\)\.state !== "ready"[\s\S]*?probeOutput\(helpLaunch\.command/,
+  "run-contract probes passively verify both exact launch plans and required files before spawning",
+);
+assert.match(
+  capabilitiesSource,
+  /openCodeRunSupportsModel[\s\S]*?evaluateRuntimeAvailability\(openCodeAvailabilityProbe\(launch, env\)\)\.state !== "ready"[\s\S]*?probeHelp\(/,
+  "the model-flag probe passively verifies its exact launch plan and required files before spawning",
+);
 
 assert.equal(openCodeCapabilityProbeTimeoutMs("linux"), 2_500, "non-Windows capability probes retain the short bounded deadline");
 assert.equal(openCodeCapabilityProbeTimeoutMs("win32"), 6_000, "Windows native/npm launches receive a bounded cold-start allowance");
