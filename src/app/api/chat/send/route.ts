@@ -137,6 +137,10 @@ import {
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
+  dispatchOpenClawGatewayTurn,
+  openClawGatewayPairedDeviceAuthStatus,
+} from "@/lib/openclaw-gateway";
+import {
   OpenClawAgentResolutionError,
   extractOpenClawSessionId,
   extractOpenClawText,
@@ -614,30 +618,6 @@ function openClawChatResponse(args: {
       }
       const agentId = agentBinding.openclawAgentId;
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
-      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
-      const openclawLaunch = openClawLaunchCommand();
-      if (openclawLaunch.unresolvedWindowsShim) {
-        pushProgress(
-          "openclaw-start",
-          "OpenClaw bridge cannot start safely",
-          "error",
-          "The resolved OpenClaw Windows npm shim could not be mapped to its JavaScript entry point. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
-        );
-        push({
-          kind: "error",
-          code: "openclaw_unsafe_shell",
-          message:
-            "OpenClaw chat is unavailable because its Windows npm shim could not be launched without shell parsing. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
-        });
-        push({
-          kind: "done",
-          durationMs: Date.now() - startedAt,
-          isError: true,
-        });
-        close();
-        return;
-      }
-      const spawnArgv = [...openclawLaunch.fixedArgs, ...argv];
       let cwd: string;
       try {
         cwd = await resolveLocalRuntimeCwd(
@@ -676,6 +656,218 @@ function openClawChatResponse(args: {
         gatewaySessionId: undefined,
         sessionKey: openClawSessionKey(conversationId),
       };
+
+      // Gateway dispatch owns a turn only after it returns the authoritative
+      // run id. Until then this branch leaves the existing CLI bridge as the
+      // safe compatibility fallback; after a request might have reached the
+      // Gateway it deliberately never starts a second CLI turn.
+      let gatewayAssistantText = "";
+      let gatewayAssistantTextEmitted = false;
+      const gatewayAuth = openClawGatewayPairedDeviceAuthStatus();
+      const gatewayDispatch = gatewayAuth.available
+        ? await dispatchOpenClawGatewayTurn({
+        sessionKey: openClawSessionKey(conversationId),
+        agentId,
+        message: args.harnessPrompt,
+        // A direct Gateway turn is only safe when Cave has the caller's
+        // stable request id. Reusing it as Gateway's idempotency key makes a
+        // retry observable to the Gateway instead of creating another run.
+        idempotencyKey: args.body.runId ?? "",
+        onEvent: (event) => {
+          if (event.kind === "status") {
+            pushProgress("openclaw-gateway", "OpenClaw Gateway", "running", event.phase);
+            return;
+          }
+          if (event.kind === "delta") {
+            if (event.replace) {
+              gatewayAssistantText = event.text;
+              gatewayAssistantTextEmitted = true;
+              push({ kind: "assistant_replace", text: event.text });
+              return;
+            }
+            gatewayAssistantText += event.text;
+            gatewayAssistantTextEmitted = true;
+            push({ kind: "assistant_chunk", text: event.text });
+            return;
+          }
+          if (event.kind === "final" && event.text) {
+            if (gatewayAssistantTextEmitted && gatewayAssistantText !== event.text) {
+              push({ kind: "assistant_replace", text: event.text });
+            }
+            gatewayAssistantText = event.text;
+          }
+          if (event.kind === "error") {
+            pushProgress("openclaw-gateway", "OpenClaw Gateway", "error", event.message);
+          }
+        },
+      })
+        : { kind: "unavailable" as const, reason: gatewayAuth.reason ?? "Gateway paired-device authentication is unavailable" };
+      if (gatewayDispatch.kind === "indeterminate") {
+        pushProgress("openclaw-gateway", "OpenClaw Gateway dispatch is indeterminate", "error", gatewayDispatch.reason);
+        push({ kind: "error", code: "openclaw_gateway_indeterminate", message: gatewayDispatch.reason });
+        push({ kind: "done", durationMs: Date.now() - startedAt, isError: true, responseMetadata });
+        close();
+        return;
+      }
+      if (gatewayDispatch.kind === "accepted") {
+        responseMetadata.gatewaySessionId = gatewayDispatch.runId;
+        pushProgress("openclaw-gateway", "OpenClaw Gateway dispatch accepted", "done", `run ${gatewayDispatch.runId}`);
+        const pendingUserTurnId = crypto.randomUUID();
+        const stubTitle = chatTitleFromPrompt(args.promptText) ?? defaultChatTitleForSession(conversationId);
+        void setDefaultSessionTitleIfMissing(conversationId, stubTitle).catch(() => undefined);
+        const stubWrite = createConversationStub({
+          sessionId: conversationId,
+          familiarId: args.body.familiarId,
+          harness: "openclaw",
+          ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
+          ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
+          title: stubTitle,
+          ...(args.body.origin ? { origin: args.body.origin } : {}),
+          userTurn: {
+            id: pendingUserTurnId,
+            text: args.promptText,
+            ...(args.attachments.length ? { attachments: args.attachments } : {}),
+          },
+        }).catch(() => undefined);
+        const stopGateway = () => {
+          void gatewayDispatch.abort();
+        };
+        const runHandle = registerChatRun([args.body.runId, conversationId], stopGateway);
+        let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
+        const armDetachKill = () => {
+          if (runHandle.stopRequested || detachKillTimer != null) return;
+          detachKillTimer = setTimeout(stopGateway, CHAT_DETACH_MAX_MS);
+        };
+        runBuffer = openRunBuffer([args.body.runId, conversationId], {
+          attach: () => {
+            if (detachKillTimer != null) {
+              clearTimeout(detachKillTimer);
+              detachKillTimer = null;
+            }
+          },
+          detach: () => {
+            if (args.req.signal.aborted) armDetachKill();
+          },
+        });
+        const onAbort = () => armDetachKill();
+        args.req.signal.addEventListener("abort", onAbort, { once: true });
+        pushProgress("openclaw-response", "Waiting for OpenClaw Gateway response", "running");
+        const gatewayResult = await gatewayDispatch.done;
+        args.req.signal.removeEventListener("abort", onAbort);
+        if (detachKillTimer != null) clearTimeout(detachKillTimer);
+        unregisterChatRun(runHandle);
+        const durationMs = Date.now() - startedAt;
+        const cancelledByUser = runHandle.stopRequested || gatewayResult.state === "aborted";
+        const isError = gatewayResult.state === "error";
+        if (!gatewayAssistantText.trim()) {
+          gatewayAssistantText = cancelledByUser
+            ? "(cancelled)"
+            : gatewayResult.message ?? "_The OpenClaw Gateway returned no text._";
+        }
+        pushProgress(
+          "openclaw-response",
+          isError ? "OpenClaw Gateway response failed" : "OpenClaw Gateway response received",
+          isError ? "error" : "done",
+          gatewayResult.message,
+          durationMs,
+        );
+        push({ kind: "session", sessionId: conversationId });
+        if (!gatewayAssistantTextEmitted) push({ kind: "assistant_chunk", text: gatewayAssistantText });
+        pushProgress("save-transcript", "Saving transcript", "running");
+        await recordSessionFamiliar(conversationId, args.body.familiarId);
+        await stubWrite;
+        const existing = await loadConversation(conversationId);
+        const hadFirstTurnStub = existing ? stripConversationStubTurn(existing, pendingUserTurnId) : false;
+        const isFirstExchange = !existing || hadFirstTurnStub;
+        const now = new Date().toISOString();
+        const chatTitle = existing?.title ?? defaultChatTitleForSession(conversationId);
+        if (!existing) await setDefaultSessionTitleIfMissing(conversationId, chatTitle);
+        const branchParentId =
+          args.body.parentTurnId !== undefined ? args.body.parentTurnId : existing?.activeLeafId ?? null;
+        const conv = existing ?? {
+          sessionId: conversationId,
+          familiarId: args.body.familiarId,
+          harness: "openclaw",
+          model: responseMetadata.model,
+          runtime: responseMetadata.runtime,
+          title: chatTitle,
+          ...(args.body.origin ? { origin: args.body.origin } : {}),
+          createdAt: now,
+          updatedAt: now,
+          turns: [],
+        };
+        conv.model = responseMetadata.model;
+        conv.runtime = responseMetadata.runtime;
+        persistSendModelIntent(conv, args.body, args.modelState);
+        const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
+        if (workBranch) conv.branch = workBranch;
+        const reportedPrUrl = latestPrUrlFromText(gatewayAssistantText);
+        if (reportedPrUrl) conv.prUrl = reportedPrUrl;
+        const assistantTurnId = crypto.randomUUID();
+        conv.turns.push(
+          {
+            id: pendingUserTurnId,
+            role: "user",
+            text: args.promptText,
+            ...(args.attachments.length ? { attachments: args.attachments } : {}),
+            createdAt: now,
+            ...(branchParentId != null ? { parentId: branchParentId } : {}),
+          },
+          {
+            id: assistantTurnId,
+            role: "assistant",
+            text: gatewayAssistantText.trim(),
+            createdAt: new Date().toISOString(),
+            durationMs,
+            isError,
+            parentId: pendingUserTurnId,
+            responseMetadata,
+            ...(cancelledByUser ? { cancelled: true } : {}),
+          },
+        );
+        conv.activeLeafId = assistantTurnId;
+        await saveConversation(conv);
+        if (isFirstExchange && !isError) await autoNameSessionFromFirstExchange(conversationId, args.promptText);
+        if (!isError) await maybeAutoRenameFromContext(conversationId, args.promptText);
+        pushProgress("save-transcript", "Transcript saved", "done");
+        push({
+          kind: "done",
+          durationMs,
+          isError,
+          sessionId: conversationId,
+          ...(cancelledByUser ? { cancelled: true } : {}),
+          responseMetadata,
+        });
+        gatewayDispatch.close();
+        runBuffer?.finish();
+        await sleep(20);
+        close();
+        return;
+      }
+      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
+      const openclawLaunch = openClawLaunchCommand();
+      if (openclawLaunch.unresolvedWindowsShim) {
+        pushProgress(
+          "openclaw-start",
+          "OpenClaw bridge cannot start safely",
+          "error",
+          "The resolved OpenClaw Windows npm shim could not be mapped to its JavaScript entry point. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
+        );
+        push({
+          kind: "error",
+          code: "openclaw_unsafe_shell",
+          message:
+            "OpenClaw chat is unavailable because its Windows npm shim could not be launched without shell parsing. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
+        });
+        push({
+          kind: "done",
+          durationMs: Date.now() - startedAt,
+          isError: true,
+        });
+        close();
+        return;
+      }
+      const spawnArgv = [...openclawLaunch.fixedArgs, ...argv];
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
       const child = spawn(openclawLaunch.command, spawnArgv, {
         cwd,
