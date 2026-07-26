@@ -683,11 +683,23 @@ function ShellInner({
     const toggleDrawerSlot = (slot: NonNullable<MobileDrawerSlot>) => {
       setMobileDrawer((curr) => (curr === slot ? null : slot));
     };
+    const toggleDesktopNav = () => {
+      const panel = navRef.current;
+      if (!panel) return;
+
+      if (panel.isCollapsed()) {
+        panel.expand();
+        setNavOpen(true);
+      } else {
+        panel.collapse();
+        setNavOpen(false);
+      }
+    };
     const handler = (e: KeyboardEvent) => {
       if (matchesPanelShortcut(e, panelShortcuts.toggleLeftPanel)) {
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("nav");
-        else togglePanel(navRef.current);
+        else toggleDesktopNav();
         return;
       }
       const key = e.key.toLowerCase();
@@ -711,7 +723,7 @@ function ShellInner({
     // without owning its panel ref.
     const onToggleLeft = () => {
       if (isMobile) toggleDrawerSlot("nav");
-      else togglePanel(navRef.current);
+      else toggleDesktopNav();
     };
     window.addEventListener("keydown", handler);
     window.addEventListener("keydown", bottomToggle);
