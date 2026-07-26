@@ -1,11 +1,43 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import * as vaultModule from "./vault.ts";
 import {
   canMirrorVaultKeyToProcessEnv,
   mirrorVaultSecretToProcessEnv,
   validateOpRef,
 } from "./vault.ts";
+
+assert.equal(
+  typeof vaultModule.grantVaultScope,
+  "function",
+  "vault scopes expose a grant helper",
+);
+assert.equal(
+  typeof vaultModule.revokeVaultScope,
+  "function",
+  "vault scopes expose a revoke helper",
+);
+assert.deepEqual(
+  vaultModule.grantVaultScope(["sage"], "Nova"),
+  ["sage", "nova"],
+  "granting normalizes and appends a familiar without widening the key to shared",
+);
+assert.deepEqual(
+  vaultModule.grantVaultScope(["sage", "nova"], "NOVA"),
+  ["sage", "nova"],
+  "granting is idempotent",
+);
+assert.deepEqual(
+  vaultModule.revokeVaultScope(["sage", "nova"], "NOVA"),
+  ["sage"],
+  "revoking removes only the selected familiar",
+);
+assert.equal(
+  vaultModule.revokeVaultScope("shared", "nova"),
+  "shared",
+  "a per-familiar action cannot narrow a globally shared key",
+);
 
 assert.equal(validateOpRef("op://Personal/GitHub/token"), null);
 assert.equal(validateOpRef(42), "ref must be a string");
@@ -74,6 +106,11 @@ assert.match(routeSource, /setLocalEncryptedSecret/, "/api/vault can save encryp
 assert.match(routeSource, /deleteLocalEncryptedSecret/, "/api/vault deletes encrypted local secrets");
 assert.match(
   routeSource,
+  /export async function PATCH[\s\S]*?action === "grant"[\s\S]*?grantVaultScope[\s\S]*?revokeVaultScope/,
+  "/api/vault updates one familiar grant without rewriting the secret mapping",
+);
+assert.match(
+  routeSource,
   /mirrorVaultSecretToProcessEnv\(key, body\.value\)/,
   "/api/vault routes encrypted values through the process-env safety gate",
 );
@@ -82,6 +119,16 @@ assert.match(githubPatRouteSource, /setLocalEncryptedSecret\(PAT_KEY, pat\)/, "G
 assert.doesNotMatch(githubPatRouteSource, /updates\[PAT_KEY\] = pat/, "GitHub PAT setup does not write tokens to .env.local");
 assert.match(panelSource, /Local encrypted/, "Vault panel exposes local encrypted storage as a first-class option");
 assert.match(panelSource, /type="password"/, "Vault panel uses a password input for raw local secrets");
+assert.match(
+  panelSource,
+  /method: "PATCH"[\s\S]*?action: granted \? "revoke" : "grant"/,
+  "Familiar Vault rows grant or revoke scope through the non-destructive API",
+);
+assert.match(
+  panelSource,
+  /familiarId \?[\s\S]*?updateFamiliarGrant[\s\S]*?:[\s\S]*?handleDelete/,
+  "The scoped Vault action cannot call the global delete path",
+);
 assert.match(
   panelSource,
   /unresolved:\s*\{[^}]*color:\s*"var\(--color-warning\)"[^}]*icon:\s*"ph:warning"/,
