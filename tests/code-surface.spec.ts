@@ -163,4 +163,73 @@ test.describe("code surface (Coding familiar's room)", () => {
       .poll(() => page.evaluate(() => window.location.search))
       .not.toContain("session=");
   });
+
+  test("organization settings move focus inside, retain it when selection disappears, and fit narrow panes", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!!isMobile, "desktop project supplies the narrow viewport explicitly");
+    await page.setViewportSize({ width: 320, height: 700 });
+    await base(page);
+    let releaseMemberships = () => {};
+    const membershipsReady = new Promise<void>((resolve) => {
+      releaseMemberships = resolve;
+    });
+    await page.route("**/api/github/activity**", async (route) => {
+      await membershipsReady;
+      await route.fulfill({
+        json: {
+          ok: true,
+          authed: true,
+          login: "val",
+          organizations: ["OpenCoven"],
+          items: [],
+        },
+      });
+    });
+    await page.goto("/?mode=code");
+
+    const sessionsTab = page.getByRole("tab", { name: "Sessions" });
+    await sessionsTab.focus();
+    await expect(sessionsTab).toBeFocused();
+    await expect
+      .poll(() =>
+        sessionsTab.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            outlineOffset: style.outlineOffset,
+            outlineWidth: style.outlineWidth,
+          };
+        }),
+      )
+      .toEqual({ outlineOffset: "-2px", outlineWidth: "2px" });
+
+    await page.getByRole("button", { name: "GitHub organization settings" }).click();
+    const popover = page.getByRole("dialog", { name: "GitHub organization settings" });
+    await expect(popover).toBeVisible({ timeout: 30_000 });
+    const all = popover.getByRole("button", { name: "GitHub organization scope: All" });
+    await expect(all).toBeFocused();
+
+    const bounds = await popover.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(8);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(312);
+    expect(
+      await popover.evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+
+    const selected = popover.getByRole("button", { name: "GitHub organization scope: Selected" });
+    await selected.click();
+    await expect(all).toHaveAttribute("aria-pressed", "true");
+    await expect(selected).toHaveAttribute("aria-pressed", "false");
+
+    releaseMemberships();
+    await expect(popover.getByText(/Every organization is included/)).toBeVisible();
+    await selected.click();
+    const checkbox = popover.getByRole("checkbox", { name: /OpenCoven/ });
+    await expect(checkbox).toBeChecked();
+    await checkbox.click();
+    await expect(all).toBeFocused();
+    await expect(popover).toBeVisible();
+  });
 });
