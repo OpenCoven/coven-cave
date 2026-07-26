@@ -265,6 +265,21 @@ export class ToolCallTracker {
     return call;
   }
 
+  /** A post hook can race ahead of its pre hook after an envelope has already
+   * settled. The post has already supplied the terminal status, so this only
+   * lets the delayed pre attach to that record; it must never reopen it. */
+  private takePostBeforePreEnvelopeCall(name: string, input?: string): OpenCall | undefined {
+    const queue = this.settledHookCalls.get(name);
+    const index = queue?.findIndex((call) => {
+      if (!call.envelopeId || call.preHookObserved) return false;
+      const recordedInput = this.recorded.get(call.id)?.input;
+      return input === undefined || recordedInput === undefined || recordedInput === input;
+    }) ?? -1;
+    const call = index >= 0 ? queue?.splice(index, 1)[0] : undefined;
+    if (queue?.length === 0) this.settledHookCalls.delete(name);
+    return call;
+  }
+
   private rememberSettledEnvelopeCall(call: OpenCall): void {
     if (call.origin !== "envelope" || call.hookStarted) return;
     const queue = this.settledEnvelopeCalls.get(call.name) ?? [];
@@ -417,6 +432,24 @@ export class ToolCallTracker {
       this.record(ev, textOffset);
       return ev;
     }
+    const postBeforePreCall = this.takePostBeforePreEnvelopeCall(name, input);
+    if (postBeforePreCall) {
+      // A post hook already made this record terminal. Preserve its output and
+      // duration instead of emitting a new running bubble that can never see
+      // the earlier post hook and would be failed at turn end.
+      postBeforePreCall.hookStarted = true;
+      postBeforePreCall.preHookObserved = true;
+      const previous = this.recorded.get(postBeforePreCall.id);
+      const ev: ToolStreamEvent = {
+        id: postBeforePreCall.id,
+        name,
+        input,
+        status: previous?.status ?? "ok",
+        ...(previous?.durationMs !== undefined ? { durationMs: previous.durationMs } : {}),
+      };
+      this.record(ev, textOffset);
+      return ev;
+    }
     this.seq += 1;
     const call: OpenCall = {
       id: this.streamId(`tool-${this.seq}-${name}`),
@@ -466,11 +499,16 @@ export class ToolCallTracker {
       return ev;
     }
     const durationMs = this.now() - call.startedAt;
+    // A post hook proves the execution existed even when its pre hook is
+    // buffered behind the terminal envelope. Mark it as hook-originated so we
+    // retain the terminal record for that delayed pre instead of spawning a
+    // second call later.
+    call.hookStarted = true;
     this.settle(call);
     // A delayed assistant envelope can arrive after a complete pre/post hook
     // pair. Retain hook-only completions long enough to link that native id
     // rather than rendering a second tool bubble for the same execution.
-    if (!call.envelopeId) this.rememberSettledHookCall(call);
+    if (!call.envelopeId || !call.preHookObserved) this.rememberSettledHookCall(call);
     const ev: ToolStreamEvent = { id: call.id, name, output, status, durationMs };
     this.record(ev);
     return ev;

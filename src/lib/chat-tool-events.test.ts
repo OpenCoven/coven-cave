@@ -156,4 +156,25 @@ assert.equal(
   "completed envelope calls retained for late hooks stay globally bounded across distinct tool names",
 );
 
+// Stdout can reorder every source: an envelope result may settle first, then a
+// post hook can arrive before the matching pre hook. The delayed pre must
+// attach to the already-terminal record rather than creating a second spinner
+// that only fails at turn end.
+const postBeforePre = new ToolCallTracker(() => 1_000);
+assert.ok(postBeforePre.envelopeToolUse("post-before-pre", "Read", '{"path":"README.md"}'));
+assert.equal(postBeforePre.envelopeToolResult("post-before-pre", "envelope output", false)?.status, "ok");
+assert.equal(postBeforePre.hookEnd("Read", "hook output", false).id, "post-before-pre");
+const delayedPre = postBeforePre.hookStart("Read", '{"path":"README.md"}');
+assert.equal(delayedPre.id, "post-before-pre", "a pre hook delayed past its post updates the original envelope record");
+assert.equal(delayedPre.status, "ok", "a delayed pre must not reopen a terminal tool bubble");
+assert.deepEqual(postBeforePre.settleUnfinished(), [], "the post-before-pre permutation leaves no synthetic running call");
+assert.deepEqual(postBeforePre.snapshot(), [{
+  id: "post-before-pre",
+  name: "Read",
+  input: '{"path":"README.md"}',
+  output: "hook output",
+  status: "ok",
+  durationMs: 0,
+}]);
+
 console.log("chat-tool-events.test.ts: ok");
