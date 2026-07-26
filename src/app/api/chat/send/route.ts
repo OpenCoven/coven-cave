@@ -2754,26 +2754,42 @@ export async function POST(req: Request) {
           const reportLaunchFailure = (err: NodeJS.ErrnoException) => {
             if (terminalFailureReported) return;
             terminalFailureReported = true;
-            // OpenCode launch errors can include the PowerShell shim's
-            // absolute path (and platform error details). Keep compatibility
-            // diagnostics value-free rather than surfacing local filesystem
-            // information.
-            const launchError = openCodeDirect
-              ? "OpenCode failed to start. Check its installation and try again."
-              : hermesDirect
-                ? "Hermes failed to start. Check its installation and try again."
-              : err.message;
             // Hermes's preflight and post-preflight race handling share the
             // availability contract. In particular, a real but unspawnable
             // executable is not a generic launch failure, and a disappeared
             // executable remains a distinct missing-runtime condition.
+            const hermesSpawnAvailability = hermesDirect && readyHermesLaunch
+              ? evaluateRuntimeAvailability({
+                  runner: "hermes",
+                  command: readyHermesLaunch.command,
+                  env: readyHermesLaunch.env,
+                })
+              : null;
+            // ENOENT can also mean the selected workspace disappeared between
+            // preflight and spawn. Recheck the pinned executable before
+            // reporting Hermes itself as missing; a still-ready executable
+            // means this was an unlaunchable spawn, not a missing runtime.
             const launchFailureCode = hermesDirect
-              ? err.code === "ENOENT"
+              ? hermesSpawnAvailability?.state === "missing"
                 ? RUNTIME_AVAILABILITY_ERROR_CODES.missing
-                : RUNTIME_AVAILABILITY_ERROR_CODES.unlaunchable
+                : hermesSpawnAvailability?.state === "probe_failed"
+                  ? RUNTIME_AVAILABILITY_ERROR_CODES.probe_failed
+                  : RUNTIME_AVAILABILITY_ERROR_CODES.unlaunchable
               : err.code === "ENOENT"
                 ? "ENOENT"
                 : "runtime_launch_failed";
+            // OpenCode launch errors can include the PowerShell shim's
+            // absolute path (and platform error details). Keep compatibility
+            // diagnostics value-free rather than surfacing local filesystem
+            // information. Hermes probe failures retain the contract's
+            // actionable, path-free remediation copy.
+            const launchError = openCodeDirect
+              ? "OpenCode failed to start. Check its installation and try again."
+              : hermesSpawnAvailability?.state === "probe_failed"
+                ? hermesSpawnAvailability.message
+                : hermesDirect
+                  ? "Hermes failed to start. Check its installation and try again."
+                  : err.message;
             // Race-safe fallback (#3856): preflight can pass and a native
             // executable can still disappear or fail between stat and spawn.
             // Mark this before empty-output handling so it can never become an
@@ -2790,7 +2806,7 @@ export async function POST(req: Request) {
               launchError,
               Date.now() - attemptStartedAt,
             );
-            if (err.code === "ENOENT") {
+            if (err.code === "ENOENT" && launchFailureCode === RUNTIME_AVAILABILITY_ERROR_CODES.missing) {
               push({
                 kind: "error",
                 code: launchFailureCode,

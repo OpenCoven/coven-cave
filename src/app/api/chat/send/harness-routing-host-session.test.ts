@@ -570,8 +570,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /pushProgress\(\s*"harness-start",\s*`Starting \$\{binding\.harness\}`,\s*"running"[\s\S]*pushProgress\(\s*"harness-start",\s*`\$\{binding\.harness\} exited`,\s*"done"/,
-  "Coven harness streams should show process start and exit progress",
+  /pushProgress\(\s*"harness-start",\s*`Starting \$\{binding\.harness\}`,\s*"running"[\s\S]*pushProgress\(\s*"harness-start",\s*`\$\{binding\.harness\} exited`,\s*hermesProcessFailed \? "error" : "done"/,
+  "Coven harness streams should show process start and exit progress while failed Hermes processes remain errors",
 );
 
 assert.match(
