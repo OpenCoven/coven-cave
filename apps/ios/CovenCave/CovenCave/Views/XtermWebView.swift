@@ -35,6 +35,7 @@ struct XtermWebView: UIViewRepresentable {
 
         private var ready = false
         private var pending: [String] = []   // base64 output queued before the page loads
+        private let pageURL: URL?            // kept to re-load after a content-process death
 
         init(terminal: PtyTerminal,
              onInput: @escaping (String) -> Void,
@@ -47,6 +48,7 @@ struct XtermWebView: UIViewRepresentable {
             let ucc = WKUserContentController()
             config.userContentController = ucc
             webView = WKWebView(frame: .zero, configuration: config)
+            pageURL = Bundle.main.url(forResource: "terminal", withExtension: "html")
             super.init()
 
             ucc.add(self, name: "term")
@@ -55,7 +57,7 @@ struct XtermWebView: UIViewRepresentable {
             webView.isOpaque = true
             webView.backgroundColor = UIColor(red: 0x16 / 255, green: 0x18 / 255, blue: 0x1d / 255, alpha: 1)
 
-            if let url = Bundle.main.url(forResource: "terminal", withExtension: "html") {
+            if let url = pageURL {
                 webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
             }
 
@@ -94,6 +96,21 @@ struct XtermWebView: UIViewRepresentable {
             let queued = pending
             pending.removeAll()
             for b in queued { eval("window.caveTerm.write(b);", ["b": b]) }
+        }
+
+        /// iOS reclaims WKWebView content processes under memory pressure
+        /// (routinely after backgrounding). Without this hook the pane stays
+        /// permanently blank — the emulator and its whole scrollback lived in
+        /// the dead process. Reload the page and reattach the PTY: the server
+        /// replays its scrollback ring into the fresh xterm, and any replay
+        /// that races the reload queues in `pending` until `didFinish`.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            ready = false
+            pending.removeAll()
+            if let url = pageURL {
+                webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+            }
+            terminal.reattach()
         }
 
         nonisolated func userContentController(

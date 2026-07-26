@@ -43,11 +43,34 @@ const vendored = readFileSync(
   "utf8",
 );
 
-// The ~22 KB vendored WebGL file loads lazily and never renders on the server.
+// The ~22 KB vendored WebGL file still reaches the client only through the
+// lazy import() in the readiness store — never statically (the top-of-file
+// import is type-only, erased at compile time) and never on the server.
 assert.match(
   wrapper,
-  /const Peel = dynamic\(\(\) => import\("@\/components\/canvasui\/Peel"\), \{ ssr: false \}\)/,
-  "vendored Peel is dynamically imported with ssr: false",
+  /void import\("@\/components\/canvasui\/Peel"\)/,
+  "vendored Peel loads through the readiness store's dynamic import",
+);
+assert.match(
+  wrapper,
+  /import type PeelComponent from "@\/components\/canvasui\/Peel";/,
+  "the only static reference to the vendored module is type-only",
+);
+// No lazy/Suspense wrapper: a lazy's thenable is always pending on its FIRST
+// render even when the chunk is already loaded, so the freshly-mounted
+// boundary would commit a null fallback — blanking the detail pane (~300ms)
+// and double-mounting its children exactly when enhancement flips (cave-ao2o).
+// The store stashes the loaded component and the wrapper renders it directly:
+// the flip is a single-commit re-parent.
+assert.doesNotMatch(
+  wrapper,
+  /from "next\/dynamic"|dynamic\(\(\) =>|React\.lazy\(|lazy\(\(\) =>|<Suspense/,
+  "live tree renders the stashed component directly — no lazy, no Suspense, no null fallback",
+);
+assert.match(
+  wrapper,
+  /PeelLive = mod\.default;/,
+  "the readiness store stashes the loaded component for direct render",
 );
 
 // Enhancement gates: local capability probe (false on the server) + reduced motion.
@@ -58,7 +81,7 @@ assert.match(
 );
 assert.match(
   wrapper,
-  /const enhanced = supported && peelReady && !reducedMotion;/,
+  /const enhanced =\s*supported && Peel !== null && !reducedMotion && !glPermanentlyLost;/,
   "reduced motion disables the enhancement entirely",
 );
 
@@ -85,17 +108,17 @@ assert.doesNotMatch(
   "Peel is never conditionally mounted on active",
 );
 
-// The live tree waits for the vendored chunk: no null-fallback blank of the
-// detail pane while next/dynamic suspends.
-assert.match(
-  wrapper,
-  /const enhanced = supported && peelReady && !reducedMotion;/,
-  "enhancement additionally gates on module readiness",
-);
+// The live tree waits for the vendored chunk: the plain tree keeps rendering
+// until the loaded component can mount for real, in one commit.
 assert.match(
   wrapper,
   /supported \? subscribePeelReady : emptySubscribe/,
   "chunk fetch starts only on supporting browsers",
+);
+assert.match(
+  wrapper,
+  /useSyncExternalStore\(\s*supported \? subscribePeelReady : emptySubscribe,\s*getPeelLive,\s*getPeelLiveServer,\s*\)/,
+  "the rendered component comes straight from the module store",
 );
 
 // The revealed sidebar clone is decorative: hidden from AT and uninteractive.
@@ -111,6 +134,37 @@ assert.match(
   wrapper,
   /MAX_CONTEXT_RESTARTS = 3/,
   "context-loss restarts are capped",
+);
+// One loss past the cap must NOT strand the dead live tree: the vendored
+// createPeel has no context-loss recovery and its WebGL output canvas is the
+// pane's only paint path, so the wrapper flips a permanent-failure state and
+// rejoins the plain bare-Fragment path instead of leaving primary content
+// blank but still hit-testable (cave-yqlt). (Blaze may stay blank past its
+// cap — it's a decorative backdrop; this wraps the detail pane.)
+assert.match(
+  wrapper,
+  /setGlEpoch\(\(epoch\) => Math\.min\(epoch \+ 1, MAX_CONTEXT_RESTARTS \+ 1\)\)/,
+  "the epoch saturates one past the cap so the final loss escapes the live tree",
+);
+assert.match(
+  wrapper,
+  /const glPermanentlyLost = glEpoch > MAX_CONTEXT_RESTARTS;/,
+  "past-cap context loss is a permanent-failure state",
+);
+assert.match(
+  wrapper,
+  /&& !glPermanentlyLost;/,
+  "permanent loss gates `enhanced` off — the existing bare-Fragment fallback, no new rendering mode",
+);
+// The capture-phase listener reacts only to the peel's own output canvas (a
+// direct child of the .shell-peel-fill root). The detail children render
+// inside the source canvas subtree, so a context loss from any future WebGL
+// canvas nested in the detail content must not bump the epoch — that would
+// remount (or, past the cap, permanently downgrade) the whole pane.
+assert.match(
+  wrapper,
+  /!\(target instanceof HTMLCanvasElement\) \|\|\s*!target\.parentElement\?\.classList\.contains\("shell-peel-fill"\)/,
+  "context-loss handler is scoped to the peel's own output canvas",
 );
 
 // Plain path is a bare Fragment: several production rules use direct-child

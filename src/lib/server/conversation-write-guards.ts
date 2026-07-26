@@ -44,6 +44,7 @@ const HARNESS_OWNED_ASSISTANT_FIELDS = [
   "costUsd",
   "tools",
   "reasoning",
+  "progress",
   "durationMs",
   "responseMetadata",
   "harnessSessionId",

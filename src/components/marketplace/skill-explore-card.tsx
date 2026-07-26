@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
-import type { SkillBrowserEntry } from "@/components/skill-browser";
+import type { SkillBrowserEntry } from "@/lib/skill-directory";
 import { sourceTarget } from "@/lib/skill-directory";
 
 export type SkillExploreCardProps = {

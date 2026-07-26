@@ -73,6 +73,7 @@ export type ConversationHistoryTurn = {
   attachments?: ChatAttachment[];
   reasoning?: string;
   tools?: ToolEvent[];
+  progress?: ProgressEvent[];
   durationMs?: number;
   isError?: boolean;
   usage?: TurnUsage;
@@ -108,6 +109,7 @@ export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[])
       attachments: turn.attachments,
       reasoning: turn.reasoning,
       tools: turn.tools,
+      progress: turn.progress ? turn.progress.map((progress) => ({ ...progress })) : undefined,
       durationMs: turn.durationMs,
       usage: turn.usage,
       costUsd: turn.costUsd,

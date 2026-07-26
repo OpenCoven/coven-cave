@@ -232,6 +232,26 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Require signed OpenCode compatibility registry
+        shell: bash
+        env:
+          NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_URL: ${{ secrets.OPENCODE_SCHEMA_REGISTRY_URL }}
+          NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY: ${{ secrets.OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY }}
+          NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS: ${{ secrets.OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS }}
+          NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_CHECKPOINT: ${{ secrets.OPENCODE_SCHEMA_REGISTRY_CHECKPOINT }}
+        run: |
+          node scripts/check-opencode-registry-release.mjs
+          {
+            echo "NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_URL=$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_URL"
+            echo "NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY<<COVEN_OPENCODE_KEY_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY"
+            echo "COVEN_OPENCODE_KEY_EOF"
+            echo "NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS<<COVEN_OPENCODE_KEYS_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS"
+            echo "COVEN_OPENCODE_KEYS_EOF"
+            echo "NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_CHECKPOINT=$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_CHECKPOINT"
+          } >> "$GITHUB_ENV"
+
       # Decode the App Store Connect API key onto the runner for the custom
       # macOS release script. The path is exported into the env for later
       # steps. Runs only on the macOS leg.

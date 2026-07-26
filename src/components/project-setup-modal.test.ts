@@ -41,6 +41,12 @@ assert.match(src, /current\.trim\(\) \? current : /, "prefill never clobbers wha
 
 // ── Primitives + a11y ───────────────────────────────────────────────────────
 assert.match(src, /<Modal\b/, "built on the shared Modal (focus trap + return)");
+assert.match(src, /dismissOnBackdrop=\{!busy\}/, "backdrop dismiss is blocked mid-submit");
+assert.match(
+  src,
+  /dismissOnEscape=\{!busy\}/,
+  "Escape dismiss is blocked mid-submit too (cave-0g9u)",
+);
 assert.match(src, /useAnnouncer\(\)/, "completion is announced");
 assert.match(src, /StandardSelect/, "access levels use the shared select primitive");
 assert.match(src, /aria-pressed=/, "color swatches expose pressed state");

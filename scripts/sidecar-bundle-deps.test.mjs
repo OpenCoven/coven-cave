@@ -135,7 +135,7 @@ assert.doesNotMatch(
 // Tauri assembles the app.
 assert.deepEqual(
   windowsConfig.bundle.resources,
-  ["resources/server-archive/**/*", "resources/node/**/*", "resources/whisper/**/*"],
+  ["resources/server-archive/**/*", "resources/node/**/*", "resources/whisper/**/*", "resources/piper/**/*"],
   "Windows resources must replace the expanded sidecar with its bounded archive while retaining bundled runtimes",
 );
 assert.ok(
@@ -146,7 +146,13 @@ assert.ok(
   baseConfig.bundle.resources.includes("resources/whisper/**/*"),
   "desktop bundles must retain the local Whisper runtime",
 );
+assert.match(src, /bundle_piper_runtime\(\)/, "release bundling must provision the pinned Piper runtime");
+assert.match(src, /Piper runtime checksum mismatch/, "Piper runtime downloads must be integrity-checked");
 assert.match(src, /WINDOWS_ARCHIVE/, "Windows sidecar must be emitted as a tar.zst archive");
+assert.match(src, /BUILD_PLATFORM="\$\(node -p 'process\.platform'\)"/, "Windows packaging must derive the host platform from Node, not shell environment");
+assert.match(src, /\[ "\$BUILD_PLATFORM" = "win32" \]/, "Windows archive and node naming must work from Git Bash as well as CI");
+assert.doesNotMatch(src, /\$\{OS:-\}/, "Windows packaging must not rely on Git Bash exporting OS=Windows_NT");
+assert.match(src, /piper_linux_x86_64\.tar\.gz/, "Linux sidecar CI builds must provision a pinned Piper runtime");
 assert.match(src, /sidecar-archive-manifest\.mjs/, "archive generation must emit its integrity and size manifest");
 assert.match(src, /\.server\.tar\.zst\.\$\$\.tmp/, "archive generation must use a same-directory staging path");
 assert.match(src, /sidecar-archive-manifest\.mjs" --publish/, "verified archive publication must use the atomic publisher");

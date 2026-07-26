@@ -30,6 +30,10 @@ import {
 import { streamFamiliarText } from "../familiar-stream.ts";
 import { extractNextPaths } from "../next-paths.ts";
 import { resolvePreferredEars } from "./native-stt.ts";
+import {
+  createLocalTtsMouth,
+  isLocalTtsVoiceName,
+} from "./local-tts.ts";
 
 export const FAMILIAR_BRAIN_ERROR_HINT =
   "The familiar's runtime didn't answer — check that its harness is installed and signed in, or try the turn again.";
@@ -118,10 +122,16 @@ async function connect(
   // fall back to Apple dictation on model-less Macs — labeled honestly via
   // earsEngine (cave-vpe1).
   const preferredEars = await resolvePreferredEars();
+  const localVoice = isLocalTtsVoiceName(connection.voice)
+    ? connection.voice
+    : null;
 
   return connectSpeechLoop({
     mic,
-    voiceName: connection.voice,
+    voiceName: localVoice ? undefined : connection.voice,
+    mouth: localVoice
+      ? createLocalTtsMouth({ voiceName: localVoice })
+      : undefined,
     ears: preferredEars?.factory,
     earsEngine: preferredEars?.engine,
     callbacks,

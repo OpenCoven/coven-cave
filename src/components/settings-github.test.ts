@@ -32,6 +32,7 @@ test("the GitHub surface applies the configured org scope", () => {
   assert.match(view, /const orgScope = useAppPreferences\(\)\.github\.orgScope;/);
   // filtered items are constrained to the scope when non-empty
   assert.match(view, /orgScope\.length === 0 \? byKind : byKind\.filter\(\(i\) => orgScope\.includes\(orgOf\(i\.repo\)\)\)/);
-  // the org dropdown only lists scoped memberships
-  assert.match(view, /orgScope\.length === 0 \|\| orgScope\.includes\(o\)/);
+  // the org dropdown derives from the (already scope-constrained) filtered rows,
+  // so it only lists orgs that actually have items in the current table
+  assert.match(view, /\.\.\.filtered\.map\(\(i\) => orgOf\(i\.repo\)\)/);
 });

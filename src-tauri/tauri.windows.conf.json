@@ -4,7 +4,8 @@
     "resources": [
       "resources/server-archive/**/*",
       "resources/node/**/*",
-      "resources/whisper/**/*"
+      "resources/whisper/**/*",
+      "resources/piper/**/*"
     ],
     "windows": {
       "wix": {

@@ -48,6 +48,35 @@ export function splitProjectsBySection<T extends { root: string }>(
   return { workspaces, repositories };
 }
 
+/** One renderable section: a labeled, ordered slice of the project list. */
+export type SectionModel<T> = {
+  key: ProjectSection | "all";
+  label: string;
+  projects: T[];
+};
+
+/**
+ * The list the page actually renders, per the grouping toggle. Grouped mode
+ * yields the workspaces/repositories split (empty sections omitted); flat
+ * mode yields a single "All projects" section, preserving the input order
+ * (the registry is already sorted alphabetically). Uniform shape either way,
+ * so section heads and Set-all render identically in both modes.
+ */
+export function sectionModels<T extends { root: string }>(
+  projects: readonly T[],
+  grouped: boolean,
+): SectionModel<T>[] {
+  if (!grouped) {
+    return projects.length > 0 ? [{ key: "all", label: "All projects", projects: [...projects] }] : [];
+  }
+  const split = splitProjectsBySection(projects);
+  return SECTION_ORDER.filter((section) => split[section].length > 0).map((section) => ({
+    key: section,
+    label: SECTION_LABELS[section],
+    projects: split[section],
+  }));
+}
+
 /** Click cycle on a row: none → read → full (write) → none. */
 export function nextAccessState(current: AccessState): AccessState {
   if (current === "none") return "read";

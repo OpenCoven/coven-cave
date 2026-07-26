@@ -45,12 +45,14 @@ assert.match(view, /<StandardSelect<CardPriority \| "">[\s\S]*?onChange=\{\(next
 assert.match(view, /list="board-bulk-label-options"/, "label input is backed by a datalist of existing labels");
 assert.match(view, /void bulkAddLabel\(labelDraft\)/, "label form submits bulkAddLabel");
 
-// Redesign: Select-multiple and Delete-selected are first-class toolbar verbs
-// (visible icon buttons), while the overflow keeps the occasional Clear-done.
-assert.match(
+// Redesign: Select-multiple and the trash are first-class toolbar verbs
+// (visible icon buttons). The trash owns BOTH destructive flows — delete the
+// selection in select mode, clear done otherwise — so the tasks header no
+// longer carries an overflow menu.
+assert.doesNotMatch(
   view,
-  /<OverflowMenu ariaLabel="More task actions">/,
-  "board header renders the shared overflow menu",
+  /<OverflowMenu/,
+  "the tasks header overflow menu is gone — the trash button owns clear-done",
 );
 assert.match(
   view,
@@ -59,8 +61,8 @@ assert.match(
 );
 assert.match(
   view,
-  /icon="ph:trash"\s*\n\s*danger\s*\n\s*disabled=\{doneCards\.length === 0\}/,
-  "Clear done remains the overflow-menu item",
+  /if \(cardSelect\.selectMode\) \{\s*if \(hasSelection\) setToolbarDeleteConfirm\(true\);\s*\} else if \(doneCards\.length > 0\) \{\s*setClearConfirm\(true\);\s*\}/,
+  "the trash button routes to delete-selected in select mode and clear-done otherwise",
 );
 
 console.log("board-bulk-select.test.ts: ok");

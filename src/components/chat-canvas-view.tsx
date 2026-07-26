@@ -47,6 +47,9 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   const [q, setQ] = useState("");
   const [kindFilter, setKindFilter] = useState<CanvasKindFilter>("all");
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // In-place expand: the preview dialog grows to fill the viewport. Reset per
+  // sketch so the next preview always opens at the normal size.
+  const [previewExpanded, setPreviewExpanded] = useState(false);
   const [editorId, setEditorId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeComposerId, setActiveComposerId] = useState<string | null>(null);
@@ -166,6 +169,10 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
     () => (editorId ? (artifacts.find((a) => a.id === editorId) ?? null) : null),
     [editorId, artifacts],
   );
+
+  useEffect(() => {
+    setPreviewExpanded(false);
+  }, [previewId]);
 
   useFocusTrap(preview !== null, previewDialogRef, {
     onEscape: () => {
@@ -340,12 +347,14 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
       {preview ? (
         <div
           className="chat-canvas-preview-backdrop"
+          data-expanded={previewExpanded || undefined}
           role="presentation"
           onClick={() => setPreviewId(null)}
         >
           <div
             ref={previewDialogRef}
             className="chat-canvas-preview"
+            data-expanded={previewExpanded || undefined}
             role="dialog"
             aria-modal="true"
             aria-label={`Sketch preview: ${preview.title}`}
@@ -358,6 +367,16 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
                 {galleryArtifactKind(preview) === "react" ? "React" : "HTML"}
                 {(() => { const when = formatArtifactWhen(preview.updatedAt); return when ? ` · ${when}` : ""; })()}
               </span>
+              <button
+                type="button"
+                className="chat-canvas-preview__expand focus-ring"
+                title={previewExpanded ? "Restore preview" : "Expand preview"}
+                aria-label={previewExpanded ? "Restore preview" : "Expand preview"}
+                aria-pressed={previewExpanded}
+                onClick={() => setPreviewExpanded((current) => !current)}
+              >
+                <Icon name={previewExpanded ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={15} aria-hidden />
+              </button>
               <button
                 type="button"
                 className="chat-canvas-preview__close focus-ring"

@@ -5,8 +5,10 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 
 const previousHome = process.env.HOME;
+const previousCovenHome = process.env.COVEN_HOME;
 const home = await mkdtemp(path.join(tmpdir(), "cave-conversations-"));
 process.env.HOME = home;
+process.env.COVEN_HOME = path.join(home, ".coven");
 
 const {
   deleteConversation,
@@ -15,6 +17,7 @@ const {
   loadConversation,
   saveConversation,
 } = await import("./cave-conversations.ts");
+const { mapConversationHistoryTurns } = await import("./chat-turn-state.ts");
 
 assert.equal(isSafeConversationSessionId("session-1"), true);
 assert.equal(isSafeConversationSessionId("019e-a-valid-thread"), true);
@@ -24,6 +27,48 @@ assert.equal(isSafeConversationSessionId("nested\\session-1"), false);
 assert.equal(isSafeConversationSessionId("."), false);
 assert.equal(isSafeConversationSessionId(".."), false);
 assert.equal(isSafeConversationSessionId(""), false);
+
+assert.deepEqual(
+  mapConversationHistoryTurns([{
+    id: "turn-progress",
+    role: "assistant",
+    text: "Safe reply",
+    createdAt: "2026-07-25T00:00:00.000Z",
+    progress: [{
+      id: "opencode-compatibility",
+      label: "OpenCode compatibility notice",
+      detail: "unrecognized event",
+      status: "error",
+      createdAt: "2026-07-25T00:00:00.000Z",
+    }],
+  }]),
+  [{
+    id: "turn-progress",
+    parentId: undefined,
+    role: "assistant",
+    text: "Safe reply",
+    attachments: undefined,
+    reasoning: undefined,
+    tools: undefined,
+    progress: [{
+      id: "opencode-compatibility",
+      label: "OpenCode compatibility notice",
+      detail: "unrecognized event",
+      status: "error",
+      createdAt: "2026-07-25T00:00:00.000Z",
+    }],
+    durationMs: undefined,
+    usage: undefined,
+    costUsd: undefined,
+    responseMetadata: undefined,
+    error: undefined,
+    lifecycle: undefined,
+    createdAt: "2026-07-25T00:00:00.000Z",
+    origin: undefined,
+    voiceCallId: undefined,
+  }],
+  "persisted compatibility diagnostics round-trip into the client transcript after reload",
+);
 
 await saveConversation({
   sessionId: "delete-me",
@@ -466,6 +511,11 @@ if (previousHome === undefined) {
   delete process.env.HOME;
 } else {
   process.env.HOME = previousHome;
+}
+if (previousCovenHome === undefined) {
+  delete process.env.COVEN_HOME;
+} else {
+  process.env.COVEN_HOME = previousCovenHome;
 }
 await rm(home, { recursive: true, force: true });
 

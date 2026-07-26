@@ -100,6 +100,168 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /hermesApiConfig\(harnessSpawnEnv\(body\.familiarId\) as \{/,
+  "Hermes API credentials must come through the familiar-scoped environment boundary",
+);
+
+assert.match(
+  chatRoute,
+  /if \(hermesApi\) return runHermesApiAttempt\(apiPrompt\);/,
+  "a configured Hermes API must use the structured Responses SSE transport rather than terminal scraping",
+);
+
+assert.match(
+  chatRoute,
+  /hermesDirect && !hermesApi[\s\S]*?Hermes tool activity unavailable[\s\S]*?HERMES_API_URL/,
+  "the CLI fallback must disclose that structured tool activity is unavailable and how to enable it",
+);
+
+assert.match(
+  chatRoute,
+  /parseHermesResponsesEvent\(frame\.event, payload\)[\s\S]*?toolTracker\.envelopeToolUse\([\s\S]*?toolTracker\.envelopeToolResult\(/,
+  "Hermes structured tool starts and completions must flow through the shared persistent tracker",
+);
+
+assert.match(
+  chatRoute,
+  /previous_response_id: previousResponseId/,
+  "Hermes API follow-ups must continue from the stored Responses id, not Cave's stable conversation id",
+);
+
+assert.match(
+  chatRoute,
+  /req\.signal\.addEventListener\("abort", onAbort, \{ once: true \}\)[\s\S]*?req\.signal\.removeEventListener\("abort", onAbort\)/,
+  "Hermes API attempts must arm and clean up the shared detached-stream deadline",
+);
+
+assert.match(
+  chatRoute,
+  /text\/event-stream[\s\S]*?Hermes API protocol error/,
+  "Hermes API attempts must reject successful non-SSE responses",
+);
+
+assert.match(
+  chatRoute,
+  /frame\.data === "\[DONE\]"\) return true[\s\S]*?await reader\.cancel\(\)/,
+  "the Responses DONE sentinel must stop a still-open SSE reader",
+);
+
+assert.match(
+  chatRoute,
+  /!terminal && !abort\.signal\.aborted[\s\S]*?Hermes API stream ended before a terminal event/,
+  "an SSE EOF without a terminal event must be persisted as an error, never a completed response",
+);
+
+assert.match(
+  chatRoute,
+  /if \(abort\.signal\.aborted\) \{[\s\S]*?!runHandle\.stopRequested[\s\S]*?Hermes API stream aborted after client disconnect/,
+  "a detach-time Hermes fetch abort must persist as an error while explicit Stop remains a cancellation",
+);
+
+assert.match(
+  chatRoute,
+  /isHermesInvalidPreviousResponseIdError\(apiError\)[\s\S]*?resumeFailed = true/,
+  "only a structured invalid previous Responses id may use the fresh-session retry",
+);
+
+assert.match(
+  chatRoute,
+  /response\.status === 404 && isHermesMissingPreviousResponseError\(apiError\)/,
+  "Hermes's documented missing previous-response 404 must use the safe fresh-session retry",
+);
+
+assert.match(
+  chatRoute,
+  /event\.isError && previousResponseId && event\.invalidPreviousResponseId[\s\S]*?previousResponseId && event\.invalidPreviousResponseId/,
+  "streamed model and tool failures must not retry unless they explicitly reject the previous Responses id",
+);
+
+assert.match(
+  chatRoute,
+  /await runAttempt\(buildArgs\(null, retry\.prompt\), retry\.prompt\);/,
+  "the Responses fresh-session retry must receive replayed conversation context",
+);
+
+assert.match(
+  chatRoute,
+  /await response\.body\?\.cancel\(\)\.catch\(\(\) => undefined\)/,
+  "rejected Hermes responses must cancel their body before returning the connection to the pool",
+);
+
+assert.match(
+  chatRoute,
+  /settleOpenHermesTools[\s\S]*?toolTracker\.failOpenCalls[\s\S]*?kind: "tool_use"/,
+  "every terminal Hermes attempt must emit interrupted updates for open tool calls",
+);
+
+assert.match(
+  chatRoute,
+  /pushProgress\("harness-start", "Starting Hermes API", "running"\);/,
+  "Hermes API progress must not disclose the configured endpoint",
+);
+
+assert.doesNotMatch(
+  chatRoute,
+  /Starting Hermes API", "running", hermesApi\.baseUrl/,
+  "Hermes API URLs may contain reverse-proxy credentials and must never reach the stream",
+);
+
+assert.match(
+  chatRoute,
+  /envelopeToolUse\(event\.id, event\.name, input, assistantText\.length\)[\s\S]*?envelopeToolInput\(event\.id, input\)/,
+  "a canonical duplicate Hermes tool start must refresh the existing bubble input",
+);
+
+assert.match(
+  chatRoute,
+  /redirect: "error"/,
+  "Hermes API requests must reject redirects rather than crossing the validated endpoint boundary",
+);
+
+assert.match(
+  chatRoute,
+  /redactSecretsDeep\(event\.output\)[\s\S]*?flattenToolResultContent\(safeOutput\) \?\? formatToolInputValue\(safeOutput\)/,
+  "structured Hermes function output must display supported text blocks without exposing tool-supplied credentials",
+);
+
+assert.match(
+  chatRoute,
+  /if \(event\.isError\) recordStdoutErrorTail\("Hermes API stream failed", true\)[\s\S]*?recordStdoutErrorTail\("Hermes API stream failed", true\)/,
+  "terminal Hermes failures must persist only a fixed diagnostic, never endpoint-provided error text",
+);
+
+assert.match(
+  chatRoute,
+  /JSON\.parse\(frame\.data\)[\s\S]*?Hermes API protocol error: malformed SSE payload[\s\S]*?return true/,
+  "malformed Hermes SSE data must fail and terminate the attempt rather than allowing a later terminal frame to succeed",
+);
+
+assert.match(
+  chatRoute,
+  /if \(!frame\.data\.trim\(\)\) return false;[\s\S]*?if \(frame\.data === "\[DONE\]"\) return true;/,
+  "empty Hermes SSE keepalive frames must be ignored before JSON parsing",
+);
+
+assert.match(
+  chatRoute,
+  /case "done":\s*if \(event\.id\) \{\s*hermesResponseId = event\.id;\s*if \(!sessionId\) announceSession\(event\.id\);/,
+  "terminal Responses events must retain response ids even when no earlier session event arrived",
+);
+
+assert.match(
+  chatRoute,
+  /hermesDirect && hermesApi\s*\? !result\.is_error && hermesResponseId\s*\? hermesResponseId\s*:\s*existingConversation\?\.harnessSessionId \?\? null/,
+  "failed Hermes API turns must retain only a prior successful Responses id, never a failed first-turn id",
+);
+
+assert.match(
+  chatRoute,
+  /hermesCallNamesById\.set\(event\.id, event\.name\)[\s\S]*?if \(event\.isFinal\) \{\s*const name = hermesCallNamesById\.get\(id\);\s*if \(name\) boundarySentinel\?\.observe\(name, next\);/,
+  "final streamed Hermes tool arguments must pass through the runtime boundary sentinel",
+);
+
+assert.match(
+  chatRoute,
   /\.\.\.\(persistedTools \? \{ tools: persistedTools \} : \{\}\)/,
   "tools persist on the assistant turn alongside usage and cost",
 );
@@ -132,6 +294,57 @@ assert.match(
   assert.equal(secondDone.id, second.id, "second post pairs with the remaining open call");
   assert.equal(secondDone.status, "error");
   assert.equal(secondDone.durationMs, 300, "duration measured from the second call's own start");
+}
+
+// Responses function calls are announced before their standard argument-delta
+// stream completes. Updating the same envelope id must replace the partial
+// input in both the live event and the persisted snapshot.
+{
+  const tracker = new ToolCallTracker();
+  const started = tracker.envelopeToolUse("call-args", "shell");
+  assert.ok(started);
+  const partial = tracker.envelopeToolInput("call-args", '{"command":');
+  assert.deepEqual(partial, { id: "call-args", name: "shell", input: '{"command":', status: "running" });
+  const complete = tracker.envelopeToolInput("call-args", '{"command":"pwd"}');
+  assert.deepEqual(complete, { id: "call-args", name: "shell", input: '{"command":"pwd"}', status: "running" });
+  assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}');
+}
+
+// Hermes progress may announce the native id before the canonical Responses
+// item supplies final arguments. The route's duplicate-start update preserves
+// the one stable bubble while replacing that incomplete input.
+{
+  const tracker = new ToolCallTracker();
+  tracker.envelopeToolUse("call-progress", "shell");
+  assert.deepEqual(
+    tracker.envelopeToolUse("call-progress", "shell", '{"command":"pwd"}'),
+    { id: "call-progress", name: "shell", input: '{"command":"pwd"}', status: "running" },
+    "the canonical duplicate start refreshes the existing stable bubble",
+  );
+  const refreshed = tracker.envelopeToolInput("call-progress", '{"command":"pwd"}');
+  assert.deepEqual(refreshed, {
+    id: "call-progress", name: "shell", input: '{"command":"pwd"}', status: "running",
+  });
+  assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}');
+}
+
+// A terminal stream failure must settle the SAME live tool id, so the UI and
+// persisted turn agree instead of leaving a running bubble until refresh.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  const started = tracker.envelopeToolUse("call-interrupted", "shell", '{"command":"pwd"}');
+  assert.ok(started);
+  t = 250;
+  assert.deepEqual(tracker.failOpenCalls("[stream ended]"), [{
+    id: "call-interrupted",
+    name: "shell",
+    output: "[stream ended]",
+    status: "error",
+    durationMs: 250,
+  }]);
+  assert.deepEqual(tracker.failOpenCalls(), [], "settling open calls twice must not duplicate tool events");
+  assert.equal(tracker.snapshot()[0]?.status, "error");
 }
 
 // Behavioral: a post with no open call still surfaces, under a fresh id.
@@ -280,6 +493,11 @@ assert.match(
       { type: "text", text: "two" },
     ]),
     "one\ntwo",
+  );
+  assert.equal(
+    flattenToolResultContent([{ type: "input_text", text: "tool output" }]),
+    "tool output",
+    "Responses function output blocks flatten to their text rather than protocol scaffolding",
   );
   assert.equal(flattenToolResultContent(null), undefined);
 }
