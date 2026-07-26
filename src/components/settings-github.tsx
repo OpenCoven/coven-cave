@@ -1,20 +1,19 @@
 "use client";
 
 /**
- * GitHub settings — the organization scope the GitHub surface pulls from.
+ * Code-page GitHub settings — the organization scope applied across the
+ * PRs, Issues, and Reviews tabs.
  *
- * By default Cave surfaces every organization the authenticated account belongs
- * to. Here the operator can narrow that to a chosen subset; the scope persists
- * in app preferences (`github.orgScope`, empty = all) and the GitHub surface
- * applies it consistently. The membership list is read live from
- * `/api/github/activity`, the same source the surface's own org filter uses.
+ * Empty `github.orgScope` means every membership. A selected subset persists
+ * in app preferences and is consumed by GitHubView itself, so the setting is
+ * shared with the standalone GitHub surface without duplicating filter logic.
  */
 
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { SettingsOverview } from "@/components/settings-overview";
-import { SettingsGroup } from "@/components/ui/settings-group";
-import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Segmented } from "@/components/ui/settings-controls";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Popover, PopoverBody } from "@/components/ui/popover";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useAppPreferences, updateAppPreferences } from "@/lib/app-preferences";
@@ -29,16 +28,19 @@ type OrgLoad =
 
 type ScopeMode = "all" | "selected";
 
-export function GithubSection() {
+export function GithubOrganizationSettings() {
   const baseId = useId();
+  const anchorRef = useRef<HTMLButtonElement>(null);
   const { announce } = useAnnouncer();
   const scope = useAppPreferences().github.orgScope;
   const scoped = scope.length > 0;
 
+  const [open, setOpen] = useState(false);
   const [load, setLoad] = useState<OrgLoad>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    if (!open) return;
     let cancelled = false;
     setLoad({ status: "loading" });
     (async () => {
@@ -60,7 +62,7 @@ export function GithubSection() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [open, reloadKey]);
 
   const memberships = load.status === "ready" ? load.organizations : [];
 
@@ -97,97 +99,132 @@ export function GithubSection() {
   const canSelect = memberships.length > 0 || scoped;
 
   return (
-    <section className="max-w-none space-y-6" aria-labelledby={`${baseId}-title`}>
-      <h2 id={`${baseId}-title`} className="sr-only">
-        GitHub
-      </h2>
-      <SettingsOverview section="github" />
-
-      <SettingsGroup
-        label="Organizations"
-        description="Choose which GitHub organizations the GitHub surface pulls issues, pull requests, and repositories from."
+    <>
+      <IconButton
+        ref={anchorRef}
+        icon="ph:gear-six-bold"
+        size="sm"
+        aria-label="GitHub organization settings"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title="GitHub organization settings"
+        onClick={() => setOpen((value) => !value)}
+      />
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={anchorRef}
+        placement="bottom-end"
+        minWidth={320}
+        ariaLabel="GitHub organization settings"
       >
-        <SettingControlRow
-          label="Organization scope"
-          hint={
-            scoped
-              ? `Limited to ${scope.length} organization${scope.length === 1 ? "" : "s"}.`
-              : "All organizations you belong to."
-          }
-        >
-          <Segmented
-            options={["all", "selected"] as const}
-            value={scoped ? "selected" : "all"}
-            onChange={setMode}
-            getLabel={(o) => (o === "all" ? "All" : "Selected")}
-            getTitle={(o) =>
-              o === "all"
-                ? "Include every organization you belong to"
-                : "Include only the organizations you choose below"
-            }
-            ariaLabel="GitHub organization scope"
-          />
-        </SettingControlRow>
+        <PopoverBody className="w-80">
+          <header className="border-b border-[var(--border-hairline)] px-2 pb-3 pt-2">
+            <h2 id={`${baseId}-title`} className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">
+              GitHub organizations
+            </h2>
+            <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+              Choose what appears in Code’s PRs, Issues, and Reviews.
+            </p>
+          </header>
 
-        <div className="px-4 pb-4">
-          {load.status === "loading" ? (
-            <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">Reading your GitHub memberships…</p>
-          ) : load.status === "unauthed" ? (
-            <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
-              Connect a GitHub token on the GitHub surface to choose specific organizations.
-            </p>
-          ) : load.status === "error" ? (
-            <p className="flex flex-wrap items-center gap-2 text-[length:var(--text-sm)] text-[var(--text-muted)]" role="alert">
-              Couldn’t read your organizations.
-              <Button variant="ghost" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
-                Try again
-              </Button>
-            </p>
-          ) : !scoped ? (
-            <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
-              {memberships.length > 0
-                ? `Every organization is included (${memberships.length} available). Switch to “Selected” to narrow the surface.`
-                : "No organization memberships found for this account."}
-            </p>
-          ) : (
-            <div className="space-y-3">
-              <ul className="grid gap-1.5 sm:grid-cols-2" aria-label="Included organizations">
-                {rows.map((org) => {
-                  const checked = scope.includes(org);
-                  const stale = !memberships.includes(org);
-                  return (
-                    <li key={org}>
-                      <label className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]">
-                        <input
-                          type="checkbox"
-                          className="focus-ring h-4 w-4 accent-[var(--accent-presence)]"
-                          checked={checked}
-                          onChange={() => toggleOrg(org)}
-                        />
-                        <Icon name="ph:users-three" width={13} height={13} aria-hidden className="text-[var(--text-muted)]" />
-                        <span className="min-w-0 truncate">{org}</span>
-                        {stale ? (
-                          <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">not a current member</span>
-                        ) : null}
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-              {canSelect ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  leadingIcon="ph:arrow-counter-clockwise"
-                  onClick={() => setMode("all")}
-                >
-                  Reset to all organizations
-                </Button>
-              ) : null}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-2 py-3">
+            <div className="min-w-0">
+              <p className="text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">
+                Organization scope
+              </p>
+              <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                {scoped
+                  ? `${scope.length} organization${scope.length === 1 ? "" : "s"} selected.`
+                  : "All organizations you belong to."}
+              </p>
             </div>
-          )}
-        </div>
-      </SettingsGroup>
-    </section>
+            <Segmented
+              options={["all", "selected"] as const}
+              value={scoped ? "selected" : "all"}
+              onChange={setMode}
+              getLabel={(option) => (option === "all" ? "All" : "Selected")}
+              getTitle={(option) =>
+                option === "all"
+                  ? "Include every organization you belong to"
+                  : "Include only the organizations you choose below"
+              }
+              ariaLabel="GitHub organization scope"
+            />
+          </div>
+
+          <div className="max-h-64 overflow-y-auto px-2 py-3" aria-labelledby={`${baseId}-title`}>
+            {load.status === "loading" ? (
+              <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                Reading your GitHub memberships…
+              </p>
+            ) : load.status === "unauthed" ? (
+              <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                Connect GitHub from PRs, Issues, or Reviews to choose specific organizations.
+              </p>
+            ) : load.status === "error" ? (
+              <div className="flex flex-wrap items-center gap-2" role="alert">
+                <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                  Couldn’t read your organizations.
+                </p>
+                <Button variant="ghost" size="xs" onClick={() => setReloadKey((key) => key + 1)}>
+                  Try again
+                </Button>
+              </div>
+            ) : !scoped ? (
+              <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                {memberships.length > 0
+                  ? `Every organization is included (${memberships.length} available). Switch to “Selected” to narrow Code.`
+                  : "No organization memberships found for this account."}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <ul className="grid gap-1.5" aria-label="Included organizations">
+                  {rows.map((org) => {
+                    const checked = scope.includes(org);
+                    const stale = !memberships.includes(org);
+                    return (
+                      <li key={org}>
+                        <label className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]">
+                          <input
+                            type="checkbox"
+                            className="focus-ring h-4 w-4 accent-[var(--accent-presence)]"
+                            checked={checked}
+                            onChange={() => toggleOrg(org)}
+                          />
+                          <Icon
+                            name="ph:users-three"
+                            width={13}
+                            height={13}
+                            aria-hidden
+                            className="shrink-0 text-[var(--text-muted)]"
+                          />
+                          <span className="min-w-0 flex-1 truncate">{org}</span>
+                          {stale ? (
+                            <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                              not a current member
+                            </span>
+                          ) : null}
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {canSelect ? (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    leadingIcon="ph:arrow-counter-clockwise"
+                    onClick={() => setMode("all")}
+                  >
+                    Reset to all organizations
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </PopoverBody>
+      </Popover>
+    </>
   );
 }
