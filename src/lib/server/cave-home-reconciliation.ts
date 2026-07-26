@@ -148,6 +148,26 @@ async function digestDir(target: string): Promise<{ hash: string; bytes: number 
   return { hash: hash.digest("hex"), bytes };
 }
 
+/**
+ * Cheap lstat-only classification. Unlike pathInfo it never reads file
+ * contents or recurses into directories, so callers that only need `kind`
+ * (steady-state reconciliation: legacy absent, verified compatibility
+ * bridge, deferred entries, per-store override) stay O(1) instead of
+ * re-hashing whole canonical stores under the global lock on every
+ * startup (cave-573l).
+ */
+async function statPath(target: string): Promise<PathInfo> {
+  try {
+    const info = await lstat(target);
+    const kind: PathInfo["kind"] = info.isSymbolicLink() ? "symlink" : info.isDirectory() ? "dir" : "file";
+    return { kind, mtimeMs: info.mtimeMs, size: info.size };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "missing" };
+    throw error;
+  }
+}
+
+/** Full classification including content hashes; reads every byte of files and directories. */
 async function pathInfo(target: string): Promise<PathInfo> {
   try {
     const info = await lstat(target);
@@ -700,7 +720,7 @@ async function retireExpectedPath(
   // The pathname may have changed after its final inspection but before the
   // atomic rename. Put those bytes back when the old pathname is still vacant;
   // otherwise keep the retired copy so neither concurrent writer is lost.
-  const targetMissing = (await pathInfo(target)).kind === "missing";
+  const targetMissing = (await statPath(target)).kind === "missing";
   if (targetMissing) {
     await rename(retired, target);
   }
@@ -710,7 +730,7 @@ async function retireExpectedPath(
 }
 
 async function restoreInterruptedRetirement(target: string): Promise<void> {
-  if ((await pathInfo(target)).kind !== "missing") return;
+  if ((await statPath(target)).kind !== "missing") return;
   const parent = path.dirname(target);
   const prefix = `.${path.basename(target)}.migration-retired-`;
   const retired = (await readdir(parent).catch((error) => {
@@ -798,7 +818,7 @@ async function replaceExpectedPath(
   } finally {
     if (installed) {
       await rm(retired, { recursive: true, force: true });
-    } else if ((await pathInfo(destination)).kind === "missing") {
+    } else if ((await statPath(destination)).kind === "missing") {
       await rename(retired, destination);
     }
   }
@@ -1189,7 +1209,7 @@ async function validateCanonical(
   canonicalPath: string,
   knownInfo?: PathInfo,
 ): Promise<void> {
-  const info = knownInfo ?? await pathInfo(canonicalPath);
+  const info = knownInfo ?? await statPath(canonicalPath);
   if (info.kind === "missing" || info.kind === "symlink") throw new Error("canonical path is missing");
   if (entry.strategy === "directory") {
     if (info.kind !== "dir") throw new Error("canonical directory is invalid");
@@ -1260,7 +1280,7 @@ async function ensureCompatibility(
       // concurrent/invalid canonical change. Remove that attempted bridge
       // before entering the ordinary-file fallback; otherwise copyFile/cp can
       // follow the link and leave the retired legacy bytes hidden.
-      if ((await pathInfo(legacyPath)).kind === "symlink") {
+      if ((await statPath(legacyPath)).kind === "symlink") {
         await rm(legacyPath, { recursive: true, force: true });
       }
       const fallbackCanonical = await pathInfo(canonicalPath);
@@ -1341,7 +1361,7 @@ async function syncManagedMirror(
       } finally {
         if (installed) {
           await rm(retired, { recursive: true, force: true });
-        } else if ((await pathInfo(legacyPath)).kind === "missing") {
+        } else if ((await statPath(legacyPath)).kind === "missing") {
           await rename(retired, legacyPath);
         }
       }
@@ -1452,8 +1472,13 @@ async function reconcileEntry(
   // missing canonical path can be rebuilt from an older compatibility copy.
   await restoreInterruptedRetirement(legacyPath);
   await restoreInterruptedRetirement(canonicalPath);
-  let legacyInfo = await pathInfo(legacyPath);
-  let canonicalInfo = await pathInfo(canonicalPath);
+  // Classify with cheap stats first: on every steady-state startup the legacy
+  // path is absent or a verified compatibility bridge, and none of the early
+  // decisions below consume a content hash. Hashing lazily keeps large
+  // canonical stores (conversations/) from being re-digested under the
+  // cross-process lock on every launch (cave-573l).
+  let legacyInfo = await statPath(legacyPath);
+  let canonicalInfo = await statPath(canonicalPath);
   const prior = journal.entries[entry.legacy];
 
   if (prior?.decision === "deferred" && !options.action) {
@@ -1495,12 +1520,19 @@ async function reconcileEntry(
     if (
       !samePath(legacyPath, canonicalPath) &&
       legacyInfo.kind !== "missing" && legacyInfo.kind !== "symlink" &&
-      canonicalInfo.kind !== "missing" && canonicalInfo.kind !== "symlink" &&
-      legacyInfo.hash !== canonicalInfo.hash
+      canonicalInfo.kind !== "missing" && canonicalInfo.kind !== "symlink"
     ) {
-      const backup = await createRecoveryBundle(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, journal, options);
-      result.backedUp.push(backup.directory);
-      journalEntry.backupId = backup.id;
+      // Deferring a real pair needs content hashes: they decide whether the
+      // copies diverge and verify the recovery bundle when they do.
+      legacyInfo = await pathInfo(legacyPath);
+      canonicalInfo = await pathInfo(canonicalPath);
+      journalEntry.legacyHash = legacyInfo.hash;
+      journalEntry.canonicalHash = canonicalInfo.hash;
+      if (legacyInfo.hash !== canonicalInfo.hash) {
+        const backup = await createRecoveryBundle(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, journal, options);
+        result.backedUp.push(backup.directory);
+        journalEntry.backupId = backup.id;
+      }
     }
     journalEntry.decision = "deferred";
     journalEntry.summary = "User deferred this migration; existing copies remain in place.";
@@ -1540,6 +1572,17 @@ async function reconcileEntry(
     result.resolved.push(entry.legacy);
     return;
   }
+
+  // From here on the legacy side is a real file or directory that is neither
+  // absent, a verified bridge, nor the canonical path itself: every remaining
+  // decision copies, verifies, backs up, or merges real bytes, so upgrade the
+  // cheap stats to full content hashes now.
+  legacyInfo = await pathInfo(legacyPath);
+  canonicalInfo = await pathInfo(canonicalPath);
+  journalEntry.legacyHash = legacyInfo.hash;
+  journalEntry.canonicalHash = canonicalInfo.hash;
+  journalEntry.legacyMtimeMs = legacyInfo.mtimeMs;
+  journalEntry.canonicalMtimeMs = canonicalInfo.mtimeMs;
 
   if (canonicalInfo.kind === "missing") {
     // Keep the legacy source intact until a fully copied and hash-verified
@@ -1728,9 +1771,12 @@ export async function caveHomeReconciliationStatus(
   for (const entry of entries) {
     const legacyPath = path.join(covenHome(), entry.legacy);
     const canonicalPath = canonicalPathFor(entry);
-    const legacyInfo = await pathInfo(legacyPath);
+    // Stat-only classification first: steady-state entries (legacy absent,
+    // verified bridge, per-store override, unchanged managed mirror) must not
+    // re-hash canonical stores on every status poll (cave-573l).
+    let legacyInfo = await statPath(legacyPath);
     if (legacyInfo.kind === "missing") continue;
-    const canonicalInfo = await pathInfo(canonicalPath);
+    let canonicalInfo = await statPath(canonicalPath);
     const prior = journal.entries[entry.legacy];
     const canonicalValid = await validateCanonical(entry, canonicalPath, canonicalInfo).then(() => true, () => false);
     if (
@@ -1738,12 +1784,13 @@ export async function caveHomeReconciliationStatus(
       await isCanonicalCompatibilityLink(legacyPath, canonicalPath)
     ) continue;
     if (samePath(legacyPath, canonicalPath) && canonicalValid) continue;
-    const managed = Boolean(
-      canonicalValid &&
-      prior?.managedMirrorHash &&
-      legacyInfo.hash === prior.managedMirrorHash,
-    );
-    if (managed) continue;
+    if (canonicalValid && prior?.managedMirrorHash) {
+      legacyInfo = await pathInfo(legacyPath);
+      if (legacyInfo.hash === prior.managedMirrorHash) continue;
+    }
+    // Real conflict or pending migration: hash both sides for review details.
+    if (!legacyInfo.hash) legacyInfo = await pathInfo(legacyPath);
+    canonicalInfo = await pathInfo(canonicalPath);
     const isPending = canonicalInfo.kind === "missing" && legacyInfo.kind !== "symlink";
     (isPending ? pending : conflicts).push(entry.legacy);
     const backupPath = prior?.backupId ? path.join(migrationBackupRoot(), prior.backupId) : undefined;
