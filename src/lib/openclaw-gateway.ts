@@ -68,6 +68,19 @@ function gatewayDispatchEnabled(env: NodeJS.ProcessEnv): boolean {
   return env[GATEWAY_DISPATCH_ENV] === "1" || env[GATEWAY_DISPATCH_ENV] === "true";
 }
 
+/**
+ * The published client delegates device-identity creation, challenge signing,
+ * and device-token lifecycle to hostDeps. Cave has not yet implemented the
+ * required cross-platform OS credential-store boundary, so the route must not
+ * activate a write-capable Gateway transport with process-environment tokens.
+ */
+export function openClawGatewayPairedDeviceAuthStatus(): { available: boolean; reason?: string } {
+  return {
+    available: false,
+    reason: "Cave has no cross-platform OS-backed paired-device credential store for OpenClaw Gateway dispatch",
+  };
+}
+
 function supportedHello(hello: GatewayHello): string | null {
   if (hello.protocol !== PROTOCOL_VERSION) return `Gateway protocol ${hello.protocol} is not supported`;
   if (hello.auth.role !== "operator") return "Gateway did not grant the operator role";

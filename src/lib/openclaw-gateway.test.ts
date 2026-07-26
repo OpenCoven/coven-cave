@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   dispatchOpenClawGatewayTurn,
   normalizeOpenClawGatewayChatEvent,
+  openClawGatewayPairedDeviceAuthStatus,
   textFromOpenClawGatewayMessage,
 } from "./openclaw-gateway.ts";
 
@@ -61,6 +62,14 @@ assert.equal(
   "ab",
 );
 assert.equal(textFromOpenClawGatewayMessage({ raw: "not published" }), undefined);
+assert.deepEqual(
+  openClawGatewayPairedDeviceAuthStatus(),
+  {
+    available: false,
+    reason: "Cave has no cross-platform OS-backed paired-device credential store for OpenClaw Gateway dispatch",
+  },
+  "Cave must not activate the Gateway route before its host-owned paired-device credentials are secure",
+);
 
 const missingRequestId = await dispatchOpenClawGatewayTurn({
   sessionKey: expected.sessionKey,

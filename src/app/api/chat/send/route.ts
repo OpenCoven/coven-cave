@@ -129,7 +129,10 @@ import {
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
-import { dispatchOpenClawGatewayTurn } from "@/lib/openclaw-gateway";
+import {
+  dispatchOpenClawGatewayTurn,
+  openClawGatewayPairedDeviceAuthStatus,
+} from "@/lib/openclaw-gateway";
 import {
   OpenClawAgentResolutionError,
   extractOpenClawSessionId,
@@ -653,7 +656,9 @@ function openClawChatResponse(args: {
       // Gateway it deliberately never starts a second CLI turn.
       let gatewayAssistantText = "";
       let gatewayAssistantTextEmitted = false;
-      const gatewayDispatch = await dispatchOpenClawGatewayTurn({
+      const gatewayAuth = openClawGatewayPairedDeviceAuthStatus();
+      const gatewayDispatch = gatewayAuth.available
+        ? await dispatchOpenClawGatewayTurn({
         sessionKey: openClawSessionKey(conversationId),
         agentId,
         message: args.harnessPrompt,
@@ -688,7 +693,8 @@ function openClawChatResponse(args: {
             pushProgress("openclaw-gateway", "OpenClaw Gateway", "error", event.message);
           }
         },
-      });
+      })
+        : { kind: "unavailable" as const, reason: gatewayAuth.reason ?? "Gateway paired-device authentication is unavailable" };
       if (gatewayDispatch.kind === "indeterminate") {
         pushProgress("openclaw-gateway", "OpenClaw Gateway dispatch is indeterminate", "error", gatewayDispatch.reason);
         push({ kind: "error", code: "openclaw_gateway_indeterminate", message: gatewayDispatch.reason });

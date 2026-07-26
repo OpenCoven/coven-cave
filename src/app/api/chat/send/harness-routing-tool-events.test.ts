@@ -44,6 +44,11 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /openClawGatewayPairedDeviceAuthStatus\(\)[\s\S]*?gatewayAuth\.available[\s\S]*?dispatchOpenClawGatewayTurn/,
+  "the route must retain the CLI fallback until an OS-backed paired-device credential store can activate Gateway dispatch",
+);
+assert.match(
+  chatRoute,
   /gatewayDispatch\.kind === "accepted"[\s\S]*?return;[\s\S]*?pushProgress\("openclaw-start", "Starting OpenClaw bridge"/,
   "an accepted Gateway turn exits before the CLI branch, preventing duplicate transport ownership",
 );
