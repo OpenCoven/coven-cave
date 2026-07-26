@@ -56,9 +56,14 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  flex: none;
   height: 26px;
   padding: 0 var(--space-3);
-  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  /* Match the "Search documents…" input radius (--radius-control) rather than a
+     pill so the header actions read as one family and the label stays on a
+     single row when the bar is tight. */
+  border-radius: var(--radius-control);
   border: 1.5px dashed color-mix(in oklch, var(--accent-presence) 60%, transparent);
   background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
   font-size: var(--text-xs);
