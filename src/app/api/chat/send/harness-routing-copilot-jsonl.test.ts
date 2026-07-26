@@ -257,8 +257,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /resolveGrokCompatibility\(await probeGrokRunCapabilities\(grokLaunchCommand\(\), harnessSpawnEnv\(body\.familiarId\)\)\)/,
-  "Grok must probe the exact launcher before selecting a structured schema",
+  /const grokCapabilities = grokDirect[\s\S]*?probeReadyLocalRuntimeCapability\([\s\S]*?runner: "grok",[\s\S]*?probe: \(\) => probeGrokRunCapabilities\([\s\S]*?command: localRuntimePlan!\.command,[\s\S]*?fixedArgs: localRuntimePlan!\.fixedArgs[\s\S]*?localRuntimePlan!\.env[\s\S]*?const grokCompatibility = grokCapabilities[\s\S]*?resolveGrokCompatibility\(grokCapabilities\)/,
+  "Grok must probe the exact preflight-approved launcher and environment before selecting a structured schema",
 );
 assert.match(
   chatRoute,
