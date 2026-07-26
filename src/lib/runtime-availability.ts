@@ -224,7 +224,12 @@ function inspectWithStatFile(candidate: string, statFile: StatFileFn): Candidate
 }
 
 function pathEntries(env: Record<string, string | undefined>, platform: NodeJS.Platform): string[] {
-  const raw = env.PATH ?? env.Path ?? env.path ?? "";
+  // Windows conventionally exposes its environment entry as `Path`. Prefer it
+  // there so a copied Windows spawn environment is not accidentally shadowed
+  // by a host-provided POSIX `PATH` during cross-platform resolution.
+  const raw = platform === "win32"
+    ? env.Path ?? env.PATH ?? env.path ?? ""
+    : env.PATH ?? env.Path ?? env.path ?? "";
   const delimiter = platform === "win32" ? ";" : ":";
   // Cap the walk so a pathological PATH cannot turn the per-turn gate into
   // unbounded filesystem work.
