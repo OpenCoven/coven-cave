@@ -133,8 +133,17 @@ assert.match(status, /const compatible =[\s\S]*packageVerified[\s\S]*!!probe\.ve
 assert.match(status, /const state = openCovenToolState/, "server status derives a truthful explicit state");
 assert.match(status, /state,/, "server status returns the derived state");
 assert.match(status, /verifyOpenCovenToolInstall[\s\S]*refreshCovenSpawnEnv\(\)/, "post-install verification refreshes PATH before probing the selected tool");
-assert.match(about, /import \{ OpenCovenToolsUpdate \}/, "About imports the OpenCoven tools update component");
-assert.match(about, /<OpenCovenToolsUpdate showDiagnosticsAction=\{false\} \/>/, "About renders the live OpenCoven tools control sheet without a duplicate diagnostics action");
+assert.match(about, /import \{[\s\S]*OpenCovenToolsUpdate[\s\S]*\}/, "About imports the OpenCoven tools update component");
+assert.match(
+  about,
+  /<OpenCovenToolsUpdate[\s\S]*showDiagnosticsAction=\{false\}[\s\S]*onSnapshotChange=\{handleToolSnapshot\}/,
+  "About renders the live OpenCoven tools control sheet and consumes its live diagnostic snapshot",
+);
+assert.match(
+  src,
+  /onSnapshotChange\?\.\(\{[\s\S]*tools,[\s\S]*installJobs,[\s\S]*installResults/,
+  "the live tools sheet reports installer jobs and results to the About hero",
+);
 assert.match(runner, /src\/components\/open-coven-tools-update\.test\.ts/, "OpenCoven tools update test is wired into the test:app suite (scripts/run-tests.mjs)");
 assert.match(runner, /src\/lib\/opencoven-tools-state\.test\.ts/, "OpenCoven tool state tests are wired into the test suite");
 assert.match(runner, /src\/lib\/opencoven-tool-verification\.test\.ts/, "post-install verification scenarios are wired into the app test suite");
