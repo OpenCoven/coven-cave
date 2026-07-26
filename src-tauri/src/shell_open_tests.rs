@@ -53,10 +53,11 @@ fn normalizes_only_absolute_existing_picked_directories() {
 #[test]
 fn folder_picker_is_summoned_to_the_foreground() {
     let src = include_str!("shell_open_commands.rs");
-    // Windows: the FolderBrowserDialog gets a TopMost owner form passed to
-    // ShowDialog so it can't open buried/unfocused.
+    // Windows: IFileOpenDialog gets a TopMost owner form handle so it cannot
+    // open buried or unfocused.
     assert!(
-        src.contains("$owner.TopMost = $true") && src.contains("$d.ShowDialog($owner)"),
+        src.contains("$owner.TopMost = $true")
+            && src.contains("[CovenFolderPicker]::Pick($owner.Handle)"),
         "the Windows folder picker must own its dialog with a TopMost form (foreground)",
     );
     // macOS: activate before `choose folder` so it comes to the front.
@@ -68,5 +69,26 @@ fn folder_picker_is_summoned_to_the_foreground() {
     assert!(
         src.contains("--file-selection") && src.contains("--modal"),
         "the Linux (zenity) folder picker must run modal",
+    );
+}
+
+#[test]
+fn folder_picker_shows_hidden_directories() {
+    let src = include_str!("shell_open_commands.rs");
+    assert!(
+        src.contains("invisibles true"),
+        "the macOS folder picker must show dot-prefixed directories",
+    );
+    assert!(
+        src.contains("--show-hidden"),
+        "the Linux (zenity) folder picker must show dot-prefixed directories",
+    );
+    assert!(
+        src.contains("FOS_FORCESHOWHIDDEN"),
+        "the Windows folder picker must request hidden directories from IFileOpenDialog",
+    );
+    assert!(
+        !src.contains("$d.ShowHiddenFiles"),
+        "Windows PowerShell uses .NET Framework, whose FolderBrowserDialog lacks ShowHiddenFiles",
     );
 }

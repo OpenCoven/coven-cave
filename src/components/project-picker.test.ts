@@ -25,7 +25,22 @@ assert.match(src, /DirectoryPickerModal/, "web fallback directory browser");
 assert.match(src, /export function ProjectPicker\(/, "picker exported");
 assert.match(src, /onChange\(NO_PROJECT_ID\);/, "explicit No-project row");
 assert.match(src, /Add project…/, "proactive add affordance (not 403-recovery-only)");
-assert.match(src, /aria-label="Filter projects"/, "filter input for long lists");
+assert.match(src, /aria-label="Filter projects"/, "typed project-name input is always available");
+assert.doesNotMatch(
+  src,
+  /projects\.length > 6 \? \([\s\S]*?aria-label="Filter projects"/,
+  "small project lists must not hide manual name entry",
+);
+assert.match(
+  src,
+  /projectForPickerQuery\(sortedProjects, query\)/,
+  "Enter resolves through the shared exact-name-first matcher",
+);
+assert.match(
+  src,
+  /event\.key !== "Enter"[\s\S]*?event\.preventDefault\(\);[\s\S]*?onChange\(match\.id\);[\s\S]*?close\(\);/,
+  "Enter selects the typed match and closes the picker",
+);
 assert.match(src, /aria-haspopup="dialog"/, "trigger announces the popover");
 assert.match(src, /role="alert"/, "add-flow failures surface inline, not silently");
 assert.match(src, /sortProjectsAlphabetically\(projects\)/, "picker renders projects alphabetically");

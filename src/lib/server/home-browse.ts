@@ -2,11 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 
-// Build-artifact / noise directories the folder browser hides. Dotfiles are
-// hidden separately (Finder-style), so a picker over $HOME stays readable.
+// Non-dot build-artifact / noise directories the folder browser hides. Dot
+// folders stay visible because they may themselves be intentional project
+// roots (for example, a configuration repository).
 const SKIP = new Set([
   "node_modules",
-  ".next",
   "dist",
   "build",
   "target",
@@ -202,7 +202,7 @@ export function createSubdirInBrowsableDir(
   return createSubdirWithinRoot(root, raw, requestedName);
 }
 
-/** Immediate visible subdirectories of `dir` (one level), sorted, noise-skipped. */
+/** Immediate subdirectories of `dir` (one level), sorted and noise-skipped. */
 export function listSubdirs(dir: string): DirEntry[] {
   let dirents: fs.Dirent[];
   try {
@@ -211,7 +211,7 @@ export function listSubdirs(dir: string): DirEntry[] {
     return [];
   }
   return dirents
-    .filter((d) => d.isDirectory() && !d.name.startsWith(".") && !SKIP.has(d.name))
+    .filter((d) => d.isDirectory() && !SKIP.has(d.name))
     .map((d) => ({ name: d.name, path: path.join(dir, d.name) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
