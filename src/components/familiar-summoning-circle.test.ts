@@ -28,6 +28,11 @@ assert.match(
   /fetch\("\/api\/familiars",\s*\{[\s\S]*?method:\s*"POST"/,
   "the circle should POST to /api/familiars",
 );
+assert.match(
+  source,
+  /vessel !== "local" \|\| h\.availability\?\.state === undefined \|\| h\.availability\.state === "ready"/,
+  "Local runtime choices must exclude installed runners the shared preflight says are not launchable",
+);
 assert.doesNotMatch(
   source,
   /onboarding\/setup/,
@@ -47,18 +52,13 @@ assert.match(
 );
 assert.match(
   source,
-  /const installedHarnesses = \(harnesses \?\? \[\]\)\.filter\([\s\S]*?\(h\.availability\?\.state \?\? "ready"\) === "ready"/,
-  "the summoning picker only offers runtimes proven safe to launch",
-);
-assert.match(
-  source,
-  /const unavailableHarnesses = \(harnesses \?\? \[\]\)\.flatMap\([\s\S]*?availability\.state !== "ready"[\s\S]*?unavailableHarnesses\.map\(\(h\) => \([\s\S]*?h\.availability\.message/,
-  "the summoning picker shows safe remediation for installed-but-unlaunchable runtimes",
+  /const unavailableHarnesses = vessel === "local" \? \(harnesses \?\? \[\]\)\.flatMap\([\s\S]*?availability\.state !== "ready"[\s\S]*?unavailableHarnesses\.map\(\(h\) => \([\s\S]*?h\.availability\.message/,
+  "the summoning picker shows safe local remediation without treating its local probe as an SSH capability check",
 );
 assert.match(
   source,
   /className="summoning-chiprow"[\s\S]*?<\/div>\s*\)}\s*\{unavailableHarnesses\.map/,
-  "an unavailable runtime remains explained even when another runtime is ready to select",
+  "an unavailable local runtime remains explained even when another runtime is ready to select",
 );
 assert.match(
   harnessesRoute,

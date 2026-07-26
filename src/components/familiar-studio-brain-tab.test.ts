@@ -20,6 +20,11 @@ assert.match(
 );
 assert.match(
   source,
+  /h\.availability && h\.availability\.state !== "ready"[\s\S]*?h\.availability\.message/,
+  "Runtime picker should reuse server-provided launchability remediation instead of treating an installed but unlaunchable CLI as ready",
+);
+assert.match(
+  source,
   /modelOptions\.map/,
   "Brain tab should render a model select from the catalog options",
 );

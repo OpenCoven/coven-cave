@@ -259,6 +259,7 @@ const CHAT_DETACH_MAX_MS = Math.max(
 type LocalRuntimePlan = LocalRuntimeCapabilityPlan & {
   command: string;
   fixedArgs: string[];
+  requiredFiles?: string[];
   env: NodeJS.ProcessEnv;
   unresolvedWindowsShim?: boolean;
   powerShellHostedCommand?: string;
@@ -266,7 +267,9 @@ type LocalRuntimePlan = LocalRuntimeCapabilityPlan & {
 
 function createLocalRuntimePlan(input: {
   runner: DirectRunnerId;
-  launch: Pick<CovenLaunchCommand, "command" | "fixedArgs" | "unresolvedWindowsShim">;
+  launch: Pick<CovenLaunchCommand, "command" | "fixedArgs" | "unresolvedWindowsShim"> & {
+    requiredFiles?: string[];
+  };
   env: NodeJS.ProcessEnv;
   availability?: RuntimeAvailability;
   powerShellHostedCommand?: string;
@@ -275,6 +278,7 @@ function createLocalRuntimePlan(input: {
     runner: input.runner,
     command: input.launch.command,
     env: input.env,
+    requiredFiles: input.launch.requiredFiles,
     unresolvedWindowsShim: input.launch.unresolvedWindowsShim === true,
     powerShellHostedCommand: input.powerShellHostedCommand,
   });
@@ -282,6 +286,7 @@ function createLocalRuntimePlan(input: {
     runner: input.runner,
     command: input.launch.command,
     fixedArgs: input.launch.fixedArgs,
+    ...(input.launch.requiredFiles ? { requiredFiles: input.launch.requiredFiles } : {}),
     env: input.env,
     availability,
     ...(input.launch.unresolvedWindowsShim
@@ -291,21 +296,6 @@ function createLocalRuntimePlan(input: {
       ? { powerShellHostedCommand: input.powerShellHostedCommand }
       : {}),
   };
-}
-
-function familiarEnvWithCanonicalPath(
-  familiarId: string,
-  canonicalEnv: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv {
-  const env = harnessSpawnEnv(familiarId);
-  const canonicalPath =
-    canonicalEnv.PATH ?? canonicalEnv.Path ?? canonicalEnv.path;
-  if (canonicalPath !== undefined) {
-    env.PATH = canonicalPath;
-    delete env.Path;
-    delete env.path;
-  }
-  return env;
 }
 
 type SendBody = {
@@ -1291,13 +1281,15 @@ export async function POST(req: Request) {
       })
     : null;
 
-  // Copilot's exact command is resolved once. The capability phase consumes
-  // that passive plan and cannot resolve a different npm shim. Its probe env
-  // is credential-free; the eventual model env keeps familiar-scoped values
-  // but is pinned to this same canonical PATH.
+  // Resolve the direct plan in the exact familiar-scoped environment passed to
+  // the child. The capability probe scrubs credentials only for `--version`;
+  // it must never discover a different launcher than the model spawn uses.
+  const copilotSpawnEnv = copilotDirect ? harnessSpawnEnv(body.familiarId) : null;
   const copilotManifestStream = copilotDirect ? copilotStreamSpec() : null;
   const copilotRuntimeLaunch = copilotManifestStream
-    ? await resolveCopilotRuntimeLaunch(copilotManifestStream.executable)
+    ? await resolveCopilotRuntimeLaunch(copilotManifestStream.executable, {
+        spawnEnv: () => copilotSpawnEnv!,
+      })
     : null;
   const copilotCapability = copilotManifestStream && copilotRuntimeLaunch
     ? copilotRuntimeLaunch.availability.state === "ready"
@@ -1316,22 +1308,24 @@ export async function POST(req: Request) {
     resolveCompatibility: () => resolveRuntimeCompatibility("copilot"),
   });
   const copilotStream = copilotRouting.spec;
-  const copilotCompatibilityDiagnostic = copilotRouting.compatibilityDiagnostic;
 
   let localRuntimePlan: LocalRuntimePlan | null = null;
   if (!sshRuntime && binding.harness !== "openclaw" && !(hermesDirect && hermesApi)) {
     if (
       copilotRuntimeLaunch &&
-      (copilotRuntimeLaunch.availability.state !== "ready" || copilotStream)
+      (
+        copilotRuntimeLaunch.availability.state !== "ready"
+        || copilotStream
+        || copilotRouting.mode === "blocked"
+      )
     ) {
       localRuntimePlan = createLocalRuntimePlan({
         runner: "copilot",
         launch: copilotRuntimeLaunch,
-        env: familiarEnvWithCanonicalPath(
-          body.familiarId,
-          copilotRuntimeLaunch.env,
-        ),
-        availability: copilotRuntimeLaunch.availability,
+        env: copilotRuntimeLaunch.env,
+        availability: copilotRouting.mode === "blocked"
+          ? copilotRouting.failure
+          : copilotRuntimeLaunch.availability,
       });
     } else if (openCodeDirect) {
       const env = openCodeSpawnEnv(body.familiarId);
@@ -2093,17 +2087,6 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
-      if (
-        copilotCompatibilityDiagnostic &&
-        copilotRuntimeLaunch?.availability.state === "ready"
-      ) {
-        pushProgress(
-          "copilot-client-compatibility",
-          "Copilot tool activity needs an update",
-          "error",
-          copilotCompatibilityDiagnostic,
-        );
-      }
       if (hermesDirect && !hermesApi) {
         // Do not fabricate tool bubbles from the CLI's presentation layer.
         // This gives the operator an actionable, privacy-safe degradation
@@ -3521,6 +3504,7 @@ export async function POST(req: Request) {
                         runner: localPlan.runner,
                         command: localPlan.command,
                         env: localPlan.env,
+                        requiredFiles: localPlan.requiredFiles,
                         unresolvedWindowsShim:
                           localPlan.unresolvedWindowsShim === true,
                         powerShellHostedCommand:
@@ -3558,6 +3542,7 @@ export async function POST(req: Request) {
                       ? ["ignore", "pipe", "pipe"]
                       : ["pipe", "pipe", "pipe"],
                     env: localPlan.env,
+                    shell: false,
                   }) as ChildProcessWithoutNullStreams;
                 } catch (error) {
                   const err = error as NodeJS.ErrnoException;

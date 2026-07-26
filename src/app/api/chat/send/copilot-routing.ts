@@ -1,8 +1,13 @@
 import {
+  copilotDirectStreamConfigured,
   copilotStreamSpec,
   type CopilotStreamSpec,
 } from "../../../../lib/copilot-stream.ts";
-import type { RuntimeAvailability } from "../../../../lib/runtime-availability.ts";
+import {
+  RUNTIME_AVAILABILITY_ERROR_CODES,
+  type RuntimeAvailability,
+  type RuntimeAvailabilityErrorCode,
+} from "../../../../lib/runtime-availability.ts";
 import {
   copilotCapabilityFailureMessage,
   type CopilotCapabilityDiagnostic,
@@ -10,7 +15,25 @@ import {
 
 export type CopilotChatRouting =
   | { mode: "direct-jsonl"; spec: CopilotStreamSpec; compatibilityDiagnostic: null }
-  | { mode: "plain"; spec: null; compatibilityDiagnostic: string | null };
+  | { mode: "plain"; spec: null; compatibilityDiagnostic: null }
+  | {
+      mode: "blocked";
+      spec: null;
+      compatibilityDiagnostic: string;
+      failure: Extract<RuntimeAvailability, { state: Exclude<RuntimeAvailability["state"], "ready"> }>;
+    };
+
+function blockedFailure(
+  state: "probe_failed" | "unsupported_runtime",
+  message: string,
+): Extract<RuntimeAvailability, { state: Exclude<RuntimeAvailability["state"], "ready"> }> {
+  return {
+    state,
+    runner: "copilot",
+    code: RUNTIME_AVAILABILITY_ERROR_CODES[state] as RuntimeAvailabilityErrorCode,
+    message,
+  };
+}
 
 /**
  * Keep the direct JSONL launch behind an explicit, testable capability gate.
@@ -33,17 +56,36 @@ export function resolveCopilotChatRouting(input: {
   const spec = copilotStreamSpec(input.capabilityVersion, input.eventProtocols, input.launchCommand);
   if (spec) return { mode: "direct-jsonl", spec, compatibilityDiagnostic: null };
 
+  // A registry that has not explicitly selected direct JSONL keeps the
+  // established Coven transport. Once it does, changing transports after a
+  // failed capability/configuration check could run a different launcher than
+  // the one just preflighted, so fail closed with runner-specific state.
+  if (!copilotDirectStreamConfigured()) {
+    return { mode: "plain", spec: null, compatibilityDiagnostic: null };
+  }
+
+  if (input.availability && input.availability.state !== "ready") {
+    return {
+      mode: "blocked",
+      spec: null,
+      compatibilityDiagnostic: input.availability.message,
+      failure: input.availability,
+    };
+  }
+
   const capabilityFailure = copilotCapabilityFailureMessage({
     version: input.capabilityVersion,
     diagnostic: input.capabilityDiagnostic,
     availability: input.availability,
   });
+  const probeTimedOut = input.capabilityDiagnostic === "probe-timeout";
+  const message = capabilityFailure ??
+    "This Copilot CLI or JSONL stream configuration is not compatible with Cave chat. Update the Copilot runtime schema or CLI, then try again.";
   return {
-    mode: "plain",
+    mode: "blocked",
     spec: null,
-    compatibilityDiagnostic:
-      capabilityFailure ??
-      "This Copilot CLI version is not yet compatible with Cave tool activity. Chat continues without live tool details; update the Copilot runtime schema or CLI.",
+    compatibilityDiagnostic: message,
+    failure: blockedFailure(probeTimedOut ? "probe_failed" : "unsupported_runtime", message),
   };
 }
 

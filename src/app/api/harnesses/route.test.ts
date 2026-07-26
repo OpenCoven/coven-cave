@@ -32,7 +32,7 @@ assert.match(
 );
 assert.match(
   source,
-  /async function adapterAvailability[\s\S]*?id === "copilot"[\s\S]*?const copilotLaunch = await resolveCopilotRuntimeLaunch\(stream\.executable\)[\s\S]*?availability: summarizeRuntimeAvailability\(copilotLaunch\.availability\)[\s\S]*?copilotLaunch/,
+  /async function adapterAvailability[\s\S]*?id === "copilot"[\s\S]*?const copilotLaunch = await resolveCopilotRuntimeLaunch\(stream\.executable,[\s\S]*?spawnEnv: \(\) => harnessSpawnEnv\(null\)[\s\S]*?availability: summarizeRuntimeAvailability\(copilotLaunch\.availability\)[\s\S]*?copilotLaunch/,
   "Copilot availability retains the shared exact launch plan for internal catalog probes",
 );
 assert.match(

@@ -846,7 +846,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                           .filter((h) => isBindableRuntimeChoice(h.id))
                           .map((h) => ({
                             value: h.id,
-                            label: `${h.label}${h.installed ? "" : " (not installed)"}`,
+                            label: h.availability && h.availability.state !== "ready"
+                              ? `${h.label} (${h.availability.message ?? "not ready"})`
+                              : `${h.label}${h.installed ? "" : " (not installed)"}`,
                           })),
                       } satisfies StandardSelectGroup<string>,
                     ]}

@@ -772,14 +772,17 @@ function StageVessel({
   // launcher. Hide it for SSH rather than letting a selection fall back to an
   // incompatible `coven run --stream-json` path.
   const installedHarnesses = (harnesses ?? []).filter(
-    (h) => h.installed && (h.availability?.state ?? "ready") === "ready" && (vessel !== "ssh" || h.id !== "grok"),
+    (h) => h.installed
+      && (vessel !== "local" || h.availability?.state === undefined || h.availability.state === "ready")
+      && (vessel !== "ssh" || h.id !== "grok"),
   );
-  const unavailableHarnesses = (harnesses ?? []).flatMap((h) => {
+  const unavailableHarnesses = vessel === "local" ? (harnesses ?? []).flatMap((h) => {
     const availability = h.availability;
     return h.installed && availability && availability.state !== "ready"
       ? [{ ...h, availability }]
       : [];
-  });
+  }) : [];
+  const unavailableLocalHarness = unavailableHarnesses[0] ?? null;
   return (
     <div className="flex flex-col gap-3">
       <div role="radiogroup" aria-label="Vessel" className="summoning-vessels">
@@ -815,7 +818,7 @@ function StageVessel({
             // users between the circle and Settings (cave-tpji).
             <div className="flex flex-col items-start gap-1.5">
               <p className="text-[length:var(--text-xs)] text-[var(--color-warning)]">
-                No chat-capable runtime found. Run setup to install one (Codex, Claude Code, Copilot…), then return to the circle.
+                {unavailableLocalHarness?.availability?.message ?? "No chat-capable runtime found. Run setup to install one (Codex, Claude Code, Copilot…), then return to the circle."}
               </p>
               <button
                 type="button"
