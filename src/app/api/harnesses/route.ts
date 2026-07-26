@@ -13,8 +13,20 @@ import {
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
 import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, type CovenLaunchCommand } from "@/lib/coven-bin";
+import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/copilot-stream";
 import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
+import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
+import {
+  resolveCopilotRuntimeLaunch,
+  type CopilotRuntimeLaunch,
+} from "@/lib/server/copilot-runtime-launch";
+import {
+  evaluateRuntimeAvailability,
+  summarizeRuntimeAvailability,
+  type RuntimeAvailabilitySummary,
+} from "@/lib/runtime-availability";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +50,76 @@ type HarnessReport = HarnessSpec & {
   /** Live authenticated catalog where the runtime exposes one. */
   models?: RuntimeModelOption[];
   defaultModel?: string | null;
+  /** Whether the chat send route could actually spawn this adapter's launch
+   * vehicle right now (#3856). */
+  availability?: RuntimeAvailabilitySummary;
 };
+
+type AdapterAvailability = {
+  availability: RuntimeAvailabilitySummary;
+  /** Internal-only exact Copilot plan; never serialized inside availability. */
+  copilotLaunch?: CopilotRuntimeLaunch;
+};
+
+// Mirrors the send route's launch dispatch: copilot/grok/hermes/opencode use
+// their direct CLI launch plans, everything else launches through `coven run`.
+// Same commands, same spawn env shape (no familiar → shared keys only), and
+// bounded filesystem stats only — this endpoint stays probe-cheap.
+async function adapterAvailability(id: string): Promise<AdapterAvailability> {
+  if (id === "copilot") {
+    const stream = copilotStreamSpec();
+    if (stream) {
+      const copilotLaunch = await resolveCopilotRuntimeLaunch(stream.executable);
+      return {
+        availability: summarizeRuntimeAvailability(copilotLaunch.availability),
+        copilotLaunch,
+      };
+    }
+    // No stream manifest → copilot chats fall back to `coven run` below.
+  }
+  const env =
+    id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
+  if (id === "opencode") {
+    const launch = openCodeLaunch([]);
+    return {
+      availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
+        runner: "opencode",
+        command: launch.command,
+        env,
+        powerShellHostedCommand: launch.input !== undefined ? openCodeCommand() : undefined,
+      })),
+    };
+  }
+  if (id === "grok") {
+    const launch = grokLaunchCommandForBinary(grokBin());
+    return {
+      availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
+        runner: "grok",
+        command: launch.command,
+        env,
+        unresolvedWindowsShim: launch.unresolvedWindowsShim === true,
+      })),
+    };
+  }
+  if (id === "hermes") {
+    return {
+      availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
+        runner: "hermes",
+        command: process.platform === "win32" ? "hermes.exe" : "hermes",
+        env,
+      })),
+    };
+  }
+  const launch = covenLaunchCommand();
+  return {
+    availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
+      runner: "coven",
+      command: launch.command,
+      env,
+      unresolvedWindowsShim: launch.unresolvedWindowsShim === true,
+    })),
+  };
+}
 
 function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | null> {
   return new Promise((resolve) => {
@@ -73,11 +154,12 @@ function probeVersion(
   binary: string,
   args: string[],
   fixedArgs: string[] = [],
+  env: NodeJS.ProcessEnv = covenSpawnEnv(),
 ): Promise<string | null> {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(binary, [...fixedArgs, ...args], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(binary, [...fixedArgs, ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       resolve(null);
       return;
@@ -202,19 +284,29 @@ export async function GET() {
       // Windows PATH in WSL. `which grok` on Linux does not apply PATHEXT, so
       // using only the generic probe would hide a runnable Windows install
       // from the summoning circle even though the chat launcher can execute it.
+      const runtime = await adapterAvailability(h.id);
+      const copilotLaunch = runtime.copilotLaunch;
       const resolvedBinary = h.id === "grok" ? grokBin() : h.binary;
       const path =
-        h.id === "grok" && resolvedBinary !== h.binary
-          ? resolvedBinary
-          : await which(h.binary);
+        copilotLaunch
+          ? copilotLaunch.availability.state === "ready"
+            ? copilotLaunch.availability.resolvedPath
+            : null
+          : h.id === "grok" && resolvedBinary !== h.binary
+            ? resolvedBinary
+            : await which(h.binary);
+      const availability = runtime.availability;
       if (!path) {
-        return { ...h, installed: false, path: null, version: null };
+        return { ...h, installed: false, path: null, version: null, availability };
       }
       const grokLaunch = h.id === "grok" ? grokLaunchCommandForBinary(path) : null;
       const version = await probeVersion(
-        grokLaunch?.command ?? h.binary,
-        h.versionArgs ?? ["--version"],
-        grokLaunch?.fixedArgs,
+        copilotLaunch?.command ?? grokLaunch?.command ?? h.binary,
+        copilotLaunch
+          ? [COPILOT_NO_AUTO_UPDATE_ARG, ...(h.versionArgs ?? ["--version"])]
+          : h.versionArgs ?? ["--version"],
+        copilotLaunch?.fixedArgs ?? grokLaunch?.fixedArgs,
+        copilotLaunch?.env,
       );
       const grokCatalog = grokLaunch ? await probeGrokModels(grokLaunch) : null;
       return {
@@ -223,6 +315,7 @@ export async function GET() {
         path,
         version,
         ...(grokCatalog ? grokCatalog : {}),
+        availability,
       };
     }),
   );

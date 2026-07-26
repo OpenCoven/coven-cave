@@ -60,12 +60,12 @@ assert.deepEqual(
     model: null,
     permissionMode: "full",
     addDirs: [],
-  }).slice(0, 5),
-  ["--allow-all", "--output-format", "json", "--stream", "on"],
+  }).slice(0, 6),
+  ["--no-auto-update", "--allow-all", "--output-format", "json", "--stream", "on"],
   "the direct full-mode routing decision keeps its approval flag before the reviewed JSONL launch contract",
 );
 
-for (const capabilityVersion of [null, "1.0.70.1", "0.9.9", "2.0.0", "2.0.0-rc.1"]) {
+for (const capabilityVersion of ["1.0.70.1", "0.9.9", "2.0.0", "2.0.0-rc.1"]) {
   const routing = resolveCopilotChatRouting({
     harness: "copilot",
     isSshRuntime: false,
@@ -75,6 +75,59 @@ for (const capabilityVersion of [null, "1.0.70.1", "0.9.9", "2.0.0", "2.0.0-rc.1
   assert.equal(routing.spec, null, "the fallback must never direct-spawn the JSONL parser");
   assert.match(routing.compatibilityDiagnostic ?? "", /not yet compatible/);
 }
+
+const capabilityCauseMessages = {
+  "version-unavailable":
+    "Cave could not read the Copilot CLI version. Run `copilot --version`, then try again.",
+  "version-unparseable":
+    "Copilot returned an unrecognized version. Update Copilot or the Cave runtime schema, then try again.",
+  "probe-timeout":
+    "The Copilot version check timed out. Retry after Copilot finishes starting.",
+};
+for (const [diagnostic, expected] of Object.entries(capabilityCauseMessages)) {
+  const routing = resolveCopilotChatRouting({
+    harness: "copilot",
+    isSshRuntime: false,
+    capabilityVersion: null,
+    capabilityDiagnostic: diagnostic,
+    availability: {
+      state: "ready",
+      runner: "copilot",
+      resolvedPath: "/must-not-reach-wire",
+    },
+  });
+  assert.equal(routing.mode, "plain");
+  assert.equal(
+    routing.compatibilityDiagnostic,
+    expected,
+    `${diagnostic} remains distinct from schema incompatibility`,
+  );
+}
+
+const missingAvailabilityMessage =
+  "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again.";
+const missingRouting = resolveCopilotChatRouting({
+  harness: "copilot",
+  isSshRuntime: false,
+  capabilityVersion: null,
+  capabilityDiagnostic: "version-unavailable",
+  availability: {
+    state: "missing",
+    runner: "copilot",
+    code: "runtime_missing",
+    message: missingAvailabilityMessage,
+  },
+});
+assert.equal(
+  missingRouting.compatibilityDiagnostic,
+  missingAvailabilityMessage,
+  "runtime availability cause wins before generic version diagnostics",
+);
+assert.doesNotMatch(
+  missingRouting.compatibilityDiagnostic ?? "",
+  /must-not-reach-wire|resolvedPath|PATH=/,
+  "Copilot compatibility diagnostics never expose launch paths or env",
+);
 
 assert.deepEqual(
   resolveCopilotChatRouting({
@@ -117,11 +170,23 @@ assert.deepEqual(
 const preparedFallback = await prepareCopilotChatRouting({
   harness: "copilot",
   isSshRuntime: false,
-  probe: async () => ({ version: "2.0.0" }),
+  probe: async () => ({
+    version: "2.0.0",
+    availability: {
+      state: "ready",
+      runner: "copilot",
+      resolvedPath: "/must-not-reach-wire",
+    },
+  }),
   resolveCompatibility: async () => ({ eventProtocols: [] }),
 });
 assert.equal(preparedFallback.mode, "plain", "an unsupported mocked runtime retains generic plain chat");
 assert.match(preparedFallback.compatibilityDiagnostic ?? "", /not yet compatible/);
+assert.notEqual(
+  preparedFallback.compatibilityDiagnostic,
+  capabilityCauseMessages["version-unavailable"],
+  "a parsed unsupported 2.0.0 keeps the schema incompatibility cause",
+);
 
 // ── Grok Build JSONL stream wiring ─────────────────────────────────────────
 
@@ -182,7 +247,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /grokDirect\s*\? grokLaunchCommand\(\)/,
+  /else if \(grokDirect\) \{[\s\S]{0,240}?runner: "grok",[\s\S]{0,160}?launch: grokLaunchCommand\(\)/,
   "Grok direct chats must support native executables and Windows npm command shims",
 );
 assert.match(
@@ -214,8 +279,18 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const launch = copilotStream[\s\S]*?: grokDirect\s*\? grokLaunchCommand\(\)[\s\S]*?: hermesDirect[\s\S]*?command: process\.platform === "win32" \? "hermes\.exe" : "hermes",[\s\S]*?: covenLaunchCommand\(\);[\s\S]*?const openCodeLaunchCommand = openCodeDirect \? openCodeLaunch\(spawnArgs\) : null;/,
+  /let localRuntimePlan: LocalRuntimePlan \| null = null;[\s\S]*?runner: "copilot"[\s\S]*?else if \(openCodeDirect\)[\s\S]*?runner: "opencode"[\s\S]*?else if \(grokDirect\)[\s\S]*?runner: "grok"[\s\S]*?else if \(hermesDirect\)[\s\S]*?runner: "hermes"[\s\S]*?runner: "coven"[\s\S]*?const command = openCodeLaunchCommand[\s\S]*?command: localPlan\.command,[\s\S]*?args: \[\.\.\.localPlan\.fixedArgs, \.\.\.spawnArgs\]/,
   "Copilot, Grok Build, Hermes, and OpenCode direct turns spawn their own CLI; other local harnesses spawn coven",
+);
+assert.match(
+  chatRoute,
+  /const copilotManifestStream = copilotDirect \? copilotStreamSpec\(\) : null;[\s\S]*?resolveCopilotRuntimeLaunch\(copilotManifestStream\.executable\)[\s\S]*?probeCopilotCapability\(copilotManifestStream\.executable/,
+  "Copilot resolves and probes the manifest-declared executable instead of an independent default",
+);
+assert.match(
+  chatRoute,
+  /if \(\s*copilotCompatibilityDiagnostic &&\s*copilotRuntimeLaunch\?\.availability\.state === "ready"\s*\) \{[\s\S]*?copilot-client-compatibility/,
+  "a non-ready Copilot plan emits only the structured runtime error, not a duplicate compatibility notice",
 );
 
 assert.match(

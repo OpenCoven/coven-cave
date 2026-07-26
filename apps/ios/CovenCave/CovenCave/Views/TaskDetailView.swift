@@ -144,6 +144,7 @@ struct TaskDetailView: View {
                     else { showFamiliarPicker = true }
                 } label: {
                     Label("Start a chat", systemImage: "plus.bubble.fill")
+                        .foregroundStyle(chrome.accentForeground)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -393,6 +394,7 @@ struct TaskDetailView: View {
                 else { showFamiliarPicker = true }
             } label: {
                 Label("Open in chat", systemImage: "bubble.left.and.bubble.right.fill")
+                    .foregroundStyle(chrome.accentForeground)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)

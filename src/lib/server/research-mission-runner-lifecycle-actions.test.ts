@@ -1,15 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ConversationFile } from "../cave-conversations.ts";
-import type { AutomationRunRecord } from "../automation-runs.ts";
 import type { FlowRunRecord } from "../flows.ts";
 import { allowedResearchActions, type ResearchMission, type ResearchSourcePatch } from "../research-missions.ts";
 import { ResearchFileIntegrityError } from "./research-mission-store.ts";
 import {
   makeResearchMissionRunner,
   parseResearchSourcesFile,
-  sessionAlreadyGone,
-  withinStartupGrace,
   type ResearchMissionRunnerDeps,
 } from "./research-mission-runner.ts";
 

@@ -9,7 +9,7 @@
  * CodeMirror stays out of the surface's initial chunk.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ProjectTree } from "@/components/project-tree";
 import { RailFilePreview } from "@/components/rail-file-preview";
 

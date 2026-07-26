@@ -24,7 +24,7 @@
  * composer (code-composer.tsx) — sends to THIS session's agent.
  */
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";

@@ -24,10 +24,10 @@ assert.match(
   /if \(link\.ref\.startsWith\("\/"\)\) \{[\s\S]{0,120}\}\s*if \(openGitHubTarget\(link\.ref\)\) return;\s*openUrlInAppBrowser\(link\.ref\);/,
   "openReminderLink prefers the native GitHub surface before the in-app browser",
 );
-assert.match(
+assert.doesNotMatch(
   workspace,
-  /if \(item\.link\?\.kind === "url" && openGitHubTarget\(item\.link\.ref\)\) return;/,
-  "inspector inbox opens route GitHub items natively before falling back to the Inbox surface",
+  /const openInspectorInboxItem/,
+  "the retired inspector inbox helper stays removed; live inbox links use openReminderLink",
 );
 assert.match(
   workspace,

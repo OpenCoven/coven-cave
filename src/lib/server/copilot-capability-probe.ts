@@ -1,39 +1,91 @@
 import { spawn } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, join } from "node:path";
-import { parseRuntimeClientVersion } from "../copilot-stream.ts";
-import { resolveCopilotLaunchCommand } from "../copilot-bin.ts";
-import { scrubSidecarInternalEnv, type CovenLaunchCommand } from "../coven-bin.ts";
+import {
+  COPILOT_NO_AUTO_UPDATE_ARG,
+  parseRuntimeClientVersion,
+} from "../copilot-stream.ts";
+import { type CovenLaunchCommand } from "../coven-bin.ts";
+import { vaultFreeDiscoveryEnv } from "../child-spawn-env.ts";
+import type { RuntimeAvailability } from "../runtime-availability.ts";
 import { loadVaultMap } from "../vault.ts";
+import {
+  copilotLaunchProbeFailureAvailability,
+  resolveCopilotRuntimeLaunch,
+  type ResolveCopilotRuntimeLaunchOptions,
+} from "./copilot-runtime-launch.ts";
+
+export type CopilotCapabilityDiagnostic =
+  | "version-unavailable"
+  | "version-unparseable"
+  | "probe-timeout";
 
 export type CopilotCapabilityProbe = {
   version: string | null;
   /** Exact spawn target resolved during this bounded probe, never request argv. */
   launchCommand?: Pick<CovenLaunchCommand, "command" | "fixedArgs">;
+  /** Passive classification of the exact launch plan used by this probe. */
+  availability: RuntimeAvailability;
   /** Only safe, non-payload diagnostic metadata; never command output. */
-  diagnostic?: "version-unavailable" | "version-unparseable" | "probe-timeout";
+  diagnostic?: CopilotCapabilityDiagnostic;
 };
 
 type ProbeCacheEntry = {
   value: CopilotCapabilityProbe;
   expiresAt: number;
-  launchCommand: CovenLaunchCommand;
   identity: string;
 };
 const cache = new Map<string, ProbeCacheEntry>();
 const CACHE_MS = 5 * 60_000;
-const TIMEOUT_MS = 2_500;
+// Copilot's npm/native loader can take tens of seconds to page in after an
+// install or update before `--version` emits. Keep launcher discovery short,
+// but give a successfully resolved version process its own bounded budget.
+const VERSION_PROCESS_TIMEOUT_MS = 30_000;
+
+const VERSION_UNAVAILABLE_MESSAGE =
+  "Cave could not read the Copilot CLI version. Run `copilot --version`, then try again.";
+const VERSION_UNPARSEABLE_MESSAGE =
+  "Copilot returned an unrecognized version. Update Copilot or the Cave runtime schema, then try again.";
+const VERSION_TIMEOUT_MESSAGE =
+  "The Copilot version check timed out. Retry after Copilot finishes starting.";
+
+/**
+ * Map only capability-probe failures. A parsed version returns null so each
+ * caller can retain its context-specific unsupported-schema copy.
+ */
+export function copilotCapabilityFailureMessage(
+  capability:
+    | {
+        version?: string | null;
+        diagnostic?: CopilotCapabilityDiagnostic;
+        availability?: RuntimeAvailability;
+      }
+    | null
+    | undefined,
+): string | null {
+  if (capability?.availability && capability.availability.state !== "ready") {
+    return capability.availability.message;
+  }
+  if (capability?.diagnostic === "version-unparseable") {
+    return VERSION_UNPARSEABLE_MESSAGE;
+  }
+  if (capability?.diagnostic === "probe-timeout") {
+    return VERSION_TIMEOUT_MESSAGE;
+  }
+  if (capability?.diagnostic === "version-unavailable" || !capability?.version) {
+    return VERSION_UNAVAILABLE_MESSAGE;
+  }
+  return null;
+}
 
 /**
  * Capability discovery has no familiar context and must never execute an
- * arbitrary PATH launcher with shared or vault-managed credentials. It also
- * deliberately avoids covenSpawnEnv's synchronous login-shell discovery: the
- * entire probe decision stays within TIMEOUT_MS on cold POSIX starts.
+ * arbitrary PATH launcher with shared or vault-managed credentials. Resolve
+ * through the same canonical PATH as the eventual harness spawn, then remove
+ * every vault-managed key before launching the untrusted runtime.
  */
-function probeSpawnEnv(): NodeJS.ProcessEnv {
-  const env = scrubSidecarInternalEnv({ ...process.env });
-  for (const key of Object.keys(loadVaultMap(true))) delete env[key];
-  return env;
+function probeSpawnEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return vaultFreeDiscoveryEnv(baseEnv, loadVaultMap(true));
 }
 
 /**
@@ -73,8 +125,9 @@ async function launchIdentity(launch: CovenLaunchCommand, env: NodeJS.ProcessEnv
 async function identityBeforeDeadline(
   work: () => Promise<string>,
   deadline: number,
+  now: () => number,
 ): Promise<string | null> {
-  const remaining = deadline - Date.now();
+  const remaining = deadline - now();
   if (remaining <= 0) return null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
@@ -99,50 +152,114 @@ export async function probeCopilotCapability(
   executable = "copilot",
   options: {
     now?: () => number;
+    platform?: NodeJS.Platform;
     spawnImpl?: typeof spawn;
     binaryIdentity?: (executable: string) => Promise<string>;
+    /** Test seam; production defaults to the exact Cave harness PATH. */
+    spawnEnv?: (discoveryDeadline: number) => NodeJS.ProcessEnv;
+    /** Test seam for proving deadline exhaustion stops launcher resolution. */
+    resolveLaunchCommand?: ResolveCopilotRuntimeLaunchOptions["resolveLaunchCommand"];
+    /** Test seam for blocked exact launch plans. */
+    resolveRuntimeLaunch?: typeof resolveCopilotRuntimeLaunch;
   } = {},
 ): Promise<CopilotCapabilityProbe> {
   const now = options.now ?? Date.now;
-  const deadline = Date.now() + TIMEOUT_MS;
-  const probeEnv = probeSpawnEnv();
-  // Cache by command name plus PATH, then validate the *previously launched*
-  // command's binary/script metadata. This keeps normal turns off `where`
-  // while invalidating immediately when an npm shim target is updated.
-  const cacheKey = `${executable}\u0000${probeEnv.PATH ?? ""}`;
-  const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > now()) {
-    const identity = options.binaryIdentity
-      ? await options.binaryIdentity(cached.launchCommand.command)
-      : await identityBeforeDeadline(() => launchIdentity(cached.launchCommand, probeEnv), deadline);
-    if (identity && identity === cached.identity) return cached.value;
+  // A cold Finder/Spotlight launch may synchronously recover the user's login
+  // PATH. That work shares the same short resolution budget as launcher and
+  // identity discovery, and its subprocesses receive only a vault-free env.
+  let launch: Awaited<ReturnType<typeof resolveCopilotRuntimeLaunch>>;
+  try {
+    launch = await (options.resolveRuntimeLaunch ?? resolveCopilotRuntimeLaunch)(
+      executable,
+      {
+        now,
+        platform: options.platform,
+        resolveLaunchCommand: options.resolveLaunchCommand,
+        ...(options.spawnEnv
+          ? {
+              spawnEnv: (discoveryDeadline) =>
+                probeSpawnEnv(options.spawnEnv!(discoveryDeadline)),
+            }
+          : {}),
+      },
+    );
+  } catch {
+    return {
+      version: null,
+      availability: copilotLaunchProbeFailureAvailability("failed"),
+    };
   }
-  const launch = await resolveCopilotLaunchCommand(executable, {
-    timeoutMs: Math.max(1, deadline - Date.now()),
-    env: probeEnv,
-  });
-  if (launch.resolutionTimedOut) return { version: null, diagnostic: "probe-timeout" };
-  if (launch.unresolvedWindowsShim) return { version: null, diagnostic: "version-unavailable" };
-  const identity = options.binaryIdentity
-    ? await options.binaryIdentity(launch.command)
-    : await identityBeforeDeadline(() => launchIdentity(launch, probeEnv), deadline);
-  if (!identity) return { version: null, diagnostic: "probe-timeout" };
+  if (launch.availability.state !== "ready") {
+    return {
+      version: null,
+      availability: launch.availability,
+      ...(launch.resolutionTimedOut
+        ? { diagnostic: "probe-timeout" as const }
+        : {}),
+    };
+  }
+
+  const launchCommand = {
+    command: launch.command,
+    fixedArgs: launch.fixedArgs,
+  };
+  // Cache by command name plus canonical PATH, then validate the exact current
+  // command/script metadata. A changed npm target is re-probed immediately.
+  const cacheKey = `${executable}\u0000${
+    launch.env.PATH ?? launch.env.Path ?? launch.env.path ?? ""
+  }`;
+  const cached = cache.get(cacheKey);
+  const identity = await identityBeforeDeadline(
+    options.binaryIdentity
+      ? () => options.binaryIdentity!(launch.command)
+      : () => launchIdentity(launchCommand, launch.env),
+    launch.deadline,
+    now,
+  );
+  if (identity === null || now() >= launch.deadline) {
+    return {
+      version: null,
+      availability: copilotLaunchProbeFailureAvailability("timeout"),
+      diagnostic: "probe-timeout",
+    };
+  }
+  if (
+    cached &&
+    cached.value.version &&
+    cached.expiresAt > now() &&
+    identity === cached.identity
+  ) {
+    return {
+      ...cached.value,
+      availability: launch.availability,
+      launchCommand,
+    };
+  }
+
   const childSpawn = options.spawnImpl ?? spawn;
-  const value = await new Promise<CopilotCapabilityProbe>((resolve) => {
+  const value = await new Promise<
+    Pick<CopilotCapabilityProbe, "version" | "diagnostic">
+  >((resolve) => {
     let stdout = "";
     let settled = false;
-    const settle = (result: CopilotCapabilityProbe) => {
+    const settle = (
+      result: Pick<CopilotCapabilityProbe, "version" | "diagnostic">,
+    ) => {
       if (settled) return;
       settled = true;
       resolve(result);
     };
     let child: ReturnType<typeof spawn>;
     try {
-      child = childSpawn(launch.command, [...launch.fixedArgs, "--version"], {
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true,
-        env: probeEnv,
-      });
+      child = childSpawn(
+        launch.command,
+        [...launch.fixedArgs, COPILOT_NO_AUTO_UPDATE_ARG, "--version"],
+        {
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+          env: launch.env,
+        },
+      );
     } catch {
       settle({ version: null, diagnostic: "version-unavailable" });
       return;
@@ -159,7 +276,7 @@ export async function probeCopilotCapability(
       }, 250);
       forceKill.unref?.();
       settle({ version: null, diagnostic: "probe-timeout" });
-    }, Math.max(1, deadline - Date.now()));
+    }, VERSION_PROCESS_TIMEOUT_MS);
     child.stdout?.on("data", (chunk: Buffer | string) => {
       if (stdout.length < 4_096) stdout += String(chunk).slice(0, 4_096 - stdout.length);
     });
@@ -181,8 +298,16 @@ export async function probeCopilotCapability(
       settle(version ? { version } : { version: null, diagnostic: "version-unparseable" });
     });
   });
-  const result = { ...value, launchCommand: { command: launch.command, fixedArgs: launch.fixedArgs } };
-  cache.set(cacheKey, { value: result, expiresAt: now() + CACHE_MS, launchCommand: launch, identity });
+  const result: CopilotCapabilityProbe = {
+    ...value,
+    availability: launch.availability,
+    launchCommand,
+  };
+  // Only a parsed version is stable enough to cache. Spawn/nonzero/timeout and
+  // unparseable output are transient and must be retried on the next request.
+  if (result.version) {
+    cache.set(cacheKey, { value: result, expiresAt: now() + CACHE_MS, identity });
+  }
   return result;
 }
 

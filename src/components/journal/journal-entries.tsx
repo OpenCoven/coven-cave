@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { UndoToast } from "@/components/ui/undo-toast";
@@ -15,7 +16,8 @@ import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug 
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { generateReflection } from "@/lib/journal-generate";
 import { DEFAULT_JOURNAL_PROMPT, readStoredJournalPrompt, splitPromptSegments, writeStoredJournalPrompt } from "@/lib/journal-prompt";
-import { openGrimoireDoc } from "@/lib/grimoire-link";import { JournalConstellation } from "@/components/journal/journal-constellation";
+import { openGrimoireDoc } from "@/lib/grimoire-link";
+import { JournalConstellation } from "@/components/journal/journal-constellation";
 import { familiarInScope } from "@/lib/familiar-multiselect";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import { invalidateIfDefined } from "@/lib/surface-warm-cache";
@@ -24,6 +26,7 @@ import type { Familiar } from "@/lib/types";
 // Stable empty-scope fallback so the filteredDays memo's identity is steady
 // when no scope set is supplied.
 const EMPTY_SCOPE: ReadonlySet<string> = new Set();
+const JOURNAL_RAIL_COLLAPSED_KEY = "cave:journal:rail-collapsed:v1";
 
 type JournalSummary = { date: string; preview: string; reflectedBy: string | null; modified: string | null };
 type JournalStats = { covenOrigin: number; externalRuntimes: number; runtimeMemory: number };
@@ -243,8 +246,10 @@ export function JournalEntries({
   const today = dateSlug(now);
   const [days, setDays] = useState<JournalSummary[]>([]);
   const [daysLoaded, setDaysLoaded] = useState(false);
+  const [daysError, setDaysError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string>(today);
   const [day, setDay] = useState<JournalDay | null>(null);
+  const [dayError, setDayError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftReflection, setDraftReflection] = useState("");
@@ -265,6 +270,25 @@ export function JournalEntries({
   }, []);
   useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
   const [filter, setFilter] = useState("");
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setRailCollapsed(window.localStorage.getItem(JOURNAL_RAIL_COLLAPSED_KEY) === "true");
+    } catch {
+      // Storage can be unavailable in strict privacy modes; collapse remains session-only.
+    }
+  }, []);
+  const toggleRail = useCallback(() => {
+    setRailCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(JOURNAL_RAIL_COLLAPSED_KEY, String(next));
+      } catch {
+        // Keep the in-memory preference when persistence is unavailable.
+      }
+      return next;
+    });
+  }, []);
   // Editable Generation-prompt template ("Memories Prototype" entry pane).
   // Starts at the default for SSR/hydration parity; the stored override loads
   // on mount. Edits persist immediately; Reset returns to the default.
@@ -286,7 +310,13 @@ export function JournalEntries({
   // Guard async setState after unmount, and ignore a stale day fetch when the
   // selection changed before its response arrived (rapid day switching).
   const mountedRef = useRef(true);
+  const loadDaysReqRef = useRef(0);
   const loadDayReqRef = useRef(0);
+  const selectedRef = useRef(selected);
+  const selectDay = useCallback((slug: string) => {
+    selectedRef.current = slug;
+    setSelected(slug);
+  }, []);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
@@ -332,29 +362,38 @@ export function JournalEntries({
   // Fetch the full day list once; the familiar multiselect scope is applied
   // client-side in `filteredDays` so switching scope never needs a refetch.
   const loadDays = useCallback(async () => {
+    if (!mountedRef.current) return;
+    const reqId = ++loadDaysReqRef.current;
+    setDaysError(null);
+    setDaysLoaded(false);
     try {
       const res = await fetch(`/api/journal`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
-      if (!mountedRef.current) return;
-      if (json.ok) setDays(Array.isArray(json.days) ? json.days : []);
-    } catch {
-      /* keep prior */
+      if (reqId !== loadDaysReqRef.current || !mountedRef.current) return;
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "Couldn't load journal entries.");
+      setDays(Array.isArray(json.days) ? json.days : []);
+    } catch (err) {
+      if (reqId === loadDaysReqRef.current && mountedRef.current) {
+        setDaysError(err instanceof Error ? err.message : "Couldn't load journal entries.");
+      }
     } finally {
-      if (mountedRef.current) setDaysLoaded(true);
+      if (reqId === loadDaysReqRef.current && mountedRef.current) setDaysLoaded(true);
     }
   }, []);
 
-  // Scope the day's memory stats to the single active familiar; with 0 or
-  // ≥ 2 selected (activeFamiliarId null) the record + stats are unscoped.
-  const dayQuery = useCallback((slug: string) => (
-    activeFamiliarId
-      ? `date=${encodeURIComponent(slug)}&familiar=${encodeURIComponent(activeFamiliarId)}`
+  // Entries are coven-wide: every visible row must open regardless of which
+  // familiar is currently active. Stats/context remain scoped to the familiar
+  // that will generate the next reflection.
+  const entryQuery = useCallback((slug: string) => `date=${encodeURIComponent(slug)}`, []);
+  const statsQuery = useCallback((slug: string) => (
+    selectedFamiliarId
+      ? `date=${encodeURIComponent(slug)}&familiar=${encodeURIComponent(selectedFamiliarId)}`
       : `date=${encodeURIComponent(slug)}`
-  ), [activeFamiliarId]);
+  ), [selectedFamiliarId]);
 
   const fetchDayStats = useCallback(async (slug: string): Promise<{ stats: JournalStats; context: string; sources: JournalSource[] } | null> => {
     try {
-      const res = await fetch(`/api/journal?${dayQuery(slug)}&stats=1`, { cache: "no-store" });
+      const res = await fetch(`/api/journal?${statsQuery(slug)}&stats=1`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       return json.ok
         ? {
@@ -366,18 +405,25 @@ export function JournalEntries({
     } catch {
       return null;
     }
-  }, [dayQuery]);
+  }, [statsQuery]);
 
   const loadDay = useCallback(async (slug: string) => {
+    if (!mountedRef.current) return;
     const reqId = ++loadDayReqRef.current;
+    setDay(null);
+    setDayError(null);
     try {
-      const res = await fetch(`/api/journal?${dayQuery(slug)}`, { cache: "no-store" });
+      const res = await fetch(`/api/journal?${entryQuery(slug)}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       // Drop a stale response: a newer loadDay (different day) superseded it.
       if (reqId !== loadDayReqRef.current || !mountedRef.current) return;
-      if (json.ok) setDay({ ...(json as Omit<JournalDay, "stats" | "context" | "sources">), stats: null, context: null, sources: null });
-    } catch {
-      if (reqId === loadDayReqRef.current && mountedRef.current) setDay(null);
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "Couldn't load journal entry.");
+      setDay({ ...(json as Omit<JournalDay, "stats" | "context" | "sources">), stats: null, context: null, sources: null });
+    } catch (err) {
+      if (reqId === loadDayReqRef.current && mountedRef.current) {
+        setDay(null);
+        setDayError(err instanceof Error ? err.message : "Couldn't load journal entry.");
+      }
       return;
     }
     // The stats block rides a separate request AFTER the entry paints — it
@@ -386,7 +432,7 @@ export function JournalEntries({
     const block = await fetchDayStats(slug);
     if (!block || reqId !== loadDayReqRef.current || !mountedRef.current) return;
     setDay((prev) => (prev && prev.date === slug ? { ...prev, ...block } : prev));
-  }, [dayQuery, fetchDayStats]);
+  }, [entryQuery, fetchDayStats]);
 
   useEffect(() => {
     void loadDays();
@@ -397,8 +443,8 @@ export function JournalEntries({
     setDraftReflection("");
   }, [selected, loadDay]);
   useEffect(() => {
-    setSelected(today);
-  }, [selectedFamiliarId, today]);
+    selectDay(today);
+  }, [selectedFamiliarId, today, selectDay]);
 
   // Derive scope / overwrite-safety values early so they can appear in the
   // `generate` useCallback's dependency array (avoids temporal dead zone).
@@ -425,48 +471,56 @@ export function JournalEntries({
     if (outOfScopeBy) return; // never overwrite another familiar's entry from a scoped surface
     setError(null);
     setGenerating(true);
-    // Context normally arrives with the non-blocking stats fetch; if the user
-    // beats it (or it failed), fetch it inline — generation needs the scope note.
-    const context = day.context ?? (await fetchDayStats(day.date))?.context ?? "";
-    if (!mountedRef.current) return;
-    const dateObj = parseDateSlug(day.date);
-    const result = await generateReflection({
-      familiarId,
-      context,
-      promptTemplate: journalPrompt,
-      familiarName: familiarName(familiarId) ?? undefined,
-      dateLabel: dateObj ? longDateLabel(dateObj) : day.date,
-    });
-    if (!mountedRef.current) return;
-    if (result.error || !result.text) {
-      setGenerating(false);
-      setError(result.error ?? "No reflection was returned.");
-      return;
+    try {
+      // Context normally arrives with the non-blocking stats fetch; if the user
+      // beats it (or it failed), fetch it inline — generation needs the scope note.
+      const context = day.context ?? (await fetchDayStats(day.date))?.context ?? "";
+      if (!mountedRef.current) return;
+      const dateObj = parseDateSlug(day.date);
+      const result = await generateReflection({
+        familiarId,
+        context,
+        promptTemplate: journalPrompt,
+        familiarName: familiarName(familiarId) ?? undefined,
+        dateLabel: dateObj ? longDateLabel(dateObj) : day.date,
+      });
+      if (!mountedRef.current) return;
+      if (result.error || !result.text) {
+        throw new Error(result.error ?? "No reflection was returned.");
+      }
+      // A real generation stamps generatedAt (only the generate flow does); the
+      // expectedModified baseline refuses to clobber a concurrent edit that landed
+      // since this day was loaded (the store is one entry per date).
+      const saveRes = await fetch("/api/journal", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          date: day.date,
+          reflection: result.text,
+          reflectedBy: familiarId,
+          generatedAt: new Date().toISOString(),
+          expectedModified: day.modified,
+        }),
+      });
+      const saveJson = await saveRes.json().catch(() => ({}));
+      if (saveRes && saveRes.status === 409) {
+        if (selectedRef.current === day.date) await loadDay(day.date);
+        await loadDays();
+        throw new Error("This day's entry changed while the reflection was being written — reloaded the latest instead of overwriting it.");
+      }
+      if (!saveRes.ok || !saveJson.ok) throw new Error(saveJson.error ?? "Couldn't save the generated reflection.");
+      invalidateIfDefined("grimoire:journal");
+      if (!mountedRef.current) return;
+      if (selectedRef.current === day.date) await loadDay(day.date);
+      await loadDays();
+      announce("Reflection generated.");
+    } catch (err) {
+      if (mountedRef.current) {
+        setError(err instanceof Error ? err.message : "Couldn't generate the reflection.");
+      }
+    } finally {
+      if (mountedRef.current) setGenerating(false);
     }
-    // A real generation stamps generatedAt (only the generate flow does); the
-    // expectedModified baseline refuses to clobber a concurrent edit that landed
-    // since this day was loaded (the store is one entry per date).
-    const saveRes = await fetch("/api/journal", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        date: day.date,
-        reflection: result.text,
-        reflectedBy: familiarId,
-        generatedAt: new Date().toISOString(),
-        expectedModified: day.modified,
-      }),
-    }).catch(() => null);
-    if (!mountedRef.current) return;
-    setGenerating(false);
-    if (saveRes?.ok) invalidateIfDefined("grimoire:journal");
-    if (saveRes && saveRes.status === 409) {
-      setError("This day's entry changed while the reflection was being written — reloaded the latest instead of overwriting it.");
-    }
-    await loadDay(day.date);
-    await loadDays();
-    // The reflection appearing is the only visual confirmation — say it too.
-    announce("Reflection generated.");
   }, [selectedFamiliarId, day, loadDay, loadDays, outOfScopeBy, announce, fetchDayStats, journalPrompt, familiarName]);
 
   function startEdit() {
@@ -558,8 +612,8 @@ export function JournalEntries({
   const hasOlder = dayIndex >= 0 && dayIndex < filteredDays.length - 1;
   const goToDay = useCallback((index: number) => {
     const target = filteredDays[index];
-    if (target) setSelected(target.date);
-  }, [filteredDays]);
+    if (target) selectDay(target.date);
+  }, [filteredDays, selectDay]);
   // ↑/↓ + Home/End move selection through the day rail (selection follows focus).
   const onRailKeyDown = (e: React.KeyboardEvent<HTMLUListElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
@@ -574,93 +628,127 @@ export function JournalEntries({
       : btns.length - 1;
     btns[ni]?.focus();
     const date = filteredDays[ni]?.date;
-    if (date) setSelected(date);
+    if (date) selectDay(date);
   };
 
   return (
     <div className="journal-list">
-      <aside className="journal-list__rail">
-        <button
-          type="button"
-          className={`journal-entry-gen${generating ? " is-generating" : ""}`}
-          aria-busy={generating}
-          disabled={!canGenerate || generating || selected !== today || Boolean(outOfScopeBy)}
-          onClick={generate}
-          title={
-            !canGenerate
-              ? "Summon a familiar first — the journal is written by one of your familiars"
-              : Boolean(outOfScopeBy)
-                ? `Today's entry was written by ${outOfScopeBy}`
-                : selected !== today
-                  ? "Select today to generate"
-                  : undefined
-          }
-        >
-          <Icon name="ph:sparkle" aria-hidden />
-          {generating ? "Reflecting…" : "Generate today's entry"}
-          {/* The disabled reason lived only in title= (hover-only) — AT and
-              keyboard users get it in the accessible name too (cave-t1ou).
-              The zero-familiar case had NO reason anywhere: the cold-start
-              empty state pointed at a button that was silently inert (cave-7jzq). */}
-          {!generating && !canGenerate ? (
-            <span className="sr-only">, unavailable — summon a familiar first</span>
-          ) : !generating && Boolean(outOfScopeBy) ? (
-            <span className="sr-only">, unavailable — today's entry was written by {outOfScopeBy}</span>
-          ) : !generating && selected !== today ? (
-            <span className="sr-only">, unavailable — select today to generate</span>
+      <aside className="journal-list__rail" data-collapsed={railCollapsed ? "true" : undefined}>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="journal-list__rail-toggle"
+          leadingIcon={railCollapsed ? "ph:caret-right" : "ph:caret-left"}
+          aria-expanded={!railCollapsed}
+          aria-controls="journal-day-rail-content"
+          aria-label={railCollapsed ? "Expand journal entries" : "Collapse journal entries"}
+          title={railCollapsed ? "Expand journal entries" : "Collapse journal entries"}
+          onClick={toggleRail}
+        />
+        <div id="journal-day-rail-content" className="journal-list__rail-content" hidden={railCollapsed}>
+          <button
+            type="button"
+            className={`journal-entry-gen${generating ? " is-generating" : ""}`}
+            aria-busy={generating}
+            disabled={!canGenerate || generating || selected !== today || Boolean(outOfScopeBy)}
+            onClick={generate}
+            title={
+              !canGenerate
+                ? "Summon a familiar first — the journal is written by one of your familiars"
+                : Boolean(outOfScopeBy)
+                  ? `Today's entry was written by ${outOfScopeBy}`
+                  : selected !== today
+                    ? "Select today to generate"
+                    : undefined
+            }
+          >
+            <Icon name="ph:sparkle" aria-hidden />
+            {generating ? "Reflecting…" : "Generate today's entry"}
+            {/* The disabled reason lived only in title= (hover-only) — AT and
+                keyboard users get it in the accessible name too (cave-t1ou).
+                The zero-familiar case had NO reason anywhere: the cold-start
+                empty state pointed at a button that was silently inert (cave-7jzq). */}
+            {!generating && !canGenerate ? (
+              <span className="sr-only">, unavailable — summon a familiar first</span>
+            ) : !generating && Boolean(outOfScopeBy) ? (
+              <span className="sr-only">, unavailable — today's entry was written by {outOfScopeBy}</span>
+            ) : !generating && selected !== today ? (
+              <span className="sr-only">, unavailable — select today to generate</span>
+            ) : null}
+          </button>
+          <div className="journal-list__cap">Your days</div>
+          {days.length > 0 ? (
+            <input
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter entries…"
+              aria-label="Filter journal entries"
+              className="journal-list__filter focus-ring-inset"
+            />
           ) : null}
-        </button>
+          {daysError ? (
+            <ErrorState
+              compact
+              headline="Couldn't load journal entries"
+              subtitle={daysError}
+              actions={
+                <Button size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => { void loadDays(); }}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : !daysLoaded && days.length === 0 ? (
+            <SkeletonRows count={4} className="journal-list__loading" />
+          ) : days.length === 0 ? (
+            <div className="journal-empty">
+              {canGenerate
+                ? "No journal entries yet. Generate today's above."
+                : "No journal entries yet. The journal is written by a familiar — summon one first, then generate today's entry above."}
+            </div>
+          ) : filteredDays.length === 0 ? (
+            <div className="journal-empty">No entries match “{filter.trim()}”.</div>
+          ) : (
+            <ul className="journal-list__items" onKeyDown={onRailKeyDown}>
+              {filteredDays.map((d) => (
+                <li key={d.date}>
+                  <button
+                    type="button"
+                    className={`journal-day${d.date === selected ? " is-selected" : ""}`}
+                    aria-current={d.date === selected ? "true" : undefined}
+                    onClick={() => selectDay(d.date)}
+                  >
+                    <span className="journal-day__top">
+                      <span className="journal-day__date">
+                        {relativeDayLabel(parseDateSlug(d.date) ?? now, now)}
+                      </span>
+                      {d.reflectedBy ? <span className="journal-day__by">{familiarName(d.reflectedBy)}</span> : null}
+                    </span>
+                    <span className="journal-day__prev" title={d.preview || undefined}>{d.preview || "—"}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </aside>
+      <section className="journal-detail" aria-label="Journal entry">
         {error ? (
           <div className="journal-list__error" role="alert">
             {error}
           </div>
         ) : null}
-        <div className="journal-list__cap">Your days</div>
-        {days.length > 0 ? (
-          <input
-            type="search"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter entries…"
-            aria-label="Filter journal entries"
-            className="journal-list__filter focus-ring-inset"
+        {dayError ? (
+          <ErrorState
+            headline="Couldn't load this journal entry"
+            subtitle={dayError}
+            actions={
+              <Button size="sm" leadingIcon="ph:arrow-clockwise" onClick={() => { void loadDay(selected); }}>
+                Retry
+              </Button>
+            }
           />
-        ) : null}
-        {!daysLoaded && days.length === 0 ? (
-          <SkeletonRows count={4} className="journal-list__loading" />
-        ) : days.length === 0 ? (
-          <div className="journal-empty">
-            {canGenerate
-              ? "No journal entries yet. Generate today's above."
-              : "No journal entries yet. The journal is written by a familiar — summon one first, then generate today's entry above."}
-          </div>
-        ) : filteredDays.length === 0 ? (
-          <div className="journal-empty">No entries match “{filter.trim()}”.</div>
-        ) : (
-          <ul className="journal-list__items" onKeyDown={onRailKeyDown}>
-            {filteredDays.map((d) => (
-              <li key={d.date}>
-                <button
-                  type="button"
-                  className={`journal-day${d.date === selected ? " is-selected" : ""}`}
-                  aria-current={d.date === selected ? "true" : undefined}
-                  onClick={() => setSelected(d.date)}
-                >
-                  <span className="journal-day__top">
-                    <span className="journal-day__date">
-                      {relativeDayLabel(parseDateSlug(d.date) ?? now, now)}
-                    </span>
-                    {d.reflectedBy ? <span className="journal-day__by">{familiarName(d.reflectedBy)}</span> : null}
-                  </span>
-                  <span className="journal-day__prev" title={d.preview || undefined}>{d.preview || "—"}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
-      <section className="journal-detail" aria-label="Journal entry">
-        {day ? (
+        ) : day ? (
           <>
             <div className="journal-entry__sec journal-entry__sec--nav">
               <h3 className="journal-entry__sec-heading">What happened · {longDateLabel(parseDateSlug(day.date) ?? now)}</h3>

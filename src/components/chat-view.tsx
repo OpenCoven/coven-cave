@@ -5,7 +5,6 @@ import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
 import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { FeedbackContext } from "@/lib/message-feedback";
 import { matchesStopPhrase, readStopPhrase } from "@/lib/stop-phrase";
@@ -94,7 +93,6 @@ import { startOmnigentRunFromBrowser } from "@/lib/omnigent/browser-run";
 import type { ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerActionsMenu } from "@/components/composer-actions-menu";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
 import { resolveModelArg, formatModelList } from "@/lib/slash-model";
 import {
@@ -151,6 +149,7 @@ import {
   resolveChatProjectSelection,
 } from "@/lib/chat-projects";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
+import { projectAccessLabel } from "@/lib/project-access-levels";
 import {
   COMMAND_CONTROL_DEFAULTS,
   COMMAND_RESPONSE_SPEED_OPTIONS,
@@ -1390,7 +1389,6 @@ function MetaLine({
   familiar,
   projectRoot,
   onSessionsChanged,
-  onBack,
   children,
 }: {
   session: SessionRow | null;
@@ -1409,7 +1407,6 @@ function MetaLine({
   familiar: Familiar;
   projectRoot?: string;
   onSessionsChanged?: () => void;
-  onBack?: () => void;
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1585,7 +1582,6 @@ function MobileChatContextMenu({
   historyState,
   daemonRunning,
   projectRoot,
-  onOpenTask,
   onOpenDebug,
 }: {
   familiar: Familiar;
@@ -1594,7 +1590,6 @@ function MobileChatContextMenu({
   historyState: ChatHistoryState;
   daemonRunning?: boolean;
   projectRoot?: string;
-  onOpenTask?: (cardId: string) => void;
   onOpenDebug?: () => void;
 }) {
   const github = linkedContext?.github ?? [];
@@ -1717,13 +1712,16 @@ async function chatBridgeFailureMessage(res: Response): Promise<string> {
     const raw = (await res.text()).trim();
     if (raw) {
       try {
-        const json = JSON.parse(raw) as { error?: unknown; message?: unknown };
+        const json = JSON.parse(raw) as { error?: unknown; message?: unknown; code?: unknown };
         detail =
           typeof json.error === "string"
             ? json.error
             : typeof json.message === "string"
               ? json.message
               : raw;
+        if (typeof json.code === "string" && json.code && !detail.includes(json.code)) {
+          detail = `${json.code}: ${detail}`;
+        }
       } catch {
         detail = raw;
       }
@@ -1817,7 +1815,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // no LLM endpoint. Run it ephemerally (embed the transcript instead of
       // resuming the session) so it never appends a turn to the user's thread.
       const prompt = buildThreadReflectPrompt({ sessionId, transcript: buildReflectTranscript(turns) });
-      const { text, error } = await streamFamiliarText({ familiarId: familiar.id, prompt });
+      const { text, error } = await streamFamiliarText({
+        familiarId: familiar.id,
+        prompt,
+        origin: "enhance",
+      });
       if (error) throw new Error(error);
       const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
         method: "POST",
@@ -1848,7 +1850,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!familiar.autoSelfReport) return;
     try {
       const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: buildReflectTranscript(turns) });
-      const { text, error } = await streamFamiliarText({ familiarId: familiar.id, prompt });
+      const { text, error } = await streamFamiliarText({
+        familiarId: familiar.id,
+        prompt,
+        origin: "enhance",
+      });
       if (error || !text.trim()) return;
       const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
         method: "POST",
@@ -2003,6 +2009,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // the user switches familiars (same mounted ChatView, new familiar prop,
   // sessionId still null) while the mint is in flight.
   const familiarIdRef = useRef(familiar.id);
+  // Project data is declared later with the rest of the composer context.
+  // Keep the current fail-closed launch decision readable from the stable
+  // voice callback without letting an older opener root leak into a mint.
+  const projectLaunchRef = useRef({
+    ready: false,
+    root: "",
+    message: "Choose a project this familiar can access before starting chat.",
+  });
   useEffect(() => {
     familiarIdRef.current = familiar.id;
   }, [familiar.id]);
@@ -2010,6 +2024,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // pre-session (voice new-chat) creates the conversation first, then the
   // router promotes it and re-enters through the openVoiceNonce effect.
   const openVoiceCall = useCallback(async () => {
+    const launch = projectLaunchRef.current;
+    if (!launch.ready) {
+      setError(launch.message);
+      setProjectRootRequired(true);
+      raiseDebugError({ code: "project_root_required" });
+      announce(launch.message, "assertive");
+      return;
+    }
     if (sessionId) {
       setVoiceCallOpen(true);
       return;
@@ -2025,7 +2047,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setVoiceCallPending(true);
     try {
       const requestedFamiliarId = familiar.id;
-      const result = await startVoiceConversation(requestedFamiliarId, projectRoot ?? null);
+      const result = await startVoiceConversation(requestedFamiliarId, launch.root);
       // The familiar may have changed while the mint was in flight. Promoting
       // a session minted for the OLD familiar onto the view now showing a
       // DIFFERENT one would silently swap them, so bail on both outcomes —
@@ -2040,7 +2062,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       setVoiceCallPending(false);
     }
-  }, [sessionId, busy, voiceCallPending, familiar.id, projectRoot, announce, onVoiceSessionCreated]);
+  }, [sessionId, busy, voiceCallPending, familiar.id, announce, onVoiceSessionCreated, raiseDebugError]);
   // Composer dictation (voice new-chat): finals append to the draft for
   // review — never auto-sent. The mic hides when no ears engine exists.
   const dictation = useDictation(
@@ -2067,7 +2089,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Scope the picker to the projects THIS familiar has been granted access to —
   // the chat-send route enforces the same grant (assertProjectAccess → 403), so
   // an unscoped list would offer projects that fail on send.
-  const { projects, createProject, createProjectOrThrow, reload: reloadProjects } = useProjects({ familiarId: familiar.id });
+  const {
+    projects: scopedProjects,
+    loading: projectsLoading,
+    error: projectsError,
+    loadedSuccessfully: projectsLoadedSuccessfully,
+    createProject,
+    createProjectOrThrow,
+    reload: reloadProjects,
+  } = useProjects({ familiarId: familiar.id });
+  // A scoped mutation can briefly carry a freshly registered project before
+  // its grant refresh lands. Hide that unverified row until the server returns
+  // its effective access level; launch readiness uses the same list.
+  const projects = useMemo(
+    () => scopedProjects.filter((project) => project.access !== undefined),
+    [scopedProjects],
+  );
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
   // The project the most recent chat ran in — the default a brand-new chat
@@ -2093,28 +2130,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   });
   const resolvedProjectId = projectSelection.projectId;
   const selectedProject = projectSelection.project;
-  // No-project normally means "no root asserted" (the familiar's own
-  // workspace), but an opener-provided unregistered root — a freshly created
-  // `.worktrees/<branch>` checkout — IS the chat's home: keep it active so the
-  // first send runs there and the git chip/env panel show the worktree.
+  // A registered project's worktree keeps its checkout root for execution
+  // while the parent project remains the visible, authorized selection.
+  // Historical unregistered roots remain readable but resolve to no selected
+  // project, so the next turn stays blocked until the user repairs it.
   const activeProjectRoot =
-    resolvedProjectId === NO_PROJECT_ID
-      ? (projectSelection.unregisteredRoot ?? "")
-      : (selectedProject?.root ?? session?.project_root ?? projectRoot ?? "");
-  // Root asserted to the server on send. A session's recorded cwd is NOT an
-  // explicit project choice: a no-project chat boots in the familiar's own
-  // workspace and the daemon records that dir as project_root. Echoing it back
-  // as projectRoot makes the server treat the next turn as an
-  // unregistered-project request and fail closed (403 "project access
-  // denied"). Only assert a root that maps to a registered project or came
-  // from an explicit selection; the server derives the resume cwd from the
-  // conversation record when no root rides.
-  const requestProjectRoot =
-    activeProjectRoot &&
-    activeProjectRoot === session?.project_root &&
-    (resolvedProjectId === NO_PROJECT_ID || !projectIdForRoot(activeProjectRoot, projects))
-      ? ""
-      : activeProjectRoot;
+    projectSelection.unregisteredRoot ??
+    selectedProject?.root ??
+    session?.project_root ??
+    projectRoot ??
+    "";
+  const projectLaunchReady =
+    projectsLoadedSuccessfully &&
+    !projectsLoading &&
+    !projectsError &&
+    selectedProject?.access !== undefined &&
+    Boolean(activeProjectRoot);
+  const projectLaunchMessage = projectsLoading
+    ? "Checking project access…"
+    : projectsError
+      ? "Projects are unavailable. Retry before starting chat."
+      : !projectsLoadedSuccessfully
+        ? "Checking project access…"
+        : projects.length === 0
+          ? "Add a project this familiar can access before starting chat."
+          : "Choose a project this familiar can access before starting chat.";
+  projectLaunchRef.current = {
+    ready: projectLaunchReady,
+    root: activeProjectRoot,
+    message: projectLaunchMessage,
+  };
+  // Only an accessible, current-scope project root may ride a request.
+  const requestProjectRoot = projectLaunchReady ? activeProjectRoot : "";
   // Shared add-project flow for the overflow menu: register + grant in one
   // click, then make the new project this chat's next-send selection.
   const overflowAddProject = useAddProjectFlow({
@@ -3986,6 +4033,30 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const trimmed = text.trim();
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
     if (!trimmed && outgoingAttachments.length === 0) return;
+    const requestedProjectRoot = opts?.projectRoot ?? requestProjectRoot;
+    const requestProject =
+      requestedProjectRoot === activeProjectRoot
+        ? selectedProject
+        : chatProjectById(projectIdForRoot(requestedProjectRoot, projects), projects);
+    const projectLaunchReadyForRequest =
+      projectsLoadedSuccessfully &&
+      !projectsLoading &&
+      !projectsError &&
+      requestProject?.access !== undefined &&
+      Boolean(requestedProjectRoot);
+    if (!projectLaunchReadyForRequest) {
+      setError(projectLaunchMessage);
+      setProjectRootRequired(true);
+      raiseDebugError({ code: "project_root_required" });
+      setLastFailedSend({
+        text: trimmed,
+        attachments: outgoingAttachments,
+        ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
+        ...(opts?.promptOverride ? { promptOverride: opts.promptOverride } : {}),
+      });
+      announce(projectLaunchMessage, "assertive");
+      return;
+    }
     // Slash commands and other programmatic sends also arrive here. Keep the
     // queue at this boundary (rather than only in the composer click handler)
     // so every harness follows the same sequential path, including runtimes
@@ -4011,7 +4082,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // wins for regenerate/edit flows.
           parentTurnId:
             opts?.parentTurnId !== undefined ? opts.parentTurnId : (activeLeafId || null),
-          projectRoot: opts?.projectRoot ?? requestProjectRoot,
+          projectRoot: requestedProjectRoot,
           ...(outgoingMentions.length
             ? { mentionedFilesRoot: opts?.mentionedFilesRoot ?? mentionRoot }
             : {}),
@@ -4076,7 +4147,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
       ...(opts?.promptOverride ? { promptOverride: opts.promptOverride } : {}),
     };
-    const projectRootForRequest = opts?.projectRoot ?? requestProjectRoot;
+    const projectRootForRequest = requestedProjectRoot;
     const mentionedFilesRootForRequest = opts?.mentionedFilesRoot ?? mentionRoot;
     const modelOverrideForRequest =
       opts?.modelOverride !== undefined
@@ -4288,7 +4359,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // A 403 here is the project-access gate: the chat's cwd belongs to no
         // registered project the familiar can reach. Capture that cwd so the
         // error strip can offer a one-click "register + grant, then retry".
-        if (res.status === 403 && /project access denied|not registered/i.test(message)) {
+        if (
+          res.status === 403 &&
+          /project_access_denied|project access denied|not registered/i.test(message)
+        ) {
           const failingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
           setProjectAccessRoot(failingRoot || null);
         }
@@ -4304,16 +4378,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               ? `This chat's project folder is missing (${missingRoot}) — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.`
               : "This chat's project folder is missing — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.";
         }
-        // A 400 project_root_required means this chat has no root anywhere:
-        // no explicit project, no conversation-recorded cwd, no daemon
-        // session record, no familiar workspace. Retry alone can never
-        // succeed, and the server's refusal is jargon — surface plain copy
-        // plus an inline project picker that re-sends the failed message in
-        // the chosen project (cave-yjnr).
-        if (res.status === 400 && /project_root_required|projectRoot is required/i.test(message)) {
+        // Missing, unregistered, and newly revoked project contexts all need a
+        // fresh choice. Retry alone cannot repair them, so route every stable
+        // launch code through the same familiar-scoped picker and retry the
+        // preserved message only after a valid selection (cave-yjnr).
+        if (
+          (res.status === 400 || res.status === 403) &&
+          /project_root_required|project_not_registered|project_access_denied|projectRoot is required/i.test(
+            message,
+          )
+        ) {
           setProjectRootRequired(true);
           surfacedMessage =
-            "This chat isn’t tied to a project folder yet, so there's nowhere to run it. Pick a project below and your message will be retried there.";
+            "This chat can’t run in its current project. Choose a project this familiar can access below and your message will be retried there.";
+          reloadProjects();
         }
         setError(surfacedMessage);
         upsertTurnProgress(assistantId, {
@@ -4625,15 +4703,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // the failed message explicitly rooted there (the explicit opts.projectRoot
   // sidesteps the stale requestProjectRoot closure of this render).
   function handlePickProjectFix(projectId: string) {
-    if (busy || !lastFailedSend) return;
+    if (busy) return;
     const project = chatProjectById(projectId, projects);
-    if (!project) return;
+    if (!project?.access) return;
     const failed = lastFailedSend;
     setProjectIdDraft(projectId);
     setProjectRootRequired(false);
     setError(null);
     setDebugError(null);
     setLastFailedSend(null);
+    // A client-blocked composer send keeps its draft in place; choosing a
+    // project only repairs context. Server failures already captured a retry
+    // payload and may resume immediately in the newly authorized root.
+    if (!failed) return;
     void sendRaw(
       failed.text,
       failed.attachments,
@@ -4758,6 +4840,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       clearDraft();
       return;
     }
+    if (!projectLaunchReady) {
+      setError(projectLaunchMessage);
+      setProjectRootRequired(true);
+      raiseDebugError({ code: "project_root_required" });
+      announce(projectLaunchMessage, "assertive");
+      return;
+    }
     const outgoingAttachments = attachments.map(({ id: _id, ...attachment }) => attachment);
     // Only mentions whose `@path` token survived editing ride along — a
     // deleted reference must not silently re-enter the prompt.
@@ -4857,6 +4946,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       initialPromptSentRef.current = false;
       return;
     }
+    if (!projectLaunchReady) return;
     if (initialPromptSentRef.current || (sessionId && !autoSendInitialPrompt)) return;
     const timer = window.setTimeout(() => {
       if (initialPromptSentRef.current) return;
@@ -4881,7 +4971,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSendInitialPrompt, initialPrompt, sessionId]);
+  }, [autoSendInitialPrompt, initialPrompt, projectLaunchReady, sessionId]);
 
   // "Start a task" tail end: the first send's "session" event hands over the
   // session id, and the card follows the chat. Fire-and-forget — a failed card
@@ -5588,7 +5678,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             linkedContext={linkedContext}
             historyState={historyState}
             projectRoot={projectRoot}
-            onOpenTask={onOpenTask}
             onOpenDebug={sessionId ? () => setDebugModalOpen(true) : undefined}
           />
         </div>
@@ -5611,7 +5700,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           familiar={familiar}
           projectRoot={projectRoot}
           onSessionsChanged={onSessionsChanged}
-          onBack={onBack}
         >
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
@@ -5890,7 +5978,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }
           pickProjectOptions={
             projectRootRequired
-              ? projects.map((project) => ({ id: project.id, name: project.name }))
+              ? projects.map((project) => ({
+                  id: project.id,
+                  name: `${project.name} · ${projectAccessLabel(project.access!)}`,
+                }))
               : undefined
           }
           onPickProject={projectRootRequired ? handlePickProjectFix : undefined}
@@ -6345,7 +6436,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     type="button"
                     className="cave-composer-footer-action focus-ring"
                     onClick={() => void openVoiceCall()}
-                    disabled={voiceCallPending || (busy && !sessionId)}
+                    disabled={!projectLaunchReady || voiceCallPending || (busy && !sessionId)}
                     title="Voice call"
                     aria-label="Voice call"
                   >
@@ -6367,7 +6458,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       projects,
                       projectValue: resolvedProjectId,
                       onProjectChange: setProjectIdDraft,
-                      allowNoProject: true,
                       familiarId: familiar.id ?? null,
                       createProject,
                       runtime: modelHarness,
@@ -6427,7 +6517,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       <button
                         type="button"
                         onClick={() => void send()}
-                        disabled={!input.trim() && attachments.length === 0}
+                        disabled={!projectLaunchReady || (!input.trim() && attachments.length === 0)}
                         data-typing={input.trim() ? "true" : undefined}
                         className="cave-composer-send cave-composer-send--queue focus-ring transition-colors"
                         title="Queue message"
@@ -6449,7 +6539,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     <button
                       type="button"
                       onClick={() => void send()}
-                      disabled={!input.trim() && attachments.length === 0}
+                      disabled={!projectLaunchReady || (!input.trim() && attachments.length === 0)}
                       data-typing={input.trim() ? "true" : undefined}
                       className="cave-composer-send focus-ring transition-colors"
                       title={`Send message (${keys.enter})`}
@@ -6472,7 +6562,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   projects={projects}
                   projectValue={resolvedProjectId}
                   onProjectChange={setProjectIdDraft}
-                  allowNoProject
                   familiarId={familiar.id ?? null}
                   createProject={createProject}
                   runtime={modelHarness}

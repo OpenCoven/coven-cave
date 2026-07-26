@@ -40,7 +40,7 @@ import { getShikiHighlighter } from "@/lib/shiki-highlighter";
 import { Icon } from "@/lib/icon";
 import { renderCitedBody } from "@/lib/citations";
 import { CitationSources } from "@/components/ui/citation";
-import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
+import { classifyDiffLines, parseFenceInfo } from "@/lib/message-code-fences";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";

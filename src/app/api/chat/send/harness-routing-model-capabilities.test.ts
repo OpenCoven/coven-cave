@@ -53,8 +53,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /binding\.harness !== "openclaw" && \(await covenRunSupportsModel\(\)\)/,
-  "OpenClaw never forwards --model; every other harness gates on the probe",
+  /binding\.harness !== "openclaw" &&[\s\S]*?probeCovenCapability\(covenRunSupportsModel\)/,
+  "OpenClaw never forwards --model; generic Coven forwarding uses the ready-plan-gated probe",
 );
 
 assert.match(
@@ -95,8 +95,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /binding\.harness !== "grok" &&\s*\n\s*\(await covenRunSupportsAddDir\(\)\)/,
-  "Grok's native direct path must not wait for an unrelated coven run --add-dir probe",
+  /binding\.harness !== "grok" &&\s*\(\(await probeCovenCapability\(covenRunSupportsAddDir\)\) \?\? false\)/,
+  "Grok's native direct path must not wait for an unrelated ready-plan-gated coven run --add-dir probe",
 );
 assert.match(
   chatRoute,

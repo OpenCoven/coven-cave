@@ -24,6 +24,7 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
 const E2E_RUN_ID = randomUUID();
 const E2E_PROJECTS_PATH = join(tmpdir(), `cave-e2e-projects-${E2E_RUN_ID}.json`);
 const E2E_QUEUE_PROJECT_PATH = join(tmpdir(), `cave-e2e-queue-project-${E2E_RUN_ID}.json`);
+const E2E_PROJECT_PERMISSIONS_PATH = join(tmpdir(), `cave-e2e-project-permissions-${E2E_RUN_ID}.json`);
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 
@@ -41,6 +42,22 @@ writeFileSync(
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     }],
+  }),
+);
+writeFileSync(
+  E2E_PROJECT_PERMISSIONS_PATH,
+  JSON.stringify({
+    version: 2,
+    projectGrants: [{
+      familiarId: "nova",
+      projectId: "e2e-project",
+      access: "write",
+      source: "human",
+      grantedAt: "2026-01-01T00:00:00.000Z",
+    }],
+    accessGroups: [],
+    grantProposals: [],
+    permissionAudit: [],
   }),
 );
 // Queue selection is a separate durable preference. Seed it alongside the
@@ -133,6 +150,7 @@ export default defineConfig({
       // every request in this run.
       COVEN_PREFERENCES_PATH: join(tmpdir(), `cave-e2e-preferences-${E2E_RUN_ID}.json`),
       CAVE_PROJECTS_PATH_OVERRIDE: E2E_PROJECTS_PATH,
+      CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: E2E_PROJECT_PERMISSIONS_PATH,
       CAVE_QUEUE_PROJECT_PATH_OVERRIDE: E2E_QUEUE_PROJECT_PATH,
       COVEN_BACKDROP_PATH: join(tmpdir(), `cave-e2e-backdrop-${E2E_RUN_ID}.jpg`),
       COVEN_THEME_PATH: join(tmpdir(), `cave-e2e-theme-${E2E_RUN_ID}.json`),

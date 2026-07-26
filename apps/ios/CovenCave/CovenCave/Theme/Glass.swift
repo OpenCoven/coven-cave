@@ -17,7 +17,7 @@ import UIKit
 ///   and the hairline border is promoted to a full, wider stroke.
 /// - Shadows/glows are suppressed for both, and for **Reduce Motion**.
 enum GlassLevel {
-    /// Top/bottom bars and the tab bar — the app's outermost chrome.
+    /// Top/bottom navigation bars — the app's outermost chrome.
     case chrome
     /// Pill controls: the search field, compose button, small action chips.
     case control
@@ -102,7 +102,7 @@ extension View {
     }
 
     /// An accent-coloured halo on a selected/active element (the focused search
-    /// field, the compose button, the current tab). Suppressed under Reduce
+    /// field, the compose button, the current destination). Suppressed under Reduce
     /// Transparency / Increase Contrast / Reduce Motion, where a glow either hurts
     /// legibility or is unwanted motion.
     func accentGlow(active: Bool) -> some View {
@@ -264,20 +264,20 @@ extension View {
     }
 }
 
-// MARK: - Frosted system bars (tab + navigation)
+// MARK: - Frosted navigation bars
 
 extension View {
-    /// Paint the bottom tab bar and navigation bars as accent-infused frosted glass
+    /// Paint navigation bars as accent-infused frosted glass
     /// that tracks the desktop palette and the accessibility environment. Reapplied
     /// to the live bars whenever the chrome or those settings change, so a desktop
     /// theme switch (or toggling Reduce Transparency) re-tints them without an app
     /// relaunch. Replaces a flat `.toolbarBackground(chrome.bgRaised, …)`.
-    func glassBars() -> some View {
-        modifier(GlassBars())
+    func glassNavigationBars() -> some View {
+        modifier(GlassNavigationBars())
     }
 }
 
-private struct GlassBars: ViewModifier {
+private struct GlassNavigationBars: ViewModifier {
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
@@ -292,23 +292,15 @@ private struct GlassBars: ViewModifier {
 
     private func apply() {
         let increasedContrast = contrast == .increased
-        let tabAppearance = UITabBarAppearance.glass(
-            chrome: chrome, reduceTransparency: reduceTransparency, increasedContrast: increasedContrast)
         let navAppearance = UINavigationBarAppearance.glass(
             chrome: chrome, reduceTransparency: reduceTransparency, increasedContrast: increasedContrast)
 
         // The proxies style any bar created later (e.g. first launch)…
-        UITabBar.appearance().standardAppearance = tabAppearance
-        UITabBar.appearance().scrollEdgeAppearance = tabAppearance
         UINavigationBar.appearance().standardAppearance = navAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
         UINavigationBar.appearance().compactAppearance = navAppearance
 
-        // …and the live bars are restyled in place so runtime theme changes show.
-        for bar in UIApplication.shared.liveTabBars {
-            bar.standardAppearance = tabAppearance
-            bar.scrollEdgeAppearance = tabAppearance
-        }
+        // …and live navigation bars are restyled in place for runtime theme changes.
         for bar in UIApplication.shared.liveNavBars {
             bar.standardAppearance = navAppearance
             bar.scrollEdgeAppearance = navAppearance
@@ -317,48 +309,9 @@ private struct GlassBars: ViewModifier {
     }
 }
 
-extension UITabBarAppearance {
-    /// Build a tab-bar appearance from the palette: a blurred, accent-tinted
-    /// background (or a solid themed one under Reduce Transparency), accent-tinted
-    /// selected items, and a themed hairline shadow.
-    static func glass(chrome: ChromePalette, reduceTransparency: Bool, increasedContrast: Bool) -> UITabBarAppearance {
-        let appearance = UITabBarAppearance()
-        let raised = UIColor(chrome.bgRaised)
-        let accent = UIColor(chrome.accent)
-
-        if reduceTransparency {
-            appearance.configureWithOpaqueBackground()
-            appearance.backgroundColor = increasedContrast
-                ? raised
-                : raised.blended(with: accent, amount: 0.06)
-            appearance.backgroundEffect = nil
-        } else {
-            appearance.configureWithDefaultBackground() // keeps the system blur
-            let tint = increasedContrast ? raised : raised.blended(with: accent, amount: 0.12)
-            appearance.backgroundColor = tint.withAlphaComponent(increasedContrast ? 0.95 : 0.55)
-        }
-
-        let normal = UIColor(chrome.textSecondary)
-        for item in [appearance.stackedLayoutAppearance,
-                     appearance.inlineLayoutAppearance,
-                     appearance.compactInlineLayoutAppearance] {
-            item.normal.iconColor = normal
-            item.normal.titleTextAttributes = [.foregroundColor: normal]
-            item.selected.iconColor = accent
-            item.selected.titleTextAttributes = [.foregroundColor: accent]
-        }
-
-        appearance.shadowColor = increasedContrast
-            ? UIColor(chrome.border)
-            : UIColor(chrome.border).withAlphaComponent(0.4)
-        return appearance
-    }
-}
-
 extension UINavigationBarAppearance {
-    /// Match the tab bar: a blurred, accent-tinted background (or a solid themed
-    /// one under Reduce Transparency) with themed title text and hairline shadow,
-    /// so pushed views (ChatView, FamiliarThreadsView) keep the desktop look.
+    /// Build a blurred, accent-tinted navigation background (or a solid themed
+    /// one under Reduce Transparency) with themed title text and hairline shadow.
     static func glass(chrome: ChromePalette, reduceTransparency: Bool, increasedContrast: Bool) -> UINavigationBarAppearance {
         let appearance = UINavigationBarAppearance()
         let raised = UIColor(chrome.bgRaised)
@@ -403,9 +356,8 @@ private extension UIColor {
 }
 
 private extension UIApplication {
-    /// Tab/nav bars currently on screen, found by walking the connected window
-    /// scenes' view hierarchies — so appearance changes hit live bars in place.
-    var liveTabBars: [UITabBar] { liveBars() }
+    /// Navigation bars currently on screen, found by walking connected window
+    /// scenes' view hierarchies so appearance changes hit them in place.
     var liveNavBars: [UINavigationBar] { liveBars() }
 
     private func liveBars<T: UIView>() -> [T] {

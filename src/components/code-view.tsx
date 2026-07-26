@@ -15,7 +15,7 @@
  * "github" workspace mode is now a tab alias landing here).
  */
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import {

@@ -42,7 +42,6 @@ import {
   appendOutput,
   appendTrace,
   installJobTail,
-  redactSensitiveInstallOutput,
   type InstallJobOutput,
 } from "./install-job-output";
 import { runInstallProcess } from "./install-process";

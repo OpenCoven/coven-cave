@@ -135,13 +135,13 @@ test("home-composer: call item starts a voice chat, summoning when no familiar",
 
 test("home-composer: voice call item gates itself on an in-flight mint and always resets", () => {
   assert.match(homeComposer, /const \[voiceCallPending, setVoiceCallPending\] = useState\(false\)/);
-  assert.match(homeComposer, /disabled: sending \|\| voiceCallPending/);
+  assert.match(homeComposer, /disabled: sending \|\| voiceCallPending \|\| !projectLaunchReady/);
   // The mint must be gated start-to-finish: set pending before the call,
   // reset it in .finally so a rejected/failed mint can't leave the item
   // permanently disabled.
   assert.match(
     homeComposer,
-    /setVoiceCallPending\(true\);[\s\S]*?Promise\.resolve\([\s\S]{0,120}?onStartVoiceCall\(selectedFamiliarId, selectedProject\?\.root \?\? null\),?[\s\S]{0,40}?\)\.finally\(\(\) => setVoiceCallPending\(false\)/,
+    /setVoiceCallPending\(true\);[\s\S]*?Promise\.resolve\([\s\S]{0,120}?onStartVoiceCall\(selectedFamiliarId, selectedProjectRoot\),?[\s\S]{0,40}?\)\.finally\(\(\) => setVoiceCallPending\(false\)/,
   );
   // The prop type must allow returning a promise, or callers couldn't chain
   // .finally onto it to reset the pending flag.
@@ -154,7 +154,7 @@ test("home-composer: voice call item gates itself on an in-flight mint and alway
 test("chat-view: direct voice call button works pre-session by creating the conversation first", () => {
   assert.match(
     chatView,
-    /<button[\s\S]*?className="cave-composer-footer-action focus-ring"[\s\S]*?onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?title="Voice call"[\s\S]*?aria-label="Voice call"[\s\S]*?<Icon name="ph:phone" width=\{15\} aria-hidden \/>[\s\S]*?<\/button>\s*<ComposerActionsMenu/,
+    /<button[\s\S]*?className="cave-composer-footer-action focus-ring"[\s\S]*?onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{!projectLaunchReady \|\| voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?title="Voice call"[\s\S]*?aria-label="Voice call"[\s\S]*?<Icon name="ph:phone" width=\{15\} aria-hidden \/>[\s\S]*?<\/button>\s*<ComposerActionsMenu/,
   );
   assert.doesNotMatch(chatView, /\{\s*sessionId\s*&&\s*<button[\s\S]{0,280}aria-label="Voice call"/);
   assert.doesNotMatch(chatView, /\{\s*sessionId\s*\?\s*<button[\s\S]{0,280}aria-label="Voice call"/);
@@ -164,7 +164,7 @@ test("chat-view: direct voice call button works pre-session by creating the conv
   // handled before the session is ever promoted onto the view.
   assert.match(
     chatView,
-    /const openVoiceCall = useCallback\(async \(\) => \{[\s\S]*?if \(sessionId\) \{[\s\S]*?setVoiceCallOpen\(true\);[\s\S]*?if \(voiceCallPending\) return;[\s\S]*?setVoiceCallPending\(true\);[\s\S]*?startVoiceConversation\(requestedFamiliarId, projectRoot \?\? null\)[\s\S]*?if \(familiarIdRef\.current !== requestedFamiliarId\) return;[\s\S]*?onVoiceSessionCreated\?\.\(result\.sessionId\)/,
+    /const openVoiceCall = useCallback\(async \(\) => \{[\s\S]*?const launch = projectLaunchRef\.current;[\s\S]*?if \(!launch\.ready\)[\s\S]*?if \(sessionId\) \{[\s\S]*?setVoiceCallOpen\(true\);[\s\S]*?if \(voiceCallPending\) return;[\s\S]*?setVoiceCallPending\(true\);[\s\S]*?startVoiceConversation\(requestedFamiliarId, launch\.root\)[\s\S]*?if \(familiarIdRef\.current !== requestedFamiliarId\) return;[\s\S]*?onVoiceSessionCreated\?\.\(result\.sessionId\)/,
   );
 });
 
@@ -180,7 +180,7 @@ test("chat-view: voice call button disables itself while a mint is in flight, an
   // mid-stream. Mid-session (sessionId set) stays available while busy.
   assert.match(
     chatView,
-    /onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?aria-label="Voice call"/,
+    /onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{!projectLaunchReady \|\| voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?aria-label="Voice call"/,
   );
 });
 
@@ -210,7 +210,7 @@ test("chat-view: openVoiceCall bails before promoting a mint onto a switched fam
   // snapshot from mount.
   assert.match(
     chatView,
-    /const familiarIdRef = useRef\(familiar\.id\);\s*\n\s*useEffect\(\(\) => \{\s*\n\s*familiarIdRef\.current = familiar\.id;\s*\n\s*\}, \[familiar\.id\]\);/,
+    /const familiarIdRef = useRef\(familiar\.id\);[\s\S]{0,500}?useEffect\(\(\) => \{\s*\n\s*familiarIdRef\.current = familiar\.id;\s*\n\s*\}, \[familiar\.id\]\);/,
   );
 });
 
@@ -249,7 +249,7 @@ test("chat-view: closing an auto-created call discards exactly the session it wa
   // mid-session stays available while busy).
   assert.match(
     chatView,
-    /onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?aria-label="Voice call"/,
+    /onClick=\{\(\) => void openVoiceCall\(\)\}[\s\S]*?disabled=\{!projectLaunchReady \|\| voiceCallPending \|\| \(busy && !sessionId\)\}[\s\S]*?aria-label="Voice call"/,
   );
   // Router side: the callback resets to a fresh compose state for the same
   // familiar/project, mirroring the onVoiceSessionCreated promotion shape

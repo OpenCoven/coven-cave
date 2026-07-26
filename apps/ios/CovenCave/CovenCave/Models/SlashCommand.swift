@@ -37,8 +37,8 @@ struct SlashCommand: Identifiable, Hashable {
         case newChat               // start a fresh chat with the same familiar(s)
         case familiarPicker        // switch familiar (arg = name) or open the picker
         case openSessions          // jump to the Chats list
-        case openBoard             // switch to the Tasks tab
-        case openTerminal          // switch to the Terminal tab
+        case openBoard             // switch to the Tasks destination
+        case openTerminal          // switch to the Terminal destination
         case sendAsPrompt          // /run /codex /claude — send the args as a message
         case daemonStatus          // /daemon — fetch + show status inline
         case doctor                // /doctor — run `coven doctor` inline

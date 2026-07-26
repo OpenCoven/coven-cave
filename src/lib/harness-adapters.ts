@@ -1,4 +1,5 @@
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+import type { RuntimeAvailabilitySummary } from "./runtime-availability.ts";
 
 export type CompatibilityAdapter = {
   id: string;
@@ -41,6 +42,9 @@ export type AdapterReport = {
   /** Runtime-discovered model choices, when the local CLI exposes them. */
   models?: Array<{ id: string; label: string }>;
   defaultModel?: string | null;
+  /** Chat launch-vehicle availability (#3856): whether the send route could
+   * actually spawn this adapter's launch command right now. */
+  availability?: RuntimeAvailabilitySummary;
 };
 
 export type AdapterSetupState =
@@ -316,6 +320,7 @@ export function mergeAdapterReports(
       manifestPath: local.manifestPath ?? null,
       ...(local.models ? { models: local.models } : {}),
       ...(local.defaultModel ? { defaultModel: local.defaultModel } : {}),
+      ...(local.availability ? { availability: local.availability } : {}),
     });
   }
 
@@ -337,6 +342,7 @@ export function mergeAdapterReports(
       manifestPath: coven.manifest_path ?? existing?.manifestPath ?? null,
       ...(existing?.models ? { models: existing.models } : {}),
       ...(existing?.defaultModel ? { defaultModel: existing.defaultModel } : {}),
+      ...(existing?.availability ? { availability: existing.availability } : {}),
     });
   }
 

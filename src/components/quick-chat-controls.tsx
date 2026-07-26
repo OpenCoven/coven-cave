@@ -2,7 +2,7 @@
 
 import "@/styles/cave-composer.css";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 // The slash menu popover reuses the home composer's .hc-slash-* affordance —
 // this stylesheet is global-scoped, so importing it here makes the menu render
 // identically in the tray window (which never mounts the home composer).
@@ -14,6 +14,7 @@ import {
   type CommandThinkingEffort,
 } from "@/lib/command-controls";
 import type { CaveProject } from "@/lib/cave-projects-types";
+import { projectAccessLabel } from "@/lib/project-access-levels";
 import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { StandardSelect } from "@/components/ui/select";
@@ -46,9 +47,7 @@ import {
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import {
   FamiliarMark,
-  QuickChatIdentity,
   QuickChatSelect,
-  type QuickChatSelectOption,
 } from "./quick-chat-primitives";
 
 export {
@@ -80,6 +79,7 @@ export function QuickChatControlsRow({
   onPickFamiliar,
   projects,
   projectsLoading,
+  projectsError,
   selectedProjectRoot,
   onPickProjectRoot,
   thinkingEffort,
@@ -95,6 +95,7 @@ export function QuickChatControlsRow({
   onPickFamiliar: (id: string | null) => void;
   projects: CaveProject[];
   projectsLoading: boolean;
+  projectsError?: string | null;
   selectedProjectRoot: string | null;
   onPickProjectRoot: (root: string | null) => void;
   thinkingEffort: CommandThinkingEffort;
@@ -112,6 +113,9 @@ export function QuickChatControlsRow({
     : null;
   const selectedProjectName =
     selectedProject?.name ?? selectedProjectRoot?.split(/[\\/]/).filter(Boolean).pop() ?? "";
+  const selectedProjectAccess = selectedProject?.access
+    ? projectAccessLabel(selectedProject.access)
+    : null;
   return (
     <div className="quick-chat-overlay__controls">
       {showFamiliarPicker ? (
@@ -132,14 +136,16 @@ export function QuickChatControlsRow({
           }
         />
       ) : null}
-      {selectedProjectRoot ? (
+      {selectedProject ? (
         <span
           className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs"
-          title={selectedProjectRoot}
-          aria-label={`Project: ${selectedProjectName} (locked for this chat)`}
+          title={selectedProject.root}
+          aria-label={`Project: ${selectedProjectName}, ${selectedProjectAccess} access (locked for this chat)`}
         >
           <Icon name="ph:folder" width={13} aria-hidden className="shrink-0 text-[var(--fg-muted)]" />
-          <span className="min-w-0 truncate">{selectedProjectName}</span>
+          <span className="min-w-0 truncate">
+            {selectedProjectName} · {selectedProjectAccess}
+          </span>
           <Icon
             name="ph:lock-simple"
             width={11}
@@ -150,18 +156,26 @@ export function QuickChatControlsRow({
       ) : (
         <QuickChatSelect
           label="Project"
-          value={selectedProjectRoot ?? "__none__"}
-          onChange={(next) => onPickProjectRoot(next === "__none__" ? null : next)}
-          disabled={projectsLoading && projects.length === 0}
+          value="__choose__"
+          onChange={(next) => {
+            if (next !== "__choose__") onPickProjectRoot(next);
+          }}
+          disabled={projectsLoading || Boolean(projectsError) || projects.length === 0}
           className="flex-1"
           options={
             projectsLoading && projects.length === 0
-              ? [{ value: "__none__", label: "Loading projects…", disabled: true }]
-              : [
-                  { value: "__none__", label: "No project", icon: "ph:folder-simple-dashed" as IconName },
+              ? [{ value: "__choose__", label: "Loading projects…", disabled: true }]
+              : projectsError
+                ? [{ value: "__choose__", label: "Projects unavailable", disabled: true }]
+                : projects.length === 0
+                  ? [{ value: "__choose__", label: "No accessible projects", disabled: true }]
+                  : [
+                  { value: "__choose__", label: "Choose project…", disabled: true },
                   ...projects.map((project) => ({
                     value: project.root,
-                    label: project.name,
+                    label: `${project.name} · ${
+                      project.access ? projectAccessLabel(project.access) : "Unknown"
+                    }`,
                     icon: "ph:folder" as IconName,
                   })),
                 ]
@@ -233,6 +247,7 @@ export function QuickChatComposer({
   onCancel,
   sending,
   disabled,
+  launchReady = true,
   familiar,
   inputId,
   composerRef,
@@ -258,6 +273,9 @@ export function QuickChatComposer({
   sending: boolean;
   /** Blocks sending while true (e.g. the roster is still loading). */
   disabled?: boolean;
+  /** Ordinary messages require a freshly authorized project. Local slash
+   *  commands stay available so setup/model help is never trapped. */
+  launchReady?: boolean;
   familiar: Familiar | null;
   inputId: string;
   composerRef?: React.RefObject<HTMLTextAreaElement | null>;
@@ -390,10 +408,11 @@ export function QuickChatComposer({
         composerRef?.current?.focus();
         return;
       }
+      if (!launchReady) return;
       onDraftChange("");
       onSendText?.(buildSkillPrompt(skill, args));
     },
-    [draft, onDraftChange, composerRef, onSendText],
+    [draft, launchReady, onDraftChange, composerRef, onSendText],
   );
 
   // Slash dispatch — the quick-chat subset. Supported commands act locally or
@@ -504,6 +523,7 @@ export function QuickChatComposer({
       runSlash(trimmed);
       return;
     }
+    if (!launchReady) return;
     // The strip belongs to the draft being sent — don't leave it hanging
     // over the emptied composer.
     promptEnhance.reset();
@@ -511,10 +531,21 @@ export function QuickChatComposer({
     // the outgoing payload (mirrors the chat composer's send).
     onSend(attachments.map(({ id: _id, ...attachment }) => attachment));
     clearAttachments();
-  }, [draft, slashEnabled, runSlash, onSend, promptEnhance.reset, attachments, clearAttachments]);
+  }, [
+    attachments,
+    clearAttachments,
+    draft,
+    launchReady,
+    onSend,
+    promptEnhance.reset,
+    runSlash,
+    slashEnabled,
+  ]);
   // Sendable = something to say (text or files). While a reply streams the
   // same action QUEUES — the hook parks it and auto-sends on settle.
   const canSend = Boolean(draft.trim() || attachments.length > 0);
+  const canDispatch =
+    canSend && (launchReady || (slashEnabled && draft.trim().startsWith("/")));
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // The inline slash menus (Esc-dismiss, ↑↓/Tab/Enter across the pickers)
@@ -546,10 +577,19 @@ export function QuickChatComposer({
         event.preventDefault();
         // Enter while a reply streams queues the message (the hook parks it);
         // `disabled` (roster loading) still blocks.
-        if (!disabled && canSend) send();
+        if (!disabled && canDispatch) send();
       }
     },
-    [acceptRecommendation, canSend, disabled, draft, recommendation.suggestion, send, slashEnabled, menu.handleKeyDown],
+    [
+      acceptRecommendation,
+      canDispatch,
+      disabled,
+      draft,
+      recommendation.suggestion,
+      send,
+      slashEnabled,
+      menu.handleKeyDown,
+    ],
   );
 
   const slashMenuOpen = slashEnabled && menu.menuOpen;
@@ -763,7 +803,7 @@ export function QuickChatComposer({
             size="sm"
             leadingIcon="ph:sparkle"
             onClick={send}
-            disabled={disabled || !canSend}
+            disabled={disabled || !canDispatch}
             title={sending ? "Queues — sends when the reply finishes" : undefined}
           >
             {sending ? "Queue" : "Send"}

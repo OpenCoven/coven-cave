@@ -11,6 +11,9 @@ import { readFileSync } from "node:fs";
 const src = readFileSync(new URL("./project-picker.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/globals/surface-marketplace.css", import.meta.url), "utf8");
 const homeComposer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
+const addMenu = readFileSync(new URL("./composer-add-menu.tsx", import.meta.url), "utf8");
+const actionsMenu = readFileSync(new URL("./composer-actions-menu.tsx", import.meta.url), "utf8");
 
 // ── One shared add flow: register + grant in a single human-initiated step ──
 assert.match(src, /export function useAddProjectFlow\(/, "shared flow exported");
@@ -27,6 +30,28 @@ assert.match(src, /aria-haspopup="dialog"/, "trigger announces the popover");
 assert.match(src, /role="alert"/, "add-flow failures surface inline, not silently");
 assert.match(src, /sortProjectsAlphabetically\(projects\)/, "picker renders projects alphabetically");
 assert.doesNotMatch(src, /if \(!q\) return projects;/, "unfiltered picker must not expose raw API order");
+assert.match(src, /projectAccessLabel/, "picker uses the shared Read/Full access copy");
+assert.match(src, /cave-project-picker__option-access/, "every scoped project option renders access");
+assert.match(
+  src,
+  /aria-label=\{`\$\{ariaLabel\}: \$\{selectedAccessibleLabel\}`\}/,
+  "the picker trigger's accessible name includes the selected project's Read or Full access",
+);
+assert.match(
+  src,
+  /allowNoProject \? "No project" : "Choose project"/,
+  "a required picker names the missing state as Choose project, not No project",
+);
+assert.match(
+  src,
+  /value[\s\S]{0,80}\? sorted\.find\(\(project\) => project\.id === value\)[\s\S]{0,80}: defaultToFirst \? sorted\[0\] : undefined/,
+  "an explicit stale picker value resolves to no project instead of silently selecting the first",
+);
+assert.match(
+  src,
+  /defaultToFirst \? sorted\[0\] : undefined/,
+  "callers that require an explicit durable choice can keep null rendered as Choose project",
+);
 assert.match(src, /import \{ Button \}/, "picker trigger uses the shared Button primitive");
 assert.doesNotMatch(src, /<button\b/, "picker should not hand-roll button controls");
 assert.doesNotMatch(
@@ -40,7 +65,6 @@ assert.doesNotMatch(
 // the chat composer). The pill chains to the shared ProjectPickerPopover, so
 // selection reads the same everywhere (chat revamp 1d).
 assert.match(homeComposer, /<ComposerContextChips[\s\S]*?projectValue=\{displayProjectId\}/, "home composer's context chips host the shared project picker");
-const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 assert.match(contextPill, /export type ComposerContextProps = \{/, "context props are reusable");
 assert.match(
   contextPill,
@@ -54,7 +78,6 @@ assert.match(
   /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?<ProjectPickerPopover/,
   "the project chip is a labelled control that opens the shared ProjectPickerPopover",
 );
-const actionsMenu = readFileSync(new URL("./composer-actions-menu.tsx", import.meta.url), "utf8");
 assert.match(
   actionsMenu,
   /<ComposerContextPickers[\s\S]*?context=\{context\}/,
@@ -62,10 +85,26 @@ assert.match(
 );
 assert.match(contextPill, /<ProjectPickerPopover/, "the context pill opens the shared ProjectPickerPopover");
 assert.match(contextPill, /useAddProjectFlow\(\{/, "the context pill folds in the shared add-project flow");
+assert.match(
+  contextPill,
+  /projectAccessLabel\(context\.selectedProject\.access\)/,
+  "the selected project chip visibly includes its effective access level",
+);
+assert.match(
+  actionsMenu,
+  /access: p\.access/,
+  "the chat actions menu preserves access metadata in its alternate project chooser",
+);
+assert.match(
+  addMenu,
+  /projectAccessLabel\(p\.access\)/,
+  "the alternate Add-to-project chooser shows Read or Full",
+);
 
 // ── Styled ──────────────────────────────────────────────────────────────────
 assert.match(css, /\.cave-project-picker__trigger/, "trigger styled");
 assert.match(css, /\.cave-project-picker__option-root/, "root subtitle styled");
+assert.match(css, /\.cave-project-picker__option-access/, "access label styled with design tokens");
 assert.match(
   css,
   /\.ui-popover\.cave-project-picker__popover \.ui-popover-item > span:not\(\.project-avatar\)/,

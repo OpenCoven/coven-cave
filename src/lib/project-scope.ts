@@ -3,6 +3,8 @@ export function projectScopeKey(familiarId: string | null): string {
   return familiarId ? `familiar:${familiarId}` : "unscoped";
 }
 
+const EMPTY_PROJECT_SCOPE: never[] = [];
+
 /** True only when a successful project response belongs to the current scope. */
 export function isCurrentProjectScope(
   loadedScopeKey: string | null,
@@ -21,7 +23,7 @@ export function projectsForCurrentScope<T>(
   loadedScopeKey: string | null,
   familiarId: string | null,
 ): T[] {
-  return isCurrentProjectScope(loadedScopeKey, familiarId) ? projects : [];
+  return isCurrentProjectScope(loadedScopeKey, familiarId) ? projects : EMPTY_PROJECT_SCOPE;
 }
 
 /**

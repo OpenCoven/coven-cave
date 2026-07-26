@@ -16,12 +16,9 @@ assert.match(card, /if \(saveState === "idle"\)[\s\S]{0,80}setSaveState\("confir
 assert.match(card, /Confirm — save to Tasks/, "second click confirms the save");
 assert.match(card, /salem-pf__action--save/, "renders a dedicated save button");
 
-// Salem panel: home card is wired to save to Tasks with labels + steps.
-assert.match(widget, /onSave=\{saveCardToBoard\}/, "panel passes the save handler");
-assert.match(widget, /\/api\/board/, "save posts to the board API");
-assert.match(widget, /labels: \["salem", "happy-path", card\.recommendedPathId\]/, "tags the board card");
-assert.match(widget, /steps: card\.steps\.map/, "copies path steps into the checklist");
-assert.match(widget, /Salem path: \$\{card\.title\}/, "titles the board card by the path");
+// The rail chat has no Pathfinder trigger. Keep the old save implementation
+// out instead of carrying an unreachable second entry path.
+assert.doesNotMatch(widget, /saveCardToBoard|\/api\/board|SalemPathfinderCard/, "rail chat omits dormant Pathfinder save plumbing");
 
 // Sidebar: the Ask Salem entry was removed from the left side panel. The mode
 // exists as a FOLDER_MODES row (object literal, not JSX) but must stay

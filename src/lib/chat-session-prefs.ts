@@ -32,8 +32,8 @@ export function readPinnedSessions(): string[] {
 // show the same pins. Each used to hold its own useState copy and write the
 // whole key on change, so pinning in one surface and then pinning in another
 // clobbered the first (the second surface wrote its stale copy). One
-// subscribable store — same idiom as session-pins.ts — keeps every mounted
-// surface on the same list and persists exactly once per change.
+// subscribable store keeps every mounted surface on the same list and persists
+// exactly once per change.
 
 const pinListeners = new Set<() => void>();
 function notifyPinnedSessions(): void {

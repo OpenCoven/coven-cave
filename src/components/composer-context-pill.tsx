@@ -26,6 +26,7 @@ import { useChangesSummary } from "@/lib/use-changes-summary";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import type { CreateProjectOptions } from "@/lib/chat-add-project";
+import { projectAccessLabel } from "@/lib/project-access-levels";
 import type { RuntimeModelOption } from "@/lib/runtime-models";
 
 export type ComposerContextView = null | "project" | "model" | "branch";
@@ -73,8 +74,14 @@ export function useComposerContextActions(config: ComposerContextProps) {
    config.projectValue === NO_PROJECT_ID
      ? null
      : (config.projectValue
-         ? sortedProjects.find((project) => project.id === config.projectValue) ?? sortedProjects[0]
+         ? sortedProjects.find((project) => project.id === config.projectValue)
          : sortedProjects[0]) ?? null;
+  const emptyProjectLabel = config.allowNoProject ? "No project" : "Choose project";
+  const selectedProjectLabel = selectedProject
+    ? `${selectedProject.name}${
+        selectedProject.access ? ` · ${projectAccessLabel(selectedProject.access)}` : ""
+      }`
+    : emptyProjectLabel;
 
   const addFlow = useAddProjectFlow({
    familiarId: config.familiarId ?? null,
@@ -97,7 +104,7 @@ export function useComposerContextActions(config: ComposerContextProps) {
   const dirtyLabel =
     count > 0 ? `${count} uncommitted change${count === 1 ? "" : "s"}` : "clean";
   const summary = [
-    selectedProject ? selectedProject.name : "No project",
+    selectedProjectLabel,
     modelLabel ?? runtimeName,
   ].join(" · ");
 
@@ -105,6 +112,8 @@ export function useComposerContextActions(config: ComposerContextProps) {
    config,
    sortedProjects,
    selectedProject,
+   emptyProjectLabel,
+   selectedProjectLabel,
    addFlow,
     runtimeName,
     modelLabel,
@@ -197,7 +206,10 @@ export function ComposerContextChips(props: ComposerContextProps) {
   const modelRef = useRef<HTMLButtonElement | null>(null);
   const branchRef = useRef<HTMLButtonElement | null>(null);
   const context = useComposerContextActions(props);
-  const projectLabel = context.selectedProject?.name ?? "No project";
+  const projectLabel = context.selectedProjectLabel;
+  const projectAccess = context.selectedProject?.access
+    ? projectAccessLabel(context.selectedProject.access)
+    : null;
   const modelLabel = context.modelLabel ?? context.runtimeName;
 
   return (
@@ -210,7 +222,11 @@ export function ComposerContextChips(props: ComposerContextProps) {
         aria-haspopup="dialog"
         aria-expanded={menu === "project"}
         aria-label={`Project: ${projectLabel} — change project`}
-        title={context.selectedProject?.root ?? "No project selected"}
+        title={
+          context.selectedProject
+            ? `${context.selectedProject.root}${projectAccess ? ` · ${projectAccess} access` : ""}`
+            : context.emptyProjectLabel
+        }
         onClick={() => setMenu((c) => (c === "project" ? null : "project"))}
       >
         <span className="cave-context-chip__lead" aria-hidden>

@@ -22,15 +22,11 @@ import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
 import { PairingStepsList } from "@/components/pairing-steps-list";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { Familiar } from "@/lib/types";
-import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
 import type { Mode, ModePref } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
 import { FamiliarStudioProvider, useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
-import { APP_VERSION } from "@/lib/app-version";
-import { UpdateSettingsRow } from "@/components/update-available";
-import { classifyAboutDaemonStatus, type AboutDaemonState } from "@/lib/about-status";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useCelebrationsEnabled, writeCelebrationsEnabled } from "@/lib/celebrations-pref";
 import {
@@ -51,6 +47,7 @@ import type { TabItem } from "@/components/ui/tabs";
 import { ProfileSection } from "./settings-profile";
 import { AccessGroupsSection } from "./access-groups-section";
 import { SettingsOverview } from "./settings-overview";
+import { AboutSection } from "./settings-about";
 import {
   SECTIONS,
   SETTINGS_INDEX,
@@ -2478,10 +2475,6 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   const [mode, setMode] = useState<ModePref>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
   const [appearanceHydrated, setAppearanceHydrated] = useState(false);
-  // Below the shell's FamiliarStudioProvider — lets the pin-order hint open
-  // Familiars directly on the Lifecycle tab (the app-wide roster order lives
-  // there, distinct from the avatar-strip pin order set here).
-  const { setActiveTab: setStudioTab } = useFamiliarStudio();
 
   // No on-change daemon mirror here: RemoteThemeController publishes tokens
   // whenever the canonical theme signature changes (every selection, mode flip,
@@ -3556,123 +3549,6 @@ function MobileSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
             Being on your Tailscale network <em>is</em> the credential. The desktop only serves the mobile API over the
             tailnet — encrypted and private — so nothing is exposed to the public internet, and there’s no token to copy.
           </p>
-        </div>
-      </SettingsGroup>
-    </SettingsPage>
-  );
-}
-
-// ─── Section: About ───────────────────────────────────────────────────────────
-
-function AboutDaemonStatusRow() {
-  const [state, setState] = useState<AboutDaemonState>({ kind: "checking" });
-  const requestRef = useRef<AbortController | null>(null);
-
-  const refresh = useCallback(() => {
-    requestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
-    setState({ kind: "checking" });
-    void fetch("/api/daemon/status", { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => null);
-        if (controller.signal.aborted) return;
-        setState(classifyAboutDaemonStatus({
-          responseOk: response.ok,
-          payload,
-          checkedAt: new Date().toISOString(),
-        }));
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setState(classifyAboutDaemonStatus({
-          responseOk: false,
-          payload: null,
-          checkedAt: new Date().toISOString(),
-          error: error instanceof Error ? error.message : "status request failed",
-        }));
-      });
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    return () => requestRef.current?.abort();
-  }, [refresh]);
-
-  const detail =
-    state.kind === "running"
-      ? state.version ? `Running v${state.version}` : "Running (version unavailable)"
-      : state.kind === "stopped"
-        ? "Stopped"
-        : state.kind === "unreachable"
-          ? "Unreachable"
-          : state.kind === "failed-to-check"
-            ? "Failed to check"
-            : "Checking…";
-  const reason = state.kind === "checking" || state.kind === "running" ? null : state.reason;
-  const checkedAt = state.kind === "checking" ? null : state.checkedAt;
-  const tone =
-    state.kind === "running"
-      ? "text-[var(--color-success)]"
-      : state.kind === "checking"
-        ? "text-[var(--text-muted)]"
-        : state.kind === "stopped"
-          ? "text-[var(--color-warning)]"
-          : "text-[var(--color-danger)]";
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-      <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">Daemon</span>
-      <div className="flex min-w-0 items-center gap-2">
-        <span className={`truncate text-right text-[length:var(--text-sm)] ${tone}`} title={reason ?? checkedAt ?? undefined}>
-          {detail}{checkedAt ? ` · checked ${relativeTime(checkedAt)}` : ""}
-        </span>
-        <Button variant="secondary" size="xs" onClick={refresh} disabled={state.kind === "checking"}>
-          {state.kind === "checking" ? "Checking…" : "Retry"}
-        </Button>
-      </div>
-      {reason ? (
-        <p className="basis-full text-right text-[length:var(--text-xs)] text-[var(--text-muted)]">
-          {reason}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function AboutSection() {
-  return (
-    <SettingsPage section="about" title="About" description="Version and build information.">
-      <SettingsGroup label="CovenCave">
-        <SettingsKV label="App version" value={APP_VERSION} />
-        <UpdateSettingsRow />
-        <AboutDaemonStatusRow />
-        <SettingsKV label="Built with" value="Next.js · React · Tauri · Tailwind" />
-      </SettingsGroup>
-      <SettingsGroup label="OpenCoven tools">
-        <OpenCovenToolsUpdate />
-      </SettingsGroup>
-      <SettingsGroup label="Links">
-        <div className="flex flex-wrap gap-2 px-4 py-3">
-          {[
-            { label: "GitHub",   href: "https://github.com/OpenCoven/coven-cave", icon: "ph:github-logo" as const },
-            { label: "Docs",     href: "https://docs.opencoven.ai",               icon: "ph:file-text" as const },
-            { label: "X",        href: "https://x.com/OpenCvn",                   icon: "ph:x-logo-bold" as const },
-            { label: "Discord",  href: "https://discord.gg/opencoven",            icon: "ph:discord-logo" as const },
-            { label: "Grimoire", href: "https://mind.opencoven.ai",               icon: "ph:book-open" as const },
-            { label: "Podcast",  href: "https://pod.opencoven.ai",                icon: "ph:waveform-bold" as const },
-          ].map((l) => (
-            <Button
-              key={l.href}
-              variant="secondary"
-              size="xs"
-              className="settings-touch-action settings-tool-action gap-1.5 px-2.5 text-[length:var(--text-xs)]"
-              onClick={() => openExternalUrl(l.href)}
-              leadingIcon={l.icon}
-            >
-              {l.label}
-            </Button>
-          ))}
         </div>
       </SettingsGroup>
     </SettingsPage>

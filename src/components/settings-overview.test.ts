@@ -45,6 +45,7 @@ test("the overview header renders mark, kicker, title, description, and the stri
 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const profile = readFileSync(new URL("./settings-profile.tsx", import.meta.url), "utf8");
+const about = readFileSync(new URL("./settings-about.tsx", import.meta.url), "utf8");
 
 test("the shell sources sections from settings-sections and renders the overview", () => {
   assert.match(shell, /import \{ SettingsOverview \} from "\.\/settings-overview"/);
@@ -58,9 +59,14 @@ test("the shell sources sections from settings-sections and renders the overview
   assert.doesNotMatch(shell, /const SETTINGS_INDEX: SettingsIndexEntry\[\]/);
   // Each SettingsPage-based section opts into its overview header.
   assert.match(profile, /section="profile"/, "profile page passes its section from the split panel");
-  for (const id of ["general", "daemon", "mobile", "appearance", "about"]) {
+  for (const id of ["general", "daemon", "mobile", "appearance"]) {
     assert.match(shell, new RegExp(`section="${id}"`), `${id} page passes its section`);
   }
+  assert.match(
+    about,
+    /aria-labelledby="settings-about-title"[\s\S]*<h1 id="settings-about-title">About<\/h1>/,
+    "About replaces the generic overview with its accessible handoff hero",
+  );
   assert.doesNotMatch(shell, /section="addons"|AddonsSection|Add-ons/, "Add-ons is not a settings section");
 });
 
