@@ -126,6 +126,9 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     toolCallId: string,
     completion: { output: string | undefined; isError: boolean },
   ) => {
+    // First terminal frame wins, matching ToolCallTracker's settled-call
+    // policy. Replayed/reordered completions must not replace it.
+    if (pendingToolCompletions.has(toolCallId)) return;
     if (!pendingToolCompletions.has(toolCallId) && pendingToolCompletions.size >= MAX_PENDING_TOOL_COMPLETIONS) {
       const oldest = pendingToolCompletions.keys().next().value;
       if (oldest) pendingToolCompletions.delete(oldest);
@@ -140,7 +143,15 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
   const rl = createInterface({ input: child.stdout });
   rl.on("line", (line) => {
     const trimmed = line.trim();
-    if (!trimmed.startsWith("{")) return;
+    if (!trimmed) return;
+    if (!trimmed.startsWith("{")) {
+      compatibilityDiagnostics.set(
+        "unframed-output",
+        "Copilot emitted an unrecognized protocol frame.",
+      );
+      protocolReportedFailure = true;
+      return;
+    }
     let raw: unknown;
     try { raw = JSON.parse(trimmed); } catch {
       compatibilityDiagnostics.set("malformed-jsonl", "Copilot emitted a malformed protocol frame.");
@@ -160,8 +171,8 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       const messageEntries = [...deltaByMessage.entries()];
       const messageIndex = messageEntries.findIndex(([id]) => id === event.messageId);
       const previousContent = deltaByMessage.get(event.messageId) ?? "";
-      const messageStart = messageEntries
-        .slice(0, Math.max(0, messageIndex))
+      const precedingMessages = messageIndex >= 0 ? messageEntries.slice(0, messageIndex) : messageEntries;
+      const messageStart = precedingMessages
         .reduce((length, [, content]) => length + content.length + 1, 0);
       textAssembler.message(event.messageId, event.content);
       deltaByMessage.set(event.messageId, event.content);

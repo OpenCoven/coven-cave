@@ -121,6 +121,7 @@ export async function probeCopilotCapability(
     timeoutMs: Math.max(1, deadline - Date.now()),
     env: probeEnv,
   });
+  if (launch.resolutionTimedOut) return { version: null, diagnostic: "probe-timeout" };
   if (launch.unresolvedWindowsShim) return { version: null, diagnostic: "version-unavailable" };
   const identity = options.binaryIdentity
     ? await options.binaryIdentity(launch.command)

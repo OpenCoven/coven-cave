@@ -141,8 +141,10 @@ const SEMVER_TOKEN = `${SEMVER_NUMBER}\\.${SEMVER_NUMBER}\\.${SEMVER_NUMBER}`;
 export function parseRuntimeClientVersion(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (lines.length !== 1) return null;
-  const match = new RegExp(`^(?:copilot(?: cli)?(?: version)?\\s+v?|v)?(${SEMVER_TOKEN}(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?)$`, "i").exec(lines[0]!);
+  const updateNotice = /^Run 'copilot update' to check for updates\.$/i;
+  const versionLines = lines.filter((line) => !updateNotice.test(line));
+  if (versionLines.length !== 1 || (lines.length !== 1 && lines.length !== 2)) return null;
+  const match = new RegExp(`^(?:(?:github\\s+)?copilot(?: cli)?(?: version)?\\s+v?|v)?(${SEMVER_TOKEN}(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?)\\.?$`, "i").exec(versionLines[0]!);
   if (!match) return null;
   return match[1]!;
 }
@@ -456,8 +458,16 @@ export type CopilotStreamLaunch = {
 export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
   const { spec } = launch;
   const args: string[] = [];
-  if (launch.resumeSessionId && spec.resumeFlag) {
-    args.push(spec.resumeFlag, launch.resumeSessionId);
+  // Resume ids are runtime data, never options. Reject control characters and
+  // flag-shaped values before argv construction rather than relying on a
+  // particular CLI parser's treatment of `--resume --flag`.
+  const safeResumeSessionId = launch.resumeSessionId &&
+    !launch.resumeSessionId.startsWith("-") &&
+    !/[\u0000-\u001f\u007f]/.test(launch.resumeSessionId)
+    ? launch.resumeSessionId
+    : null;
+  if (safeResumeSessionId && spec.resumeFlag) {
+    args.push(spec.resumeFlag, safeResumeSessionId);
   } else if (launch.newSessionId && spec.sessionIdFlag) {
     args.push(spec.sessionIdFlag, launch.newSessionId);
   }
@@ -603,8 +613,8 @@ export function parseCopilotChatEvent(
   const data = record(field(ev, protocol.fields.data));
   if (typeIs(type, protocol.eventTypes.textDelta)) {
     const messageId = textField(data, protocol.fields.messageId);
-    const text = textField(data, protocol.fields.deltaContent);
-    if (!messageId || text === undefined) return null;
+    const text = declaredTextField(data, protocol.fields.deltaContent);
+    if (!messageId || text === null || text === undefined) return null;
     const frameId = textField(ev, protocol.fields.frameId) ?? textField(data, protocol.fields.frameId);
     return {
       kind: "text_delta",
@@ -663,7 +673,9 @@ export function parseCopilotChatEvent(
       const toolCallId = textField(data, protocol.fields.toolCallId);
       const success = field(data, protocol.fields.success);
       if (!toolCallId || typeof success !== "boolean") return null;
-      const result = record(field(data, protocol.fields.result));
+      const rawResult = field(data, protocol.fields.result);
+      if (rawResult !== undefined && record(rawResult) === null) return null;
+      const result = record(rawResult);
       const output = declaredTextField(result, protocol.fields.resultContent);
       if (output === null) return null;
       return {

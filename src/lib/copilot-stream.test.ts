@@ -58,6 +58,11 @@ assert.deepEqual(spec.sandboxReadOnlyArgs, [
 
 assert.equal(parseRuntimeClientVersion("copilot version 1.0.70"), "1.0.70");
 assert.equal(parseRuntimeClientVersion("Copilot CLI v2.4.0"), "2.4.0");
+assert.equal(
+  parseRuntimeClientVersion("GitHub Copilot CLI 1.0.75.\nRun 'copilot update' to check for updates."),
+  "1.0.75",
+  "accepts Copilot's documented banner and update notice",
+);
 assert.equal(parseRuntimeClientVersion("warning only"), null);
 assert.equal(parseRuntimeClientVersion("copilot version 1.0.70.1"), null, "invalid trailing version syntax fails closed");
 assert.equal(parseRuntimeClientVersion("copilot version 01.0.0"), null, "leading-zero SemVer identifiers fail closed");
@@ -344,6 +349,17 @@ assert.deepEqual(
   ],
   "resumed read-only turns use --resume, still trust granted roots via --add-dir (cave-n1yc: read-only sessions previously got no grant access at all), and keep the manifest's deny-tool sandbox args",
 );
+
+const unsafeResumeArgs = buildCopilotStreamArgs({
+  spec,
+  prompt: "fresh after an invalid resume id",
+  resumeSessionId: "--allow-all",
+  newSessionId: null,
+  model: null,
+  permissionMode: "full",
+  addDirs: [],
+});
+assert.ok(!unsafeResumeArgs.includes("--resume"), "flag-shaped resume ids never enter argv");
 
 const unattendedArgs = buildCopilotStreamArgs({
   spec,

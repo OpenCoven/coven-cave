@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { homedir } from "node:os";
+import { StringDecoder } from "node:string_decoder";
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
@@ -1529,6 +1530,7 @@ export async function POST(req: Request) {
       let assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
       let assistantText = "";
       let jsonBuf = "";
+      let stdoutDecoder = new StringDecoder("utf8");
       let result: {
         duration_ms?: number;
         is_error?: boolean;
@@ -1610,6 +1612,9 @@ export async function POST(req: Request) {
         toolCallId: string,
         completion: { output: string | undefined; isError: boolean },
       ) => {
+        // Preserve the first terminal result for an out-of-order call. A
+        // replay must not replace an already buffered completion.
+        if (pendingCopilotToolCompletions.has(toolCallId)) return;
         if (!pendingCopilotToolCompletions.has(toolCallId) &&
             pendingCopilotToolCompletions.size >= MAX_PENDING_COPILOT_TOOL_COMPLETIONS) {
           const oldest = pendingCopilotToolCompletions.keys().next().value;
@@ -1729,8 +1734,16 @@ export async function POST(req: Request) {
               case "text_delta": {
                 const text = copilotText.delta(ev.messageId, ev.text, ev.frameId);
                 if (text) {
+                  const previousAssistantText = assistantText;
                   assistantText = copilotTranscript.appendDelta(ev.messageId, text);
-                  push({ kind: "assistant_chunk", text });
+                  // Deltas for distinct message ids can interleave. Append
+                  // only when the aggregate transcript really gained a tail;
+                  // otherwise send the reconciled transcript to every client.
+                  if (assistantText === `${previousAssistantText}${text}`) {
+                    push({ kind: "assistant_chunk", text });
+                  } else {
+                    push({ kind: "assistant_replace", text: assistantText });
+                  }
                 }
                 break;
               }
@@ -1739,6 +1752,7 @@ export async function POST(req: Request) {
                 const replacement = copilotText.takeReplacement(ev.messageId);
                 const correctionStart = copilotTranscript.offset(ev.messageId);
                 const previousMessageLength = copilotTranscript.messageLength(ev.messageId);
+                const previousAssistantText = assistantText;
                 const correctedText = copilotTranscript.setMessage(ev.messageId, ev.content);
                 // Tools can be announced after a delta but before this final
                 // frame. Shift later tool positions for every length change,
@@ -1753,7 +1767,8 @@ export async function POST(req: Request) {
                   assistantText = correctedText;
                   push({ kind: "assistant_replace", text: assistantText });
                 } else if (text) {
-                  if (assistantText === correctedText) {
+                  if (correctedText === `${previousAssistantText}${text}`) {
+                    assistantText = correctedText;
                     push({ kind: "assistant_chunk", text });
                   } else {
                     assistantText = correctedText;
@@ -2200,7 +2215,7 @@ export async function POST(req: Request) {
           req.signal.addEventListener("abort", onAbort, { once: true });
 
           child.stdout.on("data", (data: Buffer) => {
-            jsonBuf += data.toString("utf8");
+            jsonBuf += stdoutDecoder.write(data);
             let idx;
             while ((idx = jsonBuf.indexOf("\n")) >= 0) {
               const line = jsonBuf.slice(0, idx);
@@ -2282,6 +2297,7 @@ export async function POST(req: Request) {
               undefined,
               Date.now() - attemptStartedAt,
             );
+            jsonBuf += stdoutDecoder.end();
             if (jsonBuf) handleLine(jsonBuf);
             const tail = assistantFilter.flush();
             if (tail) {
@@ -2321,6 +2337,7 @@ export async function POST(req: Request) {
         assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
         assistantText = "";
         jsonBuf = "";
+        stdoutDecoder = new StringDecoder("utf8");
         result = {};
         toolTracker = new ToolCallTracker();
         pendingCopilotToolCompletions = new Map();
@@ -2362,6 +2379,7 @@ export async function POST(req: Request) {
         assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
         assistantText = "";
         jsonBuf = "";
+        stdoutDecoder = new StringDecoder("utf8");
         result = {};
         toolTracker = new ToolCallTracker();
         pendingCopilotToolCompletions = new Map();
