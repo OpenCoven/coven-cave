@@ -43,7 +43,7 @@ const chatView = await readFile(
 
 assert.match(
   chatRoute,
-  /let toolTracker = new ToolCallTracker\(\);/,
+  /let toolTracker = new ToolCallTracker\(/,
   "Native chat should track open tool calls with the shared ToolCallTracker",
 );
 
@@ -109,8 +109,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /toolTracker = new ToolCallTracker\(\);/,
-  "The resume retry should reset the tool tracker alongside the other per-attempt state",
+  /resetToolTrackerForRetry\(\);/,
+  "The resume retry should reset tool tracking alongside the other per-attempt state",
 );
 
 assert.match(
@@ -127,7 +127,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /toPersistedTools\(toolTracker\.snapshot\(\)/,
+  /toPersistedTools\(\[\.\.\.priorAttemptTools, \.\.\.toolTracker\.snapshot\(\)\]/,
   "the saved assistant turn captures the tracker's final tool state",
 );
 
@@ -139,8 +139,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /settleUnfinishedTools\(\);\s*toolTracker = new ToolCallTracker\(\);/,
-  "resume and recovery retries must settle prior-attempt tool chips before resetting their tracker",
+  /const resetToolTrackerForRetry = \(\) => \{[\s\S]*?settleUnfinishedTools\(\);[\s\S]*?priorAttemptTools\.push[\s\S]*?toolTracker = new ToolCallTracker\(Date\.now, `retry-\$\{toolAttempt\}:`\);/,
+  "resume and recovery retries must settle and persist prior-attempt tools under a distinct id namespace",
+);
+
+assert.match(
+  chatRoute,
+  /toPersistedTools\(\[\.\.\.priorAttemptTools, \.\.\.toolTracker\.snapshot\(\)\]/,
+  "tools emitted before a retry must remain in the saved assistant turn",
 );
 
 assert.match(
@@ -243,6 +249,22 @@ assert.match(
     tracker.envelopeToolUse(`unknown-${MAX_PENDING_ENVELOPE_RESULTS}`, "Read")?.status,
     "ok",
     "the most recent reordered result remains recoverable within the bound",
+  );
+}
+
+// Retries create a new tracker. Namespace its stream ids while retaining
+// native envelope lookup keys so same-name tool calls cannot overwrite a
+// previous attempt's live or persisted record.
+{
+  const initial = new ToolCallTracker(() => 0);
+  const retry = new ToolCallTracker(() => 0, "retry-1:");
+  assert.equal(initial.hookStart("Bash").id, "tool-1-Bash");
+  assert.equal(retry.hookStart("Bash").id, "retry-1:tool-1-Bash");
+  assert.equal(retry.envelopeToolUse("toolu_retry", "Read")?.id, "retry-1:toolu_retry");
+  assert.equal(
+    retry.envelopeToolResult("toolu_retry", "done", false)?.id,
+    "retry-1:toolu_retry",
+    "the namespaced UI id must still settle through the native envelope id",
   );
 }
 

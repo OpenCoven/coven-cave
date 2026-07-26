@@ -1529,7 +1529,13 @@ export async function POST(req: Request) {
       // envelopes: per-name FIFO queues give concurrent same-name calls
       // distinct ids, and hook/envelope events describing the same call are
       // deduped onto one id (hook events win — they carry real durations).
-      let toolTracker = new ToolCallTracker();
+      let toolAttempt = 0;
+      let toolTracker = new ToolCallTracker(Date.now, "");
+      // A recovery retry is a separate harness execution, but its early tool
+      // activity has already reached the client and remains part of the turn's
+      // audit trail. Keep it for persistence and namespace retry ids so a
+      // same-name hook cannot upsert over the first attempt's tool bubble.
+      const priorAttemptTools: ReturnType<ToolCallTracker["snapshot"]> = [];
       const claudeToolsEnabled =
         binding.harness !== "claude" || claudeCompatibility?.kind === "compatible";
       const claudeDiagnostic = claudeCompatibility
@@ -1580,6 +1586,16 @@ export async function POST(req: Request) {
         for (const toolEv of toolTracker.settleUnfinished()) {
           push({ kind: "tool_use", ...toolEv });
         }
+      };
+      const resetToolTrackerForRetry = () => {
+        settleUnfinishedTools();
+        // The prior attempt's assistant text is intentionally discarded before
+        // retrying, so place retained tool records at the start of the final
+        // response instead of preserving offsets into text that no longer
+        // exists.
+        priorAttemptTools.push(...toolTracker.snapshot().map((event) => ({ ...event, textOffset: 0 })));
+        toolAttempt += 1;
+        toolTracker = new ToolCallTracker(Date.now, `retry-${toolAttempt}:`);
       };
       // Keep stderr off the assistant stream — surface it only on failure
       // or empty-success so users don't see raw 401 traces mid-bubble.
@@ -2266,8 +2282,7 @@ export async function POST(req: Request) {
         assistantText = "";
         jsonBuf = "";
         result = {};
-        settleUnfinishedTools();
-        toolTracker = new ToolCallTracker();
+        resetToolTrackerForRetry();
         copilotText.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
@@ -2306,8 +2321,7 @@ export async function POST(req: Request) {
         assistantText = "";
         jsonBuf = "";
         result = {};
-        settleUnfinishedTools();
-        toolTracker = new ToolCallTracker();
+        resetToolTrackerForRetry();
         copilotText.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
@@ -2504,7 +2518,7 @@ export async function POST(req: Request) {
         // hook/result arrives. Send a terminal update before `done`; otherwise
         // the client-only chip remains running until the next transcript load.
         settleUnfinishedTools();
-        const persistedTools = toPersistedTools(toolTracker.snapshot(),
+        const persistedTools = toPersistedTools([...priorAttemptTools, ...toolTracker.snapshot()],
           assistantText.length - assistantText.trimStart().length,
         );
         const assistantTurn: ChatTurn = {

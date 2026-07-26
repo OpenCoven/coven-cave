@@ -123,9 +123,18 @@ export class ToolCallTracker {
    *  insertion-ordered, so snapshot() preserves call order for persistence. */
   private recorded = new Map<string, RecordedToolEvent>();
   private readonly now: () => number;
+  /** Distinguishes separate harness attempts within one chat turn. Native
+   * envelope ids remain the lookup keys; only the UI/persistence ids need the
+   * attempt namespace. */
+  private readonly idPrefix: string;
 
-  constructor(now: () => number = Date.now) {
+  constructor(now: () => number = Date.now, idPrefix = "") {
     this.now = now;
+    this.idPrefix = idPrefix;
+  }
+
+  private streamId(id: string): string {
+    return `${this.idPrefix}${id}`;
   }
 
   private queueFor(name: string): OpenCall[] {
@@ -257,7 +266,7 @@ export class ToolCallTracker {
     }
     this.seq += 1;
     const call: OpenCall = {
-      id: `tool-${this.seq}-${name}`,
+      id: this.streamId(`tool-${this.seq}-${name}`),
       name,
       startedAt: this.now(),
       origin: "hook",
@@ -287,7 +296,7 @@ export class ToolCallTracker {
     if (!call) {
       // Post without any open call: surface it anyway under a fresh id.
       this.seq += 1;
-      const ev: ToolStreamEvent = { id: `tool-${this.seq}-${name}`, name, output, status };
+      const ev: ToolStreamEvent = { id: this.streamId(`tool-${this.seq}-${name}`), name, output, status };
       this.record(ev);
       return ev;
     }
@@ -357,7 +366,7 @@ export class ToolCallTracker {
       return null;
     }
     const call: OpenCall = {
-      id,
+      id: this.streamId(id),
       name,
       startedAt: this.now(),
       envelopeId: id,
@@ -369,7 +378,7 @@ export class ToolCallTracker {
       this.settledEnvelopeIds.add(id);
       this.rememberSettledEnvelopeCall(call);
       const ev: ToolStreamEvent = {
-        id,
+        id: call.id,
         name,
         input,
         output: pending.output,
@@ -380,7 +389,7 @@ export class ToolCallTracker {
     }
     queue.push(call);
     this.byEnvelopeId.set(id, call);
-    const ev: ToolStreamEvent = { id, name, input, status: "running" };
+    const ev: ToolStreamEvent = { id: call.id, name, input, status: "running" };
     this.record(ev, textOffset);
     return ev;
   }
