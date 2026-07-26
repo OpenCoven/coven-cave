@@ -8,6 +8,7 @@ import {
   grokProbeEnvironment,
   grokRunCapabilitiesFromHelp,
   grokSchemaBundleSigningPayload,
+  isGrokSchemaBundle,
   resolveGrokCompatibility,
   verifyGrokSchemaBundle,
 } from "./grok-compatibility.ts";
@@ -23,6 +24,13 @@ signed.signature = {
 const keyring = { "test-key": publicKey.export({ type: "spki", format: "pem" }).toString() };
 assert.equal(verifyGrokSchemaBundle(signed, keyring), true, "Ed25519 verification accepts a canonical signed bundle");
 assert.equal(verifyGrokSchemaBundle({ ...signed, sequence: 3 }, keyring), false, "a signature cannot be replayed onto changed schema data");
+const ambiguous = structuredClone(signed);
+ambiguous.schemas[0].eventTypes.toolStart = ["text"];
+assert.equal(isGrokSchemaBundle(ambiguous), false, "ambiguous event aliases are rejected before a signed schema can be selected");
+const incompleteTool = structuredClone(signed);
+incompleteTool.schemas[0].eventTypes.toolStart = ["tool_started"];
+incompleteTool.schemas[0].fields.id = [];
+assert.equal(isGrokSchemaBundle(incompleteTool), false, "tool schemas must declare their stable id field before selection");
 const { keyId: _keyId, signature: _signature, ...unsignedWithoutKeyId } = signed;
 const signedWithoutKeyId = {
   ...unsignedWithoutKeyId,

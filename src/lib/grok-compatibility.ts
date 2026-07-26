@@ -319,9 +319,20 @@ function validSchema(value: unknown): value is GrokEventSchema {
   if (value.requires.options !== undefined && !validOptions(value.requires.options)) return false;
   if (value.launch.outputOption !== "--output-format" || value.launch.outputValue !== "streaming-json") return false;
   const events = value.eventTypes;
-  if (![events.ignored, events.text, events.end, events.error, events.toolStart, events.toolEnd, events.toolComplete].every((items) => validAliases(items, true)) || (events.toolProgress !== undefined && !validAliases(events.toolProgress, true))) return false;
+  const eventGroups = [events.ignored, events.text, events.end, events.error, events.toolStart, events.toolProgress ?? [], events.toolEnd, events.toolComplete];
+  if (!eventGroups.every((items) => validAliases(items, true))) return false;
+  // A signed schema is still untrusted input: reject ambiguous event names and
+  // incomplete tool envelopes before selection rather than quarantining only
+  // after a real user's stream reaches the parser.
+  if (new Set(eventGroups.flat()).size !== eventGroups.flat().length) return false;
   const f = value.fields;
-  return [f.type, f.text, f.sessionId, f.message, f.usage, f.totalCostUsd, f.id, f.name, f.input, f.output, f.state, f.error, f.terminalStates, f.errorStates].every((items) => validAliases(items, true));
+  if (![f.type, f.text, f.sessionId, f.message, f.usage, f.totalCostUsd, f.id, f.name, f.input, f.output, f.state, f.error, f.terminalStates, f.errorStates].every((items) => validAliases(items, true))) return false;
+  const typedEvents = events as GrokEventSchema["eventTypes"];
+  const typedFields = f as GrokEventSchema["fields"];
+  if (!typedFields.type.length) return false;
+  if (typedEvents.text.length && !typedFields.text.length) return false;
+  if ((typedEvents.toolStart.length || typedEvents.toolEnd.length || typedEvents.toolComplete.length || (typedEvents.toolProgress?.length ?? 0)) && !typedFields.id.length) return false;
+  return !(typedEvents.toolStart.length || typedEvents.toolComplete.length) || typedFields.name.length > 0;
 }
 
 function canonicalTime(value: unknown): number | null {

@@ -31,6 +31,7 @@ const windowsShimProgram = [
   "if (command === '--help') { if (process.env.XAI_API_KEY) process.exit(12); console.log(process.env.GROK_TEST_MODE === 'plain' ? '  --output-format <format>  Output format: text' : '  --output-format <format>  Output format: text, streaming-json'); process.exit(0); }",
   "if (command === '--version') { if (process.env.XAI_API_KEY) process.exit(12); console.log('1.0.0'); process.exit(0); }",
   "if (process.env.GROK_TEST_MODE === 'plain') console.log('plain fallback reply');",
+  "else if (process.env.GROK_TEST_MODE === 'malformed') console.log('unframed private tool payload');",
   "else console.log('{\\\"type\\\":\\\"text\\\",\\\"data\\\":\\\"verified route reply\\\"}\\n{\\\"type\\\":\\\"end\\\",\\\"sessionId\\\":\\\"native_grok_session\\\"}');",
 ].join("\n");
 const launcher = process.platform === "win32"
@@ -47,6 +48,7 @@ const launcher = process.platform === "win32"
       "fi",
       "if [ \"$1\" = \"--version\" ]; then [ -z \"$XAI_API_KEY\" ] || exit 12; printf '%s\\n' '1.0.0'; exit 0; fi",
       "if [ \"$GROK_TEST_MODE\" = \"plain\" ]; then printf '%s\\n' 'plain fallback reply'; exit 0; fi",
+      "if [ \"$GROK_TEST_MODE\" = \"malformed\" ]; then printf '%s\\n' 'unframed private tool payload'; exit 0; fi",
       "printf '%s\\n' '{\"type\":\"text\",\"data\":\"verified route reply\"}' '{\"type\":\"end\",\"sessionId\":\"native_grok_session\"}'",
     ].join("\n");
 const launcherPath = path.join(bin, executable);
@@ -90,6 +92,14 @@ try {
   })));
   assert.match(plain.body, /"kind":"assistant_chunk","text":"plain fallback reply\\n"/, "an unverified output format remains safe plain assistant text");
   assert.match(plain.body, /without tool activity/, "plain fallback provides an accessible compatibility diagnostic");
+
+  process.env.GROK_TEST_MODE = "malformed";
+  const malformed = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "malformed", projectRoot: familiarWorkspace }),
+  })));
+  assert.match(malformed.body, /unframed-jsonl-event/, "unframed selected-schema output emits an accessible compatibility diagnostic");
+  assert.doesNotMatch(malformed.body, /private tool payload/, "unframed structured payloads never enter assistant text or diagnostics");
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME; else process.env.COVEN_HOME = previousHome;
   if (previousCaveHome === undefined) delete process.env.COVEN_CAVE_HOME; else process.env.COVEN_CAVE_HOME = previousCaveHome;
