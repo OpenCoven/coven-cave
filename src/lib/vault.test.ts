@@ -1,7 +1,11 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { validateOpRef } from "./vault.ts";
+import {
+  canMirrorVaultKeyToProcessEnv,
+  mirrorVaultSecretToProcessEnv,
+  validateOpRef,
+} from "./vault.ts";
 
 assert.equal(validateOpRef("op://Personal/GitHub/token"), null);
 assert.equal(validateOpRef(42), "ref must be a string");
@@ -10,6 +14,52 @@ assert.equal(validateOpRef({ ref: "op://Personal/GitHub/token" }), "ref must be 
 assert.equal(validateOpRef("https://example.test"), "ref must start with op://");
 assert.equal(validateOpRef("op://Personal/GitHub"), "ref must include vault, item, and field segments");
 assert.equal(validateOpRef("op://Personal/GitHub/token;rm -rf"), "ref contains invalid characters");
+
+for (const key of [
+  "NODE_OPTIONS",
+  "node_options",
+  " Npm_Config_Node_Options ",
+  "PATH",
+  "Shell",
+  "coven_bin",
+  "Coven_Vault_File",
+]) {
+  assert.equal(
+    canMirrorVaultKeyToProcessEnv(key),
+    false,
+    `${key} cannot be mirrored into process.env`,
+  );
+}
+assert.equal(
+  canMirrorVaultKeyToProcessEnv("GITHUB_PERSONAL_ACCESS_TOKEN"),
+  true,
+  "ordinary plugin secrets can still be cached in the server process",
+);
+
+const previousNodeOptions = process.env.NODE_OPTIONS;
+const previousSafeSecret = process.env.COVEN_TEST_SAFE_SECRET;
+try {
+  delete process.env.NODE_OPTIONS;
+  assert.equal(
+    mirrorVaultSecretToProcessEnv("Node_Options", "--require=attacker.cjs"),
+    false,
+    "mixed-case runtime-control keys are rejected before assignment",
+  );
+  assert.equal(process.env.Node_Options, undefined);
+  assert.equal(process.env.NODE_OPTIONS, undefined);
+
+  assert.equal(
+    mirrorVaultSecretToProcessEnv("COVEN_TEST_SAFE_SECRET", "safe-value"),
+    true,
+    "safe vault keys remain cacheable",
+  );
+  assert.equal(process.env.COVEN_TEST_SAFE_SECRET, "safe-value");
+} finally {
+  if (previousNodeOptions === undefined) delete process.env.NODE_OPTIONS;
+  else process.env.NODE_OPTIONS = previousNodeOptions;
+  if (previousSafeSecret === undefined) delete process.env.COVEN_TEST_SAFE_SECRET;
+  else process.env.COVEN_TEST_SAFE_SECRET = previousSafeSecret;
+}
 
 const vaultSource = readFileSync(new URL("./vault.ts", import.meta.url), "utf8");
 const routeSource = readFileSync(new URL("../app/api/vault/route.ts", import.meta.url), "utf8");
@@ -22,6 +72,11 @@ assert.match(vaultSource, /getLocalEncryptedSecret/, "vault resolver can load lo
 assert.match(vaultSource, /"encrypted"/, "vault statuses include encrypted local storage");
 assert.match(routeSource, /setLocalEncryptedSecret/, "/api/vault can save encrypted local secrets");
 assert.match(routeSource, /deleteLocalEncryptedSecret/, "/api/vault deletes encrypted local secrets");
+assert.match(
+  routeSource,
+  /mirrorVaultSecretToProcessEnv\(key, body\.value\)/,
+  "/api/vault routes encrypted values through the process-env safety gate",
+);
 assert.doesNotMatch(routeSource, /applyEnvUpdates/, "/api/vault must not persist encrypted secrets to .env.local");
 assert.match(githubPatRouteSource, /setLocalEncryptedSecret\(PAT_KEY, pat\)/, "GitHub PAT setup stores tokens in the encrypted local vault");
 assert.doesNotMatch(githubPatRouteSource, /updates\[PAT_KEY\] = pat/, "GitHub PAT setup does not write tokens to .env.local");

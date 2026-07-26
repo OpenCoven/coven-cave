@@ -588,8 +588,20 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /boundarySentinel\?\.observe\(block\.name, block\.input\)/,
-  "Envelope tool_use blocks should feed the boundary sentinel",
+  /parseClaudeMessageEnvelope\(ev, claudeCompatibility\.profile\)[\s\S]*?boundarySentinel\?\.observe\(claudeEvent\.name, claudeEvent\.input\)/,
+  "Profile-selected envelope tool_use blocks should feed the boundary sentinel",
+);
+
+assert.match(
+  chatRoute,
+  /binding\.harness === "claude" && sshRuntime[\s\S]*?tool activity cannot be verified on an SSH host/,
+  "SSH Claude sessions should preserve text-only chat and surface an honest compatibility diagnostic",
+);
+
+assert.match(
+  chatRoute,
+  /const claudeDiagnostic =[\s\S]*?if \(claudeDiagnostic\) \{[\s\S]*?pushProgress\("claude-runtime-compatibility", claudeDiagnostic, "error"\)/,
+  "Claude compatibility diagnostics should be emitted before stdout so an immediately failing CLI still explains the text-only fallback",
 );
 
 assert.match(
