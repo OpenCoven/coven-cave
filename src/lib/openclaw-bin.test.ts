@@ -83,13 +83,13 @@ assert.match(
 );
 assert.match(
   src,
-  /const GATEWAY_AUTH_ENV_KEYS = new Set\(\[[\s\S]*OPENCLAW_GATEWAY_TOKEN[\s\S]*OPENCLAW_GATEWAY_DEVICE_TOKEN[\s\S]*\]\);/,
-  "Gateway authentication values have an explicit fallback-child denylist",
+  /const GATEWAY_ENV_PREFIX = "OPENCLAW_GATEWAY_"/,
+  "the whole Gateway namespace has an explicit fallback-child denylist",
 );
 assert.match(
   src,
-  /const mustNotReachFallback = GATEWAY_AUTH_ENV_KEYS\.has\(key\);[\s\S]*if \([\s\S]*mustNotReachFallback \|\|[\s\S]*genericSecret && !allowed\.has\(key\)/,
-  "Gateway auth cannot be reintroduced by the generic OpenClaw credential allow-list",
+  /const mustNotReachFallback = key\.startsWith\(GATEWAY_ENV_PREFIX\);[\s\S]*if \([\s\S]*mustNotReachFallback \|\|[\s\S]*genericSecret && !allowed\.has\(key\)/,
+  "Gateway settings cannot be reintroduced by the generic OpenClaw credential allow-list",
 );
 
 console.log("openclaw-bin.test.ts: ok");
