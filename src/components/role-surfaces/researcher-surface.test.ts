@@ -240,8 +240,9 @@ test("mission list and evidence trajectory expose semantic state", () => {
 
 test("the mission header does not print the intent twice", () => {
   // Short intents become the title verbatim (missionTitle), so the intent
-  // paragraph only renders when it adds information beyond the title.
-  assert.match(detail, /\{researchIntentAddsContext\(mission\) \? <p>\{mission\.intent\}<\/p> : null\}/);
+  // paragraph only renders when it adds information beyond the title — and a
+  // long intent collapses to 4 lines behind ClampedText's View-more toggle.
+  assert.match(detail, /\{researchIntentAddsContext\(mission\) \? <ClampedText lines=\{4\} text=\{mission\.intent\} \/> : null\}/);
 });
 
 test("evidence trajectory statuses come from the shared terminal-truthful reconciler", () => {
