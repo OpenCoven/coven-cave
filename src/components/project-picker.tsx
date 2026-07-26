@@ -15,6 +15,7 @@ import { ProjectAvatar } from "@/components/project-avatar";
 import { addChatProject, type CreateProjectOptions } from "@/lib/chat-add-project";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
+import { projectAccessLabel } from "@/lib/project-access-levels";
 import { isTauri } from "@/lib/tauri-platform";
 
 export type AddProjectFlow = {
@@ -95,11 +96,19 @@ export function useAddProjectFlow(args: {
   return { beginAddProject, addProjectModal, adding, addError };
 }
 
-/** Resolve the effective selection: NO_PROJECT_ID → none; null → first project. */
-function selectedProject(value: string | null, sorted: CaveProject[]): CaveProject | null {
+/** Resolve the effective selection; callers may require an explicit durable id. */
+function selectedProject(
+  value: string | null,
+  sorted: CaveProject[],
+  defaultToFirst: boolean,
+): CaveProject | null {
   return value === NO_PROJECT_ID
     ? null
-    : (value ? sorted.find((project) => project.id === value) ?? sorted[0] : sorted[0]) ?? null;
+    : (
+        value
+          ? sorted.find((project) => project.id === value)
+          : defaultToFirst ? sorted[0] : undefined
+      ) ?? null;
 }
 
 /**
@@ -117,6 +126,7 @@ export function ProjectPickerPopover({
   value,
   onChange,
   allowNoProject = false,
+  defaultToFirst = true,
   onAddProject,
   addingProject = false,
   registerCurrentRoot,
@@ -132,6 +142,8 @@ export function ProjectPickerPopover({
   value: string | null;
   onChange: (id: string) => void;
   allowNoProject?: boolean;
+  /** False keeps null rendered as "Choose project" until a durable id is selected. */
+  defaultToFirst?: boolean;
   /** Presence enables the "Add project…" row. */
   onAddProject?: () => void;
   addingProject?: boolean;
@@ -144,7 +156,7 @@ export function ProjectPickerPopover({
 }) {
   const [query, setQuery] = useState("");
   const sortedProjects = useMemo(() => sortProjectsAlphabetically(projects), [projects]);
-  const selected = selectedProject(value, sortedProjects);
+  const selected = selectedProject(value, sortedProjects, defaultToFirst);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -211,13 +223,21 @@ export function ProjectPickerPopover({
             }
             checked={entry.id === selected?.id}
             active={entry.id === selected?.id}
+            title={`${entry.root}${entry.access ? ` · ${projectAccessLabel(entry.access)} access` : ""}`}
             onSelect={() => {
               onChange(entry.id);
               close();
             }}
           >
             <span className="cave-project-picker__option">
-              <span className="cave-project-picker__option-name">{entry.name}</span>
+              <span className="cave-project-picker__option-heading">
+                <span className="cave-project-picker__option-name">{entry.name}</span>
+                {entry.access ? (
+                  <span className="cave-project-picker__option-access">
+                    {projectAccessLabel(entry.access)}
+                  </span>
+                ) : null}
+              </span>
               <span className="cave-project-picker__option-root">{entry.root}</span>
             </span>
           </PopoverItem>
@@ -273,6 +293,7 @@ export function ProjectPicker({
   value,
   onChange,
   allowNoProject = false,
+  defaultToFirst = true,
   familiarId = null,
   createProject,
   disabled = false,
@@ -284,6 +305,8 @@ export function ProjectPicker({
   value: string | null;
   onChange: (id: string) => void;
   allowNoProject?: boolean;
+  /** False keeps null rendered as "Choose project" until a durable id is selected. */
+  defaultToFirst?: boolean;
   familiarId?: string | null;
   /** From the caller's useProjects(); presence enables the "Add project…" row. */
   createProject?: (
@@ -298,7 +321,12 @@ export function ProjectPicker({
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const sortedProjects = useMemo(() => sortProjectsAlphabetically(projects), [projects]);
-  const selected = selectedProject(value, sortedProjects);
+  const selected = selectedProject(value, sortedProjects, defaultToFirst);
+  const emptyLabel = allowNoProject ? "No project" : "Choose project";
+  const selectedAccess = selected?.access ? projectAccessLabel(selected.access) : null;
+  const selectedAccessibleLabel = selected
+    ? `${selected.name}${selectedAccess ? `, ${selectedAccess} access` : ""}`
+    : emptyLabel;
 
   const addFlow = useAddProjectFlow({
     familiarId,
@@ -316,9 +344,13 @@ export function ProjectPicker({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={ariaLabel}
+        aria-label={`${ariaLabel}: ${selectedAccessibleLabel}`}
         disabled={disabled}
-        title={selected ? selected.root : "No project"}
+        title={
+          selected
+            ? `${selected.root}${selectedAccess ? ` · ${selectedAccess} access` : ""}`
+            : emptyLabel
+        }
       >
         {selected ? (
           <ProjectAvatar name={selected.name} root={selected.root} color={selected.color} size="sm" />
@@ -326,7 +358,7 @@ export function ProjectPicker({
           <Icon name="ph:folder" width={14} aria-hidden />
         )}
         <span className="cave-project-picker__trigger-label">
-          {selected ? selected.name : "No project"}
+          {selected ? `${selected.name}${selectedAccess ? ` · ${selectedAccess}` : ""}` : emptyLabel}
         </span>
         <Icon name="ph:caret-up-down-bold" width={10} aria-hidden />
       </Button>
@@ -338,6 +370,7 @@ export function ProjectPicker({
         value={value}
         onChange={onChange}
         allowNoProject={allowNoProject}
+        defaultToFirst={defaultToFirst}
         onAddProject={createProject ? addFlow.beginAddProject : undefined}
         addingProject={addFlow.adding}
         ariaLabel={ariaLabel}

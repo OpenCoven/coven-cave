@@ -69,8 +69,13 @@ assert.match(
 // ── Split chips (cave-g21f): project · model · branch as separate controls ──
 assert.match(
   source,
-  /<ComposerContextChips\s*\n\s*projects=\{projects\}\s*\n\s*projectValue=\{resolvedProjectId\}\s*\n\s*onProjectChange=\{setProjectIdDraft\}\s*\n\s*allowNoProject/,
-  "the chips show the RESOLVED project selection (draft → task project → session cwd) and write the draft",
+  /<ComposerContextChips\s*\n\s*projects=\{projects\}\s*\n\s*projectValue=\{resolvedProjectId\}\s*\n\s*onProjectChange=\{setProjectIdDraft\}/,
+  "the chips show the resolved authorized project selection and write the draft",
+);
+assert.doesNotMatch(
+  source,
+  /<ComposerContextChips[\s\S]{0,260}\ballowNoProject\b/,
+  "the chat composer must not offer a project-free next turn",
 );
 assert.match(
   source,

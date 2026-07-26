@@ -32,8 +32,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /useProjects\(\{ familiarId: selectedFamiliarId \|\| null \}\)/,
-  "HomeComposer should load a familiar-scoped project list for the project selector",
+  /useProjects\(\{\s*enabled: Boolean\(selectedFamiliarId\),\s*familiarId: selectedFamiliarId \|\| null,\s*\}\)/,
+  "HomeComposer should load projects only for a selected familiar, never through the unscoped fallback",
 );
 
 // Chat revamp 1a + minimal pass: the hero is the hearth card's heading —
@@ -100,7 +100,7 @@ assert.match(
 assert.match(
   composerContext,
   /if \(selectedProjectId === noProjectId\) return null/,
-  "An explicit No-project selection should resolve to a null project (not fall back to projects[0])",
+  "A legacy No-project sentinel resolves to null instead of launching in a fallback project",
 );
 
 // REGRESSION: an unset pick must stay unset — seeding state to projects[0]
@@ -119,7 +119,7 @@ assert.match(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null, \{\s*initialControls: \{ thinkingEffort, responseSpeed, \.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\) \},[\s\S]*?\}\)/,
+  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: \{ thinkingEffort, responseSpeed, \.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\) \},[\s\S]*?\}\)/,
   "HomeComposer should hand the selected project root, initial command controls, and any host pick to chat start",
 );
 
@@ -209,7 +209,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null, \{\s*initialControls: \{ thinkingEffort, responseSpeed, \.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\) \},[\s\S]*?\}\)/,
+  /onStartChat\(prompt, selectedFamiliarId, selectedProjectRoot, \{\s*initialControls: \{ thinkingEffort, responseSpeed, \.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\) \},[\s\S]*?\}\)/,
   "HomeComposer should hand the selected agent chat prompt, command controls, and any host pick to the workspace, which opens a new chat that auto-sends it",
 );
 

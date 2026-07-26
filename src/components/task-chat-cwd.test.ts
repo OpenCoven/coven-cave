@@ -35,23 +35,22 @@ assert.match(
   /if \(!session\) return sessionId === null && viewChanged \? null : prev;/,
   "Brand-new chats keep a null project draft so the recency default stays live",
 );
-// REGRESSION (2026-07-02): a session in an unregistered cwd must NOT default
-// the picker to the first project — sending that root re-roots the next
-// turn's cwd and forks the harness session (`--continue` misses).
+// A session in an unregistered cwd stays readable, but its next turn must
+// remain blocked until the user explicitly chooses an accessible project.
 assert.doesNotMatch(
   chatView,
   /const selectedProject = resolvedProjectId\s*\?\s*chatProjectById\(resolvedProjectId, projects\) \?\? firstProject\s*:\s*firstProject/,
   "The unconditional first-project fallback for existing sessions must stay gone",
 );
-assert.match(
+assert.doesNotMatch(
   sessionHeader,
   /function SessionOverflowMenu[\s\S]*?<ProjectPickerPopover[\s\S]*?allowNoProject/,
-  "The overflow menu's picker offers an explicit No-project choice so a workspace session can stay (or become) project-less",
+  "The overflow menu must not offer a project-free next turn",
 );
 assert.match(
   chatView,
-  /const activeProjectRoot =\s*resolvedProjectId === NO_PROJECT_ID\s*\?\s*\(projectSelection\.unregisteredRoot \?\? ""\)\s*:\s*\(selectedProject\?\.root \?\? session\?\.project_root \?\? projectRoot \?\? ""\)/,
-  "ChatView keeps an explicit No-project selection rootless — except an opener-provided unregistered root (worktree hand-off), which stays active",
+  /const activeProjectRoot =\s*projectSelection\.unregisteredRoot \?\?\s*selectedProject\?\.root \?\?\s*session\?\.project_root \?\?\s*projectRoot \?\?\s*""/,
+  "ChatView keeps an authorized worktree runtime root ahead of its registered parent root",
 );
 assert.match(
   chatView,
@@ -81,10 +80,10 @@ assert.match(
 // The empty state (the familiar's starting page) lives in chat-empty-state.tsx
 // since the task-aware extraction; its picker pins follow it there.
 const chatEmptyState = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
-assert.match(
+assert.doesNotMatch(
   chatEmptyState,
   /<ProjectPicker[\s\S]*?value=\{projectId \?\? null\}[\s\S]*?onChange=\{onProjectChange\}[\s\S]*?allowNoProject/,
-  "Empty state renders the shared picker with an explicit No-project choice (a no-project chat is no longer a picker-less dead end)",
+  "Empty state must not offer a project-free chat launch",
 );
 assert.match(
   chatEmptyState,
@@ -114,13 +113,13 @@ assert.doesNotMatch(
 );
 assert.match(
   taskChatRoute,
-  /projectById\(card\.projectId, await loadProjects\(\)\)/,
+  /projectById\(card\.projectId, projects\)/,
   "A card's stable projectId resolves server-side when the UI didn't send a root",
 );
 assert.match(
   taskChatRoute,
-  /assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)/,
-  "Task chat must authorize the familiar for the assigned project before launching",
+  /await authorizeChatProjectLaunch[\s\S]*surface:\s*"session-launch"/,
+  "Task chat must validate the root, registration, and familiar access before launching",
 );
 assert.match(
   taskChatRoute,

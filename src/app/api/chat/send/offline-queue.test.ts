@@ -49,7 +49,7 @@ assert.match(
 );
 
 const postIndex = chatRoute.indexOf("export async function POST");
-const accessIndex = chatRoute.indexOf("await assertProjectAccess", postIndex);
+const accessIndex = chatRoute.indexOf("await authorizeChatProjectLaunch", postIndex);
 const queueIndex = chatRoute.indexOf(
   "const offlineChatResponse = await maybeQueueOfflineChat",
   postIndex,
@@ -58,8 +58,8 @@ const imageWriteIndex = chatRoute.indexOf("writeImageAttachmentsToTemp", queueIn
 const harnessPromptIndex = chatRoute.indexOf("const harnessPrompt =", queueIndex);
 
 assert.ok(postIndex >= 0, "Chat send POST handler should exist");
-assert.ok(accessIndex >= 0, "Chat send should still perform project access checks");
-assert.ok(queueIndex > accessIndex, "Offline queueing must run after project access checks");
+assert.ok(accessIndex >= 0, "Chat send should still run the project launch gate");
+assert.ok(queueIndex > accessIndex, "Offline queueing must run after project launch authorization");
 assert.ok(
   queueIndex < imageWriteIndex,
   "Offline queueing should run before image temp-file writes",

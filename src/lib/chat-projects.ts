@@ -45,6 +45,28 @@ export function projectIdForRoot(
   return projectForRoot(projectRoot, projects)?.id ?? null;
 }
 
+/** Resolve a checkout below a registered project's `.worktrees/` directory.
+ * Browser-safe path handling is intentionally strict: dot segments are
+ * rejected instead of normalized so a traversal-looking root can never claim
+ * a parent project in the picker before the server performs its own path check. */
+function projectForWorktreeRoot(
+  projectRoot: string | null | undefined,
+  projects: CaveProject[],
+): CaveProject | null {
+  if (!projectRoot?.trim()) return null;
+  const normalized = normalizeChatProjectRoot(projectRoot);
+  const segments = normalized.split("/");
+  if (segments.some((segment) => segment === "." || segment === "..")) return null;
+
+  for (const project of projects) {
+    const prefix = `${normalizeChatProjectRoot(project.root)}/.worktrees/`;
+    if (!normalized.startsWith(prefix)) continue;
+    const relative = normalized.slice(prefix.length);
+    if (relative && !relative.startsWith("/")) return project;
+  }
+  return null;
+}
+
 /** Sentinel picker id for "this chat runs outside every registered project"
  *  (typically the familiar's own workspace). A real id so it can live in the
  *  same draft-state slot as project ids, distinct from null = "unresolved". */
@@ -107,7 +129,7 @@ export function resolveChatProjectSelection(args: {
   if (args.draftId) {
     return {
       projectId: args.draftId,
-      project: chatProjectById(args.draftId, args.projects) ?? firstProject,
+      project: chatProjectById(args.draftId, args.projects),
     };
   }
   const taskProject =
@@ -136,6 +158,14 @@ export function resolveChatProjectSelection(args: {
         ? normalizeChatProjectRoot(args.sessionProjectRoot) === explicitRoot
         : false))
   ) {
+    const worktreeProject = projectForWorktreeRoot(explicitRoot, args.projects);
+    if (worktreeProject) {
+      return {
+        projectId: worktreeProject.id,
+        project: worktreeProject,
+        unregisteredRoot: explicitRoot,
+      };
+    }
     return { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: explicitRoot };
   }
   // A chat that RAN in a project's worktree keeps that root when reopened
@@ -148,11 +178,13 @@ export function resolveChatProjectSelection(args: {
   // to bare No-project, so its cwd is never surfaced or re-asserted.
   if (args.hasSession && args.sessionProjectRoot?.trim()) {
     const sessionRoot = normalizeChatProjectRoot(args.sessionProjectRoot);
-    const inProjectWorktrees = args.projects.some((project) =>
-      sessionRoot.startsWith(`${normalizeChatProjectRoot(project.root)}/.worktrees/`),
-    );
-    if (inProjectWorktrees) {
-      return { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: sessionRoot };
+    const worktreeProject = projectForWorktreeRoot(sessionRoot, args.projects);
+    if (worktreeProject) {
+      return {
+        projectId: worktreeProject.id,
+        project: worktreeProject,
+        unregisteredRoot: sessionRoot,
+      };
     }
   }
   if (args.hasSession) return { projectId: NO_PROJECT_ID, project: null };
