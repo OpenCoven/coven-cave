@@ -2801,6 +2801,24 @@ export async function POST(req: Request) {
               push({ kind: "error", message: launchError });
             }
           };
+          const reportHermesProcessFailure = () => {
+            // A non-zero exit means Hermes did start, so it is neither a
+            // missing executable nor a preflight failure. Keep the actual
+            // runner output out of the assistant transcript: it can contain
+            // provider/configuration details and must not masquerade as a
+            // successful answer.
+            const message = "Hermes exited with an error before returning a response. Check Hermes sign-in and configuration, then try again.";
+            result.is_error = true;
+            launchFailure ??= { code: "runtime_process_failed", message };
+            pushProgress(
+              "harness-start",
+              "Hermes exited with an error",
+              "error",
+              message,
+              Date.now() - attemptStartedAt,
+            );
+            push({ kind: "error", code: "runtime_process_failed", message });
+          };
           const child = sshRuntime
             ? (() => {
                 const sshArgs = spawnArgs;
@@ -3029,6 +3047,9 @@ export async function POST(req: Request) {
             // failed invocation for a successful model application below.
             if ((openCodeDirect || copilotStream) && code !== 0) {
               result = { ...result, is_error: true };
+            }
+            if (hermesDirect && code !== 0 && !runHandle.stopRequested) {
+              reportHermesProcessFailure();
             }
             // Copilot JSONL stderr can contain raw prompt or tool payloads on
             // a successful malformed stream too. Its only user-facing

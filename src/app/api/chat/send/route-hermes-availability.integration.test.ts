@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdtemp, mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -90,6 +90,33 @@ try {
     assert.notEqual(error.code, "runtime_missing", "an existing Hermes file is not reclassified as absent after spawn");
     assertNoFabricatedAssistantResponse(body, events);
     assert.ok(!body.includes(bin), "Hermes launch diagnostics do not expose the local executable path");
+  }
+
+  // A CLI that starts but exits with an auth/config-style failure is distinct
+  // from a missing executable. It must emit a structured error rather than the
+  // generic successful-looking "produced no output" assistant fallback.
+  {
+    const executable = path.join(bin, process.platform === "win32" ? "hermes.exe" : "hermes");
+    await unlink(executable);
+    const failingExecutable = process.platform === "win32"
+      ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.exe")
+      : "/bin/false";
+    try {
+      await link(failingExecutable, executable);
+    } catch {
+      await copyFile(failingExecutable, executable);
+    }
+    const response = await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "ember", prompt: "hello once more", projectRoot: familiarWorkspace }),
+    }));
+    const { body, events } = await readSse(response);
+    const error = events.find((event) => event.kind === "error");
+    assert.equal(error?.code, "runtime_process_failed", "a started Hermes failure has its own structured code");
+    assert.match(error?.message ?? "", /Hermes exited with an error/);
+    assertNoFabricatedAssistantResponse(body, events);
+    assert.ok(!body.includes(bin), "started Hermes failure does not expose the local executable path");
   }
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
