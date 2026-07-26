@@ -98,6 +98,13 @@ final class AppModel {
     /// pushes the card, and clears it (mirrors `threadToOpen`).
     var cardToOpen: BoardCard?
 
+    /// Global Claude Design navigation. Any top-level surface can open the
+    /// shared drawer; one-shot requests let its Search/Chat actions hand off to
+    /// the Chats split view without coupling the drawer to local view state.
+    var navigationDrawerOpen = false
+    var newChatRequested = false
+    var chatSearchRequested = false
+
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
 
@@ -270,6 +277,17 @@ final class AppModel {
 
     init() {
         connection = CaveConnection.load()
+        #if DEBUG
+        // Deterministic native screenshot fixture for the canonical empty-chat
+        // surface. Launch with `--ui-preview-empty-chat` and
+        // `CAVE_OPEN_THREAD=ui-preview-empty-chat`; release builds never carry
+        // fixture state and the preview never touches the saved thread store.
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-empty-chat") {
+            configureEmptyChatPreview()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+        #endif
         // Threads hydrate off-main via the store — no file I/O in init.
         Task { await self.hydrateThreads() }
         loadCardLinks()
@@ -278,6 +296,100 @@ final class AppModel {
         if connection != nil { connectionState = .checking }
         ChatTurnNotifier.shared.app = self
     }
+
+    #if DEBUG
+    private func configureEmptyChatPreview() {
+        connection = nil
+        familiars = [
+            Familiar(
+                id: "nyx",
+                displayName: "Nyx",
+                role: "Code familiar",
+                description: "Keeps implementation work moving.",
+                pronouns: nil,
+                color: nil,
+                status: "active",
+                harness: "codex",
+                model: "gpt-5.6",
+                icon: "moon.stars.fill",
+                avatarUrl: nil,
+                activeSessions: 1,
+                memoryFreshness: "Fresh"
+            ),
+        ]
+
+        func card(
+            id: String,
+            title: String,
+            status: CardStatus,
+            priority: CardPriority,
+            number: Int
+        ) -> BoardCard {
+            BoardCard(
+                id: id,
+                title: title,
+                notes: nil,
+                statusRaw: status.rawValue,
+                priorityRaw: priority.rawValue,
+                familiarId: "nyx",
+                projectId: "coven-app",
+                sessionId: nil,
+                labels: nil,
+                startDate: nil,
+                endDate: nil,
+                createdAt: nil,
+                updatedAt: nil,
+                needsHuman: nil,
+                steps: nil,
+                github: [
+                    CardGitHubLink(
+                        id: "pr-\(number)",
+                        kind: "pr",
+                        repo: "OpenCoven/coven-cave",
+                        number: number,
+                        title: title,
+                        url: "https://github.com/OpenCoven/coven-cave/pull/\(number)",
+                        state: "open"
+                    ),
+                ]
+            )
+        }
+
+        tasks = [
+            card(
+                id: "cold-launch",
+                title: "cold-launch bug",
+                status: .running,
+                priority: .urgent,
+                number: 128
+            ),
+            card(
+                id: "drawer-fidelity",
+                title: "navigation fidelity",
+                status: .running,
+                priority: .high,
+                number: 129
+            ),
+            card(
+                id: "plugin-setup",
+                title: "plugin setup",
+                status: .blocked,
+                priority: .medium,
+                number: 130
+            ),
+        ]
+        tasksLoaded = true
+        sessionsLoaded = true
+        threads = [
+            ChatThread(
+                id: "ui-preview-empty-chat",
+                title: "Chat with Nyx on Jul 26",
+                familiarIds: ["nyx"]
+            ),
+        ]
+        connectionState = .connected
+    }
+    #endif
 
     func familiar(_ id: String) -> Familiar? {
         familiars.first { $0.id == id }
@@ -1426,7 +1538,10 @@ final class AppModel {
     /// single familiar (direct) or several (group).
     func startFreshThread(familiarIds: [String], title: String? = nil) -> ChatThread {
         let names = familiarIds.compactMap { familiar($0)?.displayName ?? $0 }
-        let derived = (title?.isEmpty == false) ? title! : names.joined(separator: ", ")
+        let date = Date.now.formatted(.dateTime.month(.abbreviated).day())
+        let derived = (title?.isEmpty == false)
+            ? title!
+            : "Chat with \(names.joined(separator: ", ")) on \(date)"
         let thread = ChatThread(title: derived, familiarIds: familiarIds)
         threads.insert(thread, at: 0)
         persistThreads()

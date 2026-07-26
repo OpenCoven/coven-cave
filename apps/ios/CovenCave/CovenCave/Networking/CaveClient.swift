@@ -165,6 +165,42 @@ struct CaveClient {
         return URL(string: path, relativeTo: base)?.absoluteURL
     }
 
+    // MARK: - Marketplace
+
+    func marketplacePlugins() async throws -> [MarketplacePlugin] {
+        let req = try request("api/marketplace")
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(MarketplaceResponse.self, from: data).plugins
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    func installMarketplacePlugin(id: String) async throws {
+        try await mutateMarketplacePlugin(path: "api/marketplace/install", id: id)
+    }
+
+    func uninstallMarketplacePlugin(id: String) async throws {
+        try await mutateMarketplacePlugin(path: "api/marketplace/uninstall", id: id)
+    }
+
+    private func mutateMarketplacePlugin(path: String, id: String) async throws {
+        struct Body: Encodable { let id: String }
+        struct Response: Decodable { let ok: Bool; let error: String? }
+        let payload = try JSONEncoder().encode(Body(id: id))
+        let req = try request(path, method: "POST", body: payload)
+        let (data, resp) = try await data(for: req)
+        let decoded = try? JSONDecoder().decode(Response.self, from: data)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw CaveError.transport(decoded?.error ?? "The plugin change was not accepted.")
+        }
+        guard decoded?.ok == true else {
+            throw CaveError.transport(decoded?.error ?? "The plugin change was not accepted.")
+        }
+    }
+
     // MARK: - Operator profile
 
     /// The human operator's profile (name + avatar metadata) from
@@ -383,6 +419,9 @@ struct CaveClient {
         /// run buffer under this, so a NEW chat (no sessionId yet) is still
         /// re-attachable after a transport drop.
         var runId: String? = nil
+        /// Real per-send controls consumed by `/api/chat/send`.
+        var reasoningEffort: ChatThinkingEffort = .high
+        var responseSpeed: ChatResponseSpeed = .fast
     }
 
     /// One decoded SSE frame: the event plus the server's `id:` (the run

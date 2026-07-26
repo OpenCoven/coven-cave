@@ -32,7 +32,9 @@ assert.match(
   /showSessionDetails = false\s*\n\s*Task \{ await switchModel\(""\) \}/,
   "the dropdown model row preserves the existing /model path",
 );
-assert.match(chatView, /TODO\(no backend\)/, "unsupported session metadata is explicitly non-persisted");
+assert.match(chatView, /Picker\("Thinking"/, "session details expose the backend-supported thinking levels");
+assert.match(chatView, /Picker\("Speed"/, "session details expose the backend-supported response speeds");
+assert.doesNotMatch(chatView, /TODO\(no backend\)/, "session details do not ship known-fake controls");
 assert.doesNotMatch(chatView, /ChatModelBar\(thread:/, "the between-list model bar is retired — model access lives in the header pill");
 
 // ── Composer "+" menu: fan-out + all three dismissal paths ───────────────────

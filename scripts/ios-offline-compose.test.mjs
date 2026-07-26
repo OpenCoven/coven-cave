@@ -29,7 +29,7 @@ assert.match(
 // --- Compose path: offline branches to enqueue, never to the network --------
 assert.match(
   chatView,
-  /if app\.connectionState != \.connected \{[\s\S]{0,220}?thread\.enqueue\(outgoing, attachments: attachments\)/,
+  /if app\.connectionState != \.connected \{[\s\S]{0,260}?thread\.enqueue\(outgoing, attachments: attachments,\s*\n\s*reasoningEffort: thinkingEffort,\s*\n\s*responseSpeed: responseSpeed\)/,
   "ChatView.send parks prose on the thread when disconnected",
 );
 assert.match(
@@ -39,12 +39,12 @@ assert.match(
 );
 assert.match(
   chatView,
-  /if app\.connectionState != \.connected \{[\s\S]{0,120}?thread\.enqueue\(text\)/,
+  /if app\.connectionState != \.connected \{[\s\S]{0,180}?thread\.enqueue\(text, reasoningEffort: thinkingEffort, responseSpeed: responseSpeed\)/,
   "suggestion chips queue offline too",
 );
 assert.match(
   thread,
-  /func enqueue\(_ text: String, attachments: \[CaveClient\.ChatAttachment\] = \[\]\)/,
+  /func enqueue\(_ text: String, attachments: \[CaveClient\.ChatAttachment\] = \[\],\s*\n\s*reasoningEffort: ChatThinkingEffort = \.high,\s*\n\s*responseSpeed: ChatResponseSpeed = \.fast\)/,
   "ChatThread.enqueue exists for offline compose",
 );
 

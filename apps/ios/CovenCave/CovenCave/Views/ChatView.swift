@@ -17,11 +17,20 @@ struct ResponseReaderItem: Identifiable {
     let markdown: String
 }
 
+private struct EmptyChatSuggestion: Identifiable {
+    var id: String { label }
+    let icon: String
+    let label: String
+    let hint: String
+}
+
 struct ChatView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("cave.chat.thinking") private var thinkingRaw = ChatThinkingEffort.high.rawValue
+    @AppStorage("cave.chat.responseSpeed") private var responseSpeedRaw = ChatResponseSpeed.fast.rawValue
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
     /// The message being quoted in the next send, if any (swipe-to-reply).
@@ -33,6 +42,7 @@ struct ChatView: View {
     @State private var showModelPicker = false
     @State private var modelPickerOptions: [ChatModelOption] = []
     @State private var modelPickerCurrent = ""
+    @State private var sessionModelState: ChatModelState?
     @State private var showTasks = false
     @State private var showSessionDetails = false
     @State private var atBottom = true
@@ -131,6 +141,9 @@ struct ChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if !app.linkedTasks(for: thread).isEmpty {
+                linkedContextStrip
+            }
             messageScroll
                 // While the "+" menu is up, the transcript becomes its scrim:
                 // a light dim signals the mode and any outside tap dismisses.
@@ -162,47 +175,26 @@ struct ChatView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
+                HStack(spacing: 9) {
+                    Circle()
+                        .fill(thread.isStreaming ? Color.orange : Color.green)
+                        .frame(width: 7, height: 7)
+                    Text(thread.title)
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(1)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(thread.title), \(thread.isStreaming ? "responding" : "ready")")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     Haptics.tap()
                     showSessionDetails.toggle()
                 } label: {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(thread.isStreaming ? Color.orange : Color.green)
-                            .frame(width: 7, height: 7)
-                        Text(thread.isGroup
-                             ? thread.title
-                             : (app.familiar(thread.familiarIds.first ?? "")?.displayName ?? thread.title))
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                        Image(systemName: showSessionDetails ? "chevron.up" : "chevron.down")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.secondary)
-                    }
+                    Image(systemName: "slider.horizontal.3")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Session details for \(thread.title)")
+                .accessibilityLabel("Session controls")
                 .accessibilityValue(showSessionDetails ? "Expanded" : "Collapsed")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showTasks = true } label: {
-                    let count = app.linkedTasks(for: thread).count
-                    Image(systemName: count > 0 ? "checklist.checked" : "checklist")
-                        .overlay(alignment: .topTrailing) {
-                            if count > 0 {
-                                Text("\(count)")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .padding(3)
-                                    .background(Color.accentColor, in: Circle())
-                                    .offset(x: 8, y: -8)
-                            }
-                        }
-                }
-                .accessibilityLabel({
-                    let n = app.linkedTasks(for: thread).count
-                    return n > 0 ? "Linked tasks, \(n)" : "Linked tasks"
-                }())
             }
             // The header stays lean (sim review, cave feedback): Commands lives
             // in the composer's + menu (same sheet), and Markdown export stays
@@ -279,6 +271,12 @@ struct ChatView: View {
             app.markFamiliarViewed(thread.familiarIds)
             ChatNotifications.removeDelivered(threadId: thread.id)
         }
+        .task(id: modelStateLoadKey) {
+            await loadSessionModelState()
+        }
+        .task {
+            if !app.tasksLoaded { await app.loadTasks() }
+        }
         // Persist every edit per-thread; send() clears the draft, which removes
         // the stored copy here so a sent message leaves nothing behind. Debounce
         // the UserDefaults write: doing synchronous persistence for every
@@ -305,38 +303,126 @@ struct ChatView: View {
                 showSessionDetails = false
                 Task { await switchModel("") }
             } label: {
-                sessionDetailRow("Model", value: "Choose", systemImage: "cpu", showsChevron: true)
+                sessionDetailRow("Model", value: sessionModelLabel, systemImage: "cpu", showsChevron: true)
             }
             .buttonStyle(.plain)
             .disabled(thread.isGroup)
 
             Divider()
-            // TODO(no backend): expose the toggle when a real per-session thinking-level API exists.
             HStack(spacing: 10) {
-                Image(systemName: "brain")
+                Image(systemName: "desktopcomputer")
                     .foregroundStyle(chrome.accent)
                     .frame(width: 22)
-                Toggle("Think", isOn: .constant(false))
-                    .disabled(true)
+                Text("Runtime")
+                Spacer()
+                Text(sessionRuntimeLabel)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .font(.callout)
             .padding(.horizontal, 14)
             .frame(minHeight: 44)
-            .accessibilityHint("Thinking level is not available from the current backend")
             Divider()
-            // TODO(no backend): these values are presentation-only until session metadata exposes them.
-            sessionDetailRow("Mode", value: "Chat", systemImage: "bubble.left")
+            sessionControlRow(systemImage: "brain") {
+                Picker("Thinking", selection: $thinkingRaw) {
+                    ForEach(ChatThinkingEffort.allCases) { effort in
+                        Text(effort.label).tag(effort.rawValue)
+                    }
+                }
+            }
             Divider()
-            sessionDetailRow("Runtime", value: "Desktop", systemImage: "desktopcomputer")
-            Divider()
-            sessionDetailRow("Intelligence", value: "Default", systemImage: "sparkles")
-            Divider()
-            sessionDetailRow("Speed", value: "Default", systemImage: "gauge.with.dots.needle.50percent")
+            sessionControlRow(systemImage: "gauge.with.dots.needle.50percent") {
+                Picker("Speed", selection: $responseSpeedRaw) {
+                    ForEach(ChatResponseSpeed.allCases) { speed in
+                        Text(speed.label).tag(speed.rawValue)
+                    }
+                }
+            }
         }
         .padding(.vertical, 4)
         .frame(maxWidth: 420)
         .glass(.raised, cornerRadius: 16)
         .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+    }
+
+    private func sessionControlRow<Control: View>(
+        systemImage: String,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(chrome.accent)
+                .frame(width: 22)
+            control()
+                .pickerStyle(.segmented)
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(minHeight: 52)
+    }
+
+    private var sessionModelLabel: String {
+        guard let state = sessionModelState else { return thread.isGroup ? "Per familiar" : "Loading…" }
+        return modelPickerOptions.first(where: { $0.id == state.effectiveModel })?.label
+            ?? conciseModelName(state.effectiveModel)
+    }
+
+    private var sessionRuntimeLabel: String {
+        if thread.isGroup { return "Per familiar" }
+        guard let state = sessionModelState else { return "Unavailable" }
+        return state.runtime?.isEmpty == false ? state.runtime! : state.harness
+    }
+
+    private var modelStateLoadKey: String {
+        guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return "group" }
+        return "\(familiarId):\(modelSessionId(familiarId) ?? "new")"
+    }
+
+    private var thinkingEffort: ChatThinkingEffort {
+        ChatThinkingEffort(rawValue: thinkingRaw) ?? .high
+    }
+
+    private var responseSpeed: ChatResponseSpeed {
+        ChatResponseSpeed(rawValue: responseSpeedRaw) ?? .fast
+    }
+
+    private func conciseModelName(_ id: String) -> String {
+        id.split(separator: "/").last.map(String.init) ?? id
+    }
+
+    private var linkedContextStrip: some View {
+        let cards = app.linkedTasks(for: thread)
+        return Button {
+            showTasks = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "checklist")
+                    .foregroundStyle(chrome.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(cards.count == 1 ? "Linked task" : "\(cards.count) linked tasks")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                    Text(cards.first?.title ?? "Open Tasks")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 52)
+            .background(chrome.bgRaised)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(chrome.border).frame(height: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens tasks linked to this conversation")
     }
 
     private func sessionDetailRow(
@@ -541,25 +627,26 @@ struct ChatView: View {
     /// (focused, ready to tweak) rather than firing a send — same convention
     /// as the desktop quick-chat suggestions.
     private var emptyState: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            VStack(spacing: 18) {
-                sigil
-                VStack(spacing: 8) {
-                    Text("Start a new session")
-                        .font(.system(size: 26, weight: .medium, design: .serif))
-                        .italic()
-                        .foregroundStyle(.primary)
-                    Text(thread.isGroup
-                         ? "All \(thread.familiarIds.count) familiars are listening. Warded — this stays in your cave."
-                         : "\(app.familiar(thread.familiarIds.first ?? "")?.displayName ?? "Your familiar") is listening. Warded — this stays in your cave.")
-                        .font(.footnote)
+        VStack(spacing: 18) {
+            sigil
+            VStack(spacing: 8) {
+                Text("Start a new session")
+                    .font(.system(size: 26, weight: .medium, design: .serif))
+                    .italic()
+                    .foregroundStyle(.primary)
+                (
+                    Text("Speak your intent — a familiar answers from the desktop. Nothing is written to your repos until you lift the ")
                         .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
+                    + Text("ward.")
+                        .foregroundStyle(chrome.accent)
+                        .underline()
+                )
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+                    .frame(maxWidth: 270)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 28)
-            Spacer()
             VStack(alignment: .leading, spacing: 8) {
                 Text("Conjure something")
                     .font(.caption.weight(.semibold))
@@ -567,7 +654,7 @@ struct ChatView: View {
                     .kerning(0.6)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 4)
-                ForEach(emptySuggestions, id: \.label) { suggestion in
+                ForEach(emptySuggestions) { suggestion in
                     EmptyChatSuggestionRow(systemImage: suggestion.icon,
                                            label: suggestion.label,
                                            hint: suggestion.hint) {
@@ -576,33 +663,83 @@ struct ChatView: View {
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 18)
         }
+        .padding(.horizontal, 30)
+        .padding(.vertical, 24)
     }
 
     /// Rotated-square moon-stars mark with a radial accent glow (design's
     /// empty-session sigil).
     private var sigil: some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(chrome.accentGradient)
-            .frame(width: 58, height: 58)
-            .rotationEffect(.degrees(45))
-            .overlay {
-                Image(systemName: "moon.stars.fill")
-                    .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(chrome.accentForeground)
-            }
-            .shadow(color: chrome.accent.opacity(0.45), radius: 26)
-            .padding(.top, 6)
-            .accessibilityHidden(true)
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [chrome.accent.opacity(0.28), .clear],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 48
+                    )
+                )
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(chrome.bgElevated)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [chrome.accent.opacity(0.32), .clear],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(chrome.accent.opacity(0.5), lineWidth: 1)
+                }
+                .frame(width: 74, height: 74)
+                .rotationEffect(.degrees(45))
+                .shadow(color: chrome.accent.opacity(0.45), radius: 24, y: 8)
+            Image(systemName: "moon.stars.fill")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(chrome.accent)
+        }
+        .frame(width: 96, height: 96)
+        .accessibilityHidden(true)
     }
 
-    private var emptySuggestions: [(icon: String, label: String, hint: String)] {
-        [
-            ("sparkles", "What can you help me with?", "Meet your familiar"),
-            ("checklist", "Summarize my open tasks", "Pulls from the board"),
-            ("calendar", "What's on my calendar today?", "Today at a glance"),
+    private var emptySuggestions: [EmptyChatSuggestion] {
+        let pullRequests = app.tasks.flatMap(\.githubLinks)
+            .filter { $0.kind == "pr" || $0.kind == "review_request" }
+        let active = app.tasks.filter { $0.status.isActive }
+        let running = active.filter { $0.status == .running }.count
+        let blocked = active.filter { $0.status == .blocked }.count
+        let next = active.sorted {
+            if $0.priority.rank != $1.priority.rank { return $0.priority.rank < $1.priority.rank }
+            return (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast)
+        }.first
+        let nextLabel = next.map { "Chase the \($0.title)" } ?? "Chase the next priority"
+        let nextHint = next.map {
+            [$0.projectId, $0.githubLinks.first?.number.map { "#\($0)" }]
+                .compactMap { $0 }
+                .joined(separator: " · ")
+        }.flatMap { $0.isEmpty ? nil : $0 } ?? "Ask your familiar to choose"
+
+        return [
+            EmptyChatSuggestion(
+                icon: "arrow.triangle.branch",
+                label: "Review my open PRs",
+                hint: pullRequests.isEmpty
+                    ? "Ask GitHub through your familiar"
+                    : "\(pullRequests.count) awaiting you"),
+            EmptyChatSuggestion(
+                icon: "checkmark.square",
+                label: "What's on the board?",
+                hint: app.tasksLoaded ? "\(running) running · \(blocked) blocked" : "Load the live board"),
+            EmptyChatSuggestion(
+                icon: "scope",
+                label: nextLabel,
+                hint: nextHint),
         ]
     }
 
@@ -643,7 +780,7 @@ struct ChatView: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingMentionMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
-        .glassBar()
+        .background(chrome.bgBase)
         // Live dictation streams its running transcript into the draft.
         .onAppear { dictation.onUpdate = { draft = $0 } }
         .onChange(of: photoItems) { _, items in
@@ -682,6 +819,7 @@ struct ChatView: View {
             FloatingAction(id: "photos", systemImage: "photo.on.rectangle", label: "Photos") { showPhotosPicker = true },
             FloatingAction(id: "files", systemImage: "folder", label: "Files") { showFileImporter = true },
             FloatingAction(id: "plugins", systemImage: "puzzlepiece.extension", label: "Plugins") { showPlugins = true },
+            FloatingAction(id: "dictation", systemImage: "mic.fill", label: "Dictate") { startDictation() },
             FloatingAction(id: "commands", systemImage: "command", label: "Commands") { showCommands = true },
         ]
     }
@@ -758,91 +896,110 @@ struct ChatView: View {
     }
 
     private var composerBar: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            // "+" opens the floating attach/tools menu (Camera · Photos ·
-            // Files · Commands) instead of jumping straight into one picker.
-            CircularIconButton(systemImage: showActionMenu ? "xmark" : "plus",
-                               active: showActionMenu,
-                               label: showActionMenu ? "Close attach menu" : "Attach or run a tool") {
+        let isEmptyThread = thread.messages.isEmpty
+        let controlSize: CGFloat = isEmptyThread ? 40 : 36
+        return HStack(alignment: .center, spacing: 8) {
+            // The authored composer keeps every control inside one elevated
+            // panel. The plus well remains accent-tinted so attachment/tools
+            // discovery does not depend on text being present.
+            Button {
                 composerFocused = false
                 showActionMenu.toggle()
+            } label: {
+                Image(systemName: showActionMenu ? "xmark" : "plus")
+                    .font(.system(size: isEmptyThread ? 18 : 16, weight: .medium))
+                    .foregroundStyle(chrome.accent)
+                    .frame(width: controlSize, height: controlSize)
+                    .background(
+                        chrome.accent.opacity(showActionMenu ? 0.22 : 0.14),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
             }
+            .buttonStyle(.glassPress)
+            .accessibilityLabel(showActionMenu ? "Close attach menu" : "Attach or run a tool")
 
-            // Hairline capsule with the field and a trailing control inside it:
-            // a mic when empty, a filled send/run button once there's text.
-            HStack(alignment: .bottom, spacing: 4) {
-                TextField("Message", text: $draft, axis: .vertical)
-                    .lineLimit(1...6)
-                    .padding(.leading, 14)
-                    .padding(.vertical, 7)
-                    .focused($composerFocused)
-                    // Hardware-keyboard ergonomics (iPad / Mac over Tailscale):
-                    // plain Return sends, Shift+Return inserts a newline. The
-                    // software keyboard's return still inserts a newline as usual
-                    // (a vertical-axis field doesn't fire onSubmit), so multi-line
-                    // composing on-device is untouched.
-                    .onKeyPress(keys: [.return]) { press in
-                        guard !press.modifiers.contains(.shift) else { return .ignored }
-                        guard canSend else { return .ignored }
-                        send()
-                        return .handled
-                    }
-                    // Hardware Escape closes the "+" menu (outside tap and row
-                    // selection are the touch paths).
-                    .onKeyPress(keys: [.escape]) { _ in
-                        guard showActionMenu else { return .ignored }
-                        showActionMenu = false
-                        return .handled
-                    }
+            TextField("Ask something…", text: $draft, axis: .vertical)
+                .font(isEmptyThread ? .body : .callout)
+                .lineLimit(1...6)
+                .padding(.vertical, isEmptyThread ? 8 : 6)
+                .focused($composerFocused)
+                // Hardware-keyboard ergonomics (iPad / Mac over Tailscale):
+                // plain Return sends, Shift+Return inserts a newline. The
+                // software keyboard's return still inserts a newline as usual
+                // (a vertical-axis field doesn't fire onSubmit), so multi-line
+                // composing on-device is untouched.
+                .onKeyPress(keys: [.return]) { press in
+                    guard !press.modifiers.contains(.shift) else { return .ignored }
+                    guard canSend else { return .ignored }
+                    send()
+                    return .handled
+                }
+                // Hardware Escape closes the "+" menu (outside tap and row
+                // selection are the touch paths).
+                .onKeyPress(keys: [.escape]) { _ in
+                    guard showActionMenu else { return .ignored }
+                    showActionMenu = false
+                    return .handled
+                }
 
-                Group {
-                    if dictation.isRecording {
-                        Button { dictation.stop() } label: {
-                            Image(systemName: "stop.circle.fill")
-                                .font(.system(size: 29))
-                                .foregroundStyle(.red)
-                                .symbolEffect(.pulse, isActive: true)
-                                .background(Circle().fill(.white).padding(3))
-                        }
-                        .padding(.trailing, 3)
-                        .padding(.bottom, 2)
-                        .transition(.scale.combined(with: .opacity))
-                        .accessibilityLabel("Stop dictation")
-                    } else if canSend {
-                        Button(action: send) {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 29))
-                                .foregroundStyle(isCommand ? Color.green : Color.accentColor)
-                                .background(Circle().fill(.white).padding(3))
-                        }
-                        .padding(.trailing, 3)
-                        .padding(.bottom, 2)
-                        .transition(.scale.combined(with: .opacity))
-                        .accessibilityLabel(isCommand ? "Run command" : "Send")
-                    } else {
-                        Button { startDictation() } label: {
-                            Image(systemName: "mic.fill")
-                                .font(.system(size: 17))
-                                .foregroundStyle(.secondary)
-                                .padding(.trailing, 12)
-                                .padding(.bottom, 8)
-                        }
-                        .accessibilityLabel("Dictate")
+            Group {
+                if dictation.isRecording {
+                    Button { dictation.stop() } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: controlSize, height: controlSize)
+                            .background(Color.red, in: Circle())
+                            .symbolEffect(.pulse, isActive: true)
                     }
+                    .buttonStyle(.glassPress)
+                    .transition(.scale.combined(with: .opacity))
+                    .accessibilityLabel("Stop dictation")
+                } else {
+                    Button(action: send) {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: isEmptyThread ? 18 : 16, weight: .bold))
+                            .foregroundStyle(
+                                canSend
+                                    ? (isCommand ? Color.white : chrome.accentForeground)
+                                    : chrome.textMuted
+                            )
+                            .frame(width: controlSize, height: controlSize)
+                            .background(
+                                canSend
+                                    ? (isCommand ? Color.green : chrome.accent)
+                                    : chrome.bgRaised,
+                                in: Circle()
+                            )
+                    }
+                    .buttonStyle(.glassPress)
+                    .disabled(!canSend)
+                    .accessibilityLabel(isCommand ? "Run command" : "Send")
                 }
             }
-            .glassFill(.control, in: Capsule())
-            .overlay(Capsule().strokeBorder(dictation.isRecording ? Color.red.opacity(0.5) : borderColor, lineWidth: 1))
-            // The focused field earns the accent halo — the design language's
-            // one "active" cue — matching the drawer's search treatment.
-            .accentGlow(active: composerFocused || dictation.isRecording)
-            .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: canSend)
-            .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: isCommand)
-            .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: dictation.isRecording)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 6)
-        .padding(.bottom, 8)
+        .padding(.leading, isEmptyThread ? 12 : 8)
+        .padding(.trailing, isEmptyThread ? 9 : 6)
+        .padding(.vertical, isEmptyThread ? 9 : 6)
+        .background(
+            chrome.bgElevated,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(dictation.isRecording ? Color.red.opacity(0.5) : borderColor, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(isEmptyThread ? 0.32 : 0.24),
+                radius: isEmptyThread ? 22 : 16, y: 8)
+        // The focused field earns the accent halo — the design language's
+        // one "active" cue — matching the drawer's search treatment.
+        .accentGlow(active: composerFocused || dictation.isRecording)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: canSend)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: isCommand)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: dictation.isRecording)
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, isEmptyThread ? 12 : 8)
     }
 
     private var canSend: Bool {
@@ -891,12 +1048,17 @@ struct ChatView: View {
             // dead-ending in a transport error — it sends automatically on
             // the next reconnect (AppModel.flushQueuedMessages).
             if app.connectionState != .connected {
-                thread.enqueue(outgoing, attachments: attachments)
+                thread.enqueue(outgoing, attachments: attachments,
+                               reasoningEffort: thinkingEffort,
+                               responseSpeed: responseSpeed)
                 app.touch(thread)
                 app.showToast("Queued — sends when reconnected", systemImage: "clock")
                 return
             }
-            thread.send(outgoing, attachments: attachments, client: client) { app.touch(thread) }
+            thread.send(outgoing, attachments: attachments,
+                        reasoningEffort: thinkingEffort,
+                        responseSpeed: responseSpeed,
+                        client: client) { app.touch(thread) }
         }
     }
 
@@ -904,12 +1066,14 @@ struct ChatView: View {
     private func sendSuggestion(_ text: String) {
         guard let client = app.client else { return }
         if app.connectionState != .connected {
-            thread.enqueue(text)
+            thread.enqueue(text, reasoningEffort: thinkingEffort, responseSpeed: responseSpeed)
             app.touch(thread)
             app.showToast("Queued — sends when reconnected", systemImage: "clock")
             return
         }
-        thread.send(text, client: client) { app.touch(thread) }
+        thread.send(text, reasoningEffort: thinkingEffort,
+                    responseSpeed: responseSpeed,
+                    client: client) { app.touch(thread) }
     }
 
     /// Retry is offered on a failed reply (any time — a flaky network shouldn't
@@ -1024,6 +1188,9 @@ struct ChatView: View {
         let resp: ChatModelStateResponse
         do {
             resp = try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
+            sessionModelState = resp.state
+            modelPickerOptions = resp.options ?? []
+            modelPickerCurrent = resp.state.effectiveModel
         } catch {
             thread.appendSystem("Couldn't load the model list. Is the desktop reachable?", isError: true)
             app.touch(thread)
@@ -1065,6 +1232,9 @@ struct ChatView: View {
         do {
             let resp = try await client.setChatModel(
                 familiarId: familiarId, sessionId: sessionId, model: model, scope: scope)
+            sessionModelState = resp.state
+            modelPickerOptions = resp.options ?? []
+            modelPickerCurrent = resp.state.effectiveModel
             let label = (resp.options ?? []).first { $0.id == resp.state.effectiveModel }?.label
                 ?? resp.state.effectiveModel
             thread.appendSystem("Model set to \(label).")
@@ -1073,6 +1243,27 @@ struct ChatView: View {
         } catch {
             thread.appendSystem("Couldn't switch the model.", isError: true)
             app.touch(thread)
+        }
+    }
+
+    private func loadSessionModelState() async {
+        guard !thread.isGroup,
+              let client = app.client,
+              let familiarId = thread.familiarIds.first else {
+            sessionModelState = nil
+            modelPickerOptions = []
+            return
+        }
+        do {
+            let response = try await client.chatModelState(
+                familiarId: familiarId,
+                sessionId: modelSessionId(familiarId))
+            sessionModelState = response.state
+            modelPickerOptions = response.options ?? []
+            modelPickerCurrent = response.state.effectiveModel
+        } catch {
+            sessionModelState = nil
+            modelPickerOptions = []
         }
     }
 
@@ -1090,7 +1281,9 @@ struct ChatView: View {
             return
         }
         guard let client = app.client else { return }
-        thread.send(trimmed, client: client) { app.touch(thread) }
+        thread.send(trimmed, reasoningEffort: thinkingEffort,
+                    responseSpeed: responseSpeed,
+                    client: client) { app.touch(thread) }
     }
 
     private func runDaemonStatus() async {
@@ -1203,7 +1396,10 @@ struct ChatView: View {
         let destination = app.directThread(for: familiar.id)
         let prompt = forwardPrompt(for: message, to: familiar)
         let displayText = forwardDisplayText(for: message)
-        destination.send(prompt, displayText: displayText, client: client) { app.touch(destination) }
+        destination.send(prompt, displayText: displayText,
+                         reasoningEffort: thinkingEffort,
+                         responseSpeed: responseSpeed,
+                         client: client) { app.touch(destination) }
         app.requestOpen(destination)
         app.showToast("Forwarded to \(familiar.displayName)", systemImage: "arrowshape.turn.up.right")
     }

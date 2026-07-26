@@ -75,6 +75,7 @@ struct ChatsHomeView: View {
             // every tab's header aligns. Search + compose stay in the bottom bar.
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { header }
+            .safeAreaInset(edge: .bottom, spacing: 0) { homeSearchBar }
             .sheet(isPresented: $showNewChat) {
                 NewChatView { thread in
                     showNewChat = false
@@ -93,6 +94,7 @@ struct ChatsHomeView: View {
             .task { if !app.sessionsLoaded { await app.loadSessions() } }
             .onAppear {
                 openDeepLinkedThread()
+                consumeGlobalRequests()
             }
             // A slash command (`/new`, `/familiar <name>`) or a task link asked to
             // open a specific thread — surface it in the detail column.
@@ -100,6 +102,16 @@ struct ChatsHomeView: View {
                 guard let thread else { return }
                 if lastThreadId != thread.id { open(.thread(thread)) }
                 app.threadToOpen = nil
+            }
+            .onChange(of: app.newChatRequested) { _, requested in
+                guard requested else { return }
+                showNewChat = true
+                app.newChatRequested = false
+            }
+            .onChange(of: app.chatSearchRequested) { _, requested in
+                guard requested else { return }
+                searchFocused = true
+                app.chatSearchRequested = false
             }
             .sidebarColumn()
         } detail: {
@@ -193,45 +205,35 @@ struct ChatsHomeView: View {
     /// Large-title header pinned to the top, mirroring the Read / Tasks tabs
     /// so every tab's title aligns at the same flush position.
     private var header: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                Menu {
-                    Button {
-                        showNewChat = true
-                    } label: {
-                        Label("New chat", systemImage: "square.and.pencil")
-                    }
-                    Button {
-                        showFamiliars = true
-                    } label: {
-                        Label("Familiars", systemImage: "person.2")
-                    }
-                    Button {
-                        app.selectedTab = .settings
-                    } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.title2)
-                }
-                .accessibilityLabel("Chats menu")
-                Text("Chats")
-                    .font(.largeTitle.weight(.bold))
-                Spacer()
-                if canReorder {
-                    Button("Reorder") { showReorder = true }
-                        .font(.subheadline.weight(.medium))
-                }
-                CircularIconButton(systemImage: "folder",
-                                   label: "Projects") {
-                    showProjects = true
-                }
-                CircularIconButton(systemImage: "square.and.pencil",
-                                   label: "New chat") {
-                    showNewChat = true
-                }
+        HStack(spacing: 10) {
+            CircularIconButton(systemImage: "line.3.horizontal",
+                               label: "Open navigation") {
+                app.navigationDrawerOpen = true
             }
+            Text("Chats")
+                .font(.largeTitle.weight(.bold))
+            Spacer()
+            if canReorder {
+                Button("Reorder") { showReorder = true }
+                    .font(.subheadline.weight(.medium))
+            }
+            CircularIconButton(systemImage: "folder",
+                               label: "Projects") {
+                showProjects = true
+            }
+            CircularIconButton(systemImage: "square.and.pencil",
+                               label: "New chat") {
+                showNewChat = true
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .glassChrome(.top)
+    }
+
+    private var homeSearchBar: some View {
+        HStack(spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
@@ -250,14 +252,18 @@ struct ChatsHomeView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .frame(minHeight: 44)
             .background(chrome.bgRaised, in: Capsule())
             .overlay(Capsule().stroke(chrome.border.opacity(0.7), lineWidth: 1))
+
+            CircularIconButton(systemImage: "square.and.pencil",
+                               label: "New chat") {
+                showNewChat = true
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .glassChrome(.top)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .glassChrome(.bottom)
     }
 
     /// Reordering is only meaningful with ≥2 familiars and no active search
@@ -268,6 +274,12 @@ struct ChatsHomeView: View {
 
     private var homeList: some View {
         List(selection: $selection) {
+            Section {
+                familiarRail
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
             Section {
                 ForEach(recentThreads) { thread in
                     RecentThreadRow(thread: thread)
@@ -361,6 +373,17 @@ struct ChatsHomeView: View {
             Button("Cancel", role: .cancel) {}
         } message: { thread in Text(thread.title) }
         .sheet(isPresented: $showReorder) { ReorderFamiliarsSheet() }
+    }
+
+    private func consumeGlobalRequests() {
+        if app.newChatRequested {
+            showNewChat = true
+            app.newChatRequested = false
+        }
+        if app.chatSearchRequested {
+            searchFocused = true
+            app.chatSearchRequested = false
+        }
     }
 
     /// The horizontal familiar rail (design 1a): 56pt avatars with presence

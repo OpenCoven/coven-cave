@@ -174,6 +174,7 @@ struct FloatingActionMenu: View {
 /// A spacious icon + short-label row for the empty chat state; tapping fills
 /// the composer so the user can tweak before sending.
 struct EmptyChatSuggestionRow: View {
+    @Environment(\.chrome) private var chrome
     let systemImage: String
     let label: String
     /// Optional muted second line (design's suggestion-card hint).
@@ -185,27 +186,40 @@ struct EmptyChatSuggestionRow: View {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 30, height: 30)
-                    .glassFill(.raised, in: Circle())
+                    .foregroundStyle(chrome.accent)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        chrome.accent.opacity(0.14),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    )
                 VStack(alignment: .leading, spacing: 1) {
                     Text(label)
-                        .font(.subheadline)
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let hint {
                         Text(hint)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 8)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .glass(.raised, in: RoundedRectangle(cornerRadius: ChatChrome.menuRadius, style: .continuous))
+            .padding(.vertical, 11)
+            .frame(minHeight: 64)
+            .background(
+                chrome.bgRaised,
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(chrome.border, lineWidth: 1)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(GlassPressStyle(scale: 0.98))

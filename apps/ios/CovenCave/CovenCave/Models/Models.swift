@@ -15,12 +15,16 @@ struct Familiar: Identifiable, Codable, Hashable {
     var model: String?
     var icon: String?
     var avatarUrl: String?
+    var activeSessions: Int?
+    var memoryFreshness: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case displayName = "display_name"
         case role, description, pronouns, color, status, harness, model, icon
         case avatarUrl
+        case activeSessions = "active_sessions"
+        case memoryFreshness = "memory_freshness"
     }
 }
 

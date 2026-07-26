@@ -32,6 +32,10 @@ struct TerminalView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
+                CircularIconButton(systemImage: "line.3.horizontal",
+                                   label: "Open navigation") {
+                    app.navigationDrawerOpen = true
+                }
                 Text("Terminal")
                     .font(.largeTitle.weight(.bold))
                 cwdMenu

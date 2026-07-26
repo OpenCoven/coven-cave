@@ -19,6 +19,10 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// Composed while the desktop was unreachable; waiting for reconnect.
     /// Optional so messages persisted before offline compose still decode.
     var queued: Bool?
+    /// Per-send response controls. Optional so snapshots written before the
+    /// controls shipped remain decodable and replay with current defaults.
+    var reasoningEffort: ChatThinkingEffort?
+    var responseSpeed: ChatResponseSpeed?
     /// Agent working steps (tool calls / progress lines) surfaced while this
     /// assistant reply streamed. Optional so older persisted messages decode.
     var activity: [ActivityStep]?
@@ -115,6 +119,8 @@ final class ChatThread: Identifiable, Hashable {
     /// the ask but sends a fuller instruction).
     func send(_ text: String, displayText: String? = nil,
               attachments: [CaveClient.ChatAttachment] = [],
+              reasoningEffort: ChatThinkingEffort = .high,
+              responseSpeed: ChatResponseSpeed = .fast,
               client: CaveClient, onChange: @escaping () -> Void) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // An image with no caption is a valid prompt (the familiar reads it).
@@ -123,8 +129,10 @@ final class ChatThread: Identifiable, Hashable {
             $0.isEmpty ? nil : $0
         } ?? trimmed
 
-        let userMessage = DisplayMessage(role: .user, familiarId: nil, text: shown,
-                                         attachmentDataUrls: attachments.map(\.dataUrl))
+        let userMessage = DisplayMessage(
+            role: .user, familiarId: nil, text: shown,
+            attachmentDataUrls: attachments.map(\.dataUrl),
+            reasoningEffort: reasoningEffort, responseSpeed: responseSpeed)
         messages.append(userMessage)
         updatedAt = Date()
         onChange()
@@ -137,6 +145,8 @@ final class ChatThread: Identifiable, Hashable {
             Task { await self.stream(familiarId: familiarId, prompt: trimmed,
                                      attachments: attachments, into: messageId,
                                      userMessageId: userMessage.id,
+                                     reasoningEffort: reasoningEffort,
+                                     responseSpeed: responseSpeed,
                                      client: client, onChange: onChange) }
         }
     }
@@ -145,11 +155,15 @@ final class ChatThread: Identifiable, Hashable {
     /// message — no placeholder bubbles, nothing touches the network. It
     /// persists with the thread and `replayQueued` sends it on the next
     /// reconnect. Prose only: slash commands never route here.
-    func enqueue(_ text: String, attachments: [CaveClient.ChatAttachment] = []) {
+    func enqueue(_ text: String, attachments: [CaveClient.ChatAttachment] = [],
+                 reasoningEffort: ChatThinkingEffort = .high,
+                 responseSpeed: ChatResponseSpeed = .fast) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }
-        var message = DisplayMessage(role: .user, familiarId: nil, text: trimmed,
-                                     attachmentDataUrls: attachments.map(\.dataUrl))
+        var message = DisplayMessage(
+            role: .user, familiarId: nil, text: trimmed,
+            attachmentDataUrls: attachments.map(\.dataUrl),
+            reasoningEffort: reasoningEffort, responseSpeed: responseSpeed)
         message.queued = true
         messages.append(message)
         updatedAt = Date()
@@ -170,6 +184,8 @@ final class ChatThread: Identifiable, Hashable {
             let queuedId = queuedMessage.id
             let prompt = queuedMessage.text
             let attachments = Self.attachments(fromDataUrls: queuedMessage.attachmentDataUrls)
+            let reasoningEffort = queuedMessage.reasoningEffort ?? .high
+            let responseSpeed = queuedMessage.responseSpeed ?? .fast
             mutate(queuedId) { $0.queued = false }
             updatedAt = Date()
             onChange()
@@ -187,7 +203,10 @@ final class ChatThread: Identifiable, Hashable {
                 messages.insert(placeholder, at: insertAt)
                 await stream(familiarId: familiarId, prompt: prompt,
                              attachments: attachments, into: placeholder.id,
-                             userMessageId: queuedId, client: client, onChange: onChange)
+                             userMessageId: queuedId,
+                             reasoningEffort: reasoningEffort,
+                             responseSpeed: responseSpeed,
+                             client: client, onChange: onChange)
                 // Re-queued mid-replay (offline again) — stop; don't spin.
                 if messages.first(where: { $0.id == queuedId })?.isQueued == true { return }
             }
@@ -209,13 +228,17 @@ final class ChatThread: Identifiable, Hashable {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }),
               messages[idx].role == .assistant,
               let familiarId = messages[idx].familiarId else { return }
-        let prompt = messages[..<idx].last(where: { $0.role == .user })?.text ?? ""
+        let source = messages[..<idx].last(where: { $0.role == .user })
+        let prompt = source?.text ?? ""
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         mutate(messageId) { $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil }
         updatedAt = Date()
         onChange()
         Task { await self.stream(familiarId: familiarId, prompt: prompt,
-                                 into: messageId, client: client, onChange: onChange) }
+                                 into: messageId,
+                                 reasoningEffort: source?.reasoningEffort ?? .high,
+                                 responseSpeed: source?.responseSpeed ?? .fast,
+                                 client: client, onChange: onChange) }
     }
 
     /// Append an inline system note (slash-command output) and return its id so
@@ -291,6 +314,8 @@ final class ChatThread: Identifiable, Hashable {
     private func stream(familiarId: String, prompt: String,
                         attachments: [CaveClient.ChatAttachment] = [], into messageId: String,
                         userMessageId: String? = nil,
+                        reasoningEffort: ChatThinkingEffort = .high,
+                        responseSpeed: ChatResponseSpeed = .fast,
                         client: CaveClient, onChange: @escaping () -> Void) async {
         // Per-send token: the server keys its resumable run buffer under this
         // (cave-h40l), so even a brand-new chat (no sessionId yet) can
@@ -301,7 +326,9 @@ final class ChatThread: Identifiable, Hashable {
         let body = CaveClient.SendBody(familiarId: familiarId, prompt: prompt,
                                        sessionId: sessionIds[familiarId],
                                        attachments: attachments.isEmpty ? nil : attachments,
-                                       runId: runId)
+                                       runId: runId,
+                                       reasoningEffort: reasoningEffort,
+                                       responseSpeed: responseSpeed)
         var receivedAnyEvent = false
         // Resume cursor: the last applied frame's SSE id (run-buffer seq).
         var cursor = 0

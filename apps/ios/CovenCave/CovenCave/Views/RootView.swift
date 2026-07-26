@@ -167,24 +167,52 @@ private struct ReconnectPill: View {
 struct MainTabView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
+    @State private var presentedOverlay: MainOverlay?
 
     var body: some View {
         @Bindable var app = app
-        TabView(selection: $app.selectedTab) {
-            Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.chats) {
-                ChatsHomeView()
+        ZStack {
+            TabView(selection: $app.selectedTab) {
+                Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.chats) {
+                    ChatsHomeView()
+                }
+                Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
+                    TasksView()
+                }
+                Tab("Terminal", systemImage: "terminal.fill", value: AppTab.terminal) {
+                    TerminalView()
+                }
+                Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
+                    SettingsView()
+                }
             }
-            Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
-                TasksView()
+            .tabViewStyle(.sidebarAdaptable)
+
+            CaveNavigationDrawer(
+                isOpen: $app.navigationDrawerOpen,
+                openProjects: { presentedOverlay = .projects },
+                openFamiliars: { presentedOverlay = .familiars },
+                openThread: { app.requestOpen($0) },
+                newChat: {
+                    app.selectedTab = .chats
+                    app.newChatRequested = true
+                },
+                searchChats: {
+                    app.selectedTab = .chats
+                    app.chatSearchRequested = true
+                }
+            )
+            .zIndex(100)
+        }
+        .fullScreenCover(item: $presentedOverlay) { overlay in
+            switch overlay {
+            case .projects: ProjectsPanel { presentedOverlay = nil }
+            case .familiars: FamiliarsListView { familiar in
+                presentedOverlay = nil
+                app.requestOpen(app.directThread(for: familiar.id))
             }
-            Tab("Terminal", systemImage: "terminal.fill", value: AppTab.terminal) {
-                TerminalView()
-            }
-            Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
-                SettingsView()
             }
         }
-        .tabViewStyle(.sidebarAdaptable)
         // Command confirmations float above the whole tab bar so they're visible
         // whether a command stays in chat or jumps to the Tasks tab.
         .toast($app.toast)
@@ -212,6 +240,12 @@ struct MainTabView: View {
             }
         }
     }
+}
+
+private enum MainOverlay: String, Identifiable {
+    case projects
+    case familiars
+    var id: String { rawValue }
 }
 
 struct ConnectingView: View {
