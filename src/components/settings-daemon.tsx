@@ -19,6 +19,7 @@ import { TextArea } from "@/components/ui/text-area";
 import { TextInput } from "@/components/ui/text-input";
 import { copyText } from "@/lib/clipboard";
 import { Icon, type IconName } from "@/lib/icon";
+import { classifyTailscaleFailureKind } from "@/lib/tailscale-failure";
 import { parseExecutorUrls } from "./settings-multihost";
 
 type DaemonStatus = {
@@ -126,23 +127,15 @@ function isValidHubUrl(value: string): boolean {
   }
 }
 
-function classifyTailscaleFailure(raw: string): { headline: string; hint: string } {
-  const text = raw.toLowerCase();
-  if (text.includes("tailscale") && (text.includes("not installed") || text.includes("cli not found"))) {
+function describeTailscaleFailure(raw: string): { headline: string; hint: string } {
+  const kind = classifyTailscaleFailureKind(raw);
+  if (kind === "not-installed") {
     return {
       headline: "Tailscale isn’t installed",
       hint: "Install Tailscale and sign in, then refresh devices.",
     };
   }
-  if (
-    text.includes("tailscale") &&
-    (text.includes("signed out") ||
-      text.includes("logged out") ||
-      text.includes("not connected") ||
-      text.includes("not running") ||
-      text.includes("stopped") ||
-      text.includes("unreachable"))
-  ) {
+  if (kind === "signed-out" || kind === "not-running") {
     return {
       headline: "Tailscale isn’t running",
       hint: "Open Tailscale and sign in, then refresh devices.",
@@ -589,7 +582,7 @@ export function DaemonSection({
     },
   ];
 
-  const tailscaleFailure = devicesError ? classifyTailscaleFailure(devicesError) : null;
+  const tailscaleFailure = devicesError ? describeTailscaleFailure(devicesError) : null;
 
   return (
     <section className="settings-daemon" aria-labelledby="settings-daemon-title">

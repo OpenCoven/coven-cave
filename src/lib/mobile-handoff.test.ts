@@ -270,8 +270,12 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.match(workspace, /addEventListener\("cave:continue-on-phone"/, "workspace listens for the handoff event");
   assert.match(workspace, /chatId=\{mobileHandoffChatId\}/, "workspace threads the chat id into the pairing modal");
 
-  const settings = read("../components/settings-shell.tsx");
-  assert.match(settings, /Paired · last seen \{relativeTime\(/, "the Settings card shows the paired-device beat");
+  const settingsPhone = read("../components/settings-phone.tsx");
+  assert.match(
+    settingsPhone,
+    /paired && handoff\?\.lastSeenAt[\s\S]*?`paired · last seen \$\{relativeTime\(new Date\(handoff\.lastSeenAt\)\.toISOString\(\)\)\}`/,
+    "the Settings Phone card shows the paired-device beat",
+  );
 }
 
 console.log("mobile-handoff.test.ts OK");
