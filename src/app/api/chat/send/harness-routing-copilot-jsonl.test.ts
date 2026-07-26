@@ -255,6 +255,26 @@ assert.match(
   /Grok Build chats currently run on this Cave host/,
   "SSH Grok must fail explicitly instead of falling back to coven run",
 );
+assert.match(
+  chatRoute,
+  /resolveGrokCompatibility\(await probeGrokRunCapabilities\(grokLaunchCommand\(\), harnessSpawnEnv\(body\.familiarId\)\)\)/,
+  "Grok must probe the exact launcher before selecting a structured schema",
+);
+assert.match(
+  chatRoute,
+  /outputFormat: grokCompatibility\?\.mode === "structured" \? "streaming-json" : null/,
+  "an unverified Grok client must use plain output rather than an assumed JSON protocol",
+);
+assert.match(
+  chatRoute,
+  /case "tool_start":[\s\S]*?envelopeToolUse[\s\S]*?consumePendingEnvelopeProgress[\s\S]*?consumePendingEnvelopeResult/,
+  "selected Grok schemas must reconcile reordered progress and terminal tool results through the shared tracker",
+);
+assert.match(
+  chatRoute,
+  /case "unknown":[\s\S]*?quarantineGrokSchema[\s\S]*?redactedGrokEventFingerprint/,
+  "unknown selected-schema events must quarantine future structured launches with a redacted diagnostic",
+);
 
 assert.match(
   chatRoute,
