@@ -310,23 +310,26 @@ export function DaemonSection({
   );
 
   const persistConnection = async (nextMode = mode) => {
+    const normalizedHubUrl = hubUrl.trim();
+    const normalizedExecutorUrls = parseExecutorUrls(executorText);
     setSavingConnection(true);
     setConnectionError(null);
     try {
       const res = await fetch("/api/config", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ multiHost: { mode: nextMode, hubUrl, executorUrls: parseExecutorUrls(executorText) } }),
+        body: JSON.stringify({ multiHost: { mode: nextMode, hubUrl: normalizedHubUrl, executorUrls: normalizedExecutorUrls } }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.ok === false) {
         throw new Error(json?.error || `save failed (${res.status})`);
       }
       setMode(nextMode);
+      setHubUrl(normalizedHubUrl);
       setSavedConnection({
         mode: nextMode,
-        hubUrl,
-        executorUrls: parseExecutorUrls(executorText),
+        hubUrl: normalizedHubUrl,
+        executorUrls: normalizedExecutorUrls,
       });
       announce("Daemon connection saved.");
       await refresh();

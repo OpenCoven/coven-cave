@@ -54,6 +54,16 @@ assert.match(daemon, /<TextArea[\s\S]*aria-label="Executor addresses, one per li
 assert.match(daemon, /aria-expanded=\{executorsOpen\}/, "executor addresses should use progressive disclosure");
 assert.match(daemon, /optional · multi-machine setups/, "executor disclosure should explain its advanced scope");
 assert.match(daemon, /const connectionDirty =/, "connection changes should remain drafts until explicitly saved");
+assert.match(
+  daemon,
+  /const normalizedHubUrl = hubUrl\.trim\(\)/,
+  "saving a connection should normalize surrounding whitespace from the hub URL",
+);
+assert.match(
+  daemon,
+  /body: JSON\.stringify\(\{ multiHost: \{ mode: nextMode, hubUrl: normalizedHubUrl, executorUrls: normalizedExecutorUrls \} \}\)/,
+  "the normalized hub URL and executor list should be the values persisted to config",
+);
 assert.match(daemon, />\s*Revert\s*</, "connection drafts should be reversible");
 assert.match(daemon, />\s*Save connection\s*</, "connection drafts should have one explicit save action");
 
@@ -72,6 +82,11 @@ assert.match(
   "daemon-specific motion should have an explicit reduced-motion treatment",
 );
 assert.doesNotMatch(
+  daemonCss,
+  /(?:gap|padding|width|height):\s*(?:2|3|6|8|12)px|box-shadow:\s*inset\s+2px/,
+  "daemon micro-spacing should use the design-system spacing tokens",
+);
+assert.doesNotMatch(
   shell,
   /bg-red-400/,
   "daemon error states should use the semantic danger token across every theme",
@@ -87,12 +102,6 @@ assert.match(
   shell,
   /fetch\("\/api\/config", \{ cache: "no-store", signal: ctl\.signal \}\)/,
   "Daemon settings should load Cave config before rendering connection controls",
-);
-
-assert.match(
-  shell,
-  /body: JSON\.stringify\(\{ multiHost: \{ mode: nextMode, hubUrl, executorUrls: parseExecutorUrls\(executorText\) \} \}\)/,
-  "Daemon settings should persist the selected connection mode through cave-config",
 );
 
 assert.match(
