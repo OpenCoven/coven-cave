@@ -60,8 +60,8 @@ assert.deepEqual(
     model: null,
     permissionMode: "full",
     addDirs: [],
-  }).slice(0, 5),
-  ["--allow-all", "--output-format", "json", "--stream", "on"],
+  }).slice(0, 6),
+  ["--no-auto-update", "--allow-all", "--output-format", "json", "--stream", "on"],
   "the direct full-mode routing decision keeps its approval flag before the reviewed JSONL launch contract",
 );
 
