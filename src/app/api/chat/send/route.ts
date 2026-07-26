@@ -62,7 +62,6 @@ import {
   parseGrokStreamEvent,
 } from "@/lib/grok-build";
 import { grokLaunchCommand } from "@/lib/grok-bin";
-<<<<<<< HEAD
 import {
   openCodeCommand,
   openCodeLaunch,
@@ -78,17 +77,6 @@ import {
   type DirectRunnerId,
   type RuntimeAvailability,
 } from "@/lib/runtime-availability";
-=======
-import {
-  openCodeCommand,
-  openCodeLaunch,
-  openCodeSpawnEnv,
-  OPENCODE_COMMAND_NOT_FOUND_MARKER,
-  OPENCODE_LAUNCH_FAILED_MARKER,
-  writeOpenCodeLaunchInput,
-} from "@/lib/opencode-bin";
-import { evaluateRuntimeAvailability, missingRunnerMessage } from "@/lib/runtime-availability";
->>>>>>> bbfd8a88 (fix(opencode): preserve PowerShell inner launch failures)
 import {
   quarantineOpenCodeSchema,
   redactedOpenCodeEventFingerprint,
@@ -1185,7 +1173,7 @@ export async function POST(req: Request) {
     ? await probeReadyLocalRuntimeCapability({
         plan: localRuntimePlan,
         runner: "opencode",
-        probe: () => openCodeRunCapabilities(body.familiarId),
+        probe: () => openCodeRunCapabilities(body.familiarId, undefined, localRuntimePlan?.env),
       })
     : null;
   const openCodeCompatibility = openCodeCapabilities
@@ -3204,18 +3192,40 @@ export async function POST(req: Request) {
                     command: localPlan.command,
                     args: [...localPlan.fixedArgs, ...spawnArgs],
                   };
-                const child = spawn(command.command, command.args, {
-                  // Spawn IN the familiar's workspace when no project root was
-                  // supplied, so coven's project-root resolver picks that dir as
-                  // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
-                  // from the familiar's home. When a project root IS supplied,
-                  // honor that instead.
-                  cwd,
-                  stdio: openCodeLaunchCommand?.input === undefined
-                    ? ["ignore", "pipe", "pipe"]
-                    : ["pipe", "pipe", "pipe"],
-                  env: localPlan.env,
-                }) as ChildProcessWithoutNullStreams;
+                let child: ChildProcessWithoutNullStreams;
+                try {
+                  child = spawn(command.command, command.args, {
+                    // Spawn IN the familiar's workspace when no project root was
+                    // supplied, so coven's project-root resolver picks that dir as
+                    // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
+                    // from the familiar's home. When a project root IS supplied,
+                    // honor that instead.
+                    cwd,
+                    stdio: openCodeLaunchCommand?.input === undefined
+                      ? ["ignore", "pipe", "pipe"]
+                      : ["pipe", "pipe", "pipe"],
+                    env: localPlan.env,
+                  }) as ChildProcessWithoutNullStreams;
+                } catch (error) {
+                  const err = error as NodeJS.ErrnoException;
+                  const ambiguousWindowsOpenCodeRace =
+                    openCodeDirect && process.platform === "win32" && err.code === "ENOENT";
+                  const missingOpenCodeCommand =
+                    openCodeDirect && !ambiguousWindowsOpenCodeRace && err.code === "ENOENT";
+                  const message = missingOpenCodeCommand
+                    ? missingRunnerMessage("opencode")
+                    : openCodeDirect
+                      ? "OpenCode failed to start. Check its installation and try again."
+                      : localRuntimeLaunchError(localPlan.runner, err.code).message;
+                  launchFailure = {
+                    code: missingOpenCodeCommand ? "runtime_missing" : "runtime_launch_failed",
+                    message,
+                  };
+                  result.is_error = true;
+                  pushProgress("harness-start", `${binding.harness} failed to start`, "error", message, Date.now() - attemptStartedAt);
+                  push({ kind: "error", code: launchFailure.code, message });
+                  return null;
+                }
                 if (openCodeLaunchCommand) {
                   writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
                 }

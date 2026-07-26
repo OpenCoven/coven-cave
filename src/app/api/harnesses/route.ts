@@ -80,7 +80,7 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
   const env =
     id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
   if (id === "opencode") {
-    const launch = openCodeLaunch([]);
+    const launch = openCodeLaunch([], process.platform, env);
     return {
       availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
         runner: "opencode",

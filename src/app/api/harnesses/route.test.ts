@@ -22,7 +22,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const env = id === "opencode" \? openCodeSpawnEnv\(null\) : harnessSpawnEnv\(null\);[\s\S]*?const launch = openCodeLaunch\(\[\], process\.platform, env\);/,
+  /const env =\s*id === "opencode" \? openCodeSpawnEnv\(null\) : harnessSpawnEnv\(null\);[\s\S]*?const launch = openCodeLaunch\(\[\], process\.platform, env\);/,
   "OpenCode availability derives its Windows PowerShell host from the same scoped environment it probes",
 );
 assert.match(
