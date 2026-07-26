@@ -3241,8 +3241,12 @@ export async function POST(req: Request) {
 
           child.on("close", (code) => {
             captureHermesSessionFromStderr("", true);
-            const hermesProcessFailed = hermesDirect && code !== 0 && !runHandle.stopRequested;
-            if (!hermesProcessFailed && hermesDirect && !sessionId && pendingHermesSessionId) {
+            const hermesAttemptFailed = hermesDirect && code !== 0 && !runHandle.stopRequested;
+            // A stale native session is retried below without `--resume`. It is
+            // still a failed attempt, so never release its buffered stdout or
+            // session id, but it is not a terminal runtime-process failure.
+            const hermesProcessFailed = hermesAttemptFailed && !resumeFailed;
+            if (!hermesAttemptFailed && hermesDirect && !sessionId && pendingHermesSessionId) {
               announceSession(pendingHermesSessionId);
             }
             if (hermesProcessFailed) {
@@ -3251,7 +3255,7 @@ export async function POST(req: Request) {
               launchFailure ??= failure;
               pushProgress("harness-start", "Hermes exited with an error", "error", failure.message, Date.now() - attemptStartedAt);
               push({ kind: "error", code: failure.code, message: failure.message });
-            } else if (hermesStdout) {
+            } else if (hermesStdout && !hermesAttemptFailed) {
               for (const chunk of hermesStdout) {
                 const decoded = stdoutDecoder.write(chunk);
                 if (decoded) handleStdoutChunk(decoded);
@@ -3283,7 +3287,7 @@ export async function POST(req: Request) {
             pushProgress(
               "harness-start",
               `${binding.harness} exited`,
-              hermesProcessFailed ? "error" : "done",
+              hermesAttemptFailed ? "error" : "done",
               hermesProcessFailed ? launchFailure?.message : undefined,
               Date.now() - attemptStartedAt,
             );
@@ -3412,6 +3416,10 @@ export async function POST(req: Request) {
           "running",
         );
         sessionId = null;
+        // A failed Hermes resume may have printed a stale session id before
+        // exiting. The fresh retry must not announce or persist that token.
+        pendingHermesSessionId = null;
+        hermesStderrBuffer = "";
         // The failed resumed stream can echo the stale native token before its
         // error frame. This retry deliberately omits --session, so retaining
         // that token would persist it again if the fresh process exits before

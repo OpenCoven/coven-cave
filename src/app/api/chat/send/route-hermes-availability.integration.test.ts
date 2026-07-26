@@ -139,6 +139,51 @@ try {
       "a failed Hermes process never persists its pre-error session stub",
     );
   }
+
+  // A failed native resume is retried as a fresh Hermes chat. The first
+  // process did start, but its stale-session exit must neither leak its stdout
+  // nor become a terminal runtime-process failure that blocks the retry's
+  // successful response from being persisted.
+  {
+    await writeFile(
+      path.join(familiarWorkspace, "chat"),
+      [
+        'if (process.argv.includes("--resume")) {',
+        '  process.stdout.write("stale Hermes output\\n");',
+        '  process.stderr.write("session_id: stale-hermes-session\\nSession not found\\n");',
+        '  process.exit(1);',
+        '}',
+        'process.stdout.write("fresh Hermes response\\n");',
+      ].join("\n"),
+    );
+    const response = await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        familiarId: "ember",
+        prompt: "resume me",
+        projectRoot: familiarWorkspace,
+        sessionId: "missing-hermes-session",
+      }),
+    }));
+    const { body, events } = await readSse(response);
+    assert.ok(
+      !events.some((event) => event.kind === "error" && event.code === "runtime_process_failed"),
+      "a stale Hermes resume is retried instead of reported as a terminal process failure",
+    );
+    assert.match(body, /fresh Hermes response/);
+    assert.doesNotMatch(body, /stale Hermes output/);
+    assert.ok(
+      !events.some((event) => event.kind === "session" && event.sessionId === "stale-hermes-session"),
+      "the fresh retry never announces the stale session id from the failed process",
+    );
+    const conversation = await loadConversation("missing-hermes-session");
+    assert.equal(
+      conversation?.turns.at(-1)?.text.trim(),
+      "fresh Hermes response",
+      "the successful fresh retry persists instead of being suppressed by the stale attempt",
+    );
+  }
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;
