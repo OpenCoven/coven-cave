@@ -76,8 +76,7 @@ menu/role badge.
 ```bash
 git add src/components/role-surfaces/surface-room.test.ts \
   src/components/role-surface-shell.test.ts scripts/run-tests.mjs
-git commit -S -m "test: pin familiar room interaction contract" \
-  -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+git commit -S -m "test: pin familiar room interaction contract"
 ```
 
 ### Task 2: Refine the generic room host
@@ -148,8 +147,7 @@ git add src/components/role-surface-host.tsx \
   src/styles/globals/surface-role-workspaces.css \
   src/components/role-surface-shell.test.ts \
   src/components/role-surfaces/surface-room.test.ts
-git commit -S -m "refactor: quiet familiar room chrome" \
-  -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+git commit -S -m "refactor: quiet familiar room chrome"
 ```
 
 ### Task 3: Add semantic room states and container-aware layout
@@ -240,8 +238,7 @@ Expected: PASS and no generated diff.
 git add src/components/role-surfaces/surface-room.tsx \
   src/styles/globals/surface-role-workspaces.css \
   src/components/role-surfaces/surface-room.test.ts
-git commit -S -m "feat: add adaptive familiar room furniture" \
-  -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+git commit -S -m "feat: add adaptive familiar room furniture"
 ```
 
 ### Task 4: Migrate data-driven room states
@@ -306,8 +303,7 @@ git add src/components/role-surfaces/messenger-surface.tsx \
   src/components/role-surfaces/navigator-surface.tsx \
   src/components/role-surfaces/indexer-surface.tsx \
   src/components/role-surfaces/*-surface.test.ts scripts/run-tests.mjs
-git commit -S -m "fix: clarify familiar room data states" \
-  -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+git commit -S -m "fix: clarify familiar room data states"
 ```
 
 ### Task 5: Refine authoring and review rooms
@@ -363,8 +359,7 @@ git add src/components/role-surfaces/scribe-surface.tsx \
   src/components/role-surfaces/scribe-surface.test.ts \
   src/components/role-surfaces/reviewer-surface.test.ts \
   src/components/role-surfaces/researcher-surface.test.ts
-git commit -S -m "refactor: focus familiar authoring rooms" \
-  -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+git commit -S -m "refactor: focus familiar authoring rooms"
 ```
 
 ### Task 6: Validate every room and land through a PR
@@ -375,7 +370,7 @@ git commit -S -m "refactor: focus familiar authoring rooms" \
 - [ ] **Step 1: Run focused room suite**
 
 ```bash
-pnpm test app
+pnpm test:app
 ```
 
 Expected: all app tests pass, including every registered role-surface test.
