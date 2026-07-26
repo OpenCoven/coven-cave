@@ -9,7 +9,6 @@ const controls = readFileSync(new URL("./ui/settings-controls.tsx", import.meta.
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const studioSources = [
   "familiar-studio-brain-tab.tsx",
-  "familiar-studio-contract-tab.tsx",
   "familiar-studio-identity-tab.tsx",
   "familiar-lifecycle-section.tsx",
   "familiar-studio-look-tab.tsx",

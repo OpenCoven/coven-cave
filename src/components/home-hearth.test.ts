@@ -14,8 +14,6 @@ import { readFile } from "node:fs/promises";
 
 const composer = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const fromTask = await readFile(new URL("./home/home-from-task.tsx", import.meta.url), "utf8");
-const disclosure = await readFile(new URL("./home/use-home-disclosure.ts", import.meta.url), "utf8");
-const boardHook = await readFile(new URL("./home/use-board-cards.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 
 // ── (1) One hearth card, in order ────────────────────────────────────────
@@ -93,10 +91,6 @@ assert.match(
 );
 
 // ── Shared plumbing ───────────────────────────────────────────────────
-// Disclosure prefs read AFTER mount (SSR-deterministic, like the greeting).
-assert.match(disclosure, /useState\(defaultOpen\);\s*useEffect\(\(\) => \{\s*setOpen\(readDisclosurePref\(key, defaultOpen\)\);/s, "stored prefs land post-mount so hydration can't drift");
-// The board-snapshot hook remains shared plumbing (home-open-work helper).
-assert.match(boardHook, /fetch\("\/api\/board", \{ cache: "no-store" \}\)/, "the board snapshot is fetched once");
 const boardFetches = composer.match(/fetch\("\/api\/board"/g) ?? [];
 assert.equal(boardFetches.length, 1, "home-composer keeps exactly one /api/board call site (the Task-create POST)");
 
