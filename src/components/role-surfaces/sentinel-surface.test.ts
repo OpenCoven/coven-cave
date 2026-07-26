@@ -176,6 +176,33 @@ test("surface keeps alert and host failures retryable and distinct from empty da
   assert.match(surface, /hosts\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
 });
 
+test("alert-derived secondary panels stay truthful while alerts load or fail", () => {
+  const recentlyClosedStart = surface.indexOf('<RailSection title="Recently closed alerts"');
+  const drawerEnd = surface.indexOf("</div>", recentlyClosedStart);
+  assert.ok(recentlyClosedStart >= 0 && drawerEnd > recentlyClosedStart);
+  const recentlyClosed = surface.slice(recentlyClosedStart, drawerEnd);
+  assert.match(
+    recentlyClosed,
+    /alertsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadAlerts\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(recentlyClosed, /recentlyClosed\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+
+  const queuesStart = surface.indexOf('<RailSection title="Alert queues"');
+  const queuesEnd = surface.indexOf('<RailSection title="Perimeter"', queuesStart);
+  assert.ok(queuesStart >= 0 && queuesEnd > queuesStart);
+  const queues = surface.slice(queuesStart, queuesEnd);
+  assert.match(
+    queues,
+    /alertsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadAlerts\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+
+  assert.match(
+    surface,
+    /\{alerts == null \|\| alertsError \? "—" : summary\.decisionsRequired\}/,
+    "watch status uses a neutral placeholder until alert data succeeds",
+  );
+});
+
 test("surface announces successful triage and assertively announces failures", () => {
   assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
   assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);

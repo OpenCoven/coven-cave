@@ -164,7 +164,11 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
             />
           </RailSection>
           <RailSection title="Recent changes" iconName="ph:clock">
-            {recentChanges.length === 0 ? (
+            {entriesError ? (
+              <SurfaceError title={entriesError} hint="Check the memory source, then retry." onRetry={loadEntries} />
+            ) : entries == null ? (
+              <SurfaceLoading label="Loading recent memory changes…" />
+            ) : recentChanges.length === 0 ? (
               <SurfaceEmpty title="No recorded changes." />
             ) : (
               <ul className="role-surface-list">

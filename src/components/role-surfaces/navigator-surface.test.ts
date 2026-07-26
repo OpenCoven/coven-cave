@@ -120,6 +120,40 @@ test("board failures stay retryable and distinct from loading and empty data", (
   assert.match(surface, /visible\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
 });
 
+test("board load failures remain visibly and assertively reported", () => {
+  assert.match(
+    surface,
+    /catch\s*\{[\s\S]*?const message = "Couldn't load the board\."[\s\S]*?setBoardError\(message\)[\s\S]*?announce\(message, "assertive"\)/,
+  );
+  assert.match(surface, /\}, \[announce, familiarId, patch\]\)/);
+});
+
+test("card-derived drawers and lane counts stay truthful while the board loads or fails", () => {
+  const recentlyDoneStart = surface.indexOf('<RailSection title="Recently completed"');
+  const blockedStart = surface.indexOf('<RailSection title="Blocked"', recentlyDoneStart);
+  const drawerEnd = surface.indexOf("</div>", blockedStart);
+  assert.ok(recentlyDoneStart >= 0 && blockedStart > recentlyDoneStart && drawerEnd > blockedStart);
+  const recentlyDone = surface.slice(recentlyDoneStart, blockedStart);
+  const blocked = surface.slice(blockedStart, drawerEnd);
+  for (const panel of [recentlyDone, blocked]) {
+    assert.match(
+      panel,
+      /boardError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadBoard\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+    );
+  }
+  assert.match(recentlyDone, /recentlyDone\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+  assert.match(blocked, /blocked\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+
+  const lanesStart = surface.indexOf('<RailSection title="Course lanes"');
+  const lanesEnd = surface.indexOf('<RailSection title="Upcoming legs"', lanesStart);
+  assert.ok(lanesStart >= 0 && lanesEnd > lanesStart);
+  const courseLanes = surface.slice(lanesStart, lanesEnd);
+  assert.match(
+    courseLanes,
+    /boardError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadBoard\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+});
+
 test("board mutations announce success and assertively announce visible failures", () => {
   assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
   assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);

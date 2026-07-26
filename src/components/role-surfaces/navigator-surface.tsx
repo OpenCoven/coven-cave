@@ -92,9 +92,11 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         },
       });
     } catch {
-      setBoardError("Couldn't load the board.");
+      const message = "Couldn't load the board.";
+      setBoardError(message);
+      announce(message, "assertive");
     }
-  }, [familiarId, patch]);
+  }, [announce, familiarId, patch]);
   useEffect(() => {
     void loadBoard();
   }, [loadBoard]);
@@ -185,7 +187,11 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       drawer={
         <div className="role-surface-drawer-grid">
           <RailSection title="Recently completed" iconName="ph:flag-checkered">
-            {recentlyDone.length === 0 ? (
+            {boardError ? (
+              <SurfaceError title={boardError} hint="Check the Cave connection, then retry." onRetry={loadBoard} />
+            ) : cards == null ? (
+              <SurfaceLoading label="Loading recently completed tasks…" />
+            ) : recentlyDone.length === 0 ? (
               <SurfaceEmpty title="Nothing completed yet." />
             ) : (
               <ul className="role-surface-list" aria-label="Recently completed cards">
@@ -199,7 +205,11 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
             )}
           </RailSection>
           <RailSection title="Blocked" iconName="ph:warning">
-            {blocked.length === 0 ? (
+            {boardError ? (
+              <SurfaceError title={boardError} hint="Check the Cave connection, then retry." onRetry={loadBoard} />
+            ) : cards == null ? (
+              <SurfaceLoading label="Loading blocked tasks…" />
+            ) : blocked.length === 0 ? (
               <SurfaceEmpty title="No blocked cards." />
             ) : (
               <ul className="role-surface-list" aria-label="Blocked cards">
@@ -248,30 +258,36 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
           <p className="role-surface-hint">Charts a real board card in Backlog, assigned to this familiar.</p>
         </RailSection>
         <RailSection title="Course lanes" iconName="ph:kanban">
-          <ul className="role-surface-list">
-            <li>
-              <button
-                type="button"
-                className={`role-surface-row-btn focus-ring-inset${state.lane === "all" ? " role-surface-row-btn--active" : ""}`}
-                onClick={() => patch({ lane: "all" })}
-              >
-                All
-                <span className="role-surface-tag">{(cards ?? []).length}</span>
-              </button>
-            </li>
-            {lanes.map((lane) => (
-              <li key={lane.status}>
+          {boardError ? (
+            <SurfaceError title={boardError} hint="Check the Cave connection, then retry." onRetry={loadBoard} />
+          ) : cards == null ? (
+            <SurfaceLoading label="Loading course lanes…" />
+          ) : (
+            <ul className="role-surface-list">
+              <li>
                 <button
                   type="button"
-                  className={`role-surface-row-btn focus-ring-inset${state.lane === lane.status ? " role-surface-row-btn--active" : ""}`}
-                  onClick={() => patch({ lane: lane.status })}
+                  className={`role-surface-row-btn focus-ring-inset${state.lane === "all" ? " role-surface-row-btn--active" : ""}`}
+                  onClick={() => patch({ lane: "all" })}
                 >
-                  {LANE_LABELS[lane.status]}
-                  <span className="role-surface-tag">{lane.cards.length}</span>
+                  All
+                  <span className="role-surface-tag">{cards.length}</span>
                 </button>
               </li>
-            ))}
-          </ul>
+              {lanes.map((lane) => (
+                <li key={lane.status}>
+                  <button
+                    type="button"
+                    className={`role-surface-row-btn focus-ring-inset${state.lane === lane.status ? " role-surface-row-btn--active" : ""}`}
+                    onClick={() => patch({ lane: lane.status })}
+                  >
+                    {LANE_LABELS[lane.status]}
+                    <span className="role-surface-tag">{lane.cards.length}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </RailSection>
         <RailSection title="Upcoming legs" iconName="ph:calendar-blank">
           {boardError ? (

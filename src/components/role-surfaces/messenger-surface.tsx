@@ -169,7 +169,15 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
             )}
           </RailSection>
           <RailSection title="Scheduled" iconName="ph:clock">
-            {scheduled.length === 0 ? (
+            {inboxError ? (
+              <SurfaceError
+                title={inboxError}
+                hint="Check the Cave connection, then retry."
+                onRetry={loadInbox}
+              />
+            ) : inbox == null ? (
+              <SurfaceLoading label="Loading scheduled messages…" />
+            ) : scheduled.length === 0 ? (
               <SurfaceEmpty title="No scheduled messages." />
             ) : (
               <ul className="role-surface-list">

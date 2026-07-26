@@ -40,3 +40,15 @@ test("archive filtering uses the shared clearable search field", () => {
     "the memory filter must not regress to a raw input",
   );
 });
+
+test("recent changes do not turn inventory loading or failure into an empty history", () => {
+  const start = surface.indexOf('<RailSection title="Recent changes"');
+  const end = surface.indexOf("</div>", start);
+  assert.ok(start >= 0 && end > start, "Recent changes section missing");
+  const recentChanges = surface.slice(start, end);
+  assert.match(
+    recentChanges,
+    /entriesError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadEntries\}[\s\S]*?\)\s*:\s*entries == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(recentChanges, /recentChanges\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+});

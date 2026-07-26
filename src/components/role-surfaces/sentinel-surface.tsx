@@ -236,7 +236,15 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
             )}
           </RailSection>
           <RailSection title="Recently closed alerts" iconName="ph:clock">
-            {recentlyClosed.length === 0 ? (
+            {alertsError ? (
+              <SurfaceError
+                title={alertsError}
+                hint="Check the Cave connection, then retry the sweep."
+                onRetry={loadAlerts}
+              />
+            ) : alerts == null ? (
+              <SurfaceLoading label="Loading recently closed alerts…" />
+            ) : recentlyClosed.length === 0 ? (
               <SurfaceEmpty title="Nothing closed yet." />
             ) : (
               <ul className="role-surface-list" aria-label="Recently closed alerts">
@@ -276,33 +284,45 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
               <span className={summary.decisionsRequired > 0 ? "role-surface-metric-warn" : undefined}>
                 Decisions required
               </span>
-              <span className="role-surface-tag">{summary.decisionsRequired}</span>
+              <span className="role-surface-tag">
+                {alerts == null || alertsError ? "—" : summary.decisionsRequired}
+              </span>
             </li>
           </ul>
         </RailSection>
         <RailSection title="Alert queues" iconName="ph:bell">
-          <ul className="role-surface-list">
-            {SCOPES.map((scope) => (
-              <li key={scope.id}>
-                <button
-                  type="button"
-                  className={`role-surface-row-btn focus-ring-inset${state.scope === scope.id ? " role-surface-row-btn--active" : ""}`}
-                  onClick={() => patch({ scope: scope.id })}
-                >
-                  {scope.label}
-                  <span className="role-surface-tag">
-                    {scope.id === "open"
-                      ? summary.open
-                      : scope.id === "snoozed"
-                        ? summary.snoozed
-                        : scope.id === "resolved"
-                          ? (alerts ?? []).filter((a) => a.state === "resolved" || a.state === "dismissed").length
-                          : (alerts ?? []).length}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          {alertsError ? (
+            <SurfaceError
+              title={alertsError}
+              hint="Check the Cave connection, then retry the sweep."
+              onRetry={loadAlerts}
+            />
+          ) : alerts == null ? (
+            <SurfaceLoading label="Loading alert queues…" />
+          ) : (
+            <ul className="role-surface-list">
+              {SCOPES.map((scope) => (
+                <li key={scope.id}>
+                  <button
+                    type="button"
+                    className={`role-surface-row-btn focus-ring-inset${state.scope === scope.id ? " role-surface-row-btn--active" : ""}`}
+                    onClick={() => patch({ scope: scope.id })}
+                  >
+                    {scope.label}
+                    <span className="role-surface-tag">
+                      {scope.id === "open"
+                        ? summary.open
+                        : scope.id === "snoozed"
+                          ? summary.snoozed
+                          : scope.id === "resolved"
+                            ? alerts.filter((a) => a.state === "resolved" || a.state === "dismissed").length
+                            : alerts.length}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </RailSection>
         <RailSection title="Perimeter" iconName="ph:globe">
           {hostsError ? (
