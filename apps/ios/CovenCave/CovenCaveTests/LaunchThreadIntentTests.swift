@@ -34,4 +34,31 @@ final class LaunchThreadIntentTests: XCTestCase {
         app.threads = [expected]
         XCTAssertTrue(app.consumeLaunchThreadIntent() === expected)
     }
+
+    func testMostRecentThreadUsesUpdateTimeAndSkipsArchivedThreads() {
+        let app = AppModel()
+        let olderPinned = ChatThread(id: "older-pinned", title: "Older pinned", familiarIds: [])
+        olderPinned.updatedAt = Date(timeIntervalSince1970: 100)
+        olderPinned.pinned = true
+
+        let newest = ChatThread(id: "newest", title: "Newest", familiarIds: [])
+        newest.updatedAt = Date(timeIntervalSince1970: 200)
+
+        let archived = ChatThread(id: "archived", title: "Archived", familiarIds: [])
+        archived.updatedAt = Date(timeIntervalSince1970: 300)
+        archived.archived = true
+
+        app.threads = [olderPinned, archived, newest]
+
+        XCTAssertTrue(app.mostRecentThread === newest)
+    }
+
+    func testMostRecentThreadIsNilWithoutAnActiveConversation() {
+        let app = AppModel()
+        let archived = ChatThread(id: "archived", title: "Archived", familiarIds: [])
+        archived.archived = true
+        app.threads = [archived]
+
+        XCTAssertNil(app.mostRecentThread)
+    }
 }
