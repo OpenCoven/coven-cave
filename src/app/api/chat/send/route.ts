@@ -53,6 +53,7 @@ import {
   copilotProtocolDiagnostic,
   CopilotMessageTranscript,
   CopilotTextAssembler,
+  isSafeCopilotResumeSessionId,
   parseCopilotChatEvent,
 } from "@/lib/copilot-stream";
 import { prepareCopilotChatRouting } from "./copilot-routing";
@@ -1324,7 +1325,13 @@ export async function POST(req: Request) {
       });
     }
     if (copilotStream) {
-      copilotSessionHint = resumeSessionId ?? crypto.randomUUID();
+      // A rejected resume token must start a named fresh native session. If
+      // argv silently omits it, retaining the invalid token here would make
+      // Cave announce/persist an id the CLI never used.
+      const safeResumeSessionId = isSafeCopilotResumeSessionId(resumeSessionId)
+        ? resumeSessionId
+        : null;
+      copilotSessionHint = safeResumeSessionId ?? crypto.randomUUID();
       // The direct spawn bypasses `coven run --familiar`, so mirror coven's
       // identity preamble here — without it the familiar answers as the
       // generic Copilot CLI.
@@ -1336,8 +1343,8 @@ export async function POST(req: Request) {
       return buildCopilotStreamArgs({
         spec: copilotStream,
         prompt: identity ? `${identity}\n\n${prompt}` : prompt,
-        resumeSessionId,
-        newSessionId: resumeSessionId ? null : copilotSessionHint,
+        resumeSessionId: safeResumeSessionId,
+        newSessionId: safeResumeSessionId ? null : copilotSessionHint,
         model: cleanModelId(desiredModel),
         permissionMode: body.permissionMode === "read" ? "read" : "full",
         // Ungated grant list (cave-n1yc): the direct spawn never goes through

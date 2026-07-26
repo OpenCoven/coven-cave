@@ -453,6 +453,14 @@ export type CopilotStreamLaunch = {
   addDirs: string[];
 };
 
+/** A native resume id must be data, never a CLI option or control sequence. */
+export function isSafeCopilotResumeSessionId(value: string | null | undefined): value is string {
+  return typeof value === "string" &&
+    value.length > 0 &&
+    !value.startsWith("-") &&
+    !/[\u0000-\u001f\u007f]/.test(value);
+}
+
 /** Direct-spawn argv for a copilot JSONL stream turn. Options ride ahead of
  *  the prefix args; the prompt trails the prefix's `-p` flag. */
 export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
@@ -461,9 +469,7 @@ export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
   // Resume ids are runtime data, never options. Reject control characters and
   // flag-shaped values before argv construction rather than relying on a
   // particular CLI parser's treatment of `--resume --flag`.
-  const safeResumeSessionId = launch.resumeSessionId &&
-    !launch.resumeSessionId.startsWith("-") &&
-    !/[\u0000-\u001f\u007f]/.test(launch.resumeSessionId)
+  const safeResumeSessionId = isSafeCopilotResumeSessionId(launch.resumeSessionId)
     ? launch.resumeSessionId
     : null;
   if (safeResumeSessionId && spec.resumeFlag) {

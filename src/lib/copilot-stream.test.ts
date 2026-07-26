@@ -16,6 +16,7 @@ import {
   CopilotMessageTranscript,
   CopilotTextAssembler,
   COPILOT_EVENT_PROTOCOL_SCHEMAS,
+  isSafeCopilotResumeSessionId,
   parseRuntimeClientVersion,
   parseCopilotChatEvent,
   runtimeEventProtocolSchemas,
@@ -369,6 +370,8 @@ const unsafeResumeArgs = buildCopilotStreamArgs({
   addDirs: [],
 });
 assert.ok(!unsafeResumeArgs.includes("--resume"), "flag-shaped resume ids never enter argv");
+assert.equal(isSafeCopilotResumeSessionId("--allow-all"), false, "flag-shaped resume ids are rejected before session routing");
+assert.equal(isSafeCopilotResumeSessionId("safe-session-id"), true, "ordinary native session ids remain resumable");
 
 const unattendedArgs = buildCopilotStreamArgs({
   spec,
