@@ -132,7 +132,7 @@ exit 0
     await unlink(executable);
     await writeFile(
       path.join(familiarWorkspace, "chat"),
-      'process.stdout.write("Hermes authentication failed\\n"); process.exit(1);\\n',
+      'process.stderr.write("session_id: failed-hermes-session\\n"); process.stdout.write("Hermes authentication failed\\n"); process.exit(1);\\n',
     );
     try {
       await link(process.execPath, executable);
@@ -151,6 +151,13 @@ exit 0
     assertNoFabricatedAssistantResponse(body, events);
     assert.ok(!body.includes("Hermes authentication failed"), "failed Hermes stdout is never rendered as an assistant reply");
     assert.ok(!body.includes(bin), "started Hermes failure does not expose the local executable path");
+    assert.ok(!events.some((event) => event.kind === "session"), "a failed Hermes process never announces a session");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      await loadConversation("failed-hermes-session"),
+      null,
+      "a failed Hermes process never persists its pre-error session stub",
+    );
   }
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;

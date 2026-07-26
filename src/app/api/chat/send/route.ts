@@ -1954,8 +1954,12 @@ export async function POST(req: Request) {
 
       // Hermes's `-Q` mode reserves stdout for the reply and writes the
       // resumable id to stderr as `session_id: <id>`. Buffer stderr because
-      // Node can split that short line across data events.
+      // Node can split that short line across data events. Do not announce it
+      // yet: a CLI can print an id before a later auth/config failure, and
+      // announcing creates a persisted in-flight stub. The direct runner only
+      // commits this candidate after its zero exit verifies the response.
       let hermesStderrBuffer = "";
+      let pendingHermesSessionId: string | null = null;
       const captureHermesSessionFromStderr = (text: string, flush = false) => {
         if (!hermesDirect || sessionId) return;
         hermesStderrBuffer += text;
@@ -1964,7 +1968,7 @@ export async function POST(req: Request) {
         for (const line of lines) {
           const hermesSession = line.trim().match(/^session_id:\s*(\S+)\s*$/i);
           if (hermesSession) {
-            announceSession(hermesSession[1]);
+            pendingHermesSessionId = hermesSession[1];
             return;
           }
         }
@@ -3141,6 +3145,9 @@ export async function POST(req: Request) {
               if (trailingStdoutText) handleStdoutChunk(trailingStdoutText);
             }
             captureHermesSessionFromStderr("", true);
+            if (!hermesProcessFailed && hermesDirect && !sessionId && pendingHermesSessionId) {
+              announceSession(pendingHermesSessionId);
+            }
             // OpenCode normally emits a JSON error envelope, but older CLI
             // builds can exit non-zero with only stderr. Do not mistake that
             // failed invocation for a successful model application below.
