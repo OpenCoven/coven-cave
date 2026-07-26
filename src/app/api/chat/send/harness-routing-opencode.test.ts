@@ -12,7 +12,7 @@ assert.match(
 );
 assert.match(
   route,
-  /let localRuntimePlan: LocalRuntimePlan \| null = null;[\s\S]*?const openCodeCapabilities = openCodeDirect[\s\S]*?probeReadyLocalRuntimeCapability\(\{[\s\S]*?plan: localRuntimePlan,[\s\S]*?runner: "opencode",[\s\S]*?probe: \(\) => openCodeRunCapabilities\(body\.familiarId\),[\s\S]*?resolveOpenCodeCompatibility\(openCodeCapabilities\)/,
+  /let localRuntimePlan: LocalRuntimePlan \| null = null;[\s\S]*?const openCodeCapabilities = openCodeDirect[\s\S]*?probeReadyLocalRuntimeCapability\(\{[\s\S]*?plan: localRuntimePlan,[\s\S]*?runner: "opencode",[\s\S]*?probe: \(\) => openCodeRunCapabilities\(body\.familiarId, undefined, localRuntimePlan\?\.env\),[\s\S]*?resolveOpenCodeCompatibility\(openCodeCapabilities\)/,
   "OpenCode capability discovery starts only after its exact local launch plan is ready",
 );
 assert.match(
@@ -71,8 +71,23 @@ assert.match(
   "OpenCode carries one Windows-safe outer host, inner command, and scoped environment from early preflight through the immediate spawn recheck",
 );
 assert.match(
+  route,
+  /const env = openCodeSpawnEnv\(body\.familiarId\);[\s\S]*?const launch = openCodeLaunch\(\[\], process\.platform, env\);[\s\S]*?runner: "opencode",[\s\S]*?powerShellHostedCommand:[\s\S]*?launch\.input !== undefined \? openCodeCommand\(\) : undefined[\s\S]*?const availability =[\s\S]*?command: localPlan\.command,[\s\S]*?powerShellHostedCommand:[\s\S]*?localPlan\.powerShellHostedCommand,[\s\S]*?if \(availability\.state !== "ready"\) \{[\s\S]*?launchFailure = \{ code: availability\.code, message: availability\.message \};[\s\S]*?return null;/,
+  "OpenCode preflights the exact PowerShell/JSON-stdin plan and returns the shared structured error before spawn",
+);
+assert.match(
+  route,
+  /child\.on\("error", \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?const openCodeWindowsOuterLaunchFailure =[\s\S]*?process\.platform === "win32" && err\.code === "ENOENT";[\s\S]*?const openCodeCommandMissing =[\s\S]*?!openCodeWindowsOuterLaunchFailure[\s\S]*?launchFailure \?\?= \{[\s\S]*?"runtime_missing"[\s\S]*?"runtime_launch_failed"/,
+  "an ambiguous Windows outer-process race stays generic while a missing POSIX OpenCode command remains distinct",
+);
+assert.match(
+  route,
+  /OPENCODE_COMMAND_NOT_FOUND_MARKER[\s\S]*?OPENCODE_LAUNCH_FAILED_MARKER[\s\S]*?launchFailure = \{[\s\S]*?code: commandMissing \? "runtime_missing" : "runtime_launch_failed"[\s\S]*?push\(\{ kind: "error", code: launchFailure\.code, message: launchError \}\)/,
+  "a PowerShell-hosted inner OpenCode race is streamed as a launch failure instead of becoming synthetic no-output text",
+);
+assert.match(
   capabilities,
-  /const launch = openCodeLaunch\(\["run", "--help"\]\);[\s\S]*?launch\.command,[\s\S]*?launch\.args,[\s\S]*?openCodeSpawnEnv\(\),/,
+  /async function probeOpenCodeRunContract\(env: NodeJS\.ProcessEnv\)[\s\S]*?const helpLaunch = openCodeLaunch\(\["run", "--help"\], process\.platform, env\);[\s\S]*?probeOutput\(helpLaunch\.command, helpLaunch\.args, env, helpLaunch\.input\)/,
   "OpenCode probes its CLI with the same Windows-safe command and WSL-compatible environment as a chat run",
 );
 assert.match(
@@ -89,7 +104,7 @@ assert.match(
   const earlyGate = route.indexOf("const openCodeCapabilities");
   assert.ok(earlyGate >= 0, "capability routing begins only after local plans are established");
   for (const capabilityCall of [
-    "openCodeRunCapabilities(body.familiarId)",
+    "openCodeRunCapabilities(body.familiarId, undefined, localRuntimePlan?.env)",
     "probe: hermesChatSupportsModel",
     "probeCovenCapability(covenRunSupportsModel)",
     "probeCovenCapability(covenRunSupportsPermission)",

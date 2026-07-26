@@ -93,7 +93,7 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
     // No stream manifest → copilot chats fall back to `coven run` below.
   }
   if (id === "opencode") {
-    const launch = openCodeLaunch([]);
+    const launch = openCodeLaunch([], process.platform, env);
     return {
       availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
         runner: "opencode",
