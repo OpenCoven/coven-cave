@@ -139,6 +139,35 @@ test.describe("onboarding wizard", () => {
     }
   });
 
+  test("keeps setup-header focus indicators visible inside the horizontal scroller", async ({
+    page,
+  }) => {
+    // Keep this assertion on the desktop-shell side of the responsive boundary;
+    // the mobile project owns the narrower navigation layout.
+    await page.setViewportSize({ width: 1024, height: 700 });
+    await gotoApp(page, FRESH_STATUS);
+    await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
+    await openWizardManually(page);
+
+    const recheck = wizard(page).getByRole("button", { name: "Re-check" });
+    await recheck.focus();
+    await expect(recheck).toBeFocused();
+
+    const focusStyle = await recheck.evaluate((button) => {
+      const style = getComputedStyle(button);
+      return {
+        visible: button.matches(":focus-visible"),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: style.outlineWidth,
+        outlineOffset: Number.parseFloat(style.outlineOffset),
+      };
+    });
+    expect(focusStyle.visible).toBe(true);
+    expect(focusStyle.outlineStyle).toBe("solid");
+    expect(Number.parseFloat(focusStyle.outlineWidth)).toBeGreaterThan(0);
+    expect(focusStyle.outlineOffset).toBeLessThanOrEqual(0);
+  });
+
   test("marks the first incomplete step as the current step", async ({ page }) => {
     await gotoApp(page, FRESH_STATUS);
     await expect(wizard(page)).toBeVisible({ timeout: 30_000 });

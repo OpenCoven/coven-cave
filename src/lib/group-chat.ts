@@ -268,6 +268,39 @@ export function extractCovenDelegations(text: string): ExtractedCovenDelegations
   return { visible: visible.trimEnd(), delegations };
 }
 
+function normalizeDelegationTaskText(text: string): string {
+  return text.trim().replace(/\s+/g, " ");
+}
+
+function delegationInstructionSegments(text: string): string[] {
+  const ignored = delegationIgnoredRanges(text).sort(([startA], [startB]) => startA - startB);
+  const segments: string[] = [];
+  let cursor = 0;
+  for (const [start, end] of ignored) {
+    if (end <= cursor) continue;
+    if (start > cursor) segments.push(text.slice(cursor, start));
+    cursor = end;
+  }
+  if (cursor < text.length) segments.push(text.slice(cursor));
+  return segments;
+}
+
+/**
+ * Delegation controls are model output, so the hidden routed task must be a
+ * verbatim visible task, modulo whitespace. This keeps the visible @mention as
+ * the operator-auditable source of truth and prevents a hidden trailer from
+ * smuggling a different instruction.
+ */
+export function isCovenDelegationTaskVisible(visible: string, delegation: CovenDelegation): boolean {
+  const task = normalizeDelegationTaskText(delegation.task);
+  return (
+    task.length > 0 &&
+    delegationInstructionSegments(visible).some((segment) =>
+      normalizeDelegationTaskText(segment).includes(task),
+    )
+  );
+}
+
 /** True for a char that may not abut the end of a matched `@name` (a word char,
  *  so `@Alpha` does not greedily match a participant named `Al`). */
 function isWordChar(ch: string | undefined): boolean {

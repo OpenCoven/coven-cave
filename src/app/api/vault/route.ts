@@ -17,8 +17,10 @@ import {
   setLocalEncryptedSecret,
 } from "@/lib/local-encrypted-vault";
 import {
+  canMirrorVaultKeyToProcessEnv,
   getVaultStatuses,
   loadVaultMap,
+  mirrorVaultSecretToProcessEnv,
   refStorage,
   saveVaultMap,
   validateRef,
@@ -85,8 +87,8 @@ export async function POST(req: NextRequest) {
   saveVaultMap(map);
 
   if (storage === "encrypted" && typeof body.value === "string") {
-    process.env[key] = body.value;
-  } else {
+    mirrorVaultSecretToProcessEnv(key, body.value);
+  } else if (canMirrorVaultKeyToProcessEnv(key)) {
     delete process.env[key];
   }
 
@@ -114,8 +116,9 @@ export async function DELETE(req: NextRequest) {
   saveVaultMap(map);
   deleteLocalEncryptedSecret(key);
 
-  // Clear from process.env too so it picks up fresh next resolve
-  delete process.env[key];
+  // Clear cached safe values so the next resolve is fresh. Denied keys may be
+  // inherited runtime configuration and are never owned by the vault.
+  if (canMirrorVaultKeyToProcessEnv(key)) delete process.env[key];
 
   return NextResponse.json({ ok: true });
 }

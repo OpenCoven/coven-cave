@@ -14,9 +14,10 @@
  * ref (and is not declared `storage: "encrypted"`), the ref wins — a stale or
  * orphaned entry left behind in the local encrypted store must never shadow it.
  *
- * Resolved values are cached in process.env for the lifetime of the process
- * so subsequent calls are instant. The raw secret value is NEVER written to
- * any file — it lives only in process memory.
+ * Resolved values whose keys cannot steer the server runtime are cached in
+ * process.env for the lifetime of the process so subsequent calls are instant.
+ * The raw secret value is NEVER written to any file — it lives only in process
+ * memory.
  */
 
 import { execFileSync } from "node:child_process";
@@ -24,7 +25,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { scrubSidecarInternalEnv } from "./coven-bin.ts";
+import { scrubSidecarInternalEnv } from "./child-spawn-env.ts";
 import { caveHome } from "./coven-paths.ts";
 import { readEnvLocalAll, readEnvLocalValue } from "./env-file.ts";
 import { getLocalEncryptedSecret, hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
@@ -48,6 +49,29 @@ export type VaultEntry = {
 };
 
 export type VaultMap = Record<string, VaultEntry>;
+
+// Vault keys are user/API-controlled. Never let a stored value rewrite the
+// server's runtime or executable-discovery environment. Normalize before the
+// lookup because Windows environment names are case-insensitive.
+const VAULT_PROCESS_ENV_DENYLIST = new Set([
+  "NODE_OPTIONS",
+  "NPM_CONFIG_NODE_OPTIONS",
+  "PATH",
+  "SHELL",
+  "COVEN_BIN",
+  "COVEN_VAULT_FILE",
+]);
+
+export function canMirrorVaultKeyToProcessEnv(key: string): boolean {
+  return !VAULT_PROCESS_ENV_DENYLIST.has(key.trim().toUpperCase());
+}
+
+/** Cache a resolved vault value only when the key cannot steer this process. */
+export function mirrorVaultSecretToProcessEnv(key: string, value: string): boolean {
+  if (!canMirrorVaultKeyToProcessEnv(key)) return false;
+  process.env[key] = value;
+  return true;
+}
 
 /**
  * Normalize a raw `scope` value from vault.yaml. Absent/`"shared"` → shared;
@@ -356,7 +380,7 @@ export function resolveVaultManagedSecret(key: string, entry = loadVaultMap()[ke
 /**
  * Resolve an env var by key.
  * Checks process.env first, then local encrypted vault, then vault.yaml → `op read`.
- * Caches in process.env on success.
+ * Caches safe keys in process.env on success.
  * Never logs or persists the value to disk.
  */
 export function resolveSecret(key: string): string | undefined {
@@ -369,7 +393,7 @@ export function resolveSecret(key: string): string | undefined {
   // and cache for the process lifetime.
   const fromFile = readEnvLocalValue(key);
   if (fromFile) {
-    process.env[key] = fromFile;
+    mirrorVaultSecretToProcessEnv(key, fromFile);
     return fromFile;
   }
 
@@ -379,7 +403,7 @@ export function resolveSecret(key: string): string | undefined {
     ? resolveVaultManagedSecret(key, entry)
     : hasLocalEncryptedSecret(key) ? getLocalEncryptedSecret(key)?.trim() : undefined;
   if (value) {
-    process.env[key] = value; // cache for process lifetime
+    mirrorVaultSecretToProcessEnv(key, value);
     return value;
   }
   return undefined;
@@ -464,7 +488,7 @@ export function getVaultStatuses(): VaultMappingStatus[] {
       try {
         const value = getLocalEncryptedSecret(key);
         if (value) {
-          process.env[key] = value;
+          mirrorVaultSecretToProcessEnv(key, value);
           return {
             key, ref: entry.ref ?? null, description: entry.description ?? null,
             storage: "encrypted",
@@ -519,7 +543,7 @@ export function getVaultStatuses(): VaultMappingStatus[] {
     try {
       const value = readRef(entry.ref);
       if (value) {
-        process.env[key] = value; // cache
+        mirrorVaultSecretToProcessEnv(key, value);
         return {
           key, ref: entry.ref, description: entry.description ?? null,
           storage: refStorage(entry.ref),

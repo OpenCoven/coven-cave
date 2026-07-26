@@ -2,10 +2,13 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
-const source = readFileSync(
+const shellSource = readFileSync(
   new URL("./settings-shell.tsx", import.meta.url),
   "utf8",
 );
+const daemonUrl = new URL("./settings-daemon.tsx", import.meta.url);
+const daemonSource = existsSync(daemonUrl) ? readFileSync(daemonUrl, "utf8") : "";
+const source = `${shellSource}\n${daemonSource}`;
 const sectionsUrl = new URL("./settings-sections.ts", import.meta.url);
 const overviewUrl = new URL("./settings-overview.tsx", import.meta.url);
 const sections = existsSync(sectionsUrl) ? readFileSync(sectionsUrl, "utf8") : "";
@@ -14,8 +17,20 @@ const globals = readFileSync(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const shellResponsiveCss = readFileSync(
+  new URL("../styles/globals/shell-responsive.css", import.meta.url),
+  "utf8",
+);
 const dashboardCssUrl = new URL("../styles/dashboard.css", import.meta.url);
 const dashboardCss = existsSync(dashboardCssUrl) ? readFileSync(dashboardCssUrl, "utf8") : "";
+const aboutSource = readFileSync(
+  new URL("./settings-about.tsx", import.meta.url),
+  "utf8",
+);
+const aboutCss = readFileSync(
+  new URL("../styles/settings-about.css", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -63,7 +78,7 @@ assert.match(
   "Settings back control should expose a mobile hit-area hook",
 );
 assert.match(
-  globals,
+  shellResponsiveCss,
   /@media \(max-width: 767px\) \{[\s\S]*\.settings-back-button\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Settings mobile back control should meet the shared touch target",
 );
@@ -147,9 +162,14 @@ assert.match(
   "Mobile setup guide link should use the shared Settings action touch target",
 );
 assert.match(
-  source,
-  /className="settings-touch-action[\s\S]*\{l\.label\}/,
-  "About external links should use the shared Settings action touch target",
+  aboutSource,
+  /settings-about-link-card[\s\S]*focus-ring/,
+  "About external cards should keep the shared keyboard focus treatment",
+);
+assert.match(
+  aboutCss,
+  /@media \(hover: none\) and \(pointer: coarse\)[\s\S]*\.settings-about-link-card[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "About external cards should meet the shared touch-target floor on coarse pointers",
 );
 // Settings section nav exposes the active section to assistive tech.
 assert.match(
@@ -323,7 +343,7 @@ assert.match(source, /aria-label="Workspace path"/, "the workspace path field is
 assert.match(source, /aria-label="Server hub URL"/, "the hub URL input is labelled");
 assert.match(source, /aria-label="Executor addresses, one per line"/, "the executor textarea is labelled");
 assert.match(source, /focusTarget\.focus\(\{ preventScroll: true \}\)/, "a search/deep-link jump moves focus to the target group");
-assert.match(source, /connectionError && <span role="alert"/, "the daemon save error is a live alert");
+assert.match(source, /connectionError (?:&&|\?) <span role="alert"/, "the daemon save error is a live alert");
 
 // (cave-rj0z) var(--danger) is NOT a defined token — only --color-danger
 // exists. Uses of the phantom variable silently resolved to nothing, so

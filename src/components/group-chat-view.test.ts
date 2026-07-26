@@ -128,6 +128,11 @@ test("completed familiar delegation trailers route bounded, attributable follow-
   assert.match(view, /source\.status !== "done"/, "never routes a partial or failed familiar reply");
   assert.match(view, /!group\.familiarIds\.includes\(targetId\)/, "rejects out-of-coven targets");
   assert.match(view, /!visibleTargets\.has\(targetId\)/, "requires the visible reply to name the routed target");
+  assert.match(
+    view,
+    /!isCovenDelegationTaskVisible\(visible, delegation\)/,
+    "requires the hidden structured task to match the visible task",
+  );
   assert.match(view, /!parseMentions\(delegation\.task, mentionable\)\.includes\(targetId\)/, "requires the structured task to name the same target");
   assert.match(view, /targetId === source\.familiarId/, "rejects self-delegation");
   assert.match(view, /lineage\.has\(targetId\)/, "rejects delegation cycles");

@@ -462,8 +462,28 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /if \(err\.code === "ENOENT"\) \{[\s\S]{0,700}?missingRunnerMessage\(/,
-    "/chat/send: the post-spawn ENOENT race copy must come from the shared missingRunnerMessage helper so it cannot drift from the pre-spawn gate",
+    /const launchCode =[\s\S]*?launchFailure \?\?= \{[\s\S]*?code: launchCode,[\s\S]*?message: launchError,[\s\S]*?pushProgress\([\s\S]*?launchError,[\s\S]*?code: sshRuntime \? "ENOENT" : launchCode,\s*message: launchError/,
+    "/chat/send: launch state, progress, and the post-spawn ENOENT race event must reuse one normalized message",
+  );
+  assert.match(
+    sendSource,
+    /const localLaunchError = localRuntimeLaunchError\([\s\S]{0,100}?err\.code,[\s\S]{0,80}?const launchError = sshRuntime[\s\S]{0,180}?: localLaunchError\.message/,
+    "/chat/send: every local post-spawn failure uses the shared runner-specific normalizer while SSH retains transport diagnostics",
+  );
+  assert.match(
+    sendSource,
+    /binding\.harness === "claude"[\s\S]*?evaluateCovenBackedRuntimeAvailability\(\{[\s\S]*?runner: "claude",[\s\S]*?covenCommand: launch\.command,[\s\S]*?env,[\s\S]*?unresolvedCovenWindowsShim:[\s\S]*?launch\.unresolvedWindowsShim === true/,
+    "/chat/send: Claude preflight must verify both the Coven launcher and Claude in the exact later spawn environment",
+  );
+  assert.match(
+    sendSource,
+    /binding\.harness === "claude"[\s\S]*?claudeInnerLaunchMissing[\s\S]*?RUNTIME_AVAILABILITY_ERROR_CODES\.claude_missing/,
+    "/chat/send: a post-preflight inner Claude disappearance remains a structured launch failure",
+  );
+  assert.doesNotMatch(
+    sendSource,
+    /(?:launchFailure \?\?=|pushProgress\(|kind: "error")[\s\S]{0,160}?message: err\.message/,
+    "/chat/send: local runner state, progress, and SSE diagnostics never copy a raw OS launch error",
   );
   assert.match(
     sendSource,

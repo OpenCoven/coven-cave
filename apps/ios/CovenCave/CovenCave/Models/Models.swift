@@ -15,12 +15,16 @@ struct Familiar: Identifiable, Codable, Hashable {
     var model: String?
     var icon: String?
     var avatarUrl: String?
+    var activeSessions: Int?
+    var memoryFreshness: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case displayName = "display_name"
         case role, description, pronouns, color, status, harness, model, icon
         case avatarUrl
+        case activeSessions = "active_sessions"
+        case memoryFreshness = "memory_freshness"
     }
 }
 
@@ -119,12 +123,18 @@ struct ChatTurn: Identifiable, Codable, Hashable {
     var createdAt: String?
     var isError: Bool?
     var usage: TurnUsage?
+    /// Response controls persisted on user turns so refresh and retry retain
+    /// the exact turn semantics. Older conversations decode these as nil.
+    var reasoningEffort: ChatThinkingEffort?
+    var responseSpeed: ChatResponseSpeed?
+    var modelOverride: String?
 
     enum CodingKeys: String, CodingKey {
         case id, role, text, reasoning, tools
         case createdAt
         case isError
         case usage
+        case reasoningEffort, responseSpeed, modelOverride
     }
 }
 

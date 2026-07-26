@@ -4,12 +4,16 @@
 // that shape when launched as a desktop app, otherwise /api/onboarding/status
 // can find `coven` while later spawns still fail with ENOENT.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { caveToolSpawnEnv, covenAdapterDirsEnvValue, covenLaunchCommandForBinary, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery } from "./coven-bin.ts";
+import { caveToolSpawnEnv, covenAdapterDirsEnvValue, covenLaunchCommandForBinary, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery } from "./coven-bin.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
+const childSpawnEnvSource = await readFile(
+  new URL("./child-spawn-env.ts", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -29,6 +33,107 @@ assert.match(
   if (previousPath === undefined) delete process.env.PATH;
   else process.env.PATH = previousPath;
   refreshCovenSpawnEnv();
+}
+
+if (process.platform !== "win32") {
+  const vaultDiscoveryDir = await mkdtemp(path.join(os.tmpdir(), "coven-bin-vault-free-"));
+  const fakeHome = path.join(vaultDiscoveryDir, "home");
+  const fakeBin = path.join(fakeHome, ".nvm", "versions", "node", "v99.0.0", "bin");
+  const captureFile = path.join(vaultDiscoveryDir, "probe-env.txt");
+  const vaultFile = path.join(vaultDiscoveryDir, "vault.yaml");
+  const originalEnv = {
+    HOME: process.env.HOME,
+    COVEN_BIN: process.env.COVEN_BIN,
+    COVEN_VAULT_FILE: process.env.COVEN_VAULT_FILE,
+    COVEN_TEST_CAPTURE_FILE: process.env.COVEN_TEST_CAPTURE_FILE,
+    COVEN_TEST_NON_GITHUB_SECRET: process.env.COVEN_TEST_NON_GITHUB_SECRET,
+  };
+  await mkdir(fakeBin, { recursive: true });
+  await writeFile(
+    path.join(fakeBin, "node"),
+    [
+      "#!/bin/sh",
+      'printf \'node:%s\\n\' "${COVEN_TEST_NON_GITHUB_SECRET-unset}" >> "$COVEN_TEST_CAPTURE_FILE"',
+    ].join("\n"),
+  );
+  await writeFile(
+    path.join(fakeBin, "npm"),
+    [
+      "#!/bin/sh",
+      'printf \'npm:%s\\n\' "${COVEN_TEST_NON_GITHUB_SECRET-unset}" >> "$COVEN_TEST_CAPTURE_FILE"',
+    ].join("\n"),
+  );
+  await writeFile(path.join(fakeBin, "coven"), "#!/bin/sh\nexit 0\n");
+  await Promise.all([
+    chmod(path.join(fakeBin, "node"), 0o755),
+    chmod(path.join(fakeBin, "npm"), 0o755),
+    chmod(path.join(fakeBin, "coven"), 0o755),
+  ]);
+  await writeFile(
+    vaultFile,
+    'COVEN_TEST_NON_GITHUB_SECRET:\n  ref: "op://Test/Secret/value"\n',
+  );
+  process.env.HOME = fakeHome;
+  delete process.env.COVEN_BIN;
+  process.env.COVEN_VAULT_FILE = vaultFile;
+  process.env.COVEN_TEST_CAPTURE_FILE = captureFile;
+  process.env.COVEN_TEST_NON_GITHUB_SECRET = "non-github-vault-secret";
+  try {
+    const isolatedCovenBin = await import(`./coven-bin.ts?vault-free=${Date.now()}`);
+    assert.equal(
+      isolatedCovenBin.covenBin(),
+      path.join(fakeBin, "coven"),
+      "the isolated default binary discovery exercises the fake NVM toolchain",
+    );
+    assert.equal(
+      await readFile(captureFile, "utf8"),
+      "node:unset\nnpm:unset\n",
+      "default covenBin Node/npm discovery removes non-GitHub Vault-mapped credentials",
+    );
+  } finally {
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await rm(vaultDiscoveryDir, { recursive: true, force: true });
+  }
+}
+
+{
+  const expiredPath = path.join(os.tmpdir(), "coven-expired-discovery");
+  const healthyPath = path.join(os.tmpdir(), "coven-healthy-discovery");
+  const baseDiscoveryEnv = {
+    ...process.env,
+    SHELL: path.join(os.tmpdir(), "missing-coven-discovery-shell"),
+  };
+  try {
+    const expired = refreshCovenSpawnEnv({
+      discoveryEnv: { ...baseDiscoveryEnv, PATH: expiredPath },
+      discoveryDeadline: 1_000,
+      now: () => 1_000,
+    });
+    const healthy = covenSpawnEnv({
+      discoveryEnv: { ...baseDiscoveryEnv, PATH: healthyPath },
+      discoveryDeadline: 10_000,
+      now: () => 2_000,
+    });
+    assert.notEqual(
+      healthy.PATH,
+      expired.PATH,
+      "an expired cold discovery result is returned once but not cached",
+    );
+    assert.ok(
+      healthy.PATH?.split(path.delimiter).includes(healthyPath),
+      "the next call rebuilds PATH from its healthy discovery snapshot",
+    );
+    assert.equal(
+      healthy.PATH?.split(path.delimiter).includes(expiredPath),
+      false,
+      "the incomplete first PATH does not poison the canonical cache",
+    );
+  } finally {
+    refreshCovenSpawnEnv();
+  }
 }
 
 assert.match(
@@ -56,7 +161,7 @@ assert.match(
 );
 
 assert.match(
-  source,
+  childSpawnEnvSource,
   /FORBIDDEN_SPAWN_ENV_KEYS = \[[\s\S]*"GITHUB_PAT",[\s\S]*"GITHUB_TOKEN",[\s\S]*"COVEN_GITHUB_TOKEN",[\s\S]*"GH_TOKEN",[\s\S]*"GITHUB_PERSONAL_ACCESS_TOKEN"/,
   "coven child processes strip every GitHub credential alias Cave accepts",
 );
@@ -67,7 +172,7 @@ assert.match(
 // generateBuildId function and bakes CI paths) and COVEN_CAVE_* auth/bundle
 // state (401-gates an inherited dev server; the tokens are secrets).
 assert.match(
-  source,
+  childSpawnEnvSource,
   /SIDECAR_INTERNAL_ENV_PREFIXES = \["COVEN_CAVE_", "__NEXT_PRIVATE_"\]/,
   "the sidecar-internal namespaces are scrubbed by prefix, so new COVEN_CAVE_* vars stay contained",
 );
@@ -80,6 +185,7 @@ assert.match(
   const env = scrubSidecarInternalEnv({
     PATH: "/usr/bin",
     HOME: "/Users/witch",
+    SHELL: "/bin/zsh",
     COVEN_CAVE_BUNDLE: "1",
     COVEN_CAVE_AUTH_TOKEN: "sidecar-secret",
     COVEN_CAVE_ACCESS_TOKEN: "mobile-secret",
@@ -91,12 +197,44 @@ assert.match(
     COVEN_GITHUB_TOKEN: "coven-github-token",
     GH_TOKEN: "gh-token",
     GITHUB_PERSONAL_ACCESS_TOKEN: "marketplace-token",
+    NODE_OPTIONS: "--require=attacker.cjs",
+    NPM_CONFIG_NODE_OPTIONS: "--require=attacker.cjs",
+    COVEN_BIN: "/tmp/attacker-bin",
+    COVEN_VAULT_FILE: "/tmp/attacker-vault.yaml",
     MY_APP_TOKEN: "kept",
   });
   assert.deepEqual(
     env,
-    { PATH: "/usr/bin", HOME: "/Users/witch", MY_APP_TOKEN: "kept" },
-    "scrubSidecarInternalEnv drops every COVEN_CAVE_*/__NEXT_PRIVATE_* var and forbidden token keys, keeping user env intact",
+    {
+      PATH: "/usr/bin",
+      HOME: "/Users/witch",
+      SHELL: "/bin/zsh",
+      MY_APP_TOKEN: "kept",
+    },
+    "scrubSidecarInternalEnv drops sidecar secrets and runtime-control keys while keeping the user environment intact",
+  );
+}
+{
+  const env = scrubSidecarInternalEnv({
+    PATH: "C:\\Windows\\System32",
+    HOME: "C:\\Users\\witch",
+    CoVeN_CaVe_Auth_Token: "sidecar-mixed-case-secret",
+    __next_private_origin: "next-mixed-case-secret",
+    GitHub_Pat: "ghp_mixed_case",
+    Node_Options: "--require=attacker.cjs",
+    Npm_Config_Node_Options: "--require=attacker.cjs",
+    Coven_Bin: "C:\\attacker\\coven.exe",
+    Coven_Vault_File: "C:\\attacker\\vault.yaml",
+    MY_APP_TOKEN: "kept",
+  }, "win32");
+  assert.deepEqual(
+    env,
+    {
+      PATH: "C:\\Windows\\System32",
+      HOME: "C:\\Users\\witch",
+      MY_APP_TOKEN: "kept",
+    },
+    "Windows scrubbing compares internal, credential, and runtime-control keys case-insensitively",
   );
 }
 // Every other spawn site that spreads process.env wraps it in the scrub —
@@ -137,7 +275,7 @@ for (const rel of [
 
 assert.match(
   source,
-  /export function refreshCovenSpawnEnv\(\)[\s\S]*cachedPath = null[\s\S]*return covenSpawnEnv\(\)/,
+  /export function refreshCovenSpawnEnv\([^)]*CovenSpawnEnvOptions[\s\S]*cachedPath = null[\s\S]*return covenSpawnEnv\(options\)/,
   "desktop install retries can refresh Cave's cached PATH after Node/npm is installed",
 );
 
@@ -246,15 +384,147 @@ assert.match(
   }
 }
 
+{
+  const discoveryDir = path.join("/virtual", "nvm", "v24.17.0", "bin");
+  const existing = new Set([
+    path.join(discoveryDir, "node"),
+    path.join(discoveryDir, "npm"),
+  ]);
+  const originalVaultSentinel = process.env.COVEN_TEST_VAULT_SENTINEL;
+  const originalSidecarSentinel = process.env.COVEN_CAVE_TEST_DISCOVERY_SENTINEL;
+  process.env.COVEN_TEST_VAULT_SENTINEL = "vault-secret";
+  process.env.COVEN_CAVE_TEST_DISCOVERY_SENTINEL = "sidecar-secret";
+  try {
+    const explicitDiscoveryEnv = {
+      PATH: "/credential-free/discovery-path",
+      UNRELATED_DISCOVERY_VALUE: "keep",
+    };
+    const probeEnvs: NodeJS.ProcessEnv[] = [];
+    const runnable = runnableNodeToolchainDirs([discoveryDir], {
+      platform: "linux",
+      exists: (file) => existing.has(file),
+      env: explicitDiscoveryEnv,
+      deadline: 2_000,
+      now: () => 1_000,
+      probe: (_command, _args, options) => {
+        assert.ok(options.env, "each discovery probe receives an explicit env");
+        probeEnvs.push(options.env);
+      },
+    });
+    assert.deepEqual(runnable, [discoveryDir]);
+    assert.equal(probeEnvs.length, 2, "both Node and npm receive the discovery env");
+    for (const env of probeEnvs) {
+      assert.equal(
+        env.COVEN_TEST_VAULT_SENTINEL,
+        undefined,
+        "an explicit vault-free env never falls back to secretful process.env",
+      );
+      assert.equal(
+        env.COVEN_CAVE_TEST_DISCOVERY_SENTINEL,
+        undefined,
+        "sidecar credentials remain absent during toolchain discovery",
+      );
+      assert.equal(env.UNRELATED_DISCOVERY_VALUE, "keep");
+      assert.equal(
+        env.PATH?.split(path.delimiter)[0],
+        discoveryDir,
+        "the candidate toolchain remains first on discovery PATH",
+      );
+    }
+  } finally {
+    if (originalVaultSentinel === undefined) delete process.env.COVEN_TEST_VAULT_SENTINEL;
+    else process.env.COVEN_TEST_VAULT_SENTINEL = originalVaultSentinel;
+    if (originalSidecarSentinel === undefined) {
+      delete process.env.COVEN_CAVE_TEST_DISCOVERY_SENTINEL;
+    } else {
+      process.env.COVEN_CAVE_TEST_DISCOVERY_SENTINEL = originalSidecarSentinel;
+    }
+  }
+}
+
+{
+  const expiredDir = path.join("/virtual", "nvm", "v24.18.0", "bin");
+  const existing = new Set([
+    path.join(expiredDir, "node"),
+    path.join(expiredDir, "npm"),
+  ]);
+  const probes: string[] = [];
+  const runnable = runnableNodeToolchainDirs([expiredDir], {
+    platform: "linux",
+    exists: (file) => existing.has(file),
+    env: { PATH: "/discovery" },
+    deadline: 5_000,
+    now: () => 5_000,
+    probe: (command) => probes.push(command),
+  });
+  assert.deepEqual(runnable, [], "an expired discovery budget cannot admit a toolchain");
+  assert.deepEqual(probes, [], "an expired discovery budget starts no helper");
+}
+
+{
+  const interruptedDir = path.join("/virtual", "nvm", "v24.19.0", "bin");
+  const existing = new Set([
+    path.join(interruptedDir, "node"),
+    path.join(interruptedDir, "npm"),
+  ]);
+  let clock = 7_000;
+  const probes: string[] = [];
+  const runnable = runnableNodeToolchainDirs([interruptedDir], {
+    platform: "linux",
+    exists: (file) => existing.has(file),
+    env: { PATH: "/discovery" },
+    deadline: 7_100,
+    now: () => clock,
+    probe: (command) => {
+      probes.push(command);
+      clock = 7_100;
+    },
+  });
+  assert.deepEqual(
+    runnable,
+    [],
+    "a directory is not admitted when Node consumes the remaining discovery budget",
+  );
+  assert.deepEqual(
+    probes,
+    [path.join(interruptedDir, "node")],
+    "remaining time is re-checked before starting npm",
+  );
+}
+
+{
+  const expiredAfterNpmDir = path.join("/virtual", "nvm", "v24.20.0", "bin");
+  const existing = new Set([
+    path.join(expiredAfterNpmDir, "node"),
+    path.join(expiredAfterNpmDir, "npm"),
+  ]);
+  let clock = 8_000;
+  const runnable = runnableNodeToolchainDirs([expiredAfterNpmDir], {
+    platform: "linux",
+    exists: (file) => existing.has(file),
+    env: { PATH: "/discovery" },
+    deadline: 8_100,
+    now: () => clock,
+    probe: (command) => {
+      if (command === path.join(expiredAfterNpmDir, "npm")) clock = 8_100;
+    },
+  });
+  assert.deepEqual(
+    runnable,
+    [],
+    "a directory is not admitted when npm consumes the remaining discovery budget",
+  );
+}
+
 assert.match(
   source,
-  /function nodeNvmBinDirs\(\)[\s\S]*return runnableNodeToolchainDirs\(directories\)/,
-  "NVM candidates are health-checked before Cave prepends them",
+  /function nodeNvmBinDirs\([^)]*\)[\s\S]*return runnableNodeToolchainDirs\(directories, \{[\s\S]*env: discovery\.env[\s\S]*deadline: discovery\.deadline/,
+  "NVM candidates are health-checked with the bounded discovery context before Cave prepends them",
 );
 assert.match(
   source,
-  /function fnmBinDirs\(\)[\s\S]*return runnableNodeToolchainDirs\(directories\)/,
-  "FNM candidates are health-checked before Cave prepends them",
+  /function fnmBinDirs\([^)]*\)[\s\S]*return runnableNodeToolchainDirs\(directories, \{[\s\S]*env: discovery\.env[\s\S]*deadline: discovery\.deadline/,
+  "FNM candidates are health-checked with the bounded discovery context before Cave prepends them",
 );
 assert.match(
   source,
@@ -358,7 +628,7 @@ assert.deepEqual(
 // registry is where those entries actually land.
 assert.match(
   source,
-  /process\.platform === "win32"\s*\?\s*windowsRegistryPath\(\)\s*:\s*loginShellPath\(\)/,
+  /process\.platform === "win32"\s*\?\s*windowsRegistryPath\(discovery\)\s*:\s*loginShellPath\(discovery\)/,
   "Windows spawn PATH comes from the registry, not a POSIX login-shell probe",
 );
 

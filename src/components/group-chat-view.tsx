@@ -58,6 +58,7 @@ import {
   setGroupParticipants,
   parseMentions,
   extractCovenDelegations,
+  isCovenDelegationTaskVisible,
   resolveGroupMessageTargets,
   mentionSuggestionAuthor,
   setGroupResponseMode,
@@ -719,6 +720,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
               targetId === source.familiarId ||
               !group.familiarIds.includes(targetId) ||
               !visibleTargets.has(targetId) ||
+              !isCovenDelegationTaskVisible(visible, delegation) ||
               !parseMentions(delegation.task, mentionable).includes(targetId) ||
               lineage.has(targetId) ||
               delivered.has(dedupeKey)
