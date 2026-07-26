@@ -23,15 +23,29 @@ export function ClampedText({
   const [overflows, setOverflows] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
+  // A new passage starts collapsed and re-measured: without this, swapping the
+  // `text` under one instance (switching missions/iterations) keeps the prior
+  // expansion and overflow verdict, so a short summary would render un-clamped
+  // behind a lingering "View less". Adjusting state during render (React's
+  // derive-state-from-props pattern) avoids ever painting that stale frame.
+  const [prevText, setPrevText] = useState(text);
+  if (prevText !== text) {
+    setPrevText(text);
+    setExpanded(false);
+    setOverflows(false);
+  }
+
   // Measure only while collapsed: an expanded (un-clamped) paragraph has
   // scrollHeight === clientHeight, so we keep the prior overflow verdict and
   // leave the toggle in place rather than recomputing it away. A ResizeObserver
-  // re-checks on reflow (container resize, late-loading fonts).
+  // re-checks on reflow (container resize, late-loading fonts); where it's
+  // unavailable (house rule — see Sparkline) we still measure once.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || expanded) return;
     const measure = () => setOverflows(el.scrollHeight - el.clientHeight > 1);
     measure();
+    if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();

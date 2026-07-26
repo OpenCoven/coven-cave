@@ -57,6 +57,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-artifact-actions.test.ts",
     "src/components/role-surfaces/research-tab-prompt.test.ts",
     "src/components/role-surfaces/research-tab-desk.test.ts",
+    "src/components/ui/clamped-text.test.ts",
     "src/components/role-surfaces/research-tab-library.test.ts",
     "src/components/role-surfaces/research-tab-studio.test.ts",
     "src/components/role-surfaces/research-tab-resources.test.ts",
