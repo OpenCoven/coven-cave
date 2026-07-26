@@ -3,6 +3,26 @@ import XCTest
 final class DrawerNavigationUITests: XCTestCase {
 
     @MainActor
+    func testDrawerRecentThreadOpensAfterChatsIsMounted() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview-empty-chat", "--ui-tab", "terminal"]
+        app.launch()
+
+        let openNavigation = app.buttons["Open navigation"]
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
+                      "Terminal exposes the navigation drawer")
+        openNavigation.tap()
+
+        let recentThread = app.buttons["Chat with Nyx on Jul 26"]
+        XCTAssertTrue(recentThread.waitForExistence(timeout: 5),
+                      "the fixture thread is available from drawer recents")
+        recentThread.tap()
+
+        XCTAssertTrue(app.navigationBars["Chat with Nyx on Jul 26"].waitForExistence(timeout: 10),
+                      "a pending thread handoff opens after Chats mounts")
+    }
+
+    @MainActor
     func testDrawerRoutesBetweenPrimaryDestinationsWithoutATabBar() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-preview-empty-chat"]

@@ -816,13 +816,13 @@ final class AppModel {
 
     /// Quiet: the state only changes on an outcome, so a healthy path change
     /// (Wi-Fi ↔ LTE) doesn't blink the UI through `.checking` — which would
-    /// flash the reconnect pill over perfectly good tabs.
+    /// flash the reconnect pill over a perfectly good primary destination.
     func recoverConnectionInBackground() async {
         guard connection != nil else { connectionState = .unconfigured; return }
         await refreshConnection(reloadLoadedSurfaces: true, quiet: true)
     }
 
-    /// Any surface holds real data — the tab tree is worth keeping mounted
+    /// Any surface holds real data — the primary shell is worth keeping mounted
     /// through a connection drop (RootView shows the reconnect pill over it
     /// instead of tearing down to the Connect screen).
     var hasLoadedSurfaces: Bool {

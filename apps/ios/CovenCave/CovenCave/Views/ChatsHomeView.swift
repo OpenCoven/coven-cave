@@ -8,7 +8,7 @@ enum ChatRoute: Hashable {
     case thread(ChatThread)
 }
 
-/// The Chats tab, redesigned per the 2026-07 design handoff (screen 1a): a
+/// The Chats destination, redesigned per the 2026-07 design handoff (screen 1a): a
 /// horizontal familiar rail (tap one to see its threads) above one unified
 /// "Recent" list of every conversation — direct and group — sorted by recency.
 /// Tapping a rail avatar pushes `FamiliarThreadsView`; tapping a row opens
@@ -74,7 +74,7 @@ struct ChatsHomeView: View {
             }
             // Flush large-title header at the very top, matching Read / Tasks
             // (which hide the nav bar and supply their own top inset) so
-            // every tab's header aligns. Search + compose stay in the bottom bar.
+            // every destination's header aligns. Search + compose stay in the bottom bar.
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { header }
             .safeAreaInset(edge: .bottom, spacing: 0) { homeSearchBar }
@@ -92,7 +92,7 @@ struct ChatsHomeView: View {
                 await app.loadSessions()
             }
             // Sessions load once; reconnects and pull-to-refresh handle
-            // subsequent reloads, so re-appearing tabs don't refetch the list.
+            // subsequent reloads, so re-appearing destinations don't refetch the list.
             .task { if !app.sessionsLoaded { await app.loadSessions() } }
             .onAppear {
                 openDeepLinkedThread()
@@ -101,9 +101,7 @@ struct ChatsHomeView: View {
             // A slash command (`/new`, `/familiar <name>`) or a task link asked to
             // open a specific thread — surface it in the detail column.
             .onChange(of: app.threadToOpen) { _, thread in
-                guard let thread else { return }
-                if lastThreadId != thread.id { open(.thread(thread)) }
-                app.threadToOpen = nil
+                consumeThreadRequest(thread)
             }
             .onChange(of: app.newChatRequested) { _, requested in
                 guard requested else { return }
@@ -378,6 +376,7 @@ struct ChatsHomeView: View {
     }
 
     private func consumeGlobalRequests() {
+        consumeThreadRequest(app.threadToOpen)
         if app.newChatRequested {
             showNewChat = true
             app.newChatRequested = false
@@ -386,6 +385,15 @@ struct ChatsHomeView: View {
             searchFocused = true
             app.chatSearchRequested = false
         }
+    }
+
+    /// Consume a cross-destination thread handoff on first appearance and on
+    /// later updates. Clearing the one-shot intent prevents re-appearance from
+    /// reopening the same conversation.
+    private func consumeThreadRequest(_ thread: ChatThread?) {
+        guard let thread else { return }
+        if lastThreadId != thread.id { open(.thread(thread)) }
+        app.threadToOpen = nil
     }
 
     /// The horizontal familiar rail (design 1a): 56pt avatars with presence
