@@ -262,7 +262,7 @@ assert.match(
 
 assert.match(
   overview,
-  /export function SettingsOverview\(\{ section \}: \{ section: Section \}\)/,
+  /export function SettingsOverview\(/,
   "SettingsOverview should live outside the shell component",
 );
 
@@ -357,6 +357,104 @@ assert.match(
   dashboardCss,
   /\.settings-switch::after \{[\s\S]{0,120}?inset: -12px/,
   "the small switch keeps a generous hit area",
+);
+
+assert.match(
+  source,
+  /className="settings-general"/,
+  "General owns a dedicated control-sheet container",
+);
+assert.match(
+  source,
+  /<SettingsGroup label="Workspace" variant="ruled"/,
+  "General groups use the opt-in ruled heading",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-general\s*\{[\s\S]*container-type:\s*inline-size/,
+  "General responds to its content width",
+);
+assert.match(
+  dashboardCss,
+  /@container settings-general \(max-width:/,
+  "narrow General layout uses a container query",
+);
+assert.match(
+  source,
+  /shell_open_path[\s\S]{0,220}Workspace folder opened/,
+  "Browse truthfully opens the current workspace directory",
+);
+assert.match(
+  source,
+  /useIsTauriDesktop/,
+  "workspace Browse is gated to desktop Tauri",
+);
+assert.match(
+  source,
+  /SettingsGroup label="Progression" variant="ruled"[\s\S]*settings-progression-card/,
+  "Progression uses the ruled full-width composition",
+);
+assert.match(
+  source,
+  /SettingsGroup label="Startup" variant="ruled"[\s\S]*settings-startup-grid/,
+  "Startup uses the ruled two-cell composition",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-startup-cell\s*\{[\s\S]*border:\s*1px dashed var\(--border-strong\)/,
+  "Soon cells use the dashed affordance language",
+);
+assert.match(
+  source,
+  /<SettingsGroup label="Backup" variant="ruled"[\s\S]*settings-backup-grid/,
+  "Backup uses the reference two-column composition",
+);
+assert.match(
+  source,
+  /settings-backup-manual[\s\S]*Backup passphrase[\s\S]*Export backup[\s\S]*Choose backup[\s\S]*Restore/,
+  "manual backup retains every action",
+);
+assert.match(
+  source,
+  /syncLoadState === "error"[\s\S]*Couldn't load scheduled sync[\s\S]*Retry/,
+  "scheduled sync does not disguise request failures as an empty panel",
+);
+assert.match(
+  source,
+  /settings-backup-sync__state[\s\S]*\{enabled \? "On" : "Off"\}/,
+  "scheduled sync always names its state",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-backup-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/,
+  "wide Backup is a balanced two-column grid",
+);
+for (const token of [
+  "--bg-base",
+  "--bg-raised",
+  "--bg-subtle",
+  "--text-primary",
+  "--text-secondary",
+  "--text-muted",
+  "--border-hairline",
+  "--border-strong",
+  "--accent-presence",
+]) {
+  assert.match(
+    dashboardCss,
+    new RegExp(`var\\(${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)`),
+    `control-sheet CSS uses ${token}`,
+  );
+}
+assert.doesNotMatch(
+  dashboardCss.match(/\.settings-general[\s\S]*?(?=\/\* ── Unified dashboard)/)?.[0] ?? "",
+  /#[0-9a-f]{3,8}\b/i,
+  "General control-sheet CSS introduces no literal colors",
+);
+assert.match(
+  dashboardCss,
+  /@media \(pointer: coarse\)[\s\S]*settings-(?:overview-anchor|stop-phrase|voice-catalog__toggle)/,
+  "new compact controls preserve touch targets",
 );
 
 console.log("settings-shell-polish.test.ts OK");

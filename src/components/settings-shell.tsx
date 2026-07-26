@@ -32,10 +32,13 @@ import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { classifyAboutDaemonStatus, type AboutDaemonState } from "@/lib/about-status";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useCelebrationsEnabled, writeCelebrationsEnabled } from "@/lib/celebrations-pref";
 import {
-  DEFAULT_STOP_PHRASE,
   STOP_PHRASE_MAX_LENGTH,
+  appendStopPhrase,
+  parseStopPhrases,
+  removeStopPhraseAt,
   useStopPhrase,
   writeStopPhrase,
 } from "@/lib/stop-phrase";
@@ -427,23 +430,37 @@ export function SettingsShell() {
 
 function GeneralSection() {
   return (
-    <SettingsPage section="general" title="General" description="App-wide preferences.">
-      <SettingsGroup label="Workspace">
-        <SettingsRow label="Workspace path" description="Where Coven stores familiar workspaces.">
+    <SettingsPage section="general" title="General" description="App-wide preferences." variant="control-sheet">
+      <SettingsGroup label="Workspace" variant="ruled" panel={false}>
+        <SettingsRow
+          label="Workspace path"
+          description="Where Coven stores familiar workspaces."
+          variant="sheet"
+        >
           <WorkspacePathField />
         </SettingsRow>
       </SettingsGroup>
-      <SettingsGroup label="Chat">
+      <SettingsGroup label="Chat" variant="ruled">
         <StopPhraseField />
       </SettingsGroup>
       <VoiceEngineSettings />
-      <SettingsGroup label="Progression">
-        <CelebrationsToggle />
+      <SettingsGroup label="Progression" variant="ruled" panel={false}>
+        <div className="settings-progression-card">
+          <CelebrationsToggle />
+        </div>
       </SettingsGroup>
       <BackupSettingsGroup />
-      <SettingsGroup label="Startup">
-        <SettingsRow label="Launch at login" description="Start CovenCave when you log in." comingSoon />
-        <SettingsRow label="Open to" description="Which view to show on launch." comingSoon />
+      <SettingsGroup label="Startup" variant="ruled" panel={false}>
+        <div className="settings-startup-grid">
+          <div className="settings-startup-cell">
+            <span>Launch at login</span>
+            <span className="settings-startup-soon">Soon</span>
+          </div>
+          <div className="settings-startup-cell">
+            <span>Open to</span>
+            <span className="settings-startup-soon">Soon</span>
+          </div>
+        </div>
       </SettingsGroup>
     </SettingsPage>
   );
@@ -480,29 +497,96 @@ function CelebrationsToggle() {
 // clearing the field disables interception.
 function StopPhraseField() {
   const saved = useStopPhrase();
-  const [draft, setDraft] = useState<string | null>(null);
-  const value = draft ?? saved;
-  const commit = () => {
-    if (draft !== null && draft.trim() !== saved) writeStopPhrase(draft);
-    setDraft(null);
+  const { announce } = useAnnouncer();
+  const [draft, setDraft] = useState("");
+  const phrases = parseStopPhrases(saved);
+
+  const persist = (value: string, announcement: string) => {
+    writeStopPhrase(value);
+    announce(announcement);
   };
+
+  const addDraft = () => {
+    const result = appendStopPhrase(saved, draft);
+    if (!result.added) {
+      if (result.reason === "too-long") {
+        announce(
+          `Stop phrases must fit within ${STOP_PHRASE_MAX_LENGTH} characters.`,
+          "assertive",
+        );
+      }
+      if (result.reason === "duplicate") announce("That stop phrase is already saved.");
+      return;
+    }
+    setDraft("");
+    persist(result.value, `Added stop phrase ${parseStopPhrases(result.value).at(-1)}.`);
+  };
+
   return (
     <SettingsRow
       label="Stop phrases"
-      description="Typing any one of these in the composer while a task is running stops it. Separate options with commas; leave empty to disable."
+      description="Typing one while a task runs stops it."
+      descriptionId="general-stop-phrases-help"
+      variant="sheet"
     >
-      <input
-        value={value}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-        }}
-        placeholder={DEFAULT_STOP_PHRASE}
-        maxLength={STOP_PHRASE_MAX_LENGTH}
+      <div
+        className="settings-stop-phrases"
+        role="group"
         aria-label="Stop phrases"
-        className="focus-ring w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)] outline-none"
-      />
+        aria-describedby="general-stop-phrases-help"
+      >
+        <div className="settings-stop-phrases__editor">
+          {phrases.map((phrase, index) => (
+            <span key={phrase} className="settings-stop-phrase">
+              {phrase}
+              <IconButton
+                icon="ph:x"
+                size="xs"
+                className="settings-stop-phrase__remove focus-ring"
+                aria-label={`Remove stop phrase ${phrase}`}
+                onClick={() => persist(
+                  removeStopPhraseAt(saved, index),
+                  `Removed stop phrase ${phrase}.`,
+                )}
+              />
+            </span>
+          ))}
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => {
+              if (draft.trim()) addDraft();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === ",") {
+                e.preventDefault();
+                addDraft();
+              } else if (e.key === "Backspace" && !draft && phrases.length > 0) {
+                persist(
+                  removeStopPhraseAt(saved, phrases.length - 1),
+                  `Removed stop phrase ${phrases.at(-1)}.`,
+                );
+              }
+            }}
+            aria-label="Add stop phrase"
+            placeholder="Add another…"
+            maxLength={STOP_PHRASE_MAX_LENGTH}
+            className="settings-stop-phrases__input focus-ring"
+          />
+        </div>
+        <div className="settings-stop-phrases__meta">
+          <span>{phrases.length} {phrases.length === 1 ? "phrase" : "phrases"}</span>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="settings-stop-phrases__clear focus-ring"
+            disabled={phrases.length === 0}
+            onClick={() => persist("", "Cleared stop phrases.")}
+          >
+            Clear
+          </Button>
+        </div>
+      </div>
     </SettingsRow>
   );
 }
@@ -584,42 +668,61 @@ function BackupSettingsGroup() {
   };
 
   return (
-    <SettingsGroup label="Backup" description="Manual encrypted snapshots for machine loss recovery.">
-      <SettingsRow
-        label="Encrypted export"
-        description="Includes Tier-1 state and the vault key inside a passphrase-wrapped envelope. Browser profile state is not included yet."
-      >
-        <div className="flex w-full max-w-md flex-col gap-2">
+    <SettingsGroup label="Backup" variant="ruled" panel={false}>
+      <div className="settings-backup-grid">
+        <section
+          className="settings-backup-card settings-backup-manual"
+          aria-labelledby="settings-backup-manual-title"
+        >
+          <div>
+            <h3 id="settings-backup-manual-title">Encrypted export</h3>
+            <p>Tier-1 state and the vault key, wrapped with your passphrase.</p>
+          </div>
           <input
             type="password"
             value={passphrase}
-            onChange={(e) => setPassphrase(e.target.value)}
+            onChange={(event) => setPassphrase(event.target.value)}
             placeholder="Backup passphrase"
             aria-label="Backup passphrase"
-            className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] outline-none"
+            className="settings-backup-input focus-ring"
           />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={exportBackup} disabled={!canSubmit || busy !== null} leadingIcon="ph:arrow-down">
+          <div className="settings-backup-actions">
+            <Button
+              size="sm"
+              onClick={exportBackup}
+              disabled={!canSubmit || busy !== null}
+              leadingIcon="ph:arrow-down"
+            >
               {busy === "export" ? "Exporting…" : "Export backup"}
             </Button>
-            <label className="focus-ring inline-flex cursor-pointer items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:border-[var(--border-strong)]">
+            <label className="settings-backup-file focus-ring">
               Choose backup
               <input
                 type="file"
                 accept=".ccbackup,application/octet-stream"
                 className="sr-only"
-                onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)}
+                onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)}
               />
             </label>
-            <Button size="sm" onClick={restoreBackup} disabled={!canSubmit || !restoreFile || busy !== null} leadingIcon="ph:arrow-counter-clockwise">
+            <Button
+              size="sm"
+              onClick={restoreBackup}
+              disabled={!canSubmit || !restoreFile || busy !== null}
+              leadingIcon="ph:arrow-counter-clockwise"
+            >
               {busy === "restore" ? "Restoring…" : "Restore"}
             </Button>
           </div>
-          {restoreFile ? <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Selected {restoreFile.name}</p> : null}
-          {status ? <p className="text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">{status}</p> : null}
-        </div>
-      </SettingsRow>
-      <ScheduledSyncSettings />
+          <p className="settings-backup-footnote">
+            Browser profile state is not included yet.
+          </p>
+          {restoreFile ? (
+            <p className="settings-backup-selection">Selected {restoreFile.name}</p>
+          ) : null}
+          {status ? <p className="settings-backup-status" role="status">{status}</p> : null}
+        </section>
+        <ScheduledSyncSettings />
+      </div>
     </SettingsGroup>
   );
 }
@@ -658,17 +761,34 @@ function ScheduledSyncSettings() {
   const [passphraseDraft, setPassphraseDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [syncLoadState, setSyncLoadState] =
+    useState<"loading" | "ready" | "error">("loading");
+
+  const loadOverview = useCallback(async (signal?: AbortSignal) => {
+    setSyncLoadState("loading");
+    try {
+      const response = await fetch("/api/backup/sync", {
+        cache: "no-store",
+        signal,
+      });
+      const json = await response.json().catch(() => null) as
+        | (BackupSyncOverview & { ok?: boolean })
+        | null;
+      if (!response.ok || !json?.ok) throw new Error("invalid sync response");
+      if (signal?.aborted) return;
+      setOverview(json);
+      setSyncLoadState("ready");
+    } catch {
+      if (signal?.aborted) return;
+      setSyncLoadState("error");
+    }
+  }, []);
 
   useEffect(() => {
-    const ctl = new AbortController();
-    fetch("/api/backup/sync", { cache: "no-store", signal: ctl.signal })
-      .then((r) => r.json())
-      .then((json: BackupSyncOverview & { ok?: boolean }) => {
-        if (!ctl.signal.aborted && json?.ok) setOverview(json);
-      })
-      .catch(() => {});
-    return () => ctl.abort();
-  }, []);
+    const controller = new AbortController();
+    void loadOverview(controller.signal);
+    return () => controller.abort();
+  }, [loadOverview]);
 
   const update = async (patch: Record<string, unknown>, announcement: string) => {
     setBusy(true);
@@ -712,7 +832,27 @@ function ScheduledSyncSettings() {
     }
   };
 
-  if (!overview) return null;
+  if (syncLoadState === "loading") {
+    return (
+      <section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">
+        <SkeletonRows count={3} />
+      </section>
+    );
+  }
+
+  if (syncLoadState === "error" || !overview) {
+    return (
+      <section className="settings-backup-card settings-backup-sync">
+        <ErrorState
+          compact
+          headline="Couldn't load scheduled sync"
+          subtitle="Retry after the Cave sidecar is available."
+          actions={<Button size="sm" onClick={() => void loadOverview()}>Retry</Button>}
+        />
+      </section>
+    );
+  }
+
   const { config, status: sync } = overview;
   const enabled = config.enabled;
   const freshness = sync.lastSuccessAt
@@ -720,11 +860,11 @@ function ScheduledSyncSettings() {
     : "No snapshots yet.";
 
   return (
-    <>
-      <SettingsRow
-        label="Scheduled sync"
-        description="Push an encrypted snapshot to a folder you own once a day and when Cave quits."
-      >
+    <section
+      className="settings-backup-card settings-backup-sync"
+      aria-labelledby="settings-backup-sync-title"
+    >
+      <div className="settings-backup-sync__header">
         <button
           type="button"
           role="switch"
@@ -736,16 +876,21 @@ function ScheduledSyncSettings() {
         >
           <span className="settings-switch__knob" aria-hidden />
         </button>
-      </SettingsRow>
+        <h3 id="settings-backup-sync-title">Scheduled sync</h3>
+        <span className="settings-backup-sync__state">{enabled ? "On" : "Off"}</span>
+      </div>
+      <p>Pushes an encrypted snapshot to a folder you own and again when Cave quits.</p>
+      <p className="settings-backup-sync__freshness">{freshness}</p>
       {enabled ? (
-        <>
-          <SettingsRow
-            label="Destination"
-            description="Folder that receives snapshots. Leave empty to use iCloud Drive when available."
-          >
+        <div className="settings-backup-sync__details">
+          <label className="settings-backup-field">
+            <span className="settings-backup-field__label">Destination</span>
+            <span className="settings-backup-field__help">
+              Folder that receives snapshots. Leave empty to use iCloud Drive when available.
+            </span>
             <input
               value={directoryDraft ?? config.directory ?? ""}
-              onChange={(e) => setDirectoryDraft(e.target.value)}
+              onChange={(event) => setDirectoryDraft(event.target.value)}
               onBlur={() => {
                 if (directoryDraft === null) return;
                 const next = directoryDraft.trim();
@@ -753,26 +898,28 @@ function ScheduledSyncSettings() {
                 if (next === (config.directory ?? "")) return;
                 void update({ directory: next || null }, "Backup destination saved.");
               }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
               }}
               placeholder={overview.defaultDirectory}
               aria-label="Backup destination folder"
-              className="focus-ring w-full max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)] outline-none"
+              className="settings-backup-input settings-backup-input--mono focus-ring"
             />
-          </SettingsRow>
-          <SettingsRow
-            label="Sync passphrase"
-            description="Saved in the local encrypted vault so scheduled snapshots can encrypt unattended. Restore always asks for it."
-          >
-            <div className="flex w-full max-w-md flex-wrap items-center gap-2">
+          </label>
+
+          <div className="settings-backup-field">
+            <span className="settings-backup-field__label">Sync passphrase</span>
+            <span className="settings-backup-field__help">
+              Saved in the local encrypted vault for unattended snapshots.
+            </span>
+            <div className="settings-backup-field__controls">
               <input
                 type="password"
                 value={passphraseDraft}
-                onChange={(e) => setPassphraseDraft(e.target.value)}
+                onChange={(event) => setPassphraseDraft(event.target.value)}
                 placeholder={overview.passphraseSet ? "Passphrase saved" : "Sync passphrase"}
                 aria-label="Sync passphrase"
-                className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] outline-none"
+                className="settings-backup-input focus-ring"
               />
               <Button
                 size="sm"
@@ -794,14 +941,19 @@ function ScheduledSyncSettings() {
                 </Button>
               ) : null}
             </div>
-          </SettingsRow>
-          <SettingsRow label="Keep snapshots" description="How many snapshots to retain in the destination before pruning the oldest.">
+          </div>
+
+          <label className="settings-backup-field">
+            <span className="settings-backup-field__label">Keep snapshots</span>
+            <span className="settings-backup-field__help">
+              Oldest snapshots are pruned after this limit.
+            </span>
             <input
               type="number"
               min={1}
               max={365}
               value={retainDraft ?? String(config.retainCount)}
-              onChange={(e) => setRetainDraft(e.target.value)}
+              onChange={(event) => setRetainDraft(event.target.value)}
               onBlur={() => {
                 if (retainDraft === null) return;
                 const next = Number(retainDraft);
@@ -809,35 +961,47 @@ function ScheduledSyncSettings() {
                 if (!Number.isFinite(next) || next === config.retainCount) return;
                 void update({ retainCount: next }, "Snapshot retention saved.");
               }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
               }}
               aria-label="Snapshots to keep"
-              className="focus-ring w-20 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] outline-none"
+              className="settings-backup-input settings-backup-input--count focus-ring"
             />
-          </SettingsRow>
-          <SettingsRow label="Freshness" description={freshness}>
-            <div className="flex w-full max-w-md flex-col gap-2">
-              <Button size="sm" onClick={runNow} disabled={busy || !overview.passphraseSet} leadingIcon="ph:arrow-clockwise">
-                {busy ? "Backing up…" : "Back up now"}
-              </Button>
-              {!overview.passphraseSet ? (
-                <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Save a sync passphrase to start scheduled snapshots.</p>
-              ) : null}
-              {sync.lastError ? (
-                <p className="text-[length:var(--text-xs)] leading-5 text-[var(--danger-text)]">{sync.lastError}</p>
-              ) : null}
-              {message ? <p className="text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">{message}</p> : null}
-            </div>
-          </SettingsRow>
-        </>
+          </label>
+
+          <div className="settings-backup-field">
+            <span className="settings-backup-field__label">Freshness</span>
+            <span className="settings-backup-field__help">{freshness}</span>
+            <Button
+              size="sm"
+              onClick={runNow}
+              disabled={busy || !overview.passphraseSet}
+              leadingIcon="ph:arrow-clockwise"
+            >
+              {busy ? "Backing up…" : "Back up now"}
+            </Button>
+            {!overview.passphraseSet ? (
+              <p className="settings-backup-field__help">
+                Save a sync passphrase to start scheduled snapshots.
+              </p>
+            ) : null}
+            {sync.lastError ? (
+              <p className="settings-backup-error" role="alert">{sync.lastError}</p>
+            ) : null}
+            {message ? <p className="settings-backup-status" role="status">{message}</p> : null}
+          </div>
+        </div>
       ) : null}
-    </>
+    </section>
   );
 }
 
 function WorkspacePathField() {
   const [path, setPath] = useState("");
+  const desktop = useIsTauriDesktop();
+  const { announce } = useAnnouncer();
+  const [openError, setOpenError] = useState("");
+
   useEffect(() => {
     const ctl = new AbortController();
     fetch("/api/daemon/status", { cache: "no-store", signal: ctl.signal })
@@ -848,13 +1012,40 @@ function WorkspacePathField() {
       .catch(() => {});
     return () => ctl.abort();
   }, []);
+
+  const browse = async () => {
+    if (!desktop || !path) return;
+    setOpenError("");
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("shell_open_path", { path });
+      announce("Workspace folder opened.");
+    } catch {
+      setOpenError("Couldn't open the workspace folder.");
+      announce("Couldn't open the workspace folder.", "assertive");
+    }
+  };
+
   return (
-    <input
-      value={path}
-      readOnly
-      aria-label="Workspace path"
-      className="w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)] outline-none"
-    />
+    <div className="settings-workspace-control">
+      <input
+        value={path}
+        readOnly
+        aria-label="Workspace path"
+        className="settings-workspace-path focus-ring"
+      />
+      <Button
+        variant="secondary"
+        size="sm"
+        leadingIcon="ph:folder-open"
+        disabled={!desktop || !path}
+        title={desktop ? "Open workspace folder" : "Available in the desktop app"}
+        onClick={() => void browse()}
+      >
+        Browse
+      </Button>
+      {openError ? <p role="alert" className="settings-workspace-error">{openError}</p> : null}
+    </div>
   );
 }
 
@@ -3679,8 +3870,38 @@ function AboutSection() {
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
-function SettingsPage({ title, description, section, children }: { title: string; description?: string; section?: Section; children: React.ReactNode }) {
+function SettingsPage({
+  title,
+  description,
+  section,
+  variant = "default",
+  children,
+}: {
+  title: string;
+  description?: string;
+  section?: Section;
+  variant?: "default" | "control-sheet";
+  children: React.ReactNode;
+}) {
   const pageTitleId = section ? `settings-${section}-title` : "settings-page-title";
+
+  if (variant === "control-sheet") {
+    return (
+      <section className="settings-general" aria-labelledby={pageTitleId}>
+        <h2 id={pageTitleId} className="sr-only">{title}</h2>
+        {section ? (
+          <SettingsOverview section={section} variant="control-sheet" />
+        ) : (
+          <div>
+            <p className="text-[length:var(--text-xl)] font-semibold text-[var(--text-primary)]">{title}</p>
+            {description && <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">{description}</p>}
+          </div>
+        )}
+        {children}
+      </section>
+    );
+  }
+
   return (
     <section className="max-w-none space-y-6" aria-labelledby={pageTitleId}>
       <h2 id={pageTitleId} className="sr-only">{title}</h2>
@@ -3698,12 +3919,39 @@ function SettingsPage({ title, description, section, children }: { title: string
 }
 
 
-function SettingsRow({ label, description, comingSoon, children }: { label: string; description?: string; comingSoon?: boolean; children?: React.ReactNode }) {
+function SettingsRow({
+  label,
+  description,
+  descriptionId,
+  comingSoon,
+  variant = "default",
+  children,
+}: {
+  label: string;
+  description?: string;
+  descriptionId?: string;
+  comingSoon?: boolean;
+  variant?: "default" | "sheet";
+  children?: React.ReactNode;
+}) {
   return (
-    <div className={`flex items-center justify-between gap-4 px-4 py-3 ${comingSoon ? "opacity-50" : ""}`}>
+    <div
+      className={
+        variant === "sheet"
+          ? `settings-row settings-row--sheet${comingSoon ? " is-dimmed" : ""}`
+          : `flex items-center justify-between gap-4 px-4 py-3 ${comingSoon ? "opacity-50" : ""}`
+      }
+    >
       <div className="min-w-0">
         <p className="text-[length:var(--text-base)] text-[var(--text-primary)]">{label}</p>
-        {description && <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{description}</p>}
+        {description ? (
+          <p
+            id={descriptionId}
+            className="text-[length:var(--text-xs)] text-[var(--text-muted)]"
+          >
+            {description}
+          </p>
+        ) : null}
       </div>
       {comingSoon ? (
         <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">Soon</span>

@@ -58,6 +58,40 @@ export function parseStopPhrases(phrase: string): string[] {
   return [...candidates];
 }
 
+export type AppendStopPhraseResult =
+  | { value: string; added: true }
+  | { value: string; added: false; reason: "empty" | "duplicate" | "too-long" };
+
+function serializeStopPhraseOptions(options: readonly string[]): string {
+  return parseStopPhrases(options.join(", ")).join(", ");
+}
+
+export function appendStopPhrase(
+  current: string,
+  candidate: string,
+): AppendStopPhraseResult {
+  const value = serializeStopPhraseOptions(parseStopPhrases(current));
+  const normalized = normalizeStopUtterance(candidate);
+  if (!normalized) return { value, added: false, reason: "empty" };
+  const options = parseStopPhrases(value);
+  if (options.includes(normalized)) {
+    return { value, added: false, reason: "duplicate" };
+  }
+  const next = serializeStopPhraseOptions([...options, normalized]);
+  if (next.length > STOP_PHRASE_MAX_LENGTH) {
+    return { value, added: false, reason: "too-long" };
+  }
+  return { value: next, added: true };
+}
+
+export function removeStopPhraseAt(current: string, index: number): string {
+  const options = parseStopPhrases(current);
+  if (!Number.isInteger(index) || index < 0 || index >= options.length) {
+    return serializeStopPhraseOptions(options);
+  }
+  return serializeStopPhraseOptions(options.filter((_, candidate) => candidate !== index));
+}
+
 /**
  * True when `text` IS one of the configured stop phrases (not merely contains
  * one). An empty or unset phrase list never matches — that is the off switch.
