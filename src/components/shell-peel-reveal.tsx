@@ -74,7 +74,12 @@ const OFF_OPTIONS = {
 
 /** How many times a lost WebGL context earns a fresh mount before giving up —
  *  a crashing GPU/driver loop should not thrash remounts forever (mirrors
- *  cave-backdrop-blaze.tsx, bead cave-kbh1). */
+ *  cave-backdrop-blaze.tsx, bead cave-kbh1). Unlike Blaze — a decorative
+ *  backdrop that may acceptably stay blank past the cap — the peel wraps
+ *  primary content and its WebGL output canvas is the pane's only paint path
+ *  (the vendored createPeel has no context-loss recovery), so giving up here
+ *  permanently falls back to the plain bare-Fragment path instead of
+ *  stranding a blank but still hit-testable pane (cave-yqlt). */
 const MAX_CONTEXT_RESTARTS = 3;
 
 type ProbeCanvas = HTMLCanvasElement & { requestPaint?: () => void };
@@ -116,6 +121,9 @@ const emptySubscribe = () => () => {};
  * blanks on a null fallback and children re-parent exactly once (cave-ao2o).
  * Under the experimental flag those `>` chains do not reach through the
  * vendor's canvas layers — a known, flag-gated divergence (Task 6 QA).
+ * WebGL context loss remounts the live tree at most MAX_CONTEXT_RESTARTS
+ * times; one loss past the cap permanently downgrades to the bare-Fragment
+ * path (cave-yqlt).
  */
 export function ShellPeelReveal({
   active,
@@ -133,19 +141,35 @@ export function ShellPeelReveal({
     getPeelLiveServer,
   );
   const reducedMotion = usePrefersReducedMotion();
-  const enhanced = supported && Peel !== null && !reducedMotion;
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [glEpoch, setGlEpoch] = useState(0);
+  /** Epochs 1..MAX_CONTEXT_RESTARTS are fresh mounts; one more loss means the
+   *  GPU/driver is hopeless and the dead live tree would paint nothing while
+   *  still swallowing hits — fall back to the plain path for good. */
+  const glPermanentlyLost = glEpoch > MAX_CONTEXT_RESTARTS;
+  const enhanced =
+    supported && Peel !== null && !reducedMotion && !glPermanentlyLost;
 
   // webglcontextlost fires on the vendor's output canvas and does not bubble,
-  // but a capture-phase listener on the wrapper still sees it.
+  // but a capture-phase listener on the wrapper still sees it. Only the
+  // peel's own output canvas — a direct child of the .shell-peel-fill root —
+  // counts: the detail children live inside the source canvas subtree, so a
+  // context loss from any future WebGL canvas nested in the detail content
+  // must not remount (or permanently downgrade) the whole pane.
   useEffect(() => {
     if (!enhanced) return;
     const node = wrapRef.current;
     if (!node) return;
-    const onContextLost = () => {
-      setGlEpoch((epoch) => (epoch < MAX_CONTEXT_RESTARTS ? epoch + 1 : epoch));
+    const onContextLost = (event: Event) => {
+      const target = event.target;
+      if (
+        !(target instanceof HTMLCanvasElement) ||
+        !target.parentElement?.classList.contains("shell-peel-fill")
+      ) {
+        return;
+      }
+      setGlEpoch((epoch) => Math.min(epoch + 1, MAX_CONTEXT_RESTARTS + 1));
     };
     node.addEventListener("webglcontextlost", onContextLost, true);
     return () => node.removeEventListener("webglcontextlost", onContextLost, true);
