@@ -76,7 +76,7 @@ pub(super) fn shell_pick_directory() -> Result<Option<String>, String> {
                 "-e",
                 "tell application \"System Events\" to activate",
                 "-e",
-                "POSIX path of (choose folder with prompt \"Choose a folder for CovenCave\")",
+                "POSIX path of (choose folder with prompt \"Choose a folder for CovenCave\" invisibles true)",
             ])
             .output()
             .map_err(|e| e.to_string())?;
@@ -93,12 +93,112 @@ pub(super) fn shell_pick_directory() -> Result<Option<String>, String> {
 
     #[cfg(target_os = "windows")]
     {
-        // A bare FolderBrowserDialog has no owner window, so Windows opens it
-        // *behind* every other window, unfocused, with no taskbar entry — it
-        // looks like the click did nothing (issue #2614b). Give it a TopMost,
-        // ShowInTaskbar owner form (created off-screen) and pass that form as
-        // the ShowDialog owner so the picker is summoned to the foreground.
-        let script = r#"Add-Type -AssemblyName System.Windows.Forms; $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true; $owner.ShowInTaskbar = $false; $owner.StartPosition = 'Manual'; $owner.Location = New-Object System.Drawing.Point(-32000, -32000); $owner.Size = New-Object System.Drawing.Size(1, 1); $owner.Show(); $owner.Activate(); $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Choose a folder for CovenCave'; $result = $d.ShowDialog($owner); $owner.Close(); if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($d.SelectedPath) }"#;
+        // Windows PowerShell's .NET Framework FolderBrowserDialog cannot force
+        // hidden items visible, so use IFileOpenDialog with FOS_FORCESHOWHIDDEN.
+        // Give it a TopMost, off-screen owner form so the picker is summoned to
+        // the foreground instead of opening behind Cave (issue #2614b).
+        let script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+[ComImport]
+[Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
+internal class FileOpenDialogCom {}
+
+[ComImport]
+[Guid("42F85136-DB7E-439C-85F1-E4075D135FC8")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IFileDialog
+{
+    [PreserveSig]
+    int Show(IntPtr owner);
+    void SetFileTypes(uint count, IntPtr filterSpec);
+    void SetFileTypeIndex(uint index);
+    void GetFileTypeIndex(out uint index);
+    void Advise(IntPtr events, out uint cookie);
+    void Unadvise(uint cookie);
+    void SetOptions(uint options);
+    void GetOptions(out uint options);
+    void SetDefaultFolder(IShellItem item);
+    void SetFolder(IShellItem item);
+    void GetFolder(out IShellItem item);
+    void GetCurrentSelection(out IShellItem item);
+    void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name);
+    void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+    void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title);
+    void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string text);
+    void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+    void GetResult(out IShellItem item);
+}
+
+[ComImport]
+[Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IShellItem
+{
+    void BindToHandler(IntPtr bindingContext, ref Guid handler, ref Guid interfaceId, out IntPtr result);
+    void GetParent(out IShellItem parent);
+    void GetDisplayName(uint displayName, out IntPtr name);
+    void GetAttributes(uint mask, out uint attributes);
+    void Compare(IShellItem item, uint hint, out int order);
+}
+
+public static class CovenFolderPicker
+{
+    private const uint FOS_PICKFOLDERS = 0x00000020;
+    private const uint FOS_FORCEFILESYSTEM = 0x00000040;
+    private const uint FOS_FORCESHOWHIDDEN = 0x10000000;
+    private const uint SIGDN_FILESYSPATH = 0x80058000;
+    private const int ERROR_CANCELLED = unchecked((int)0x800704C7);
+
+    public static string Pick(IntPtr owner)
+    {
+        IFileDialog dialog = null;
+        IShellItem item = null;
+        IntPtr path = IntPtr.Zero;
+        try
+        {
+            dialog = (IFileDialog)new FileOpenDialogCom();
+            uint options;
+            dialog.GetOptions(out options);
+            dialog.SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_FORCESHOWHIDDEN);
+            dialog.SetTitle("Choose a folder for CovenCave");
+
+            int result = dialog.Show(owner);
+            if (result == ERROR_CANCELLED) return null;
+            Marshal.ThrowExceptionForHR(result);
+
+            dialog.GetResult(out item);
+            item.GetDisplayName(SIGDN_FILESYSPATH, out path);
+            return Marshal.PtrToStringUni(path);
+        }
+        finally
+        {
+            if (path != IntPtr.Zero) Marshal.FreeCoTaskMem(path);
+            if (item != null) Marshal.FinalReleaseComObject(item);
+            if (dialog != null) Marshal.FinalReleaseComObject(dialog);
+        }
+    }
+}
+'@
+
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.ShowInTaskbar = $false
+$owner.StartPosition = 'Manual'
+$owner.Location = New-Object System.Drawing.Point(-32000, -32000)
+$owner.Size = New-Object System.Drawing.Size(1, 1)
+$owner.Show()
+$owner.Activate()
+try {
+    $selected = [CovenFolderPicker]::Pick($owner.Handle)
+    if ($null -ne $selected) { [Console]::Write($selected) }
+} finally {
+    $owner.Close()
+}
+"#;
         let output = std::process::Command::new("powershell.exe")
             .args(["-NoProfile", "-Sta", "-Command", script])
             .output()
@@ -120,6 +220,7 @@ pub(super) fn shell_pick_directory() -> Result<Option<String>, String> {
             .args([
                 "--file-selection",
                 "--directory",
+                "--show-hidden",
                 "--modal",
                 "--title",
                 "Choose a folder for CovenCave",
