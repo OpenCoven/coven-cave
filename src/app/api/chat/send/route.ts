@@ -2457,6 +2457,16 @@ export async function POST(req: Request) {
               boundarySentinel?.observe(event.name, event.input);
               const started = toolTracker.envelopeToolUse(event.id, event.name, formatToolInputValue(event.input), assistantText.length);
               if (started) push({ kind: "tool_use", ...started });
+              const progress = toolTracker.consumePendingEnvelopeProgress(event.id);
+              if (progress) push({ kind: "tool_use", ...progress });
+              // A terminal frame can be flushed before the combined snapshot.
+              // Keep ToolCallTracker's first terminal outcome instead of
+              // overwriting it with a later duplicate completion.
+              const reorderedEnd = toolTracker.consumePendingEnvelopeResult(event.id);
+              if (reorderedEnd) {
+                push({ kind: "tool_use", ...reorderedEnd });
+                return;
+              }
               const ended = toolTracker.envelopeToolResult(event.id, typeof event.output === "string" ? event.output : formatToolInputValue(event.output), event.isError);
               if (ended) push({ kind: "tool_use", ...ended });
               return;
