@@ -11,6 +11,34 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
+assert.match(
+  source,
+  /import\s*\{[^}]*\bauthorizeChatProjectLaunch\b[^}]*\}\s*from\s*"@\/lib\/server\/chat-project-launch"/,
+  "Board task chat should use the shared project launch gate",
+);
+assert.match(
+  source,
+  /validateProjectRoot:\s*validateCaveProjectRoot/,
+  "Board task chat should reject a project root that no longer resolves to a directory",
+);
+const authorizationIndex = source.indexOf("await authorizeChatProjectLaunch");
+const reuseIndex = source.indexOf("if (card.sessionId)");
+const nativeReserveIndex = source.indexOf("const reserveNativeChatTask");
+const daemonLaunchIndex = source.indexOf("const res = await callDaemon");
+assert.ok(authorizationIndex >= 0, "Board task chat should await project authorization");
+assert.ok(
+  authorizationIndex < reuseIndex,
+  "Board task chat must authorize before reusing a persisted session link",
+);
+assert.ok(
+  authorizationIndex < nativeReserveIndex,
+  "Board task chat must authorize before reserving a native Chat session",
+);
+assert.ok(
+  authorizationIndex < daemonLaunchIndex,
+  "Board task chat must authorize before asking the daemon to launch",
+);
+
 // The route uses extractDaemonError so the nested
 // { error: { code, message } } daemon body actually surfaces.
 assert.match(

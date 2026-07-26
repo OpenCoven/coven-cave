@@ -149,7 +149,17 @@ test.describe("chat boot landing", () => {
       return route.fulfill({ json: { ok: true, conversation: { turns: [] }, context: { task: null, github: [] } } });
     });
 
+    const scopedProjectsLoaded = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/api/projects" &&
+        url.searchParams.get("familiarId") === "nova" &&
+        response.request().method() === "GET" &&
+        response.ok()
+      );
+    });
     await page.goto("/?mode=chat");
+    await scopedProjectsLoaded;
     const dash = page.getByTestId("chat-new-dashboard");
     await expect(dash).toBeVisible({ timeout: 45_000 });
 

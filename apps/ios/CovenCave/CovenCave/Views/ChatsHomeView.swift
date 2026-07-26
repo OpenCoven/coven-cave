@@ -8,7 +8,7 @@ enum ChatRoute: Hashable {
     case thread(ChatThread)
 }
 
-/// The Chats tab, redesigned per the 2026-07 design handoff (screen 1a): a
+/// The Chats destination, redesigned per the 2026-07 design handoff (screen 1a): a
 /// horizontal familiar rail (tap one to see its threads) above one unified
 /// "Recent" list of every conversation — direct and group — sorted by recency.
 /// Tapping a rail avatar pushes `FamiliarThreadsView`; tapping a row opens
@@ -48,7 +48,9 @@ struct ChatsHomeView: View {
     var body: some View {
         splitView
         .sheet(isPresented: $showFamiliars) {
-            FamiliarsListView { open(.familiar($0)) }
+            FamiliarsListView { familiar in
+                open(.thread(app.directThread(for: familiar.id)))
+            }
         }
         .onAppear {
             #if DEBUG
@@ -63,7 +65,11 @@ struct ChatsHomeView: View {
         NavigationSplitView {
             Group {
                 if app.familiars.isEmpty && app.threads.isEmpty {
-                    emptyState
+                    if let error = app.familiarsError ?? app.sessionsError {
+                        loadFailure(error)
+                    } else {
+                        emptyState
+                    }
                 } else if filteredFamiliars.isEmpty && recentThreads.isEmpty {
                     ContentUnavailableView.search(text: query)
                 } else {
@@ -72,9 +78,10 @@ struct ChatsHomeView: View {
             }
             // Flush large-title header at the very top, matching Read / Tasks
             // (which hide the nav bar and supply their own top inset) so
-            // every tab's header aligns. Search + compose stay in the bottom bar.
+            // every destination's header aligns. Search + compose stay in the bottom bar.
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { header }
+            .safeAreaInset(edge: .bottom, spacing: 0) { homeSearchBar }
             .sheet(isPresented: $showNewChat) {
                 NewChatView { thread in
                     showNewChat = false
@@ -89,17 +96,29 @@ struct ChatsHomeView: View {
                 await app.loadSessions()
             }
             // Sessions load once; reconnects and pull-to-refresh handle
-            // subsequent reloads, so re-appearing tabs don't refetch the list.
+            // subsequent reloads, so re-appearing destinations don't refetch the list.
             .task { if !app.sessionsLoaded { await app.loadSessions() } }
             .onAppear {
-                openDeepLinkedThread()
+                consumeLaunchThreadIntent()
+                consumeGlobalRequests()
+            }
+            .onChange(of: app.threads.map(\.id)) { _, _ in
+                consumeLaunchThreadIntent()
             }
             // A slash command (`/new`, `/familiar <name>`) or a task link asked to
             // open a specific thread — surface it in the detail column.
             .onChange(of: app.threadToOpen) { _, thread in
-                guard let thread else { return }
-                if lastThreadId != thread.id { open(.thread(thread)) }
-                app.threadToOpen = nil
+                consumeThreadRequest(thread)
+            }
+            .onChange(of: app.newChatRequested) { _, requested in
+                guard requested else { return }
+                showNewChat = true
+                app.newChatRequested = false
+            }
+            .onChange(of: app.chatSearchRequested) { _, requested in
+                guard requested else { return }
+                searchFocused = true
+                app.chatSearchRequested = false
             }
             .sidebarColumn()
         } detail: {
@@ -175,63 +194,44 @@ struct ChatsHomeView: View {
         return nil
     }
 
-    /// Open a thread named by the `CAVE_OPEN_THREAD` launch env var. This is the
-    /// same hook Phase 2 notification taps will use to jump straight into a chat.
     /// Start a brand-new chat with a familiar and open it (familiar-row action).
     private func startNewChat(with familiar: Familiar) {
         let thread = app.startFreshThread(familiarIds: [familiar.id])
         open(.thread(thread))
     }
 
-    private func openDeepLinkedThread() {
-        guard selection == nil,
-              let id = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"],
-              let thread = app.threads.first(where: { $0.id == id }) else { return }
-        open(.thread(thread))
+    /// Large-title header pinned to the top, mirroring the Read / Tasks
+    /// destinations so every destination title aligns at the same flush position.
+    private var header: some View {
+        HStack(spacing: 10) {
+            CircularIconButton(systemImage: "line.3.horizontal",
+                               label: "Open navigation") {
+                app.navigationDrawerOpen = true
+            }
+            Text("Chats")
+                .font(.largeTitle.weight(.bold))
+            Spacer()
+            if canReorder {
+                Button("Reorder") { showReorder = true }
+                    .font(.subheadline.weight(.medium))
+            }
+            CircularIconButton(systemImage: "folder",
+                               label: "Projects") {
+                showProjects = true
+            }
+            CircularIconButton(systemImage: "square.and.pencil",
+                               label: "New chat") {
+                showNewChat = true
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .glassChrome(.top)
     }
 
-    /// Large-title header pinned to the top, mirroring the Read / Tasks tabs
-    /// so every tab's title aligns at the same flush position.
-    private var header: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                Menu {
-                    Button {
-                        showNewChat = true
-                    } label: {
-                        Label("New chat", systemImage: "square.and.pencil")
-                    }
-                    Button {
-                        showFamiliars = true
-                    } label: {
-                        Label("Familiars", systemImage: "person.2")
-                    }
-                    Button {
-                        app.selectedTab = .settings
-                    } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.title2)
-                }
-                .accessibilityLabel("Chats menu")
-                Text("Chats")
-                    .font(.largeTitle.weight(.bold))
-                Spacer()
-                if canReorder {
-                    Button("Reorder") { showReorder = true }
-                        .font(.subheadline.weight(.medium))
-                }
-                CircularIconButton(systemImage: "folder",
-                                   label: "Projects") {
-                    showProjects = true
-                }
-                CircularIconButton(systemImage: "square.and.pencil",
-                                   label: "New chat") {
-                    showNewChat = true
-                }
-            }
+    private var homeSearchBar: some View {
+        HStack(spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
@@ -250,14 +250,18 @@ struct ChatsHomeView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .frame(minHeight: 44)
             .background(chrome.bgRaised, in: Capsule())
             .overlay(Capsule().stroke(chrome.border.opacity(0.7), lineWidth: 1))
+
+            CircularIconButton(systemImage: "square.and.pencil",
+                               label: "New chat") {
+                showNewChat = true
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .glassChrome(.top)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .glassChrome(.bottom)
     }
 
     /// Reordering is only meaningful with ≥2 familiars and no active search
@@ -268,6 +272,12 @@ struct ChatsHomeView: View {
 
     private var homeList: some View {
         List(selection: $selection) {
+            Section {
+                familiarRail
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
             Section {
                 ForEach(recentThreads) { thread in
                     RecentThreadRow(thread: thread)
@@ -363,6 +373,32 @@ struct ChatsHomeView: View {
         .sheet(isPresented: $showReorder) { ReorderFamiliarsSheet() }
     }
 
+    private func consumeGlobalRequests() {
+        consumeThreadRequest(app.threadToOpen)
+        if app.newChatRequested {
+            showNewChat = true
+            app.newChatRequested = false
+        }
+        if app.chatSearchRequested {
+            searchFocused = true
+            app.chatSearchRequested = false
+        }
+    }
+
+    private func consumeLaunchThreadIntent() {
+        guard let thread = app.consumeLaunchThreadIntent() else { return }
+        open(.thread(thread))
+    }
+
+    /// Consume a cross-destination thread handoff on first appearance and on
+    /// later updates. Clearing the one-shot intent prevents re-appearance from
+    /// reopening the same conversation.
+    private func consumeThreadRequest(_ thread: ChatThread?) {
+        guard let thread else { return }
+        if lastThreadId != thread.id { open(.thread(thread)) }
+        app.threadToOpen = nil
+    }
+
     /// The horizontal familiar rail (design 1a): 56pt avatars with presence
     /// dots and an unread accent dot, name below. Tapping drills into that
     /// familiar's thread list, exactly like the old vertical rows.
@@ -425,6 +461,22 @@ struct ChatsHomeView: View {
         } actions: {
             Button("New chat") { showNewChat = true }
                 .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private func loadFailure(_ error: String) -> some View {
+        ContentUnavailableView {
+            Label("Couldn’t load chats", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(error)
+        } actions: {
+            Button("Retry") {
+                Task {
+                    await app.loadFamiliars()
+                    await app.loadSessions()
+                }
+            }
+            .buttonStyle(.borderedProminent)
         }
     }
 }

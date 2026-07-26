@@ -51,6 +51,18 @@ test("a prior familiar's projects are synchronously masked before effects run", 
   );
 });
 
+test("a masked project scope keeps stable empty identity across renders", () => {
+  const projects = ["retained-project"];
+  const first = projectsForCurrentScope(projects, null, "familiar-a");
+  const second = projectsForCurrentScope(projects, null, "familiar-a");
+
+  assert.equal(
+    second,
+    first,
+    "fail-closed masking must not churn consumer dependencies while a scoped request is pending",
+  );
+});
+
 test("a reopened modal keeps its previous familiar's result unavailable until new defaults load", () => {
   assert.equal(
     isProjectPickerReady({ opening: true, loadedSuccessfully: true, loading: false }),

@@ -204,7 +204,20 @@ export function HomeComposer({
   );
   const { modelState, selectModel: handleSelectModel, selectRuntime: handleSelectRuntime } =
     useHomeModelState(selectedFamiliarId);
-  const { projects, createProject } = useProjects({ familiarId: selectedFamiliarId || null });
+  const {
+    projects: scopedProjects,
+    loading: projectsLoading,
+    error: projectsError,
+    loadedSuccessfully: projectsLoadedSuccessfully,
+    createProject,
+  } = useProjects({
+    enabled: Boolean(selectedFamiliarId),
+    familiarId: selectedFamiliarId || null,
+  });
+  const projects = useMemo(
+    () => scopedProjects.filter((project) => project.access !== undefined),
+    [scopedProjects],
+  );
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [thinkingEffort, setThinkingEffort] = useState<CommandThinkingEffort>(
     COMMAND_CONTROL_DEFAULTS.thinkingEffort,
@@ -225,10 +238,23 @@ export function HomeComposer({
     () => resolveHomeComposerProject(projects, selectedProjectId, NO_PROJECT_ID, recentProjectRoot),
     [projects, selectedProjectId, recentProjectRoot],
   );
-  // What the pickers display: the explicit pick when set (including
-  // "No project"), otherwise the resolved live default the send would use.
-  const displayProjectId =
-    selectedProjectId === NO_PROJECT_ID ? NO_PROJECT_ID : selectedProject?.id ?? null;
+  const selectedProjectRoot = selectedProject?.root ?? "";
+  const projectLaunchReady =
+    projectsLoadedSuccessfully &&
+    !projectsLoading &&
+    !projectsError &&
+    selectedProject?.access !== undefined &&
+    Boolean(selectedProjectRoot);
+  const projectLaunchMessage = projectsLoading
+    ? "Checking project access…"
+    : projectsError
+      ? "Projects are unavailable. Retry before starting chat."
+      : !projectsLoadedSuccessfully
+        ? "Checking project access…"
+        : projects.length === 0
+          ? "Add a project this familiar can access before starting chat."
+          : "Choose a project this familiar can access before starting chat.";
+  const displayProjectId = selectedProject?.id ?? null;
   const selectedRuntime = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
   );
@@ -257,7 +283,7 @@ export function HomeComposer({
   // then the first project) resolves in resolveHomeComposerProject so it can
   // upgrade as sessions land. Only clear a stale pick whose project vanished.
   useEffect(() => {
-    if (!selectedProjectId || selectedProjectId === NO_PROJECT_ID) return;
+    if (!selectedProjectId) return;
     if (projects.some((project) => project.id === selectedProjectId)) return;
     setSelectedProjectId("");
   }, [projects, selectedProjectId]);
@@ -266,7 +292,11 @@ export function HomeComposer({
   // directory-picker flow the context pill uses, so both entry points create
   // projects identically).
   const plusMenuProjects = useMemo(
-    () => sortProjectsAlphabetically(projects).map((p) => ({ id: p.id, name: p.name })),
+    () => sortProjectsAlphabetically(projects).map((p) => ({
+      id: p.id,
+      name: p.name,
+      access: p.access,
+    })),
     [projects],
   );
   const plusAddProject = useAddProjectFlow({
@@ -330,12 +360,28 @@ export function HomeComposer({
         onToast("No familiar selected — add one in Settings.");
         return;
       }
+      if (!projectLaunchReady) {
+        onToast(projectLaunchMessage);
+        return;
+      }
       setText("");
-      onStartChat(buildSkillPrompt(skill, args), selectedFamiliarId, selectedProject?.root ?? null, {
+      onStartChat(buildSkillPrompt(skill, args), selectedFamiliarId, selectedProjectRoot, {
         initialControls: { thinkingEffort, responseSpeed, ...(runtimeHost ? { runtimeHost } : {}) },
       });
     },
-    [selectedFamiliarId, selectedProject, thinkingEffort, responseSpeed, runtimeHost, onStartChat, onToast, text],
+    [
+      selectedFamiliarId,
+      selectedProject,
+      selectedProjectRoot,
+      projectLaunchReady,
+      projectLaunchMessage,
+      thinkingEffort,
+      responseSpeed,
+      runtimeHost,
+      onStartChat,
+      onToast,
+      text,
+    ],
   );
 
   // Drop a prompt template into the composer for editing — never a start.
@@ -541,6 +587,11 @@ export function HomeComposer({
       return;
     }
 
+    if (destination === "chat" && !projectLaunchReady) {
+      onToast(projectLaunchMessage);
+      return;
+    }
+
     // Host chip on Omnigent fleet → create session on the control plane (not Cave chat stream).
     if (runtimeHost && prompt) {
       const { isOmnigentHostOptionId } = await import("@/lib/omnigent/ids");
@@ -590,6 +641,10 @@ export function HomeComposer({
             requestSummonFamiliar();
             break;
           }
+          if (!projectLaunchReady) {
+            onToast(projectLaunchMessage);
+            break;
+          }
           // Hand the prompt to ChatView, which owns the streaming send. Doing
           // the send here and canceling on the session event aborts the
           // request server-side — the harness is killed mid-run and the
@@ -605,7 +660,7 @@ export function HomeComposer({
           clearDraft();
           clearAttachments();
           promptEnhance.reset();
-          onStartChat(prompt, selectedFamiliarId, selectedProject?.root ?? null, {
+          onStartChat(prompt, selectedFamiliarId, selectedProjectRoot, {
             initialControls: { thinkingEffort, responseSpeed, ...(runtimeHost ? { runtimeHost } : {}) },
             initialAttachments: outgoing,
           });
@@ -651,6 +706,9 @@ export function HomeComposer({
     activeFamiliarId,
     selectedFamiliarId,
     selectedProject,
+    selectedProjectRoot,
+    projectLaunchReady,
+    projectLaunchMessage,
     modelState,
     modelHarness,
     thinkingEffort,
@@ -937,7 +995,6 @@ export function HomeComposer({
                   projects: plusMenuProjects,
                   selectedId: displayProjectId,
                   onPick: setSelectedProjectId,
-                  noProjectId: NO_PROJECT_ID,
                   onStartNewProject: plusAddProject.beginAddProject,
                 }}
                 skills={{
@@ -966,12 +1023,16 @@ export function HomeComposer({
                             requestSummonFamiliar();
                             return;
                           }
+                          if (!projectLaunchReady) {
+                            onToast(projectLaunchMessage);
+                            return;
+                          }
                           setVoiceCallPending(true);
                           void Promise.resolve(
-                            onStartVoiceCall(selectedFamiliarId, selectedProject?.root ?? null),
+                            onStartVoiceCall(selectedFamiliarId, selectedProjectRoot),
                           ).finally(() => setVoiceCallPending(false));
                         },
-                        disabled: sending || voiceCallPending,
+                        disabled: sending || voiceCallPending || !projectLaunchReady,
                       }
                     : undefined
                 }
@@ -1014,7 +1075,11 @@ export function HomeComposer({
               <button
                 type="button"
                 onClick={() => void handleSubmit()}
-                disabled={(!text.trim() && attachments.length === 0) || sending}
+                disabled={
+                  (!text.trim() && attachments.length === 0) ||
+                  sending ||
+                  (destination === "chat" && !projectLaunchReady)
+                }
                 data-typing={text.trim() ? "true" : undefined}
                 className="cave-composer-send focus-ring transition-colors"
                 title={`Send message (${keys.enter})`}
@@ -1092,7 +1157,6 @@ export function HomeComposer({
               projects={projects}
               projectValue={displayProjectId}
               onProjectChange={setSelectedProjectId}
-              allowNoProject
               familiarId={selectedFamiliarId || null}
               createProject={createProject}
               runtime={selectedRuntime}

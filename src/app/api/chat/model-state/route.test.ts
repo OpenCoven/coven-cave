@@ -16,6 +16,11 @@ assert.match(route, /resolveChatModelState/);
 assert.match(route, /loadConversation\(sessionId\)/);
 assert.match(route, /saveConfig/);
 assert.match(route, /saveConversation/);
+assert.equal(
+  route.match(/sessionId && !isSafeConversationSessionId\(sessionId\)/g)?.length,
+  2,
+  "GET and PATCH must reject unsafe optional session ids before loading or locking",
+);
 assert.match(
   route,
   /conversation\.familiarId !== familiarId[\s\S]*jsonError\("not found", 404\)/,

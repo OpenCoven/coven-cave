@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { CaveProject } from "@/lib/cave-projects";
-import { NO_PROJECT_ID, chatProjectById } from "@/lib/chat-projects";
+import { chatProjectById } from "@/lib/chat-projects";
 import { archiveAction, sessionMenuSections, voiceAction, type SessionMenuItemId } from "@/lib/chat-session-menu-model";
 import { Icon } from "@/lib/icon";
 import { useShowThinking } from "@/lib/reasoning-visibility";
@@ -51,9 +51,7 @@ export function SessionOverflowMenu({
   const [showThinking, setShowThinking] = useShowThinking();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const activeProject =
-    projectId === NO_PROJECT_ID
-      ? null
-      : (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
+    (projectId ? chatProjectById(projectId, projects) : projects[0]) ?? null;
 
   const sections = sessionMenuSections({
     sessionId: sessionId ?? null,
@@ -152,7 +150,6 @@ export function SessionOverflowMenu({
         projects={projects}
         value={projectId}
         onChange={onProjectChange}
-        allowNoProject
         onAddProject={onAddProject}
         registerCurrentRoot={registerCurrentRoot}
         onRegisterCurrentRoot={onRegisterCurrentRoot}

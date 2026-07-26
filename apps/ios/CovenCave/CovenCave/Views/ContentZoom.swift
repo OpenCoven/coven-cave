@@ -93,8 +93,30 @@ struct ZoomableContentView: View {
             }
             .padding(.top, 8)
             .padding(.horizontal, 12)
+
+            if showsWidthHint {
+                VStack {
+                    Spacer()
+                    Label("Rotate for width", systemImage: "rectangle.landscape.rotate")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.16), in: Capsule())
+                        .padding(.bottom, 18)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
         }
         .statusBarHidden(true)
+    }
+
+    private var showsWidthHint: Bool {
+        switch target.content {
+        case .html, .code: return true
+        case .image: return false
+        }
     }
 
     private func copy(_ text: String) {

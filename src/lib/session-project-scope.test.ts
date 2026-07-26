@@ -83,5 +83,10 @@ test("chat surface consumers pass the active familiar scope", () => {
 
 test("chat/send still gates project access for the acting familiar", () => {
   const send = read("src/app/api/chat/send/route.ts");
-  assert.match(send, /assertProjectAccess\(\{ familiarId: body\.familiarId \}, chatProjectId, "chat"\)/, "chat/send enforces project access");
+  assert.match(send, /authorizeChatProjectLaunch/, "chat/send uses the shared project launch gate");
+  assert.match(
+    send,
+    /assertProjectAccess\(\{ familiarId: requestedFamiliarId \}, projectId, surface\)/,
+    "chat/send enforces the gate's selected familiar and permission surface",
+  );
 });

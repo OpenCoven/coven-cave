@@ -24,7 +24,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { scrubSidecarInternalEnv } from "./coven-bin.ts";
+import { scrubSidecarInternalEnv } from "./child-spawn-env.ts";
 import { caveHome } from "./coven-paths.ts";
 import { readEnvLocalAll, readEnvLocalValue } from "./env-file.ts";
 import { getLocalEncryptedSecret, hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";

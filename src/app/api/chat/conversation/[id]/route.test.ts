@@ -186,6 +186,37 @@ test("PUT strips client-forged assistant telemetry (usage/cost/tools/reasoning)"
   }
 });
 
+test("PUT preserves retry controls on user turns", async () => {
+  const res = await PUT(
+    writeReq({
+      familiarId: "milo",
+      harness: "claude",
+      turns: [{
+        role: "user",
+        text: "Review the branch",
+        reasoningEffort: "medium",
+        responseSpeed: "careful",
+        modelOverride: "anthropic/claude-opus-4-6",
+      }],
+    }),
+    paramsFor("sess-user-controls"),
+  );
+  const json = await res.json();
+  assert.equal(res.status, 200);
+  assert.deepEqual(
+    {
+      reasoningEffort: json.conversation.turns[0].reasoningEffort,
+      responseSpeed: json.conversation.turns[0].responseSpeed,
+      modelOverride: json.conversation.turns[0].modelOverride,
+    },
+    {
+      reasoningEffort: "medium",
+      responseSpeed: "careful",
+      modelOverride: "anthropic/claude-opus-4-6",
+    },
+  );
+});
+
 test("PUT rejects an over-long turn with 413", async () => {
   const res = await PUT(
     writeReq({

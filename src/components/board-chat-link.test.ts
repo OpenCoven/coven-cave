@@ -91,18 +91,18 @@ assert.match(
 );
 assert.match(
   route,
-  /normalizeProjectRoot\(rawProjectRoot\)|projectRoot = normalizeProjectRoot\(assignedProject\.root\)/,
+  /normalizeProjectRoot\(rawProjectRoot\)|assignedProjectRoot = normalizeProjectRoot\(assignedProject\.root\)/,
   "Board chat endpoint normalizes the resolved project root",
 );
 assert.match(
   route,
-  /projectById\(card\.projectId, await loadProjects\(\)\)[\s\S]{0,900}assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)/,
-  "Board chat endpoint should resolve assigned project roots server-side and authorize the familiar",
+  /projectById\(card\.projectId, projects\)[\s\S]*await authorizeChatProjectLaunch/,
+  "Board chat endpoint should resolve assigned project roots server-side and use the shared launch gate",
 );
 assert.match(
   route,
-  /assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)[\s\S]{0,700}if \(card\.sessionId\) \{[\s\S]{0,300}reused: true/,
-  "a project-linked session is reused only after the current familiar passes project authorization",
+  /await authorizeChatProjectLaunch[\s\S]*if \(card\.sessionId\) \{[\s\S]{0,300}reused: true/,
+  "a project-linked session is reused only after its root, registration, and current familiar access pass authorization",
 );
 assert.match(
   route,

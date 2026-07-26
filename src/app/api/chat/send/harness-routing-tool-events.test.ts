@@ -96,8 +96,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /hermesApiConfig\(harnessSpawnEnv\(body\.familiarId\) as \{/,
-  "Hermes API credentials must come through the familiar-scoped environment boundary",
+  /const hermesSpawnEnvironment = hermesDirect[\s\S]*?harnessSpawnEnv\(body\.familiarId\)[\s\S]*?const hermesApi = hermesSpawnEnvironment[\s\S]*?hermesApiConfig\(hermesSpawnEnvironment as \{/,
+  "Hermes API credentials and CLI fallback must reuse one familiar-scoped environment boundary",
 );
 
 assert.match(
