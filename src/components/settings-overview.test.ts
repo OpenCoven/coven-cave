@@ -58,8 +58,11 @@ test("the shell sources sections from settings-sections and renders the overview
   assert.match(shell, /section \? \(\s*<SettingsOverview section=\{section\} \/>/);
   // The shared search index is sourced from settings-sections.
   assert.doesNotMatch(shell, /const SETTINGS_INDEX: SettingsIndexEntry\[\]/);
-  // Each SettingsPage-based section opts into its overview header.
-  assert.match(profile, /section="profile"/, "profile page passes its section from the split panel");
+  // Each SettingsPage-based section opts into its overview header. Profile,
+  // Daemon, and About use their approved richer heroes instead.
+  assert.match(profile, /<header className="settings-profile__hero">/, "profile renders its control-sheet hero");
+  assert.match(profile, />SETTINGS · PROFILE</, "profile hero preserves settings wayfinding");
+  assert.doesNotMatch(profile, /<SettingsOverview/, "profile does not duplicate the generic overview");
   for (const id of ["general", "mobile", "appearance"]) {
     assert.match(shell, new RegExp(`section="${id}"`), `${id} page passes its section`);
   }

@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+  evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
   missingRunnerMessage,
@@ -63,6 +64,47 @@ try {
     "ready reports the exact executable name selected from the spawn PATH",
   );
 
+  const linuxBinDir = "/runtime-availability/bin";
+  const linuxClaudeDir = "/runtime-availability/claude-bin";
+  const linuxFiles = new Set([
+    path.posix.join(linuxBinDir, "coven"),
+    path.posix.join(linuxClaudeDir, "claude"),
+  ]);
+  const linuxStat = (candidate: string) => linuxFiles.has(candidate);
+  const claudeReady = evaluateCovenBackedRuntimeAvailability({
+    runner: "claude",
+    covenCommand: "coven",
+    env: { PATH: `${linuxBinDir}:${linuxClaudeDir}` },
+    platform: "linux",
+    statFile: linuxStat,
+  });
+  assert.equal(claudeReady.state, "ready", "Claude requires both Coven and Claude to resolve");
+  const claudeMissing = evaluateCovenBackedRuntimeAvailability({
+    runner: "claude",
+    covenCommand: "coven",
+    env: { PATH: linuxBinDir },
+    platform: "linux",
+    statFile: linuxStat,
+  });
+  assert.equal(claudeMissing.state, "missing", "missing inner Claude blocks the composite launch");
+  assert.equal(
+    claudeMissing.state === "missing" && claudeMissing.code,
+    RUNTIME_AVAILABILITY_ERROR_CODES.claude_missing,
+    "a missing inner Claude has a distinct structured code",
+  );
+  const covenMissing = evaluateCovenBackedRuntimeAvailability({
+    runner: "claude",
+    covenCommand: "coven",
+    env: { PATH: linuxClaudeDir },
+    platform: "linux",
+    statFile: linuxStat,
+  });
+  assert.equal(covenMissing.state, "missing", "missing outer Coven blocks the composite launch");
+  assert.equal(
+    covenMissing.state === "missing" && covenMissing.code,
+    RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing,
+    "a missing outer Coven has a distinct structured code",
+  );
   const absoluteReady = evaluateRuntimeAvailability({
     runner: "coven",
     command: executable,

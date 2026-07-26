@@ -20,6 +20,9 @@ import { harnessSpawnEnv } from "./harness-spawn-env.ts";
  */
 
 export type DirectRunnerId = "coven" | "codex" | "copilot" | "grok" | "hermes" | "opencode";
+/** A runtime launched by Coven rather than handed directly to Node's spawn. */
+export type CovenBackedRunnerId = "claude";
+export type RuntimeRunnerId = DirectRunnerId | CovenBackedRunnerId;
 
 export type RuntimeAvailabilityState =
   | "ready"
@@ -34,6 +37,10 @@ export const RUNTIME_AVAILABILITY_ERROR_CODES = {
   probe_failed: "runtime_probe_failed",
   unsupported_runtime: "runtime_unsupported",
   process_failed: "runtime_process_failed",
+  /** Coven-backed launches distinguish an absent outer launcher from an
+   * absent harness resolved by that launcher. */
+  coven_missing: "runtime_coven_missing",
+  claude_missing: "runtime_claude_missing",
 } as const;
 
 export type RuntimeAvailabilityErrorCode =
@@ -42,14 +49,14 @@ export type RuntimeAvailabilityErrorCode =
 export type RuntimeAvailability =
   | {
       state: "ready";
-      runner: DirectRunnerId;
+      runner: RuntimeRunnerId;
       /** Where the spawn command resolved. Diagnostic only — the spawn keeps
        * using the original command so resolution and launch cannot drift. */
       resolvedPath: string;
     }
   | {
       state: Exclude<RuntimeAvailabilityState, "ready">;
-      runner: DirectRunnerId;
+      runner: RuntimeRunnerId;
       code: RuntimeAvailabilityErrorCode;
       message: string;
       /** Present when a composite launch names the layer that failed. */
@@ -93,7 +100,7 @@ export type StatFileFn = (candidate: string) => boolean;
 export type ReadableFileFn = (candidate: string) => boolean;
 
 export type RuntimeAvailabilityProbe = {
-  runner: DirectRunnerId;
+  runner: RuntimeRunnerId;
   /** The exact executable that will be passed to `spawn()`. */
   command: string;
   /** The exact environment object the spawn will receive. */
@@ -133,13 +140,26 @@ export type ResolveHermesLaunchOptions = {
   statFile?: StatFileFn;
 };
 
+/** The exact two executable boundaries of `coven run claude`. */
+export type CovenBackedRuntimeAvailabilityProbe = {
+  runner: CovenBackedRunnerId;
+  covenCommand: string;
+  env: Record<string, string | undefined>;
+  requiredCovenFiles?: string[];
+  unresolvedCovenWindowsShim?: boolean;
+  platform?: NodeJS.Platform;
+  statFile?: StatFileFn;
+};
+
 // The missing-runner remediation copy is shared with the post-spawn ENOENT
 // race handler in the send route so the two failure paths can never drift.
 // The Coven line is additionally pinned by the chat client, which shows its
 // "Open Setup" recovery when the message matches /Coven CLI not found on
 // PATH/i (src/components/chat-view.test.ts).
-const MISSING_RUNNER_MESSAGES: Record<DirectRunnerId, string> = {
+const MISSING_RUNNER_MESSAGES: Record<RuntimeRunnerId, string> = {
   coven: "Coven CLI not found on PATH. Open Setup to install it, then try again.",
+  claude:
+    "Claude Code CLI not found on PATH. Install it with `npm install -g @anthropic-ai/claude-code`, then run `claude doctor`.",
   codex:
     "Codex CLI not found on PATH. Install it with `npm install -g @openai/codex`, then try again.",
   copilot:
@@ -159,8 +179,9 @@ const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
   opencode: "OpenCode CLI failed to start. Check its installation and try again.",
 };
 
-const RUNNER_LABELS: Record<DirectRunnerId, string> = {
+const RUNNER_LABELS: Record<RuntimeRunnerId, string> = {
   coven: "Coven CLI",
+  claude: "Claude Code CLI",
   codex: "Codex CLI",
   copilot: "copilot CLI",
   grok: "Grok Build CLI",
@@ -168,7 +189,7 @@ const RUNNER_LABELS: Record<DirectRunnerId, string> = {
   opencode: "OpenCode CLI",
 };
 
-export function missingRunnerMessage(runner: DirectRunnerId): string {
+export function missingRunnerMessage(runner: RuntimeRunnerId): string {
   return MISSING_RUNNER_MESSAGES[runner];
 }
 
@@ -359,14 +380,14 @@ function resolveCommand(
 }
 
 function notReady(
-  runner: DirectRunnerId,
+  runner: RuntimeRunnerId,
   state: Exclude<RuntimeAvailabilityState, "ready">,
   message: string,
 ): RuntimeAvailability {
   return { state, runner, code: RUNTIME_AVAILABILITY_ERROR_CODES[state], message };
 }
 
-function unlaunchableRunnerMessage(runner: DirectRunnerId): string {
+function unlaunchableRunnerMessage(runner: RuntimeRunnerId): string {
   return `${RUNNER_LABELS[runner]} was found but is not executable. Restore executable permissions or reinstall it, then try again.`;
 }
 
@@ -491,4 +512,58 @@ export function resolveHermesLaunch(
   return availability.state === "ready"
     ? { ...availability, command: availability.resolvedPath, env, cwd }
     : availability;
+}
+
+function remapCovenBackedFailure(
+  failure: Exclude<RuntimeAvailability, { state: "ready" }>,
+  runner: CovenBackedRunnerId,
+  missingCode: RuntimeAvailabilityErrorCode,
+): RuntimeAvailability {
+  return {
+    ...failure,
+    runner,
+    ...(failure.state === "missing" ? { code: missingCode } : {}),
+  };
+}
+
+/**
+ * Verify both the outer Coven command and the Claude command that Coven will
+ * resolve in the identical child environment. The check is intentionally
+ * passive: no shell lookup or capability process can hide a missing Claude.
+ */
+export function evaluateCovenBackedRuntimeAvailability(
+  probe: CovenBackedRuntimeAvailabilityProbe,
+): RuntimeAvailability {
+  const outer = evaluateRuntimeAvailability({
+    runner: "coven",
+    command: probe.covenCommand,
+    env: probe.env,
+    requiredFiles: probe.requiredCovenFiles,
+    unresolvedWindowsShim: probe.unresolvedCovenWindowsShim,
+    platform: probe.platform,
+    statFile: probe.statFile,
+  });
+  if (outer.state !== "ready") {
+    return remapCovenBackedFailure(
+      outer,
+      probe.runner,
+      RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing,
+    );
+  }
+
+  const inner = evaluateRuntimeAvailability({
+    runner: probe.runner,
+    command: probe.runner,
+    env: probe.env,
+    platform: probe.platform,
+    statFile: probe.statFile,
+  });
+  if (inner.state !== "ready") {
+    return remapCovenBackedFailure(
+      inner,
+      probe.runner,
+      RUNTIME_AVAILABILITY_ERROR_CODES.claude_missing,
+    );
+  }
+  return inner;
 }

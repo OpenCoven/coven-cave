@@ -5,7 +5,7 @@ const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   route,
-  /const env = harnessSpawnEnv\(body\.familiarId\);[\s\S]*?runner: "coven",[\s\S]*?launch: covenLaunchCommand\(\),[\s\S]*?const codexLaunchPlan =[\s\S]*?command: localRuntimePlan\.command,[\s\S]*?fixedArgs: localRuntimePlan\.fixedArgs,[\s\S]*?env: localRuntimePlan\.env/,
+  /const env = harnessSpawnEnv\(body\.familiarId\);[\s\S]*?const launch = covenLaunchCommand\(\);[\s\S]*?runner: "coven",[\s\S]*?launch,[\s\S]*?const codexLaunchPlan =[\s\S]*?command: localRuntimePlan\.command,[\s\S]*?fixedArgs: localRuntimePlan\.fixedArgs,[\s\S]*?env: localRuntimePlan\.env/,
   "Codex preflight owns the exact resolved Coven plan and familiar-scoped environment",
 );
 assert.match(
