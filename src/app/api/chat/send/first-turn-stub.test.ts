@@ -64,8 +64,8 @@ assert.match(
 
 assert.equal(
   (chatRoute.match(/const hadFirstTurnStub = existing\s*\? stripConversationStubTurn\(existing, pendingUserTurnId\)\s*: false;/g) ?? []).length,
-  2,
-  "both save paths must strip the stub turn so the authoritative user turn re-lands cleanly",
+  3,
+  "all save paths must strip the stub turn so the authoritative user turn re-lands cleanly",
 );
 
 assert.equal(

@@ -36,6 +36,37 @@ const chatView = await readFile(
   new URL("../../../../components/chat-view.tsx", import.meta.url),
   "utf8",
 );
+
+assert.match(
+  chatRoute,
+  /dispatchOpenClawGatewayTurn\([\s\S]*?sessionKey: openClawSessionKey\(conversationId\),[\s\S]*?agentId,[\s\S]*?message: args\.harnessPrompt/,
+  "OpenClaw uses the Gateway-owned dispatcher with the canonical session key and agent id before selecting the CLI fallback",
+);
+assert.match(
+  chatRoute,
+  /openClawGatewayPairedDeviceAuthStatus\(\)[\s\S]*?gatewayAuth\.available[\s\S]*?dispatchOpenClawGatewayTurn/,
+  "the route must retain the CLI fallback until an OS-backed paired-device credential store can activate Gateway dispatch",
+);
+assert.match(
+  chatRoute,
+  /gatewayDispatch\.kind === "accepted"[\s\S]*?return;[\s\S]*?pushProgress\("openclaw-start", "Starting OpenClaw bridge"/,
+  "an accepted Gateway turn exits before the CLI branch, preventing duplicate transport ownership",
+);
+assert.match(
+  chatRoute,
+  /gatewayDispatch\.kind === "indeterminate"[\s\S]*?openclaw_gateway_indeterminate[\s\S]*?return;/,
+  "an ambiguous Gateway acknowledgement produces a terminal error instead of a duplicate CLI turn",
+);
+assert.match(
+  chatRoute,
+  /if \(event\.replace\) \{[\s\S]*?gatewayAssistantText = event\.text;[\s\S]*?kind: "assistant_replace"/,
+  "a published Gateway replacement delta corrects both the live stream and persisted transcript",
+);
+assert.match(
+  chatRoute,
+  /event\.kind === "final" && event\.text[\s\S]*?gatewayAssistantText !== event\.text[\s\S]*?kind: "assistant_replace"/,
+  "the terminal Gateway message reconciles divergent streamed text for connected clients",
+);
 // ── Tool-event fidelity (CHAT-D4-03 + CHAT-D4-04) ──────────────────────────
 // Source pins: the route must route BOTH tool-event sources through the
 // shared ToolCallTracker — hook lines and stream-json envelope blocks — and
