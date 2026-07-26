@@ -1,8 +1,9 @@
 # OpenClaw Gateway-dispatch implementation plan
 
 **GitHub:** #3865 (implementation issue), #3847 (parent compatibility work),
-and #3852 (the retained safe CLI/plain-chat stop point). This document is a
-planning contract only; it does not enable Gateway dispatch.
+and #3852 (the retained safe CLI/plain-chat stop point). This document records
+both the shipped chat-only v4 boundary and the remaining plan for full tool
+lifecycle support.
 
 ## Decision
 
@@ -16,14 +17,13 @@ the accepted `runId`, subscribes to session events, and accepts only events
 belonging to that exact run. The current CLI bridge stays the authoritative
 fallback for every other runtime.
 
-## Supported contract
+## Target contract after a tool schema is published
 
-The first supported profile is OpenClaw Gateway protocol v4 using the published
-`@openclaw/gateway-client` and `@openclaw/gateway-protocol` packages pinned in
-Cave's lockfile. Cave requests `operator.read` and `operator.write`, advertises
-only `tool-events` and `session-scoped-events`, validates the negotiated
-role/scopes, and requires the documented `chat.send`, `sessions.subscribe`,
-`sessions.messages.subscribe`, `chat`, and `session.tool` surfaces.
+Full tool activity requires a published, versioned `session.tool` event name,
+payload validator, and lifecycle fixtures. Once those exist, Cave must request
+only the documented capabilities, validate the negotiated role/scopes and
+methods, and bind tool events to the Gateway-accepted run ID. Until then, no
+capability string or observed frame is a substitute for a payload contract.
 
 The direct dispatcher supplies an idempotency key, receives the accepted run
 identifier, then binds all live state to `(sessionKey, agentId, runId)`. A tool
@@ -43,15 +43,17 @@ reason to guess a field shape.
    authenticate with the reference Gateway client and validate `hello-ok` plus
    negotiated policy limits. Never persist credentials in plaintext or include
    them in logs, caches, SSE, or diagnostics.
-3. Establish `sessions.subscribe` and the selected canonical-session
-   subscription before dispatching the turn.
+3. Establish the selected canonical-session subscription before dispatching
+   the turn. Add any additional subscription only when its published schema
+   and contract fixture are available.
 4. Send `chat.send` with the Cave message, canonical session key, agent ID,
    and an idempotency key derived from the Cave request ID. Record the
    Gateway-accepted `runId`.
-5. Project only matching `chat` and `session.tool` events to Cave SSE. Maintain
-   a per-run high-water sequence, reject replay, reload history on a forward
-   gap, and never treat an unknown event as liveness.
-6. On terminal chat state, persist the response and reconciled tool cards. On
+5. Project only matching, schema-validated events to Cave SSE. Maintain a
+   per-run high-water sequence, reject replay, and fail the owned turn on a
+   forward gap until a published history-reconciliation contract is available.
+6. On terminal chat state, persist the response. After a published tool schema
+   is supported, also persist reconciled tool cards. On
    cancellation, first persist a per-run `cancelled` terminal fence, then abort
    the exact `runId`, close the stream, and settle only its unfinished cards.
    Every event, reconciliation, and persistence path checks that fence: a
@@ -62,10 +64,10 @@ reason to guess a field shape.
    fallback only after acceptance is disproven; a lost acknowledgement is not
    permission to duplicate the turn.
 8. After acceptance, use the official keepalive/liveness policy. On reconnect,
-   restore both subscriptions, reconcile authoritative history and the active
-   run, then resume only validated frames for the accepted run. If recovery
-   fails, terminate and settle the Gateway-owned turn; never replace it with a
-   CLI invocation.
+   restore the validated session subscription and resume only validated frames
+   for the accepted run. Add history reconciliation only alongside its
+   published schema; if recovery fails, terminate and settle the Gateway-owned
+   turn, never replacing it with a CLI invocation.
 
 ## Compatibility and upgrade policy
 
@@ -109,11 +111,11 @@ from an observed Gateway frame.
 ## Verification
 
 Add a route-level Gateway fixture that performs the real authenticated
-handshake, subscriptions, `chat.send` acknowledgement, and emitted chat/tool
-lifecycle. It must prove that start/update/result cards reach SSE and
-persistence for the accepted run, and that otherwise-valid concurrent-session
-frames are rejected. Exercise cancellation, reconnect/history reconciliation,
-and every fallback boundary above.
+handshake, subscription, `chat.send` acknowledgement, and emitted chat
+lifecycle. It must prove that matching chat frames reach SSE and persistence
+and that otherwise-valid concurrent-session frames are rejected. Once a
+published tool validator exists, extend it with start/update/result cards,
+history reconciliation, and every fallback boundary above.
 
 ## Delivery slices
 
