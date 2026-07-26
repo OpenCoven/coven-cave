@@ -1,5 +1,9 @@
 import { GatewayClient } from "@openclaw/gateway-client";
-import { ChatEventSchema, HelloOkSchema } from "@openclaw/gateway-protocol";
+import {
+  ChatEventSchema,
+  GATEWAY_SERVER_CAPS,
+  HelloOkSchema,
+} from "@openclaw/gateway-protocol";
 import { PROTOCOL_VERSION } from "@openclaw/gateway-protocol/version";
 import { Value } from "typebox/value";
 
@@ -13,6 +17,7 @@ const GATEWAY_DISPATCH_ENV = "OPENCLAW_GATEWAY_DISPATCH";
 const GATEWAY_URL_ENV = "OPENCLAW_GATEWAY_URL";
 const STARTUP_TIMEOUT_MS = 3_000;
 const REQUIRED_GATEWAY_METHODS = ["chat.send", "chat.abort", "sessions.messages.subscribe"];
+const REQUIRED_GATEWAY_CAPABILITIES = [GATEWAY_SERVER_CAPS.CHAT_SEND_ROUTING_CONTRACT];
 
 export type OpenClawGatewayChatEvent =
   | { kind: "status"; phase: string }
@@ -89,6 +94,10 @@ function supportedHello(hello: GatewayHello): string | null {
   const methods = new Set(hello.features.methods);
   if (REQUIRED_GATEWAY_METHODS.some((method) => !methods.has(method))) {
     return "Gateway does not advertise the required chat.send, chat.abort, and sessions.messages.subscribe methods";
+  }
+  const capabilities = new Set(hello.features.capabilities ?? []);
+  if (REQUIRED_GATEWAY_CAPABILITIES.some((capability) => !capabilities.has(capability))) {
+    return "Gateway does not advertise the required chat-send-routing-contract capability";
   }
   if (!hello.features.events.includes("chat")) return "Gateway does not advertise the versioned chat event";
   return null;

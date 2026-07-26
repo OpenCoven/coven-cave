@@ -145,7 +145,11 @@ const dispatch = await dispatchOpenClawGatewayTurn({
             type: "hello-ok",
             protocol: 4,
             server: { version: "2026.7.2-beta.4", connId: "test-connection" },
-            features: { methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"], events: ["chat"] },
+            features: {
+              methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"],
+              events: ["chat"],
+              capabilities: ["chat-send-routing-contract"],
+            },
             snapshot: {
               presence: [],
               health: {},
@@ -209,6 +213,38 @@ assert.deepEqual(
 assert.ok(
   emitted.some((event) => event.kind === "final" && !("text" in event)),
   "an opaque final message never becomes assistant-visible text",
+);
+
+const missingRoutingCapability = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "capability check",
+  idempotencyKey: "cave-request-missing-routing-capability",
+  env: { OPENCLAW_GATEWAY_DISPATCH: "1", OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789" },
+  onEvent: () => assert.fail("an incompatible Gateway must not emit events"),
+  clientFactory: (options) => ({
+    start() {
+      queueMicrotask(() => options.onHelloOk?.({
+        ...helloOk(),
+        features: {
+          ...helloOk().features,
+          capabilities: [],
+        },
+      }));
+    },
+    stop() {},
+    async request() {
+      assert.fail("a Gateway without the routing capability must not dispatch");
+    },
+  }),
+});
+assert.deepEqual(
+  missingRoutingCapability,
+  {
+    kind: "unavailable",
+    reason: "Gateway does not advertise the required chat-send-routing-contract capability",
+  },
+  "agent and session routing must not be trusted without the published routing capability",
 );
 
 const gappedEvents = [];
@@ -294,7 +330,11 @@ function helloOk() {
     type: "hello-ok",
     protocol: 4,
     server: { version: "2026.7.2-beta.4", connId: "reconnect-connection" },
-    features: { methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"], events: ["chat"] },
+    features: {
+      methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"],
+      events: ["chat"],
+      capabilities: ["chat-send-routing-contract"],
+    },
     snapshot: {
       presence: [],
       health: {},
