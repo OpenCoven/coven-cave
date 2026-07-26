@@ -124,6 +124,9 @@ assert.equal(stale.kind === "compatible" && stale.stale, true, "expired cached p
 const first = redactedEventFingerprint({ type: "assistant", message: { content: [{ type: "tool_use", input: { token: "secret", path: "C:/private" } }] } });
 const second = redactedEventFingerprint({ type: "assistant", message: { content: [{ type: "tool_use", input: { token: "different", path: "/other" } }] } });
 assert.equal(first, second, "fingerprints capture only frame shape, never payload values");
+const dynamicKeyFirst = redactedEventFingerprint({ type: "assistant", message: { content: [{ type: "tool_use", input: { "C:/private/client-secret.txt": "value" } }] } });
+const dynamicKeySecond = redactedEventFingerprint({ type: "assistant", message: { content: [{ type: "tool_use", input: { "C:/other/not-secret.txt": "value" } }] } });
+assert.equal(dynamicKeyFirst, dynamicKeySecond, "fingerprints must not distinguish payload values encoded as dynamic object keys");
 assert.match(first, /^[a-f0-9]{16}$/);
 
 console.log("runtime-compatibility: ok");

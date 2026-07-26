@@ -256,7 +256,12 @@ export function redactedEventFingerprint(value: unknown): string {
     if (depth >= 2) return Array.isArray(input) ? "array" : typeof input;
     if (Array.isArray(input)) return [input.length ? shape(input[0], depth + 1) : "empty"];
     if (!input || typeof input !== "object") return typeof input;
-    return Object.fromEntries(Object.entries(input as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, shape(child, depth + 1)]));
+    // Object keys are payload too: a tool can legally use a path, token, or
+    // prompt fragment as a dynamic key. Keep only the value-shape multiset so
+    // the diagnostic hash cannot be used to distinguish those secret keys.
+    return Object.values(input as Record<string, unknown>)
+      .map((child) => shape(child, depth + 1))
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   };
   return createHash("sha256").update(JSON.stringify(shape(value))).digest("hex").slice(0, 16);
 }
