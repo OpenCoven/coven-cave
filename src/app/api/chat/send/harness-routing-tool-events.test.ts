@@ -121,6 +121,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /const toolMatch = trimmed\.match\(TOOL_HOOK_RE\);[\s\S]*?if \(!\(binding\.harness === "claude" && toolMatch\)\) \{[\s\S]*?recordStdoutErrorTail\(cleaned\);/,
+  "Claude hook payloads must not enter the generic empty-response diagnostic tail",
+);
+
+assert.match(
+  chatRoute,
   /resetToolTrackerForRetry\(\);/,
   "The resume retry should reset tool tracking alongside the other per-attempt state",
 );
