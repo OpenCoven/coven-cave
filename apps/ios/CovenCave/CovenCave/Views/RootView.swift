@@ -164,6 +164,8 @@ struct MainShellView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var presentedOverlay: MainOverlay?
     @State private var projectToOpen: ProjectInfo?
+    @State private var terminal = PtyTerminal()
+    @State private var terminalCwd: String?
 
     var body: some View {
         ZStack {
@@ -240,7 +242,7 @@ struct MainShellView: View {
         case .tasks:
             TasksView()
         case .terminal:
-            TerminalView()
+            TerminalView(terminal: terminal, cwd: $terminalCwd)
         case .settings:
             SettingsView()
         }

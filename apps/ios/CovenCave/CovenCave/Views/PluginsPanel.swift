@@ -4,10 +4,17 @@ private func isDesktopManaged(_ plugin: MarketplacePlugin) -> Bool {
     plugin.kind == "craft" || plugin.kind == "knowledge-pack"
 }
 
-enum MarketplacePluginCatalogLoadOutcome {
+enum MarketplacePluginCatalogLoadOutcome: Equatable {
     case applied
     case superseded
     case failed
+}
+
+enum MarketplacePluginMutationDisposition: Equatable {
+    case confirmed
+    case mutationFailed
+    case refreshFailed
+    case unconfirmed
 }
 
 enum MarketplacePluginMutationReconciliation {
@@ -17,6 +24,24 @@ enum MarketplacePluginMutationReconciliation {
         expectedInstalled: Bool
     ) -> Bool {
         outcome == .applied && installed == expectedInstalled
+    }
+
+    static func disposition(
+        mutationFailed: Bool,
+        catalogOutcome: MarketplacePluginCatalogLoadOutcome,
+        installed: Bool?,
+        expectedInstalled: Bool
+    ) -> MarketplacePluginMutationDisposition {
+        if isConfirmed(
+            catalogOutcome,
+            installed: installed,
+            expectedInstalled: expectedInstalled
+        ) {
+            return .confirmed
+        }
+        if catalogOutcome == .failed { return .refreshFailed }
+        if mutationFailed { return .mutationFailed }
+        return .unconfirmed
     }
 }
 
@@ -281,38 +306,47 @@ struct PluginsPanel: View {
         let wasInstalled = plugin.installed
         mutating.insert(id)
         defer { mutating.remove(id) }
+        var mutationFailure: Error?
         do {
             if wasInstalled {
                 try await client.uninstallMarketplacePlugin(id: id)
             } else {
                 try await client.installMarketplacePlugin(id: id)
             }
-            // The mutation succeeded. Reflect it immediately, then require a
-            // catalog reconciliation before claiming the final state.
-            if let refreshedIndex = plugins.firstIndex(where: { $0.id == id }) {
-                plugins[refreshedIndex].installed = !wasInstalled
-                if selected?.id == id { selected = plugins[refreshedIndex] }
-            }
-            let outcome = await loadPlugins()
-            guard MarketplacePluginMutationReconciliation.isConfirmed(
-                outcome,
-                installed: currentPlugin(id)?.installed,
-                expectedInstalled: !wasInstalled
-            ) else {
-                app.showToast(
-                    "Plugin changed, but its status couldn’t refresh",
-                    systemImage: "arrow.clockwise",
-                    style: .warning)
-                return
-            }
+        } catch {
+            mutationFailure = error
+        }
+
+        // A dropped response is ambiguous: the desktop may have committed the
+        // write. Re-read authoritative catalog state after both success and
+        // failure, and never infer success from the transport result alone.
+        let catalogOutcome = await loadPlugins()
+        let disposition = MarketplacePluginMutationReconciliation.disposition(
+            mutationFailed: mutationFailure != nil,
+            catalogOutcome: catalogOutcome,
+            installed: currentPlugin(id)?.installed,
+            expectedInstalled: !wasInstalled
+        )
+        switch disposition {
+        case .confirmed:
             app.showToast(
                 wasInstalled ? "Plugin removed" : "Plugin added",
                 systemImage: wasInstalled ? "minus.circle" : "checkmark.circle.fill",
                 style: .info)
-        } catch {
-            app.showToast(error.localizedDescription,
+        case .mutationFailed:
+            app.showToast(mutationFailure?.localizedDescription ?? "Plugin change failed",
                           systemImage: "exclamationmark.triangle.fill",
                           style: .error)
+        case .refreshFailed:
+            app.showToast(
+                "Couldn’t confirm the plugin status",
+                systemImage: "arrow.clockwise",
+                style: .warning)
+        case .unconfirmed:
+            app.showToast(
+                "Plugin status didn’t match the requested change",
+                systemImage: "exclamationmark.triangle.fill",
+                style: .warning)
         }
     }
 }

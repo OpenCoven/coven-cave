@@ -221,7 +221,7 @@ struct ChatView: View {
         .sheet(isPresented: $showModelPicker) {
             ModelPickerSheet(options: modelPickerOptions, current: modelPickerCurrent, onSelect: { id in
                 guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return }
-                Task { await applyModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId)) }
+                _ = selectModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId))
             }, onSwitchFamiliar: { showFamiliarPicker = true })
         }
         .sheet(isPresented: $showFamiliarPicker) {
@@ -265,7 +265,10 @@ struct ChatView: View {
                    !last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Haptics.success()
                 }
-                Task { await app.reconcileCardLinks(for: thread) }
+                Task {
+                    await app.reconcileCardLinks(for: thread)
+                    _ = await loadSessionModelState()
+                }
             }
         }
         // Restore an unsent draft for this thread (typed earlier, then the view
@@ -408,6 +411,17 @@ struct ChatView: View {
     private var currentModelRequestTarget: ChatModelRequestTarget? {
         guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return nil }
         return ChatModelRequestTarget(familiarId: familiarId, sessionId: modelSessionId(familiarId))
+    }
+
+    private var turnModelBinding: ChatModelTurnBinding {
+        guard !thread.isGroup, let familiarId = thread.familiarIds.first else {
+            return ChatModelTurnBinding(modelOverride: nil, scope: nil)
+        }
+        return ChatModelTurnBinding.resolve(
+            pendingModel: thread.pendingModelOverride,
+            confirmedState: sessionModelState,
+            hasSession: modelSessionId(familiarId) != nil
+        )
     }
 
     private var thinkingEffort: ChatThinkingEffort {
@@ -773,6 +787,14 @@ struct ChatView: View {
                 .compactMap { $0 }
                 .joined(separator: " · ")
         }.flatMap { $0.isEmpty ? nil : $0 } ?? "Ask your familiar to choose"
+        let boardHint = app.tasksError != nil
+            ? "Board unavailable"
+            : app.tasksLoaded
+                ? "\(running) running · \(blocked) blocked"
+                : "Load the live board"
+        let priorityHint = app.tasksError != nil && !app.tasks.isEmpty
+            ? "Cached · \(nextHint)"
+            : nextHint
 
         return [
             EmptyChatSuggestion(
@@ -784,11 +806,11 @@ struct ChatView: View {
             EmptyChatSuggestion(
                 icon: "checkmark.square",
                 label: "What's on the board?",
-                hint: app.tasksLoaded ? "\(running) running · \(blocked) blocked" : "Load the live board"),
+                hint: boardHint),
             EmptyChatSuggestion(
                 icon: "scope",
                 label: nextLabel,
-                hint: nextHint),
+                hint: priorityHint),
         ]
     }
 
@@ -1116,6 +1138,7 @@ struct ChatView: View {
             pendingImages = []
             replyingTo = nil
             Haptics.tap()
+            let modelBinding = turnModelBinding
             // Offline compose: park the message on the thread instead of
             // dead-ending in a transport error — it sends automatically on
             // the next reconnect (AppModel.flushQueuedMessages).
@@ -1123,7 +1146,8 @@ struct ChatView: View {
                 thread.enqueue(outgoing, attachments: attachments,
                                reasoningEffort: thinkingEffort,
                                responseSpeed: responseSpeed,
-                               modelOverride: thread.pendingModelOverride)
+                               modelOverride: modelBinding.modelOverride,
+                               modelOverrideScope: modelBinding.scope)
                 app.touch(thread)
                 app.showToast("Queued — sends when reconnected", systemImage: "clock")
                 return
@@ -1131,7 +1155,8 @@ struct ChatView: View {
             thread.send(outgoing, attachments: attachments,
                         reasoningEffort: thinkingEffort,
                         responseSpeed: responseSpeed,
-                        modelOverride: thread.pendingModelOverride,
+                        modelOverride: modelBinding.modelOverride,
+                        modelOverrideScope: modelBinding.scope,
                         client: client) { app.touch(thread) }
         }
     }
@@ -1139,17 +1164,20 @@ struct ChatView: View {
     /// Tap a follow-up suggestion chip → send it as the next message.
     private func sendSuggestion(_ text: String) {
         guard let client = app.client else { return }
+        let modelBinding = turnModelBinding
         if app.connectionState != .connected {
             thread.enqueue(text, reasoningEffort: thinkingEffort,
                            responseSpeed: responseSpeed,
-                           modelOverride: thread.pendingModelOverride)
+                           modelOverride: modelBinding.modelOverride,
+                           modelOverrideScope: modelBinding.scope)
             app.touch(thread)
             app.showToast("Queued — sends when reconnected", systemImage: "clock")
             return
         }
         thread.send(text, reasoningEffort: thinkingEffort,
                     responseSpeed: responseSpeed,
-                    modelOverride: thread.pendingModelOverride,
+                    modelOverride: modelBinding.modelOverride,
+                    modelOverrideScope: modelBinding.scope,
                     client: client) { app.touch(thread) }
     }
 
@@ -1277,6 +1305,14 @@ struct ChatView: View {
             guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget) else { return }
             sessionModelState = resp.state
             modelPickerOptions = resp.options ?? []
+            if ChatModelTurnBinding.shouldClearPending(
+                thread.pendingModelOverride,
+                confirmedState: resp.state,
+                hasSession: sessionId != nil
+            ) {
+                thread.pendingModelOverride = nil
+                app.touch(thread)
+            }
             modelPickerCurrent = thread.pendingModelOverride ?? resp.state.effectiveModel
         } catch {
             guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget) else { return }
@@ -1309,60 +1345,79 @@ struct ChatView: View {
             app.touch(thread)
             return
         }
-        await applyModel(modelId, familiarId: familiarId, sessionId: sessionId)
+        if let task = selectModel(modelId, familiarId: familiarId, sessionId: sessionId) {
+            await task.value
+        }
     }
 
-    /// A pre-send choice rides on the first chat request as session intent.
-    /// Existing sessions can be patched directly. Neither path mutates the
-    /// familiar's default.
-    private func applyModel(_ model: String, familiarId: String, sessionId: String?) async {
+    /// Stage model intent synchronously so a sheet dismissal followed by an
+    /// immediate Send cannot outrun the session PATCH. Existing-session writes
+    /// are serialized in tap order; the pending intent also rides that next
+    /// turn as a one-message override until GET confirms durable session state.
+    @discardableResult
+    private func selectModel(
+        _ model: String,
+        familiarId: String,
+        sessionId: String?
+    ) -> Task<Void, Never>? {
         let target = ChatModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+        modelRequests.beginIntent(for: target)
+        thread.pendingModelOverride = model
+        modelPickerCurrent = model
+        app.touch(thread)
+        Haptics.tap()
+
         guard sessionId != nil else {
-            modelRequests.beginIntent(for: target)
-            thread.pendingModelOverride = model
-            modelPickerCurrent = model
-            app.touch(thread)
             app.showToast("Model set for this chat", systemImage: "cpu", style: .info)
-            Haptics.tap()
-            return
+            return nil
+        }
+        guard let client = app.client else {
+            app.showToast("Model queued for this chat", systemImage: "cpu", style: .warning)
+            return nil
         }
         let mutation = modelRequests.beginMutation(for: target)
-        guard let client = app.client else {
-            if let reconciliationTarget = modelRequests.finishMutation(mutation) {
-                _ = await loadSessionModelState(reconciling: reconciliationTarget)
-            }
-            return
-        }
-        var mutationError: Error?
-        let queuedMutation = modelMutationQueue.enqueue {
+        return modelMutationQueue.enqueue {
+            var mutationFailed = false
             do {
                 _ = try await client.setChatModel(
                     familiarId: familiarId, sessionId: sessionId, model: model, scope: "session")
             } catch {
-                mutationError = error
+                mutationFailed = true
             }
+            await finishModelMutation(
+                mutation,
+                model: model,
+                mutationFailed: mutationFailed
+            )
         }
-        await queuedMutation.value
+    }
+
+    private func finishModelMutation(
+        _ mutation: ChatModelRequest,
+        model: String,
+        mutationFailed: Bool
+    ) async {
         guard let reconciliationTarget = modelRequests.finishMutation(mutation) else { return }
         let reconciliation = await loadSessionModelState(reconciling: reconciliationTarget)
         switch reconciliation.outcome.messageDisposition {
         case .none:
             return
         case .failure:
-            thread.appendSystem("Couldn't switch the model.", isError: true)
+            thread.appendSystem("Couldn't confirm the model change.", isError: true)
             app.touch(thread)
             return
         case .success:
             break
         }
-        if mutationError != nil {
-            thread.appendSystem("Couldn't switch the model.", isError: true)
-            app.touch(thread)
-            return
-        }
         guard let finalState = reconciliation.response,
+              finalState.state.source == "session",
               finalState.state.effectiveModel == model else {
-            thread.appendSystem("Couldn't confirm the model change.", isError: true)
+            thread.appendSystem(
+                mutationFailed
+                    ? "Couldn't switch the model."
+                    : "Couldn't confirm the model change.",
+                isError: true
+            )
             app.touch(thread)
             return
         }
@@ -1397,7 +1452,11 @@ struct ChatView: View {
             guard outcome == .applied else { return (outcome, nil) }
             sessionModelState = response.state
             modelPickerOptions = response.options ?? []
-            if sessionId != nil {
+            if ChatModelTurnBinding.shouldClearPending(
+                thread.pendingModelOverride,
+                confirmedState: response.state,
+                hasSession: sessionId != nil
+            ) {
                 thread.pendingModelOverride = nil
                 app.touch(thread)
             }
@@ -1407,8 +1466,6 @@ struct ChatView: View {
             let outcome = modelRequests.reconciliationOutcome(
                 for: request, currentTarget: currentModelRequestTarget, failed: true)
             guard outcome == .failed else { return (outcome, nil) }
-            sessionModelState = nil
-            modelPickerOptions = []
             return (.failed, nil)
         }
     }
@@ -1427,9 +1484,11 @@ struct ChatView: View {
             return
         }
         guard let client = app.client else { return }
+        let modelBinding = turnModelBinding
         thread.send(trimmed, reasoningEffort: thinkingEffort,
                     responseSpeed: responseSpeed,
-                    modelOverride: thread.pendingModelOverride,
+                    modelOverride: modelBinding.modelOverride,
+                    modelOverrideScope: modelBinding.scope,
                     client: client) { app.touch(thread) }
     }
 
@@ -1543,9 +1602,15 @@ struct ChatView: View {
         let destination = app.directThread(for: familiar.id)
         let prompt = forwardPrompt(for: message, to: familiar)
         let displayText = forwardDisplayText(for: message)
+        let destinationModel = destination.pendingModelOverride
+        let destinationScope: ChatModelOverrideScope? = destinationModel.map { _ in
+            destination.sessionIds[familiar.id]?.isEmpty == false ? .nextMessage : .session
+        }
         destination.send(prompt, displayText: displayText,
                          reasoningEffort: thinkingEffort,
                          responseSpeed: responseSpeed,
+                         modelOverride: destinationModel,
+                         modelOverrideScope: destinationScope,
                          client: client) { app.touch(destination) }
         app.requestOpen(destination)
         app.showToast("Forwarded to \(familiar.displayName)", systemImage: "arrowshape.turn.up.right")

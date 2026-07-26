@@ -26,6 +26,16 @@ struct XtermWebView: UIViewRepresentable {
         context.coordinator.onResize = onResize
     }
 
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.stopLoading()
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "term")
+        uiView.navigationDelegate = nil
+        coordinator.terminal.onData = nil
+        coordinator.terminal.onReset = nil
+        coordinator.onInput = { _ in }
+        coordinator.onResize = { _, _ in }
+    }
+
     @MainActor
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         let webView: WKWebView

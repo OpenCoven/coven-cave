@@ -14,7 +14,16 @@ struct FamiliarsListView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if app.familiars.isEmpty {
+                if let error = app.familiarsError, app.familiars.isEmpty {
+                    ContentUnavailableView {
+                        Label("Couldn’t load familiars", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Retry") { Task { await app.loadFamiliars() } }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else if app.familiars.isEmpty {
                     ContentUnavailableView {
                         Label("No familiars", systemImage: "cat")
                     } description: {
@@ -37,6 +46,24 @@ struct FamiliarsListView: View {
                 }
             }
             .themedListBackground()
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if app.familiarsError != nil, !app.familiars.isEmpty {
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle")
+                        Text("Showing cached familiars")
+                            .font(.footnote)
+                        Spacer()
+                        Button("Retry") { Task { await app.loadFamiliars() } }
+                            .font(.footnote.weight(.semibold))
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .foregroundStyle(chrome.textSecondary)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 44)
+                    .background(chrome.bgRaised)
+                }
+            }
             .navigationTitle("Familiars")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -197,7 +224,13 @@ struct FamiliarDetailView: View {
                 value: familiar.activeSessions.map(String.init) ?? "Unknown",
                 icon: "bolt.fill"
             )
-            statCard("Tasks", value: "\(assignedTasks.count)", icon: "checkmark.square")
+            statCard(
+                "Tasks",
+                value: app.tasksError == nil
+                    ? "\(assignedTasks.count)"
+                    : app.tasks.isEmpty ? "Unknown" : "\(assignedTasks.count) cached",
+                icon: "checkmark.square"
+            )
             statCard("Memory", value: familiar.memoryFreshness ?? "Unknown", icon: "brain")
         }
     }

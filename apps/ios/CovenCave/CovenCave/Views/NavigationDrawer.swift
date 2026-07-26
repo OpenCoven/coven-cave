@@ -117,7 +117,7 @@ struct CaveNavigationDrawer: View {
                                         .lineLimit(1)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .padding(.horizontal, 14)
-                                        .padding(.vertical, 9)
+                                        .frame(minHeight: 44)
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.glassPress)
@@ -190,6 +190,7 @@ struct CaveNavigationDrawer: View {
                     url: app.operatorAvatarURL,
                     size: 40,
                     fallbackName: app.operatorDisplayName)
+                    .frame(minWidth: 44, minHeight: 44)
             }
             .buttonStyle(.glassPress)
             .accessibilityLabel("Profile and settings")

@@ -46,8 +46,24 @@ struct ProjectsPanel: View {
             .listStyle(.plain)
             .themedListBackground()
             .overlay {
-                if app.projectsLoaded && app.projects.isEmpty {
+                if let error = app.projectsError, app.projects.isEmpty {
+                    ContentUnavailableView {
+                        Label("Couldn’t load projects", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Retry") { Task { await app.loadProjects() } }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else if app.projectsLoaded && app.projects.isEmpty {
                     ContentUnavailableView("No projects", systemImage: "folder")
+                }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if app.projectsError != nil, !app.projects.isEmpty {
+                    ProjectsRefreshBanner(label: "Showing cached projects") {
+                        Task { await app.loadProjects() }
+                    }
                 }
             }
             .navigationTitle("Projects")
@@ -105,7 +121,16 @@ private struct ProjectTasksView: View {
         .listStyle(.plain)
         .themedListBackground()
         .overlay {
-            if app.tasksLoaded && cards.isEmpty {
+            if let error = app.tasksError, cards.isEmpty {
+                ContentUnavailableView {
+                    Label("Couldn’t load tasks", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(error)
+                } actions: {
+                    Button("Retry") { Task { await app.loadTasks() } }
+                        .buttonStyle(.borderedProminent)
+                }
+            } else if app.tasksLoaded && cards.isEmpty {
                 ContentUnavailableView {
                     Label("No tasks", systemImage: "checkmark.circle")
                 } description: {
@@ -113,7 +138,37 @@ private struct ProjectTasksView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if app.tasksError != nil, !cards.isEmpty {
+                ProjectsRefreshBanner(label: "Showing cached tasks") {
+                    Task { await app.loadTasks() }
+                }
+            }
+        }
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct ProjectsRefreshBanner: View {
+    @Environment(\.chrome) private var chrome
+    let label: String
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+            Text(label)
+                .font(.footnote)
+            Spacer()
+            Button("Retry", action: retry)
+                .font(.footnote.weight(.semibold))
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .foregroundStyle(chrome.textSecondary)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 44)
+        .background(chrome.bgRaised)
     }
 }

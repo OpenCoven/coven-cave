@@ -68,6 +68,204 @@ final class ChatResponseControlsTests: XCTestCase {
         XCTAssertEqual(restored.pendingModelOverride, "anthropic/claude-opus-4-6")
     }
 
+    @MainActor
+    func testQueuedTurnPersistsItsModelScope() throws {
+        let thread = ChatThread(
+            title: "Nyx chat",
+            familiarIds: ["nyx"],
+            sessionIds: ["nyx": "session-1"]
+        )
+        thread.enqueue(
+            "Review the branch",
+            modelOverride: "anthropic/claude-opus-4-6",
+            modelOverrideScope: .nextMessage
+        )
+
+        let restored = ChatThread(snapshot: thread.snapshot)
+        let queued = try XCTUnwrap(restored.messages.first)
+
+        XCTAssertEqual(queued.modelOverride, "anthropic/claude-opus-4-6")
+        XCTAssertEqual(queued.modelOverrideScope, .nextMessage)
+    }
+
+    func testServerReloadRestoresTurnControlsForRetry() throws {
+        let data = try XCTUnwrap(
+            """
+            {
+              "id": "turn-1",
+              "role": "user",
+              "text": "Review the branch",
+              "reasoningEffort": "medium",
+              "responseSpeed": "careful",
+              "modelOverride": "anthropic/claude-opus-4-6"
+            }
+            """.data(using: .utf8)
+        )
+        let turn = try JSONDecoder().decode(ChatTurn.self, from: data)
+
+        let restored = DisplayMessage.restored(from: turn, familiarId: "nyx")
+
+        XCTAssertEqual(restored.reasoningEffort, .medium)
+        XCTAssertEqual(restored.responseSpeed, .careful)
+        XCTAssertEqual(restored.modelOverride, "anthropic/claude-opus-4-6")
+        XCTAssertEqual(restored.retryModel(for: "nyx"), "anthropic/claude-opus-4-6")
+    }
+
+    func testDuplicatingTurnPreservesRetryControls() {
+        let original = DisplayMessage(
+            role: .user,
+            familiarId: nil,
+            text: "Review the branch",
+            attachmentDataUrls: ["data:image/png;base64,AAAA"],
+            reasoningEffort: .medium,
+            responseSpeed: .careful,
+            modelOverride: "anthropic/claude-opus-4-6",
+            modelOverridesByFamiliar: [
+                "nyx": "anthropic/claude-opus-4-6",
+                "milo": "openai/gpt-5.6-sol",
+            ]
+        )
+
+        let copied = DisplayMessage.duplicate(of: original)
+
+        XCTAssertNotEqual(copied.id, original.id)
+        XCTAssertEqual(copied.reasoningEffort, .medium)
+        XCTAssertEqual(copied.responseSpeed, .careful)
+        XCTAssertEqual(copied.modelOverride, "anthropic/claude-opus-4-6")
+        XCTAssertEqual(copied.retryModel(for: "milo"), "openai/gpt-5.6-sol")
+    }
+
+    func testDoneMetadataCarriesTheHonestRetryModel() throws {
+        let event = try XCTUnwrap(StreamEvent.decode(
+            """
+            {"kind":"done","isError":false,"sessionId":"session-1",
+             "responseMetadata":{"retryModel":"openai/gpt-5.6-sol"}}
+            """
+        ))
+
+        guard case .done(let isError, let sessionId, let retryModel) = event else {
+            return XCTFail("expected done event")
+        }
+        XCTAssertFalse(isError)
+        XCTAssertEqual(sessionId, "session-1")
+        XCTAssertEqual(retryModel, "openai/gpt-5.6-sol")
+    }
+
+    func testGroupTurnRetainsOneRetryModelPerFamiliar() {
+        var message = DisplayMessage(role: .user, familiarId: nil, text: "Review this")
+
+        message.recordRetryModel("anthropic/claude-opus-4-6", for: "nyx")
+        message.recordRetryModel("openai/gpt-5.6-sol", for: "milo")
+
+        XCTAssertEqual(message.retryModel(for: "nyx"), "anthropic/claude-opus-4-6")
+        XCTAssertEqual(message.retryModel(for: "milo"), "openai/gpt-5.6-sol")
+    }
+
+    func testDelayedExistingSessionPatchStillBindsImmediateTurn() {
+        let confirmed = ChatModelState(
+            familiarId: "nyx",
+            harness: "claude",
+            runtime: nil,
+            effectiveModel: "anthropic/claude-sonnet-4-5",
+            source: "session",
+            applicationState: nil,
+            reason: nil
+        )
+
+        let binding = ChatModelTurnBinding.resolve(
+            pendingModel: "anthropic/claude-opus-4-6",
+            confirmedState: confirmed,
+            hasSession: true
+        )
+
+        XCTAssertEqual(binding.modelOverride, "anthropic/claude-opus-4-6")
+        XCTAssertEqual(binding.scope, .nextMessage)
+    }
+
+    func testConfirmedSessionModelBindsSubsequentTurnsAndRetries() {
+        let confirmed = ChatModelState(
+            familiarId: "nyx",
+            harness: "claude",
+            runtime: nil,
+            effectiveModel: "anthropic/claude-opus-4-6",
+            source: "session",
+            applicationState: nil,
+            reason: nil
+        )
+
+        let binding = ChatModelTurnBinding.resolve(
+            pendingModel: nil,
+            confirmedState: confirmed,
+            hasSession: true
+        )
+
+        XCTAssertEqual(binding.modelOverride, "anthropic/claude-opus-4-6")
+        XCTAssertEqual(binding.scope, .nextMessage)
+    }
+
+    func testPreSessionModelPersistsAsSessionIntent() {
+        let binding = ChatModelTurnBinding.resolve(
+            pendingModel: "anthropic/claude-opus-4-6",
+            confirmedState: nil,
+            hasSession: false
+        )
+
+        XCTAssertEqual(binding.modelOverride, "anthropic/claude-opus-4-6")
+        XCTAssertEqual(binding.scope, .session)
+    }
+
+    func testPendingModelClearsOnlyAfterMatchingSessionConfirmation() {
+        let pending = "anthropic/claude-opus-4-6"
+        let inherited = ChatModelState(
+            familiarId: "nyx",
+            harness: "claude",
+            runtime: nil,
+            effectiveModel: pending,
+            source: "familiar-default",
+            applicationState: nil,
+            reason: nil
+        )
+        let staleSession = ChatModelState(
+            familiarId: "nyx",
+            harness: "claude",
+            runtime: nil,
+            effectiveModel: "anthropic/claude-sonnet-4-5",
+            source: "session",
+            applicationState: nil,
+            reason: nil
+        )
+        let confirmedSession = ChatModelState(
+            familiarId: "nyx",
+            harness: "claude",
+            runtime: nil,
+            effectiveModel: pending,
+            source: "session",
+            applicationState: nil,
+            reason: nil
+        )
+
+        XCTAssertFalse(ChatModelTurnBinding.shouldClearPending(
+            pending,
+            confirmedState: inherited,
+            hasSession: true
+        ))
+        XCTAssertFalse(ChatModelTurnBinding.shouldClearPending(
+            pending,
+            confirmedState: staleSession,
+            hasSession: true
+        ))
+        XCTAssertFalse(ChatModelTurnBinding.shouldClearPending(
+            pending,
+            confirmedState: confirmedSession,
+            hasSession: false
+        ))
+        XCTAssertTrue(ChatModelTurnBinding.shouldClearPending(
+            pending,
+            confirmedState: confirmedSession,
+            hasSession: true
+        ))
+    }
+
     func testPluginReconciliationPermitsOnlyAnAppliedMatchingCatalog() {
         XCTAssertTrue(
             MarketplacePluginMutationReconciliation.isConfirmed(
@@ -87,6 +285,51 @@ final class ChatResponseControlsTests: XCTestCase {
         XCTAssertFalse(
             MarketplacePluginMutationReconciliation.isConfirmed(
                 .applied, installed: false, expectedInstalled: true))
+    }
+
+    func testPluginTransportFailureCanBeConfirmedByMatchingCatalog() {
+        XCTAssertEqual(
+            MarketplacePluginMutationReconciliation.disposition(
+                mutationFailed: true,
+                catalogOutcome: .applied,
+                installed: true,
+                expectedInstalled: true
+            ),
+            .confirmed
+        )
+    }
+
+    func testPluginTransportFailureWithUnchangedCatalogRemainsFailed() {
+        XCTAssertEqual(
+            MarketplacePluginMutationReconciliation.disposition(
+                mutationFailed: true,
+                catalogOutcome: .applied,
+                installed: false,
+                expectedInstalled: true
+            ),
+            .mutationFailed
+        )
+    }
+
+    func testPluginRefreshFailureNeverConfirmsMutation() {
+        XCTAssertEqual(
+            MarketplacePluginMutationReconciliation.disposition(
+                mutationFailed: false,
+                catalogOutcome: .failed,
+                installed: true,
+                expectedInstalled: true
+            ),
+            .refreshFailed
+        )
+        XCTAssertEqual(
+            MarketplacePluginMutationReconciliation.disposition(
+                mutationFailed: true,
+                catalogOutcome: .failed,
+                installed: true,
+                expectedInstalled: true
+            ),
+            .refreshFailed
+        )
     }
 
     func testModelRequestCoordinatorRejectsOlderGetAfterMutationBegins() throws {
@@ -135,6 +378,17 @@ final class ChatResponseControlsTests: XCTestCase {
         XCTAssertNil(coordinator.finishMutation(first))
         XCTAssertTrue(coordinator.canApplyMutation(latest, for: latestTarget))
         XCTAssertEqual(coordinator.finishMutation(latest), suppressedTarget)
+    }
+
+    func testNewerOfflineIntentSilencesOlderMutationFinish() {
+        var coordinator = ChatModelRequestCoordinator()
+        let target = ChatModelRequestTarget(familiarId: "nyx", sessionId: "session-1")
+        let mutation = coordinator.beginMutation(for: target)
+
+        coordinator.beginIntent(for: target)
+
+        XCTAssertNil(coordinator.finishMutation(mutation))
+        XCTAssertNotNil(coordinator.beginLoad(for: target))
     }
 
     func testSupersededFinalReconciliationIsSilent() throws {

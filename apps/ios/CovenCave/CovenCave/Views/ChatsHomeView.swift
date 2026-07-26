@@ -65,7 +65,11 @@ struct ChatsHomeView: View {
         NavigationSplitView {
             Group {
                 if app.familiars.isEmpty && app.threads.isEmpty {
-                    emptyState
+                    if let error = app.familiarsError ?? app.sessionsError {
+                        loadFailure(error)
+                    } else {
+                        emptyState
+                    }
                 } else if filteredFamiliars.isEmpty && recentThreads.isEmpty {
                     ContentUnavailableView.search(text: query)
                 } else {
@@ -457,6 +461,22 @@ struct ChatsHomeView: View {
         } actions: {
             Button("New chat") { showNewChat = true }
                 .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private func loadFailure(_ error: String) -> some View {
+        ContentUnavailableView {
+            Label("Couldn’t load chats", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(error)
+        } actions: {
+            Button("Retry") {
+                Task {
+                    await app.loadFamiliars()
+                    await app.loadSessions()
+                }
+            }
+            .buttonStyle(.borderedProminent)
         }
     }
 }

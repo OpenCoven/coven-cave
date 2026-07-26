@@ -28,6 +28,44 @@ enum ChatModelOverrideScope: String, Codable {
     case session
 }
 
+/// The model intent attached to one user turn. A pending choice wins over the
+/// last confirmed session state so tapping Send immediately after selecting a
+/// model cannot race the session PATCH.
+struct ChatModelTurnBinding: Equatable {
+    let modelOverride: String?
+    let scope: ChatModelOverrideScope?
+
+    static func resolve(
+        pendingModel: String?,
+        confirmedState: ChatModelState?,
+        hasSession: Bool
+    ) -> ChatModelTurnBinding {
+        let confirmedSessionModel = confirmedState.flatMap {
+            $0.source == "session" ? $0.effectiveModel : nil
+        }
+        guard let model = pendingModel ?? confirmedSessionModel else {
+            return ChatModelTurnBinding(modelOverride: nil, scope: nil)
+        }
+        return ChatModelTurnBinding(
+            modelOverride: model,
+            scope: hasSession ? .nextMessage : .session
+        )
+    }
+
+    /// A session announcement can precede end-of-stream persistence. Keep the
+    /// pending intent until an authoritative model-state read proves that exact
+    /// model is now the session's durable choice.
+    static func shouldClearPending(
+        _ pendingModel: String?,
+        confirmedState: ChatModelState,
+        hasSession: Bool
+    ) -> Bool {
+        guard hasSession, let pendingModel else { return false }
+        return confirmedState.source == "session"
+            && confirmedState.effectiveModel == pendingModel
+    }
+}
+
 /// The familiar/session pair a model-state request is allowed to update.
 struct ChatModelRequestTarget: Equatable {
     let familiarId: String
@@ -99,8 +137,10 @@ struct ChatModelRequestCoordinator {
     mutating func finishMutation(_ request: ChatModelRequest) -> ChatModelRequestTarget? {
         guard activeMutation == request else { return nil }
         activeMutation = nil
+        let target = suppressedLoadTarget ?? request.target
         defer { suppressedLoadTarget = nil }
-        return suppressedLoadTarget ?? request.target
+        guard request.token == latestToken else { return nil }
+        return target
     }
 
     private mutating func issue(_ target: ChatModelRequestTarget) -> ChatModelRequest {

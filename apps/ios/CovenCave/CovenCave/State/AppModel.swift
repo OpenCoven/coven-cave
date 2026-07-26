@@ -680,9 +680,9 @@ final class AppModel {
         // covencave://thread/<id> — a chat notification / Live Activity tap
         // jumps straight into its thread via the existing one-shot intent.
         if let threadId = ChatNotifications.threadId(fromDeepLink: url) {
-            if let thread = threads.first(where: { $0.id == threadId }) {
-                requestOpen(thread)
-            }
+            launchThreadId = threadId
+            selectedTab = .chats
+            if let thread = consumeLaunchThreadIntent() { requestOpen(thread) }
             return
         }
         guard let target = DeepLink(rawValue: url.host ?? "") else { return }
@@ -1528,15 +1528,9 @@ final class AppModel {
     private func loadHistory(into thread: ChatThread, sessionId: String) async {
         guard let client, thread.messages.isEmpty,
               let convo = try? await client.conversation(sessionId: sessionId) else { return }
-        let assignee = thread.familiarIds.first
+        let assignee = thread.familiarIds.first ?? convo.familiarId
         thread.messages = convo.turns.map { turn in
-            let role = DisplayMessage.Role(rawValue: turn.role) ?? .assistant
-            return DisplayMessage(role: role,
-                                  familiarId: role == .assistant ? assignee : nil,
-                                  text: turn.text,
-                                  isError: turn.isError ?? false,
-                                  activity: role == .assistant
-                                      ? ActivityFold.steps(fromTools: turn.tools) : nil)
+            DisplayMessage.restored(from: turn, familiarId: assignee)
         }
         persistThreads()
     }
@@ -1697,10 +1691,7 @@ final class AppModel {
     @discardableResult
     func duplicateThread(_ thread: ChatThread) -> ChatThread {
         let copiedMessages = thread.messages.map { message in
-            DisplayMessage(role: message.role, familiarId: message.familiarId,
-                           text: message.text, isError: message.isError,
-                           attachmentDataUrls: message.attachmentDataUrls,
-                           activity: message.activity)
+            DisplayMessage.duplicate(of: message)
         }
         let copy = ChatThread(title: "\(thread.title) (copy)",
                               familiarIds: thread.familiarIds,

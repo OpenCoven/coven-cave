@@ -76,8 +76,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /guard sessionId != nil else \{[\s\S]{0,240}thread\.pendingModelOverride = model/,
-  "switchModel should retain a pre-send model choice for the new chat",
+  /private func selectModel\([\s\S]{0,360}thread\.pendingModelOverride = model[\s\S]{0,240}guard sessionId != nil else/,
+  "switchModel should synchronously retain model intent before any session write",
 );
 assert.match(
   chatView,

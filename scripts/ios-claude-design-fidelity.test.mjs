@@ -23,6 +23,7 @@ const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelCon
 const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
 const caveApp = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
 const tasks = await read("apps/ios/CovenCave/CovenCave/Views/TasksView.swift");
+const linkedTasks = await read("apps/ios/CovenCave/CovenCave/Views/LinkedTasksSheet.swift");
 const terminal = await read("apps/ios/CovenCave/CovenCave/Views/TerminalView.swift");
 const settings = await read("apps/ios/CovenCave/CovenCave/Views/SettingsView.swift");
 const glass = await read("apps/ios/CovenCave/CovenCave/Theme/Glass.swift");
@@ -91,6 +92,16 @@ assert.match(
   /func consumeLaunchThreadIntent\(\) -> ChatThread\?/,
   "the launch thread intent waits for a matching thread before consuming",
 );
+assert.match(
+  appModel,
+  /if let threadId = ChatNotifications\.threadId\(fromDeepLink: url\) \{[\s\S]{0,140}launchThreadId = threadId[\s\S]{0,140}selectedTab = \.chats/,
+  "runtime chat links retain their thread id until hydration",
+);
+assert.match(
+  appModel,
+  /private func loadHistory[\s\S]{0,500}DisplayMessage\.restored\(from: turn, familiarId: assignee\)/,
+  "initial server-history hydration restores retry controls",
+);
 assert.doesNotMatch(
   home,
   /ProcessInfo\.processInfo\.environment\["CAVE_OPEN_THREAD"\]/,
@@ -115,7 +126,7 @@ assert.doesNotMatch(root, /MainTabView/, "RootView mounts the semantically neutr
 assert.match(root, /struct MainShellView/, "the connected root uses MainShellView");
 assert.match(
   root,
-  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.terminal:\s*TerminalView\(\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
+  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.terminal:\s*TerminalView\(terminal: terminal, cwd: \$terminalCwd\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
   "the shell mounts exactly the selected primary destination",
 );
 for (const label of ["Chats", "Tasks", "Terminal", "Settings"]) {
@@ -155,8 +166,13 @@ assert.match(
 );
 assert.match(
   caveApp,
-  /notificationDelegate\.onOpen[\s\S]*?UNUserNotificationCenter\.current\(\)\.delegate[\s\S]*?guard !app\.isConnectingPreview else \{ return \}[\s\S]*?app\.startConnectionSupervisor\(\)[\s\S]*?await app\.connectWithRetry\(\)/,
-  "connecting preview configures notifications but skips live connection work",
+  /init\(\) \{[\s\S]*?notificationDelegate\.onOpen[\s\S]*?UNUserNotificationCenter\.current\(\)\.delegate = notificationDelegate[\s\S]*?_notificationDelegate = State\(initialValue: notificationDelegate\)/,
+  "the notification delegate is registered synchronously for cold-launch taps",
+);
+assert.match(
+  caveApp,
+  /guard !app\.isConnectingPreview else \{ return \}[\s\S]*?app\.startConnectionSupervisor\(\)[\s\S]*?await app\.connectWithRetry\(\)/,
+  "connecting preview skips only live connection work",
 );
 assert.match(
   drawer,
@@ -221,20 +237,55 @@ assert.match(
 );
 assert.match(
   thread,
-  /modelOverride: source\?\.modelOverride/,
-  "retry restores the original model selection",
+  /let retryModel = source\?\.retryModel\(for: familiarId\)[\s\S]{0,900}modelOverride: retryModel/,
+  "retry restores the original per-familiar model selection",
 );
 assert.match(
   thread,
-  /modelOverrideScope: source\?\.modelOverride == nil \? nil : \.nextMessage/,
+  /modelOverrideScope: retryModel == nil \? nil : \.nextMessage/,
   "retry replays the original model without changing the chat’s current model",
+);
+assert.match(
+  thread,
+  /DisplayMessage\.restored\(from: turn, familiarId: familiarId\)/,
+  "server reload restores the controls that retry reads",
+);
+assert.match(
+  appModel,
+  /DisplayMessage\.duplicate\(of: message\)/,
+  "thread duplication preserves the controls that retry reads",
 );
 assert.match(chat, /Picker\("Thinking"/, "session details expose real thinking levels");
 assert.match(chat, /Picker\("Speed"/, "session details expose real response speeds");
 assert.match(
   chat,
   /thread\.pendingModelOverride = model/,
-  "a model selected before the first turn is retained for that chat",
+  "a selected model is synchronously retained as the chat's pending intent",
+);
+assert.match(
+  chat,
+  /_ = selectModel\(id, familiarId: familiarId, sessionId: modelSessionId\(familiarId\)\)/,
+  "the model picker stages intent synchronously before its sheet dismisses",
+);
+assert.match(
+  chat,
+  /private var turnModelBinding: ChatModelTurnBinding/,
+  "all send paths derive a turn-owned model binding",
+);
+assert.doesNotMatch(
+  chat,
+  /modelOverride: thread\.pendingModelOverride/,
+  "send paths do not drop an already-confirmed session model",
+);
+assert.match(
+  chat,
+  /ChatModelTurnBinding\.shouldClearPending\(/,
+  "a session id alone cannot clear unconfirmed model intent",
+);
+assert.match(
+  chat,
+  /destination\.pendingModelOverride[\s\S]{0,650}modelOverrideScope: destinationScope/,
+  "forwarding honors a pending model choice on the destination chat",
 );
 assert.doesNotMatch(
   chat,
@@ -253,12 +304,64 @@ assert.match(
   /case \.checking: return \(Color\.orange, "reconnecting"\)/,
   "the chat header reports reconnecting state instead of claiming readiness",
 );
+assert.match(
+  chat,
+  /app\.tasksError != nil\s*\?\s*"Board unavailable"/,
+  "the start page does not report zero board work after a failed first load",
+);
+assert.match(
+  home,
+  /if app\.familiars\.isEmpty && app\.threads\.isEmpty \{[\s\S]{0,180}if let error = app\.familiarsError \?\? app\.sessionsError \{[\s\S]{0,100}loadFailure\(error\)/,
+  "Chats renders first-load failure before the no-familiars empty state",
+);
+assert.match(
+  home,
+  /private func loadFailure[\s\S]{0,500}Label\("Couldn’t load chats"[\s\S]{0,350}Button\("Retry"\)/,
+  "Chats exposes a concrete recovery action after first-load failure",
+);
+assert.match(
+  linkedTasks,
+  /if !app\.tasksLoaded[\s\S]{0,260}else if let error = app\.tasksError, assignable\.isEmpty[\s\S]{0,700}Button\("Retry"\)/,
+  "task linking renders refresh failure and recovery before an empty result",
+);
+assert.match(
+  projects,
+  /if let error = app\.projectsError, app\.projects\.isEmpty/,
+  "the projects surface renders first-load failure before empty state",
+);
+assert.match(
+  projects,
+  /if let error = app\.tasksError[\s\S]{0,180}ContentUnavailableView/,
+  "project task detail renders board failure before no-tasks state",
+);
+assert.match(
+  familiars,
+  /if let error = app\.familiarsError, app\.familiars\.isEmpty/,
+  "the familiar roster renders first-load failure before empty state",
+);
+assert.match(
+  familiars,
+  /app\.tasksError == nil\s*\?\s*"\\\(assignedTasks\.count\)"\s*:\s*app\.tasks\.isEmpty \? "Unknown" : "\\\(assignedTasks\.count\) cached"/,
+  "familiar task stats distinguish live, unavailable, and cached counts",
+);
+for (const [name, source] of [["projects", projects], ["familiars", familiars]]) {
+  assert.match(
+    source,
+    /Button\("Retry"[\s\S]{0,180}\.frame\(minWidth: 44, minHeight: 44\)/,
+    `${name} cached-state retry keeps a 44-point touch target`,
+  );
+}
 
 // Marketplace state comes from the desktop rather than a session-local catalog.
 assert.match(client, /func marketplacePlugins\(\)/, "iOS can read the live marketplace");
 assert.match(client, /func installMarketplacePlugin\(/, "iOS can install a live marketplace plugin");
 assert.match(client, /func uninstallMarketplacePlugin\(/, "iOS can uninstall a live marketplace plugin");
 assert.match(plugins, /\.task \{ await loadPlugins\(\) \}/, "plugin panel loads server state");
+assert.match(
+  plugins,
+  /let catalogOutcome = await loadPlugins\(\)[\s\S]{0,500}disposition\(/,
+  "plugin writes reconcile the authoritative catalog even after transport ambiguity",
+);
 assert.doesNotMatch(plugins, /static let featured/, "plugin panel has no fabricated featured catalog");
 const marketplaceRows = plugins.slice(
   plugins.indexOf("ForEach(filtered)"),
@@ -285,13 +388,13 @@ assert.match(
 );
 assert.match(
   plugins,
-  /let outcome = await loadPlugins\(\)[\s\S]*?guard MarketplacePluginMutationReconciliation\.isConfirmed\([\s\S]*?installed: currentPlugin\(id\)\?\.installed,[\s\S]*?expectedInstalled: !wasInstalled[\s\S]*?\) else/,
+  /let catalogOutcome = await loadPlugins\(\)[\s\S]*?MarketplacePluginMutationReconciliation\.disposition\([\s\S]*?installed: currentPlugin\(id\)\?\.installed,[\s\S]*?expectedInstalled: !wasInstalled/,
   "a mutation only claims success after install state reconciles",
 );
 assert.match(
   plugins,
-  /if let refreshedIndex = plugins\.firstIndex\(where: \{ \$0\.id == id \}\)/,
-  "plugin mutation state re-resolves its row after awaiting the server",
+  /if let selected \{\s*self\.selected = currentPlugin\(selected\.id\)\s*\}/,
+  "plugin detail state re-resolves from each authoritative catalog",
 );
 assert.match(
   plugins,

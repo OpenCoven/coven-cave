@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
-import { loadConversation, saveConversation } from "@/lib/cave-conversations";
+import {
+  loadConversation,
+  saveConversation,
+  withConversationLock,
+} from "@/lib/cave-conversations";
 import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
@@ -133,16 +137,19 @@ export async function PATCH(req: Request) {
   }
 
   if (!sessionId) return jsonError("sessionId is required for session scope", 400);
-  const conversation = await loadConversation(sessionId);
-  if (!conversation) return jsonError("not found", 404);
-  if (conversation.familiarId !== familiarId) return jsonError("not found", 404);
-  conversation.modelIntent = {
-    model,
-    source: "session",
-    applicationState: "saved",
-    reason: "Saved for this chat.",
-  };
-  await saveConversation(conversation);
+  const updated = await withConversationLock(sessionId, async () => {
+    const conversation = await loadConversation(sessionId);
+    if (!conversation || conversation.familiarId !== familiarId) return false;
+    conversation.modelIntent = {
+      model,
+      source: "session",
+      applicationState: "saved",
+      reason: "Saved for this chat.",
+    };
+    await saveConversation(conversation);
+    return true;
+  });
+  if (!updated) return jsonError("not found", 404);
   const state = await currentState(familiarId, sessionId);
   return NextResponse.json({ ok: true, state });
 }
