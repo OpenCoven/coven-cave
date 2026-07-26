@@ -83,6 +83,11 @@ assert.match(
 );
 assert.match(
   source,
+  /availability && h\.availability\.state !== "ready"[\s\S]{0,100}h\.availability\.message/,
+  "Runtime choices retain the shared launchability remediation instead of collapsing unlaunchable Hermes into generic not-installed copy",
+);
+assert.match(
+  source,
   /\/api\/capabilities\?harness=/,
   "Brain tab should fetch the daemon capabilities manifest for the selected harness",
 );

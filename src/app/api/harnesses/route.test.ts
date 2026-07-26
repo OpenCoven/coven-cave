@@ -22,6 +22,16 @@ assert.match(
 );
 assert.match(
   source,
+  /const hermesLaunch = h\.id === "hermes" \? resolveHermesLaunch\(\) : null;[\s\S]*?h\.id === "hermes" && hermesLaunch[\s\S]*?hermesLaunch\.command/,
+  "Hermes status must use the same resolved native launch plan as chat instead of a generic which/where shim result",
+);
+assert.match(
+  source,
+  /if \(id === "hermes"\) \{[\s\S]*?resolveHermesLaunch\(\{ env \}\)/,
+  "the wire-safe runtime availability summary is derived from the Hermes resolver",
+);
+assert.match(
+  source,
   /const resolvedBinary = h\.id === "grok" \? grokBin\(\) : h\.binary;[\s\S]*?h\.id === "grok" && resolvedBinary !== h\.binary[\s\S]*?: await which\(h\.binary\)/,
   "WSL must report a Windows grok.exe discovered by the native launcher even though Linux which does not use PATHEXT",
 );

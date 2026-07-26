@@ -20,6 +20,7 @@ import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencod
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 import {
   evaluateRuntimeAvailability,
+  resolveHermesLaunch,
   summarizeRuntimeAvailability,
   type RuntimeAvailabilitySummary,
 } from "@/lib/runtime-availability";
@@ -76,11 +77,7 @@ function adapterAvailability(id: string): RuntimeAvailabilitySummary {
     }));
   }
   if (id === "hermes") {
-    return summarizeRuntimeAvailability(evaluateRuntimeAvailability({
-      runner: "hermes",
-      command: process.platform === "win32" ? "hermes.exe" : "hermes",
-      env,
-    }));
+    return summarizeRuntimeAvailability(resolveHermesLaunch({ env }));
   }
   if (id === "copilot") {
     const stream = copilotStreamSpec();
@@ -135,11 +132,12 @@ function probeVersion(
   binary: string,
   args: string[],
   fixedArgs: string[] = [],
+  env: NodeJS.ProcessEnv = covenSpawnEnv(),
 ): Promise<string | null> {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(binary, [...fixedArgs, ...args], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(binary, [...fixedArgs, ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       resolve(null);
       return;
@@ -260,24 +258,42 @@ export async function GET() {
       if (h.id === "openclaw") {
         return openClawAdapterReport(openclawAgentCount);
       }
+      // Hermes must never use the generic `which`/`where` result: Windows
+      // discovery can find an npm .cmd shim even though native chat safely
+      // launches only the resolver's `hermes.exe` plan.
+      const hermesLaunch = h.id === "hermes" ? resolveHermesLaunch() : null;
+      if (hermesLaunch && hermesLaunch.state !== "ready") {
+        return {
+          ...h,
+          installed: false,
+          path: null,
+          version: null,
+          availability: summarizeRuntimeAvailability(hermesLaunch),
+        };
+      }
       // Native Grok resolution also recognizes `grok.exe` from an imported
       // Windows PATH in WSL. `which grok` on Linux does not apply PATHEXT, so
       // using only the generic probe would hide a runnable Windows install
       // from the summoning circle even though the chat launcher can execute it.
       const resolvedBinary = h.id === "grok" ? grokBin() : h.binary;
       const path =
-        h.id === "grok" && resolvedBinary !== h.binary
+        h.id === "hermes" && hermesLaunch
+          ? hermesLaunch.command
+          : h.id === "grok" && resolvedBinary !== h.binary
           ? resolvedBinary
           : await which(h.binary);
-      const availability = adapterAvailability(h.id);
+      const availability = hermesLaunch
+        ? summarizeRuntimeAvailability(hermesLaunch)
+        : adapterAvailability(h.id);
       if (!path) {
         return { ...h, installed: false, path: null, version: null, availability };
       }
       const grokLaunch = h.id === "grok" ? grokLaunchCommandForBinary(path) : null;
       const version = await probeVersion(
-        grokLaunch?.command ?? h.binary,
+        grokLaunch?.command ?? hermesLaunch?.command ?? h.binary,
         h.versionArgs ?? ["--version"],
         grokLaunch?.fixedArgs,
+        hermesLaunch?.env,
       );
       const grokCatalog = grokLaunch ? await probeGrokModels(grokLaunch) : null;
       return {

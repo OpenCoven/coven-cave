@@ -9,6 +9,7 @@ import {
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
 import { isBindableRuntimeChoice } from "@/lib/harness-adapters";
+import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import type { RuntimeModelOption } from "@/lib/grok-build";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
@@ -71,6 +72,7 @@ type HarnessReport = {
   id: string;
   label: string;
   installed: boolean;
+  availability?: RuntimeAvailabilitySummary;
   models?: RuntimeModelOption[];
   defaultModel?: string | null;
 };
@@ -840,7 +842,12 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                           .filter((h) => isBindableRuntimeChoice(h.id))
                           .map((h) => ({
                             value: h.id,
-                            label: `${h.label}${h.installed ? "" : " (not installed)"}`,
+                            label: h.label,
+                            detail: h.availability && h.availability.state !== "ready"
+                              ? h.availability.message
+                              : h.installed
+                                ? undefined
+                                : "Runtime is not installed.",
                           })),
                       } satisfies StandardSelectGroup<string>,
                     ]}

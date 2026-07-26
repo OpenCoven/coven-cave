@@ -106,7 +106,14 @@ function FamiliarIdentityHero({
       .map((h) => ({
         value: h.id,
         label: h.label,
-        detail: [h.version, h.installed ? null : "not installed"].filter(Boolean).join(" · ") || undefined,
+        detail: [
+          h.version,
+          h.availability && h.availability.state !== "ready"
+            ? h.availability.message
+            : h.installed
+              ? null
+              : "Runtime is not installed.",
+        ].filter(Boolean).join(" · ") || undefined,
       })),
   ];
 
@@ -342,6 +349,9 @@ function familiarCapabilitySummary(familiar: ResolvedFamiliar, snapshot: Capabil
     capabilityCount: enabledPlugins,
     runtime: [harness?.label ?? harnessId, familiar.model].filter(Boolean).join(" · "),
     installed: harness?.installed,
+    availabilityMessage: harness?.availability && harness.availability.state !== "ready"
+      ? harness.availability.message
+      : null,
   };
 }
 
@@ -421,7 +431,9 @@ function FamiliarScopeOverview({
                     <span>{summary.skillCount} skill{summary.skillCount === 1 ? "" : "s"}</span>
                     <span>{summary.capabilityCount} runtime capabilit{summary.capabilityCount === 1 ? "y" : "ies"}</span>
                     {activeSessions > 0 ? <span>{activeSessions} active</span> : null}
-                    {summary.installed === false ? <span className="text-[var(--color-warning)]">runtime unavailable</span> : null}
+                    {summary.availabilityMessage ? (
+                      <span className="text-[var(--color-warning)]">{summary.availabilityMessage}</span>
+                    ) : summary.installed === false ? <span className="text-[var(--color-warning)]">Runtime is not installed.</span> : null}
                   </span>
                 </span>
                 <Icon name="ph:caret-right" width={14} className="familiar-scope-overview__caret text-[var(--text-muted)] transition-transform group-hover:translate-x-0.5" aria-hidden />
