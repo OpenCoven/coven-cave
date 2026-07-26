@@ -44,6 +44,15 @@ importers:
       '@milkdown/crepe':
         specifier: 7.21.2
         version: 7.21.2(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-view@1.42.0)(typescript@6.0.3)
+      '@milkdown/react':
+        specifier: 7.21.2
+        version: 7.21.2(@codemirror/language@6.12.3)(@codemirror/state@6.7.0)(@codemirror/view@6.43.1)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-view@1.42.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@6.0.3)
+      '@openclaw/gateway-client':
+        specifier: 2026.7.2-beta.4
+        version: 2026.7.2-beta.4
+      '@openclaw/gateway-protocol':
+        specifier: 2026.7.2-beta.4
+        version: 2026.7.2-beta.4
       '@tailwindcss/browser':
         specifier: 4.3.1
         version: 4.3.1
@@ -131,6 +140,9 @@ importers:
       sucrase:
         specifier: 3.35.1
         version: 3.35.1
+      typebox:
+        specifier: 1.3.6
+        version: 1.3.6
       ws:
         specifier: 8.21.0
         version: 8.21.0
@@ -377,8 +389,8 @@ packages:
   '@emnapi/runtime@1.10.0':
     resolution: {integrity: sha512-ewvYlk86xUoGI0zQRNq/mC+16R1QeDlKQy21Ki3oSYXNgLb45GV1P6A0M+/s6nyCuNDqe5VpaY84BzXGwVbwFA==}
 
-  '@emnapi/runtime@1.11.1':
-    resolution: {integrity: sha512-vgj7R3y3Wgx24IQaGPA/R6YFXLHVMOZ0uVEyIQPaWs+rd1AzfEMXlAC22FYwO1XkKR6NPsq7mUandH8oIRdZFw==}
+  '@emnapi/runtime@1.11.2':
+    resolution: {integrity: sha512-kyOl3X0DuTiT1h2ft8r2fYO8JYtU9a9Xis/zBSiGArNaagCOWx90N1k2wxp18czFDH+OgcWGb5ZP/XMt3dcyPA==}
 
   '@emnapi/wasi-threads@1.2.1':
     resolution: {integrity: sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w==}
@@ -905,6 +917,12 @@ packages:
   '@milkdown/prose@7.21.2':
     resolution: {integrity: sha512-ufnHhRaevLbqISBpOA5Rl4+S66n+h0JRfoZw2j/WyJ1eBNHg42xoQNXUEI9YiP/GoQPKeOitKux50GpafyNtQw==}
 
+  '@milkdown/react@7.21.2':
+    resolution: {integrity: sha512-JjRFfp/K/3aatEELQNngGMnpskqvY43zAe/b9kZRSVk4Fpt4QDYep6ISFiW/46BgoUw9EsOozT6JlEvWmsVimQ==}
+    peerDependencies:
+      react: '*'
+      react-dom: '*'
+
   '@milkdown/transformer@7.21.2':
     resolution: {integrity: sha512-j2VQ6baKy6b6rAo/yo00YwSsWHoW0sqgwRTDqSCwXW8dgdFtl4M2i/73exRLcRQ4MvDOHrSqGS5RcRz+fzPOeQ==}
 
@@ -977,6 +995,14 @@ packages:
 
   '@ocavue/utils@1.7.0':
     resolution: {integrity: sha512-yEk9ATNBjTZTtuVFMB/MAIF6zJBvJ2+lVNQvK2+O+ggEBGTgx2tp27d4FPgmD5bRsNHHP3D0SleQia/bvIeV8w==}
+
+  '@openclaw/gateway-client@2026.7.2-beta.4':
+    resolution: {integrity: sha512-iWkaaUQ+sBuLYYw6NkFlmboFJ4ZCIv/5YZiLcCvl8+EsYOyumVim1C+ar9OfIRj/eusMeMbvEpzpkuVfu6WDmg==}
+    engines: {node: '>=22.19.0'}
+
+  '@openclaw/gateway-protocol@2026.7.2-beta.4':
+    resolution: {integrity: sha512-oE2uQYu6/GtIp4eGgkZyDFE2dZ06PMWCPsPKQvKI2DljhVvQ4F9Jn6IPWTHlO8oQqU8zE1Hyu/3Lnqjkc7Ng8w==}
+    engines: {node: '>=22.19.0'}
 
   '@oxc-project/types@0.133.0':
     resolution: {integrity: sha512-KzkdCd6Uxqnf6l3HOw1xfatAlUURA0g14cvBYFyJ5SaNOQbOUvBr9PKArcPcrNIeRsBdgcUzOGrhKveVpvOIGA==}
@@ -2244,6 +2270,10 @@ packages:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
 
+  ipaddr.js@2.4.0:
+    resolution: {integrity: sha512-9VGk3HGanVE6JoZXHiCpnGy5X0jYDnN4EA4lntFPj+1vIWlFhIylq2CrrCOJH9EAhc5CYhq18F2Av2tgoAPsYQ==}
+    engines: {node: '>= 10'}
+
   is-extglob@2.1.1:
     resolution: {integrity: sha512-SbKbANkN603Vi4jEZv49LeVJMn4yGwsbzZworEoyEiutsN3nJYdbO36zfhGJ6QEDpOZIFkDtnq5JRxmvl3jsoQ==}
     engines: {node: '>=0.10.0'}
@@ -2996,6 +3026,9 @@ packages:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
     engines: {node: '>= 0.8.0'}
 
+  typebox@1.3.6:
+    resolution: {integrity: sha512-Sc8RA0NCMEFmApHNU9ZMzqcpQj46She44J8ffpLM/bdhLNUZKq7DJumcLcsFx1gRmDfQPgCgOmFFJ7rcnfWNyA==}
+
   typescript@6.0.3:
     resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
@@ -3173,6 +3206,18 @@ packages:
 
   ws@8.21.0:
     resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+  ws@8.21.1:
+    resolution: {integrity: sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -3543,7 +3588,7 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@emnapi/runtime@1.11.1':
+  '@emnapi/runtime@1.11.2':
     dependencies:
       tslib: 2.8.1
     optional: true
@@ -3789,7 +3834,7 @@ snapshots:
 
   '@img/sharp-wasm32@0.34.5':
     dependencies:
-      '@emnapi/runtime': 1.11.1
+      '@emnapi/runtime': 1.11.2
     optional: true
 
   '@img/sharp-win32-arm64@0.34.5':
@@ -4182,6 +4227,22 @@ snapshots:
       prosemirror-transform: 1.12.0
       prosemirror-view: 1.42.0
 
+  '@milkdown/react@7.21.2(@codemirror/language@6.12.3)(@codemirror/state@6.7.0)(@codemirror/view@6.43.1)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-view@1.42.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@6.0.3)':
+    dependencies:
+      '@milkdown/crepe': 7.21.2(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-view@1.42.0)(typescript@6.0.3)
+      '@milkdown/kit': 7.21.2(@codemirror/language@6.12.3)(@codemirror/state@6.7.0)(@codemirror/view@6.43.1)(typescript@6.0.3)
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+    transitivePeerDependencies:
+      - '@codemirror/language'
+      - '@codemirror/state'
+      - '@codemirror/view'
+      - prosemirror-model
+      - prosemirror-state
+      - prosemirror-view
+      - supports-color
+      - typescript
+
   '@milkdown/transformer@7.21.2':
     dependencies:
       '@milkdown/exception': 7.21.2
@@ -4243,6 +4304,19 @@ snapshots:
     optional: true
 
   '@ocavue/utils@1.7.0': {}
+
+  '@openclaw/gateway-client@2026.7.2-beta.4':
+    dependencies:
+      '@openclaw/gateway-protocol': 2026.7.2-beta.4
+      ipaddr.js: 2.4.0
+      ws: 8.21.1
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@openclaw/gateway-protocol@2026.7.2-beta.4':
+    dependencies:
+      typebox: 1.3.6
 
   '@oxc-project/types@0.133.0': {}
 
@@ -5568,6 +5642,8 @@ snapshots:
 
   internmap@2.0.3: {}
 
+  ipaddr.js@2.4.0: {}
+
   is-extglob@2.1.1: {}
 
   is-fullwidth-code-point@3.0.0: {}
@@ -6563,6 +6639,8 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
 
+  typebox@1.3.6: {}
+
   typescript@6.0.3: {}
 
   undici-types@7.18.2: {}
@@ -6715,6 +6793,8 @@ snapshots:
   ws@7.5.11: {}
 
   ws@8.21.0: {}
+
+  ws@8.21.1: {}
 
   y18n@4.0.3: {}
 

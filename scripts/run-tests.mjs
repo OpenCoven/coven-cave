@@ -1000,6 +1000,7 @@ export const SUITES = {
     "src/lib/hermes-responses-stream.test.ts",
     "src/lib/openclaw-bin.test.ts",
     "src/lib/openclaw-bridge.test.ts",
+    "src/lib/openclaw-gateway.test.ts",
     "src/lib/coven-identity-canon.test.ts",
     "src/lib/familiar-runtime.test.ts",
     "src/lib/harness-adapters.test.ts",
