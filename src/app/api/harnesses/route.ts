@@ -14,6 +14,7 @@ import {
 } from "@/lib/harness-adapters";
 import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, type CovenLaunchCommand } from "@/lib/coven-bin";
 import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/copilot-stream";
+import { probeCodexRuntimeAvailability } from "@/lib/codex-runtime-availability";
 import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
@@ -69,6 +70,15 @@ type AdapterAvailability = {
 // Same commands, same spawn env shape (no familiar → shared keys only), and
 // bounded filesystem stats only — this endpoint stays probe-cheap.
 async function adapterAvailability(id: string): Promise<AdapterAvailability> {
+  const env = id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
+  if (id === "codex") {
+    return {
+      availability: summarizeRuntimeAvailability(await probeCodexRuntimeAvailability({
+        launch: covenLaunchCommand(),
+        env,
+      })),
+    };
+  }
   if (id === "copilot") {
     const stream = copilotStreamSpec();
     if (stream) {
@@ -82,8 +92,6 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
     }
     // No stream manifest → copilot chats fall back to `coven run` below.
   }
-  const env =
-    id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
   if (id === "opencode") {
     const launch = openCodeLaunch([]);
     return {
@@ -315,7 +323,7 @@ export async function GET() {
             ? resolvedBinary
             : await which(h.binary);
       const availability = runtime.availability;
-      if (!path) {
+      if (!path || (h.id === "codex" && availability.state !== "ready")) {
         return { ...h, installed: false, path: null, version: null, availability };
       }
       const grokLaunch = h.id === "grok" ? grokLaunchCommandForBinary(path) : null;

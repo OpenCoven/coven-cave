@@ -1998,6 +1998,9 @@ function StepRuntimes({
           const job = oneClick ? installJobs[oneClick.target] : undefined;
           const busy = job?.status === "running";
           const openClaw = adapter.id === "openclaw";
+          const availabilityIssue = adapter.availability?.state && adapter.availability.state !== "ready"
+            ? adapter.availability
+            : null;
           const availabilityMessage =
             adapter.availability && adapter.availability.state !== "ready"
               ? adapter.availability.message
@@ -2082,7 +2085,14 @@ function StepRuntimes({
                   <HermesSetupNext onCopy={onCopy} />
                 </div>
               ) : null}
-              {!adapter.installed ? (
+              {availabilityIssue?.message ? (
+                <p
+                  role="alert"
+                  className="mt-2 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2 text-[length:var(--text-xs)] leading-4 text-[var(--color-warning)]"
+                >
+                  {availabilityIssue.message}
+                </p>
+              ) : !adapter.installed ? (
                 <div className="mt-2 flex flex-col gap-2">
                   {oneClick ? (
                     <>

@@ -611,7 +611,10 @@ function ChatErrorStrip({
   // offer a soft "Open Setup" link (overlay, not a hard nav) — the message
   // stays in the composer for retry (#2618).
   const covenMissing = useMemo(
-    () => /Coven CLI not found on PATH/i.test(message) || code === "ENOENT",
+    () =>
+      /Coven CLI (?:not found on PATH|was found as a Windows launcher shim|is installed as a Windows command shim)/i.test(message)
+      || /Windows PowerShell was not found at its system location, so Coven CLI cannot be launched/i.test(message)
+      || code === "ENOENT",
     [message, code],
   );
 

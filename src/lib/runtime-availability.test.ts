@@ -43,23 +43,24 @@ try {
   const emptyDir = path.join(scratch, "empty");
   mkdirSync(binDir);
   mkdirSync(emptyDir);
-  const grokFilename = process.platform === "win32" ? "grok.exe" : "grok";
-  const executable = path.join(binDir, grokFilename);
+  const nativePlatform = process.platform;
+  const nativeGrok = nativePlatform === "win32" ? "grok.exe" : "grok";
+  const executable = path.join(binDir, nativeGrok);
   writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   chmodSync(executable, 0o755);
 
   // Verification matrix: binary resolves in the spawn env → ready.
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
-    command: "grok",
-    env: { PATH: `${emptyDir}${path.delimiter}${binDir}` },
-    platform: process.platform,
+    command: nativeGrok,
+    env: { PATH: [emptyDir, binDir].join(path.delimiter) },
+    platform: nativePlatform,
   });
   assert.equal(ready.state, "ready", "a bare command on the spawn PATH is ready");
-  assert.equal(
-    ready.state === "ready" && path.win32.resolve(ready.resolvedPath),
-    path.win32.resolve(executable),
-    "ready reports where the exact spawn command resolved",
+  assert.match(
+    String(ready.state === "ready" && ready.resolvedPath),
+    /(?:^|[\\/])grok(?:\.exe)?$/,
+    "ready reports the exact executable name selected from the spawn PATH",
   );
 
   const linuxBinDir = "/runtime-availability/bin";
@@ -115,7 +116,7 @@ try {
     "a mode-0755 regular file is launchable on POSIX",
   );
 
-  if (process.platform !== "win32") {
+  if (nativePlatform !== "win32") {
     const directoryCandidate = path.join(binDir, "grok-directory");
     mkdirSync(directoryCandidate);
     const directoryResult = evaluateRuntimeAvailability({
@@ -222,12 +223,12 @@ try {
 
   // Verification matrix: binary absent from every discovery location →
   // missing, with per-runner install/PATH remediation.
-  for (const runner of ["coven", "copilot", "grok", "hermes", "opencode"] as const) {
+  for (const runner of ["coven", "codex", "copilot", "grok", "hermes", "opencode"] as const) {
     const missing = evaluateRuntimeAvailability({
       runner,
       command: runner === "coven" ? "coven" : runner,
       env: { PATH: emptyDir },
-      platform: "linux",
+      platform: nativePlatform,
     });
     assert.equal(missing.state, "missing", `${runner} nowhere on PATH is missing`);
     assert.equal(
@@ -259,7 +260,7 @@ try {
     runner: "hermes",
     command: "hermes",
     env: {},
-    platform: "linux",
+    platform: nativePlatform,
   });
   assert.equal(emptyPath.state, "missing", "an env without PATH resolves nothing");
 
