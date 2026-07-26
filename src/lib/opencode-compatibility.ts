@@ -1384,8 +1384,9 @@ export async function resolveOpenCodeCompatibility(
     // The shipped parser is a source-trusted offline baseline. A failed
     // registry refresh must not remove otherwise compatible tool activity,
     // but callers still surface the value-free recovery state.
-    diagnostic: capabilities.probeStatus === "fallback"
-      ? "capability-probe-fallback"
-      : loaded.diagnostic,
+    // Registry health remains the primary diagnostic. A probe fallback is a
+    // useful non-error notice only when schema loading has no warning to
+    // surface; it must never hide a rejected or unavailable registry refresh.
+    diagnostic: loaded.diagnostic ?? (capabilities.probeStatus === "fallback" ? "capability-probe-fallback" : undefined),
   };
 }

@@ -406,6 +406,18 @@ const offlineBaseline = await resolveOpenCodeCompatibility(
 assert.equal(offlineBaseline.mode, "structured", "a first offline launch keeps the shipped matching parser usable");
 assert.equal(offlineBaseline.bundleSource, "built-in");
 assert.equal(offlineBaseline.diagnostic, "schema-registry-refresh-rejected", "the built-in recovery remains visible to the user");
+const fallbackOfflineBaseline = await resolveOpenCodeCompatibility(
+  { version: "current", probeStatus: "fallback", json: true, model: false, session: true, protocols: ["json"] },
+  {
+    cacheFile: path.join(await mkdtemp(path.join(tmpdir(), "cave-opencode-schema-fallback-baseline-")), "bundle.json"),
+    publicKey: publicPem,
+    url: "https://registry.invalid/opencode.json",
+    now: () => now,
+    fetch: async () => { throw new Error("offline"); },
+  },
+);
+assert.equal(fallbackOfflineBaseline.mode, "structured");
+assert.equal(fallbackOfflineBaseline.diagnostic, "schema-registry-refresh-rejected", "a probe fallback never hides a schema-registry health diagnostic");
 
 const expiredOfflineBaseline = await resolveOpenCodeCompatibility(
   { version: "current", json: true, model: false, session: true, protocols: ["json"] },

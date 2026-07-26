@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
@@ -20,6 +21,10 @@ const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 2_500;
 const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
 const OPENCODE_PROBE_CLEANUP_GRACE_MS = 1_000;
 const OPENCODE_VERIFIED_CAPABILITY_FALLBACK_TTL_MS = 60_000;
+const MAX_VERIFIED_OPENCODE_CAPABILITIES = 64;
+// The current Windows OpenCode executable is roughly 175 MB. Bound hashing
+// enough to cover supported releases while refusing an arbitrary PATH target.
+const MAX_OPENCODE_IDENTITY_FILE_BYTES = 256 * 1024 * 1024;
 
 type OpenCodeRunContractProbe = { helpProbe: ProbeOutput; versionProbe: ProbeOutput };
 type CapabilityIdentityProbe = (env: NodeJS.ProcessEnv) => string | null;
@@ -47,6 +52,12 @@ export function openCodeProbeCleanupGraceMs(): number {
 /** Exposed for fixtures; this is a fallback lifetime, not a probe cache TTL. */
 export function openCodeVerifiedCapabilityFallbackTtlMs(): number {
   return OPENCODE_VERIFIED_CAPABILITY_FALLBACK_TTL_MS;
+}
+
+/** A hard cap keeps per-familiar, short-lived evidence from accumulating in a
+ * long-running desktop process. */
+export function openCodeVerifiedCapabilityFallbackLimit(): number {
+  return MAX_VERIFIED_OPENCODE_CAPABILITIES;
 }
 
 /** The help text is the executable contract, and an installed OpenCode may
@@ -387,6 +398,30 @@ async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCod
  * npm PowerShell shim and its package executable both participate: package
  * upgrades can replace the latter while leaving the small `.cmd` shim intact.
  */
+function fileIdentity(file: string, platform: NodeJS.Platform): string | null {
+  try {
+    // Resolve a symlink before reading it so changing its target changes the
+    // identity even when the link itself keeps its old metadata.
+    const resolved = realpathSync(file);
+    const entry = statSync(resolved);
+    if (!entry.isFile() || entry.size > MAX_OPENCODE_IDENTITY_FILE_BYTES) return null;
+    const stablePath = platform === "win32" ? resolved.toLowerCase() : resolved;
+    const digest = createHash("sha256").update(readFileSync(resolved)).digest("hex");
+    return `${stablePath}\0${entry.size}\0${entry.mtimeMs}\0${digest}`;
+  } catch {
+    return null;
+  }
+}
+
+function npmPackageExecutable(directory: string, pathApi: typeof path.win32): string {
+  // A project-local npm shim sits at node_modules/.bin/opencode.cmd; global
+  // npm shims conventionally sit beside their node_modules directory.
+  const packageRoot = pathApi.basename(directory).toLowerCase() === ".bin"
+    ? pathApi.dirname(directory)
+    : pathApi.join(directory, "node_modules");
+  return pathApi.join(packageRoot, "opencode-ai", "bin", "opencode.exe");
+}
+
 export function openCodeCapabilityLaunchIdentity(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform = process.platform,
@@ -396,44 +431,39 @@ export function openCodeCapabilityLaunchIdentity(
   const separator = platform === "win32" ? ";" : ":";
   const pathApi = platform === "win32" ? path.win32 : path.posix;
   const extensions = platform === "win32"
-    ? [".PS1", ...(env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)]
+    ? [...new Set([".PS1", ...(env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)].map((extension) => extension.toLowerCase()))]
     : [""];
   for (const directory of rawPath.split(separator).filter(Boolean).slice(0, 512)) {
-    const entries: string[] = [];
     for (const extension of extensions) {
       const candidate = pathApi.join(directory, `${openCodeCommand()}${extension}`);
-      try {
-        const entry = statSync(candidate);
-        if (!entry.isFile()) continue;
-        const stablePath = platform === "win32" ? candidate.toLowerCase() : candidate;
-        entries.push(`${stablePath}\0${entry.size}\0${entry.mtimeMs}`);
-      } catch {
-        // A missing, unreadable, or otherwise unverifiable launcher cannot
-        // itself contribute to launch identity evidence.
-      }
+      const launcher = fileIdentity(candidate, platform);
+      if (!launcher) continue;
+      if (platform !== "win32" || extension === ".exe" || extension === ".com") return launcher;
+
+      // A cmd/bat/PowerShell wrapper can dispatch to a mutable downstream
+      // executable. Permit fallback only for npm's known layout, and include
+      // the resolved package executable in the fingerprint. Unknown wrappers
+      // deliberately receive no fallback evidence.
+      const packageTarget = fileIdentity(npmPackageExecutable(directory, pathApi), platform);
+      return packageTarget ? `${launcher}\0${packageTarget}` : null;
     }
-    if (!entries.length) continue;
-    // npm's Windows wrappers dispatch to this package-local executable. It is
-    // optional because alternate installations can legitimately use another
-    // launch layout; when present it prevents a changed runtime from sharing
-    // the wrapper's prior capability result.
-    if (platform === "win32") {
-      const packageExecutable = pathApi.join(directory, "node_modules", "opencode-ai", "bin", "opencode.exe");
-      try {
-        const entry = statSync(packageExecutable);
-        if (entry.isFile()) entries.push(`${packageExecutable.toLowerCase()}\0${entry.size}\0${entry.mtimeMs}`);
-      } catch {
-        // The wrapper itself remains valid identity evidence for non-npm
-        // launchers; no guessed package target is ever added.
-      }
-    }
-    return entries.sort().join("\0");
   }
   return null;
 }
 
 function capabilityKey(scope: string, launcherIdentity: string, version: string): string {
   return `${scope}\0${launcherIdentity}\0${version}`;
+}
+
+function pruneVerifiedOpenCodeCapabilities(now: number): void {
+  for (const [key, evidence] of verifiedOpenCodeCapabilities) {
+    if (evidence.expiresAt <= now) verifiedOpenCodeCapabilities.delete(key);
+  }
+  while (verifiedOpenCodeCapabilities.size > MAX_VERIFIED_OPENCODE_CAPABILITIES) {
+    const oldest = verifiedOpenCodeCapabilities.keys().next().value;
+    if (oldest === undefined) break;
+    verifiedOpenCodeCapabilities.delete(oldest);
+  }
 }
 
 function advertisedFormatProtocols(
@@ -551,12 +581,21 @@ export async function openCodeRunCapabilities(
   // string alone is not a safe cache key: package managers and shims can
   // replace a CLI in place while preserving both PATH and `--version`.
   const env = openCodeSpawnEnv(familiarId);
-  const launcherIdentity = capabilityIdentity(env);
+  const launcherIdentityBeforeProbe = capabilityIdentity(env);
   const { helpProbe, versionProbe } = await probeRunContract(env);
+  const launcherIdentityAfterProbe = capabilityIdentity(env);
+  // A launcher update during the probe leaves no trustworthy association
+  // between its output and a later invocation, so fail closed for caching and
+  // fallback even if the reported version is unchanged.
+  const launcherIdentity = launcherIdentityBeforeProbe && launcherIdentityBeforeProbe === launcherIdentityAfterProbe
+    ? launcherIdentityAfterProbe
+    : null;
   const version = versionProbe.complete
     ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null
     : null;
   const scope = openCodeCapabilityProbeScope(familiarId);
+  const observedNow = now();
+  pruneVerifiedOpenCodeCapabilities(observedNow);
   if (helpProbe.complete) {
     const capabilities = {
       ...parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version),
@@ -567,9 +606,10 @@ export async function openCodeRunCapabilities(
     // PATH, or a failed version probe therefore falls back to plain mode.
     if (launcherIdentity && version) {
       verifiedOpenCodeCapabilities.set(capabilityKey(scope, launcherIdentity, version), {
-        expiresAt: now() + OPENCODE_VERIFIED_CAPABILITY_FALLBACK_TTL_MS,
+        expiresAt: observedNow + OPENCODE_VERIFIED_CAPABILITY_FALLBACK_TTL_MS,
         capabilities,
       });
+      pruneVerifiedOpenCodeCapabilities(observedNow);
     }
     return capabilities;
   }
@@ -581,7 +621,7 @@ export async function openCodeRunCapabilities(
   if (launcherIdentity && version) {
     const key = capabilityKey(scope, launcherIdentity, version);
     const fallback = verifiedOpenCodeCapabilities.get(key);
-    if (fallback && fallback.expiresAt > now()) {
+    if (fallback && fallback.expiresAt > observedNow) {
       return { ...fallback.capabilities, probeStatus: "fallback" };
     }
     if (fallback) verifiedOpenCodeCapabilities.delete(key);
