@@ -18,7 +18,7 @@ import path from "node:path";
  * real output.
  */
 
-export type DirectRunnerId = "coven" | "copilot" | "grok" | "hermes" | "opencode";
+export type DirectRunnerId = "coven" | "codex" | "copilot" | "grok" | "hermes" | "opencode";
 
 export type RuntimeAvailabilityState =
   | "ready"
@@ -50,6 +50,8 @@ export type RuntimeAvailability =
       runner: DirectRunnerId;
       code: RuntimeAvailabilityErrorCode;
       message: string;
+      /** Present when a composite launch names the layer that failed. */
+      component?: "coven" | "adapter";
     };
 
 /** Wire-safe shape for status surfaces: state plus remediation copy, without
@@ -60,6 +62,11 @@ export type RuntimeAvailabilitySummary =
       state: Exclude<RuntimeAvailabilityState, "ready">;
       code: RuntimeAvailabilityErrorCode;
       message: string;
+      /**
+       * Which layer of a composite launch failed. Most direct runners leave
+       * this unset; Codex routes through Coven and names the failing layer.
+       */
+      component?: "coven" | "adapter";
     };
 
 export function summarizeRuntimeAvailability(
@@ -70,6 +77,7 @@ export function summarizeRuntimeAvailability(
     state: availability.state,
     code: availability.code,
     message: availability.message,
+    ...(availability.component ? { component: availability.component } : {}),
   };
 }
 
@@ -100,6 +108,8 @@ export type RuntimeAvailabilityProbe = {
 // PATH/i (src/components/chat-view.test.ts).
 const MISSING_RUNNER_MESSAGES: Record<DirectRunnerId, string> = {
   coven: "Coven CLI not found on PATH. Open Setup to install it, then try again.",
+  codex:
+    "Codex CLI not found on PATH. Install it with `npm install -g @openai/codex`, then try again.",
   copilot:
     "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again.",
   grok: "Grok Build CLI not found on PATH. Install Grok Build, sign in with `grok`, then try again.",
@@ -110,6 +120,7 @@ const MISSING_RUNNER_MESSAGES: Record<DirectRunnerId, string> = {
 
 const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
   coven: "Coven CLI failed to start. Check its installation and try again.",
+  codex: "Codex CLI failed to start. Check its installation and try again.",
   copilot: "copilot CLI failed to start. Check its installation and try again.",
   grok: "Grok Build CLI failed to start. Check its installation and try again.",
   hermes: "Hermes CLI failed to start. Check its installation and try again.",
@@ -118,6 +129,7 @@ const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
 
 const RUNNER_LABELS: Record<DirectRunnerId, string> = {
   coven: "Coven CLI",
+  codex: "Codex CLI",
   copilot: "copilot CLI",
   grok: "Grok Build CLI",
   hermes: "Hermes CLI",

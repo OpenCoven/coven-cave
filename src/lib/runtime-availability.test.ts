@@ -42,16 +42,18 @@ try {
   const emptyDir = path.join(scratch, "empty");
   mkdirSync(binDir);
   mkdirSync(emptyDir);
-  const executable = path.join(binDir, "grok");
+  const nativePlatform = process.platform;
+  const nativeGrok = nativePlatform === "win32" ? "grok.exe" : "grok";
+  const executable = path.join(binDir, nativeGrok);
   writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   chmodSync(executable, 0o755);
 
   // Verification matrix: binary resolves in the spawn env → ready.
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
-    command: "grok",
-    env: { PATH: `${emptyDir}:${binDir}` },
-    platform: "linux",
+    command: nativeGrok,
+    env: { PATH: [emptyDir, binDir].join(path.delimiter) },
+    platform: nativePlatform,
   });
   assert.equal(ready.state, "ready", "a bare command on the spawn PATH is ready");
   assert.equal(
@@ -64,7 +66,7 @@ try {
     runner: "coven",
     command: executable,
     env: { PATH: "" },
-    platform: "linux",
+    platform: nativePlatform,
   });
   assert.equal(
     absoluteReady.state,
@@ -137,12 +139,12 @@ try {
 
   // Verification matrix: binary absent from every discovery location →
   // missing, with per-runner install/PATH remediation.
-  for (const runner of ["coven", "copilot", "grok", "hermes", "opencode"] as const) {
+  for (const runner of ["coven", "codex", "copilot", "grok", "hermes", "opencode"] as const) {
     const missing = evaluateRuntimeAvailability({
       runner,
       command: runner === "coven" ? "coven" : runner,
       env: { PATH: emptyDir },
-      platform: "linux",
+      platform: nativePlatform,
     });
     assert.equal(missing.state, "missing", `${runner} nowhere on PATH is missing`);
     assert.equal(
@@ -174,7 +176,7 @@ try {
     runner: "hermes",
     command: "hermes",
     env: {},
-    platform: "linux",
+    platform: nativePlatform,
   });
   assert.equal(emptyPath.state, "missing", "an env without PATH resolves nothing");
 

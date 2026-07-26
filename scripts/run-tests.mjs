@@ -1013,6 +1013,7 @@ export const SUITES = {
     "src/lib/grok-bin.test.ts",
     "src/lib/grok-build.test.ts",
     "src/lib/runtime-availability.test.ts",
+    "src/lib/codex-runtime-availability.test.ts",
     "src/app/api/harnesses/route.test.ts",
     "src/lib/copilot-stream.test.ts",
     "src/lib/copilot-bin.test.ts",
