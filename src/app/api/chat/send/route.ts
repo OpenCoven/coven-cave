@@ -63,6 +63,13 @@ import {
 } from "@/lib/grok-build";
 import { grokLaunchCommand } from "@/lib/grok-bin";
 import {
+  parseGrokCompatibilityEvent,
+  probeGrokRunCapabilities,
+  quarantineGrokSchema,
+  redactedGrokEventFingerprint,
+  resolveGrokCompatibility,
+} from "@/lib/grok-compatibility";
+import {
   openCodeCommand,
   openCodeLaunch,
   openCodeSpawnEnv,
@@ -137,6 +144,10 @@ import {
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
+import {
+  dispatchOpenClawGatewayTurn,
+  openClawGatewayPairedDeviceAuthStatus,
+} from "@/lib/openclaw-gateway";
 import {
   OpenClawAgentResolutionError,
   extractOpenClawSessionId,
@@ -615,30 +626,6 @@ function openClawChatResponse(args: {
       }
       const agentId = agentBinding.openclawAgentId;
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
-      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
-      const openclawLaunch = openClawLaunchCommand();
-      if (openclawLaunch.unresolvedWindowsShim) {
-        pushProgress(
-          "openclaw-start",
-          "OpenClaw bridge cannot start safely",
-          "error",
-          "The resolved OpenClaw Windows npm shim could not be mapped to its JavaScript entry point. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
-        );
-        push({
-          kind: "error",
-          code: "openclaw_unsafe_shell",
-          message:
-            "OpenClaw chat is unavailable because its Windows npm shim could not be launched without shell parsing. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
-        });
-        push({
-          kind: "done",
-          durationMs: Date.now() - startedAt,
-          isError: true,
-        });
-        close();
-        return;
-      }
-      const spawnArgv = [...openclawLaunch.fixedArgs, ...argv];
       let cwd: string;
       try {
         cwd = await resolveLocalRuntimeCwd(
@@ -677,6 +664,218 @@ function openClawChatResponse(args: {
         gatewaySessionId: undefined,
         sessionKey: openClawSessionKey(conversationId),
       };
+
+      // Gateway dispatch owns a turn only after it returns the authoritative
+      // run id. Until then this branch leaves the existing CLI bridge as the
+      // safe compatibility fallback; after a request might have reached the
+      // Gateway it deliberately never starts a second CLI turn.
+      let gatewayAssistantText = "";
+      let gatewayAssistantTextEmitted = false;
+      const gatewayAuth = openClawGatewayPairedDeviceAuthStatus();
+      const gatewayDispatch = gatewayAuth.available
+        ? await dispatchOpenClawGatewayTurn({
+        sessionKey: openClawSessionKey(conversationId),
+        agentId,
+        message: args.harnessPrompt,
+        // A direct Gateway turn is only safe when Cave has the caller's
+        // stable request id. Reusing it as Gateway's idempotency key makes a
+        // retry observable to the Gateway instead of creating another run.
+        idempotencyKey: args.body.runId ?? "",
+        onEvent: (event) => {
+          if (event.kind === "status") {
+            pushProgress("openclaw-gateway", "OpenClaw Gateway", "running", event.phase);
+            return;
+          }
+          if (event.kind === "delta") {
+            if (event.replace) {
+              gatewayAssistantText = event.text;
+              gatewayAssistantTextEmitted = true;
+              push({ kind: "assistant_replace", text: event.text });
+              return;
+            }
+            gatewayAssistantText += event.text;
+            gatewayAssistantTextEmitted = true;
+            push({ kind: "assistant_chunk", text: event.text });
+            return;
+          }
+          if (event.kind === "final" && event.text) {
+            if (gatewayAssistantTextEmitted && gatewayAssistantText !== event.text) {
+              push({ kind: "assistant_replace", text: event.text });
+            }
+            gatewayAssistantText = event.text;
+          }
+          if (event.kind === "error") {
+            pushProgress("openclaw-gateway", "OpenClaw Gateway", "error", event.message);
+          }
+        },
+      })
+        : { kind: "unavailable" as const, reason: gatewayAuth.reason ?? "Gateway paired-device authentication is unavailable" };
+      if (gatewayDispatch.kind === "indeterminate") {
+        pushProgress("openclaw-gateway", "OpenClaw Gateway dispatch is indeterminate", "error", gatewayDispatch.reason);
+        push({ kind: "error", code: "openclaw_gateway_indeterminate", message: gatewayDispatch.reason });
+        push({ kind: "done", durationMs: Date.now() - startedAt, isError: true, responseMetadata });
+        close();
+        return;
+      }
+      if (gatewayDispatch.kind === "accepted") {
+        responseMetadata.gatewaySessionId = gatewayDispatch.runId;
+        pushProgress("openclaw-gateway", "OpenClaw Gateway dispatch accepted", "done", `run ${gatewayDispatch.runId}`);
+        const pendingUserTurnId = crypto.randomUUID();
+        const stubTitle = chatTitleFromPrompt(args.promptText) ?? defaultChatTitleForSession(conversationId);
+        void setDefaultSessionTitleIfMissing(conversationId, stubTitle).catch(() => undefined);
+        const stubWrite = createConversationStub({
+          sessionId: conversationId,
+          familiarId: args.body.familiarId,
+          harness: "openclaw",
+          ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
+          ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
+          title: stubTitle,
+          ...(args.body.origin ? { origin: args.body.origin } : {}),
+          userTurn: {
+            id: pendingUserTurnId,
+            text: args.promptText,
+            ...(args.attachments.length ? { attachments: args.attachments } : {}),
+          },
+        }).catch(() => undefined);
+        const stopGateway = () => {
+          void gatewayDispatch.abort();
+        };
+        const runHandle = registerChatRun([args.body.runId, conversationId], stopGateway);
+        let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
+        const armDetachKill = () => {
+          if (runHandle.stopRequested || detachKillTimer != null) return;
+          detachKillTimer = setTimeout(stopGateway, CHAT_DETACH_MAX_MS);
+        };
+        runBuffer = openRunBuffer([args.body.runId, conversationId], {
+          attach: () => {
+            if (detachKillTimer != null) {
+              clearTimeout(detachKillTimer);
+              detachKillTimer = null;
+            }
+          },
+          detach: () => {
+            if (args.req.signal.aborted) armDetachKill();
+          },
+        });
+        const onAbort = () => armDetachKill();
+        args.req.signal.addEventListener("abort", onAbort, { once: true });
+        pushProgress("openclaw-response", "Waiting for OpenClaw Gateway response", "running");
+        const gatewayResult = await gatewayDispatch.done;
+        args.req.signal.removeEventListener("abort", onAbort);
+        if (detachKillTimer != null) clearTimeout(detachKillTimer);
+        unregisterChatRun(runHandle);
+        const durationMs = Date.now() - startedAt;
+        const cancelledByUser = runHandle.stopRequested || gatewayResult.state === "aborted";
+        const isError = gatewayResult.state === "error";
+        if (!gatewayAssistantText.trim()) {
+          gatewayAssistantText = cancelledByUser
+            ? "(cancelled)"
+            : gatewayResult.message ?? "_The OpenClaw Gateway returned no text._";
+        }
+        pushProgress(
+          "openclaw-response",
+          isError ? "OpenClaw Gateway response failed" : "OpenClaw Gateway response received",
+          isError ? "error" : "done",
+          gatewayResult.message,
+          durationMs,
+        );
+        push({ kind: "session", sessionId: conversationId });
+        if (!gatewayAssistantTextEmitted) push({ kind: "assistant_chunk", text: gatewayAssistantText });
+        pushProgress("save-transcript", "Saving transcript", "running");
+        await recordSessionFamiliar(conversationId, args.body.familiarId);
+        await stubWrite;
+        const existing = await loadConversation(conversationId);
+        const hadFirstTurnStub = existing ? stripConversationStubTurn(existing, pendingUserTurnId) : false;
+        const isFirstExchange = !existing || hadFirstTurnStub;
+        const now = new Date().toISOString();
+        const chatTitle = existing?.title ?? defaultChatTitleForSession(conversationId);
+        if (!existing) await setDefaultSessionTitleIfMissing(conversationId, chatTitle);
+        const branchParentId =
+          args.body.parentTurnId !== undefined ? args.body.parentTurnId : existing?.activeLeafId ?? null;
+        const conv = existing ?? {
+          sessionId: conversationId,
+          familiarId: args.body.familiarId,
+          harness: "openclaw",
+          model: responseMetadata.model,
+          runtime: responseMetadata.runtime,
+          title: chatTitle,
+          ...(args.body.origin ? { origin: args.body.origin } : {}),
+          createdAt: now,
+          updatedAt: now,
+          turns: [],
+        };
+        conv.model = responseMetadata.model;
+        conv.runtime = responseMetadata.runtime;
+        persistSendModelIntent(conv, args.body, args.modelState);
+        const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
+        if (workBranch) conv.branch = workBranch;
+        const reportedPrUrl = latestPrUrlFromText(gatewayAssistantText);
+        if (reportedPrUrl) conv.prUrl = reportedPrUrl;
+        const assistantTurnId = crypto.randomUUID();
+        conv.turns.push(
+          {
+            id: pendingUserTurnId,
+            role: "user",
+            text: args.promptText,
+            ...(args.attachments.length ? { attachments: args.attachments } : {}),
+            createdAt: now,
+            ...(branchParentId != null ? { parentId: branchParentId } : {}),
+          },
+          {
+            id: assistantTurnId,
+            role: "assistant",
+            text: gatewayAssistantText.trim(),
+            createdAt: new Date().toISOString(),
+            durationMs,
+            isError,
+            parentId: pendingUserTurnId,
+            responseMetadata,
+            ...(cancelledByUser ? { cancelled: true } : {}),
+          },
+        );
+        conv.activeLeafId = assistantTurnId;
+        await saveConversation(conv);
+        if (isFirstExchange && !isError) await autoNameSessionFromFirstExchange(conversationId, args.promptText);
+        if (!isError) await maybeAutoRenameFromContext(conversationId, args.promptText);
+        pushProgress("save-transcript", "Transcript saved", "done");
+        push({
+          kind: "done",
+          durationMs,
+          isError,
+          sessionId: conversationId,
+          ...(cancelledByUser ? { cancelled: true } : {}),
+          responseMetadata,
+        });
+        gatewayDispatch.close();
+        runBuffer?.finish();
+        await sleep(20);
+        close();
+        return;
+      }
+      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
+      const openclawLaunch = openClawLaunchCommand();
+      if (openclawLaunch.unresolvedWindowsShim) {
+        pushProgress(
+          "openclaw-start",
+          "OpenClaw bridge cannot start safely",
+          "error",
+          "The resolved OpenClaw Windows npm shim could not be mapped to its JavaScript entry point. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
+        );
+        push({
+          kind: "error",
+          code: "openclaw_unsafe_shell",
+          message:
+            "OpenClaw chat is unavailable because its Windows npm shim could not be launched without shell parsing. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
+        });
+        push({
+          kind: "done",
+          durationMs: Date.now() - startedAt,
+          isError: true,
+        });
+        close();
+        return;
+      }
+      const spawnArgv = [...openclawLaunch.fixedArgs, ...argv];
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
       const child = spawn(openclawLaunch.command, spawnArgv, {
         cwd,
@@ -1179,6 +1378,22 @@ export async function POST(req: Request) {
   const openCodeCompatibility = openCodeCapabilities
     ? await resolveOpenCodeCompatibility(openCodeCapabilities)
     : null;
+  // Probe the same ready local launcher/environment that the direct run will
+  // use. A missing or changed CLI remains a truthful preflight failure; it
+  // never turns undocumented output into tool activity.
+  const grokCapabilities = grokDirect
+    ? await probeReadyLocalRuntimeCapability({
+        plan: localRuntimePlan,
+        runner: "grok",
+        probe: () => probeGrokRunCapabilities(
+          { command: localRuntimePlan!.command, fixedArgs: localRuntimePlan!.fixedArgs },
+          localRuntimePlan!.env,
+        ),
+      })
+    : null;
+  const grokCompatibility = grokCapabilities
+    ? await resolveGrokCompatibility(grokCapabilities)
+    : null;
   const hermesModelCapability =
     hermesDirect && hermesApi === null
       ? await probeReadyLocalRuntimeCapability({
@@ -1676,6 +1891,7 @@ export async function POST(req: Request) {
           binding.display_name,
           binding.role,
         ),
+        outputFormat: grokCompatibility?.mode === "structured" ? "streaming-json" : null,
       });
     }
     if (openCodeDirect) {
@@ -1837,7 +2053,7 @@ export async function POST(req: Request) {
       // Compatibility notices are deliberately value-free and must survive
       // transcript reloads; the live SSE buffer alone expires after two
       // minutes. Keep only this narrowly-scoped subset of progress rows.
-      const persistedOpenCodeDiagnostics: NonNullable<ChatTurn["progress"]> = [];
+      const persistedCompatibilityDiagnostics: NonNullable<ChatTurn["progress"]> = [];
       const pushProgress = (
         id: string,
         label: string,
@@ -1845,8 +2061,8 @@ export async function POST(req: Request) {
         detail?: string,
         durationMs?: number,
       ) => {
-        if (id === "opencode-compatibility") {
-          persistedOpenCodeDiagnostics.push({
+        if (id === "opencode-compatibility" || id === "grok-compatibility") {
+          persistedCompatibilityDiagnostics.push({
             id,
             label,
             status,
@@ -2092,6 +2308,24 @@ export async function POST(req: Request) {
       let openCodeProtocolQuarantineNoticeSent = false;
       let openCodeStructuredProtocolQuarantined = false;
       let openCodeModelRejected = false;
+      let grokCompatibilityHealthNoticeSent = false;
+      let grokStructuredProtocolQuarantined = false;
+      let grokProtocolQuarantineNoticeSent = false;
+      const quarantineGrokProtocol = (
+        detail: "malformed-jsonl-event" | "unframed-jsonl-event" | `unknown-event:${string}`,
+      ) => {
+        grokStructuredProtocolQuarantined = true;
+        quarantineGrokSchema(grokCompatibility?.schema);
+        recordStdoutErrorTail("Grok Build emitted a malformed structured event", true);
+        if (grokProtocolQuarantineNoticeSent) return;
+        grokProtocolQuarantineNoticeSent = true;
+        pushProgress(
+          "grok-compatibility",
+          "Grok Build sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
+          "error",
+          detail,
+        );
+      };
       const quarantineOpenCodeProtocol = (
         label: string,
         detail: "malformed-json-event" | "oversized-jsonl-event",
@@ -2401,12 +2635,64 @@ export async function POST(req: Request) {
       };
 
       const handleGrokLine = (line: string, isJson: boolean) => {
+        if (!grokCompatibilityHealthNoticeSent && grokCompatibility?.diagnostic) {
+          grokCompatibilityHealthNoticeSent = true;
+          const label = grokCompatibility.diagnostic === "streaming-json-unavailable"
+            ? "This Grok Build client does not advertise streaming JSON; continuing without tool activity"
+            : grokCompatibility.diagnostic === "built-in-schema-expired"
+              ? "Grok Build's built-in compatibility schema has expired; continuing without tool activity"
+              : grokCompatibility.diagnostic === "no-compatible-schema"
+                ? "This Grok Build client has no verified tool-event schema; continuing without tool activity"
+                : "Grok Build's structured event protocol is unavailable; continuing without tool activity";
+          pushProgress("grok-compatibility", label, "error", grokCompatibility.diagnostic);
+        }
+        if (grokCompatibility?.mode === "plain") {
+          // Plain output is safe only while it is prose. A changed client can
+          // still emit an unverified JSON envelope even after capability
+          // probing failed; never turn that possible tool payload into a
+          // persisted assistant message or diagnostic.
+          let unverifiedStructuredOutput = false;
+          if (isJson) {
+            try {
+              const candidate = JSON.parse(line);
+              unverifiedStructuredOutput = !!candidate && typeof candidate === "object";
+            } catch {
+              // Plain prose can begin with a brace or bracket. It has no
+              // parseable structured boundary, so preserve it as text.
+            }
+          }
+          if (unverifiedStructuredOutput) {
+            recordStdoutErrorTail("Grok Build emitted an unverified structured event", true);
+            if (!grokProtocolQuarantineNoticeSent) {
+              grokProtocolQuarantineNoticeSent = true;
+              pushProgress(
+                "grok-compatibility",
+                "Grok Build emitted unverified structured output; continuing without tool activity",
+                "error",
+                "unverified-structured-output",
+              );
+            }
+            return;
+          }
+          const text = `${resolveBackspaces(stripAnsi(line))}\n`;
+           // Plain mode has no native session event. Once actual assistant
+           // prose arrives, the launched UUID is safe to retain for persistence
+           // and the next resume; do not manufacture it for raw envelopes.
+          if (!grokSessionId && grokSessionHint) grokSessionId = grokSessionHint;
+          if (!sessionId && grokSessionHint) announceSession(grokSessionHint);
+          assistantText += text;
+          push({ kind: "assistant_chunk", text });
+          return;
+        }
         if (!isJson) {
-          recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+          quarantineGrokProtocol("unframed-jsonl-event");
           return;
         }
         try {
-          const event = parseGrokStreamEvent(JSON.parse(line));
+          const raw = JSON.parse(line);
+          const event = grokStructuredProtocolQuarantined
+            ? parseGrokStreamEvent(raw, grokCompatibility?.schema)
+            : parseGrokCompatibilityEvent(raw, grokCompatibility?.schema);
           // A fresh native session's id is assigned by Cave because Grok only
           // returns it in its final frame. Once its first response frame
           // confirms the process is live, retain that id for a cancelled
@@ -2428,7 +2714,7 @@ export async function POST(req: Request) {
               // launch means its --model contract accepted the selected id.
               if (!confirmedModel && grokForwardModel) confirmedModel = desiredModel;
               result = {
-                is_error: event.isError,
+                is_error: false,
                 usage: parseStreamJsonUsage(event.usage),
                 costUsd: parseCostUsd(event.totalCostUsd),
               };
@@ -2439,7 +2725,61 @@ export async function POST(req: Request) {
                 usage: parseStreamJsonUsage(event.usage),
                 costUsd: parseCostUsd(event.totalCostUsd),
               };
-              recordStdoutErrorTail(event.message);
+              // Provider error frames are untrusted structured payloads; keep
+              // their values out of transcript diagnostics.
+              recordStdoutErrorTail("Grok Build returned a structured error", true);
+              return;
+            case "tool_start": {
+              boundarySentinel?.observe(event.name, event.input);
+              const started = toolTracker.envelopeToolUse(event.id, event.name, formatToolInputValue(event.input), assistantText.length);
+              if (started) push({ kind: "tool_use", ...started });
+              const progress = toolTracker.consumePendingEnvelopeProgress(event.id);
+              if (progress) push({ kind: "tool_use", ...progress });
+              const ended = toolTracker.consumePendingEnvelopeResult(event.id);
+              if (ended) push({ kind: "tool_use", ...ended });
+              return;
+            }
+            case "tool_progress": {
+              const progress = toolTracker.envelopeToolProgress(event.id, typeof event.output === "string" ? event.output : formatToolInputValue(event.output));
+              if (progress) push({ kind: "tool_use", ...progress });
+              return;
+            }
+            case "tool_end": {
+              const ended = toolTracker.envelopeToolResult(event.id, typeof event.output === "string" ? event.output : formatToolInputValue(event.output), event.isError);
+              if (ended) push({ kind: "tool_use", ...ended });
+              return;
+            }
+            case "tool_complete": {
+              boundarySentinel?.observe(event.name, event.input);
+              const started = toolTracker.envelopeToolUse(event.id, event.name, formatToolInputValue(event.input), assistantText.length);
+              if (started) push({ kind: "tool_use", ...started });
+              const progress = toolTracker.consumePendingEnvelopeProgress(event.id);
+              if (progress) push({ kind: "tool_use", ...progress });
+              // A terminal frame can be flushed before the combined snapshot.
+              // Keep ToolCallTracker's first terminal outcome instead of
+              // overwriting it with a later duplicate completion.
+              const reorderedEnd = toolTracker.consumePendingEnvelopeResult(event.id);
+              if (reorderedEnd) {
+                push({ kind: "tool_use", ...reorderedEnd });
+                return;
+              }
+              const ended = toolTracker.envelopeToolResult(event.id, typeof event.output === "string" ? event.output : formatToolInputValue(event.output), event.isError);
+              if (ended) push({ kind: "tool_use", ...ended });
+              return;
+            }
+            case "unknown":
+              grokStructuredProtocolQuarantined = true;
+              quarantineGrokSchema(grokCompatibility?.schema);
+              recordStdoutErrorTail("Grok Build emitted a malformed structured event", true);
+              if (!grokProtocolQuarantineNoticeSent) {
+                grokProtocolQuarantineNoticeSent = true;
+                pushProgress(
+                  "grok-compatibility",
+                  "Grok Build sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
+                  "error",
+                  `unknown-event:${redactedGrokEventFingerprint(raw)}`,
+                );
+              }
               return;
             case "ignore":
               return;
@@ -2447,7 +2787,7 @@ export async function POST(req: Request) {
         } catch {
           /* not valid JSON after all — fall through to the error tail */
         }
-        recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+        quarantineGrokProtocol("malformed-jsonl-event");
       };
 
       const handleOpenCodeLine = (line: string) => {
@@ -2593,7 +2933,11 @@ export async function POST(req: Request) {
         if (!line && !(openCodeDirect && openCodeCompatibility?.mode === "plain")) return;
         if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
           openCodeCompatibilityHealthNoticeSent = true;
-          const diagnostic = openCodeCompatibility.diagnostic === "json-format-unavailable"
+          const diagnostic = openCodeCompatibility.diagnostic === "capability-probe-unavailable"
+            ? "Couldn't verify OpenCode JSON events; continuing in plain chat without tool activity"
+            : openCodeCompatibility.diagnostic === "capability-probe-fallback"
+              ? "OpenCode capability probe was unavailable; using recently verified JSON event support"
+            : openCodeCompatibility.diagnostic === "json-format-unavailable"
             ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
             : openCodeCompatibility.diagnostic === "no-compatible-schema"
               ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
@@ -2604,7 +2948,14 @@ export async function POST(req: Request) {
               : openCodeCompatibility.bundleSource === "built-in"
                 ? "OpenCode schema refresh was not trusted; using the shipped compatible parser"
                 : "OpenCode schema refresh was not trusted; using the last known compatible parser";
-          pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
+          pushProgress(
+            "opencode-compatibility",
+            diagnostic,
+            openCodeCompatibility.diagnostic === "capability-probe-unavailable" || openCodeCompatibility.diagnostic === "capability-probe-fallback"
+              ? "done"
+              : "error",
+            openCodeCompatibility.diagnostic,
+          );
         }
         const openCodePlainFallback = openCodeDirect && openCodeCompatibility?.mode === "plain";
         // Plain OpenCode has no structured error envelope, so stdout cannot
@@ -2624,7 +2975,9 @@ export async function POST(req: Request) {
           return;
         }
         if (grokDirect) {
-          handleGrokLine(line, isJson);
+          // Plain Grok fallback must not make a structured envelope with
+          // leading whitespace look like harmless assistant prose.
+          handleGrokLine(line, isJson || /^[{\[]/.test(line.trimStart()));
           return;
         }
         if (openCodeDirect) {
@@ -3436,7 +3789,7 @@ export async function POST(req: Request) {
             // OpenCode normally emits a JSON error envelope, but older CLI
             // builds can exit non-zero with only stderr. Do not mistake that
             // failed invocation for a successful model application below.
-            if ((openCodeDirect || copilotStream) && code !== 0) {
+            if ((openCodeDirect || copilotStream || grokDirect) && code !== 0) {
               result = { ...result, is_error: true };
             }
             // Copilot JSONL stderr can contain raw prompt or tool payloads on
@@ -3448,6 +3801,14 @@ export async function POST(req: Request) {
                 stdoutErrTail.length = 0;
                 stdoutErrTail.push("Copilot exited before completing its response.");
               }
+            }
+            // Grok's stderr can include provider request details or local
+            // paths. Its structured errors already yield a fixed diagnostic;
+            // an unframed non-zero exit must receive the same redaction.
+            if (grokDirect) {
+              stderrTail.length = 0;
+              stdoutErrTail.length = 0;
+              if (code !== 0) stdoutErrTail.push("Grok Build exited before completing its response.");
             }
             pushProgress(
               "harness-start",
@@ -3474,7 +3835,11 @@ export async function POST(req: Request) {
       // stdout. Announce it before spawning instead of relying on handleLine.
       if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
         openCodeCompatibilityHealthNoticeSent = true;
-        const diagnostic = openCodeCompatibility.diagnostic === "json-format-unavailable"
+        const diagnostic = openCodeCompatibility.diagnostic === "capability-probe-unavailable"
+          ? "Couldn't verify OpenCode JSON events; continuing in plain chat without tool activity"
+          : openCodeCompatibility.diagnostic === "capability-probe-fallback"
+            ? "OpenCode capability probe was unavailable; using recently verified JSON event support"
+          : openCodeCompatibility.diagnostic === "json-format-unavailable"
           ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
           : openCodeCompatibility.diagnostic === "no-compatible-schema"
             ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
@@ -3485,7 +3850,14 @@ export async function POST(req: Request) {
             : openCodeCompatibility.bundleSource === "built-in"
               ? "OpenCode schema refresh was not trusted; using the shipped compatible parser"
               : "OpenCode schema refresh was not trusted; using the last known compatible parser";
-        pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
+        pushProgress(
+          "opencode-compatibility",
+          diagnostic,
+          openCodeCompatibility.diagnostic === "capability-probe-unavailable" || openCodeCompatibility.diagnostic === "capability-probe-fallback"
+            ? "done"
+            : "error",
+          openCodeCompatibility.diagnostic,
+        );
       }
       if (openCodeFreshSessionForCompatibility) {
         pushProgress(
@@ -3641,7 +4013,7 @@ export async function POST(req: Request) {
         // OpenCode stderr can include request bodies, provider diagnostics, or
         // local paths. It is useful for other harnesses' existing recovery
         // guidance, but must never become assistant-visible/persisted text.
-        const tailBlock = !openCodeDirect && tailSource.length
+        const tailBlock = !openCodeDirect && !grokDirect && tailSource.length
           ? `\n\n\`\`\`\n${tailSource.slice(-5).join("\n")}\n\`\`\``
           : "";
         const diagnostic = result.is_error
@@ -3707,11 +4079,11 @@ export async function POST(req: Request) {
       // us to normalize provider text. Preserve its leading indentation and
       // trailing blank lines in the durable transcript as well as the live
       // stream; other harnesses retain their established trim behavior.
-      const assistantTextForPersistence = openCodeDirect && openCodeCompatibility?.mode === "plain"
+      const assistantTextForPersistence = (openCodeDirect && openCodeCompatibility?.mode === "plain") || (grokDirect && grokCompatibility?.mode === "plain")
         ? assistantText
         : assistantText.trim();
       const { text: cleanedAssistantText, attachments: agentAttachments } =
-        openCodeDirect && openCodeCompatibility?.mode === "plain"
+        (openCodeDirect && openCodeCompatibility?.mode === "plain") || (grokDirect && grokCompatibility?.mode === "plain")
           ? { text: assistantTextForPersistence, attachments: [] }
           : parseAgentAttachments(assistantTextForPersistence, {
               allowedRoots: sshRuntime ? [] : [cwd, ...grantedProjectRoots],
@@ -3850,8 +4222,8 @@ export async function POST(req: Request) {
             ...(result.usage ? { usage: result.usage } : {}),
             ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
             ...(persistedTools ? { tools: persistedTools } : {}),
-            ...(persistedOpenCodeDiagnostics.length
-              ? { progress: persistedOpenCodeDiagnostics }
+            ...(persistedCompatibilityDiagnostics.length
+              ? { progress: persistedCompatibilityDiagnostics }
               : {}),
             parentId: userTurnId,
             responseMetadata,

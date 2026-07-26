@@ -162,6 +162,11 @@ assert.match(
   /compatibility registry is unavailable; continuing in plain chat without tool activity/,
   "an unavailable expired registry accurately reports plain fallback rather than a parser that is not active",
 );
+assert.match(
+  route,
+  /Couldn't verify OpenCode JSON events; continuing in plain chat without tool activity[\s\S]*?capability-probe-unavailable[\s\S]*?capability-probe-fallback[\s\S]*?\? "done"\s*:\s*"error"/,
+  "an unavailable capability probe is distinct from confirmed JSON incompatibility and does not create a false error issue",
+);
 assert.doesNotMatch(
   route,
   /openCodeStructuredIncompatibility|structured-stream-quarantined/,
@@ -184,8 +189,8 @@ assert.match(
 );
 assert.match(
   route,
-  /child\.on\("close", \(code\) => \{[\s\S]*?if \(\(openCodeDirect \|\| copilotStream\) && code !== 0\)[\s\S]*?is_error: true/,
-  "a non-zero direct OpenCode or Copilot exit cannot be treated as a successful run when no JSON error arrives",
+  /child\.on\("close", \(code\) => \{[\s\S]*?if \(\(openCodeDirect \|\| copilotStream \|\| grokDirect\) && code !== 0\)[\s\S]*?is_error: true/,
+  "a non-zero direct OpenCode, Copilot, or Grok exit cannot be treated as a successful run when no JSON error arrives",
 );
 assert.match(
   route,
@@ -194,8 +199,8 @@ assert.match(
 );
 assert.match(
   route,
-  /const tailBlock = !openCodeDirect && tailSource\.length/,
-  "OpenCode stderr never becomes assistant-visible or persisted empty-response diagnostics",
+  /const tailBlock = !openCodeDirect && !grokDirect && tailSource\.length/,
+  "OpenCode and Grok stderr never become assistant-visible or persisted empty-response diagnostics",
 );
 assert.match(
   route,
@@ -234,8 +239,8 @@ assert.match(
 );
 assert.match(
   route,
-  /persistedOpenCodeDiagnostics[\s\S]*?id === "opencode-compatibility"[\s\S]*?progress: persistedOpenCodeDiagnostics/,
-  "safe OpenCode compatibility diagnostics persist with the completed assistant turn",
+  /persistedCompatibilityDiagnostics[\s\S]*?id === "opencode-compatibility" \|\| id === "grok-compatibility"[\s\S]*?progress: persistedCompatibilityDiagnostics/,
+  "safe OpenCode and Grok compatibility diagnostics persist with the completed assistant turn",
 );
 assert.match(
   route,
@@ -270,7 +275,7 @@ assert.match(
 assert.doesNotMatch(
   capabilities,
   /openCodeCapabilitiesProbe/,
-  "OpenCode must not retain capability evidence that could be stale after an in-place same-version CLI upgrade; chat-send-capabilities tests this behavior with two probes",
+  "OpenCode does not use a normal TTL cache that would skip re-probing after an in-place same-version CLI upgrade",
 );
 
 console.log("opencode harness routing tests passed");

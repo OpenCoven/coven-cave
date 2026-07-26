@@ -1,4 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { realpath, stat } from "node:fs/promises";
+import path from "node:path";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
@@ -6,7 +10,7 @@ import {
   covenRunSupportsPermissionFlag,
 } from "@/lib/harness-adapters";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
+import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import type { OpenCodeRunCapabilities } from "@/lib/opencode-compatibility";
 
 let modelFlagProbe: Promise<boolean> | null = null;
@@ -17,6 +21,26 @@ let openCodeModelFlagProbe: Promise<boolean> | null = null;
 const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 2_500;
 const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
 const OPENCODE_PROBE_CLEANUP_GRACE_MS = 1_000;
+const OPENCODE_VERIFIED_CAPABILITY_FALLBACK_TTL_MS = 60_000;
+const MAX_VERIFIED_OPENCODE_CAPABILITIES = 64;
+const MAX_OPENCODE_FILE_IDENTITIES = 128;
+// The current Windows OpenCode executable is roughly 175 MB. Bound hashing
+// enough to cover supported releases while refusing an arbitrary PATH target.
+const MAX_OPENCODE_IDENTITY_FILE_BYTES = 256 * 1024 * 1024;
+
+type OpenCodeRunContractProbe = { helpProbe: ProbeOutput; versionProbe: ProbeOutput };
+type CapabilityIdentityProbe = (env: NodeJS.ProcessEnv) => string | null | Promise<string | null>;
+type CapabilityClock = () => number;
+type VerifiedCapability = {
+  expiresAt: number;
+  capabilities: OpenCodeRunCapabilities;
+};
+
+// The help surface is re-probed on every turn. This cache is never used to
+// skip that probe: it only avoids turning a transient launcher failure into a
+// false claim that an otherwise unchanged OpenCode lacks JSON support.
+const verifiedOpenCodeCapabilities = new Map<string, VerifiedCapability>();
+const openCodeFileIdentities = new Map<string, string>();
 
 /** PowerShell/npm shims can be delayed by cold start or Defender scanning. */
 export function openCodeCapabilityProbeTimeoutMs(platform: NodeJS.Platform = process.platform): number {
@@ -26,6 +50,17 @@ export function openCodeCapabilityProbeTimeoutMs(platform: NodeJS.Platform = pro
 /** Cleanup remains best-effort: a hung launcher must never block chat fallback. */
 export function openCodeProbeCleanupGraceMs(): number {
   return OPENCODE_PROBE_CLEANUP_GRACE_MS;
+}
+
+/** Exposed for fixtures; this is a fallback lifetime, not a probe cache TTL. */
+export function openCodeVerifiedCapabilityFallbackTtlMs(): number {
+  return OPENCODE_VERIFIED_CAPABILITY_FALLBACK_TTL_MS;
+}
+
+/** A hard cap keeps per-familiar, short-lived evidence from accumulating in a
+ * long-running desktop process. */
+export function openCodeVerifiedCapabilityFallbackLimit(): number {
+  return MAX_VERIFIED_OPENCODE_CAPABILITIES;
 }
 
 /** The help text is the executable contract, and an installed OpenCode may
@@ -350,8 +385,6 @@ function advertisedStructuredSwitches(options: string[], noValueOptions: string[
   });
 }
 
-type OpenCodeRunContractProbe = { helpProbe: ProbeOutput; versionProbe: ProbeOutput };
-
 async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCodeRunContractProbe> {
   const helpLaunch = openCodeLaunch(["run", "--help"], process.platform, env);
   const versionLaunch = openCodeLaunch(["--version"], process.platform, env);
@@ -360,6 +393,122 @@ async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCod
     probeOutput(versionLaunch.command, versionLaunch.args, env, versionLaunch.input),
   ]);
   return { helpProbe, versionProbe };
+}
+
+/**
+ * Return a local-only fingerprint for the exact command files PowerShell or
+ * spawn can resolve. It is intentionally never rendered or persisted. The
+ * npm PowerShell shim and its package executable both participate: package
+ * upgrades can replace the latter while leaving the small `.cmd` shim intact.
+ */
+function rememberOpenCodeFileIdentity(key: string, identity: string): void {
+  openCodeFileIdentities.delete(key);
+  openCodeFileIdentities.set(key, identity);
+  while (openCodeFileIdentities.size > MAX_OPENCODE_FILE_IDENTITIES) {
+    const oldest = openCodeFileIdentities.keys().next().value;
+    if (oldest === undefined) break;
+    openCodeFileIdentities.delete(oldest);
+  }
+}
+
+async function hashFile(file: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(file);
+    stream.on("data", (chunk: string | Buffer) => { hash.update(chunk); });
+    stream.once("error", reject);
+    stream.once("end", () => resolve(hash.digest("hex")));
+  });
+}
+
+async function fileIdentity(file: string, platform: NodeJS.Platform): Promise<string | null> {
+  try {
+    // Resolve a symlink before reading it so changing its target changes the
+    // identity even when the link itself keeps its old metadata.
+    const resolved = await realpath(file);
+    const entry = await stat(resolved);
+    if (!entry.isFile() || entry.size > MAX_OPENCODE_IDENTITY_FILE_BYTES) return null;
+    const stablePath = platform === "win32" ? resolved.toLowerCase() : resolved;
+    // ctime and inode invalidate a retained digest for ordinary in-place
+    // replacements even when an updater preserves the size and mtime.
+    const metadataKey = `${stablePath}\0${entry.size}\0${entry.mtimeMs}\0${entry.ctimeMs}\0${entry.ino}`;
+    const cached = openCodeFileIdentities.get(metadataKey);
+    if (cached) {
+      rememberOpenCodeFileIdentity(metadataKey, cached);
+      return cached;
+    }
+    const digest = await hashFile(resolved);
+    const after = await stat(resolved);
+    const afterKey = `${stablePath}\0${after.size}\0${after.mtimeMs}\0${after.ctimeMs}\0${after.ino}`;
+    // An update racing the stream makes the hash ambiguous. Do not cache or
+    // reuse it; the caller will safely fall back to plain mode for this turn.
+    if (afterKey !== metadataKey) return null;
+    const identity = `${metadataKey}\0${digest}`;
+    rememberOpenCodeFileIdentity(metadataKey, identity);
+    return identity;
+  } catch {
+    return null;
+  }
+}
+
+function npmPackageExecutable(directory: string, pathApi: typeof path.win32): string {
+  // A project-local npm shim sits at node_modules/.bin/opencode.cmd; global
+  // npm shims conventionally sit beside their node_modules directory.
+  const packageRoot = pathApi.basename(directory).toLowerCase() === ".bin"
+    ? pathApi.dirname(directory)
+    : pathApi.join(directory, "node_modules");
+  return pathApi.join(packageRoot, "opencode-ai", "bin", "opencode.exe");
+}
+
+export async function openCodeCapabilityLaunchIdentity(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string | null> {
+  const rawPath = env.PATH ?? env.Path ?? env.path;
+  if (!rawPath) return null;
+  const separator = platform === "win32" ? ";" : ":";
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
+  const extensions = platform === "win32"
+    ? [...new Set([".PS1", ...(env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)].map((extension) => extension.toLowerCase()))]
+    : [""];
+  for (const directory of rawPath.split(separator).filter(Boolean).slice(0, 512)) {
+    for (const extension of extensions) {
+      const candidate = pathApi.join(directory, `${openCodeCommand()}${extension}`);
+      const launcher = await fileIdentity(candidate, platform);
+      if (!launcher) continue;
+      if (platform !== "win32" || extension === ".exe" || extension === ".com") return launcher;
+
+      // A cmd/bat/PowerShell wrapper can dispatch to a mutable downstream
+      // executable. Permit fallback only for npm's known layout, and include
+      // the resolved package executable in the fingerprint. Unknown wrappers
+      // deliberately receive no fallback evidence.
+      const packageTarget = await fileIdentity(npmPackageExecutable(directory, pathApi), platform);
+      return packageTarget ? `${launcher}\0${packageTarget}` : null;
+    }
+  }
+  return null;
+}
+
+function capabilityKey(scope: string, launcherIdentity: string, version: string): string {
+  return `${scope}\0${launcherIdentity}\0${version}`;
+}
+
+function pruneVerifiedOpenCodeCapabilities(now: number): void {
+  for (const [key, evidence] of verifiedOpenCodeCapabilities) {
+    if (evidence.expiresAt <= now) verifiedOpenCodeCapabilities.delete(key);
+  }
+  while (verifiedOpenCodeCapabilities.size > MAX_VERIFIED_OPENCODE_CAPABILITIES) {
+    const oldest = verifiedOpenCodeCapabilities.keys().next().value;
+    if (oldest === undefined) break;
+    verifiedOpenCodeCapabilities.delete(oldest);
+  }
+}
+
+function discardVerifiedOpenCodeCapabilities(scope: string, launcherIdentity: string): void {
+  const prefix = `${scope}\0${launcherIdentity}\0`;
+  for (const key of verifiedOpenCodeCapabilities.keys()) {
+    if (key.startsWith(prefix)) verifiedOpenCodeCapabilities.delete(key);
+  }
 }
 
 function advertisedFormatProtocols(
@@ -471,19 +620,84 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
 export async function openCodeRunCapabilities(
   familiarId?: string,
   probeRunContract: (env: NodeJS.ProcessEnv) => Promise<OpenCodeRunContractProbe> = probeOpenCodeRunContract,
-  spawnEnv?: NodeJS.ProcessEnv,
+  spawnEnvOrCapabilityIdentity?: NodeJS.ProcessEnv | CapabilityIdentityProbe,
+  capabilityIdentityNow: CapabilityClock = Date.now,
 ): Promise<OpenCodeRunCapabilities> {
   // Probe the exact scoped environment used for this chat turn. A version
   // string alone is not a safe cache key: package managers and shims can
   // replace a CLI in place while preserving both PATH and `--version`.
-  const env = spawnEnv ?? openCodeSpawnEnv(familiarId);
+  const env = typeof spawnEnvOrCapabilityIdentity === "function"
+    ? openCodeSpawnEnv(familiarId)
+    : spawnEnvOrCapabilityIdentity ?? openCodeSpawnEnv(familiarId);
+  const capabilityIdentity = typeof spawnEnvOrCapabilityIdentity === "function"
+    ? spawnEnvOrCapabilityIdentity
+    : openCodeCapabilityLaunchIdentity;
+  // Hashing a large npm executable is streamed asynchronously and overlaps
+  // the help/version children, so it never blocks the request event loop.
+  const launcherIdentityBeforeProbe = Promise.resolve(capabilityIdentity(env));
   const { helpProbe, versionProbe } = await probeRunContract(env);
+  const launcherIdentityAfterProbe = await capabilityIdentity(env);
+  const launcherIdentityBefore = await launcherIdentityBeforeProbe;
+  // A launcher update during the probe leaves no trustworthy association
+  // between its output and a later invocation, so fail closed for caching and
+  // fallback even if the reported version is unchanged.
+  const launcherIdentity = launcherIdentityBefore && launcherIdentityBefore === launcherIdentityAfterProbe
+    ? launcherIdentityAfterProbe
+    : null;
   const version = versionProbe.complete
     ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null
     : null;
-  // Partial, timed-out, non-zero, or oversized help is never capability
-  // evidence. Re-probe on the next turn instead of risking unsupported argv.
-  return !helpProbe.complete
-    ? { version, json: false, model: false, session: false, protocols: [], options: [], valueOptions: [], noValueOptions: [], endOfOptions: false, structuredSwitches: [], structuredOutputs: [] }
-    : parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version);
+  const scope = openCodeCapabilityProbeScope(familiarId);
+  const observedNow = capabilityIdentityNow();
+  pruneVerifiedOpenCodeCapabilities(observedNow);
+  if (helpProbe.complete) {
+    const capabilities = {
+      ...parseOpenCodeRunCapabilitiesHelp(helpProbe.output, version),
+      probeStatus: "verified" as const,
+    };
+    // Require both an exact launch-file fingerprint and a completed version
+    // response before retaining evidence. A replacement in place, a changed
+    // PATH, or a failed version probe therefore falls back to plain mode.
+    if (launcherIdentity && !version) {
+      // Complete help is authoritative capability evidence. Without a usable
+      // version it cannot be retained, so erase every prior version for this
+      // scope/launcher rather than allowing a later failed probe to revive a
+      // contradicted JSON contract.
+      discardVerifiedOpenCodeCapabilities(scope, launcherIdentity);
+    } else if (launcherIdentity && version) {
+      verifiedOpenCodeCapabilities.set(capabilityKey(scope, launcherIdentity, version), {
+        expiresAt: observedNow + OPENCODE_VERIFIED_CAPABILITY_FALLBACK_TTL_MS,
+        capabilities,
+      });
+      pruneVerifiedOpenCodeCapabilities(observedNow);
+    }
+    return capabilities;
+  }
+
+  // A partial, timed-out, non-zero, or oversized help response is never new
+  // argv evidence. It may use only a recent complete contract for the same
+  // familiar scope, launcher file, and reported version; it never bypasses a
+  // fresh probe on the next turn.
+  if (launcherIdentity && version) {
+    const key = capabilityKey(scope, launcherIdentity, version);
+    const fallback = verifiedOpenCodeCapabilities.get(key);
+    if (fallback && fallback.expiresAt > observedNow) {
+      return { ...fallback.capabilities, probeStatus: "fallback" };
+    }
+    if (fallback) verifiedOpenCodeCapabilities.delete(key);
+  }
+  return {
+    version,
+    probeStatus: "unavailable",
+    json: false,
+    model: false,
+    session: false,
+    protocols: [],
+    options: [],
+    valueOptions: [],
+    noValueOptions: [],
+    endOfOptions: false,
+    structuredSwitches: [],
+    structuredOutputs: [],
+  };
 }
