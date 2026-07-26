@@ -65,6 +65,7 @@ import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchI
 import {
   evaluateRuntimeAvailability,
   missingRunnerMessage,
+  RUNTIME_AVAILABILITY_ERROR_CODES,
   resolveHermesLaunch,
 } from "@/lib/runtime-availability";
 import {
@@ -2759,13 +2760,24 @@ export async function POST(req: Request) {
               : hermesDirect
                 ? "Hermes failed to start. Check its installation and try again."
               : err.message;
+            // Hermes's preflight and post-preflight race handling share the
+            // availability contract. In particular, a real but unspawnable
+            // executable is not a generic launch failure, and a disappeared
+            // executable remains a distinct missing-runtime condition.
+            const launchFailureCode = hermesDirect
+              ? err.code === "ENOENT"
+                ? RUNTIME_AVAILABILITY_ERROR_CODES.missing
+                : RUNTIME_AVAILABILITY_ERROR_CODES.unlaunchable
+              : err.code === "ENOENT"
+                ? "ENOENT"
+                : "runtime_launch_failed";
             // Race-safe fallback (#3856): preflight can pass and a native
             // executable can still disappear or fail between stat and spawn.
             // Mark this before empty-output handling so it can never become an
             // authentication/no-output assistant response.
             result.is_error = true;
             launchFailure ??= {
-              code: err.code === "ENOENT" ? "ENOENT" : "runtime_launch_failed",
+              code: launchFailureCode,
               message: launchError,
             };
             pushProgress(
@@ -2778,7 +2790,7 @@ export async function POST(req: Request) {
             if (err.code === "ENOENT") {
               push({
                 kind: "error",
-                code: "ENOENT",
+                code: launchFailureCode,
                 // SSH is a remote transport, not a direct runner; every local
                 // runner shares the pre-spawn gate's remediation copy so the
                 // two failure paths cannot drift.
@@ -2798,7 +2810,11 @@ export async function POST(req: Request) {
                       ),
               });
             } else {
-              push({ kind: "error", message: launchError });
+              push({
+                kind: "error",
+                ...(hermesDirect ? { code: launchFailureCode } : {}),
+                message: launchError,
+              });
             }
           };
           const reportHermesProcessFailure = () => {

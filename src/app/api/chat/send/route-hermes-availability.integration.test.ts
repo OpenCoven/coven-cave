@@ -85,9 +85,10 @@ try {
       body: JSON.stringify({ familiarId: "ember", prompt: "hello again", projectRoot: familiarWorkspace }),
     }));
     const { body, events } = await readSse(response);
-    const error = events.find((event) => event.kind === "error");
-    assert.ok(error, "a post-preflight Hermes launch failure is structured");
-    assert.notEqual(error.code, "runtime_missing", "an existing Hermes file is not reclassified as absent after spawn");
+    const errors = events.filter((event) => event.kind === "error");
+    const error = errors[0];
+    assert.equal(errors.length, 1, "a failed Hermes spawn emits one terminal structured error");
+    assert.equal(error?.code, "runtime_unlaunchable", "an existing Hermes file that cannot spawn is unlaunchable, not missing");
     assertNoFabricatedAssistantResponse(body, events);
     assert.ok(!body.includes(bin), "Hermes launch diagnostics do not expose the local executable path");
   }
