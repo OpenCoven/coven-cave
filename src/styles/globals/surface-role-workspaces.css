@@ -154,6 +154,7 @@
 .role-surface-room {
   --room-accent: oklch(0.74 0.11 var(--room-accent-h, 293));
   --room-accent-soft: color-mix(in oklch, var(--room-accent) 22%, transparent);
+  container: role-surface-room / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -173,6 +174,21 @@
   z-index: -1;
   background: radial-gradient(120% 100% at 50% 0%, var(--room-accent-soft), transparent 70%);
   opacity: 0.5;
+}
+
+.role-surface-disclosures {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) 0;
+}
+
+.role-surface-disclosure {
+  min-width: 0;
+}
+
+.role-surface-disclosure--right {
+  margin-left: auto;
 }
 
 .role-surface-columns {
@@ -549,17 +565,43 @@
   overflow-y: auto;
 }
 
-.role-surface-empty {
-  display: flex;
-  flex-direction: column;
+.role-surface-state.ui-empty-state,
+.role-surface-state.ui-error-state {
   align-items: flex-start;
-  gap: var(--space-1);
-  padding: 10px var(--space-2);
-  color: var(--text-muted);
+  max-width: none;
+  margin: 0;
+  padding: var(--space-3) var(--space-2);
+  text-align: left;
 }
 
-.role-surface-empty-title { font-size: 12px; }
-.role-surface-empty-hint { font-size: 11px; opacity: 0.8; line-height: 1.5; }
+.role-surface-state .ui-empty-state-icon,
+.role-surface-state .ui-error-state-icon {
+  width: var(--space-8);
+  height: var(--space-8);
+  margin-bottom: 0;
+}
+
+.role-surface-state .ui-empty-state-headline {
+  font-size: var(--text-base);
+}
+
+.role-surface-state .ui-empty-state-subtitle,
+.role-surface-state .ui-error-state-subtitle {
+  max-width: none;
+}
+
+.role-surface-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+}
+
+.role-surface-state-label {
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
 
 .role-surface-unavailable {
   display: flex;
@@ -627,15 +669,29 @@
   color: var(--text-muted);
 }
 
-/* Narrow shells: stack the room columns; rails become sections above/below
-   the canvas instead of vanishing. */
-@media (max-width: 1023px) {
+/* Narrow room containers keep the canvas primary and reveal either rail on demand. */
+@container role-surface-room (max-width: 860px) {
+  .role-surface-disclosures {
+    display: flex;
+  }
+
   .role-surface-columns {
     grid-template-columns: minmax(0, 1fr);
     overflow-y: auto;
   }
-  .role-surface-rail { overflow-y: visible; }
-  .role-surface-canvas { overflow-y: visible; }
+
+  .role-surface-rail {
+    display: none;
+    overflow-y: visible;
+  }
+
+  .role-surface-rail--expanded {
+    display: flex;
+  }
+
+  .role-surface-canvas {
+    overflow-y: visible;
+  }
 }
 
 /* ── Research mission factory ─────────────────────────────────────────────

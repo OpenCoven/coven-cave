@@ -10,8 +10,46 @@
  * hue via `--room-accent-h`).
  */
 
-import type { CSSProperties, ReactNode } from "react";
+import {
+  Children,
+  createContext,
+  isValidElement,
+  useContext,
+  useId,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { Icon, type IconName } from "@/lib/icon";
+
+type RailSide = "left" | "right";
+
+type SurfaceRailProps = {
+  side: RailSide;
+  label: string;
+  children: ReactNode;
+};
+
+type RailDisclosureContextValue = {
+  ids: Record<RailSide, string>;
+  open: Record<RailSide, boolean>;
+};
+
+const RailDisclosureContext = createContext<RailDisclosureContextValue | null>(null);
+
+function getRailLabels(children: ReactNode) {
+  const labels: Partial<Record<RailSide, string>> = {};
+  Children.forEach(children, (child) => {
+    if (isValidElement<SurfaceRailProps>(child) && child.type === SurfaceRail) {
+      labels[child.props.side] = child.props.label;
+    }
+  });
+  return labels;
+}
 
 export function SurfaceRoom({
   accentHue,
@@ -28,36 +66,88 @@ export function SurfaceRoom({
   drawerTitle?: string;
   onToggleDrawer?: () => void;
 }) {
+  const roomId = useId();
+  const [leftRailOpen, setLeftRailOpen] = useState(false);
+  const [rightRailOpen, setRightRailOpen] = useState(false);
+  const railLabels = getRailLabels(children);
+  const railIds = {
+    left: `${roomId}-left-rail`,
+    right: `${roomId}-right-rail`,
+  };
+  const disclosure = {
+    ids: railIds,
+    open: { left: leftRailOpen, right: rightRailOpen },
+  };
+
   return (
-    <div
-      className="role-surface-room"
-      style={accentHue != null ? ({ "--room-accent-h": String(accentHue) } as CSSProperties) : undefined}
-    >
-      <div className="role-surface-columns">{children}</div>
-      {drawer != null && (
-        <section
-          className={`role-surface-drawer${drawerOpen ? " role-surface-drawer--open" : ""}`}
-          aria-label={drawerTitle}
-        >
-          <button
-            type="button"
-            className="role-surface-drawer-toggle focus-ring-inset"
-            onClick={onToggleDrawer}
-            aria-expanded={drawerOpen ?? false}
+    <RailDisclosureContext.Provider value={disclosure}>
+      <div
+        className="role-surface-room"
+        style={accentHue != null ? ({ "--room-accent-h": String(accentHue) } as CSSProperties) : undefined}
+      >
+        <div className="role-surface-disclosures" role="group" aria-label="Room panels">
+          {railLabels.left ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="role-surface-disclosure"
+              leadingIcon="ph:sidebar-simple"
+              aria-label={`${leftRailOpen ? "Hide" : "Show"} ${railLabels.left}`}
+              aria-expanded={leftRailOpen}
+              aria-controls={railIds.left}
+              onClick={() => setLeftRailOpen((open) => !open)}
+            >
+              {railLabels.left}
+            </Button>
+          ) : null}
+          {railLabels.right ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="role-surface-disclosure role-surface-disclosure--right"
+              trailingIcon="ph:sidebar-simple"
+              aria-label={`${rightRailOpen ? "Hide" : "Show"} ${railLabels.right}`}
+              aria-expanded={rightRailOpen}
+              aria-controls={railIds.right}
+              onClick={() => setRightRailOpen((open) => !open)}
+            >
+              {railLabels.right}
+            </Button>
+          ) : null}
+        </div>
+        <div className="role-surface-columns">{children}</div>
+        {drawer != null && (
+          <section
+            className={`role-surface-drawer${drawerOpen ? " role-surface-drawer--open" : ""}`}
+            aria-label={drawerTitle}
           >
-            <Icon name={drawerOpen ? "ph:caret-down" : "ph:caret-up"} width={14} height={14} aria-hidden />
-            <span>{drawerTitle}</span>
-          </button>
-          {drawerOpen && <div className="role-surface-drawer-body">{drawer}</div>}
-        </section>
-      )}
-    </div>
+            <button
+              type="button"
+              className="role-surface-drawer-toggle focus-ring-inset"
+              onClick={onToggleDrawer}
+              aria-expanded={drawerOpen ?? false}
+            >
+              <Icon name={drawerOpen ? "ph:caret-down" : "ph:caret-up"} width={14} height={14} aria-hidden />
+              <span>{drawerTitle}</span>
+            </button>
+            {drawerOpen && <div className="role-surface-drawer-body">{drawer}</div>}
+          </section>
+        )}
+      </div>
+    </RailDisclosureContext.Provider>
   );
 }
 
-export function SurfaceRail({ side, label, children }: { side: "left" | "right"; label: string; children: ReactNode }) {
+export function SurfaceRail({ side, label, children }: SurfaceRailProps) {
+  const disclosure = useContext(RailDisclosureContext);
+  const expanded = disclosure?.open[side] ?? false;
+
   return (
-    <aside className={`role-surface-rail role-surface-rail--${side}`} aria-label={label}>
+    <aside
+      id={disclosure?.ids[side]}
+      className={`role-surface-rail role-surface-rail--${side}${expanded ? " role-surface-rail--expanded" : ""}`}
+      aria-label={label}
+    >
       {children}
     </aside>
   );
@@ -96,12 +186,52 @@ export function RailSection({
 
 /** Honest empty state — used wherever a backing integration doesn't exist yet
  *  or simply has nothing. Never renders placeholder data. */
-export function SurfaceEmpty({ iconName, title, hint }: { iconName?: IconName; title: string; hint?: string }) {
+export function SurfaceEmpty({
+  iconName,
+  title,
+  hint,
+  action,
+}: {
+  iconName?: IconName;
+  title: string;
+  hint?: string;
+  action?: ReactNode;
+}) {
   return (
-    <div className="role-surface-empty">
-      {iconName && <Icon name={iconName} width={18} height={18} aria-hidden />}
-      <p className="role-surface-empty-title">{title}</p>
-      {hint && <p className="role-surface-empty-hint">{hint}</p>}
+    <EmptyState
+      compact
+      className="role-surface-state"
+      icon={iconName}
+      headline={title}
+      subtitle={hint}
+      actions={action}
+    />
+  );
+}
+
+export function SurfaceLoading({ label }: { label: string }) {
+  return (
+    <div className="role-surface-state role-surface-loading" role="status" aria-label={label} aria-busy="true">
+      <span className="role-surface-state-label">{label}</span>
+      <SkeletonRows count={3} />
     </div>
+  );
+}
+
+export function SurfaceError({ title, hint, onRetry }: { title: string; hint?: string; onRetry?: () => void }) {
+  return (
+    <ErrorState
+      compact
+      className="role-surface-state"
+      headline={title}
+      subtitle={hint}
+      actions={
+        onRetry ? (
+          <Button size="sm" onClick={onRetry}>
+            Retry
+          </Button>
+        ) : undefined
+      }
+    />
   );
 }
