@@ -319,7 +319,13 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   }, [sessionsLoaded, sidebarGroups]);
   useEffect(() => {
     if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
-    setExpandedKeys(projectSelectionKeys(sidebarGroups));
+    const nextExpandedKeys = projectSelectionKeys(sidebarGroups);
+    setExpandedKeys((currentExpandedKeys) =>
+      currentExpandedKeys.length === nextExpandedKeys.length &&
+      currentExpandedKeys.every((key, index) => key === nextExpandedKeys[index])
+        ? currentExpandedKeys
+        : nextExpandedKeys,
+    );
   }, [sidebarHydrated, sidebarGroups]);
   useEffect(() => {
     if (!sidebarHydrated) return;

@@ -18,4 +18,9 @@ assert.match(
   /listOpenCodeModels\(familiarId\?: string \| null\)[\s\S]*?openCodeSpawnEnv\(familiarId\)/,
   "model discovery uses the same familiar-scoped vault environment as a chat run",
 );
+assert.match(
+  serverSource,
+  /const launch = openCodeLaunch\([\s\S]*?evaluateRuntimeAvailability\(openCodeAvailabilityProbe\(launch, env\)\)\.state !== "ready"[\s\S]*?done\(\[\]\);[\s\S]*?return;[\s\S]*?const child = spawn/,
+  "model discovery passively verifies the exact command and required launch files before spawn",
+);
 console.log("opencode-models.test.ts: ok");

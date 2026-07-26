@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -17,8 +17,21 @@ import {
   parseOpenCodeRunCapabilitiesHelp,
 } from "./chat-send-capabilities.ts";
 
+const capabilitiesSource = readFileSync(new URL("./chat-send-capabilities.ts", import.meta.url), "utf8");
+
+assert.match(
+  capabilitiesSource,
+  /probeOpenCodeRunContract[\s\S]*?evaluateRuntimeAvailability\(openCodeAvailabilityProbe\(helpLaunch, env\)\)\.state !== "ready"[\s\S]*?evaluateRuntimeAvailability\(openCodeAvailabilityProbe\(versionLaunch, env\)\)\.state !== "ready"[\s\S]*?probeOutput\(helpLaunch\.command/,
+  "run-contract probes passively verify both exact launch plans and required files before spawning",
+);
+assert.match(
+  capabilitiesSource,
+  /openCodeRunSupportsModel[\s\S]*?evaluateRuntimeAvailability\(openCodeAvailabilityProbe\(launch, env\)\)\.state !== "ready"[\s\S]*?probeHelp\(/,
+  "the model-flag probe passively verifies its exact launch plan and required files before spawning",
+);
+
 assert.equal(openCodeCapabilityProbeTimeoutMs("linux"), 2_500, "non-Windows capability probes retain the short bounded deadline");
-assert.equal(openCodeCapabilityProbeTimeoutMs("win32"), 6_000, "Windows PowerShell/npm launchers receive a bounded cold-start allowance");
+assert.equal(openCodeCapabilityProbeTimeoutMs("win32"), 6_000, "Windows native/npm launches receive a bounded cold-start allowance");
 assert.equal(openCodeProbeCleanupGraceMs(), 1_000, "timed-out probe cleanup has a short final deadline so chat can fall back");
 assert.equal(openCodeVerifiedCapabilityFallbackTtlMs(), 60_000, "only a short-lived verified OpenCode contract can survive a transient probe failure");
 assert.equal(openCodeVerifiedCapabilityFallbackLimit(), 64, "verified capability evidence remains bounded across scoped launches");
@@ -112,13 +125,16 @@ if (process.platform === "win32") {
     const packageBin = path.join(identityRoot, "node_modules", "opencode-ai", "bin");
     mkdirSync(localBin, { recursive: true });
     mkdirSync(packageBin, { recursive: true });
-    writeFileSync(path.join(localBin, "opencode.cmd"), "@echo off\r\n");
     writeFileSync(path.join(localBin, "opencode.exe"), "direct-executable");
     const packageExecutable = path.join(packageBin, "opencode.exe");
     writeFileSync(packageExecutable, "package-target-one");
+    writeFileSync(
+      path.join(localBin, "opencode.cmd"),
+      '"%dp0%\\..\\opencode-ai\\bin\\opencode.exe" %*\r\n',
+    );
     const cmdIdentity = await openCodeCapabilityLaunchIdentity({ PATH: localBin, PATHEXT: ".CMD;.EXE" }, "win32");
     const exeIdentity = await openCodeCapabilityLaunchIdentity({ PATH: localBin, PATHEXT: ".EXE;.CMD" }, "win32");
-    assert.notEqual(cmdIdentity, exeIdentity, "PATHEXT order selects and fingerprints only the actual Windows launcher");
+    assert.notEqual(cmdIdentity, exeIdentity, "PATHEXT order selects and fingerprints only the exact shell-free target");
     const timestamp = new Date("2026-01-01T00:00:00.000Z");
     utimesSync(packageExecutable, timestamp, timestamp);
     writeFileSync(packageExecutable, "package-target-two");
@@ -146,7 +162,7 @@ assert.equal(evictedFallback.probeStatus, "unavailable", "bounded evidence evict
 assert.deepEqual(
   openCodeProbeTreeKillCommand(4242, "win32"),
   { command: "taskkill.exe", args: ["/PID", "4242", "/T", "/F"] },
-  "timed-out Windows probes terminate their launcher tree rather than only PowerShell",
+  "timed-out Windows probes terminate the complete native process tree",
 );
 assert.equal(openCodeProbeTreeKillCommand(4242, "linux"), null, "non-Windows probes retain process-local termination");
 

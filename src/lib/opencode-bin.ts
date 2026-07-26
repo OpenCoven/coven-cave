@@ -1,66 +1,180 @@
-import type { ChildProcess } from "node:child_process";
+import { statSync } from "node:fs";
+import path from "node:path";
+import {
+  windowsShimLaunchCommandForBinary,
+  type CovenLaunchCommand,
+} from "./coven-bin.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
+import type { RuntimeAvailabilityProbe, StatFileFn } from "./runtime-availability.ts";
 
 /** OpenCode is installed as `opencode` on all supported desktop platforms. */
 export function openCodeCommand(): string {
   return "opencode";
 }
 
-// Fixed, value-free sentinels emitted only when the Windows PowerShell host
-// could not invoke the inner CLI after the route's preflight passed. They let
-// the route preserve the no-synthetic-turn launch-failure contract for the
-// small race between the stat check and PowerShell resolving `opencode`.
-export const OPENCODE_COMMAND_NOT_FOUND_MARKER = "COVEN_OPENCODE_COMMAND_NOT_FOUND";
-export const OPENCODE_LAUNCH_FAILED_MARKER = "COVEN_OPENCODE_LAUNCH_FAILED";
+export type OpenCodeLaunch = {
+  command: string;
+  args: string[];
+  unresolvedWindowsShim?: true;
+  resolutionFailed?: true;
+  requiredFiles?: readonly string[];
+};
 
-export type OpenCodeLaunch = { command: string; args: string[]; input?: string };
+/** Resolution metadata is a hard no-spawn boundary for every OpenCode caller. */
+export function isOpenCodeLaunchSpawnable(launch: OpenCodeLaunch): boolean {
+  return launch.unresolvedWindowsShim !== true && launch.resolutionFailed !== true;
+}
 
-function windowsPowerShell(env: NodeJS.ProcessEnv): string {
-  const systemRoot = (env.SystemRoot ?? env.WINDIR ?? "C:\\Windows").replace(/[\\/]+$/, "");
-  return `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+type OpenCodeLaunchOptions = {
+  statFile?: StatFileFn;
+  resolveWindowsShim?: (
+    binary: string,
+    platform?: NodeJS.Platform,
+  ) => CovenLaunchCommand;
+};
+
+type OpenCodeWindowsResolution = CovenLaunchCommand & {
+  resolutionFailed?: true;
+  requiredFiles?: readonly string[];
+};
+
+function isMissingCandidateError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+function windowsPathEntries(env: NodeJS.ProcessEnv): string[] {
+  return (env.PATH ?? env.Path ?? env.path ?? "")
+    .split(";")
+    .filter(Boolean)
+    .slice(0, 512);
+}
+
+function windowsCandidateNames(env: NodeJS.ProcessEnv): string[] {
+  const supported = new Set([".com", ".exe", ".bat", ".cmd"]);
+  const names = new Set<string>();
+  for (const extension of (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";")) {
+    if (!supported.has(extension.toLowerCase())) continue;
+    names.add(`opencode${extension}`);
+    names.add(`opencode${extension.toLowerCase()}`);
+  }
+  return [...names];
+}
+
+function resolveOpenCodeWindowsLaunch(
+  env: NodeJS.ProcessEnv,
+  options: OpenCodeLaunchOptions,
+): OpenCodeWindowsResolution {
+  const statFile = options.statFile
+    ?? ((candidate: string) => statSync(candidate).isFile());
+  const resolveWindowsShim =
+    options.resolveWindowsShim ?? windowsShimLaunchCommandForBinary;
+  const exists = (candidate: string): boolean => {
+    try {
+      return statFile(candidate);
+    } catch (error) {
+      if (isMissingCandidateError(error)) return false;
+      throw error;
+    }
+  };
+
+  try {
+    for (const directory of windowsPathEntries(env)) {
+      for (const name of windowsCandidateNames(env)) {
+        const candidate = path.win32.join(directory, name);
+        if (!exists(candidate)) continue;
+        if (/\.(?:exe|com)$/i.test(candidate)) {
+          return { command: candidate, fixedArgs: [] };
+        }
+        const launch = resolveWindowsShim(candidate, "win32");
+        if (launch.unresolvedWindowsShim) return launch;
+        return {
+          ...launch,
+          ...(launch.fixedArgs.length > 0
+            ? { requiredFiles: [launch.fixedArgs.at(-1)!] }
+            : {}),
+        };
+      }
+
+      // npm normally creates a .cmd beside these files. If only an
+      // extensionless POSIX shim or a PowerShell shim remains, do not skip to a
+      // lower-priority PATH entry and silently launch a different install.
+      for (const unsafeName of ["opencode.ps1", "opencode"]) {
+        const candidate = path.win32.join(directory, unsafeName);
+        if (exists(candidate)) {
+          return {
+            command: candidate,
+            fixedArgs: [],
+            unresolvedWindowsShim: true,
+          };
+        }
+      }
+    }
+  } catch {
+    return {
+      command: "opencode.exe",
+      fixedArgs: [],
+      resolutionFailed: true,
+    };
+  }
+
+  return { command: "opencode.exe", fixedArgs: [] };
 }
 
 /**
- * Npm installs OpenCode's executable as `opencode.cmd` on Windows. Node's
- * `spawn("opencode")` cannot launch a cmd shim, while `shell: true` would
- * concatenate an untrusted chat prompt into a shell command. PowerShell can
- * invoke the shim. Its complete argv arrives as JSON over stdin, so punctuation
- * remains data rather than command syntax and a large chat prompt does not
- * exceed Windows' command-line length limit.
+ * Npm installs OpenCode behind command-shell shims on Windows. Both `.cmd`
+ * (`%*`) and the generated PowerShell wrapper reserialize prompt-bearing argv,
+ * which can rewrite quotes and metacharacters. Resolve the npm shim's proven
+ * package target passively, then let Node spawn that native executable (or
+ * legacy Node script) directly with an argv array.
  */
 export function openCodeLaunch(
   args: readonly string[],
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
+  options: OpenCodeLaunchOptions = {},
 ): OpenCodeLaunch {
   if (platform !== "win32") return { command: openCodeCommand(), args: [...args] };
-  const script = [
-    "$ErrorActionPreference = 'Stop'",
-    "$utf8 = New-Object System.Text.UTF8Encoding $false",
-    "[Console]::InputEncoding = $utf8",
-    "[Console]::OutputEncoding = $utf8",
-    "$OutputEncoding = $utf8",
-    "$openCodeArgs = [Console]::In.ReadToEnd() | ConvertFrom-Json",
-    "try { & opencode @openCodeArgs; exit $LASTEXITCODE } catch { if ($_.Exception -is [System.Management.Automation.CommandNotFoundException]) { [Console]::Error.WriteLine('COVEN_OPENCODE_COMMAND_NOT_FOUND'); exit 127 }; [Console]::Error.WriteLine('COVEN_OPENCODE_LAUNCH_FAILED'); exit 126 }",
-  ].join("; ");
+  const resolution = resolveOpenCodeWindowsLaunch(env, options);
   return {
-    command: windowsPowerShell(env),
-    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
-    input: JSON.stringify(args),
+    command: resolution.command,
+    args: [...resolution.fixedArgs, ...args],
+    ...(resolution.unresolvedWindowsShim
+      ? { unresolvedWindowsShim: true as const }
+      : {}),
+    ...(resolution.resolutionFailed
+      ? { resolutionFailed: true as const }
+      : {}),
+    ...(resolution.requiredFiles
+      ? { requiredFiles: resolution.requiredFiles }
+      : {}),
   };
 }
 
-/** Feed a Windows launch's argv after its PowerShell host has started. */
-export function writeOpenCodeLaunchInput(
-  child: Pick<ChildProcess, "stdin">,
+/**
+ * Canonical availability probe for OpenCode's resolved launch plan (#3862).
+ *
+ * Callers hand in the EXACT launch plan and environment they are about to
+ * spawn, so preflight and launch cannot drift. Windows shim resolution already
+ * produced a direct, shell-free command; this mapper carries its failure and
+ * required-target metadata into the shared passive availability contract. The
+ * user prompt is never an input, so availability is identical for any argv.
+ */
+export function openCodeAvailabilityProbe(
   launch: OpenCodeLaunch,
-): void {
-  if (launch.input === undefined || !child.stdin) return;
-  // A missing executable can close stdin before this write; the child error
-  // handler owns that user-facing failure, so do not turn EPIPE into a server
-  // exception here.
-  child.stdin.on("error", () => {});
-  child.stdin.end(launch.input);
+  env: NodeJS.ProcessEnv,
+  options: { platform?: NodeJS.Platform; statFile?: StatFileFn } = {},
+): RuntimeAvailabilityProbe {
+  return {
+    runner: "opencode",
+    command: launch.command,
+    env,
+    unresolvedWindowsShim: launch.unresolvedWindowsShim === true,
+    resolutionFailed: launch.resolutionFailed === true,
+    requiredFiles: launch.requiredFiles,
+    ...(options.platform !== undefined ? { platform: options.platform } : {}),
+    ...(options.statFile !== undefined ? { statFile: options.statFile } : {}),
+  };
 }
 
 /**

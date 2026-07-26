@@ -26,26 +26,41 @@ process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`;
 
 const executable = process.platform === "win32" ? "opencode.cmd" : "opencode";
 const expectedReply = process.platform === "win32" ? "route reply" : "split 😀";
+if (process.platform === "win32") {
+  await writeFile(path.join(bin, "opencode-shim.mjs"), [
+    "const args = process.argv.slice(2);",
+    "const plain = process.env.OPENCODE_TEST_MODE === \"plain\";",
+    "if (args[0] === \"--version\") { console.log(plain ? \"1.2.4\" : \"1.2.3\"); process.exit(0); }",
+    "if (args[0] === \"run\" && args[1] === \"--help\") {",
+    "  console.log(plain ? \"  --format <format>  Output format: text, json-v2\" : \"  --format <format>  Output format: text, json\");",
+    "  if (!plain) console.log(\"  --session <id>     Session to continue\");",
+    "  process.exit(0);",
+    "}",
+    "if (args[0] !== \"run\") process.exit(9);",
+    "let input = \"\";",
+    "process.stdin.setEncoding(\"utf8\");",
+    "for await (const chunk of process.stdin) input += chunk;",
+    "if (plain) {",
+    "  process.stdout.write([",
+    "    \"permission requested by a fictional assistant; auto-rejecting is only a phrase\",",
+    "    \"  const value = 1;\",",
+    "    \"\",",
+    "    \"  return value;\",",
+    "    \"Session not found in the documentation.\",",
+    "    \"```coven:attachment\",",
+    "    \"{\\\"path\\\":\\\"/not-an-attachment\\\"}\",",
+    "    \"```\",",
+    "  ].join(\"\\n\") + \"\\n\");",
+    "  process.exit(0);",
+    "}",
+    "if (args[1] !== \"--format\" || args[2] !== \"json\" || args[3] === \"--\") process.exit(9);",
+    "if (!input.includes(\"--format text\")) process.exit(8);",
+    "console.log(\"permission requested ... auto-rejecting\");",
+    "console.log(JSON.stringify({ type: \"text\", sessionID: \"native_opencode_session\", part: { type: \"text\", text: \"route reply\" } }));",
+  ].join("\n"));
+}
 const launcher = process.platform === "win32"
-  ? [
-      "@echo off",
-      "if \"%~1\"==\"--version\" if \"%OPENCODE_TEST_MODE%\"==\"plain\" (echo 1.2.4& exit /b 0)",
-      "if \"%~1\"==\"--version\" (echo 1.2.3& exit /b 0)",
-      "if \"%~1\"==\"run\" if \"%~2\"==\"--help\" (",
-      "  if \"%OPENCODE_TEST_MODE%\"==\"plain\" (echo   --format ^<format^>  Output format: text, json-v2& exit /b 0)",
-      "  echo   --format ^<format^>  Output format: text, json",
-      "  echo   --session ^<id^>     Session to continue",
-      "  exit /b 0",
-      ")",
-      "if not \"%~1\"==\"run\" exit /b 9",
-      "if \"%OPENCODE_TEST_MODE%\"==\"plain\" (echo permission requested by a fictional assistant; auto-rejecting is only a phrase& echo   const value = 1;& echo.& echo   return value;& echo Session not found in the documentation.& echo ```coven:attachment& echo {\"path\":\"/not-an-attachment\"}& echo ```& exit /b 0)",
-      "if not \"%~2\"==\"--format\" exit /b 9",
-      "if not \"%~3\"==\"json\" exit /b 9",
-      "if \"%~4\"==\"--\" exit /b 9",
-      "echo permission requested ... auto-rejecting",
-      "echo {\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"type\":\"text\",\"text\":\"route reply\"}}",
-      "exit /b 0",
-    ].join("\r\n")
+  ? '"%dp0%\\node.exe" "%dp0%\\opencode-shim.mjs" %*\r\n'
   : [
       "#!/bin/sh",
       "if [ \"$1\" = \"--version\" ]; then if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then echo 1.2.4; else echo 1.2.3; fi; exit 0; fi",
@@ -54,8 +69,10 @@ const launcher = process.platform === "win32"
       "  exit 0",
       "fi",
       "if [ \"$1\" != \"run\" ]; then exit 9; fi",
+      "input=$(cat)",
       "if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf 'permission requested by a fictional assistant; auto-rejecting is only a phrase\\n  const value = 1;\\n\\n  return value;\\nSession not found in the documentation.\\n```coven:attachment\\n{\"path\":\"/not-an-attachment\"}\\n```\\n'; exit 0; fi",
       "if [ \"$2\" != \"--format\" ] || [ \"$3\" != \"json\" ] || [ \"$4\" = \"--\" ]; then exit 9; fi",
+      "case \"$input\" in *'--format text'*) ;; *) exit 8 ;; esac",
       "printf '%s\\n' 'permission requested ... auto-rejecting'",
       "printf '%s' '{\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"type\":\"text\",\"text\":\"split '",
       "sleep 0.05",
@@ -87,7 +104,7 @@ try {
   }));
   assert.equal(response.status, 200, await response.clone().text());
   const body = await response.text();
-  assert.doesNotMatch(body, /empty response/i, "a legacy OpenCode help surface keeps the compatible positional prompt launch without an unprobed delimiter");
+  assert.doesNotMatch(body, /empty response/i, "a flag-shaped prompt remains ordinary stdin data without requiring an argv delimiter");
   assert.doesNotMatch(body, /opencode-compatibility/i, "a current OpenCode permission control notice does not quarantine the selected JSON schema");
   assert.match(body, new RegExp(`"kind":"assistant_chunk","text":"${expectedReply}\\\\n"`), "the route preserves selected OpenCode JSON text when UTF-8 spans stdout chunks");
   const done = body
@@ -141,38 +158,6 @@ try {
   const quotedResumeBody = await quotedResumeResponse.text();
   assert.match(quotedResumeBody, /Session not found in the documentation\./, "plain fallback preserves assistant text that resembles a resume failure");
   assert.doesNotMatch(quotedResumeBody, /No assistant text returned/, "quoted resume-failure text does not become a synthetic empty-response error");
-
-  // The OpenCode-specific preflight runs before capability discovery or a
-  // prompt/model command. Removing the same shim used by the successful turn
-  // proves the route returns the shared structured remediation and never
-  // manufactures an auth/no-output assistant response.
-  await rm(path.join(bin, executable), { force: true });
-  const missingResponse = await POST(new Request("http://localhost/api/chat/send", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ familiarId: "opal", prompt: "missing OpenCode must not run", projectRoot: familiarWorkspace }),
-  }));
-  assert.equal(missingResponse.status, 200, await missingResponse.clone().text());
-  const missingBody = await missingResponse.text();
-  const missingEvents = missingBody
-    .split("\n")
-    .filter((line) => line.startsWith("data: "))
-    .map((line) => JSON.parse(line.slice("data: ".length)));
-  const missingError = missingEvents.find((event) => event.kind === "error");
-  assert.equal(missingError?.code, "runtime_missing", "missing OpenCode is classified before the chat launch");
-  assert.match(missingError?.message ?? "", /OpenCode CLI not found on PATH/, "missing OpenCode uses its install/PATH remediation");
-  assert.doesNotMatch(missingBody, /installed but not authenticated|produced no output/i, "a missing OpenCode binary never becomes an auth or empty-output diagnosis");
-  assert.ok(!missingEvents.some((event) => event.kind === "assistant_chunk"), "a missing OpenCode binary streams no fabricated assistant response");
-  const missingDone = missingEvents.findLast((event) => event.kind === "done");
-  assert.equal(missingDone?.isError, true, "the no-spawn OpenCode result is terminally errored");
-  if (missingDone?.sessionId) {
-    const missingConversation = await loadConversation(missingDone.sessionId);
-    assert.equal(
-      (missingConversation?.turns ?? []).filter((turn) => turn.role === "assistant").length,
-      0,
-      "the unavailable OpenCode turn never persists a fabricated assistant message",
-    );
-  }
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;

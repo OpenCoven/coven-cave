@@ -19,6 +19,7 @@ try {
     seedDefaultProjectsIfEmpty,
     sortProjectsAlphabetically,
   } = await import("./cave-projects.ts");
+  const { projectForPickerQuery } = await import("./cave-projects-types.ts");
   const source = await readFile(new URL("./cave-projects.ts", import.meta.url), "utf8");
 
   assert.equal(
@@ -253,6 +254,28 @@ try {
     ["new", "solo", "z"],
     "shared project sorting deduplicates by normalized root before alphabetical order",
   );
+
+  assert.equal(
+    typeof projectForPickerQuery,
+    "function",
+    "the shared picker exposes a pure typed-query resolver",
+  );
+  const pickerProjects = [
+    { id: "partial", name: "Alpha Coven tools", root: "/work/alpha", createdAt: "", updatedAt: "" },
+    { id: "exact", name: "Coven", root: "/work/coven", createdAt: "", updatedAt: "" },
+    { id: "root", name: "Toolkit", root: "/work/coven-runtime", createdAt: "", updatedAt: "" },
+  ];
+  assert.equal(
+    projectForPickerQuery(pickerProjects, "  COVEN  ")?.id,
+    "exact",
+    "an exact project-name match wins over an alphabetically earlier partial match",
+  );
+  assert.equal(
+    projectForPickerQuery(pickerProjects, "coven-r")?.id,
+    "root",
+    "typed queries retain the picker's existing root matching",
+  );
+  assert.equal(projectForPickerQuery(pickerProjects, "   "), null, "blank input selects nothing");
 
   console.log("cave-projects.test.ts: ok");
 } finally {
