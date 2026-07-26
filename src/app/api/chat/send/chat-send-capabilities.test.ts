@@ -32,7 +32,7 @@ assert.equal(hermesHelpSupportsModel("  --model <id>\n"), true, "Hermes model fo
     );
     process.chdir(probeDir);
     assert.equal(
-      await hermesChatSupportsModel({ command: process.execPath, env: process.env }),
+      await hermesChatSupportsModel({ command: process.execPath, env: process.env, cwd: probeDir }),
       false,
       "a failed Hermes help probe does not forward --model from its error usage",
     );

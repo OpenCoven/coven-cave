@@ -124,6 +124,7 @@ function probeHelp(
   env = harnessSpawnEnv(),
   input?: string,
   acceptNonZeroExit = true,
+  cwd?: string,
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let output = "";
@@ -136,6 +137,7 @@ function probeHelp(
     try {
       const child = spawn(command, args, {
         env,
+        cwd,
         stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
         ...openCodeProbeSpawnOptions(),
       }) as ChildProcessWithoutNullStreams;
@@ -452,6 +454,7 @@ export function hermesHelpSupportsModel(help: string): boolean {
 export function hermesChatSupportsModel(launch: {
   command: string;
   env: NodeJS.ProcessEnv;
+  cwd: string;
 }): Promise<boolean> {
   return probeHelp(
     launch.command,
@@ -460,6 +463,7 @@ export function hermesChatSupportsModel(launch: {
     launch.env,
     undefined,
     false,
+    launch.cwd,
   );
 }
 

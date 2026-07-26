@@ -1011,56 +1011,6 @@ export async function POST(req: Request) {
         HERMES_API_KEY?: string;
       })
     : null;
-  // The API integration has its own HTTP transport. The direct CLI fallback
-  // gets one server-owned native launch plan before capability probing, then
-  // hands that exact command and scoped environment to spawn below.
-  const hermesLaunch = hermesDirect && hermesApi === null
-    ? resolveHermesLaunch({ familiarId: body.familiarId })
-    : null;
-  const readyHermesLaunch = hermesLaunch?.state === "ready" ? hermesLaunch : null;
-  const modelForwardingEnabled =
-    hermesDirect
-      ? hermesApi !== null ||
-        (readyHermesLaunch !== null && await hermesChatSupportsModel(readyHermesLaunch))
-      : openCodeDirect
-        ? openCodeCompatibility?.capabilities.model ?? false
-        : binding.harness === "grok" ||
-          (binding.harness !== "openclaw" && (await covenRunSupportsModel()));
-  // Hermes, Grok, and OpenCode are direct integrations, so none may wait on
-  // coven capability probes for flags they do not execute.
-  const permissionForwardingEnabled =
-    !openCodeDirect &&
-    binding.harness !== "openclaw" &&
-    binding.harness !== "grok" &&
-    binding.harness !== "hermes" &&
-    (await covenRunSupportsPermission());
-  // Same gating for directory grants (`--add-dir`). Without forwarding, the
-  // granted roots listed in the runtime-scope preamble are prompt-text-only
-  // and the harness denies every access to them.
-  const addDirForwardingEnabled =
-    !openCodeDirect &&
-    binding.harness !== "openclaw" &&
-    binding.harness !== "grok" &&
-    binding.harness !== "hermes" &&
-    (await covenRunSupportsAddDir());
-  const { desiredModel, modelState } = resolveSendModelMetadata({
-    body,
-    config,
-    binding,
-    existingConversation,
-    modelForwardingEnabled,
-  });
-  // Do not turn Cave's provider-level fallback into a pinned Grok model. The
-  // live `grok models` catalog is account-specific and may not contain the
-  // compile-time fallback, while omitting --model reliably selects the CLI's
-  // current authenticated default on every supported host.
-  const grokForwardModel = grokShouldUseCliDefault({
-    modelSource: modelState.source,
-    globalDefaultModel: config.defaults.model,
-  })
-    ? null
-    : cleanModelId(desiredModel);
-
   // Native Cave chat can drive Coven harnesses that resolve through
   // `coven run <harness> --stream-json`, including external adapter manifests.
   // Bundled adapters may opt out when they require a bridge instead of the
@@ -1224,6 +1174,56 @@ export async function POST(req: Request) {
     }
     throw error;
   }
+  // The API integration has its own HTTP transport. The direct CLI fallback
+  // gets one server-owned native launch plan only after the spawn cwd is
+  // known, then hands that exact command, environment, and cwd to both
+  // `chat --help` and the real child below.
+  const hermesLaunch = hermesDirect && hermesApi === null
+    ? resolveHermesLaunch({ familiarId: body.familiarId, cwd })
+    : null;
+  const readyHermesLaunch = hermesLaunch?.state === "ready" ? hermesLaunch : null;
+  const modelForwardingEnabled =
+    hermesDirect
+      ? hermesApi !== null ||
+        (readyHermesLaunch !== null && await hermesChatSupportsModel(readyHermesLaunch))
+      : openCodeDirect
+        ? openCodeCompatibility?.capabilities.model ?? false
+        : binding.harness === "grok" ||
+          (binding.harness !== "openclaw" && (await covenRunSupportsModel()));
+  // Hermes, Grok, and OpenCode are direct integrations, so none may wait on
+  // coven capability probes for flags they do not execute.
+  const permissionForwardingEnabled =
+    !openCodeDirect &&
+    binding.harness !== "openclaw" &&
+    binding.harness !== "grok" &&
+    binding.harness !== "hermes" &&
+    (await covenRunSupportsPermission());
+  // Same gating for directory grants (`--add-dir`). Without forwarding, the
+  // granted roots listed in the runtime-scope preamble are prompt-text-only
+  // and the harness denies every access to them.
+  const addDirForwardingEnabled =
+    !openCodeDirect &&
+    binding.harness !== "openclaw" &&
+    binding.harness !== "grok" &&
+    binding.harness !== "hermes" &&
+    (await covenRunSupportsAddDir());
+  const { desiredModel, modelState } = resolveSendModelMetadata({
+    body,
+    config,
+    binding,
+    existingConversation,
+    modelForwardingEnabled,
+  });
+  // Do not turn Cave's provider-level fallback into a pinned Grok model. The
+  // live `grok models` catalog is account-specific and may not contain the
+  // compile-time fallback, while omitting --model reliably selects the CLI's
+  // current authenticated default on every supported host.
+  const grokForwardModel = grokShouldUseCliDefault({
+    modelSource: modelState.source,
+    globalDefaultModel: config.defaults.model,
+  })
+    ? null
+    : cleanModelId(desiredModel);
   const grantedProjectRoots = sshRuntime
     ? []
     : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
@@ -2826,6 +2826,7 @@ export async function POST(req: Request) {
                   runner: "hermes",
                   command: readyHermesLaunch.command,
                   env: readyHermesLaunch.env,
+                  cwd: readyHermesLaunch.cwd,
                 })
               : null;
             // ENOENT can also mean the selected workspace disappeared between
@@ -3021,7 +3022,7 @@ export async function POST(req: Request) {
                     // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
                     // from the familiar's home. When a project root IS supplied,
                     // honor that instead.
-                    cwd,
+                    cwd: hermesDirect ? readyHermesLaunch!.cwd : cwd,
                     stdio: openCodeLaunchCommand?.input === undefined
                       ? ["ignore", "pipe", "pipe"]
                       : ["pipe", "pipe", "pipe"],

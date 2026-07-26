@@ -85,6 +85,8 @@ export type RuntimeAvailabilityProbe = {
   command: string;
   /** The exact environment object the spawn will receive. */
   env: Record<string, string | undefined>;
+  /** Spawn cwd. Relative PATH entries resolve from this directory. */
+  cwd?: string;
   /** Coven/Grok launch resolution found a Windows shim it could not safely
    * convert into a runnable command (`CovenLaunchCommand.unresolvedWindowsShim`). */
   unresolvedWindowsShim?: boolean;
@@ -103,6 +105,7 @@ export type HermesLaunchPlan = Extract<RuntimeAvailability, {
 }> & {
   command: string;
   env: NodeJS.ProcessEnv;
+  cwd: string;
 };
 
 export type HermesLaunchResolution = HermesLaunchPlan | Exclude<RuntimeAvailability, {
@@ -114,6 +117,7 @@ export type ResolveHermesLaunchOptions = {
   /** Injectable for status checks and focused tests. Chat callers leave this
    * unset so the resolver owns the scoped environment it returns. */
   env?: NodeJS.ProcessEnv;
+  cwd?: string;
   platform?: NodeJS.Platform;
   statFile?: StatFileFn;
 };
@@ -235,6 +239,7 @@ function resolveCommand(
   platform: NodeJS.Platform,
   statFile: StatFileFn,
   candidatesFor: (name: string) => string[],
+  cwd: string,
 ): string | null {
   if (isPathLike(command, platform)) {
     // Launch plans only ever produce absolute path-like commands (discovered
@@ -247,7 +252,12 @@ function resolveCommand(
   const joiner = platform === "win32" ? path.win32 : path.posix;
   for (const dir of pathEntries(env, platform)) {
     for (const candidate of candidatesFor(command)) {
-      const full = joiner.join(dir, candidate);
+      // Node resolves relative PATH entries against the spawn cwd, rather
+      // than the Cave server's cwd. Pin that same resolved path in the launch
+      // plan so preflight, `chat --help`, and the real child cannot drift.
+      const full = joiner.isAbsolute(dir)
+        ? joiner.join(dir, candidate)
+        : joiner.resolve(cwd, dir, candidate);
       if (statFile(full)) return full;
     }
   }
@@ -279,6 +289,7 @@ export function evaluateRuntimeAvailability(
   const { runner, command, env } = probe;
   const platform = probe.platform ?? process.platform;
   const statFile = probe.statFile ?? defaultStatFile;
+  const cwd = probe.cwd ?? process.cwd();
   const label = RUNNER_LABELS[runner];
   try {
     if (probe.unresolvedWindowsShim) {
@@ -289,7 +300,7 @@ export function evaluateRuntimeAvailability(
       );
     }
     const resolved = resolveCommand(command, env, platform, statFile, (name) =>
-      spawnCandidates(name, platform),
+      spawnCandidates(name, platform), cwd,
     );
     if (!resolved) {
       if (probe.powerShellHostedCommand !== undefined) {
@@ -304,7 +315,7 @@ export function evaluateRuntimeAvailability(
       }
       if (platform === "win32") {
         const shimOnly = resolveCommand(command, env, platform, statFile, (name) =>
-          shimOnlyCandidates(name, env),
+          shimOnlyCandidates(name, env), cwd,
         );
         if (shimOnly) {
           return notReady(
@@ -323,6 +334,7 @@ export function evaluateRuntimeAvailability(
         platform,
         statFile,
         (name) => pathExtCandidates(name, env),
+        cwd,
       );
       if (!inner) return notReady(runner, "missing", missingRunnerMessage(runner));
     }
@@ -353,10 +365,12 @@ export function resolveHermesLaunch(
 ): HermesLaunchResolution {
   const platform = options.platform ?? process.platform;
   const env = options.env ?? harnessSpawnEnv(options.familiarId);
+  const cwd = options.cwd ?? process.cwd();
   const availability = evaluateRuntimeAvailability({
     runner: "hermes",
     command: platform === "win32" ? "hermes.exe" : "hermes",
     env,
+    cwd,
     platform,
     statFile: options.statFile,
   });
@@ -364,5 +378,5 @@ export function resolveHermesLaunch(
 
   // Pin the resolved native executable instead of re-spawning the bare name:
   // PATH changes between preflight and spawn must not make the two diverge.
-  return { ...availability, command: availability.resolvedPath, env };
+  return { ...availability, command: availability.resolvedPath, env, cwd };
 }

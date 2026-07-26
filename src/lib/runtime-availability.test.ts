@@ -236,6 +236,19 @@ import {
   if (hermesReady.state === "ready") {
     assert.equal(hermesReady.command, "C:\\bin\\hermes.exe", "the ready plan pins the resolved executable");
     assert.equal(hermesReady.env, hermesEnv, "the ready plan retains the exact scoped spawn environment");
+    assert.equal(hermesReady.cwd, process.cwd(), "the ready plan retains the spawn cwd");
+  }
+
+  const relativePathHermes = resolveHermesLaunch({
+    env: { ...process.env, PATH: "bin" },
+    cwd: "/virtual/workspace",
+    platform: "linux",
+    statFile: posixStats(["/virtual/workspace/bin/hermes"]),
+  });
+  assert.equal(relativePathHermes.state, "ready", "a relative PATH entry resolves from the spawn cwd");
+  if (relativePathHermes.state === "ready") {
+    assert.equal(relativePathHermes.command, "/virtual/workspace/bin/hermes");
+    assert.equal(relativePathHermes.cwd, "/virtual/workspace");
   }
 
   const hermesCmdOnly = resolveHermesLaunch({
