@@ -296,11 +296,18 @@ export async function dispatchOpenClawGatewayTurn(args: {
     },
     onConnectError: (error) => {
       if (!connected) helloReject?.(error);
-      else if (!settled) {
-        args.onEvent({ kind: "error", message: "Gateway connection failed after dispatch" });
-        settle("error", "Gateway connection failed after dispatch");
-        client.stop();
-      }
+      // GatewayClient reports failures while attempting its *next* socket as
+      // onConnectError too. Once the first hello has completed, stopping here
+      // would defeat the client's documented reconnect policy before a later
+      // hello can restore the subscription. A terminal reconnect pause is
+      // handled below instead.
+    },
+    onReconnectPaused: () => {
+      if (settled) return;
+      const message = "Gateway reconnect was paused after dispatch";
+      args.onEvent({ kind: "error", message });
+      settle("error", message);
+      client.stop();
     },
     onEvent: (frame) => {
       if (frame.event === "chat") processChatEvent(frame.payload);

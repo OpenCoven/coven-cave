@@ -222,6 +222,10 @@ function helloOk() {
 }
 
 assert.equal(reconnectDispatch.kind, "accepted");
+// The published client reports a failed *reconnect attempt* through
+// onConnectError before it retries. That must not terminate a Gateway-owned
+// run; a subsequent authenticated hello restores the subscription.
+reconnectOptions.onConnectError?.(new Error("transient reconnect failure"));
 reconnectOptions.onHelloOk?.(helloOk());
 reconnectOptions.onHelloOk?.(helloOk());
 reconnectOptions.onEvent?.({ type: "event", event: "chat", payload: { ...delta, seq: 0 } });
