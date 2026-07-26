@@ -1,9 +1,16 @@
 import { spawn } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, join } from "node:path";
-import { parseRuntimeClientVersion } from "../copilot-stream.ts";
+import {
+  COPILOT_NO_AUTO_UPDATE_ARG,
+  parseRuntimeClientVersion,
+} from "../copilot-stream.ts";
 import { resolveCopilotLaunchCommand } from "../copilot-bin.ts";
-import { scrubSidecarInternalEnv, type CovenLaunchCommand } from "../coven-bin.ts";
+import {
+  covenSpawnEnv,
+  scrubSidecarInternalEnv,
+  type CovenLaunchCommand,
+} from "../coven-bin.ts";
 import { loadVaultMap } from "../vault.ts";
 
 export type CopilotCapabilityProbe = {
@@ -22,16 +29,20 @@ type ProbeCacheEntry = {
 };
 const cache = new Map<string, ProbeCacheEntry>();
 const CACHE_MS = 5 * 60_000;
-const TIMEOUT_MS = 2_500;
+const RESOLUTION_TIMEOUT_MS = 2_500;
+// Copilot's npm/native loader can take tens of seconds to page in after an
+// install or update before `--version` emits. Keep launcher discovery short,
+// but give a successfully resolved version process its own bounded budget.
+const VERSION_PROCESS_TIMEOUT_MS = 30_000;
 
 /**
  * Capability discovery has no familiar context and must never execute an
- * arbitrary PATH launcher with shared or vault-managed credentials. It also
- * deliberately avoids covenSpawnEnv's synchronous login-shell discovery: the
- * entire probe decision stays within TIMEOUT_MS on cold POSIX starts.
+ * arbitrary PATH launcher with shared or vault-managed credentials. Resolve
+ * through the same canonical PATH as the eventual harness spawn, then remove
+ * every vault-managed key before launching the untrusted runtime.
  */
-function probeSpawnEnv(): NodeJS.ProcessEnv {
-  const env = scrubSidecarInternalEnv({ ...process.env });
+function probeSpawnEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env = scrubSidecarInternalEnv({ ...baseEnv });
   for (const key of Object.keys(loadVaultMap(true))) delete env[key];
   return env;
 }
@@ -101,11 +112,16 @@ export async function probeCopilotCapability(
     now?: () => number;
     spawnImpl?: typeof spawn;
     binaryIdentity?: (executable: string) => Promise<string>;
+    /** Test seam; production defaults to the exact Cave harness PATH. */
+    spawnEnv?: () => NodeJS.ProcessEnv;
   } = {},
 ): Promise<CopilotCapabilityProbe> {
   const now = options.now ?? Date.now;
-  const deadline = Date.now() + TIMEOUT_MS;
-  const probeEnv = probeSpawnEnv();
+  // covenSpawnEnv() may synchronously recover a Finder-launched app's login
+  // PATH. Start the asynchronous launcher deadline after that one-time work;
+  // the eventual harness spawn uses the cached result.
+  const probeEnv = probeSpawnEnv(options.spawnEnv?.() ?? covenSpawnEnv());
+  const resolutionDeadline = Date.now() + RESOLUTION_TIMEOUT_MS;
   // Cache by command name plus PATH, then validate the *previously launched*
   // command's binary/script metadata. This keeps normal turns off `where`
   // while invalidating immediately when an npm shim target is updated.
@@ -114,18 +130,24 @@ export async function probeCopilotCapability(
   if (cached && cached.expiresAt > now()) {
     const identity = options.binaryIdentity
       ? await options.binaryIdentity(cached.launchCommand.command)
-      : await identityBeforeDeadline(() => launchIdentity(cached.launchCommand, probeEnv), deadline);
+      : await identityBeforeDeadline(
+          () => launchIdentity(cached.launchCommand, probeEnv),
+          resolutionDeadline,
+        );
     if (identity && identity === cached.identity) return cached.value;
   }
   const launch = await resolveCopilotLaunchCommand(executable, {
-    timeoutMs: Math.max(1, deadline - Date.now()),
+    timeoutMs: Math.max(1, resolutionDeadline - Date.now()),
     env: probeEnv,
   });
   if (launch.resolutionTimedOut) return { version: null, diagnostic: "probe-timeout" };
   if (launch.unresolvedWindowsShim) return { version: null, diagnostic: "version-unavailable" };
   const identity = options.binaryIdentity
     ? await options.binaryIdentity(launch.command)
-    : await identityBeforeDeadline(() => launchIdentity(launch, probeEnv), deadline);
+    : await identityBeforeDeadline(
+        () => launchIdentity(launch, probeEnv),
+        resolutionDeadline,
+      );
   if (!identity) return { version: null, diagnostic: "probe-timeout" };
   const childSpawn = options.spawnImpl ?? spawn;
   const value = await new Promise<CopilotCapabilityProbe>((resolve) => {
@@ -138,11 +160,15 @@ export async function probeCopilotCapability(
     };
     let child: ReturnType<typeof spawn>;
     try {
-      child = childSpawn(launch.command, [...launch.fixedArgs, "--version"], {
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true,
-        env: probeEnv,
-      });
+      child = childSpawn(
+        launch.command,
+        [...launch.fixedArgs, COPILOT_NO_AUTO_UPDATE_ARG, "--version"],
+        {
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+          env: probeEnv,
+        },
+      );
     } catch {
       settle({ version: null, diagnostic: "version-unavailable" });
       return;
@@ -159,7 +185,7 @@ export async function probeCopilotCapability(
       }, 250);
       forceKill.unref?.();
       settle({ version: null, diagnostic: "probe-timeout" });
-    }, Math.max(1, deadline - Date.now()));
+    }, VERSION_PROCESS_TIMEOUT_MS);
     child.stdout?.on("data", (chunk: Buffer | string) => {
       if (stdout.length < 4_096) stdout += String(chunk).slice(0, 4_096 - stdout.length);
     });

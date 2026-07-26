@@ -263,6 +263,11 @@ export type CopilotStreamSpec = {
 // shipped in every CLI version this stream path supports (verified 1.0.70).
 const COPILOT_ADD_DIR_FLAG = "--add-dir";
 
+// Versioned direct streams must execute the same runtime the capability probe
+// selected. An in-process auto-update could otherwise replace the CLI after
+// schema selection and before its first JSONL frame.
+export const COPILOT_NO_AUTO_UPDATE_ARG = "--no-auto-update";
+
 // Approval argv for unattended one-shot runs (flow sessions). A `-p` spawn
 // cannot answer approval prompts, so without these the CLI auto-denies every
 // tool — the "mission workspace was read-only all session" failure that left
@@ -466,7 +471,7 @@ export function isSafeCopilotResumeSessionId(value: string | null | undefined): 
  *  the prefix args; the prompt trails the prefix's `-p` flag. */
 export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
   const { spec } = launch;
-  const args: string[] = [];
+  const args: string[] = [COPILOT_NO_AUTO_UPDATE_ARG];
   // Resume ids are runtime data, never options. Reject control characters and
   // flag-shaped values before argv construction rather than relying on a
   // particular CLI parser's treatment of `--resume --flag`.
