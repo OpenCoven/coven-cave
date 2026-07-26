@@ -19,6 +19,7 @@ import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 import {
+  evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   summarizeRuntimeAvailability,
   type RuntimeAvailabilitySummary,
@@ -94,6 +95,19 @@ function adapterAvailability(id: string): RuntimeAvailabilitySummary {
     // No stream manifest → copilot chats fall back to `coven run` below.
   }
   const launch = covenLaunchCommand();
+  if (id === "claude") {
+    // Claude is launched by `coven run`, so readiness requires BOTH the outer
+    // Coven command and the Claude executable that Coven will resolve from
+    // this same scoped child environment. Do not reduce this to the legacy UI
+    // `which` check: chat send uses this composite contract immediately before
+    // spawning a model turn.
+    return summarizeRuntimeAvailability(evaluateCovenBackedRuntimeAvailability({
+      runner: "claude",
+      covenCommand: launch.command,
+      env,
+      unresolvedCovenWindowsShim: launch.unresolvedWindowsShim === true,
+    }));
+  }
   return summarizeRuntimeAvailability(evaluateRuntimeAvailability({
     runner: "coven",
     command: launch.command,

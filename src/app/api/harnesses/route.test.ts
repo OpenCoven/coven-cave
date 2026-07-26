@@ -26,4 +26,15 @@ assert.match(
   "WSL must report a Windows grok.exe discovered by the native launcher even though Linux which does not use PATHEXT",
 );
 
+assert.match(
+  source,
+  /if \(id === "claude"\) \{[\s\S]*?evaluateCovenBackedRuntimeAvailability\(\{[\s\S]*?runner: "claude",[\s\S]*?covenCommand: launch\.command,[\s\S]*?env,[\s\S]*?unresolvedCovenWindowsShim: launch\.unresolvedWindowsShim === true/,
+  "Claude runtime status must share the Coven-plus-Claude availability plan used by native chat",
+);
+assert.match(
+  source,
+  /const env = id === "opencode" \? openCodeSpawnEnv\(null\) : harnessSpawnEnv\(null\);[\s\S]*?id === "claude"[\s\S]*?env,/,
+  "Claude status probes the same scoped harness environment shape as a local chat launch",
+);
+
 console.log("harness route tests passed");
