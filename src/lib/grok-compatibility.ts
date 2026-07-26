@@ -311,6 +311,11 @@ function configuredGrokRegistrySource(): RegistrySource {
   let checkpoint: GrokRegistryCheckpoint | undefined;
   try { publicKeys = rawKeyring ? JSON.parse(rawKeyring) : single ? { legacy: single } : undefined; } catch { /* invalid config fails closed */ }
   try { checkpoint = rawCheckpoint ? JSON.parse(rawCheckpoint) : undefined; } catch { /* invalid config fails closed */ }
+  try {
+    const parsed = url ? new URL(url) : null;
+    if (parsed && (parsed.protocol !== "https:" || parsed.username || parsed.password)) return {};
+  } catch { return {}; }
+  if (!checkpoint || !Number.isSafeInteger(checkpoint.sequence) || checkpoint.sequence < 1 || !/^[a-f0-9]{64}$/.test(checkpoint.payloadHash)) return {};
   return { url, publicKeys, checkpoint };
 }
 
