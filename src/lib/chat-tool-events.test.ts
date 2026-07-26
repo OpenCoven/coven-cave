@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { LIVE_TOOL_INPUT_CAP, MAX_RECORDED_TOOL_EVENTS, MAX_SETTLED_ENVELOPE_IDS, MAX_SETTLED_RECONCILIATION_CALLS, ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
+import { LIVE_TOOL_INPUT_CAP, LIVE_TOOL_OUTPUT_CAP, MAX_RECORDED_TOOL_EVENTS, MAX_SETTLED_ENVELOPE_IDS, MAX_SETTLED_RECONCILIATION_CALLS, ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
 
 const tracker = new ToolCallTracker(() => 1_000);
 assert.equal(tracker.envelopeToolResult("call_1", "late terminal output", false), null);
@@ -79,6 +79,19 @@ assert.equal(
   terminalWindow.envelopeToolUse("settled-0", "read"),
   null,
   "a retransmitted start remains a no-op after the bounded terminal-id window evicts it, so it cannot reopen the persisted call",
+);
+
+const largeHookStart = new ToolCallTracker(() => 1_000);
+const largeHookStartInput = "x".repeat(LIVE_TOOL_INPUT_CAP + 1);
+assert.equal(
+  largeHookStart.hookStart("read", largeHookStartInput).input,
+  capLiveToolPayload(largeHookStartInput, LIVE_TOOL_INPUT_CAP),
+  "hook starts must cap tool input before returning the live SSE event",
+);
+assert.equal(
+  largeHookStart.hookEnd("read", "x".repeat(LIVE_TOOL_OUTPUT_CAP + 1), false).output,
+  capLiveToolPayload("x".repeat(LIVE_TOOL_OUTPUT_CAP + 1), LIVE_TOOL_OUTPUT_CAP),
+  "hook completions must cap tool output before returning the live SSE event",
 );
 terminalWindow.hookEnd("never-started", undefined, false);
 assert.equal(

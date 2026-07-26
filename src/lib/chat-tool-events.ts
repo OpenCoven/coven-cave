@@ -404,6 +404,7 @@ export class ToolCallTracker {
     // to FIFO; otherwise the completed output can be recorded on the other
     // call's stable id.
     const inputFingerprint = toolInputFingerprint(input);
+    const liveInput = capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP);
     const claim = inputFingerprint === undefined
       ? unclaimedEnvelopeCalls[0]
       : unclaimedEnvelopeCalls.find((c) => c.inputFingerprint === inputFingerprint)
@@ -422,7 +423,7 @@ export class ToolCallTracker {
       // The hook marks actual execution start — a tighter duration baseline
       // than when the envelope was parsed.
       claim.startedAt = this.now();
-      const ev: ToolStreamEvent = { id: claim.id, name, input, status: "running" };
+      const ev: ToolStreamEvent = { id: claim.id, name, input: liveInput, status: "running" };
       this.record(ev, textOffset);
       return ev;
     }
@@ -438,7 +439,7 @@ export class ToolCallTracker {
       // end; remembering it only as completed would leave the live SSE chip
       // running forever.
       this.queueFor(name).push(settledEnvelopeCall);
-      const ev: ToolStreamEvent = { id: settledEnvelopeCall.id, name, input, status: "running" };
+      const ev: ToolStreamEvent = { id: settledEnvelopeCall.id, name, input: liveInput, status: "running" };
       this.record(ev, textOffset);
       return ev;
     }
@@ -453,7 +454,7 @@ export class ToolCallTracker {
       const ev: ToolStreamEvent = {
         id: postBeforePreCall.id,
         name,
-        input,
+        input: liveInput,
         status: previous?.status ?? "ok",
         ...(previous?.durationMs !== undefined ? { durationMs: previous.durationMs } : {}),
       };
@@ -471,7 +472,7 @@ export class ToolCallTracker {
       inputFingerprint,
     };
     queue.push(call);
-    const ev: ToolStreamEvent = { id: call.id, name, input, status: "running" };
+    const ev: ToolStreamEvent = { id: call.id, name, input: liveInput, status: "running" };
     this.record(ev, textOffset);
     return ev;
   }
@@ -479,6 +480,7 @@ export class ToolCallTracker {
   /** post_tool_use hook line: the OLDEST open hook-started call completed. */
   hookEnd(name: string, output: string | undefined, isError: boolean): ToolStreamEvent {
     const queue = this.open.get(name);
+    const liveOutput = capLiveToolPayload(output, LIVE_TOOL_OUTPUT_CAP);
     // FIFO pairing: a post matches the oldest open pre of the same name.
     // Fall back to the oldest envelope-only call (post-hook-only harnesses).
     const hookStartedCall = queue?.find((c) => c.hookStarted);
@@ -505,7 +507,7 @@ export class ToolCallTracker {
         preHookObserved: false,
       };
       this.rememberSettledHookCall(completedHook);
-      const ev: ToolStreamEvent = { id: completedHook.id, name, output, status };
+      const ev: ToolStreamEvent = { id: completedHook.id, name, output: liveOutput, status };
       this.record(ev);
       return ev;
     }
@@ -520,7 +522,7 @@ export class ToolCallTracker {
     // pair. Retain hook-only completions long enough to link that native id
     // rather than rendering a second tool bubble for the same execution.
     if (!call.envelopeId || !call.preHookObserved) this.rememberSettledHookCall(call);
-    const ev: ToolStreamEvent = { id: call.id, name, output, status, durationMs };
+    const ev: ToolStreamEvent = { id: call.id, name, output: liveOutput, status, durationMs };
     this.record(ev);
     return ev;
   }

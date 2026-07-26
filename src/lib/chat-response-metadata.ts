@@ -7,6 +7,8 @@ export type ChatResponseMetadata = {
   runtime: string;
   desiredModel?: string;
   confirmedModel?: string;
+  /** Exact model safe to pin for a retry. Omitted for dynamic CLI defaults. */
+  retryModel?: string;
   modelSource?: ModelScope;
   modelApplicationState?: ModelApplicationState;
   modelApplicationReason?: string;

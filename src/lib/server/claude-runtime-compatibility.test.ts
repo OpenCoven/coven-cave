@@ -139,6 +139,10 @@ const signedV3 = {
   contentHash: "dfbf920628b0110e6628386df12d68d974d85131680711d1d050e534438fcbbe",
   signature: "aLoC2wLxSA9DYh5MGckdxQJbdV1LcIlLhyqu58H++4LdXr+FT/qD3e3kwBDcmsLAm4nE1c/8+DY9/xbY5qzgDA==",
 };
+const profileIdentities = (profiles: Array<{ id: string; sequence: number; contentHash: string }>) =>
+  profiles
+    .map(({ id, sequence, contentHash }) => ({ id, sequence, contentHash }))
+    .sort((a, b) => a.sequence - b.sequence || a.id.localeCompare(b.id));
 await assert.rejects(
   refreshClaudeCompatibilityProfiles([...CLAUDE_COMPATIBILITY_PROFILES, signedV3], {
     path: "ignored",
@@ -172,7 +176,11 @@ await assert.rejects(
   /profile write failed after watermark/,
   "a profile-cache write failure remains visible after the durable rollback barrier advances",
 );
-assert.deepEqual(watermarkBeforeFailedPromotion, { schemaVersion: 1, maxSequence: signedV3.sequence });
+assert.deepEqual(watermarkBeforeFailedPromotion, {
+  schemaVersion: 1,
+  maxSequence: signedV3.sequence,
+  profiles: profileIdentities([...CLAUDE_COMPATIBILITY_PROFILES, signedV3]),
+});
 const failedPromotionResolution = await resolveInstalledClaudeCompatibility({
   version: async () => "2.1.179 (Claude Code)",
   help: async () => "--output-format stream-json",
@@ -199,7 +207,11 @@ assert.equal(
 assert.equal((refreshed as { profiles: Array<{ id: string }> }).profiles.at(-1)?.id, signedV3.id);
 assert.deepEqual(
   persistedWatermark,
-  { schemaVersion: 1, maxSequence: signedV3.sequence },
+  {
+    schemaVersion: 1,
+    maxSequence: signedV3.sequence,
+    profiles: profileIdentities([...CLAUDE_COMPATIBILITY_PROFILES, signedV3]),
+  },
   "a newly accepted sequence must persist before its selectable cache snapshot",
 );
 const v3 = await resolveInstalledClaudeCompatibility({
@@ -218,7 +230,11 @@ await loadClaudeCompatibilityCache({
   path: "ahead-cache",
   read: async () => JSON.stringify({ schemaVersion: 1, profiles: [...CLAUDE_COMPATIBILITY_PROFILES, signedV3] }),
   watermarkPath: "stale-watermark",
-  readWatermark: async () => JSON.stringify({ schemaVersion: 1, maxSequence: 2 }),
+  readWatermark: async () => JSON.stringify({
+    schemaVersion: 1,
+    maxSequence: 2,
+    profiles: profileIdentities(CLAUDE_COMPATIBILITY_PROFILES),
+  }),
 });
 const cacheAheadOfWatermark = await resolveInstalledClaudeCompatibility({
   version: async () => "3.1.0",
@@ -263,6 +279,36 @@ assert.deepEqual(
   "a rejected cache behind a durable high-water mark must not silently select an older bundled profile",
 );
 
+// A high-water sequence alone cannot distinguish a different signed profile
+// set at the same sequence after restart. The durable cache identity must pin
+// the complete accepted snapshot, so an equal-sequence replacement fails
+// closed before it can select the replacement profile.
+resetClaudeCompatibilityCacheForTest();
+const sameSequenceReplacementWatermark = {
+  schemaVersion: 1 as const,
+  maxSequence: signedV3.sequence,
+  profiles: profileIdentities([...CLAUDE_COMPATIBILITY_PROFILES, signedV3]).map((profile) =>
+    profile.sequence === signedV3.sequence
+      ? { ...profile, contentHash: "a".repeat(64) }
+      : profile,
+  ),
+};
+await loadClaudeCompatibilityCache({
+  path: "same-sequence-cache",
+  read: async () => JSON.stringify({ schemaVersion: 1, profiles: [...CLAUDE_COMPATIBILITY_PROFILES, signedV3] }),
+  watermarkPath: "same-sequence-watermark",
+  readWatermark: async () => JSON.stringify(sameSequenceReplacementWatermark),
+});
+assert.deepEqual(
+  await resolveInstalledClaudeCompatibility({
+    version: async () => "3.1.0",
+    help: async () => "--output-format stream-json",
+    now: () => Date.parse("2026-07-24T00:00:00.000Z"),
+  }),
+  { kind: "fallback", reason: "invalid-profile" },
+  "a same-sequence cache replacement must fail closed when it differs from the durable accepted snapshot",
+);
+
 // A registry refresh may be the first request that touches compatibility state
 // after a restart. It must load the durable watermark before deciding whether
 // an otherwise-valid snapshot is an allowed replacement.
@@ -274,7 +320,11 @@ assert.equal(
     path: "higher-cache",
     read: async () => JSON.stringify({ schemaVersion: 1, profiles: [...CLAUDE_COMPATIBILITY_PROFILES, signedV3] }),
     watermarkPath: "higher-watermark",
-    readWatermark: async () => JSON.stringify({ schemaVersion: 1, maxSequence: signedV3.sequence }),
+    readWatermark: async () => JSON.stringify({
+      schemaVersion: 1,
+      maxSequence: signedV3.sequence,
+      profiles: profileIdentities([...CLAUDE_COMPATIBILITY_PROFILES, signedV3]),
+    }),
     write: async () => { downgradedCacheWritten = true; },
     writeWatermark: async () => { downgradedWatermarkWritten = true; },
   }),

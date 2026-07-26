@@ -60,13 +60,20 @@ export function claudeProbeEnvironment(env: Record<string, string | undefined>):
 }
 
 type ProfileCacheDocument = { schemaVersion: 1; profiles: unknown[] };
-type ProfileCacheWatermark = { schemaVersion: 1; maxSequence: number };
+type ProfileCacheIdentity = { id: string; sequence: number; contentHash: string };
+type ProfileCacheWatermark = {
+  schemaVersion: 1;
+  maxSequence: number;
+  /** Identity of the complete accepted snapshot, not merely its high-water mark. */
+  profiles: ProfileCacheIdentity[];
+};
 
 const BUNDLED_PROFILE_MAX_SEQUENCE = Math.max(...CLAUDE_COMPATIBILITY_PROFILES.map((profile) => profile.sequence));
 // This companion record is an append-only high-water mark. It is written
 // before the selectable cache: a crash can leave a profile unavailable, but
 // can never make an older signed profile selectable after a restart.
 let acceptedProfileSequence = BUNDLED_PROFILE_MAX_SEQUENCE;
+let acceptedProfileIdentities = profileCacheIdentities(CLAUDE_COMPATIBILITY_PROFILES)!;
 
 function profileCachePath(): string {
   return path.join(caveHome(), "runtime-compatibility", "claude.json");
@@ -76,24 +83,50 @@ function profileCacheWatermarkPath(): string {
   return path.join(caveHome(), "runtime-compatibility", "claude-watermark.json");
 }
 
-function profileMaxSequence(profiles: readonly unknown[]): number | null {
+function profileCacheIdentities(profiles: readonly unknown[]): ProfileCacheIdentity[] | null {
   if (profiles.length === 0) return null;
-  let maximum = 0;
+  const identities: ProfileCacheIdentity[] = [];
   for (const profile of profiles) {
     if (!profile || typeof profile !== "object" || Array.isArray(profile)) return null;
-    const sequence = (profile as { sequence?: unknown }).sequence;
-    if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 1) return null;
-    maximum = Math.max(maximum, sequence);
+    const { id, sequence, contentHash } = profile as {
+      id?: unknown;
+      sequence?: unknown;
+      contentHash?: unknown;
+    };
+    if (
+      typeof id !== "string" ||
+      !id ||
+      typeof sequence !== "number" ||
+      !Number.isSafeInteger(sequence) ||
+      sequence < 1 ||
+      typeof contentHash !== "string" ||
+      !contentHash
+    ) return null;
+    identities.push({ id, sequence, contentHash });
   }
-  return maximum;
+  return identities.sort((a, b) => a.sequence - b.sequence || a.id.localeCompare(b.id));
+}
+
+function sameProfileCacheIdentities(
+  first: readonly ProfileCacheIdentity[],
+  second: readonly ProfileCacheIdentity[],
+): boolean {
+  return first.length === second.length && first.every((profile, index) =>
+    profile.id === second[index]?.id &&
+    profile.sequence === second[index]?.sequence &&
+    profile.contentHash === second[index]?.contentHash,
+  );
 }
 
 function isProfileCacheWatermark(value: unknown): value is ProfileCacheWatermark {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const watermark = value as ProfileCacheWatermark;
-  return watermark.schemaVersion === 1
-    && Number.isSafeInteger(watermark.maxSequence)
-    && watermark.maxSequence >= BUNDLED_PROFILE_MAX_SEQUENCE;
+  const identities = profileCacheIdentities(watermark.profiles ?? []);
+  return watermark.schemaVersion === 1 &&
+    Number.isSafeInteger(watermark.maxSequence) &&
+    watermark.maxSequence >= BUNDLED_PROFILE_MAX_SEQUENCE &&
+    identities !== null &&
+    Math.max(...identities.map((profile) => profile.sequence)) === watermark.maxSequence;
 }
 
 /** Load a previous accepted profile set before probing. A corrupt, stale, or
@@ -107,7 +140,7 @@ export async function loadClaudeCompatibilityCache(
   } = {},
 ): Promise<void> {
   if (profileCacheLoaded && !dependencies.read) return;
-  let hasDurableWatermark = false;
+  let durableWatermark: ProfileCacheWatermark | null = null;
   try {
     const readWatermark = dependencies.readWatermark
       ?? (dependencies.read ? undefined : (target: string) => readFile(target, "utf8"));
@@ -120,8 +153,9 @@ export async function loadClaudeCompatibilityCache(
           profileCacheTrustFailure = true;
           return;
         }
-        hasDurableWatermark = true;
+        durableWatermark = watermark;
         acceptedProfileSequence = Math.max(acceptedProfileSequence, watermark.maxSequence);
+        acceptedProfileIdentities = watermark.profiles;
       } catch (error) {
         // No watermark exists on a first run. Keep the signed bundled profile
         // sequence as the immutable genesis floor.
@@ -133,25 +167,37 @@ export async function loadClaudeCompatibilityCache(
     }
     const raw = await (dependencies.read ?? ((target) => readFile(target, "utf8")))(dependencies.path ?? profileCachePath());
     const document = JSON.parse(raw) as ProfileCacheDocument;
-    const maximum = document?.schemaVersion === 1 && Array.isArray(document.profiles)
-      ? profileMaxSequence(document.profiles)
+    const identities = document?.schemaVersion === 1 && Array.isArray(document.profiles)
+      ? profileCacheIdentities(document.profiles)
       : null;
     // With a durable watermark, the selectable snapshot must agree with that
     // exact high-water mark. A cache ahead of the watermark is also suspect:
     // if it were accepted, later deletion of that cache would let a lower
     // signed snapshot become selectable from the stale watermark.
-    if (maximum !== null && (!hasDurableWatermark || maximum === acceptedProfileSequence)) {
-      if (!profileCache.refresh(document.profiles) && hasDurableWatermark) {
+    if (identities !== null && durableWatermark &&
+      Math.max(...identities.map((profile) => profile.sequence)) === acceptedProfileSequence &&
+      sameProfileCacheIdentities(identities, durableWatermark.profiles)
+    ) {
+      if (!profileCache.refresh(document.profiles) && durableWatermark) {
         profileCacheTrustFailure = true;
       }
-    } else if (hasDurableWatermark) {
+    } else if (
+      identities !== null &&
+      !durableWatermark &&
+      sameProfileCacheIdentities(identities, acceptedProfileIdentities)
+    ) {
+      // A first-run cache may mirror the shipped bundle before there is a
+      // durable watermark. Do not let any other cache snapshot establish its
+      // own trust anchor merely by being present on disk.
+      profileCache.refresh(document.profiles);
+    } else if (durableWatermark || identities !== null) {
       profileCacheTrustFailure = true;
     }
   } catch {
     // Offline first run and a rejected cache both safely retain the bundle.
     // Once a durable high-water mark exists, however, retaining the bundle
     // would be a rollback to a profile known to be older than accepted state.
-    if (hasDurableWatermark) profileCacheTrustFailure = true;
+    if (durableWatermark) profileCacheTrustFailure = true;
   }
   if (!dependencies.read) profileCacheLoaded = true;
 }
@@ -190,13 +236,16 @@ export async function refreshClaudeCompatibilityProfiles(
     const next = new RuntimeCompatibilityCache(profileCache.current());
     if (!next.refresh(profiles)) return;
     const document = { schemaVersion: 1 as const, profiles: [...next.current()] };
-    const maximum = profileMaxSequence(document.profiles);
-    if (maximum === null || maximum < acceptedProfileSequence) return;
+    const identities = profileCacheIdentities(document.profiles);
+    if (!identities) return;
+    const maximum = Math.max(...identities.map((profile) => profile.sequence));
+    if (maximum < acceptedProfileSequence) return;
     // Persist the monotonic trust anchor first. If the process stops before
     // the profile file is promoted, the same signed snapshot may be retried,
     // but an older cache can never become selectable after restart.
-    if (maximum > acceptedProfileSequence) {
-      const watermark = { schemaVersion: 1 as const, maxSequence: maximum };
+    const identityChanged = !sameProfileCacheIdentities(identities, acceptedProfileIdentities);
+    if (maximum > acceptedProfileSequence || identityChanged) {
+      const watermark = { schemaVersion: 1 as const, maxSequence: maximum, profiles: identities };
       let durableWatermarkWritten = false;
       if (dependencies.writeWatermark) {
         await dependencies.writeWatermark(dependencies.watermarkPath ?? profileCacheWatermarkPath(), watermark);
@@ -230,6 +279,7 @@ export async function refreshClaudeCompatibilityProfiles(
     profileCache = next;
     profileCacheTrustFailure = false;
     acceptedProfileSequence = Math.max(acceptedProfileSequence, maximum);
+    acceptedProfileIdentities = identities;
     // The probe cache contains a completed resolution rather than just raw
     // probe output. It may have selected a fallback for a profile that this
     // refresh just added, so it cannot survive a successful publication.
@@ -250,6 +300,7 @@ export function resetClaudeCompatibilityCacheForTest(): void {
   profileCacheTrustFailure = false;
   refreshQueue = Promise.resolve();
   acceptedProfileSequence = BUNDLED_PROFILE_MAX_SEQUENCE;
+  acceptedProfileIdentities = profileCacheIdentities(CLAUDE_COMPATIBILITY_PROFILES)!;
 }
 
 function runClaude(args: string[]): Promise<string | null> {

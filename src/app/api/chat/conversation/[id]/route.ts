@@ -10,6 +10,7 @@ import {
   deleteConversation,
   loadConversation,
   saveConversation,
+  withConversationLock,
   type ChatTurn,
   type ConversationFile,
 } from "@/lib/cave-conversations";
@@ -71,6 +72,19 @@ function normalizeTurn(input: unknown): ChatTurn | null {
   const now = new Date().toISOString();
   const usage = normalizeTurnUsage(value.usage);
   const costUsd = parseCostUsd(value.costUsd);
+  const reasoningEffort =
+    value.reasoningEffort === "low"
+    || value.reasoningEffort === "medium"
+    || value.reasoningEffort === "high"
+      ? value.reasoningEffort
+      : undefined;
+  const responseSpeed =
+    value.responseSpeed === "fast"
+    || value.responseSpeed === "balanced"
+    || value.responseSpeed === "careful"
+      ? value.responseSpeed
+      : undefined;
+  const modelOverride = cleanModelId(value.modelOverride);
   const progress = Array.isArray(value.progress)
     ? value.progress.flatMap((entry) => {
       if (!entry || typeof entry !== "object") return [];
@@ -114,6 +128,9 @@ function normalizeTurn(input: unknown): ChatTurn | null {
     ...(typeof value.cancelled === "boolean" ? { cancelled: value.cancelled } : {}),
     ...(usage ? { usage } : {}),
     ...(costUsd !== undefined ? { costUsd } : {}),
+    ...(value.role === "user" && reasoningEffort ? { reasoningEffort } : {}),
+    ...(value.role === "user" && responseSpeed ? { responseSpeed } : {}),
+    ...(value.role === "user" && modelOverride ? { modelOverride } : {}),
   };
 }
 
@@ -292,52 +309,52 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return jsonError("invalid json body", 400);
   }
 
-  if (typeof body.activeLeafId === "string" && body.activeLeafId) {
+  return withConversationLock(id, async () => {
     const existing = await loadConversation(id);
     if (!existing) return jsonError("not found", 404);
-    // Reject a leaf that isn't an actual turn — persisting a bogus id would make
-    // resolveActivePath silently fall back to showing every turn unfiltered.
-    if (!existing.turns.some((turn) => turn.id === body.activeLeafId)) {
-      return jsonError("unknown activeLeafId", 400);
+
+    if (typeof body.activeLeafId === "string" && body.activeLeafId) {
+      // Reject a leaf that isn't an actual turn — persisting a bogus id would make
+      // resolveActivePath silently fall back to showing every turn unfiltered.
+      if (!existing.turns.some((turn) => turn.id === body.activeLeafId)) {
+        return jsonError("unknown activeLeafId", 400);
+      }
+      existing.activeLeafId = body.activeLeafId;
+      await saveConversation(existing);
+      return NextResponse.json({ ok: true, conversation: existing });
     }
-    existing.activeLeafId = body.activeLeafId;
-    await saveConversation(existing);
-    return NextResponse.json({ ok: true, conversation: existing });
-  }
 
-  const existing = await loadConversation(id);
-  if (!existing) return jsonError("not found", 404);
-
-  if (body.modelIntent === null) {
-    delete existing.modelIntent;
-    await saveConversation(existing);
-    return NextResponse.json({ ok: true, conversation: existing });
-  }
-
-  if (body.modelIntent !== undefined) {
-    if (!body.modelIntent || typeof body.modelIntent !== "object" || Array.isArray(body.modelIntent)) {
-      return jsonError("invalid model intent", 400);
+    if (body.modelIntent === null) {
+      delete existing.modelIntent;
+      await saveConversation(existing);
+      return NextResponse.json({ ok: true, conversation: existing });
     }
-    const model = cleanModelId(body.modelIntent.model);
-    if (!model) return jsonError("invalid model", 400);
-    if (body.modelIntent.source !== "session") {
-      return jsonError("model intent source must be session", 400);
-    }
-    const reason =
-      typeof body.modelIntent.reason === "string" && body.modelIntent.reason.trim()
-        ? body.modelIntent.reason.trim()
-        : "Saved for this chat.";
-    existing.modelIntent = {
-      model,
-      source: "session",
-      applicationState: "saved",
-      reason,
-    };
-    await saveConversation(existing);
-    return NextResponse.json({ ok: true, conversation: existing });
-  }
 
-  return jsonError("nothing to patch", 400);
+    if (body.modelIntent !== undefined) {
+      if (!body.modelIntent || typeof body.modelIntent !== "object" || Array.isArray(body.modelIntent)) {
+        return jsonError("invalid model intent", 400);
+      }
+      const model = cleanModelId(body.modelIntent.model);
+      if (!model) return jsonError("invalid model", 400);
+      if (body.modelIntent.source !== "session") {
+        return jsonError("model intent source must be session", 400);
+      }
+      const reason =
+        typeof body.modelIntent.reason === "string" && body.modelIntent.reason.trim()
+          ? body.modelIntent.reason.trim()
+          : "Saved for this chat.";
+      existing.modelIntent = {
+        model,
+        source: "session",
+        applicationState: "saved",
+        reason,
+      };
+      await saveConversation(existing);
+      return NextResponse.json({ ok: true, conversation: existing });
+    }
+
+    return jsonError("nothing to patch", 400);
+  });
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
