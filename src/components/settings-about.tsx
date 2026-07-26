@@ -3,7 +3,10 @@
 import "@/styles/settings-about.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
+import {
+  OpenCovenToolsUpdate,
+  type OpenCovenToolsDiagnosticsSnapshot,
+} from "@/components/open-coven-tools-update";
 import {
   UpdateSettingsRow,
   type UpdateSettingsActionHandle,
@@ -21,21 +24,14 @@ import {
 } from "@/lib/about-status";
 import { APP_VERSION } from "@/lib/app-version";
 import { copyText } from "@/lib/clipboard";
+import { exactSemver } from "@/lib/exact-semver";
 import { Icon, type IconName } from "@/lib/icon";
 import { openExternalUrl } from "@/lib/open-external";
-import type { OpenCovenToolStatus } from "@/lib/opencoven-tools-status";
 import { relativeTime } from "@/lib/relative-time";
 
 const STACK = ["Next.js", "React", "Tauri", "Tailwind"] as const;
 const SIDECAR_TOKEN_STORAGE_KEY = "coven-cave:sidecar-auth-token";
 const CLONE_COMMAND = "git clone https://github.com/OpenCoven/coven-cave.git";
-
-type ToolSnapshot = {
-  tools: OpenCovenToolStatus[];
-  checking: boolean;
-  checkedAt: string | null;
-  error: string | null;
-};
 
 type LinkCard = {
   label: string;
@@ -71,9 +67,10 @@ function daemonPresentation(state: AboutDaemonState): {
   tone: "success" | "warning" | "danger" | "muted";
 } {
   if (state.kind === "running") {
+    const version = exactSemver(state.version);
     return {
-      label: state.version ? `daemon v${state.version}` : "daemon running",
-      detail: state.version ? `Running v${state.version}` : "Running (version unavailable)",
+      label: version ? `daemon v${version}` : "daemon running",
+      detail: version ? `Running v${version}` : "Running (version unavailable)",
       tone: "success",
     };
   }
@@ -94,7 +91,7 @@ function safeDaemonDiagnostics(state: AboutDaemonState) {
   if (state.kind === "running") {
     return {
       state: "running",
-      version: state.version,
+      version: exactSemver(state.version),
       checkedAt: state.checkedAt,
     };
   }
@@ -195,17 +192,20 @@ export function AboutSection() {
   const { announce } = useAnnouncer();
   const updateActionRef = useRef<UpdateSettingsActionHandle>(null);
   const daemonRequestRef = useRef<AbortController | null>(null);
-  const diagnosticsRequestRef = useRef<AbortController | null>(null);
   const diagnosticsResetRef = useRef<number | null>(null);
+  const [updateCheckAvailable, setUpdateCheckAvailable] = useState(false);
   const [daemonState, setDaemonState] = useState<AboutDaemonState>({
     kind: "checking",
   });
-  const [toolSnapshot, setToolSnapshot] = useState<ToolSnapshot>({
-    tools: [],
-    checking: true,
-    checkedAt: null,
-    error: null,
-  });
+  const [toolSnapshot, setToolSnapshot] =
+    useState<OpenCovenToolsDiagnosticsSnapshot>({
+      tools: [],
+      checking: true,
+      error: null,
+      lastSuccessfulCheckedAt: null,
+      installJobs: {},
+      installResults: {},
+    });
   const toolSnapshotRef = useRef(toolSnapshot);
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<
     "idle" | "copying" | "copied" | "failed"
@@ -247,95 +247,36 @@ export function AboutSection() {
       });
   }, []);
 
-  const loadToolSnapshot = useCallback(
-    async (
-      force = false,
-      signal?: AbortSignal,
-    ): Promise<ToolSnapshot | null> => {
-      const checkingSnapshot: ToolSnapshot = {
-        ...toolSnapshotRef.current,
-        checking: true,
-        error: force ? toolSnapshotRef.current.error : null,
-      };
-      toolSnapshotRef.current = checkingSnapshot;
-      setToolSnapshot(checkingSnapshot);
-      try {
-        const response = await fetch("/api/onboarding/update", {
-          method: force ? "POST" : "GET",
-          cache: "no-store",
-          signal,
-        });
-        const payload = (await response.json()) as {
-          ok?: boolean;
-          tools?: OpenCovenToolStatus[];
-          checkedAt?: string | null;
-          error?: string | null;
-        };
-        if (!response.ok || payload.ok === false) {
-          throw new Error(payload.error ?? "tool check failed");
-        }
-        const next: ToolSnapshot = {
-          tools: Array.isArray(payload.tools) ? payload.tools : [],
-          checking: false,
-          checkedAt:
-            payload.checkedAt ??
-            (Array.isArray(payload.tools) ? payload.tools[0]?.checkedAt : null) ??
-            null,
-          error: payload.error ?? null,
-        };
-        if (!signal?.aborted) {
-          toolSnapshotRef.current = next;
-          setToolSnapshot(next);
-        }
-        return next;
-      } catch (error) {
-        if (signal?.aborted) return null;
-        const message =
-          error instanceof Error ? error.message : "tool check failed";
-        const failedSnapshot: ToolSnapshot = {
-          ...toolSnapshotRef.current,
-          checking: false,
-          error: message,
-        };
-        toolSnapshotRef.current = failedSnapshot;
-        setToolSnapshot(failedSnapshot);
-        return failedSnapshot;
-      }
+  const handleToolSnapshot = useCallback(
+    (snapshot: OpenCovenToolsDiagnosticsSnapshot) => {
+      toolSnapshotRef.current = snapshot;
+      setToolSnapshot(snapshot);
     },
     [],
   );
 
   useEffect(() => {
     refreshDaemon();
-    const controller = new AbortController();
-    void loadToolSnapshot(false, controller.signal);
     return () => {
-      controller.abort();
       daemonRequestRef.current?.abort();
-      diagnosticsRequestRef.current?.abort();
       if (diagnosticsResetRef.current !== null) {
         window.clearTimeout(diagnosticsResetRef.current);
       }
     };
-  }, [loadToolSnapshot, refreshDaemon]);
+  }, [refreshDaemon]);
 
   const handleCopyDiagnostics = useCallback(async () => {
     if (diagnosticsStatus === "copying") return;
     setDiagnosticsStatus("copying");
-    diagnosticsRequestRef.current?.abort();
-    const controller = new AbortController();
-    diagnosticsRequestRef.current = controller;
-    const refreshed = await loadToolSnapshot(false, controller.signal);
-    if (controller.signal.aborted) return;
-    const snapshot = refreshed ?? toolSnapshot;
+    const snapshot = toolSnapshotRef.current;
     const safeToolDiagnostics = JSON.parse(
       buildSafeToolDiagnostics({
         tools: snapshot.tools,
         checking: snapshot.checking,
         error: snapshot.error,
-        lastSuccessfulCheckedAt: snapshot.checkedAt,
-        installJobs: {},
-        installResults: {},
+        lastSuccessfulCheckedAt: snapshot.lastSuccessfulCheckedAt,
+        installJobs: snapshot.installJobs,
+        installResults: snapshot.installResults,
         href: window.location.href,
         sidecarTokenPresent: sidecarTokenPresent(),
         tauriInternalsPresent: "__TAURI_INTERNALS__" in window,
@@ -372,8 +313,6 @@ export function AboutSection() {
     announce,
     daemonState,
     diagnosticsStatus,
-    loadToolSnapshot,
-    toolSnapshot,
   ]);
 
   const pokeSigil = () => {
@@ -469,9 +408,11 @@ export function AboutSection() {
             variant="primary"
             size="sm"
             leadingIcon="ph:arrow-clockwise-bold"
+            disabled={!updateCheckAvailable}
             onClick={() => {
-              updateActionRef.current?.check();
-              announce("Checking for Cave updates.");
+              if (updateActionRef.current?.check()) {
+                announce("Checking for Cave updates.");
+              }
             }}
           >
             Check for updates
@@ -491,7 +432,10 @@ export function AboutSection() {
               <span className="settings-about-row__label">App version</span>
               <code className="settings-about-row__code">v{APP_VERSION}</code>
             </div>
-            <UpdateSettingsRow actionRef={updateActionRef} />
+            <UpdateSettingsRow
+              actionRef={updateActionRef}
+              onCheckAvailabilityChange={setUpdateCheckAvailable}
+            />
             <AboutDaemonStatusRow
               state={daemonState}
               onRefresh={refreshDaemon}
@@ -536,7 +480,10 @@ export function AboutSection() {
             OpenCoven tools
           </SectionRule>
           <div className="settings-about-sheet settings-about-tools">
-            <OpenCovenToolsUpdate showDiagnosticsAction={false} />
+            <OpenCovenToolsUpdate
+              showDiagnosticsAction={false}
+              onSnapshotChange={handleToolSnapshot}
+            />
           </div>
         </div>
       </div>

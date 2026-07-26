@@ -29,10 +29,12 @@ import { Icon } from "@/lib/icon";
 import { groupInboxFeed } from "@/lib/inbox-feed";
 import { greetingForHour } from "@/lib/home-greeting";
 import { relativeAge } from "@/lib/rss";
+import { filterVisibleChatSessions } from "@/lib/chat-projects";
 import { useDashboardBoard } from "@/components/home/use-dashboard-board";
 import {
   OPEN_WORK_FILTERS,
   OPEN_WORK_FILTER_LABEL,
+  filterFamiliarOwned,
   filterOpenWork,
   openWorkCounts,
   openWorkPriorityLabel,
@@ -126,12 +128,20 @@ export function ChatNewDashboard({
   // that item's session (or land on Schedules), read-stamped like the bell.
   const boardCards = useDashboardBoard();
   const needsYou = useNeedsYou();
+  const scopedBoardCards = useMemo(
+    () => filterFamiliarOwned(boardCards, familiar.id),
+    [boardCards, familiar.id],
+  );
+  const scopedNeedsYou = useMemo(
+    () => filterFamiliarOwned(needsYou, familiar.id),
+    [needsYou, familiar.id],
+  );
   const openWork = useMemo(() => {
-    const board = openWorkRows(boardCards).map((r) => ({
+    const board = openWorkRows(scopedBoardCards).map((r) => ({
       ...r,
       onOpen: () => navigateMode("board"),
     }));
-    const needs = needsYou.map((item) => ({
+    const needs = scopedNeedsYou.map((item) => ({
       id: `needs-${item.id}`,
       title: item.title,
       kind: "inbox" as const,
@@ -148,7 +158,7 @@ export function ChatNewDashboard({
       },
     }));
     return [...board, ...needs];
-  }, [boardCards, needsYou]);
+  }, [scopedBoardCards, scopedNeedsYou]);
   const [workFilter, setWorkFilter] = useState<OpenWorkFilter>("all");
   const workCounts = useMemo(() => openWorkCounts(openWork), [openWork]);
   // Capped so the no-scroll board fits the pane; "View all in Tasks →" carries
@@ -157,13 +167,13 @@ export function ChatNewDashboard({
     () => filterOpenWork(openWork, workFilter).slice(0, OPEN_WORK_ROWS_CAP),
     [openWork, workFilter],
   );
-  // Recent threads: the freshest titled sessions, newest-first, capped.
+  // Recent threads: this familiar's freshest titled sessions, newest-first,
+  // capped after applying the shared chat visibility contract.
   const recentThreads = useMemo(() => {
-    return sessions
-      .filter((s) => !s.archived_at && !s.generated && Boolean(s.title?.trim()))
-      .sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""))
+    return filterVisibleChatSessions(sessions, familiar.id)
+      .filter((s) => Boolean(s.title?.trim()))
       .slice(0, RECENT_THREADS_CAP);
-  }, [sessions]);
+  }, [sessions, familiar.id]);
 
   return (
     <div className="home-dash__body home-dash--embed select-none" data-testid="chat-new-dashboard">
@@ -213,7 +223,7 @@ export function ChatNewDashboard({
           <section className="home-dash__section" aria-label="Open work">
             <div className="home-dash__section-head">
               <div className="home-dash__section-label">Open work</div>
-              {workFilter === "inbox" && needsYou.length > 0 ? (
+              {workFilter === "inbox" && scopedNeedsYou.length > 0 ? (
                 <button
                   type="button"
                   className="home-dash__section-link"

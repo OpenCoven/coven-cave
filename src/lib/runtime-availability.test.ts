@@ -25,7 +25,7 @@ try {
   assert.deepEqual(
     localRuntimeLaunchError("grok", "ENOENT"),
     {
-      code: "ENOENT",
+      code: "runtime_missing",
       message: missingRunnerMessage("grok"),
     },
     "a post-spawn missing-interpreter race retains the missing-runner contract",
@@ -43,7 +43,8 @@ try {
   const emptyDir = path.join(scratch, "empty");
   mkdirSync(binDir);
   mkdirSync(emptyDir);
-  const executable = path.join(binDir, "grok");
+  const grokFilename = process.platform === "win32" ? "grok.exe" : "grok";
+  const executable = path.join(binDir, grokFilename);
   writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   chmodSync(executable, 0o755);
 
@@ -51,14 +52,14 @@ try {
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
     command: "grok",
-    env: { PATH: `${emptyDir}:${binDir}` },
-    platform: "linux",
+    env: { PATH: `${emptyDir}${path.delimiter}${binDir}` },
+    platform: process.platform,
   });
   assert.equal(ready.state, "ready", "a bare command on the spawn PATH is ready");
-  assert.match(
-    String(ready.state === "ready" && ready.resolvedPath),
-    /(?:^|[\\/])grok$/,
-    "ready reports the exact executable name selected from the spawn PATH",
+  assert.equal(
+    ready.state === "ready" && path.win32.resolve(ready.resolvedPath),
+    path.win32.resolve(executable),
+    "ready reports where the exact spawn command resolved",
   );
 
   const linuxBinDir = "/runtime-availability/bin";
@@ -102,20 +103,17 @@ try {
     RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing,
     "a missing outer Coven has a distinct structured code",
   );
-
-  if (process.platform !== "win32") {
-    const absoluteReady = evaluateRuntimeAvailability({
-      runner: "coven",
-      command: executable,
-      env: { PATH: "" },
-      platform: "linux",
-    });
-    assert.equal(
-      absoluteReady.state,
-      "ready",
-      "a mode-0755 regular file is launchable on POSIX",
-    );
-  }
+  const absoluteReady = evaluateRuntimeAvailability({
+    runner: "coven",
+    command: executable,
+    env: { PATH: "" },
+    platform: process.platform,
+  });
+  assert.equal(
+    absoluteReady.state,
+    "ready",
+    "a mode-0755 regular file is launchable on POSIX",
+  );
 
   if (process.platform !== "win32") {
     const directoryCandidate = path.join(binDir, "grok-directory");

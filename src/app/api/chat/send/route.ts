@@ -1,5 +1,6 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessByStdio, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { homedir } from "node:os";
+import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
@@ -3462,7 +3463,44 @@ export async function POST(req: Request) {
               // location detail.
               : openCodeDirect ? undefined : cwd,
           );
-          const child = sshRuntime
+          const reportLaunchFailure = (err: NodeJS.ErrnoException) => {
+            const localLaunchError = localRuntimeLaunchError(
+              localRuntimePlan?.runner ?? "coven",
+              err.code,
+            );
+            const launchError = sshRuntime
+              ? err.code === "ENOENT"
+                ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
+                : err.message
+              : localLaunchError.message;
+            const launchCode =
+              !sshRuntime && err.code === "ENOENT" && binding.harness === "claude"
+                ? RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing
+                : localLaunchError.code;
+            result.is_error = true;
+            launchFailure ??= {
+              code: sshRuntime ? err.code ?? "runtime_launch_failed" : launchCode,
+              message: launchError,
+            };
+            pushProgress(
+              "harness-start",
+              `${binding.harness} failed to start`,
+              "error",
+              launchError,
+              Date.now() - attemptStartedAt,
+            );
+            push({
+              kind: "error",
+              ...(sshRuntime ? (err.code ? { code: err.code } : {}) : { code: launchCode }),
+              message: launchError,
+            });
+          };
+          let child:
+            | ChildProcessWithoutNullStreams
+            | ChildProcessByStdio<null, Readable, Readable>
+            | null = null;
+          try {
+            child = sshRuntime
             ? (() => {
                 const sshArgs = spawnArgs;
                 return spawn("ssh", sshArgs, {
@@ -3587,6 +3625,13 @@ export async function POST(req: Request) {
                 }
                 return child;
               })();
+          } catch (error) {
+            // A plan can pass passive preflight yet still throw synchronously
+            // during spawn (notably invalid Windows executables).
+            reportLaunchFailure(error as NodeJS.ErrnoException);
+            resolve();
+            return;
+          }
 
           if (!child) {
             resolve();
@@ -3594,6 +3639,7 @@ export async function POST(req: Request) {
           }
 
           currentChild = child;
+          let childLaunchFailed = false;
           const onAbort = () => {
             // Transport drop, not Stop — arm the detach cap and let the turn
             // finish. Deliberate stops kill through the registry instead.
@@ -3688,57 +3734,18 @@ export async function POST(req: Request) {
           });
 
           child.on("error", (err: NodeJS.ErrnoException) => {
-            // Local OS launch errors can include an absolute command,
-            // interpreter, or workspace path. Normalize them once and reuse
-            // the exact value-free message in state, progress, and SSE.
-            const localLaunchError = localRuntimeLaunchError(
-              localRuntimePlan?.runner ?? "coven",
-              err.code,
-            );
-            const launchError = sshRuntime
-              ? err.code === "ENOENT"
-                ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
-                : err.message
-              : localLaunchError.message;
-            const launchCode =
-              err.code === "ENOENT" && binding.harness === "claude"
-                ? RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing
-                : localLaunchError.code;
-            // Race-safe fallback (#3856): the pre-spawn gate can pass and the
-            // binary still vanish before spawn. Mark the run errored BEFORE
-            // the empty-output diagnostic can run, so a launch failure is
-            // never misreported as "installed but not authenticated".
-            result.is_error = true;
-            launchFailure ??= {
-              code: launchCode,
-              message: launchError,
-            };
-            pushProgress(
-              "harness-start",
-              `${binding.harness} failed to start`,
-              "error",
-              launchError,
-              Date.now() - attemptStartedAt,
-            );
-            if (err.code === "ENOENT") {
-              push({
-                kind: "error",
-                code: sshRuntime ? "ENOENT" : launchCode,
-                message: launchError,
-              });
-            } else {
-              push({
-                kind: "error",
-                ...(sshRuntime ? {} : { code: localLaunchError.code }),
-                message: launchError,
-              });
-            }
+            childLaunchFailed = true;
+            reportLaunchFailure(err);
             req.signal.removeEventListener("abort", onAbort);
             resolve();
-            close();
           });
 
           child.on("close", (code) => {
+            if (childLaunchFailed) {
+              req.signal.removeEventListener("abort", onAbort);
+              resolve();
+              return;
+            }
             const trailingOpenCodeText = openCodeStdoutDecoder?.end();
             if (trailingOpenCodeText) handleStdoutChunk(trailingOpenCodeText);
             const trailingStdoutText = openCodeStdoutDecoder ? "" : stdoutDecoder.end();
