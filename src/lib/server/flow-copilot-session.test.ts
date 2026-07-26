@@ -62,6 +62,7 @@ test("spawns with the prompt as one argv element and persists the transcript", a
     familiarId: "sage",
     familiarName: "Sage",
     familiarRole: "Researcher",
+    permissionMode: "unattended",
     spawnCommand: FAKE_LAUNCH,
   });
   assert.match(sessionId, /^[0-9a-f-]{36}$/);

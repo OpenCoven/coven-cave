@@ -173,6 +173,14 @@ assert.deepEqual(
   { kind: "result", sessionId: "v2-session", isError: true, durationMs: 44 },
   "schema-selected result envelopes preserve failure state and duration",
 );
+assert.equal(
+  parseCopilotChatEvent(
+    { type: "run.finished", payload: "malformed", exit_code: 0 },
+    V2_SCHEMA,
+  ),
+  null,
+  "a declared malformed result envelope cannot fall back to top-level aliases",
+);
 assert.deepEqual(
   runtimeEventProtocolSchemas([{
     ...V2_SCHEMA,
@@ -310,6 +318,7 @@ assert.deepEqual(
     "/Users/example/projects/alpha",
     "--add-dir",
     "/Users/example/.coven/workspaces/familiars/sage",
+    "--allow-all",
     "--output-format",
     "json",
     "--stream",
@@ -317,7 +326,7 @@ assert.deepEqual(
     "-p",
     "do the thing",
   ],
-  "fresh turns pre-assign the session id, strip the model namespace, trust each granted root via repeatable --add-dir (empty entries dropped), leave full access implicit, and trail the prompt after -p",
+  "fresh full-permission turns preserve the manifest approval argv with their session, model, trust grants, and trailing prompt",
 );
 
 const resumeArgs = buildCopilotStreamArgs({

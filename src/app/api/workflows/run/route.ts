@@ -157,11 +157,16 @@ export async function POST(req: Request) {
   const offlineWorkflowResponse = await maybeQueueOfflineWorkflow(body, gateWorkflow);
   if (offlineWorkflowResponse) return offlineWorkflowResponse;
 
-  // Resolve this before the native-engine probe: an engine-capable daemon is
-  // still not allowed to launch an unversioned local Copilot protocol.
+  // The daemon is a separate process with its own executable PATH. Do not use
+  // Cave's probe to authorize a different daemon-side Copilot binary: local
+  // Copilot workflows take the already-probed direct session path instead.
+  if (await usesLocalCopilotWorkflowRuntime(body, gateWorkflow)) {
+    return runViaSession(body);
+  }
+
   // 1. Native daemon engine first (forward-compatible).
   const engineAttempt = await runWorkflowEngineAfterCopilotGate({
-    localCopilot: await usesLocalCopilotWorkflowRuntime(body, gateWorkflow),
+    localCopilot: false,
     probe: probeCopilotCapability,
     resolveCompatibility: () => resolveRuntimeCompatibility("copilot"),
     selectSpec: (version, protocols) => copilotStreamSpec(
@@ -327,6 +332,9 @@ async function runViaSession(body: RunBody) {
       familiarName: "display_name" in binding ? binding.display_name : undefined,
       familiarRole: "role" in binding ? binding.role : undefined,
       addDirs: await workflowFamiliarAddDirs(familiarId, projectRoot),
+      // This route rejects non-local requests before building the workflow
+      // prompt, so it may use the reviewed local automation contract.
+      permissionMode: "unattended",
     });
     return finishSession(sessionId);
   }

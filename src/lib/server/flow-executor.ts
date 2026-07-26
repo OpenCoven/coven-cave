@@ -279,6 +279,7 @@ export async function startFlowSession(
           ...(options.addDirs ?? []),
           ...await flowFamiliarAddDirs(familiarId, projectRoot),
         ],
+        permissionMode: options.triggerInput?.source === "webhook" ? "read" : "unattended",
       });
       return finishStart(sessionId);
     }

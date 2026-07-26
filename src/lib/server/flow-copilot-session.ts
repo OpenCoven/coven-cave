@@ -47,6 +47,8 @@ export type CopilotFlowLaunch = {
    * be listed (cave-n1yc contract).
    */
   addDirs?: string[];
+  /** Only trusted local automation may pre-approve tools and URLs. */
+  permissionMode?: "read" | "unattended";
   /** Injected only by direct-spawn tests; production resolves the CLI safely. */
   spawnCommand?: { command: string; fixedArgs: string[] };
 };
@@ -97,7 +99,9 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     // iteration "completes" with an untouched workspace (the research-mission
     // "completed without artifacts/primary.md" failure). Path verification
     // stays on — writes are confined to the spawn cwd plus addDirs.
-    permissionMode: "unattended",
+    // Webhook payloads are untrusted prompt data. Only a caller that has
+    // explicitly established a local automation boundary may pre-approve.
+    permissionMode: launch.permissionMode ?? "read",
     addDirs,
   });
 

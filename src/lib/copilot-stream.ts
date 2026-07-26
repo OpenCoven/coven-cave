@@ -488,12 +488,14 @@ export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
   for (const dir of launch.addDirs) {
     if (dir) args.push(spec.addDirFlag, dir);
   }
-  // Sandbox mapping from the manifest. Read-only is enforced explicitly;
-  // full access stays implicit so the direct Copilot stream path does not widen
-  // the local harness sandbox with manifest full_args such as `--allow-all`.
+  // Sandbox mapping from the manifest. A direct `-p` process has no stdin to
+  // answer approval prompts, so full chats retain their existing manifest
+  // approval contract instead of auto-denying every requested tool.
   // Unattended one-shots pre-approve tools/URLs (auto-deny otherwise) while
   // path verification keeps the cwd + --add-dir write boundary.
-  if (launch.permissionMode === "read") {
+  if (launch.permissionMode === "full") {
+    args.push(...spec.sandboxFullArgs);
+  } else if (launch.permissionMode === "read") {
     args.push(...spec.sandboxReadOnlyArgs);
   } else if (launch.permissionMode === "unattended") {
     args.push(...COPILOT_UNATTENDED_ARGS);
@@ -687,9 +689,12 @@ export function parseCopilotChatEvent(
       };
   }
   if (typeIs(type, protocol.eventTypes.result)) {
-      // Legacy v1 result fields are top-level. Future schemas may move the
-      // complete result envelope under their declared data field instead.
-      const resultSource = record(field(ev, protocol.fields.data)) ?? ev;
+      // Legacy v1 result fields are top-level. A declared-but-malformed
+      // envelope is protocol drift, not permission to reinterpret top-level
+      // aliases as a successful legacy result.
+      const rawEnvelope = field(ev, protocol.fields.data);
+      const resultSource = rawEnvelope === undefined ? ev : record(rawEnvelope);
+      if (!resultSource) return null;
       const exitCode = field(resultSource, protocol.fields.exitCode);
       if (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode)) return null;
       const usage = record(field(resultSource, protocol.fields.usage));

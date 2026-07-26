@@ -10,6 +10,8 @@ import { realpath, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, join } from "node:path";
 import { covenLaunchCommandForBinary, pickWindowsLauncher, type CovenLaunchCommand } from "./coven-bin.ts";
 
+const MAX_WINDOWS_WHERE_OUTPUT = 64 * 1024;
+
 async function withinTimeout<T>(work: Promise<T>, timeoutMs: number, fallback: T): Promise<{ value: T; timedOut: boolean }> {
   if (timeoutMs <= 0) return { value: fallback, timedOut: true };
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -64,7 +66,16 @@ async function windowsCopilotLauncher(binary: string, timeoutMs: number, env?: N
       settle(binary);
     }, Math.max(1, timeoutMs));
     timer.unref?.();
-    child.stdout?.on("data", (chunk: Buffer | string) => { output += String(chunk); });
+    child.stdout?.on("data", (chunk: Buffer | string) => {
+      const text = String(chunk);
+      if (output.length + text.length > MAX_WINDOWS_WHERE_OUTPUT) {
+        try { child.kill("SIGTERM"); } catch { /* best effort */ }
+        clearTimeout(timer);
+        settle(binary);
+        return;
+      }
+      output += text;
+    });
     child.once("error", () => {
       clearTimeout(timer);
       settle(binary);
