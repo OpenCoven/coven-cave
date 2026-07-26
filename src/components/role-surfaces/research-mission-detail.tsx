@@ -369,7 +369,7 @@ export function ResearchMissionDetail({
                 <time dateTime={mission.updatedAt}>updated {relativeTime(mission.updatedAt) || "just now"}</time>
               </span>
               <h2 id="research-mission-title">{mission.title}</h2>
-              {researchIntentAddsContext(mission) ? <p>{mission.intent}</p> : null}
+              {researchIntentAddsContext(mission) ? <ClampedText lines={4} text={mission.intent} /> : null}
             </div>
             {sessionId ? (
               <Button

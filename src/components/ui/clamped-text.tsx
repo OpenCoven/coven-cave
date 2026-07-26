@@ -8,14 +8,19 @@ import { useLayoutEffect, useRef, useState } from "react";
  * the clamp, so short passages render untouched. Pass the surface's own text
  * class through `className` — the clamp composes with its font/colour/rhythm.
  */
+// Static class map — Tailwind only emits classes it can see verbatim.
+const LINE_CLAMP: Record<4 | 8, string> = { 4: "line-clamp-4", 8: "line-clamp-8" };
+
 export function ClampedText({
   text,
   className,
+  lines = 8,
   moreLabel = "View more",
   lessLabel = "View less",
 }: {
   text: string;
   className?: string;
+  lines?: 4 | 8;
   moreLabel?: string;
   lessLabel?: string;
 }) {
@@ -55,7 +60,7 @@ export function ClampedText({
     <div className="flex flex-col items-start gap-1.5">
       <p
         ref={ref}
-        className={`${className ?? ""} ${expanded ? "line-clamp-none" : "line-clamp-8"}`.trim()}
+        className={`${className ?? ""} ${expanded ? "line-clamp-none" : LINE_CLAMP[lines]}`.trim()}
       >
         {text}
       </p>
