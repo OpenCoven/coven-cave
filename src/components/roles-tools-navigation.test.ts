@@ -256,8 +256,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /e\.key === "\?" && !isEditableTarget\(e\.target\)/,
-  "Bare ? should open the sheet only when focus is outside an editable control",
+  /e\.key === "\?" \|\| \(e\.code === "Slash" && e\.shiftKey\)[\s\S]{0,80}!isEditableTarget\(e\.target\)/,
+  "Bare ? and physical Shift+/ should open the sheet only when focus is outside an editable control",
 );
 
 assert.match(
