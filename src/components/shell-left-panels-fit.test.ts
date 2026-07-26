@@ -8,11 +8,17 @@ const foundations = await readFile(new URL("../styles/globals/foundations.css", 
 // The left panels are PIXEL-sized so they stop scaling with monitor width —
 // a 24%-wide nav is 826px on a 3440px ultrawide for a ~240px rail of labels.
 // The detail panel has no size props and absorbs everything the left releases.
-// Normal navigation keeps its 240px default, while Chat's contextual sidebar
-// gets the wider list-like sizing it needs for workspace/session content.
+// Normal navigation hydrates at its 56px rail, then restores its 240px expanded
+// size before paint. Chat's contextual sidebar keeps the wider list-like sizing
+// it needs for workspace/session content.
 assert.match(
   shell,
-  /id="nav"[\s\S]{0,700}?defaultSize=\{chatContextual \? "260px" : "240px"\}[\s\S]{0,120}?minSize=\{chatContextual \? "220px" : "200px"\}[\s\S]{0,60}?maxSize="420px"/,
+  /const defaultNavSize = chatContextual\s*\? "260px"\s*: mounted\s*\? `\$\{NAV_OPEN_PX\}px`\s*: `\$\{NAV_RAIL_PX\}px`/,
+  "normal nav hydrates at the icon rail before restoring its expanded size",
+);
+assert.match(
+  shell,
+  /id="nav"[\s\S]{0,700}?defaultSize=\{defaultNavSize\}[\s\S]{0,120}?minSize=\{chatContextual \? "220px" : "200px"\}[\s\S]{0,60}?maxSize="420px"/,
   "Chat's contextual nav defaults to 260px within a 220–420px band while normal nav keeps 240/200 sizing",
 );
 // Minimized by default via the group's setLayout (sets ALL panels at once) —

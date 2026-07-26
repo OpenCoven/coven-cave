@@ -556,8 +556,13 @@ assert.doesNotMatch(
 // these pins hold the call sites, the hook test holds the semantics.
 assert.match(
   source,
-  /const \[text, setText\] = useState\(\(\) => readComposerDraft\(HOME_DRAFT_KEY\)\)/,
-  "home composer text initialises from the persisted draft",
+  /const \[text, setText\] = useState\(""\);[\s\S]{0,260}?const \[draftRestored, setDraftRestored\] = useState\(false\);[\s\S]{0,260}?useLayoutEffect\(\(\) => \{\s*setText\(readComposerDraft\(HOME_DRAFT_KEY\)\);\s*setDraftRestored\(true\);\s*\}, \[\]\)/,
+  "home composer restores the persisted draft before paint from an SSR-stable empty snapshot",
+);
+assert.match(
+  source,
+  /<textarea[\s\S]{0,420}?readOnly=\{!draftRestored\}/,
+  "the SSR textarea stays read-only until draft restoration so pre-hydration input cannot be overwritten",
 );
 assert.match(
   source,
