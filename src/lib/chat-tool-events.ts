@@ -319,6 +319,7 @@ export class ToolCallTracker {
       hookCall.envelopeId = id;
       this.byEnvelopeId.set(id, hookCall);
       const prev = this.recorded.get(hookCall.id);
+      const displayedInput = prev?.input ?? input;
       if (prev && prev.input === undefined && input !== undefined) {
         this.recorded.set(hookCall.id, { ...prev, input });
       }
@@ -330,6 +331,7 @@ export class ToolCallTracker {
         const ev: ToolStreamEvent = {
           id: hookCall.id,
           name,
+          input: displayedInput,
           output: pending.output,
           status: pending.isError ? "error" : "ok",
           durationMs,

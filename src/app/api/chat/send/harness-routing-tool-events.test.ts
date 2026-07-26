@@ -338,6 +338,24 @@ assert.match(
   assert.equal(tracker.snapshot().length, 1, "late post hooks must not create an orphan bubble");
 }
 
+// If a reordered result settles a hook-first call as its delayed envelope
+// arrives, the terminal SSE update must retain the envelope input. Otherwise
+// the live bubble drops it (the UI keeps prior fields when an update omits
+// them), even though the persisted record receives the backfill.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  const started = tracker.hookStart("Bash");
+  assert.equal(tracker.envelopeToolResult("toolu_reordered_input", "done", false), null);
+  const settled = tracker.envelopeToolUse(
+    "toolu_reordered_input",
+    "Bash",
+    '{"command":"pwd"}',
+  );
+  assert.equal(settled?.id, started.id);
+  assert.equal(settled?.input, '{"command":"pwd"}', "the live terminal update backfills the envelope input");
+  assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}', "the persisted tool keeps the same input");
+}
+
 // When a buffered stream reorders both envelope frames ahead of its hooks, the
 // eventual hooks must still replace the envelope result on the native record.
 {
