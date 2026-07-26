@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { isTauri, useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useShellBanners } from "@/lib/shell-banners";
@@ -501,11 +509,19 @@ type LastKnownUpdate =
   | { kind: "current"; checkedAt: string }
   | { kind: "available"; version: string; checkedAt: string };
 
+export type UpdateSettingsActionHandle = {
+  check: () => void;
+};
+
 /**
  * Settings ▸ About row. Desktop uses the signed native updater when available;
  * the web surface truthfully renders the same release-route fallback state.
  */
-export function UpdateSettingsRow() {
+export function UpdateSettingsRow({
+  actionRef,
+}: {
+  actionRef?: Ref<UpdateSettingsActionHandle>;
+} = {}) {
   const [state, setState] = useState<RowState>({ phase: "checking" });
   const mounted = useRef(true);
   const activeCancellation = useRef<CancellationSignal | null>(null);
@@ -537,6 +553,8 @@ export function UpdateSettingsRow() {
       }
     });
   }, []);
+
+  useImperativeHandle(actionRef, () => ({ check }), [check]);
 
   useEffect(() => {
     mounted.current = true;
@@ -807,7 +825,7 @@ export function UpdateSettingsRow() {
   }
 
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
+    <div className="settings-about-update-row flex items-center justify-between gap-4 px-4 py-3">
       <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">Updates</span>
       <div className="flex items-center gap-2">{control}</div>
     </div>

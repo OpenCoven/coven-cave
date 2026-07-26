@@ -17,10 +17,12 @@ await mkdir(bin, { recursive: true });
 const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousPath = process.env.PATH;
+const previousPathCase = process.env.Path;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 // A relative PATH entry must resolve from the familiar workspace used by the
 // preflight, model probe, and direct child — not from the test/server cwd.
+if (process.platform === "win32") delete process.env.Path;
 process.env.PATH = "bin";
 
 async function readSse(response) {
@@ -80,7 +82,13 @@ try {
   // failure may become a generic authentication/no-output assistant message.
   {
     const brokenName = process.platform === "win32" ? "hermes.exe" : "hermes";
-    await writeFile(path.join(bin, brokenName), "not an executable\n", { mode: 0o644 });
+    await writeFile(
+      path.join(bin, brokenName),
+      process.platform === "win32"
+        ? "not an executable\n"
+        : `#!${path.join(home, "missing-interpreter")}\nexit 0\n`,
+      { mode: 0o755 },
+    );
     const response = await POST(new Request("http://localhost/api/chat/send", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -138,6 +146,8 @@ try {
   else process.env.COVEN_CAVE_HOME = previousCaveHome;
   if (previousPath === undefined) delete process.env.PATH;
   else process.env.PATH = previousPath;
+  if (previousPathCase === undefined) delete process.env.Path;
+  else process.env.Path = previousPathCase;
   await rm(home, { recursive: true, force: true });
 }
 

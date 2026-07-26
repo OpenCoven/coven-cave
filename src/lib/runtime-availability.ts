@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { accessSync, constants, statSync } from "node:fs";
 import path from "node:path";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 
@@ -11,11 +11,12 @@ import { harnessSpawnEnv } from "./harness-spawn-env.ts";
  * command the route is about to hand to `spawn()`, resolved inside the EXACT
  * environment that spawn will receive, points at a real launchable file.
  *
- * The evaluation is bounded and passive — filesystem stats only. It never
- * spawns a process, never prompts, and never touches the user's message, so
- * it is safe to run before every chat turn. Authentication/provider health is
- * deliberately out of scope: a runner that launches but is signed out is
- * "ready" here and must fail through its own real output.
+ * The evaluation is bounded and passive — filesystem metadata and permission
+ * checks only. It never spawns a process, never prompts, and never touches the
+ * user's message, so it is safe to run before every chat turn.
+ * Authentication/provider health is deliberately out of scope: a runner that
+ * launches but is signed out is "ready" here and must fail through its own
+ * real output.
  */
 
 export type DirectRunnerId = "coven" | "copilot" | "grok" | "hermes" | "opencode";
@@ -74,9 +75,8 @@ export function summarizeRuntimeAvailability(
   };
 }
 
-/** True when the stat proves a launchable file exists; false when the path
- * definitively does not exist. Unexpected errors (EACCES, EIO, …) propagate
- * so the caller can report `probe_failed` instead of a false "missing". */
+/** Legacy injectable seam for filesystem simulations. The production probe
+ * uses richer candidate inspection so POSIX execute permissions are checked. */
 export type StatFileFn = (candidate: string) => boolean;
 
 export type RuntimeAvailabilityProbe = {
@@ -97,25 +97,18 @@ export type RuntimeAvailabilityProbe = {
   statFile?: StatFileFn;
 };
 
-/** A ready-to-spawn Hermes CLI plan. Its command and environment are created
- * together and must be handed to `spawn()` unchanged. The resolved path stays
- * server-only; status surfaces use `summarizeRuntimeAvailability()` instead. */
-export type HermesLaunchPlan = Extract<RuntimeAvailability, {
-  state: "ready";
-}> & {
+/** A direct Hermes plan keeps the exact command, scoped environment, and
+ * working directory together for preflight, capability probing, and spawn. */
+export type HermesLaunchPlan = Extract<RuntimeAvailability, { state: "ready" }> & {
   command: string;
   env: NodeJS.ProcessEnv;
   cwd: string;
 };
 
-export type HermesLaunchResolution = HermesLaunchPlan | Exclude<RuntimeAvailability, {
-  state: "ready";
-}>;
+export type HermesLaunchResolution = HermesLaunchPlan | Exclude<RuntimeAvailability, { state: "ready" }>;
 
 export type ResolveHermesLaunchOptions = {
   familiarId?: string | null;
-  /** Injectable for status checks and focused tests. Chat callers leave this
-   * unset so the resolver owns the scoped environment it returns. */
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   platform?: NodeJS.Platform;
@@ -137,6 +130,14 @@ const MISSING_RUNNER_MESSAGES: Record<DirectRunnerId, string> = {
     "OpenCode CLI not found on PATH. Install it with `npm install -g opencode-ai`, then try again.",
 };
 
+const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
+  coven: "Coven CLI failed to start. Check its installation and try again.",
+  copilot: "copilot CLI failed to start. Check its installation and try again.",
+  grok: "Grok Build CLI failed to start. Check its installation and try again.",
+  hermes: "Hermes CLI failed to start. Check its installation and try again.",
+  opencode: "OpenCode CLI failed to start. Check its installation and try again.",
+};
+
 const RUNNER_LABELS: Record<DirectRunnerId, string> = {
   coven: "Coven CLI",
   copilot: "copilot CLI",
@@ -145,38 +146,81 @@ const RUNNER_LABELS: Record<DirectRunnerId, string> = {
   opencode: "OpenCode CLI",
 };
 
-/** A process that starts and then exits unsuccessfully is not a discovery or
- * launchability failure. Keep its safe, actionable terminal error in the same
- * runtime contract so the chat route does not invent a separate response
- * shape or expose provider output. */
-export type RuntimeProcessFailure = {
-  runner: DirectRunnerId;
-  code: typeof RUNTIME_AVAILABILITY_ERROR_CODES.process_failed;
-  message: string;
-};
-
-export function runtimeProcessFailure(runner: DirectRunnerId): RuntimeProcessFailure {
-  const label = RUNNER_LABELS[runner];
-  const launchLabel = runner === "hermes" ? "Hermes" : label;
-  return {
-    runner,
-    code: RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
-    message: `${launchLabel} exited with an error before returning a response. Check ${launchLabel} sign-in and configuration, then try again.`,
-  };
-}
-
 export function missingRunnerMessage(runner: DirectRunnerId): string {
   return MISSING_RUNNER_MESSAGES[runner];
 }
 
-function defaultStatFile(candidate: string): boolean {
+export function runtimeLaunchFailedMessage(runner: DirectRunnerId): string {
+  return RUNTIME_LAUNCH_FAILED_MESSAGES[runner];
+}
+
+export function localRuntimeLaunchError(
+  runner: DirectRunnerId,
+  errorCode: string | undefined,
+): {
+  code: "ENOENT" | "runtime_launch_failed";
+  message: string;
+} {
+  return errorCode === "ENOENT"
+    ? { code: "ENOENT", message: missingRunnerMessage(runner) }
+    : {
+        code: "runtime_launch_failed",
+        message: runtimeLaunchFailedMessage(runner),
+      };
+}
+
+/** A process that did start but exited unsuccessfully is distinct from a
+ * missing or unlaunchable CLI. Its copy is safe to surface without provider
+ * output, executable paths, or scoped environment values. */
+export function runtimeProcessFailure(runner: DirectRunnerId): {
+  code: typeof RUNTIME_AVAILABILITY_ERROR_CODES.process_failed;
+  message: string;
+} {
+  const label = runner === "hermes" ? "Hermes" : RUNNER_LABELS[runner];
+  return {
+    code: RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
+    message: `${label} exited with an error before returning a response. Check ${label} sign-in and configuration, then try again.`,
+  };
+}
+
+type CandidateInspection = "launchable" | "missing" | "unlaunchable";
+
+type CommandResolution =
+  | { state: "launchable"; resolvedPath: string }
+  | { state: "missing" | "unlaunchable" };
+
+type InspectCandidateFn = (candidate: string) => CandidateInspection;
+
+function isMissingCandidateError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+function defaultInspectCandidate(
+  candidate: string,
+  platform: NodeJS.Platform,
+): CandidateInspection {
   try {
-    return statSync(candidate).isFile();
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === "ENOENT" || code === "ENOTDIR") return false;
-    throw err;
+    if (!statSync(candidate).isFile()) return "unlaunchable";
+  } catch (error) {
+    if (isMissingCandidateError(error)) return "missing";
+    throw error;
   }
+  if (platform !== "win32") {
+    try {
+      accessSync(candidate, constants.X_OK);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code === "EACCES" || code === "EPERM") return "unlaunchable";
+      if (isMissingCandidateError(error)) return "missing";
+      throw error;
+    }
+  }
+  return "launchable";
+}
+
+function inspectWithStatFile(candidate: string, statFile: StatFileFn): CandidateInspection {
+  return statFile(candidate) ? "launchable" : "missing";
 }
 
 function pathEntries(env: Record<string, string | undefined>, platform: NodeJS.Platform): string[] {
@@ -237,31 +281,40 @@ function resolveCommand(
   command: string,
   env: Record<string, string | undefined>,
   platform: NodeJS.Platform,
-  statFile: StatFileFn,
+  inspectCandidate: InspectCandidateFn,
   candidatesFor: (name: string) => string[],
   cwd: string,
-): string | null {
+): CommandResolution {
+  let sawUnlaunchable = false;
+  const inspect = (candidate: string): CommandResolution | null => {
+    const inspection = inspectCandidate(candidate);
+    if (inspection === "launchable") return { state: "launchable", resolvedPath: candidate };
+    if (inspection === "unlaunchable") sawUnlaunchable = true;
+    return null;
+  };
+
   if (isPathLike(command, platform)) {
     // Launch plans only ever produce absolute path-like commands (discovered
-    // binaries, process.execPath, the PowerShell host). Stat them as given.
+    // binaries, process.execPath, the PowerShell host). Inspect them as given.
     for (const candidate of candidatesFor(command)) {
-      if (statFile(candidate)) return candidate;
+      const resolved = inspect(candidate);
+      if (resolved) return resolved;
     }
-    return null;
+    return { state: sawUnlaunchable ? "unlaunchable" : "missing" };
   }
   const joiner = platform === "win32" ? path.win32 : path.posix;
   for (const dir of pathEntries(env, platform)) {
     for (const candidate of candidatesFor(command)) {
-      // Node resolves relative PATH entries against the spawn cwd, rather
-      // than the Cave server's cwd. Pin that same resolved path in the launch
-      // plan so preflight, `chat --help`, and the real child cannot drift.
+      // Node resolves relative PATH entries from the child's cwd, not the
+      // server cwd that happened to build this availability report.
       const full = joiner.isAbsolute(dir)
         ? joiner.join(dir, candidate)
         : joiner.resolve(cwd, dir, candidate);
-      if (statFile(full)) return full;
+      const resolved = inspect(full);
+      if (resolved) return resolved;
     }
   }
-  return null;
+  return { state: sawUnlaunchable ? "unlaunchable" : "missing" };
 }
 
 function notReady(
@@ -270,6 +323,10 @@ function notReady(
   message: string,
 ): RuntimeAvailability {
   return { state, runner, code: RUNTIME_AVAILABILITY_ERROR_CODES[state], message };
+}
+
+function unlaunchableRunnerMessage(runner: DirectRunnerId): string {
+  return `${RUNNER_LABELS[runner]} was found but is not executable. Restore executable permissions or reinstall it, then try again.`;
 }
 
 /**
@@ -288,8 +345,10 @@ export function evaluateRuntimeAvailability(
 ): RuntimeAvailability {
   const { runner, command, env } = probe;
   const platform = probe.platform ?? process.platform;
-  const statFile = probe.statFile ?? defaultStatFile;
   const cwd = probe.cwd ?? process.cwd();
+  const inspectCandidate: InspectCandidateFn = probe.statFile
+    ? (candidate) => inspectWithStatFile(candidate, probe.statFile!)
+    : (candidate) => defaultInspectCandidate(candidate, platform);
   const label = RUNNER_LABELS[runner];
   try {
     if (probe.unresolvedWindowsShim) {
@@ -299,10 +358,11 @@ export function evaluateRuntimeAvailability(
         `${label} was found as a Windows launcher shim that cannot be converted into a directly runnable command. Reinstall it so a native executable is on PATH, then try again.`,
       );
     }
-    const resolved = resolveCommand(command, env, platform, statFile, (name) =>
-      spawnCandidates(name, platform), cwd,
+    const resolved = resolveCommand(command, env, platform, inspectCandidate, (name) =>
+      spawnCandidates(name, platform),
+      cwd,
     );
-    if (!resolved) {
+    if (resolved.state !== "launchable") {
       if (probe.powerShellHostedCommand !== undefined) {
         // The outer command for a hosted launch is the PowerShell host
         // itself; its absence is a broken launch vehicle, not a missing
@@ -313,11 +373,15 @@ export function evaluateRuntimeAvailability(
           `Windows PowerShell was not found at its system location, so ${label} cannot be launched. Restore Windows PowerShell, then try again.`,
         );
       }
+      if (resolved.state === "unlaunchable") {
+        return notReady(runner, "unlaunchable", unlaunchableRunnerMessage(runner));
+      }
       if (platform === "win32") {
-        const shimOnly = resolveCommand(command, env, platform, statFile, (name) =>
-          shimOnlyCandidates(name, env), cwd,
+        const shimOnly = resolveCommand(command, env, platform, inspectCandidate, (name) =>
+          shimOnlyCandidates(name, env),
+          cwd,
         );
-        if (shimOnly) {
+        if (shimOnly.state === "launchable") {
           return notReady(
             runner,
             "unlaunchable",
@@ -332,13 +396,18 @@ export function evaluateRuntimeAvailability(
         probe.powerShellHostedCommand,
         env,
         platform,
-        statFile,
+        inspectCandidate,
         (name) => pathExtCandidates(name, env),
         cwd,
       );
-      if (!inner) return notReady(runner, "missing", missingRunnerMessage(runner));
+      if (inner.state === "unlaunchable") {
+        return notReady(runner, "unlaunchable", unlaunchableRunnerMessage(runner));
+      }
+      if (inner.state === "missing") {
+        return notReady(runner, "missing", missingRunnerMessage(runner));
+      }
     }
-    return { state: "ready", runner, resolvedPath: resolved };
+    return { state: "ready", runner, resolvedPath: resolved.resolvedPath };
   } catch {
     // Keep the message value-free: stat errors embed local filesystem paths,
     // and OpenCode diagnostics in particular must never surface them.
@@ -350,16 +419,9 @@ export function evaluateRuntimeAvailability(
   }
 }
 
-/**
- * Resolve Hermes's direct native launch plan. Windows deliberately targets
- * `hermes.exe`: CreateProcess cannot safely execute npm's `.cmd`/`.bat`
- * launchers, and `evaluateRuntimeAvailability()` classifies a shim-only
- * installation as `unlaunchable` rather than falling back to cmd.exe.
- *
- * This is the Hermes-specific extension of the shared availability contract.
- * It does not inspect auth state or CLI feature flags; those are post-start
- * and capability concerns respectively.
- */
+/** Resolve Hermes's native direct launch once. Windows deliberately uses
+ * `hermes.exe`; `.cmd`/`.bat` npm shims remain an unlaunchable state rather
+ * than being delegated to a shell wrapper. */
 export function resolveHermesLaunch(
   options: ResolveHermesLaunchOptions = {},
 ): HermesLaunchResolution {
@@ -374,9 +436,7 @@ export function resolveHermesLaunch(
     platform,
     statFile: options.statFile,
   });
-  if (availability.state !== "ready") return availability;
-
-  // Pin the resolved native executable instead of re-spawning the bare name:
-  // PATH changes between preflight and spawn must not make the two diverge.
-  return { ...availability, command: availability.resolvedPath, env, cwd };
+  return availability.state === "ready"
+    ? { ...availability, command: availability.resolvedPath, env, cwd }
+    : availability;
 }

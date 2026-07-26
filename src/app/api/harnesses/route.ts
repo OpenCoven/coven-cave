@@ -13,11 +13,15 @@ import {
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
 import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, type CovenLaunchCommand } from "@/lib/coven-bin";
-import { copilotStreamSpec } from "@/lib/copilot-stream";
+import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/copilot-stream";
 import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
+import {
+  resolveCopilotRuntimeLaunch,
+  type CopilotRuntimeLaunch,
+} from "@/lib/server/copilot-runtime-launch";
 import {
   evaluateRuntimeAvailability,
   resolveHermesLaunch,
@@ -52,51 +56,66 @@ type HarnessReport = HarnessSpec & {
   availability?: RuntimeAvailabilitySummary;
 };
 
+type AdapterAvailability = {
+  availability: RuntimeAvailabilitySummary;
+  /** Internal-only exact Copilot plan; never serialized inside availability. */
+  copilotLaunch?: CopilotRuntimeLaunch;
+};
+
 // Mirrors the send route's launch dispatch: copilot/grok/hermes/opencode use
 // their direct CLI launch plans, everything else launches through `coven run`.
 // Same commands, same spawn env shape (no familiar → shared keys only), and
 // bounded filesystem stats only — this endpoint stays probe-cheap.
-function adapterAvailability(id: string): RuntimeAvailabilitySummary {
-  const env = id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
-  if (id === "opencode") {
-    const launch = openCodeLaunch([]);
-    return summarizeRuntimeAvailability(evaluateRuntimeAvailability({
-      runner: "opencode",
-      command: launch.command,
-      env,
-      powerShellHostedCommand: launch.input !== undefined ? openCodeCommand() : undefined,
-    }));
-  }
-  if (id === "grok") {
-    const launch = grokLaunchCommandForBinary(grokBin());
-    return summarizeRuntimeAvailability(evaluateRuntimeAvailability({
-      runner: "grok",
-      command: launch.command,
-      env,
-      unresolvedWindowsShim: launch.unresolvedWindowsShim === true,
-    }));
-  }
-  if (id === "hermes") {
-    return summarizeRuntimeAvailability(resolveHermesLaunch({ env }));
-  }
+async function adapterAvailability(id: string): Promise<AdapterAvailability> {
   if (id === "copilot") {
     const stream = copilotStreamSpec();
     if (stream) {
-      return summarizeRuntimeAvailability(evaluateRuntimeAvailability({
-        runner: "copilot",
-        command: stream.executable,
-        env,
-      }));
+      const copilotLaunch = await resolveCopilotRuntimeLaunch(stream.executable);
+      return {
+        availability: summarizeRuntimeAvailability(copilotLaunch.availability),
+        copilotLaunch,
+      };
     }
     // No stream manifest → copilot chats fall back to `coven run` below.
   }
+  const env =
+    id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
+  if (id === "opencode") {
+    const launch = openCodeLaunch([]);
+    return {
+      availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
+        runner: "opencode",
+        command: launch.command,
+        env,
+        powerShellHostedCommand: launch.input !== undefined ? openCodeCommand() : undefined,
+      })),
+    };
+  }
+  if (id === "grok") {
+    const launch = grokLaunchCommandForBinary(grokBin());
+    return {
+      availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
+        runner: "grok",
+        command: launch.command,
+        env,
+        unresolvedWindowsShim: launch.unresolvedWindowsShim === true,
+      })),
+    };
+  }
+  if (id === "hermes") {
+    return {
+      availability: summarizeRuntimeAvailability(resolveHermesLaunch({ env })),
+    };
+  }
   const launch = covenLaunchCommand();
-  return summarizeRuntimeAvailability(evaluateRuntimeAvailability({
-    runner: "coven",
-    command: launch.command,
-    env,
-    unresolvedWindowsShim: launch.unresolvedWindowsShim === true,
-  }));
+  return {
+    availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
+      runner: "coven",
+      command: launch.command,
+      env,
+      unresolvedWindowsShim: launch.unresolvedWindowsShim === true,
+    })),
+  };
 }
 
 function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | null> {
@@ -258,42 +277,38 @@ export async function GET() {
       if (h.id === "openclaw") {
         return openClawAdapterReport(openclawAgentCount);
       }
-      // Hermes must never use the generic `which`/`where` result: Windows
-      // discovery can find an npm .cmd shim even though native chat safely
-      // launches only the resolver's `hermes.exe` plan.
-      const hermesLaunch = h.id === "hermes" ? resolveHermesLaunch() : null;
-      if (hermesLaunch && hermesLaunch.state !== "ready") {
-        return {
-          ...h,
-          installed: false,
-          path: null,
-          version: null,
-          availability: summarizeRuntimeAvailability(hermesLaunch),
-        };
-      }
       // Native Grok resolution also recognizes `grok.exe` from an imported
       // Windows PATH in WSL. `which grok` on Linux does not apply PATHEXT, so
       // using only the generic probe would hide a runnable Windows install
       // from the summoning circle even though the chat launcher can execute it.
+      const runtime = await adapterAvailability(h.id);
+      const copilotLaunch = runtime.copilotLaunch;
+      const hermesLaunch = h.id === "hermes" ? resolveHermesLaunch() : null;
       const resolvedBinary = h.id === "grok" ? grokBin() : h.binary;
       const path =
-        h.id === "hermes" && hermesLaunch
-          ? hermesLaunch.command
+        copilotLaunch
+          ? copilotLaunch.availability.state === "ready"
+            ? copilotLaunch.availability.resolvedPath
+            : null
           : h.id === "grok" && resolvedBinary !== h.binary
-          ? resolvedBinary
-          : await which(h.binary);
-      const availability = hermesLaunch
-        ? summarizeRuntimeAvailability(hermesLaunch)
-        : adapterAvailability(h.id);
+            ? resolvedBinary
+            : h.id === "hermes" && hermesLaunch?.state === "ready"
+              ? hermesLaunch.command
+            : await which(h.binary);
+      const availability = runtime.availability;
       if (!path) {
         return { ...h, installed: false, path: null, version: null, availability };
       }
       const grokLaunch = h.id === "grok" ? grokLaunchCommandForBinary(path) : null;
       const version = await probeVersion(
-        grokLaunch?.command ?? hermesLaunch?.command ?? h.binary,
-        h.versionArgs ?? ["--version"],
-        grokLaunch?.fixedArgs,
-        hermesLaunch?.env,
+        copilotLaunch?.command
+          ?? grokLaunch?.command
+          ?? (hermesLaunch?.state === "ready" ? hermesLaunch.command : h.binary),
+        copilotLaunch
+          ? [COPILOT_NO_AUTO_UPDATE_ARG, ...(h.versionArgs ?? ["--version"])]
+          : h.versionArgs ?? ["--version"],
+        copilotLaunch?.fixedArgs ?? grokLaunch?.fixedArgs,
+        copilotLaunch?.env ?? (hermesLaunch?.state === "ready" ? hermesLaunch.env : undefined),
       );
       const grokCatalog = grokLaunch ? await probeGrokModels(grokLaunch) : null;
       return {

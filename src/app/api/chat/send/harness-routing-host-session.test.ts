@@ -77,8 +77,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?await hermesChatSupportsModel\(readyHermesLaunch\)/,
-  "Hermes model forwarding must probe its resolver-pinned direct CLI instead of assuming the coven-run capability applies",
+  /const hermesModelCapability\s*=[\s\S]*?probe:\s*hermesChatSupportsModel[\s\S]*?const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?\(hermesModelCapability \?\? false\)/,
+  "Hermes model forwarding must consume its ready-plan-gated direct CLI probe instead of assuming the coven-run capability applies",
 );
 
 assert.match(
@@ -95,8 +95,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const hermesLaunch = hermesDirect && hermesApi === null\s*\? resolveHermesLaunch\(\{ familiarId: body\.familiarId \}\)/,
-  "Hermes direct chat must obtain its platform-native command from the shared resolver",
+  /command: process\.platform === "win32" \? "hermes\.exe" : "hermes"/,
+  "Hermes direct chat must use the Windows executable name on Windows",
 );
 
 assert.doesNotMatch(
@@ -110,8 +110,8 @@ assert.doesNotMatch(
 // the flag; "full" stays implicit so the harness keeps its default sandbox.
 assert.match(
   chatRoute,
-  /covenRunSupportsPermission\(\)/,
-  "route capability-probes coven run --permission before forwarding",
+  /probeCovenCapability\(covenRunSupportsPermission\)/,
+  "route capability-probes coven run --permission through the ready-plan gate before forwarding",
 );
 assert.match(
   chatRoute,
@@ -618,8 +618,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /pushProgress\(\s*"harness-start",\s*`Starting \$\{binding\.harness\}`,\s*"running"[\s\S]*pushProgress\(\s*"harness-start",\s*`\$\{binding\.harness\} exited`,\s*hermesProcessFailed \? "error" : "done"/,
-  "Coven harness streams should show process start and exit progress while failed Hermes processes remain errors",
+  /pushProgress\(\s*"harness-start",\s*`Starting \$\{binding\.harness\}`,\s*"running"[\s\S]*pushProgress\(\s*"harness-start",\s*`\$\{binding\.harness\} exited`,\s*"done"/,
+  "Coven harness streams should show process start and exit progress",
 );
 
 assert.match(

@@ -462,18 +462,18 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /err\.code === "ENOENT" && launchFailureCode === RUNTIME_AVAILABILITY_ERROR_CODES\.missing[\s\S]{0,600}?missingRunnerMessage\(/,
-    "/chat/send: a generic post-spawn ENOENT race must use the shared missingRunnerMessage helper so it cannot drift from the pre-spawn gate",
+    /launchFailure \?\?= \{[\s\S]{0,180}?message: launchError,[\s\S]{0,400}?pushProgress\([\s\S]{0,220}?launchError,[\s\S]{0,300}?code: "ENOENT",\s*message: launchError/,
+    "/chat/send: launch state, progress, and the post-spawn ENOENT race event must reuse one normalized message",
   );
   assert.match(
     sendSource,
-    /const hermesSpawnAvailability = hermesDirect && readyHermesLaunch[\s\S]{0,700}?evaluateRuntimeAvailability\(/,
-    "/chat/send: a direct Hermes post-spawn race must re-evaluate the shared launch availability contract",
+    /let localLaunchError: \{ code: string; message: string \} = localRuntimeLaunchError\([\s\S]{0,100}?err\.code,[\s\S]{0,500}?const launchError = sshRuntime[\s\S]{0,180}?: localLaunchError\.message/,
+    "/chat/send: every local post-spawn failure uses the shared runner-specific normalizer while SSH retains transport diagnostics",
   );
-  assert.match(
+  assert.doesNotMatch(
     sendSource,
-    /hermesSpawnAvailability && hermesSpawnAvailability\.state !== "ready"[\s\S]{0,200}?hermesSpawnAvailability\.message/,
-    "/chat/send: a failed Hermes recheck must surface the shared availability remediation instead of generic launch copy",
+    /(?:launchFailure \?\?=|pushProgress\(|kind: "error")[\s\S]{0,160}?message: err\.message/,
+    "/chat/send: local runner state, progress, and SSE diagnostics never copy a raw OS launch error",
   );
   assert.match(
     sendSource,

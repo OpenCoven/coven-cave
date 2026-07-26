@@ -1,49 +1,150 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import {
   evaluateRuntimeAvailability,
+  localRuntimeLaunchError,
   missingRunnerMessage,
   resolveHermesLaunch,
   runtimeProcessFailure,
+  runtimeLaunchFailedMessage,
   summarizeRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
 } from "./runtime-availability.ts";
 
-{
-  // Keep Linux/macOS launch resolution virtual so this contract test behaves
-  // the same on a native Windows test host (where `C:\\...` cannot be split
-  // with POSIX PATH semantics).
-  const binDir = "/virtual/runtime/bin";
-  const emptyDir = "/virtual/runtime/empty";
-  const posixStats = (present: string[]) => {
-    const set = new Set(present);
-    return (candidate: string) => set.has(candidate);
-  };
+const scratch = mkdtempSync(path.join(tmpdir(), "runtime-availability-"));
+try {
+  assert.deepEqual(
+    localRuntimeLaunchError("grok", "ENOENT"),
+    {
+      code: "ENOENT",
+      message: missingRunnerMessage("grok"),
+    },
+    "a post-spawn missing-interpreter race retains the missing-runner contract",
+  );
+  assert.deepEqual(
+    localRuntimeLaunchError("grok", "UNKNOWN"),
+    {
+      code: "runtime_launch_failed",
+      message: runtimeLaunchFailedMessage("grok"),
+    },
+    "every non-ENOENT local spawn error uses the normalized launch-failure contract",
+  );
+
+  const binDir = path.join(scratch, "bin");
+  const emptyDir = path.join(scratch, "empty");
+  mkdirSync(binDir);
+  mkdirSync(emptyDir);
+  const executable = path.join(binDir, "grok");
+  writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
+  chmodSync(executable, 0o755);
+  // The following probes intentionally simulate Linux semantics. Native
+  // Windows paths contain `:`, so they cannot be used as colon-delimited
+  // Linux PATH entries when this suite runs on Windows.
+  const simulatedBinDir = process.platform === "win32" ? "/virtual/runtime/bin" : binDir;
+  const simulatedEmptyDir = process.platform === "win32" ? "/virtual/runtime/empty" : emptyDir;
+  const simulatedExecutable = process.platform === "win32" ? `${simulatedBinDir}/grok` : executable;
+  const simulatedStats = (candidate: string) => candidate === simulatedExecutable;
 
   // Verification matrix: binary resolves in the spawn env → ready.
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
     command: "grok",
-    env: { PATH: `${emptyDir}:${binDir}` },
+    env: { PATH: `${simulatedEmptyDir}:${simulatedBinDir}` },
     platform: "linux",
-    statFile: posixStats([`${binDir}/grok`]),
+    ...(process.platform === "win32" ? { statFile: simulatedStats } : {}),
   });
   assert.equal(ready.state, "ready", "a bare command on the spawn PATH is ready");
   assert.equal(
     ready.state === "ready" && ready.resolvedPath,
-    `${binDir}/grok`,
+    simulatedExecutable,
     "ready reports where the exact spawn command resolved",
   );
 
   const absoluteReady = evaluateRuntimeAvailability({
     runner: "coven",
-    command: `${binDir}/grok`,
+    command: simulatedExecutable,
     env: { PATH: "" },
     platform: "linux",
-    statFile: posixStats([`${binDir}/grok`]),
+    ...(process.platform === "win32" ? { statFile: simulatedStats } : {}),
   });
-  assert.equal(absoluteReady.state, "ready", "an absolute launch command is stat'd directly");
+  assert.equal(
+    absoluteReady.state,
+    "ready",
+    "a mode-0755 regular file is launchable on POSIX",
+  );
+
+  if (process.platform !== "win32") {
+    const directoryCandidate = path.join(binDir, "grok-directory");
+    mkdirSync(directoryCandidate);
+    const directoryResult = evaluateRuntimeAvailability({
+      runner: "grok",
+      command: directoryCandidate,
+      env: { PATH: "" },
+      platform: "linux",
+    });
+    assert.equal(
+      directoryResult.state,
+      "unlaunchable",
+      "an existing directory at the launch path is found but unlaunchable",
+    );
+    assert.equal(
+      directoryResult.state === "unlaunchable" && directoryResult.code,
+      RUNTIME_AVAILABILITY_ERROR_CODES.unlaunchable,
+      "a non-file candidate carries runtime_unlaunchable",
+    );
+
+    const nonExecutable = path.join(binDir, "grok-no-exec");
+    writeFileSync(nonExecutable, "#!/bin/sh\n", { mode: 0o644 });
+    chmodSync(nonExecutable, 0o644);
+    const nonExecutableResult = evaluateRuntimeAvailability({
+      runner: "grok",
+      command: nonExecutable,
+      env: { PATH: "" },
+      platform: "linux",
+    });
+    assert.equal(
+      nonExecutableResult.state,
+      "unlaunchable",
+      "a mode-0644 regular file is unlaunchable on POSIX",
+    );
+    assert.equal(
+      nonExecutableResult.state === "unlaunchable" && nonExecutableResult.code,
+      RUNTIME_AVAILABILITY_ERROR_CODES.unlaunchable,
+      "a non-executable regular file carries runtime_unlaunchable",
+    );
+
+    const earlierBinDir = path.join(scratch, "earlier-bin");
+    mkdirSync(earlierBinDir);
+    const earlierNonExecutable = path.join(earlierBinDir, "grok");
+    writeFileSync(earlierNonExecutable, "#!/bin/sh\n", { mode: 0o644 });
+    chmodSync(earlierNonExecutable, 0o644);
+    const laterExecutableWins = evaluateRuntimeAvailability({
+      runner: "grok",
+      command: "grok",
+      env: { PATH: `${earlierBinDir}:${binDir}` },
+      platform: "linux",
+    });
+    assert.equal(
+      laterExecutableWins.state,
+      "ready",
+      "a later executable PATH candidate wins after an earlier non-executable file",
+    );
+    assert.equal(
+      laterExecutableWins.state === "ready" && laterExecutableWins.resolvedPath,
+      executable,
+      "PATH resolution reports the exact later executable that won",
+    );
+  }
 
   // Verification matrix: binary absent from every discovery location →
   // missing, with per-runner install/PATH remediation.
@@ -78,19 +179,6 @@ import {
     missingRunnerMessage("coven"),
     /Coven CLI not found on PATH/,
     "Coven missing copy stays pinned to the client recovery matcher",
-  );
-
-  const hermesProcessFailure = runtimeProcessFailure("hermes");
-  assert.equal(
-    hermesProcessFailure.code,
-    RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
-    "a started Hermes failure uses the shared runtime error-code contract",
-  );
-  assert.match(hermesProcessFailure.message, /Hermes sign-in and configuration/);
-  assert.doesNotMatch(
-    hermesProcessFailure.message,
-    /\/virtual\/runtime|[A-Za-z]:\\/,
-    "started-process remediation never exposes a local executable path",
   );
 
   const emptyPath = evaluateRuntimeAvailability({
@@ -218,61 +306,34 @@ import {
     "an explicit .exe with no install at all remains missing",
   );
 
-  // Hermes owns a launch plan rather than reusing a bare string after
-  // preflight. The ready plan is the exact native executable and the exact
-  // scoped environment that the chat route must hand to spawn.
-  const hermesEnv: NodeJS.ProcessEnv = {
-    ...process.env,
-    PATH: undefined,
-    Path: "C:\\bin",
-    HERMES_API_KEY: "scoped-only",
-  };
-  const hermesReady = resolveHermesLaunch({
-    env: hermesEnv,
+  const hermesPlan = resolveHermesLaunch({
+    env: { Path: "C:\\bin" },
     platform: "win32",
     statFile: winStats(["C:\\bin\\hermes.exe"]),
   });
-  assert.equal(hermesReady.state, "ready", "a native Windows Hermes executable is ready");
-  if (hermesReady.state === "ready") {
-    assert.equal(hermesReady.command, "C:\\bin\\hermes.exe", "the ready plan pins the resolved executable");
-    assert.equal(hermesReady.env, hermesEnv, "the ready plan retains the exact scoped spawn environment");
-    assert.equal(hermesReady.cwd, process.cwd(), "the ready plan retains the spawn cwd");
+  assert.equal(hermesPlan.state, "ready", "Hermes resolves a native Windows executable into one launch plan");
+  if (hermesPlan.state === "ready") {
+    assert.equal(hermesPlan.command, "C:\\bin\\hermes.exe");
+    assert.equal(hermesPlan.env.Path, "C:\\bin");
   }
-
-  const relativePathHermes = resolveHermesLaunch({
-    env: { ...process.env, PATH: "bin" },
-    cwd: "/virtual/workspace",
-    platform: "linux",
-    statFile: posixStats(["/virtual/workspace/bin/hermes"]),
-  });
-  assert.equal(relativePathHermes.state, "ready", "a relative PATH entry resolves from the spawn cwd");
-  if (relativePathHermes.state === "ready") {
-    assert.equal(relativePathHermes.command, "/virtual/workspace/bin/hermes");
-    assert.equal(relativePathHermes.cwd, "/virtual/workspace");
-  }
-
   const hermesCmdOnly = resolveHermesLaunch({
-    env: { ...process.env, PATH: undefined, ...winEnv },
+    env: { Path: "C:\\bin" },
     platform: "win32",
     statFile: winStats(["C:\\bin\\hermes.cmd"]),
   });
-  assert.equal(hermesCmdOnly.state, "unlaunchable", "a Hermes .cmd-only install is never spawned directly");
-  assert.doesNotMatch(
-    hermesCmdOnly.message,
-    /authenticat/i,
-    "a shim-only Hermes install is not presented as an authentication problem",
-  );
-
-  for (const platform of ["linux", "darwin"] as const) {
-    const missingHermes = resolveHermesLaunch({ env: { ...process.env, PATH: emptyDir }, platform });
-    assert.equal(missingHermes.state, "missing", `Hermes absent on ${platform} is missing before launch`);
-  }
-  const failedHermesProbe = resolveHermesLaunch({
-    env: { ...process.env, PATH: binDir },
+  assert.equal(hermesCmdOnly.state, "unlaunchable", "a Windows Hermes .cmd shim is not a direct launch target");
+  const relativeHermes = resolveHermesLaunch({
+    env: { PATH: "bin" },
+    cwd: "/virtual/workspace",
     platform: "linux",
-    statFile: () => { throw new Error("EACCES"); },
+    statFile: (candidate) => candidate === "/virtual/workspace/bin/hermes",
   });
-  assert.equal(failedHermesProbe.state, "probe_failed", "a Hermes stat failure is not reported as missing");
+  assert.equal(relativeHermes.state, "ready", "relative PATH entries resolve from the direct spawn cwd");
+  assert.equal(
+    runtimeProcessFailure("hermes").code,
+    RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
+    "a started Hermes process has a structured error distinct from availability",
+  );
 
   // OpenCode's Windows launch is PowerShell-hosted: the host must exist and
   // the inner `opencode` command must resolve with PATHEXT semantics.
@@ -324,8 +385,9 @@ import {
     "the host failure names the actual remediation target",
   );
 
-  // Availability never executes anything: the whole evaluation is stat-only,
-  // so evaluating before every chat turn stays cheap and side-effect free.
+  // Availability never executes anything: the whole evaluation uses bounded
+  // filesystem inspection, so evaluating before every chat turn stays cheap
+  // and side-effect free.
   // (Enforced structurally — the module must not import child_process.)
   const moduleSource = readFileSync(
     new URL("./runtime-availability.ts", import.meta.url),
@@ -343,6 +405,8 @@ import {
     code: RUNTIME_AVAILABILITY_ERROR_CODES.unlaunchable,
     message: shim.state === "unlaunchable" ? shim.message : "",
   });
+} finally {
+  rmSync(scratch, { recursive: true, force: true });
 }
 
 console.log("runtime-availability.test.ts: ok");

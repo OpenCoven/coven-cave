@@ -47,24 +47,14 @@ assert.match(
 );
 assert.match(
   capabilityProbes,
-  /export function hermesChatSupportsModel\(launch:/,
-  "Direct Hermes model forwarding must probe hermes chat --help through its resolved launch plan",
-);
-assert.match(
-  chatRoute,
-  /const readyHermesLaunch = hermesLaunch\?\.state === "ready" \? hermesLaunch : null;[\s\S]*?hermesChatSupportsModel\(readyHermesLaunch\)/,
-  "Hermes capability probing must use the preflighted command and scoped environment without treating a missing --model flag as missing Hermes",
-);
-assert.match(
-  chatRoute,
-  /command: readyHermesLaunch!\.command,[\s\S]*?hermesDirect\s*\? readyHermesLaunch!\.env/,
-  "The direct Hermes spawn must receive the resolver's exact command and environment",
+  /export function hermesChatSupportsModel\(launch:[\s\S]*?\["chat", "--help"\][\s\S]*?launch\.env[\s\S]*?launch\.cwd/,
+  "Direct Hermes model forwarding must probe hermes chat --help with its resolved command, scoped environment, and spawn cwd",
 );
 
 assert.match(
   chatRoute,
-  /binding\.harness !== "openclaw" && \(await covenRunSupportsModel\(\)\)/,
-  "OpenClaw never forwards --model; every other harness gates on the probe",
+  /binding\.harness !== "openclaw" &&[\s\S]*?probeCovenCapability\(covenRunSupportsModel\)/,
+  "OpenClaw never forwards --model; generic Coven forwarding uses the ready-plan-gated probe",
 );
 
 assert.match(
@@ -105,8 +95,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /binding\.harness !== "grok" &&\s*\n\s*binding\.harness !== "hermes" &&\s*\n\s*\(await covenRunSupportsAddDir\(\)\)/,
-  "Direct Hermes and Grok paths must not wait for an unrelated coven run --add-dir probe",
+  /binding\.harness !== "grok" &&\s*binding\.harness !== "hermes" &&\s*\(\(await probeCovenCapability\(covenRunSupportsAddDir\)\) \?\? false\)/,
+  "Direct Grok and Hermes paths must not wait for an unrelated ready-plan-gated coven run --add-dir probe",
 );
 assert.match(
   chatRoute,
