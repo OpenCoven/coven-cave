@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const helper = await readFile(new URL("./open-external.ts", import.meta.url), "utf8");
-const settings = await readFile(new URL("../components/settings-shell.tsx", import.meta.url), "utf8");
+const about = await readFile(new URL("../components/settings-about.tsx", import.meta.url), "utf8");
 
 assert.match(
   helper,
@@ -42,9 +42,9 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  settings,
+  about,
   /import \{ openExternalUrl \} from "@\/lib\/open-external"/,
-  "Settings should use the shared in-app browser URL helper",
+  "About should use the shared in-app browser URL helper",
 );
 for (const [label, href] of [
   ["GitHub", "https://github.com/OpenCoven/coven-cave"],
@@ -55,19 +55,20 @@ for (const [label, href] of [
   ["Podcast", "https://pod.opencoven.ai"],
 ]) {
   const escapedHref = href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  assert.match(
-    settings,
-    new RegExp(`label: "${label}"[\\s\\S]{0,80}href: "${escapedHref}"`),
-    `${label} routes to its exact Settings destination`,
-  );
+  assert.match(about, new RegExp(escapedHref), `${label} keeps its exact Settings destination`);
 }
 assert.match(
-  settings,
-  /\]\.map\(\(l\) => \([\s\S]{0,300}onClick=\{\(\) => openExternalUrl\(l\.href\)\}/,
-  "every Settings link routes through the acknowledged in-app Browser handoff",
+  about,
+  /onClick=\{\(\) => openExternalUrl\(card\.href\)\}/,
+  "mapped Settings links route through the acknowledged in-app Browser handoff",
+);
+assert.match(
+  about,
+  /onClick=\{\(\) =>\s*openExternalUrl\("https:\/\/mind\.opencoven\.ai"\)\s*\}/,
+  "featured Settings links route through the acknowledged in-app Browser handoff",
 );
 assert.doesNotMatch(
-  settings,
+  about,
   /target="_blank"/,
   "Settings links should not bypass the app with new external tabs",
 );

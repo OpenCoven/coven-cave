@@ -77,6 +77,16 @@ assert.match(
   /if \(binding\.harness === "copilot" && !sshBound && !hubAuthority\)[\s\S]*?if \(!spec\)[\s\S]*?NextResponse\.json\([\s\S]*?status: 409/,
   "an unsupported local Copilot workflow fails explicitly instead of starting the known unattached daemon TUI",
 );
+assert.match(
+  source,
+  /const capabilityFailure = copilotCapabilityFailureMessage\(capability\);[\s\S]*?if \(capabilityFailure\)[\s\S]*?status: 409[\s\S]*?const spec = copilotStreamSpec\(/,
+  "a direct Copilot workflow returns the shared truthful capability cause before checking schema compatibility",
+);
+assert.match(
+  source,
+  /if \(capabilityFailure\)[\s\S]*?return NextResponse\.json\([\s\S]*?status: 409[\s\S]*?startCopilotFlowRun\(/,
+  "a failed capability gate cannot start a direct workflow session",
+);
 const compatibilityGateIndex = source.indexOf("if (!spec)");
 const directCopilotLaunchIndex = source.indexOf("startCopilotFlowRun", compatibilityGateIndex);
 assert.ok(
