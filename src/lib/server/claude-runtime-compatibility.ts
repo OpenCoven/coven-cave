@@ -53,7 +53,7 @@ let refreshQueue: Promise<void> = Promise.resolve();
 /** Remove credentials and configuration from the direct Claude metadata probe.
  * Exported so the privacy boundary can be regression-tested without spawning a
  * local executable. */
-export function claudeProbeEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function claudeProbeEnvironment(env: Record<string, string | undefined>): Record<string, string | undefined> {
   return Object.fromEntries(
     Object.entries(env).filter(([key, value]) => value !== undefined && PROBE_ENV_KEYS.has(key.toUpperCase())),
   );
@@ -228,7 +228,7 @@ function runClaude(args: string[]): Promise<string | null> {
     let child;
     try {
       child = spawn("claude", args, {
-        env: claudeProbeEnvironment(covenSpawnEnv()),
+        env: claudeProbeEnvironment(covenSpawnEnv()) as NodeJS.ProcessEnv,
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });

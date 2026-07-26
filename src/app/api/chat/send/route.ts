@@ -2497,6 +2497,10 @@ export async function POST(req: Request) {
         modelState.reason = application.reason;
       }
       const finalSessionId = body.sessionId ?? sessionId;
+      // Always settle the live chip before `done`, even if a malformed or
+      // early-exiting harness never supplied a session id and therefore has
+      // no conversation file to persist.
+      settleUnfinishedTools();
       if (finalSessionId) {
         pushProgress("save-transcript", "Saving transcript", "running");
         await recordSessionFamiliar(finalSessionId, body.familiarId);
@@ -2536,10 +2540,6 @@ export async function POST(req: Request) {
         // state fed by SSE; without this, refresh/chat-switch loses them.
         // Offsets were stamped against the untrimmed stream — shift by the
         // leading trim so interleaving matches the saved text.
-        // A process can exit after announcing a tool but before its matching
-        // hook/result arrives. Send a terminal update before `done`; otherwise
-        // the client-only chip remains running until the next transcript load.
-        settleUnfinishedTools();
         const persistedTools = toPersistedTools([...priorAttemptTools, ...toolTracker.snapshot()],
           assistantText.length - assistantText.trimStart().length,
         );
