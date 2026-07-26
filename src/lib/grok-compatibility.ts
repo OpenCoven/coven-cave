@@ -5,7 +5,7 @@
  * registry can add a tool envelope only after a local capability probe has
  * established that the installed launcher advertises that protocol.
  */
-import { createHash, createPublicKey, verify } from "node:crypto";
+import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import * as fs from "node:fs/promises";
 import { homedir } from "node:os";
@@ -301,6 +301,7 @@ export function quarantineGrokSchema(schema: GrokEventSchema | undefined): void 
 
 type RegistrySource = { url?: string; publicKeys?: GrokRegistryKeyring; checkpoint?: GrokRegistryCheckpoint; now?: () => number; fetch?: typeof globalThis.fetch; cachePath?: string };
 type Cached = { bundle: GrokSchemaBundle; checkedAt: number };
+type TrustAnchor = { sequence: number; payloadHash: string };
 
 function configuredGrokRegistrySource(): RegistrySource {
   const url = process.env.NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_URL || process.env.COVEN_GROK_SCHEMA_REGISTRY_URL;
@@ -323,22 +324,48 @@ function defaultCachePath(): string {
   return path.join(process.env.COVEN_CAVE_HOME || path.join(process.env.COVEN_HOME || homedir(), ".coven", "cave"), "grok-schema-bundle-v1.json");
 }
 
-async function readCache(file: string, keys: GrokRegistryKeyring, now: number): Promise<GrokSchemaBundle | null> {
+function trustAnchorPath(file: string): string { return `${file}.anchor`; }
+
+function validTrustAnchor(value: unknown): value is TrustAnchor {
+  return isRecord(value) && Object.keys(value).length === 2 && typeof value.sequence === "number" && Number.isSafeInteger(value.sequence) && value.sequence >= 1 && typeof value.payloadHash === "string" && /^[a-f0-9]{64}$/.test(value.payloadHash);
+}
+
+async function readTrustAnchor(file: string): Promise<TrustAnchor | null> {
+  try {
+    const raw = await fs.readFile(trustAnchorPath(file), "utf8");
+    if (Buffer.byteLength(raw) > 1024) return null;
+    const anchor = JSON.parse(raw);
+    return validTrustAnchor(anchor) ? anchor : null;
+  } catch { return null; }
+}
+
+function meetsTrustAnchor(bundle: GrokSchemaBundle, anchor: TrustAnchor | null): boolean {
+  return !anchor || bundle.sequence > anchor.sequence || (bundle.sequence === anchor.sequence && grokSchemaBundlePayloadHash(bundle) === anchor.payloadHash);
+}
+
+async function readCache(file: string, keys: GrokRegistryKeyring, now: number, anchor: TrustAnchor | null): Promise<GrokSchemaBundle | null> {
   try {
     const raw = await fs.readFile(file, "utf8");
     if (Buffer.byteLength(raw) > MAX_CACHE_BYTES) return null;
     const cached = JSON.parse(raw) as Cached;
-    return verifyGrokSchemaBundle(cached?.bundle, keys, now) ? cached.bundle : null;
+    return verifyGrokSchemaBundle(cached?.bundle, keys, now) && meetsTrustAnchor(cached.bundle, anchor) ? cached.bundle : null;
   } catch { return null; }
 }
 
-async function writeCache(file: string, bundle: GrokSchemaBundle): Promise<void> {
+async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
+  const temporary = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   try {
     await fs.mkdir(path.dirname(file), { recursive: true });
-    const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
-    await fs.writeFile(temporary, JSON.stringify({ checkedAt: Date.now(), bundle }), { mode: 0o600 });
+    await fs.writeFile(temporary, JSON.stringify(value), { mode: 0o600 });
     await fs.rename(temporary, file);
   } catch { /* Cache is an optimization; a failed write never broadens parsing. */ }
+}
+
+async function writeCache(file: string, bundle: GrokSchemaBundle): Promise<void> {
+  // Anchor first: an interruption can make the cache unavailable, never make
+  // an older cache appear acceptable after a newer bundle was trusted.
+  await writeJsonAtomic(trustAnchorPath(file), { sequence: bundle.sequence, payloadHash: grokSchemaBundlePayloadHash(bundle) });
+  await writeJsonAtomic(file, { checkedAt: Date.now(), bundle });
 }
 
 function trustedBundle(bundle: GrokSchemaBundle, checkpoint?: GrokRegistryCheckpoint): boolean {
@@ -353,7 +380,8 @@ export async function resolveGrokCompatibility(capabilities: GrokRunCapabilities
   const keys = source.publicKeys ?? {};
   const cacheFile = source.cachePath ?? defaultCachePath();
   let bundle = BUILTIN_GROK_SCHEMA_BUNDLE; let bundleSource: GrokCompatibility["bundleSource"] = "built-in"; let diagnostic: GrokCompatibilityDiagnostic | undefined;
-  const cached = Object.keys(keys).length ? await readCache(cacheFile, keys, now) : null;
+  const anchor = Object.keys(keys).length ? await readTrustAnchor(cacheFile) : null;
+  const cached = Object.keys(keys).length ? await readCache(cacheFile, keys, now, anchor) : null;
   if (cached && trustedBundle(cached, source.checkpoint)) { bundle = cached; bundleSource = "cache"; }
   if (source.url && Object.keys(keys).length) {
     try {
@@ -361,7 +389,7 @@ export async function resolveGrokCompatibility(capabilities: GrokRunCapabilities
       const body = await response.text();
       if (!response.ok || Buffer.byteLength(body) > MAX_BUNDLE_BYTES) throw new Error("untrusted registry response");
       const remote = JSON.parse(body);
-      if (!verifyGrokSchemaBundle(remote, keys, now) || !trustedBundle(remote, source.checkpoint)) throw new Error("untrusted registry bundle");
+      if (!verifyGrokSchemaBundle(remote, keys, now) || !trustedBundle(remote, source.checkpoint) || !meetsTrustAnchor(remote, anchor)) throw new Error("untrusted registry bundle");
       bundle = remote; bundleSource = "remote"; await writeCache(cacheFile, remote);
     } catch { diagnostic = "schema-registry-refresh-rejected"; }
   }

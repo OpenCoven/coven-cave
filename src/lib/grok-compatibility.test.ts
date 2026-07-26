@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   BUILTIN_GROK_SCHEMA_BUNDLE,
   grokSchemaBundleSigningPayload,
@@ -25,5 +28,23 @@ assert.equal(selected.mode, "structured");
 assert.equal(selected.schema?.id, "grok-build-streaming-json-v1");
 const unsupported = await resolveGrokCompatibility({ ...supported, streamingJson: false });
 assert.deepEqual(unsupported.diagnostic, "streaming-json-unavailable");
+
+const highWater = structuredClone(signed);
+highWater.sequence = 3;
+highWater.signature = {
+  algorithm: "ed25519",
+  value: sign(null, Buffer.from(grokSchemaBundleSigningPayload(highWater)), privateKey).toString("base64"),
+};
+const cacheDirectory = await mkdtemp(path.join(tmpdir(), "coven-grok-registry-"));
+const cachePath = path.join(cacheDirectory, "schema.json");
+try {
+  const refreshed = await resolveGrokCompatibility(supported, { publicKeys: keyring, cachePath, url: "https://registry.example/grok.json", fetch: async () => new Response(JSON.stringify(highWater)) });
+  assert.equal(refreshed.bundleSource, "remote");
+  const rollback = await resolveGrokCompatibility(supported, { publicKeys: keyring, cachePath, url: "https://registry.example/grok.json", fetch: async () => new Response(JSON.stringify(signed)) });
+  assert.equal(rollback.bundleSource, "cache", "a lower signed sequence cannot replace the local high-water contract");
+  assert.equal(rollback.diagnostic, "schema-registry-refresh-rejected");
+} finally {
+  await rm(cacheDirectory, { recursive: true, force: true });
+}
 
 console.log("grok compatibility tests passed");
