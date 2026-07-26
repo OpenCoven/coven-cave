@@ -8,7 +8,7 @@ import {
   BUILTIN_GROK_SCHEMA_BUNDLE,
   parseGrokCompatibilityEvent,
   type GrokEventSchema,
-} from "./grok-compatibility";
+} from "./grok-compatibility.ts";
 
 export type RuntimeModelOption = { id: string; label: string };
 export type GrokSandboxProfile = "full" | "read";
