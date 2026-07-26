@@ -5,11 +5,11 @@
 //                                  [--dry-run] [--no-pr]
 //
 // Hand-rolled stamps produced three PR collisions between concurrent sessions
-// on 2026-07-08 alone, and every cut re-derives the same six version
+// on 2026-07-08 alone, and every cut re-derives the same version
 // locations by hand. This script:
 //   1. REFUSES when another stamp PR is already open (the collision guard);
-//   2. bumps the six version locations (package.json, tauri.conf.json,
-//      Cargo.toml, Cargo.lock's `app` package, both iOS Info.plists);
+//   2. bumps the four version locations (package.json, tauri.conf.json,
+//      Cargo.toml, Cargo.lock's `app` package);
 //   3. drafts the CHANGELOG section from `git log v<prev>..HEAD` subjects —
 //      a starting point to edit in the PR, not prose to trust blindly;
 //   4. branches, commits SIGNED (-S), pushes, and opens the PR via the REST
@@ -37,14 +37,12 @@ export function bumpVersion(current, level = "patch") {
   throw new Error(`unknown bump level: "${level}"`);
 }
 
-/** The six stamp locations and how each encodes the version. */
+/** The four stamp locations and how each encodes the version. */
 export const STAMP_FILES = [
   { file: "package.json", kind: "json-version" },
   { file: "src-tauri/tauri.conf.json", kind: "json-version" },
   { file: "src-tauri/Cargo.toml", kind: "toml-version" },
   { file: "src-tauri/Cargo.lock", kind: "cargo-lock-app" },
-  { file: "src-tauri/Info.ios.plist", kind: "plist-string" },
-  { file: "src-tauri/gen/apple/app_iOS/Info.plist", kind: "plist-string" },
 ];
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -72,9 +70,6 @@ export function stampContent(kind, content, oldVersion, newVersion) {
       break;
     case "cargo-lock-app":
       sub(new RegExp(`(name = "app"\\nversion = ")${old}(")`));
-      break;
-    case "plist-string":
-      sub(new RegExp(`(<string>)${old}(</string>)`, "g"));
       break;
     default:
       throw new Error(`unknown stamp kind: "${kind}"`);
@@ -191,16 +186,13 @@ function main() {
 
   for (const e of edits) writeFileSync(e.abs, e.content);
   writeFileSync(changelogAbs, changelog);
-  console.log("✓ six locations stamped + CHANGELOG drafted");
+  console.log("✓ four locations stamped + CHANGELOG drafted");
 
   const branch = `release/stamp-v${next}`;
   run("git", ["checkout", "-b", branch]);
-  // -f: src-tauri/gen is gitignored but the generated iOS plist inside it is
-  // TRACKED — a plain `git add` exits 1 with the ignored-paths advice and
-  // killed the first real run of this script mid-stamp.
-  run("git", ["add", "-f", "CHANGELOG.md", ...STAMP_FILES.map((f) => f.file)]);
+  run("git", ["add", "CHANGELOG.md", ...STAMP_FILES.map((f) => f.file)]);
   // -S: repo rule — every commit lands Verified.
-  run("git", ["commit", "-S", "-m", `chore(release): stamp v${next}\n\nPatch release on top of v${current}. Bumps all six version locations and\ndrafts the v${next} CHANGELOG entry for the ${subjects.length} commits since ${prevTag}.`]);
+  run("git", ["commit", "-S", "-m", `chore(release): stamp v${next}\n\nPatch release on top of v${current}. Bumps all four version locations and\ndrafts the v${next} CHANGELOG entry for the ${subjects.length} commits since ${prevTag}.`]);
   run("git", ["push", "-u", "origin", branch]);
   console.log(`✓ committed + pushed ${branch}`);
 
