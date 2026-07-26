@@ -1671,7 +1671,7 @@ function PrerequisiteSummary({ prerequisites }: { prerequisites: OnboardingPrere
                   return (
                     <li key={entry.id} className="flex items-start gap-2 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
                       <Icon
-                        name={passed ? "ph:check-circle-fill" : unknown ? "ph:question-fill" : "ph:warning-fill"}
+                        name={passed ? "ph:check-circle-fill" : unknown ? "ph:question" : "ph:warning-fill"}
                         className={passed ? "mt-0.5 shrink-0 text-[var(--color-success)]" : "mt-0.5 shrink-0 text-[var(--color-warning)]"}
                         aria-hidden="true"
                       />
