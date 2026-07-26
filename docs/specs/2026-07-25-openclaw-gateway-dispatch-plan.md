@@ -81,6 +81,31 @@ reason to guess a field shape.
 - Upgrade only after the schema diff and fixtures pass. Unknown wire versions
   fail closed to CLI; a new Cave release adds a tested profile.
 
+## Current release boundary (2026-07-26)
+
+The only published protocol/client release is the `2026.7.2-beta.4` beta
+package pair, negotiating wire protocol v4. It publishes `HelloOkSchema`,
+`ChatEventSchema`, `chat.send`, `chat.abort`, and
+`sessions.messages.subscribe`, so Cave can support a strictly correlated
+chat-only Gateway turn for that exact profile.
+
+It does **not** publish a `session.tool` event name, payload schema, or
+validator. Cave must therefore ignore those frames and emit no Gateway tool
+card for this release. A method/event capability string is not a substitute
+for a versioned payload contract. The CLI/plain-chat bridge remains the
+fallback when dispatch cannot prove its accepted run, while the direct path
+may render only validated `chat` lifecycle frames.
+
+| Package profile | Wire protocol | Validated projection | Tool cards | Upgrade rule |
+| --- | --- | --- | --- | --- |
+| `2026.7.2-beta.4` | v4 only | `chat` frames correlated by session, agent, and accepted run | Disabled: no published schema | Add a fixture and explicit profile only when OpenClaw publishes a stable tool payload validator. |
+| Any other version/profile | Not assumed | None | Disabled | Keep CLI/plain chat with a visible compatibility diagnostic. |
+
+Before enabling tool cards, record the package release, exported validator,
+schema diff, and fixtures for lifecycle, foreign-run rejection, malformed
+payload, replay, gap, disconnect, and cancellation. Do not infer a tool shape
+from an observed Gateway frame.
+
 ## Verification
 
 Add a route-level Gateway fixture that performs the real authenticated
