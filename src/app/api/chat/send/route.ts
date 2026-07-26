@@ -1759,7 +1759,7 @@ export async function POST(req: Request) {
         { output: string | undefined; isError: boolean }
       >();
       const MAX_PENDING_COPILOT_TOOL_COMPLETIONS = 64;
-      const claudeToolsEnabled =
+      let claudeToolsEnabled =
         binding.harness !== "claude" ||
         (claudeCompatibility?.kind === "compatible" && !claudeCompatibility.stale);
       const claudeDiagnostic = claudeCompatibility
@@ -1779,6 +1779,10 @@ export async function POST(req: Request) {
       let claudeFallbackFingerprintLogged = false;
       let claudeUnsupportedFrameDiagnosticSent = false;
       const reportMalformedClaudeStreamFrame = (frame: unknown) => {
+        // One malformed frame means the selected envelope profile no longer
+        // describes this stream. Continue showing assistant text, but do not
+        // resume profile-selected tool decoding on later frames.
+        claudeToolsEnabled = false;
         if (claudeUnsupportedFrameDiagnosticSent) return;
         claudeUnsupportedFrameDiagnosticSent = true;
         console.warn("[chat] Claude stream frame could not be decoded", {
@@ -1793,6 +1797,10 @@ export async function POST(req: Request) {
         );
       };
       const reportUnsupportedClaudeToolFrame = (frame: unknown) => {
+        // An unrecognised tool block can change the meaning or ordering of
+        // later frames, so fail closed for the rest of this stream rather than
+        // treating subsequent familiar labels as independently trustworthy.
+        claudeToolsEnabled = false;
         if (claudeUnsupportedFrameDiagnosticSent) return;
         claudeUnsupportedFrameDiagnosticSent = true;
         console.warn("[chat] Claude tool frame ignored by compatibility profile", {
@@ -2461,7 +2469,8 @@ export async function POST(req: Request) {
             } else if (
               binding.harness === "claude" &&
               claudeCompatibility?.kind === "compatible" &&
-              !claudeCompatibility.stale
+              !claudeCompatibility.stale &&
+              claudeToolsEnabled
             ) {
               // Profile-selected decoding keeps version-specific envelope names
               // outside this route. The shared tracker continues to provide

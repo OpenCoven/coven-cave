@@ -109,6 +109,24 @@ assert.equal(
   capLiveToolPayload(delayedInput, LIVE_TOOL_INPUT_CAP),
   "late envelope input is bounded in persisted tracker state too",
 );
+
+const streamedInput = new ToolCallTracker(() => 1_000);
+assert.ok(streamedInput.envelopeToolUse("streamed-input", "Read"));
+assert.deepEqual(
+  streamedInput.envelopeToolInput("streamed-input", delayedInput),
+  {
+    id: "streamed-input",
+    name: "Read",
+    input: capLiveToolPayload(delayedInput, LIVE_TOOL_INPUT_CAP),
+    status: "running",
+  },
+  "streamed tool input updates are capped before they reach SSE",
+);
+assert.equal(
+  streamedInput.snapshot()[0]?.input,
+  capLiveToolPayload(delayedInput, LIVE_TOOL_INPUT_CAP),
+  "streamed tool input updates are capped in tracker state too",
+);
 const completedHookInput = new ToolCallTracker(() => 1_000);
 completedHookInput.hookStart("Read");
 const hookCompletion = completedHookInput.hookEnd("Read", "done", false);

@@ -79,8 +79,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const claudeToolsEnabled =\s*binding\.harness !== "claude" \|\|\s*\(claudeCompatibility\?\.kind === "compatible" && !claudeCompatibility\.stale\);[\s\S]*?binding\.harness === "claude" &&\s*claudeCompatibility\?\.kind === "compatible" &&\s*!claudeCompatibility\.stale/,
+  /let claudeToolsEnabled =\s*binding\.harness !== "claude" \|\|\s*\(claudeCompatibility\?\.kind === "compatible" && !claudeCompatibility\.stale\);[\s\S]*?binding\.harness === "claude" &&\s*claudeCompatibility\?\.kind === "compatible" &&\s*!claudeCompatibility\.stale &&\s*claudeToolsEnabled/,
   "an expired profile must preserve text-only Claude chat while disabling both hook and envelope tool decoding",
+);
+
+assert.match(
+  chatRoute,
+  /reportMalformedClaudeStreamFrame = \(frame: unknown\) => \{[\s\S]*?claudeToolsEnabled = false;[\s\S]*?reportUnsupportedClaudeToolFrame = \(frame: unknown\) => \{[\s\S]*?claudeToolsEnabled = false;/,
+  "a malformed or unknown Claude frame must disable profile-selected tool decoding for the rest of the stream",
 );
 
 assert.match(

@@ -614,10 +614,11 @@ export class ToolCallTracker {
     if (input === undefined || this.settledEnvelopeIds.has(toolUseId)) return null;
     const call = this.byEnvelopeId.get(toolUseId);
     if (!call) return null;
-    const ev: ToolStreamEvent = { id: call.id, name: call.name, input, status: "running" };
+    const boundedInput = capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP);
+    const ev: ToolStreamEvent = { id: call.id, name: call.name, input: boundedInput, status: "running" };
     const prev = this.recorded.get(call.id);
     if (prev) {
-      this.recorded.set(call.id, { ...prev, ...ev, input });
+      this.recorded.set(call.id, { ...prev, ...ev, input: boundedInput });
     } else {
       this.record(ev);
     }
