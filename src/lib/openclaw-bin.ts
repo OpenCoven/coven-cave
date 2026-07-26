@@ -22,6 +22,17 @@ import { isVaultKeyGrantedTo, loadVaultMap } from "./vault";
 let cachedBin: string | null = null;
 
 const FORBIDDEN_SPAWN_ENV_KEYS = new Set(["GITHUB_PAT"]);
+// The Gateway dispatcher reads these only in Cave's server process. They must
+// never cross the fallback boundary, even if a broad harness allow-list was
+// configured for a different OpenClaw integration.
+const GATEWAY_AUTH_ENV_KEYS = new Set([
+  "OPENCLAW_GATEWAY_TOKEN",
+  "OPENCLAW_GATEWAY_DEVICE_TOKEN",
+  "OPENCLAW_GATEWAY_BOOTSTRAP_TOKEN",
+  "OPENCLAW_GATEWAY_PASSWORD",
+  "OPENCLAW_GATEWAY_APPROVAL_RUNTIME_TOKEN",
+  "OPENCLAW_GATEWAY_AGENT_RUNTIME_IDENTITY_TOKEN",
+]);
 const FORBIDDEN_SPAWN_ENV_RE =
   /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|PASS|PAT|CREDENTIALS?|COOKIE|SESSION)(?:_|$)/i;
 
@@ -177,10 +188,12 @@ export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   restoreAllowedGitHubTokenEnv(env, allowed, new Set(Object.keys(map)));
 
   for (const key of Object.keys(env)) {
+    const mustNotReachFallback = GATEWAY_AUTH_ENV_KEYS.has(key);
+    const genericSecret =
+      FORBIDDEN_SPAWN_ENV_KEYS.has(key) || FORBIDDEN_SPAWN_ENV_RE.test(key);
     if (
-      (FORBIDDEN_SPAWN_ENV_KEYS.has(key) || FORBIDDEN_SPAWN_ENV_RE.test(key)) &&
-      !allowed.has(key) &&
-      !grantedVaultTokenKeys.has(key)
+      mustNotReachFallback ||
+      (genericSecret && !allowed.has(key) && !grantedVaultTokenKeys.has(key))
     ) {
       delete env[key];
     }
