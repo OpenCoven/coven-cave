@@ -63,7 +63,8 @@ import {
   parseGrokStreamEvent,
 } from "@/lib/grok-build";
 import { grokLaunchCommand } from "@/lib/grok-bin";
-import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
+import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
+import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 import {
   quarantineOpenCodeSchema,
   redactedOpenCodeEventFingerprint,
@@ -1686,6 +1687,12 @@ export async function POST(req: Request) {
         usage?: TurnUsage;
         costUsd?: number;
       } = {};
+      // Launch-integrity flag (#3856): set when the pre-spawn availability
+      // gate or the post-spawn error handler proves the harness never
+      // actually ran. Downstream it suppresses the empty-output diagnostic
+      // (a never-launched CLI must not be diagnosed as "installed but not
+      // authenticated") and skips persisting a fabricated assistant turn.
+      let launchFailure: { code: string; message: string } | null = null;
       // Tracks open tool calls from both hook lines and stream-json
       // envelopes: per-name FIFO queues give concurrent same-name calls
       // distinct ids, and hook/envelope events describing the same call are
@@ -2598,6 +2605,49 @@ export async function POST(req: Request) {
                       }
                     : covenLaunchCommand();
                 const openCodeLaunchCommand = openCodeDirect ? openCodeLaunch(spawnArgs) : null;
+                // Scoped vault keys the familiar is not granted are
+                // subtracted here — the harness only sees shared secrets
+                // plus its own grants (cave-4nu6).
+                const spawnEnv = openCodeDirect
+                  ? openCodeSpawnEnv(body.familiarId)
+                  : harnessSpawnEnv(body.familiarId);
+                // Pre-spawn availability gate (#3856): verify the EXACT
+                // command/env this attempt is about to spawn, using bounded
+                // filesystem stats only. When the runner is not ready, emit a
+                // structured error instead of creating a child whose ENOENT
+                // could be misdiagnosed downstream as an auth problem.
+                const availability = evaluateRuntimeAvailability({
+                  runner: copilotStream
+                    ? "copilot"
+                    : grokDirect
+                      ? "grok"
+                    : hermesDirect
+                      ? "hermes"
+                    : openCodeDirect
+                      ? "opencode"
+                      : "coven",
+                  command: (openCodeLaunchCommand ?? launch).command,
+                  env: spawnEnv,
+                  unresolvedWindowsShim:
+                    "unresolvedWindowsShim" in launch && launch.unresolvedWindowsShim === true,
+                  // Only the Windows OpenCode launch is PowerShell-hosted; it
+                  // is the one that carries a stdin argv payload.
+                  powerShellHostedCommand:
+                    openCodeLaunchCommand?.input !== undefined ? openCodeCommand() : undefined,
+                });
+                if (availability.state !== "ready") {
+                  launchFailure = { code: availability.code, message: availability.message };
+                  result.is_error = true;
+                  pushProgress(
+                    "harness-start",
+                    `${binding.harness} failed to start`,
+                    "error",
+                    availability.message,
+                    Date.now() - attemptStartedAt,
+                  );
+                  push({ kind: "error", code: availability.code, message: availability.message });
+                  return null;
+                }
                 const command = openCodeLaunchCommand
                   ?? { command: launch.command, args: [...launch.fixedArgs, ...spawnArgs] };
                 const child = spawn(command.command, command.args, {
@@ -2610,18 +2660,18 @@ export async function POST(req: Request) {
                   stdio: openCodeLaunchCommand?.input === undefined
                     ? ["ignore", "pipe", "pipe"]
                     : ["pipe", "pipe", "pipe"],
-                  // Scoped vault keys the familiar is not granted are
-                  // subtracted here — the harness only sees shared secrets
-                  // plus its own grants (cave-4nu6).
-                  env: openCodeDirect
-                    ? openCodeSpawnEnv(body.familiarId)
-                    : harnessSpawnEnv(body.familiarId),
+                  env: spawnEnv,
                 }) as ChildProcessWithoutNullStreams;
                 if (openCodeLaunchCommand) {
                   writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
                 }
                 return child;
               })();
+
+          if (!child) {
+            resolve();
+            return;
+          }
 
           currentChild = child;
           const onAbort = () => {
@@ -2717,6 +2767,15 @@ export async function POST(req: Request) {
             const launchError = openCodeDirect
               ? "OpenCode failed to start. Check its installation and try again."
               : err.message;
+            // Race-safe fallback (#3856): the pre-spawn gate can pass and the
+            // binary still vanish before spawn. Mark the run errored BEFORE
+            // the empty-output diagnostic can run, so a launch failure is
+            // never misreported as "installed but not authenticated".
+            result.is_error = true;
+            launchFailure ??= {
+              code: err.code === "ENOENT" ? "ENOENT" : "runtime_launch_failed",
+              message: launchError,
+            };
             pushProgress(
               "harness-start",
               `${binding.harness} failed to start`,
@@ -2936,7 +2995,7 @@ export async function POST(req: Request) {
       if (cancelledByUser) {
         if (!assistantText.trim()) assistantText = "(cancelled)";
         result.is_error = false;
-      } else if (!assistantText.trim()) {
+      } else if (!assistantText.trim() && !launchFailure) {
         // Empty-response diagnostic: when the harness reports done but never
         // produced assistant text, the user otherwise sees a silent empty
         // bubble. Synthesize a short explanation so they know what to do.
@@ -3081,7 +3140,11 @@ export async function POST(req: Request) {
       const finalSessionId = body.sessionId && !openCodeUnrecordedResume
         ? body.sessionId
         : sessionId;
-      if (finalSessionId) {
+      // Launch failures never produced a real assistant response: the client
+      // already received the structured error above, so persist nothing
+      // (matching the OpenClaw no-spawn precedent) instead of writing a
+      // fabricated turn the user would rediscover on reload.
+      if (finalSessionId && !launchFailure) {
         pushProgress("save-transcript", "Saving transcript", "running");
         await recordSessionFamiliar(finalSessionId, body.familiarId);
         // Settle any in-flight stub write first so it can never race (and
