@@ -2267,7 +2267,10 @@ export async function POST(req: Request) {
             "running",
             sshRuntime
               ? `${sshRuntime.host}:${sshRuntime.cwd}`
-              : familiarCwd ?? cwd,
+              // OpenCode compatibility diagnostics must not expose a local
+              // workspace path. Other harnesses retain their existing launch
+              // location detail.
+              : openCodeDirect ? undefined : familiarCwd ?? cwd,
           );
           const child = sshRuntime
             ? (() => {
@@ -2405,11 +2408,17 @@ export async function POST(req: Request) {
           });
 
           child.on("error", (err: NodeJS.ErrnoException) => {
+            // OpenCode launch errors can include the PowerShell shim's absolute
+            // path (and platform error details). Keep compatibility diagnostics
+            // value-free rather than surfacing local filesystem information.
+            const launchError = openCodeDirect
+              ? "OpenCode failed to start. Check its installation and try again."
+              : err.message;
             pushProgress(
               "harness-start",
               `${binding.harness} failed to start`,
               "error",
-              err.message,
+              launchError,
               Date.now() - attemptStartedAt,
             );
             if (err.code === "ENOENT") {
@@ -2430,7 +2439,7 @@ export async function POST(req: Request) {
                         : "Coven CLI not found on PATH. Open Setup to install it, then try again.",
               });
             } else {
-              push({ kind: "error", message: err.message });
+              push({ kind: "error", message: launchError });
             }
             req.signal.removeEventListener("abort", onAbort);
             resolve();
