@@ -46,7 +46,7 @@ const chatView = await readFile(
 
 assert.match(
   chatRoute,
-  /let toolTracker = new ToolCallTracker\(\);/,
+  /let toolTracker = new ToolCallTracker\(Date\.now, `attempt-\$\{toolAttempt\}-`\);/,
   "Native chat should track open tool calls with the shared ToolCallTracker",
 );
 
@@ -76,7 +76,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /settleToolCallsBeforeRetry\(\);[\s\S]*?toolTracker = new ToolCallTracker\(\);/,
+  /settleToolCallsBeforeRetry\(\);[\s\S]*?toolAttempt \+= 1;[\s\S]*?toolTracker = new ToolCallTracker\(Date\.now, `attempt-\$\{toolAttempt\}-`\);/,
   "Retries settle announced tools before resetting per-attempt state, so live bubbles cannot remain running",
 );
 
@@ -141,6 +141,16 @@ assert.match(
   assert.ok(orphan.id, "orphan post still gets an id");
   assert.equal(orphan.status, "ok");
   assert.equal(orphan.durationMs, undefined, "no start time means no fabricated duration");
+}
+
+// Behavioral: transparent retries preserve the first attempt's settled hook
+// activity, so a replacement tracker must not mint the same UI merge key.
+{
+  const firstAttempt = new ToolCallTracker(() => 0, "attempt-0-");
+  const retryAttempt = new ToolCallTracker(() => 0, "attempt-1-");
+  const first = firstAttempt.hookStart("Bash", '{"command":"pwd"}');
+  const retry = retryAttempt.hookStart("Bash", '{"command":"pwd"}');
+  assert.notEqual(first.id, retry.id, "same-name hook calls from separate attempts keep distinct live and persisted ids");
 }
 
 // Behavioral: envelope-only harnesses (no pre/post_tool_use hooks) get a full

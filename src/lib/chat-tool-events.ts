@@ -106,9 +106,13 @@ export class ToolCallTracker {
    *  insertion-ordered, so snapshot() preserves call order for persistence. */
   private recorded = new Map<string, RecordedToolEvent>();
   private readonly now: () => number;
+  /** Per-attempt prefix for locally generated hook ids. Native envelope ids
+   * are already supplied by the protocol and remain unchanged. */
+  private readonly generatedIdPrefix: string;
 
-  constructor(now: () => number = Date.now) {
+  constructor(now: () => number = Date.now, generatedIdPrefix = "") {
     this.now = now;
+    this.generatedIdPrefix = generatedIdPrefix;
   }
 
   private queueFor(name: string): OpenCall[] {
@@ -178,7 +182,7 @@ export class ToolCallTracker {
     }
     this.seq += 1;
     const call: OpenCall = {
-      id: `tool-${this.seq}-${name}`,
+      id: `${this.generatedIdPrefix}tool-${this.seq}-${name}`,
       name,
       startedAt: this.now(),
       origin: "hook",
@@ -200,7 +204,7 @@ export class ToolCallTracker {
     if (!call) {
       // Post without any open call: surface it anyway under a fresh id.
       this.seq += 1;
-      const ev: ToolStreamEvent = { id: `tool-${this.seq}-${name}`, name, output, status };
+      const ev: ToolStreamEvent = { id: `${this.generatedIdPrefix}tool-${this.seq}-${name}`, name, output, status };
       this.record(ev);
       return ev;
     }

@@ -977,9 +977,19 @@ export async function POST(req: Request) {
   // Coven route for that case, where it can retain its established fallback
   // behavior without turning a path or resume id into shell syntax.
   const selectedCodexDirect = codexCompatibility?.ok === true;
+  // Codex 0.145's `exec resume` does not accept the fresh-session sandbox or
+  // directory-grant flags.  Do not silently drop them (which could resume a
+  // broader prior sandbox): retain the established generic runner whenever a
+  // resumed turn needs access constraints that native resume cannot express.
+  const codexResumeNeedsGenericFallback = Boolean(resumeTarget) && (
+    body.permissionMode === "read" || Boolean(body.projectRoot)
+  );
   const codexDirect = selectedCodexDirect
     && !codexLaunch?.unresolvedWindowsShim
-    && (!resumeTarget || codexCompatibility.report.capabilities.resume);
+    && (!resumeTarget || (
+      codexCompatibility.report.capabilities.resume
+      && !codexResumeNeedsGenericFallback
+    ));
   const modelForwardingEnabled =
     codexDirect
       ? true
@@ -1388,9 +1398,16 @@ export async function POST(req: Request) {
         ? ["exec", "resume", "--json", "--skip-git-repo-check"]
         : ["exec", "--json", "--skip-git-repo-check", "--color", "never"];
       if (forwardModel) a.push("--model", forwardModel);
-      if (forwardPermission) a.push("--sandbox", forwardPermission === "read-only" ? "read-only" : "workspace-write");
-      for (const dir of forwardAddDirs) a.push("--add-dir", dir);
+      // The resume subcommand accepts neither --sandbox nor --add-dir on
+      // supported Codex releases. `codexDirect` above only admits resume when
+      // Cave has no such constraints to forward.
+      if (!resumeSessionId) {
+        if (forwardPermission) a.push("--sandbox", forwardPermission === "read-only" ? "read-only" : "workspace-write");
+        for (const dir of forwardAddDirs) a.push("--add-dir", dir);
+      }
       if (resumeSessionId) a.push(resumeSessionId);
+      // A prompt beginning with `--` is user content, never a Codex option.
+      a.push("--");
       a.push(prompt);
       return a;
     }
@@ -1560,7 +1577,11 @@ export async function POST(req: Request) {
       // transport marker. Before that marker, a JSON/code response belongs to
       // the assistant and must survive verbatim rather than being phase-gated
       // by the legacy transcript filter.
-      const rawStdoutHarness = binding.harness !== "claude";
+      // Generic Codex output is an untrusted captured pipe: preserve its
+      // legacy phase filter so startup/context echoes and hook lines cannot
+      // enter the transcript. Native Codex agent_message events bypass the
+      // filter explicitly in handleCodexEvents below.
+      const rawStdoutHarness = binding.harness !== "claude" && binding.harness !== "codex";
       let assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
       let assistantText = "";
       let jsonBuf = "";
@@ -1574,7 +1595,8 @@ export async function POST(req: Request) {
       // envelopes: per-name FIFO queues give concurrent same-name calls
       // distinct ids, and hook/envelope events describing the same call are
       // deduped onto one id (hook events win — they carry real durations).
-      let toolTracker = new ToolCallTracker();
+      let toolAttempt = 0;
+      let toolTracker = new ToolCallTracker(Date.now, `attempt-${toolAttempt}-`);
       // A transparent retry replaces the active tracker, but the client has
       // already seen its prior attempt's terminal events. Preserve that
       // snapshot so reloads match the live transcript.
@@ -2384,7 +2406,8 @@ export async function POST(req: Request) {
         jsonBuf = "";
         result = {};
         settleToolCallsBeforeRetry();
-        toolTracker = new ToolCallTracker();
+        toolAttempt += 1;
+        toolTracker = new ToolCallTracker(Date.now, `attempt-${toolAttempt}-`);
         copilotText.reset();
         codexDecoder = codexDirect ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
         codexUnknownShapeReported = false;
@@ -2427,7 +2450,8 @@ export async function POST(req: Request) {
         jsonBuf = "";
         result = {};
         settleToolCallsBeforeRetry();
-        toolTracker = new ToolCallTracker();
+        toolAttempt += 1;
+        toolTracker = new ToolCallTracker(Date.now, `attempt-${toolAttempt}-`);
         copilotText.reset();
         codexDecoder = codexDirect ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
         codexUnknownShapeReported = false;
@@ -2564,7 +2588,7 @@ export async function POST(req: Request) {
       const harnessSessionId = grokDirect
         ? grokSessionId
         : binding.harness === "codex"
-          ? codexHarnessSessionId ?? sessionId
+          ? codexHarnessSessionId ?? existingConversation?.harnessSessionId ?? sessionId
           : sessionId;
       // OpenCode's JSON event protocol does not echo the selected model. Its
       // direct argv proves the selection was forwarded, while a successful

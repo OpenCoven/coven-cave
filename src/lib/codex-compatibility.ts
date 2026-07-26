@@ -24,6 +24,7 @@ const MAX_SCHEMA_STRING_LENGTH = 160;
 const MAX_SCHEMA_FUTURE_SKEW_MS = 5 * 60_000;
 const CACHE_LOCK_TIMEOUT_MS = 2_000;
 const CACHE_LOCK_RETRY_MS = 25;
+const MAX_TOOL_DISPLAY_CHARS = 16_384;
 
 export type CodexCapabilities = {
   jsonEvents: boolean;
@@ -94,17 +95,19 @@ export const CODEX_BOOTSTRAP_SCHEMAS: readonly CodexEventSchema[] = [
     maxVersionExclusive: "0.146.0",
     requiredCapabilities: { jsonEvents: true },
     eventTypes: ["thread.started", "turn.started", "turn.completed", "turn.failed", "item.started", "item.updated", "item.completed", "item.failed", "error"],
-    toolItemTypes: ["command_execution", "file_change", "mcp_tool_call", "web_search", "tool_call"],
+    toolItemTypes: ["command_execution", "file_change", "mcp_tool_call", "collab_tool_call", "web_search", "tool_call"],
     textItemTypes: ["agent_message"],
   },
   {
     id: "codex-jsonl-legacy-v1",
     schemaVersion: 1,
-    minVersion: "0.0.0",
+    // This is the earliest legacy stream with an observed, fixture-backed
+    // JSONL shape. Older JSON-capable CLIs retain the generic runner.
+    minVersion: "0.144.2",
     maxVersionExclusive: "0.145.0",
     requiredCapabilities: { jsonEvents: true },
     eventTypes: ["thread.started", "turn.started", "turn.completed", "turn.failed", "item.started", "item.updated", "item.completed", "item.failed", "error"],
-    toolItemTypes: ["command_execution", "file_change", "mcp_tool_call", "web_search", "tool_call"],
+    toolItemTypes: ["command_execution", "file_change", "mcp_tool_call", "collab_tool_call", "web_search", "tool_call"],
     textItemTypes: ["agent_message"],
   },
 ] as const;
@@ -916,9 +919,16 @@ function record(value: unknown): Record<string, unknown> | null {
 }
 
 function safeOutput(value: unknown): string | undefined {
-  if (typeof value === "string") return value || undefined;
-  if (value == null) return undefined;
-  try { return JSON.stringify(value); } catch { return undefined; }
+  let output: string | undefined;
+  if (typeof value === "string") output = value || undefined;
+  else if (value == null) return undefined;
+  else {
+    try { output = JSON.stringify(value); } catch { return undefined; }
+  }
+  if (!output) return undefined;
+  return output.length <= MAX_TOOL_DISPLAY_CHARS
+    ? output
+    : `${output.slice(0, MAX_TOOL_DISPLAY_CHARS)}\n[output truncated]`;
 }
 
 function eventFingerprint(value: Record<string, unknown>): string {
@@ -947,7 +957,9 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
   if (typeof item.type === "string" && schema.textItemTypes.includes(item.type)) {
     return event.type === "item.completed" && typeof item.text === "string"
       ? { kind: "text", text: item.text }
-      : { kind: "unknown", fingerprint: eventFingerprint(event) };
+      // Normal lifecycle starts/updates for agent_message contain no display
+      // text. They are not compatibility failures.
+      : { kind: "ignored" };
   }
   if (
     (event.type === "item.started" || event.type === "item.updated" || event.type === "item.completed" || event.type === "item.failed") &&
@@ -955,8 +967,14 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
   ) {
     return { kind: "unknown", fingerprint: eventFingerprint(event) };
   }
-  if (typeof item.id !== "string" || typeof item.type !== "string" || !schema.toolItemTypes.includes(item.type)) return { kind: "unknown", fingerprint: eventFingerprint(event) };
-  const name = typeof item.name === "string" ? item.name : item.type === "command_execution" ? "Bash" : item.type;
+  if (typeof item.id !== "string" || !item.id || item.id.length > MAX_SCHEMA_STRING_LENGTH || typeof item.type !== "string" || !schema.toolItemTypes.includes(item.type)) return { kind: "unknown", fingerprint: eventFingerprint(event) };
+  const mcpName = item.type === "mcp_tool_call"
+    && typeof item.tool === "string" && item.tool
+    ? `${typeof item.server === "string" && item.server ? `${item.server}.` : ""}${item.tool}`
+    : null;
+  const name = typeof item.name === "string" && item.name
+    ? item.name
+    : mcpName ?? (item.type === "command_execution" ? "Bash" : item.type);
   const input = item.arguments
     ?? item.input
     ?? (item.type === "command_execution" && typeof item.command === "string"
@@ -975,7 +993,7 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
       id: item.id,
       name,
       ...(input !== undefined ? { input } : {}),
-      output: safeOutput(item.aggregated_output ?? item.output ?? item.error),
+      output: safeOutput(item.aggregated_output || item.output || item.result || item.error),
       isError,
     };
   }
@@ -1080,8 +1098,13 @@ export class CodexJsonlDecoder {
         // owns later JSON records. In particular, do not let an assistant's
         // ordinary `{ type: "invoice.created" }` JSON response become an
         // unsupported protocol frame merely because it has a dotted type.
+        // Once a native/attested JSONL boundary owns the stream, every JSON
+        // envelope with a type is protocol data. Assistant-authored JSON is
+        // conveyed inside a validated agent_message item, never as a raw
+        // outer frame, so fail closed rather than leaking a future control
+        // record into the transcript.
         const protocolFrame = this.protocolArmed || this.protocolActive
-          ? protocolType || reservedProtocolType
+          ? !!rawType
           : this.options.trustThreadPreamble === true && (validThreadPreamble || reservedProtocolType);
         if (protocolFrame) {
           if (validThreadPreamble) {
@@ -1103,8 +1126,8 @@ export class CodexJsonlDecoder {
           continue;
         }
       } catch {
-        if ((this.protocolArmed || this.protocolActive || this.options.trustThreadPreamble === true)
-          && /"type"\s*:\s*"(?:(?:thread|turn|item|response|rate_limits)\.[^"\\.\s]+|error)"/.test(line)) {
+        if ((this.protocolArmed || this.protocolActive)
+          && /"type"\s*:/.test(line)) {
           const event: CodexStreamEvent = { kind: "unknown", fingerprint: "malformed-jsonl" };
           events.push(event);
           tokens.push(event);

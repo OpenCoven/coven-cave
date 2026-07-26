@@ -92,6 +92,25 @@ assert.deepEqual(
   { kind: "text", text: "visible answer" },
   "known assistant message items remain visible as chat text",
 );
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "item.started", item: { id: "message-a", type: "agent_message" } }, selected.schema),
+  { kind: "ignored" },
+  "nonterminal agent-message lifecycle frames do not create false compatibility failures",
+);
+assert.deepEqual(
+  parseCodexStreamEvent({ type: "item.completed", item: { id: "mcp-a", type: "mcp_tool_call", server: "example", tool: "lookup", result: { content: [{ type: "text", text: "MCP result" }] } } }, selected.schema),
+  { kind: "tool_end", id: "mcp-a", name: "example.lookup", output: '{"content":[{"type":"text","text":"MCP result"}]}', isError: false },
+  "MCP tool results retain their actual server/tool attribution and result payload",
+);
+assert.equal(
+  parseCodexStreamEvent({ type: "item.completed", item: { id: "collab-a", type: "collab_tool_call", output: "ok" } }, selected.schema)?.kind,
+  "tool_end",
+  "the observed collaboration tool item type is part of the bootstrap schema",
+);
+const hugeOutput = parseCodexStreamEvent({ type: "item.completed", item: { id: "large-a", type: "command_execution", aggregated_output: "x".repeat(20_000) } }, selected.schema);
+assert.equal(hugeOutput?.kind === "tool_end" && hugeOutput.output?.includes("[output truncated]"), true, "tool display output is bounded before live SSE emission");
+assert.equal(hugeOutput?.kind === "tool_end" && hugeOutput.output!.length <= 16_405, true, "bounded tool output has a stable live size limit");
+assert.equal(parseCodexStreamEvent({ type: "item.started", item: { id: "", type: "command_execution" } }, selected.schema)?.kind, "unknown", "empty native tool ids cannot merge distinct tool bubbles");
 const unknown = parseCodexStreamEvent({ type: "item.new_shape", item: { id: "secret-id", type: "unknown", prompt: "never log this" } }, selected.schema);
 assert.equal(unknown?.kind, "unknown");
 assert.doesNotMatch(JSON.stringify(unknown), /secret-id|never log this/, "unknown event diagnostics contain shape-only fingerprints");
@@ -110,9 +129,11 @@ const first = decoder.push('{"type":"item.started","item":{"id":"a","type":"comm
 assert.equal(first.events.filter((event) => event.kind === "tool_start").length, 1);
 assert.equal(first.events.filter((event) => event.kind === "tool_end").length, 1);
 assert.equal(first.passthrough, "assistant prose\n", "normal transcript text remains available to AssistantFilter");
-const jsonProse = decoder.push('{"type":"example","value":"assistant JSON"}\n', selected.schema);
-assert.equal(jsonProse.events.length, 0);
-assert.equal(jsonProse.passthrough, '{"type":"example","value":"assistant JSON"}\n', "ordinary JSON assistant content remains visible");
+const unknownActiveEnvelope = decoder.push('{"type":"example","value":"runtime metadata"}\n', selected.schema);
+assert.equal(unknownActiveEnvelope.events[0]?.kind, "unknown", "an active native JSONL stream quarantines every unknown envelope");
+assert.equal(unknownActiveEnvelope.passthrough, "", "unknown native envelopes never become assistant prose");
+const jsonAgentMessage = decoder.push('{"type":"item.completed","item":{"id":"json-answer","type":"agent_message","text":"{\\\"type\\\":\\\"example\\\",\\\"value\\\":\\\"assistant JSON\\\"}"}}\n', selected.schema);
+assert.deepEqual(jsonAgentMessage.events.at(-1), { kind: "text", text: '{"type":"example","value":"assistant JSON"}' }, "user-requested JSON remains visible when carried by the validated assistant channel");
 const preambleFreeDecoder = new CodexJsonlDecoder();
 const itemJsonProse = preambleFreeDecoder.push('{"type":"item.summary","value":"assistant JSON"}\n', selected.schema);
 assert.equal(itemJsonProse.passthrough, '{"type":"item.summary","value":"assistant JSON"}\n', "JSON examples that resemble future event names remain visible before a protocol preamble");
@@ -132,6 +153,9 @@ assert.equal(controls.passthrough, "", "control and malformed protocol frames ne
 assert.equal(controls.events.filter((event) => event.kind === "unknown").length, 4, "malformed and future protocol frames surface only shape-only diagnostics");
 assert.equal(controls.events.some((event) => event.kind === "failure"), true, "terminal error frames retain failure state without payloads");
 assert.doesNotMatch(JSON.stringify(controls.events), /never render/, "unknown protocol payloads never reach diagnostics");
+const malformedActive = protectedFrames.push('{"type":"usage.updated","secret":"never render"\n', selected.schema);
+assert.equal(malformedActive.events[0]?.kind, "unknown", "malformed active-stream envelopes are quarantined without parsing their payload");
+assert.equal(malformedActive.passthrough, "", "malformed active-stream envelopes never reach assistant text");
 const unarmedDottedJson = new CodexJsonlDecoder({ trustThreadPreamble: true }).push('{"type":"invoice.created","value":"assistant JSON"}\n', selected.schema);
 assert.equal(unarmedDottedJson.events.length, 0, "dotted JSON remains prose until a Codex protocol boundary is confirmed");
 assert.equal(unarmedDottedJson.passthrough, '{"type":"invoice.created","value":"assistant JSON"}\n', "captured output preserves ordinary JSON with dotted types before a valid preamble");
