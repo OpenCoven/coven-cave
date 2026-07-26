@@ -1,14 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ConversationFile } from "../cave-conversations.ts";
 import type { AutomationRunRecord } from "../automation-runs.ts";
 import type { FlowRunRecord } from "../flows.ts";
-import { allowedResearchActions, type ResearchMission } from "../research-missions.ts";
+import type { ResearchMission } from "../research-missions.ts";
 import {
   makeResearchMissionRunner,
-  parseResearchSourcesFile,
-  sessionAlreadyGone,
-  withinStartupGrace,
   type ResearchMissionRunnerDeps,
 } from "./research-mission-runner.ts";
 
@@ -22,23 +18,6 @@ const RUN: FlowRunRecord = {
   steps: [],
   source: "cave",
   sessionId: "session-1",
-};
-
-const INPUT = {
-  familiarId: "sage",
-  title: "Storage decision",
-  intent: "Compare SQLite and Postgres",
-  mode: "brief" as const,
-  modeSource: "user" as const,
-  deliverable: "brief",
-  constraints: [],
-  bounds: {
-    wallClockMinutes: 20,
-    maxIterations: 1,
-    sourceTarget: 6,
-    checkpointEvery: 1,
-    stopWhenCostUnavailable: false,
-  },
 };
 
 function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissionRunnerDeps {

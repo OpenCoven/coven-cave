@@ -37,7 +37,6 @@ import {
   type ThreadView,
   type WeaveListEntry,
   type WeaveDetail,
-  type WeaveSummary,
 } from "./threads-read.ts";
 import { normalizeProposal } from "./proposal-normalize.ts";
 

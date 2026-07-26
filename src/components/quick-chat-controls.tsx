@@ -2,7 +2,7 @@
 
 import "@/styles/cave-composer.css";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 // The slash menu popover reuses the home composer's .hc-slash-* affordance —
 // this stylesheet is global-scoped, so importing it here makes the menu render
 // identically in the tray window (which never mounts the home composer).
@@ -46,9 +46,7 @@ import {
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import {
   FamiliarMark,
-  QuickChatIdentity,
   QuickChatSelect,
-  type QuickChatSelectOption,
 } from "./quick-chat-primitives";
 
 export {

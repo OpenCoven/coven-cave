@@ -6,18 +6,13 @@ import {
   bindingFor,
   enqueueOfflineTravelItem,
   type CaveConfig,
-  type FamiliarBinding,
   loadConfig,
   loadState,
   recordSessionFamiliar,
   setSessionTitle,
   setSessionTitleAuto,
 } from "@/lib/cave-config";
-import {
-  chatSummaryTitle,
-  chatTitleFromPrompt,
-  defaultChatTitleForSession,
-} from "@/lib/cave-chat-titles";
+import { chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import {
   isAutoOwnedTitle,
   isRenameDueAtTurn,
@@ -74,7 +69,6 @@ import {
   resolveOpenCodeCompatibility,
 } from "@/lib/opencode-compatibility";
 import { handleOpenCodeJsonLine } from "@/lib/opencode-stream";
-import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import {
   hasUnsupportedClaudeToolFrame,
   isClaudeStreamJsonFrame,
@@ -129,7 +123,6 @@ import {
 } from "@/lib/openclaw-bridge";
 import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters";
 import {
-  type ConversationFile,
   type ChatTurn,
   createConversationStub,
   loadConversation,
@@ -147,7 +140,6 @@ import {
   modelApplicationForHarness,
   modelApplicationFromRun,
   modelRejectionInError,
-  resolveChatModelState,
   type ChatModelState,
 } from "@/lib/chat-model-state";
 import {

@@ -38,7 +38,7 @@ import { useProjects } from "@/lib/use-projects";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
-import { BoardKanbanSkeleton, type ViewMode } from "@/components/board-view-display";
+import { BoardKanbanSkeleton } from "@/components/board-view-display";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";

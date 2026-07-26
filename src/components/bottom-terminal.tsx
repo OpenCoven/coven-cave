@@ -201,10 +201,7 @@ export function BottomTerminal({
   active = true,
   visible = active,
   projectRoot,
-  paneId,
   label,
-  registerWriter,
-  onUserInput,
 }: {
   threadId: string;
   /** This pane has keyboard focus (drives refit + refocus on activation). */
@@ -215,32 +212,14 @@ export function BottomTerminal({
    *  Defaults to `active` for single-pane hosts. */
   visible?: boolean;
   projectRoot?: string;
-  /** Stable id for comux's broadcast registry (defaults to threadId). */
-  paneId?: string;
-  /** Human-readable pane name (the comux tab/pane label) so AT can tell split
+  /** Human-readable pane name so AT can tell split
    *  panes apart — names the terminal region and its screen-reader mirror. */
   label?: string;
-  /** Register/unregister this pane's PTY writer so broadcast can fan input in. */
-  registerWriter?: (paneId: string, write: ((data: string) => void) | null) => void;
-  /** Called with every keystroke (post Ctrl-transform) so comux can mirror it
-   *  to sibling panes when broadcast mode is on. */
-  onUserInput?: (paneId: string, data: string) => void;
 }) {
-  const broadcastPaneId = paneId ?? threadId;
   // Connection transitions are written into the terminal (and its polite
   // mirror) as dim ANSI, where a disconnect can be buried under output — mirror
   // them to the shared assertive live region so AT interrupts with the status.
   const { announce: srAnnounce } = useAnnouncer();
-  // Writer set by whichever transport (Tauri / WS) is live; the registered
-  // wrapper reads this ref at call time so registration can precede attach.
-  const writerRef = useRef<((data: string) => void) | null>(null);
-  const onUserInputRef = useRef(onUserInput);
-  onUserInputRef.current = onUserInput;
-  useEffect(() => {
-    if (!registerWriter) return;
-    registerWriter(broadcastPaneId, (data: string) => writerRef.current?.(data));
-    return () => registerWriter(broadcastPaneId, null);
-  }, [registerWriter, broadcastPaneId]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
@@ -547,13 +526,7 @@ export function BottomTerminal({
           threadId: threadId,
           bytes: Array.from(new TextEncoder().encode(out)),
         }).catch((err) => log("pty_write FAILED", err));
-        onUserInputRef.current?.(broadcastPaneId, out);
       });
-      writerRef.current = (d) =>
-        void bridge.invoke("pty_write", {
-          threadId: threadId,
-          bytes: Array.from(new TextEncoder().encode(d)),
-        }).catch((err) => log("pty_write FAILED", err));
 
       if (!attachToRunning) {
         log("pty_start: invoking with projectRoot=", projectRootRef.current);
@@ -767,9 +740,7 @@ export function BottomTerminal({
           return;
         }
         bridge.write(new TextEncoder().encode(data));
-        onUserInputRef.current?.(broadcastPaneId, data);
       });
-      writerRef.current = (d) => bridge.write(new TextEncoder().encode(d));
 
       const resizer = makeResizer(term, fit, () => visibleRef.current, (cols, rows) => {
         try {

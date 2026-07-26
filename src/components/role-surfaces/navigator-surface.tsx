@@ -24,7 +24,6 @@ import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   COURSE_LANES,
   cardProgress,
-  chartRoomStatus,
   groupByLane,
   scopeCards,
   upcomingLegs,

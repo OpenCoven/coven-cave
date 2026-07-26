@@ -15,11 +15,8 @@ assert.match(card, /aria-label="Not helpful"/, "thumbs-down control");
 assert.match(card, /Suggest a better path/, "offers an optional correction note");
 assert.match(card, /sendFeedback\(false, correction\)/, "correction submitted explicitly");
 
-// Panel: feedback + savedToBoard posted to the local route; saved-to-board recorded on success.
-assert.match(widget, /\/api\/salem\/pathfinder\/feedback/, "posts feedback to the local route");
-assert.match(widget, /savedToBoard: true/, "records save-to-board");
-assert.match(widget, /onFeedback=\{\(fb\) =>/, "card feedback wired in the panel");
-// Privacy: only whitelisted fields are sent — no transcript/notes/secrets.
-assert.doesNotMatch(widget, /recordFeedback\([\s\S]{0,200}(token|secret|transcript|messages)/i, "feedback payload carries no secrets/transcript");
+// The rail chat has no Pathfinder trigger, so it must not retain unreachable
+// feedback transport or card wiring.
+assert.doesNotMatch(widget, /pathfinder\/feedback|recordFeedback|onFeedback=/, "rail chat omits dormant Pathfinder feedback plumbing");
 
 console.log("salem-feedback-capture.test.ts OK");
