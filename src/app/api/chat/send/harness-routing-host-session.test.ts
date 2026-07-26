@@ -77,8 +77,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?await hermesChatSupportsModel\(\)/,
-  "Hermes model forwarding must probe its direct CLI instead of assuming the coven-run capability applies",
+  /const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?await hermesChatSupportsModel\(readyHermesLaunch\)/,
+  "Hermes model forwarding must probe its resolver-pinned direct CLI instead of assuming the coven-run capability applies",
 );
 
 assert.match(
@@ -95,8 +95,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /command: process\.platform === "win32" \? "hermes\.exe" : "hermes"/,
-  "Hermes direct chat must use the Windows executable name on Windows",
+  /const hermesLaunch = hermesDirect && hermesApi === null\s*\? resolveHermesLaunch\(\{ familiarId: body\.familiarId \}\)/,
+  "Hermes direct chat must obtain its platform-native command from the shared resolver",
 );
 
 assert.doesNotMatch(
