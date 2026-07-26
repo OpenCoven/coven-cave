@@ -159,6 +159,14 @@ assert.match(
   /filterVisibleChatSessions\(sessions,\s*familiar\.id\)[\s\S]{0,300}?\.slice\(0,\s*RECENT_THREADS_CAP\)/,
   "Recent threads must apply shared familiar visibility before the three-row cap",
 );
+assert.doesNotMatch(
+  dash.slice(
+    dash.indexOf("const recentThreads = useMemo"),
+    dash.indexOf("return (", dash.indexOf("const recentThreads = useMemo")),
+  ),
+  /\.sort\(/,
+  "Recent threads preserve the shared helper's canonical newest-first ordering",
+);
 assert.match(dash, /OPEN_WORK_FILTERS\.map/, "the board renders the trimmed filter tabs");
 assert.match(
   dash,

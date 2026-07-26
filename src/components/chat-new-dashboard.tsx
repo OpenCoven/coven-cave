@@ -172,7 +172,6 @@ export function ChatNewDashboard({
   const recentThreads = useMemo(() => {
     return filterVisibleChatSessions(sessions, familiar.id)
       .filter((s) => Boolean(s.title?.trim()))
-      .sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""))
       .slice(0, RECENT_THREADS_CAP);
   }, [sessions, familiar.id]);
 
