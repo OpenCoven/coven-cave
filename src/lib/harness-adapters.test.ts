@@ -162,6 +162,39 @@ const mergedGrok = mergeAdapterReports(
 assert.deepEqual(mergedGrok[0].models, [{ id: "grok-4.5", label: "grok-4.5 (default)" }]);
 assert.equal(mergedGrok[0].defaultModel, "grok-4.5");
 
+// A broad adapter list may have been generated under a different process
+// environment. The runner-specific availability gate is authoritative for
+// native-chat UI state and must not be overwritten by that broad row.
+const mergedUnavailableCodex = mergeAdapterReports(
+  [{
+    id: "codex",
+    label: "Codex",
+    binary: "codex",
+    installed: false,
+    path: null,
+    version: null,
+    availability: {
+      state: "missing",
+      code: "runtime_missing",
+      message: "Codex CLI is unavailable to Coven.",
+      component: "adapter" as const,
+    },
+  }],
+  [{
+    id: "codex",
+    label: "Codex",
+    executable: "codex",
+    available: true,
+    install_hint: "Install Codex.",
+    source: "bundled",
+  }],
+);
+assert.equal(
+  mergedUnavailableCodex[0].installed,
+  false,
+  "the familiar picker/runtime card keeps Codex unavailable when its exact launch environment failed",
+);
+
 const merged = mergeAdapterReports(
   [
     {

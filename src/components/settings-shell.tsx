@@ -46,7 +46,6 @@ import { SettingsTabbed } from "./settings-section-tabs";
 import type { TabItem } from "@/components/ui/tabs";
 import { ProfileSection } from "./settings-profile";
 import { GithubSection } from "./settings-github";
-import { AccessGroupsSection } from "./access-groups-section";
 import { SettingsOverview } from "./settings-overview";
 import { AboutSection } from "./settings-about";
 import {
@@ -334,7 +333,13 @@ export function SettingsShell() {
         {/* Content */}
         <main
           hidden={showPicker}
-          className="settings-shell__content min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 [padding-bottom:calc(1.5rem_+_var(--sai-bottom))]!"
+          className={`settings-shell__content min-h-0 flex-1 ${
+            section === "familiars" ? "settings-shell__content--familiars" : ""
+          } ${
+            section === "familiars"
+              ? "overflow-hidden"
+              : "overflow-y-auto px-4 py-6 md:px-8 [padding-bottom:calc(1.5rem_+_var(--sai-bottom))]!"
+          }`}
         >
           {section === "profile" && <ProfileSection />}
           {section === "general" && <GeneralSection />}
@@ -1086,7 +1091,7 @@ function FamiliarsSection({
   const [createOpen, setCreateOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
-  const familiars = useResolvedFamiliars(rawFamiliars);
+  const familiars = useResolvedFamiliars(rawFamiliars, { includeArchived: true });
   // This renders below FamiliarStudioProvider (the shell mounts it), so the
   // studio tab state is reachable here even though the shell body can't.
   const { setActiveTab, openFamiliarStudio } = useFamiliarStudio();
@@ -1230,20 +1235,12 @@ function FamiliarsSection({
 
   return (
     <>
-      {/* Summon lives in the familiar picker's fixed footer, alongside the
-          roster it extends instead of floating above the Studio. */}
       <FamiliarStudioInlinePanel
         familiars={rawFamiliars}
         resolved={familiars}
         onSummon={() => setCreateOpen(true)}
         onRosterChanged={() => void load()}
       />
-      {/* Cross-familiar access groups — shared base project grants at read or
-          write level; per-familiar effective access renders in the studio's
-          Projects tab. */}
-      <div className="mt-4">
-        <AccessGroupsSection familiars={familiars} />
-      </div>
       {createDialog}
     </>
   );

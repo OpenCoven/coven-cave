@@ -92,6 +92,24 @@ export function normalizeVaultScope(scope: unknown): VaultScope {
   return [];
 }
 
+/** Add one familiar to an already-scoped key without ever widening it. */
+export function grantVaultScope(scope: unknown, familiarId: string): VaultScope {
+  const current = normalizeVaultScope(scope);
+  if (current === "shared") return current;
+  const normalizedId = familiarId.trim().toLowerCase();
+  if (!normalizedId || current.includes(normalizedId)) return current;
+  return [...current, normalizedId];
+}
+
+/** Remove only one familiar from a scoped key. Shared keys stay shared. */
+export function revokeVaultScope(scope: unknown, familiarId: string): VaultScope {
+  const current = normalizeVaultScope(scope);
+  if (current === "shared") return current;
+  const normalizedId = familiarId.trim().toLowerCase();
+  if (!normalizedId) return current;
+  return current.filter((id) => id !== normalizedId);
+}
+
 /** Whether a vault entry's value may be injected into a spawn for `familiarId`
  *  (no familiar context — probes, runners, the daemon — gets shared keys only). */
 export function isVaultKeyGrantedTo(entry: VaultEntry | undefined, familiarId?: string | null): boolean {

@@ -2,12 +2,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import cssContract from "../../scripts/css-source-contract.cjs";
 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const daemon = readFileSync(new URL("./settings-daemon.tsx", import.meta.url), "utf8");
 const picker = readFileSync(new URL("./settings-familiar-picker.tsx", import.meta.url), "utf8");
 const controls = readFileSync(new URL("./ui/settings-controls.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = cssContract.readEffectiveCssSync("src/app/globals.css", "utf8");
 const studioSources = [
   "familiar-studio-brain-tab.tsx",
   "familiar-studio-identity-tab.tsx",
