@@ -96,17 +96,16 @@ function supportedHello(hello: GatewayHello): string | null {
   return null;
 }
 
-/** Extract text only from the documented chat envelope shapes. */
+/**
+ * The published v4 ChatEvent schema deliberately leaves `message` opaque.
+ * Do not infer a content envelope from an opaque value: doing so would make
+ * unversioned Gateway payloads assistant-visible. Text reaches Cave only via
+ * the schema's `deltaText` field until a versioned final-message validator is
+ * published.
+ */
 export function textFromOpenClawGatewayMessage(message: unknown): string | undefined {
-  if (typeof message === "string") return message;
-  if (!isRecord(message)) return undefined;
-  if (typeof message.text === "string") return message.text;
-  if (!Array.isArray(message.content)) return undefined;
-  const text = message.content
-    .map((part) => (isRecord(part) && typeof part.text === "string" ? part.text : ""))
-    .filter(Boolean)
-    .join("");
-  return text || undefined;
+  void message;
+  return undefined;
 }
 
 /**
@@ -211,7 +210,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
     // history-reconciliation schema, so finish this Gateway-owned turn as an
     // error instead of pretending its stream is complete.
     if (event.seq <= highestSequence) return;
-    if (highestSequence >= 0 && event.seq !== highestSequence + 1) {
+    if (event.seq !== highestSequence + 1) {
       args.onEvent({ kind: "error", message: "Gateway event sequence gap" });
       settle("error", "Gateway event sequence gap");
       client.stop();

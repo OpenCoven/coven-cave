@@ -55,11 +55,12 @@ assert.equal(
   "unpublished tool payload shapes fail closed instead of becoming cards",
 );
 
-assert.equal(textFromOpenClawGatewayMessage("plain"), "plain");
-assert.equal(textFromOpenClawGatewayMessage({ text: "envelope" }), "envelope");
+assert.equal(textFromOpenClawGatewayMessage("plain"), undefined);
+assert.equal(textFromOpenClawGatewayMessage({ text: "envelope" }), undefined);
 assert.equal(
   textFromOpenClawGatewayMessage({ content: [{ type: "text", text: "a" }, { type: "text", text: "b" }] }),
-  "ab",
+  undefined,
+  "the published ChatEvent schema leaves message opaque, so its observed contents must not reach Cave output",
 );
 assert.equal(textFromOpenClawGatewayMessage({ raw: "not published" }), undefined);
 assert.deepEqual(
@@ -168,13 +169,51 @@ assert.equal(clientOptions.caps, undefined, "chat-only dispatch must not request
 assert.equal(clientOptions.minProtocol, 4);
 assert.equal(clientOptions.maxProtocol, 4);
 if (dispatch.kind === "accepted") {
-  assert.deepEqual(await dispatch.done, { state: "final", message: "Hello" });
+  assert.deepEqual(await dispatch.done, { state: "final" });
 }
 assert.deepEqual(
   emitted.filter((event) => event.kind === "delta"),
   [{ kind: "delta", text: "Hello", replace: false }],
   "only the accepted run reaches Cave output; a foreign same-session run is rejected",
 );
+assert.ok(
+  emitted.some((event) => event.kind === "final" && !("text" in event)),
+  "an opaque final message never becomes assistant-visible text",
+);
+
+const gappedEvents = [];
+const gappedDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "gap",
+  idempotencyKey: "cave-request-gap",
+  env: { OPENCLAW_GATEWAY_DISPATCH: "1", OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789" },
+  onEvent: (event) => gappedEvents.push(event),
+  clientFactory: (options) => ({
+    start() { queueMicrotask(() => options.onHelloOk?.(helloOk())); },
+    stop() {},
+    async request(method, _params, requestOptions) {
+      if (method === "chat.send") {
+        requestOptions?.onSent?.();
+        queueMicrotask(() => options.onEvent?.({
+          type: "event",
+          event: "chat",
+          payload: { ...delta, seq: 1 },
+        }));
+        return { runId: expected.runId };
+      }
+      return { subscribed: true };
+    },
+  }),
+});
+if (gappedDispatch.kind === "accepted") {
+  assert.deepEqual(
+    await gappedDispatch.done,
+    { state: "error", message: "Gateway event sequence gap" },
+    "the first accepted event must be sequence zero; otherwise the Gateway turn is incomplete",
+  );
+}
+assert.deepEqual(gappedEvents, [{ kind: "error", message: "Gateway event sequence gap" }]);
 
 // A reconnect is not an excuse to trust an event before the documented
 // session subscription returns. The queued frame is accepted only after the
@@ -272,7 +311,7 @@ reconnectOptions.onEvent?.({
   },
 });
 if (reconnectDispatch.kind === "accepted") {
-  assert.deepEqual(await reconnectDispatch.done, { state: "final", message: "done" });
+  assert.deepEqual(await reconnectDispatch.done, { state: "final" });
 }
 
 console.log("openclaw Gateway run correlation tests passed");
