@@ -249,8 +249,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /\(openCodeDirect \|\| copilotStream\) && code !== 0[\s\S]*?is_error: true/,
-  "a nonzero direct Copilot process exit persists the turn as an error even without a final result frame",
+  /\(openCodeDirect \|\| copilotStream \|\| codexDirect\) && code !== 0[\s\S]*?is_error: true/,
+  "a nonzero direct Copilot or Codex process exit persists the turn as an error even without a final result frame",
 );
 assert.match(
   chatRoute,
