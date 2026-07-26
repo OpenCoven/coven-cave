@@ -548,7 +548,7 @@
 }
 
 .settings-about-link-card--podcast {
-  grid-column: span 2;
+  grid-column: span 3;
   flex-direction: row;
   align-items: center;
   gap: var(--space-3);
@@ -663,6 +663,10 @@
 
   .settings-about-links-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-about-link-card--podcast {
+    grid-column: span 1;
   }
 }
 
