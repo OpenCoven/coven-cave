@@ -126,6 +126,18 @@ assert.equal(
 clearCopilotCapabilityProbeCache();
 const identityTimedOut = await probeCopilotCapability("copilot-identity-timeout-fixture", {
   binaryIdentity: async () => "",
+  resolveRuntimeLaunch: async () => ({
+    env: { NODE_ENV: "test", PATH: "" },
+    command: "copilot-identity-timeout-fixture",
+    fixedArgs: [],
+    requiredFiles: [],
+    deadline: Date.now() + 1_500,
+    availability: {
+      state: "ready",
+      runner: "copilot",
+      resolvedPath: "copilot-identity-timeout-fixture",
+    },
+  }),
   spawnImpl: (() => {
     throw new Error("the version probe must not run after identity timeout");
   }) as typeof import("node:child_process").spawn,

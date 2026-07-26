@@ -217,11 +217,15 @@ export async function probeCopilotCapability(
     launch.deadline,
     now,
   );
-  if (identity === null || now() >= launch.deadline) {
+  if (!identity || now() >= launch.deadline) {
     return {
       version: null,
       availability: copilotLaunchProbeFailureAvailability("timeout"),
       diagnostic: "probe-timeout",
+      // The send route must still preflight the exact argv-list plan rather
+      // than falling back to a bare `copilot` command after a timed-out
+      // identity check.
+      launchCommand,
     };
   }
   if (

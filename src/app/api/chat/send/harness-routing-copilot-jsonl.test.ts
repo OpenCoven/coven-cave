@@ -322,8 +322,8 @@ assert.doesNotMatch(
 );
 assert.match(
   chatRoute,
-  /copilotStream\s*\?\s*"Copilot failed to start\. Check its installation and try again\."/,
-  "a post-preflight Copilot launch error uses fixed copy instead of Node's path-bearing error message",
+  /localRuntimeLaunchError\(\s*localRuntimePlan\?\.runner \?\? "coven",\s*err\.code,\s*\)/,
+  "a post-preflight Copilot launch error uses the shared fixed runner copy instead of Node's path-bearing error message",
 );
 
 assert.match(
