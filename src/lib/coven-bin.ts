@@ -504,7 +504,14 @@ function augmentedSpawnPath(
   const fromSystem = process.platform === "win32"
     ? windowsRegistryPath(discovery)
     : loginShellPath(discovery);
-  const launchPath = discovery.env.PATH ? discovery.env.PATH.split(path.delimiter) : [];
+  // Windows retains the casing it inherited for environment keys (normally
+  // `Path`). After copying the environment, `env.PATH` therefore cannot be
+  // relied on even though `process.env.PATH` is case-insensitive. Read it
+  // case-insensitively so a desktop launch PATH remains first for Queue tools.
+  const launchPathValue = discovery.env.PATH ?? Object.entries(discovery.env).find(
+    ([key]) => key.toUpperCase() === "PATH",
+  )?.[1];
+  const launchPath = launchPathValue ? launchPathValue.split(path.delimiter) : [];
   const systemPath = fromSystem ? fromSystem.split(path.delimiter) : [];
   const candidates = candidateDirs(discovery);
   // `coven` intentionally prefers its managed install locations over a stale
