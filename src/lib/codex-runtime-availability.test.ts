@@ -106,7 +106,9 @@ const covenProbe = {
 }
 
 assert.equal(classifyCodexAdapterFailure("harness `codex` is not available"), "missing");
-assert.equal(classifyCodexAdapterFailure("harness codex is not configured"), "unlaunchable");
+assert.equal(classifyCodexAdapterFailure("Codex adapter is not installed"), "missing");
+assert.equal(classifyCodexAdapterFailure("unsupported adapter codex"), "unlaunchable");
+assert.equal(classifyCodexAdapterFailure("codex adapter is not configured"), "unlaunchable");
 assert.equal(classifyCodexAdapterFailure("authentication required"), null);
 
 // Production execution remains direct argv: it runs only `adapter list --json`
