@@ -142,10 +142,10 @@ try {
   assert.match(quotedResumeBody, /Session not found in the documentation\./, "plain fallback preserves assistant text that resembles a resume failure");
   assert.doesNotMatch(quotedResumeBody, /No assistant text returned/, "quoted resume-failure text does not become a synthetic empty-response error");
 
-  // The OpenCode-specific preflight runs after capability discovery but before
-  // a prompt/model command is created. Removing the same shim used by the
-  // successful turn proves the route returns the shared structured remediation
-  // and never manufactures an auth/no-output assistant response.
+  // The OpenCode-specific preflight runs before capability discovery or a
+  // prompt/model command. Removing the same shim used by the successful turn
+  // proves the route returns the shared structured remediation and never
+  // manufactures an auth/no-output assistant response.
   await rm(path.join(bin, executable), { force: true });
   const missingResponse = await POST(new Request("http://localhost/api/chat/send", {
     method: "POST",
