@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { MAX_RECORDED_TOOL_EVENTS, MAX_SETTLED_ENVELOPE_IDS, MAX_SETTLED_RECONCILIATION_CALLS, ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
+import { LIVE_TOOL_INPUT_CAP, MAX_RECORDED_TOOL_EVENTS, MAX_SETTLED_ENVELOPE_IDS, MAX_SETTLED_RECONCILIATION_CALLS, ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
 
 const tracker = new ToolCallTracker(() => 1_000);
 assert.equal(tracker.envelopeToolResult("call_1", "late terminal output", false), null);
@@ -58,8 +58,10 @@ assert.ok(
 );
 
 const linkedHook = new ToolCallTracker(() => 1_000);
-linkedHook.hookStart("read");
-assert.equal(linkedHook.envelopeToolUse("hook-linked", "read", "x".repeat(100_000)), null);
+const linkedHookStart = linkedHook.hookStart("read");
+const linkedHookUpdate = linkedHook.envelopeToolUse("hook-linked", "read", "x".repeat(100_000));
+assert.equal(linkedHookUpdate?.id, linkedHookStart.id, "a late envelope updates the existing hook bubble instead of creating a second one");
+assert.equal(linkedHookUpdate?.status, "running", "a late envelope input keeps its running hook bubble running");
 const linkedHookInput = linkedHook.snapshot()[0]?.input;
 assert.ok(
   new TextEncoder().encode(linkedHookInput ?? "").byteLength <= 8_000,
@@ -88,6 +90,39 @@ for (let index = 0; index <= MAX_RECORDED_TOOL_EVENTS; index += 1) {
   assert.ok(recordedWindow.envelopeToolResult(id, "ok", false));
 }
 assert.equal(recordedWindow.snapshot().length, MAX_RECORDED_TOOL_EVENTS, "a long-running runtime cannot retain unbounded settled tool records");
+
+const lateEnvelopeInput = new ToolCallTracker(() => 1_000);
+const hookOnlyStart = lateEnvelopeInput.hookStart("Read");
+const delayedInput = "x".repeat(LIVE_TOOL_INPUT_CAP + 1);
+assert.deepEqual(
+  lateEnvelopeInput.envelopeToolUse("late-input", "Read", delayedInput),
+  {
+    id: hookOnlyStart.id,
+    name: "Read",
+    input: capLiveToolPayload(delayedInput, LIVE_TOOL_INPUT_CAP),
+    status: "running",
+  },
+  "a late envelope fills a hook-only live bubble with a bounded input update",
+);
+assert.equal(
+  lateEnvelopeInput.snapshot()[0]?.input,
+  capLiveToolPayload(delayedInput, LIVE_TOOL_INPUT_CAP),
+  "late envelope input is bounded in persisted tracker state too",
+);
+const completedHookInput = new ToolCallTracker(() => 1_000);
+completedHookInput.hookStart("Read");
+const hookCompletion = completedHookInput.hookEnd("Read", "done", false);
+assert.deepEqual(
+  completedHookInput.envelopeToolUse("late-completed-input", "Read", "{\"path\":\"README.md\"}"),
+  {
+    id: hookCompletion.id,
+    name: "Read",
+    input: "{\"path\":\"README.md\"}",
+    status: "ok",
+    durationMs: hookCompletion.durationMs,
+  },
+  "a late envelope fills a completed hook bubble without resetting its terminal status",
+);
 
 const lateReconciliationWindow = new ToolCallTracker(() => 1_000);
 for (let index = 0; index <= MAX_SETTLED_RECONCILIATION_CALLS; index += 1) {

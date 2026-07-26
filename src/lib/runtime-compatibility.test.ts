@@ -48,6 +48,11 @@ assert.deepEqual(
   { kind: "fallback", reason: "unsupported-version" },
   "a prerelease or suffixed version must not inherit a profile for the released CLI",
 );
+assert.deepEqual(
+  resolveRuntimeCompatibility({ ...current, version: "2.1" }, CLAUDE_COMPATIBILITY_PROFILES, NOW),
+  { kind: "fallback", reason: "unsupported-version" },
+  "a two-component version must not assume an unreported patch version is profile-compatible",
+);
 
 const tampered = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
 tampered.eventTypes.toolUse = "arbitrary-remote-event";

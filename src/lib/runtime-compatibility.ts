@@ -42,12 +42,12 @@ export type CompatibilityResolution =
 // Keep the token bounded on both sides: accepting the first three components
 // of `2.1.179.1` or `2.1.179-unreviewed` would select a profile for an
 // unknown CLI version.
-const SEMVER = /(?:^|\s)v?(\d+)\.(\d+)(?:\.(\d+))?(?=\s|$)/;
+const SEMVER = /(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(?=\s|$)/;
 
 function semver(value: string): [number, number, number] | null {
   const found = value.match(SEMVER);
   if (!found) return null;
-  const parsed: [number, number, number] = [Number(found[1]), Number(found[2]), Number(found[3] ?? 0)];
+  const parsed: [number, number, number] = [Number(found[1]), Number(found[2]), Number(found[3])];
   return parsed.every(Number.isSafeInteger) ? parsed : null;
 }
 

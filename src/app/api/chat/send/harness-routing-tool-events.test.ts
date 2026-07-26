@@ -647,10 +647,10 @@ assert.match(
   const tracker = new ToolCallTracker(() => 0);
   const post = tracker.hookEnd("Bash", "hook output", false);
   assert.equal(post.status, "ok");
-  assert.equal(
+  assert.deepEqual(
     tracker.envelopeToolUse("toolu-post-only", "Bash", '{"command":"pwd"}'),
-    null,
-    "a late envelope must link the post-only hook instead of emitting a duplicate bubble",
+    { id: post.id, name: "Bash", input: '{"command":"pwd"}', status: "ok" },
+    "a late envelope must fill the completed post-only hook bubble without duplicating or reopening it",
   );
   assert.equal(tracker.envelopeToolResult("toolu-post-only", "envelope output", false), null);
   assert.deepEqual(

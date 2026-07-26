@@ -503,12 +503,17 @@ export class ToolCallTracker {
       hookCall.envelopeId = id;
       this.byEnvelopeId.set(id, hookCall);
       const prev = this.recorded.get(hookCall.id);
-      const displayedInput = prev?.input ?? input;
       if (prev && prev.input === undefined && input !== undefined) {
-        this.recorded.set(hookCall.id, {
-          ...prev,
+        const ev: ToolStreamEvent = {
+          id: hookCall.id,
+          name,
           input: capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP),
-        });
+          status: prev.status,
+        };
+        this.record(ev);
+        // The hook was already rendered without an input. Emit this bounded
+        // update so the live bubble receives the envelope input too.
+        return ev;
       }
       return null;
     }
@@ -523,7 +528,17 @@ export class ToolCallTracker {
       this.dropPendingEnvelopeResult(id);
       const prev = this.recorded.get(settledHookCall.id);
       if (prev && prev.input === undefined && input !== undefined) {
-        this.recorded.set(settledHookCall.id, { ...prev, input });
+        const ev: ToolStreamEvent = {
+          id: settledHookCall.id,
+          name,
+          input: capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP),
+          status: prev.status,
+          ...(prev.durationMs !== undefined ? { durationMs: prev.durationMs } : {}),
+        };
+        this.record(ev);
+        // A completed hook remains completed; this is only the late input
+        // update for the already-rendered bubble.
+        return ev;
       }
       return null;
     }
