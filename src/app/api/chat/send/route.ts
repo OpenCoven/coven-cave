@@ -3830,7 +3830,7 @@ export async function POST(req: Request) {
             createdAt: new Date().toISOString(),
             durationMs: result.duration_ms,
             isError: result.is_error,
-            ...(cancelledByUser ? { cancelled: true } : {}),
+            // Cancellation state is persisted by the resolved transaction above.
             ...(result.usage ? { usage: result.usage } : {}),
             ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
             ...(persistedTools ? { tools: persistedTools } : {}),
