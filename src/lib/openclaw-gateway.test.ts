@@ -351,6 +351,13 @@ assert.equal(reconnectDispatch.kind, "accepted");
 // onConnectError before it retries. That must not terminate a Gateway-owned
 // run; a subsequent authenticated hello restores the subscription.
 reconnectOptions.onConnectError?.(new Error("transient reconnect failure"));
+reconnectOptions.onClose?.(1006, "network reset");
+reconnectOptions.onEvent?.({ type: "event", event: "chat", payload: { ...delta, seq: 0 } });
+assert.deepEqual(
+  reconnectEvents,
+  [],
+  "a closed transport cannot project a buffered frame before its reconnect hello re-subscribes",
+);
 reconnectOptions.onHelloOk?.(helloOk());
 reconnectOptions.onHelloOk?.(helloOk());
 reconnectOptions.onEvent?.({ type: "event", event: "chat", payload: { ...delta, seq: 0 } });

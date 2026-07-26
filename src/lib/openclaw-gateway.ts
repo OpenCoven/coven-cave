@@ -339,6 +339,15 @@ export async function dispatchOpenClawGatewayTurn(args: {
       settle("error", message);
       client.stop();
     },
+    onClose: () => {
+      // A socket close invalidates the subscription immediately, not only
+      // when the next hello arrives. The Gateway client retries in the
+      // background, and a buffered callback from the closed transport must
+      // not be accepted in the interval before that new hello restores the
+      // session subscription.
+      streamReady = false;
+      connectionGeneration += 1;
+    },
     onEvent: (frame) => {
       if (frame.event === "chat") processChatEvent(frame.payload);
     },
