@@ -5,17 +5,17 @@ const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   route,
-  /const codexLaunchPlan = !sshRuntime && binding\.harness === "codex"[\s\S]*?\? covenLaunchCommand\(\)[\s\S]*?const codexSpawnEnv = codexLaunchPlan \? harnessSpawnEnv\(body\.familiarId\) : null/,
+  /const env = harnessSpawnEnv\(body\.familiarId\);[\s\S]*?runner: "coven",[\s\S]*?launch: covenLaunchCommand\(\),[\s\S]*?const codexLaunchPlan =[\s\S]*?command: localRuntimePlan\.command,[\s\S]*?fixedArgs: localRuntimePlan\.fixedArgs,[\s\S]*?env: localRuntimePlan\.env/,
   "Codex preflight owns the exact resolved Coven plan and familiar-scoped environment",
 );
 assert.match(
   route,
-  /: codexLaunchPlan \?\? covenLaunchCommand\(\)[\s\S]*?: codexSpawnEnv \?\? harnessSpawnEnv\(body\.familiarId\)/,
+  /const availability =[\s\S]*?runner: localPlan\.runner,[\s\S]*?command: localPlan\.command,[\s\S]*?env: localPlan\.env,[\s\S]*?const command = openCodeLaunchCommand[\s\S]*?command: localPlan\.command,[\s\S]*?args: \[\.\.\.localPlan\.fixedArgs, \.\.\.spawnArgs\],[\s\S]*?env: localPlan\.env/,
   "the Codex child reuses the command and environment preflight inspected",
 );
 assert.match(
   route,
-  /await probeCodexRuntimeAvailability\(\{[\s\S]*?launch: codexLaunchPlan,[\s\S]*?env: codexSpawnEnv,[\s\S]*?\}\)[\s\S]*?if \(availability\.state !== "ready"\)[\s\S]*?push\(\{ kind: "error", code: availability\.code, message: availability\.message \}\)/,
+  /await probeCodexRuntimeAvailability\(\{[\s\S]*?launch: codexLaunchPlan,[\s\S]*?env: localRuntimePlan\.env,[\s\S]*?\}\)[\s\S]*?if \(availability\.state !== "ready"\)[\s\S]*?push\(\{ kind: "error", code: availability\.code, message: availability\.message \}\)/,
   "an unavailable Codex route emits a structured error before any model attempt",
 );
 assert.match(
