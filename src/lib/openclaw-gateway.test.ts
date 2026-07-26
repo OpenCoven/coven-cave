@@ -56,6 +56,24 @@ assert.equal(
 );
 assert.equal(textFromOpenClawGatewayMessage({ raw: "not published" }), undefined);
 
+const missingRequestId = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "hello",
+  idempotencyKey: "",
+  env: {
+    OPENCLAW_GATEWAY_DISPATCH: "1",
+    OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+  },
+  onEvent: () => assert.fail("a Gateway without a Cave request id must not emit events"),
+  clientFactory: () => assert.fail("a Gateway without a Cave request id must not connect"),
+});
+assert.deepEqual(
+  missingRequestId,
+  { kind: "unavailable", reason: "Gateway dispatch requires a Cave request id" },
+  "without a stable Cave request id the route retains the CLI fallback",
+);
+
 // The direct dispatcher is tested through the same official-client callback
 // contract that production uses: it waits for hello and subscription, binds
 // the acknowledged run id, and ignores a foreign run with the same session.
@@ -65,6 +83,7 @@ const dispatch = await dispatchOpenClawGatewayTurn({
   sessionKey: expected.sessionKey,
   agentId: expected.agentId,
   message: "hello",
+  idempotencyKey: "cave-request-123",
   env: {
     OPENCLAW_GATEWAY_DISPATCH: "1",
     OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
@@ -92,8 +111,9 @@ const dispatch = await dispatchOpenClawGatewayTurn({
         );
       },
       stop() {},
-      async request(method, _params, requestOptions) {
+      async request(method, params, requestOptions) {
         if (method === "chat.send") {
+          assert.equal(params.idempotencyKey, "cave-request-123", "Gateway receives Cave's stable request id");
           requestOptions?.onSent?.();
           queueMicrotask(() => {
             options.onEvent?.({

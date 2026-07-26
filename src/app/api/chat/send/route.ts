@@ -657,6 +657,10 @@ function openClawChatResponse(args: {
         sessionKey: openClawSessionKey(conversationId),
         agentId,
         message: args.harnessPrompt,
+        // A direct Gateway turn is only safe when Cave has the caller's
+        // stable request id. Reusing it as Gateway's idempotency key makes a
+        // retry observable to the Gateway instead of creating another run.
+        idempotencyKey: args.body.runId ?? "",
         onEvent: (event) => {
           if (event.kind === "status") {
             pushProgress("openclaw-gateway", "OpenClaw Gateway", "running", event.phase);

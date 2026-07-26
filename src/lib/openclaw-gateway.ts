@@ -132,6 +132,12 @@ export async function dispatchOpenClawGatewayTurn(args: {
   sessionKey: string;
   agentId: string;
   message: string;
+  /**
+   * Cave's stable per-request id. It is sent verbatim to Gateway so a client
+   * retry can be reconciled by the remote idempotency contract; generating a
+   * fresh value here would make an acknowledgement loss duplicate work.
+   */
+  idempotencyKey: string;
   onEvent: (event: OpenClawGatewayChatEvent) => void;
   env?: NodeJS.ProcessEnv;
   /** Injectable only so the official-client lifecycle can be tested without a live Gateway. */
@@ -139,6 +145,9 @@ export async function dispatchOpenClawGatewayTurn(args: {
 }): Promise<OpenClawGatewayDispatch> {
   const env = args.env ?? process.env;
   if (!gatewayDispatchEnabled(env)) return { kind: "unavailable", reason: "Gateway dispatch is disabled" };
+  if (!nonEmptyString(args.idempotencyKey)) {
+    return { kind: "unavailable", reason: "Gateway dispatch requires a Cave request id" };
+  }
   const url = env[GATEWAY_URL_ENV];
   if (!nonEmptyString(url)) return { kind: "unavailable", reason: "Gateway URL is not configured" };
 
@@ -290,14 +299,13 @@ export async function dispatchOpenClawGatewayTurn(args: {
     return { kind: "unavailable", reason: error instanceof Error ? error.message : "Gateway is unavailable" };
   }
 
-  const idempotencyKey = crypto.randomUUID();
   let response: unknown;
   try {
     response = await client.request("chat.send", {
       sessionKey: args.sessionKey,
       agentId: args.agentId,
       message: args.message,
-      idempotencyKey,
+      idempotencyKey: args.idempotencyKey,
     }, {
       onSent: () => {
         dispatchSent = true;
