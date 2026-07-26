@@ -77,8 +77,8 @@ assert.match(
 );
 assert.match(
   route,
-  /const openCodePowerShellHostFailed =[\s\S]*?process\.platform === "win32";[\s\S]*?const openCodeCommandMissing =[\s\S]*?launchFailure \?\?= \{[\s\S]*?"runtime_unlaunchable"[\s\S]*?"runtime_missing"[\s\S]*?child\.on\("error", \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?reportLaunchFailure\(err\)/,
-  "an OpenCode launch race classifies any failed PowerShell host as unlaunchable and preserves a missing inner command distinctly",
+  /const openCodeWindowsOuterLaunchFailure =[\s\S]*?process\.platform === "win32";[\s\S]*?const openCodeCommandMissing =[\s\S]*?!openCodeWindowsOuterLaunchFailure[\s\S]*?launchFailure \?\?= \{[\s\S]*?"runtime_missing"[\s\S]*?"runtime_launch_failed"[\s\S]*?child\.on\("error", \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?reportLaunchFailure\(err\)/,
+  "an ambiguous Windows outer-process race stays generic while a missing POSIX OpenCode command remains distinct",
 );
 assert.match(
   route,
