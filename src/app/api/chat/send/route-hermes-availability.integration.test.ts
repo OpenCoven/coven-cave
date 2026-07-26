@@ -104,7 +104,7 @@ try {
       executable,
       `#!/bin/sh
 if [ "$1" = "chat" ] && [ "$2" = "--help" ]; then
-  rm -rf "$COVEN_HOME/familiars/ember"
+  /bin/rm -rf "$COVEN_HOME/familiars/ember"
 fi
 exit 0
 `,
