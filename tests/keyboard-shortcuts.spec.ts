@@ -13,12 +13,23 @@ async function gotoApp(page: Page) {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
   await page.goto("/");
-  // Wait until the workspace has hydrated — the global keydown handler is
-  // attached in a useEffect, so a key pressed before hydration is lost. The app
-  // boots into Chat (cave-hsa6); the always-present top-bar search input (role
-  // searchbox) is the reliable "interactive now" signal on every boot surface.
+  // A visible searchbox can precede the Workspace effect that owns the global
+  // shortcuts. Prove that exact handler is attached through its idempotent ⌘K
+  // path before exercising either shortcut-sheet binding.
   await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
-  await page.waitForTimeout(500);
+  await page.mouse.click(5, 5);
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await expect
+    .poll(
+      async () => {
+        await page.keyboard.press("Meta+k");
+        return palette.isVisible();
+      },
+      { timeout: 30_000, message: "Workspace global shortcuts should be interactive" },
+    )
+    .toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(palette).toBeHidden();
 }
 
 // The sheet is a Modal labelled via its breadcrumb header (aria-labelledby),
@@ -32,11 +43,8 @@ const GROUPS = ["Panels & navigation", "Browser", "Composer", "Slash menu", "Oth
 test.describe("keyboard shortcuts sheet", () => {
   test("opens with ?, lists every catalog group, closes with Escape", async ({ page }) => {
     await gotoApp(page);
-    // The Home-first shell keeps its top-bar search mounted. A coordinate click
-    // can leave that field focused, which correctly suppresses bare `?` as
-    // typing. Explicitly blur the current editable target before exercising the
-    // global shortcut.
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    // Focus the page chrome (not a text field) so the `?` guard lets it through.
+    await page.mouse.click(5, 5);
     await page.keyboard.press("?");
 
     await expect(sheet(page)).toBeVisible();
