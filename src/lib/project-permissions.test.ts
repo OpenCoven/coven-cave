@@ -33,8 +33,8 @@ try {
   );
   assert.equal(
     canAccessProject({ projectGrants: [] }, { familiarId: "supreme" }, "cave", "supreme"),
-    true,
-    "Supreme has implicit access to every project",
+    false,
+    "Supreme requires an explicit bootstrap grant",
   );
 
   await grantProjectToFamiliar({ familiarId: "nova", projectId: "cave", source: "human" });
@@ -49,12 +49,6 @@ try {
     ["cave"],
     "project picker results are filtered server-side for normal familiars",
   );
-  assert.deepEqual(
-    (await filterProjectsForFamiliar(projects, "supreme")).map((project) => project.id),
-    ["cave", "docs"],
-    "Supreme sees all projects",
-  );
-
   await assertProjectAccess({ familiarId: "nova" }, "cave", "chat");
   await assert.rejects(
     () => assertProjectAccess({ familiarId: "nova" }, "docs", "file-read"),
@@ -102,6 +96,11 @@ try {
 
   await bootstrapSupremeProjectGrants(projects);
   const bootstrapped = await loadProjectPermissions();
+  assert.deepEqual(
+    (await filterProjectsForFamiliar(projects, "supreme")).map((project) => project.id),
+    ["cave", "docs"],
+    "Supreme sees bootstrapped projects through explicit grants",
+  );
   assert.deepEqual(
     bootstrapped.projectGrants
       .filter((grant) => grant.familiarId === "supreme")

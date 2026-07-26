@@ -33,38 +33,38 @@ assert.match(grantsRoute, /export async function POST\(/, "project grants route 
 assert.match(grantsRoute, /export async function DELETE\(/, "project grants route should revoke human grants");
 assert.match(
   grantsRoute,
-  /rejectRelayedApproval\(payload\)/,
-  "direct grant mutations should reject actor/relayed-human fields instead of trusting familiar claims",
+  /directGrantMutationDenied/,
+  "direct grant mutations should fail closed instead of trusting request bodies",
 );
-assert.match(
+assert.doesNotMatch(
   grantsRoute,
-  /grantProjectToFamiliar\(\{[\s\S]*source: "human"/,
-  "direct grants should always be recorded with source=human",
-);
-assert.match(
-  grantsRoute,
-  /revokeProjectFromFamiliar/,
-  "direct grants route should call the revocation primitive",
+  /grantProjectToFamiliar|revokeProjectFromFamiliar/,
+  "direct grants route should not expose unauthenticated grant mutation primitives",
 );
 
 assert.match(proposalsRoute, /export async function GET\(/, "grant proposals route should list proposals");
 assert.match(proposalsRoute, /export async function POST\(/, "grant proposals route should create proposals");
 assert.match(
   proposalsRoute,
-  /createGrantProposal\(\{[\s\S]*proposedBy:[\s\S]*targetFamiliarId:[\s\S]*projectId:[\s\S]*claimedHumanApproval:/,
-  "proposal route should pass Supreme proposal claims to the guarded core primitive",
+  /proposalMutationDenied/,
+  "proposal creation should fail closed instead of trusting caller-supplied Supreme claims",
+);
+assert.doesNotMatch(
+  proposalsRoute,
+  /createGrantProposal/,
+  "proposal route should not expose unauthenticated proposal creation",
 );
 
 assert.match(proposalItemRoute, /export async function PATCH\(/, "proposal item route should resolve proposals");
 assert.match(
   proposalItemRoute,
-  /rejectRelayedApproval\(payload\)/,
-  "proposal resolution should reject relayed human approval claims",
+  /authenticated human approval flow/,
+  "proposal resolution should fail closed without authenticated human approval",
 );
-assert.match(
+assert.doesNotMatch(
   proposalItemRoute,
-  /resolveGrantProposal\(\{[\s\S]*proposalId: params\.id[\s\S]*decision/,
-  "proposal item route should resolve the addressed proposal id",
+  /resolveGrantProposal/,
+  "proposal item route should not expose unauthenticated proposal resolution",
 );
 
 console.log("project-grants route.test.ts: ok");

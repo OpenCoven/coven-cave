@@ -161,11 +161,10 @@ export function canAccessProject(
   file: Pick<ProjectPermissionsFile, "projectGrants">,
   ctx: ProjectAccessContext,
   projectId: string,
-  supremeFamiliarId: string,
+  _supremeFamiliarId: string,
 ): boolean {
   const familiarId = ctx.familiarId?.trim();
   if (!familiarId) return false;
-  if (familiarId === supremeFamiliarId) return true;
   return file.projectGrants.some(
     (grant) => grant.familiarId === familiarId && grant.projectId === projectId,
   );
@@ -175,11 +174,7 @@ export async function filterProjectsForFamiliar(
   projects: CaveProject[],
   familiarId: string,
 ): Promise<CaveProject[]> {
-  const [permissions, config] = await Promise.all([
-    loadProjectPermissions(),
-    loadHumanPermissionConfig(),
-  ]);
-  if (familiarId === config.supremeFamiliarId) return projects;
+  const permissions = await loadProjectPermissions();
   const granted = new Set(
     permissions.projectGrants
       .filter((grant) => grant.familiarId === familiarId)
@@ -208,11 +203,7 @@ export async function assertProjectAccess(
     loadHumanPermissionConfig(),
   ]);
   const allowed = canAccessProject(permissions, ctx, projectId, config.supremeFamiliarId);
-  const reason = allowed
-    ? familiarId === config.supremeFamiliarId
-      ? "supreme"
-      : "grant"
-    : "missing-grant";
+  const reason = allowed ? "grant" : "missing-grant";
 
   await appendAudit({
     familiarId: familiarId || "unknown",
