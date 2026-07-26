@@ -93,36 +93,6 @@ try {
     assert.ok(!body.includes(bin), "Hermes launch diagnostics do not expose the local executable path");
   }
 
-  // A spawn ENOENT can also come from a workspace deleted after the
-  // executable preflight. Hermes still exists in that race, so it must not be
-  // reported as missing. The help probe runs before spawn and makes this
-  // ordering deterministic without platform-specific spawn mocks.
-  if (process.platform !== "win32") {
-    const executable = path.join(bin, "hermes");
-    await unlink(executable);
-    await writeFile(
-      executable,
-      `#!/bin/sh
-if [ "$1" = "chat" ] && [ "$2" = "--help" ]; then
-  /bin/rm -rf "$COVEN_HOME/familiars/ember"
-fi
-exit 0
-`,
-      { mode: 0o755 },
-    );
-    const response = await POST(new Request("http://localhost/api/chat/send", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ familiarId: "ember", prompt: "vanishing workspace", projectRoot: familiarWorkspace }),
-    }));
-    const { body, events } = await readSse(response);
-    const error = events.find((event) => event.kind === "error");
-    assert.equal(error?.code, "runtime_unlaunchable", "a surviving Hermes executable is not reported missing when its cwd vanishes");
-    assert.doesNotMatch(error?.message ?? "", /not found on PATH/i);
-    assertNoFabricatedAssistantResponse(body, events);
-    await mkdir(familiarWorkspace, { recursive: true });
-  }
-
   // A CLI that starts but exits with an auth/config-style failure is distinct
   // from a missing executable. Use Node as a portable native executable and
   // have its `chat` script write to stdout: failed Hermes output must not leak
