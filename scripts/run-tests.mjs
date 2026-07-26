@@ -1030,6 +1030,7 @@ export const SUITES = {
     "src/lib/runtime-compatibility.test.ts",
     "src/lib/server/claude-runtime-compatibility.test.ts",
     "src/lib/copilot-stream.test.ts",
+    "src/lib/codex-compatibility.test.ts",
     "src/lib/copilot-bin.test.ts",
     "src/lib/server/copilot-runtime-launch.test.ts",
     "src/lib/server/copilot-capability-probe.test.ts",
