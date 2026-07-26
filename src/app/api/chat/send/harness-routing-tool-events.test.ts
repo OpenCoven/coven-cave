@@ -79,14 +79,26 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /hasUnsupportedClaudeToolFrame\(ev, claudeCompatibility\.profile\)[\s\S]*?fingerprint: redactedEventFingerprint\(ev\)[\s\S]*?Claude Code tool frame is not supported/,
+  /hasUnsupportedClaudeToolFrame\(ev, claudeCompatibility\.profile\)[\s\S]*?reportUnsupportedClaudeToolFrame\(ev\)/,
   "a malformed or unknown profiled tool block should emit one redacted compatibility diagnostic instead of silently creating a bubble",
+);
+
+assert.match(
+  chatRoute,
+  /reportUnsupportedClaudeToolFrame = \(frame: unknown\) => \{[\s\S]*?fingerprint: redactedEventFingerprint\(frame\)[\s\S]*?Claude Code tool frame is not supported/,
+  "unsupported profiled tool blocks must be logged as redacted fingerprints",
 );
 
 assert.match(
   chatRoute,
   /Claude stream frame could not be decoded[\s\S]*?fingerprint: redactedEventFingerprint\(frame\)[\s\S]*?chat text will continue without unverified tool bubbles[\s\S]*?reportMalformedClaudeStreamFrame\(line\)/,
   "malformed Claude JSONL must be reduced to a fingerprint and diagnostic rather than falling through to payload-bearing stdout diagnostics",
+);
+
+assert.match(
+  chatRoute,
+  /let claudeCompatibilityDiagnosticSent = Boolean\(claudeDiagnostic\);[\s\S]*?reportMalformedClaudeStreamFrame[\s\S]*?if \(claudeCompatibilityDiagnosticSent\) return;[\s\S]*?reportUnsupportedClaudeToolFrame[\s\S]*?if \(claudeCompatibilityDiagnosticSent\) return/,
+  "a probe or SSH fallback must retain its first truthful diagnostic when a later malformed frame is logged",
 );
 
 assert.match(

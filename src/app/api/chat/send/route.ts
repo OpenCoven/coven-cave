@@ -1542,6 +1542,10 @@ export async function POST(req: Request) {
         // or immediately-failing CLI must not hide the only useful diagnostic.
         pushProgress("claude-runtime-compatibility", claudeDiagnostic, "error");
       }
+      // A fallback reason is already a user-visible compatibility diagnostic.
+      // Later malformed frames still get a redacted log fingerprint, but must
+      // not overwrite that truthful state with a second, conflicting error.
+      let claudeCompatibilityDiagnosticSent = Boolean(claudeDiagnostic);
       let claudeFallbackFingerprintLogged = false;
       let claudeUnsupportedFrameDiagnosticSent = false;
       const reportMalformedClaudeStreamFrame = (frame: unknown) => {
@@ -1550,9 +1554,25 @@ export async function POST(req: Request) {
         console.warn("[chat] Claude stream frame could not be decoded", {
           fingerprint: redactedEventFingerprint(frame),
         });
+        if (claudeCompatibilityDiagnosticSent) return;
+        claudeCompatibilityDiagnosticSent = true;
         pushProgress(
           "claude-runtime-compatibility",
           "A Claude Code stream frame could not be decoded; chat text will continue without unverified tool bubbles.",
+          "error",
+        );
+      };
+      const reportUnsupportedClaudeToolFrame = (frame: unknown) => {
+        if (claudeUnsupportedFrameDiagnosticSent) return;
+        claudeUnsupportedFrameDiagnosticSent = true;
+        console.warn("[chat] Claude tool frame ignored by compatibility profile", {
+          fingerprint: redactedEventFingerprint(frame),
+        });
+        if (claudeCompatibilityDiagnosticSent) return;
+        claudeCompatibilityDiagnosticSent = true;
+        pushProgress(
+          "claude-runtime-compatibility",
+          "A Claude Code tool frame is not supported by the selected compatibility profile; chat text will continue without unverified tool bubbles.",
           "error",
         );
       };
@@ -1928,15 +1948,7 @@ export async function POST(req: Request) {
                 !claudeUnsupportedFrameDiagnosticSent &&
                 hasUnsupportedClaudeToolFrame(ev, claudeCompatibility.profile)
               ) {
-                claudeUnsupportedFrameDiagnosticSent = true;
-                console.warn("[chat] Claude tool frame ignored by compatibility profile", {
-                  fingerprint: redactedEventFingerprint(ev),
-                });
-                pushProgress(
-                  "claude-runtime-compatibility",
-                  "A Claude Code tool frame is not supported by the selected compatibility profile; chat text will continue without unverified tool bubbles.",
-                  "error",
-                );
+                reportUnsupportedClaudeToolFrame(ev);
               }
               for (const claudeEvent of parseClaudeMessageEnvelope(ev, claudeCompatibility.profile)) {
                 if (claudeEvent.kind === "text") {
