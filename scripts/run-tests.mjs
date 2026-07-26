@@ -664,6 +664,7 @@ export const SUITES = {
     "src/components/familiar-glyph-picker-panel.test.ts",
     "src/components/familiar-glyph-loading.test.ts",
     "src/components/familiar-studio-brain-tab.test.ts",
+    "src/components/chat-familiar-capabilities.test.ts",
     "src/components/journal-redirect.test.ts",
     "src/components/familiar-studio-identity-tab.test.ts",
     "src/components/familiar-lifecycle-section.test.ts",
