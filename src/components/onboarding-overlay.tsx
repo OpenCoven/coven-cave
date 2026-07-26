@@ -1005,7 +1005,7 @@ export function OnboardingOverlay({
               onClick={() => void recheckNow()}
               disabled={rechecking}
               aria-busy={rechecking}
-              className="focus-ring inline-flex shrink-0 whitespace-nowrap items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-70"
+              className="focus-ring-inset inline-flex shrink-0 whitespace-nowrap items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-70"
             >
               <Icon
                 name="ph:arrows-clockwise-bold"
@@ -1016,7 +1016,7 @@ export function OnboardingOverlay({
             <button
               onClick={() => void copyDiagnostics()}
               aria-live="polite"
-              className={`focus-ring inline-flex shrink-0 whitespace-nowrap items-center gap-2 rounded-md border px-3 py-2 text-[length:var(--text-sm)] hover:border-[var(--border-strong)] ${
+              className={`focus-ring-inset inline-flex shrink-0 whitespace-nowrap items-center gap-2 rounded-md border px-3 py-2 text-[length:var(--text-sm)] hover:border-[var(--border-strong)] ${
                 diagCopy === "copied"
                   ? "border-[color-mix(in_oklch,var(--color-success)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_12%,transparent)] text-[var(--color-success)]"
                   : diagCopy === "failed"

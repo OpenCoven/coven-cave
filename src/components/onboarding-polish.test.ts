@@ -16,6 +16,11 @@ assert.match(
   "Re-check, Copy diagnostics, and readiness render in one contained non-wrapping row",
 );
 assert.equal(
+  setupHeader.match(/focus-ring-inset/g)?.length,
+  2,
+  "scrollable setup actions keep their focus indicator inside the clipped row",
+);
+assert.equal(
   setupHeader.match(/shrink-0 whitespace-nowrap/g)?.length,
   3,
   "each setup status action keeps its label on one line",
