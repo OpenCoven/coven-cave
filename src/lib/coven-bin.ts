@@ -517,10 +517,12 @@ function augmentedSpawnPath(
   return parts.filter((part) => !!part && !seen.has(part) && (seen.add(part), true)).join(path.delimiter);
 }
 
-function spawnEnv(pathValue: string): NodeJS.ProcessEnv {
+function spawnEnv(pathValue: string, includeManagedNode = true): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, PATH: pathValue };
-  const managed = managedNodeSpawnEnv(env);
-  if (managed) Object.assign(env, managed);
+  if (includeManagedNode) {
+    const managed = managedNodeSpawnEnv(env);
+    if (managed) Object.assign(env, managed);
+  }
   env.COVEN_HARNESS_ADAPTER_DIRS = covenAdapterDirsEnvValue(
     process.env.COVEN_HARNESS_ADAPTER_DIRS,
     process.env.COVEN_HOME,
@@ -557,7 +559,7 @@ export function covenSpawnEnv(options: CovenSpawnEnvOptions = {}): NodeJS.Proces
  */
 export function caveToolSpawnEnv(): NodeJS.ProcessEnv {
   cachedToolPath ??= augmentedSpawnPath(true, discoveryOptions());
-  return spawnEnv(cachedToolPath);
+  return spawnEnv(cachedToolPath, false);
 }
 
 export function refreshCovenSpawnEnv(
