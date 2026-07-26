@@ -399,6 +399,27 @@ assert.match(
   assert.equal(snapshot[0].input, '{"file_path":"/tmp/x"}', "late envelope input backfills the hook record");
 }
 
+// A late hook attached to an already settled envelope must not consume the
+// next concurrent call of the same name when its assistant frame arrives
+// before that hook's post line.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  tracker.envelopeToolResult("toolu_first", "first result", false);
+  tracker.envelopeToolUse("toolu_first", "Read");
+  const firstHook = tracker.hookStart("Read");
+  assert.equal(firstHook.id, "toolu_first");
+
+  const second = tracker.envelopeToolUse("toolu_second", "Read");
+  assert.equal(second?.id, "toolu_second", "a pending late post must not absorb a different concurrent envelope id");
+  assert.equal(tracker.envelopeToolResult("toolu_second", "second result", false)?.id, "toolu_second");
+  assert.equal(tracker.hookEnd("Read", "first hook result", false).id, "toolu_first");
+  assert.deepEqual(
+    tracker.snapshot().map((event) => event.id),
+    ["toolu_first", "toolu_second"],
+    "reordered concurrent same-name calls retain one record per native id",
+  );
+}
+
 // Behavioral: payload formatters used by both event sources.
 {
   assert.equal(formatToolPayload(""), undefined);
