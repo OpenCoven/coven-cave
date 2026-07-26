@@ -4,6 +4,7 @@ import {
   claudeCompatibilityDiagnostic,
   loadClaudeCompatibilityCache,
   refreshClaudeCompatibilityProfiles,
+  resetClaudeCompatibilityCacheForTest,
   resolveInstalledClaudeCompatibility,
 } from "./claude-runtime-compatibility.ts";
 import { CLAUDE_COMPATIBILITY_PROFILES } from "../runtime-compatibility.ts";
@@ -12,6 +13,7 @@ const compatibilitySource = await readFile(
   new URL("./claude-runtime-compatibility.ts", import.meta.url),
   "utf8",
 );
+resetClaudeCompatibilityCacheForTest();
 assert.match(
   compatibilitySource,
   /child\.on\("close", \(code\) => \{[\s\S]*?finish\(code === 0 \? output : null\)/,
@@ -126,21 +128,54 @@ assert.equal(
   "claude-stream-json-v2",
   "a failed write must retain the previously persisted compatibility profile in memory",
 );
+// The injected writer above models a failed cache promotion without a durable
+// watermark writer. Reset before modelling the next process that performs the
+// successful accepted refresh below.
+resetClaudeCompatibilityCacheForTest();
 let refreshed: unknown = null;
+let persistedWatermark: unknown = null;
 assert.equal(
   await refreshClaudeCompatibilityProfiles([...CLAUDE_COMPATIBILITY_PROFILES, signedV3], {
     path: "ignored",
     write: async (_path, value) => { refreshed = value; },
+    watermarkPath: "ignored-watermark",
+    writeWatermark: async (_path, value) => { persistedWatermark = value; },
   }),
   true,
   "a registry-signed append-only profile refresh is accepted and persisted",
 );
 assert.equal((refreshed as { profiles: Array<{ id: string }> }).profiles.at(-1)?.id, signedV3.id);
+assert.deepEqual(
+  persistedWatermark,
+  { schemaVersion: 1, maxSequence: signedV3.sequence },
+  "a newly accepted sequence must persist before its selectable cache snapshot",
+);
 const v3 = await resolveInstalledClaudeCompatibility({
   version: async () => "3.1.0",
   help: async () => "--output-format stream-json",
   now: () => Date.parse("2026-07-24T00:00:00.000Z"),
 });
 assert.equal(v3.kind === "compatible" && v3.profile.id, signedV3.id);
+
+// A restart must not make a previously accepted higher profile disappear just
+// because an attacker or interrupted cache writer leaves an older, otherwise
+// valid signed snapshot at the selectable cache path.
+resetClaudeCompatibilityCacheForTest();
+await loadClaudeCompatibilityCache({
+  path: "old-cache",
+  read: async () => JSON.stringify({ schemaVersion: 1, profiles: CLAUDE_COMPATIBILITY_PROFILES }),
+  watermarkPath: "watermark",
+  readWatermark: async () => JSON.stringify(persistedWatermark),
+});
+const rollbackAfterRestart = await resolveInstalledClaudeCompatibility({
+  version: async () => "3.1.0",
+  help: async () => "--output-format stream-json",
+  now: () => Date.parse("2026-07-24T00:00:00.000Z"),
+});
+assert.deepEqual(
+  rollbackAfterRestart,
+  { kind: "fallback", reason: "unsupported-version" },
+  "a signed lower-sequence cache snapshot must be rejected after restart",
+);
 
 console.log("claude-runtime-compatibility: ok");

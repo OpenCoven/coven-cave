@@ -26,21 +26,74 @@ let profileCacheLoaded = false;
 let refreshQueue: Promise<void> = Promise.resolve();
 
 type ProfileCacheDocument = { schemaVersion: 1; profiles: unknown[] };
+type ProfileCacheWatermark = { schemaVersion: 1; maxSequence: number };
+
+const BUNDLED_PROFILE_MAX_SEQUENCE = Math.max(...CLAUDE_COMPATIBILITY_PROFILES.map((profile) => profile.sequence));
+// This companion record is an append-only high-water mark. It is written
+// before the selectable cache: a crash can leave a profile unavailable, but
+// can never make an older signed profile selectable after a restart.
+let acceptedProfileSequence = BUNDLED_PROFILE_MAX_SEQUENCE;
 
 function profileCachePath(): string {
   return path.join(caveHome(), "runtime-compatibility", "claude.json");
 }
 
+function profileCacheWatermarkPath(): string {
+  return path.join(caveHome(), "runtime-compatibility", "claude-watermark.json");
+}
+
+function profileMaxSequence(profiles: readonly unknown[]): number | null {
+  if (profiles.length === 0) return null;
+  let maximum = 0;
+  for (const profile of profiles) {
+    if (!profile || typeof profile !== "object" || Array.isArray(profile)) return null;
+    const sequence = (profile as { sequence?: unknown }).sequence;
+    if (typeof sequence !== "number" || !Number.isSafeInteger(sequence) || sequence < 1) return null;
+    maximum = Math.max(maximum, sequence);
+  }
+  return maximum;
+}
+
+function isProfileCacheWatermark(value: unknown): value is ProfileCacheWatermark {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const watermark = value as ProfileCacheWatermark;
+  return watermark.schemaVersion === 1
+    && Number.isSafeInteger(watermark.maxSequence)
+    && watermark.maxSequence >= BUNDLED_PROFILE_MAX_SEQUENCE;
+}
+
 /** Load a previous accepted profile set before probing. A corrupt, stale, or
  * rollback cache is ignored; the bundled last-known-good profiles remain. */
 export async function loadClaudeCompatibilityCache(
-  dependencies: { read?: (path: string) => Promise<string>; path?: string } = {},
+  dependencies: {
+    read?: (path: string) => Promise<string>;
+    path?: string;
+    readWatermark?: (path: string) => Promise<string>;
+    watermarkPath?: string;
+  } = {},
 ): Promise<void> {
   if (profileCacheLoaded && !dependencies.read) return;
   try {
+    const readWatermark = dependencies.readWatermark
+      ?? (dependencies.read ? undefined : (target: string) => readFile(target, "utf8"));
+    if (readWatermark) {
+      try {
+        const watermark = JSON.parse(await readWatermark(dependencies.watermarkPath ?? profileCacheWatermarkPath())) as unknown;
+        // A malformed durable high-water mark is a trust failure, not an
+        // invitation to reload a potentially rolled-back cache snapshot.
+        if (!isProfileCacheWatermark(watermark)) return;
+        acceptedProfileSequence = Math.max(acceptedProfileSequence, watermark.maxSequence);
+      } catch {
+        // No watermark exists on a first run. Keep the signed bundled profile
+        // sequence as the immutable genesis floor.
+      }
+    }
     const raw = await (dependencies.read ?? ((target) => readFile(target, "utf8")))(dependencies.path ?? profileCachePath());
     const document = JSON.parse(raw) as ProfileCacheDocument;
-    if (document?.schemaVersion === 1 && Array.isArray(document.profiles)) {
+    const maximum = document?.schemaVersion === 1 && Array.isArray(document.profiles)
+      ? profileMaxSequence(document.profiles)
+      : null;
+    if (maximum !== null && maximum >= acceptedProfileSequence) {
       profileCache.refresh(document.profiles);
     }
   } catch {
@@ -54,7 +107,12 @@ export async function loadClaudeCompatibilityCache(
  * signature/provenance verification, never before. */
 export async function refreshClaudeCompatibilityProfiles(
   profiles: readonly unknown[],
-  dependencies: { write?: (path: string, value: ProfileCacheDocument) => Promise<void>; path?: string } = {},
+  dependencies: {
+    write?: (path: string, value: ProfileCacheDocument) => Promise<void>;
+    path?: string;
+    writeWatermark?: (path: string, value: ProfileCacheWatermark) => Promise<void>;
+    watermarkPath?: string;
+  } = {},
 ): Promise<boolean> {
   let accepted = false;
   const refresh = async () => {
@@ -64,6 +122,25 @@ export async function refreshClaudeCompatibilityProfiles(
     const next = new RuntimeCompatibilityCache(profileCache.current());
     if (!next.refresh(profiles)) return;
     const document = { schemaVersion: 1 as const, profiles: [...next.current()] };
+    const maximum = profileMaxSequence(document.profiles);
+    if (maximum === null || maximum < acceptedProfileSequence) return;
+    // Persist the monotonic trust anchor first. If the process stops before
+    // the profile file is promoted, the same signed snapshot may be retried,
+    // but an older cache can never become selectable after restart.
+    if (maximum > acceptedProfileSequence) {
+      const watermark = { schemaVersion: 1 as const, maxSequence: maximum };
+      if (dependencies.writeWatermark) {
+        await dependencies.writeWatermark(dependencies.watermarkPath ?? profileCacheWatermarkPath(), watermark);
+      } else if (!dependencies.write) {
+        const target = dependencies.watermarkPath ?? profileCacheWatermarkPath();
+        await mkdir(path.dirname(target), { recursive: true });
+        await writeJsonAtomic(target, watermark);
+      }
+      // Keep the current process on the same high-water mark as disk even if
+      // the following profile promotion fails. Retrying the same signed set
+      // is allowed; accepting a lower one is not.
+      acceptedProfileSequence = maximum;
+    }
     if (dependencies.write) {
       await dependencies.write(dependencies.path ?? profileCachePath(), document);
     } else {
@@ -72,6 +149,7 @@ export async function refreshClaudeCompatibilityProfiles(
       await writeJsonAtomic(target, document);
     }
     profileCache = next;
+    acceptedProfileSequence = Math.max(acceptedProfileSequence, maximum);
     // The probe cache contains a completed resolution rather than just raw
     // probe output. It may have selected a fallback for a profile that this
     // refresh just added, so it cannot survive a successful publication.
@@ -82,6 +160,15 @@ export async function refreshClaudeCompatibilityProfiles(
   refreshQueue = pending.then(() => undefined, () => undefined);
   await pending;
   return accepted;
+}
+
+/** Test-only reset that models a new server process with no in-memory cache. */
+export function resetClaudeCompatibilityCacheForTest(): void {
+  cached = null;
+  profileCache = new RuntimeCompatibilityCache();
+  profileCacheLoaded = false;
+  refreshQueue = Promise.resolve();
+  acceptedProfileSequence = BUNDLED_PROFILE_MAX_SEQUENCE;
 }
 
 function runClaude(args: string[]): Promise<string | null> {
