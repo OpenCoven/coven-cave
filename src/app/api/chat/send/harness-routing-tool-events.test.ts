@@ -121,7 +121,13 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const toolMatch = trimmed\.match\(TOOL_HOOK_RE\);[\s\S]*?if \(!\(binding\.harness === "claude" && toolMatch\)\) \{[\s\S]*?recordStdoutErrorTail\(cleaned\);/,
+  /binding\.harness === "claude" && \(toolMatch \|\| trimmed\.startsWith\("hook:"\)\)/,
+  "unrecognized Claude hook lines must not leak tool payloads into empty-response diagnostics",
+);
+
+assert.match(
+  chatRoute,
+  /const toolMatch = trimmed\.match\(TOOL_HOOK_RE\);[\s\S]*?if \(!\(binding\.harness === "claude" && \(toolMatch \|\| trimmed\.startsWith\("hook:"\)\)\)\) \{[\s\S]*?recordStdoutErrorTail\(cleaned\);/,
   "Claude hook payloads must not enter the generic empty-response diagnostic tail",
 );
 

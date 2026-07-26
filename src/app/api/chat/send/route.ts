@@ -2056,7 +2056,7 @@ export async function POST(req: Request) {
         // Claude hook lines can contain complete tool inputs or outputs. Do
         // not retain one in the generic empty-response diagnostic, even when
         // the tool profile is unavailable and no bubble is emitted.
-        if (!(binding.harness === "claude" && toolMatch)) {
+        if (!(binding.harness === "claude" && (toolMatch || trimmed.startsWith("hook:")))) {
           recordStdoutErrorTail(cleaned);
         }
         if (toolMatch && claudeToolsEnabled) {
