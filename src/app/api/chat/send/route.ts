@@ -2790,7 +2790,7 @@ export async function POST(req: Request) {
                       covenCommand: launch.command,
                       // This is deliberately the exact familiar-scoped env
                       // supplied to the later Coven spawn, not a shell lookup
-                      // or the unscoped covenSpawnEnv().
+                      // or an unscoped launcher environment.
                       env: spawnEnv,
                       unresolvedCovenWindowsShim:
                         "unresolvedWindowsShim" in launch && launch.unresolvedWindowsShim === true,
