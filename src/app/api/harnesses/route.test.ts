@@ -51,4 +51,15 @@ assert.doesNotMatch(
   "the harness API never copies private Copilot launch-plan data onto availability",
 );
 
+assert.match(
+  source,
+  /probeCopilotCapability\(stream\.executable[\s\S]*?resolveRuntimeCompatibility\("copilot"\)[\s\S]*?resolveCopilotChatRouting\([\s\S]*?requiredFiles: launch\.requiredFiles/,
+  "Copilot status must preflight the same resolved direct launch plan and fixed artifacts as chat send",
+);
+assert.match(
+  source,
+  /routing\.mode === "blocked"[\s\S]*?state: "unsupported_runtime"[\s\S]*?message: routing\.failure\.message/,
+  "an incompatible Copilot stream is surfaced as configuration compatibility, not as a missing CLI",
+);
+
 console.log("harness route tests passed");

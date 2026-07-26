@@ -5,7 +5,7 @@ import {
   COPILOT_NO_AUTO_UPDATE_ARG,
   parseRuntimeClientVersion,
 } from "../copilot-stream.ts";
-import { type CovenLaunchCommand } from "../coven-bin.ts";
+import { type CopilotLaunchCommand } from "../copilot-bin.ts";
 import { vaultFreeDiscoveryEnv } from "../child-spawn-env.ts";
 import type { RuntimeAvailability } from "../runtime-availability.ts";
 import { loadVaultMap } from "../vault.ts";
@@ -23,7 +23,7 @@ export type CopilotCapabilityDiagnostic =
 export type CopilotCapabilityProbe = {
   version: string | null;
   /** Exact spawn target resolved during this bounded probe, never request argv. */
-  launchCommand?: Pick<CovenLaunchCommand, "command" | "fixedArgs">;
+  launchCommand?: CopilotLaunchCommand;
   /** Passive classification of the exact launch plan used by this probe. */
   availability: RuntimeAvailability;
   /** Only safe, non-payload diagnostic metadata; never command output. */
@@ -117,7 +117,7 @@ async function binaryIdentity(executable: string, env: NodeJS.ProcessEnv): Promi
   return `unresolved:${executable}:${pathValue}`;
 }
 
-async function launchIdentity(launch: CovenLaunchCommand, env: NodeJS.ProcessEnv): Promise<string> {
+async function launchIdentity(launch: CopilotLaunchCommand, env: NodeJS.ProcessEnv): Promise<string> {
   const targets = [launch.command, ...launch.fixedArgs.filter((arg) => isAbsolute(arg))];
   return (await Promise.all(targets.map((target) => binaryIdentity(target, env)))).join("\u0000");
 }
@@ -199,9 +199,10 @@ export async function probeCopilotCapability(
     };
   }
 
-  const launchCommand = {
+  const launchCommand: CopilotLaunchCommand = {
     command: launch.command,
     fixedArgs: launch.fixedArgs,
+    requiredFiles: launch.requiredFiles ?? [],
   };
   // Cache by command name plus canonical PATH, then validate the exact current
   // command/script metadata. A changed npm target is re-probed immediately.
