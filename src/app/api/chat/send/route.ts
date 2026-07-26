@@ -3356,18 +3356,34 @@ export async function POST(req: Request) {
               localRuntimePlan?.runner ?? "coven",
               err.code,
             );
+            // Node uses the same ENOENT shape when either the Windows
+            // PowerShell host or the selected cwd vanishes after preflight.
+            // The preflight owns the precise host diagnosis; this ambiguous
+            // post-preflight race must stay generic rather than blaming either.
+            const openCodeWindowsOuterLaunchFailure =
+              openCodeDirect && process.platform === "win32" && err.code === "ENOENT";
+            const openCodeCommandMissing =
+              openCodeDirect && !openCodeWindowsOuterLaunchFailure && err.code === "ENOENT";
             const launchError = sshRuntime
               ? err.code === "ENOENT"
                 ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
                 : err.message
-              : localLaunchError.message;
+              : openCodeWindowsOuterLaunchFailure
+                ? "OpenCode failed to start. Check its installation and try again."
+                : openCodeCommandMissing
+                  ? missingRunnerMessage("opencode")
+                  : localLaunchError.message;
             // Race-safe fallback (#3856): the pre-spawn gate can pass and the
             // binary still vanish before spawn. Mark the run errored BEFORE
             // the empty-output diagnostic can run, so a launch failure is
             // never misreported as "installed but not authenticated".
             result.is_error = true;
             launchFailure ??= {
-              code: localLaunchError.code,
+              code: openCodeCommandMissing
+                ? "runtime_missing"
+                : openCodeWindowsOuterLaunchFailure
+                  ? "runtime_launch_failed"
+                  : localLaunchError.code,
               message: launchError,
             };
             pushProgress(
@@ -3377,7 +3393,13 @@ export async function POST(req: Request) {
               launchError,
               Date.now() - attemptStartedAt,
             );
-            if (err.code === "ENOENT") {
+            if (openCodeWindowsOuterLaunchFailure || openCodeCommandMissing) {
+              push({
+                kind: "error",
+                code: launchFailure.code,
+                message: launchError,
+              });
+            } else if (err.code === "ENOENT") {
               push({
                 kind: "error",
                 code: "ENOENT",

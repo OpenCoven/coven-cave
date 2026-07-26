@@ -77,8 +77,8 @@ assert.match(
 );
 assert.match(
   route,
-  /child\.on\("error", \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?const launchError = openCodeDirect[\s\S]*?result\.is_error = true;[\s\S]*?launchFailure \?\?= \{[\s\S]*?err\.code === "ENOENT" \? "ENOENT" : "runtime_launch_failed"/,
-  "an OpenCode launch race marks the turn failed before empty-output/auth diagnostics can run",
+  /child\.on\("error", \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?const openCodePowerShellHostMissing =[\s\S]*?process\.platform === "win32"[\s\S]*?const openCodeCommandMissing =[\s\S]*?launchFailure \?\?= \{[\s\S]*?"runtime_unlaunchable"[\s\S]*?"runtime_missing"/,
+  "an OpenCode launch race preserves distinct PowerShell-host and OpenCode-missing classifications before empty-output/auth diagnostics can run",
 );
 assert.match(
   route,
