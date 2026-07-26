@@ -12,24 +12,42 @@ const stripComments = (source: string) =>
     .replace(/^\s*\/\/.*$/gm, "")
     .replace(/([^:"'])\/\/[^\n"]*$/gm, "$1");
 
+const extractBlock = (source: string, selector: string) => {
+  const start = source.indexOf(selector);
+  assert.ok(start >= 0, `${selector} block missing`);
+
+  const open = source.indexOf("{", start);
+  assert.ok(open >= 0, `${selector} block missing opening brace`);
+
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+
+  assert.fail(`${selector} block missing closing brace`);
+};
+
 const surfaceRoom = stripComments(read("src/components/role-surfaces/surface-room.tsx"));
 const host = stripComments(read("src/components/role-surface-host.tsx"));
 const css = stripComments(read("src/styles/globals/surface-role-workspaces.css"));
 
-assert.match(surfaceRoom, /\bSurfaceLoading\b/, "surface-room exports SurfaceLoading");
-assert.match(surfaceRoom, /\bSurfaceError\b/, "surface-room exports SurfaceError");
+assert.match(surfaceRoom, /export function SurfaceLoading\b/, "surface-room exports SurfaceLoading");
+assert.match(surfaceRoom, /export function SurfaceError\b/, "surface-room exports SurfaceError");
 assert.match(surfaceRoom, /role="status"/, "shared loading state uses role=status");
 assert.match(surfaceRoom, /role="alert"/, "shared error state uses role=alert");
 
-assert.match(host, /\bOverflowMenu\b/, "host uses OverflowMenu");
+assert.match(host, /<OverflowMenu\b/, "host uses OverflowMenu in JSX");
 assert.doesNotMatch(host, /role-surface-commands-menu/, "host no longer contains role-surface-commands-menu");
 
-assert.match(css, /container-type:\s*inline-size/, "role-surface workspaces use inline-size containers");
+const roomBlock = extractBlock(css, ".role-surface-room");
+assert.match(roomBlock, /container-type:\s*inline-size/, "role-surface-room uses inline-size containers");
 assert.match(css, /@container\s+role-surface-room/, "role-surface workspaces declare a room container query");
-assert.doesNotMatch(
-  css,
-  /\.role-surface-status-dot--ok\s*\{[\s\S]*?oklch[\s\S]*?\}/,
-  "role-surface-status-dot--ok no longer hardcodes oklch",
-);
+const okBlock = extractBlock(css, ".role-surface-status-dot--ok");
+assert.doesNotMatch(okBlock, /oklch\(/, "role-surface-status-dot--ok no longer hardcodes oklch");
 
 console.log("role-surface room contract: ok");
