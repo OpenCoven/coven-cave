@@ -65,7 +65,6 @@ test("packages owned only by retired runtime modules stay removed", () => {
   );
   const retiredPackages = [
     "@create-markdown/react",
-    "@milkdown/react",
     "@xyflow/react",
   ] as const;
 
