@@ -20,6 +20,23 @@ test("an empty query preserves daemon roster order", () => {
   );
 });
 
+test("archived familiars stay recoverable after active familiars", () => {
+  const withArchived = [
+    { ...roster[0], archived: true },
+    roster[1],
+    { ...roster[2], archived: true },
+  ];
+
+  assert.deepEqual(
+    filterSettingsFamiliars(withArchived, "").map((familiar) => familiar.id),
+    ["nova-research", "sage-main", "cody-build"],
+  );
+  assert.deepEqual(
+    filterSettingsFamiliars(withArchived, "sage").map((familiar) => familiar.id),
+    ["sage-main"],
+  );
+});
+
 test("search is case-insensitive across display name, role, and id", () => {
   assert.deepEqual(filterSettingsFamiliars(roster, "SAGE").map((familiar) => familiar.id), ["sage-main"]);
   assert.deepEqual(filterSettingsFamiliars(roster, "research").map((familiar) => familiar.id), ["nova-research"]);
@@ -68,4 +85,3 @@ test("arrow navigation starts at an edge and wraps across the result list", () =
   assert.equal(moveFamiliarPickerIndex(0, "ArrowUp", 3), 2);
   assert.equal(moveFamiliarPickerIndex(1, "ArrowDown", 3), 2);
 });
-
