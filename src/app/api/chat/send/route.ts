@@ -128,6 +128,7 @@ import {
   loadConversation,
   saveConversation,
   stripConversationStubTurn,
+  withConversationLock,
 } from "@/lib/cave-conversations";
 import {
   captureWorkBranch,
@@ -197,8 +198,11 @@ import {
 } from "./chat-send-capabilities";
 import {
   buildPromptWithResponseControls,
+  modelIntentForSend,
+  persistedTurnControls,
   persistSendModelIntent,
   resolveSendModelMetadata,
+  turnRetryModel,
 } from "./chat-send-models";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import { conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
@@ -455,6 +459,7 @@ function openClawChatResponse(args: {
   attachments: ChatAttachment[];
   desiredModel: string;
   modelState: ChatModelState;
+  initialModelIntent: string | null;
 }): Response {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -585,6 +590,7 @@ function openClawChatResponse(args: {
         runtime: `local:${cwd}`,
         desiredModel: args.desiredModel,
         confirmedModel: undefined,
+        retryModel: turnRetryModel({ requestedModel: args.body.modelOverride }),
         modelSource: args.modelState.source,
         modelApplicationState: args.modelState.applicationState,
         modelApplicationReason: args.modelState.reason,
@@ -658,10 +664,12 @@ function openClawChatResponse(args: {
         ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
         title: stubTitle,
         ...(args.body.origin ? { origin: args.body.origin } : {}),
+        modelIntent: modelIntentForSend(args.body, args.modelState),
         userTurn: {
           id: pendingUserTurnId,
           text: args.promptText,
           ...(args.attachments.length ? { attachments: args.attachments } : {}),
+          ...persistedTurnControls(args.body, responseMetadata.retryModel),
         },
       }).catch(() => undefined);
 
@@ -774,72 +782,81 @@ function openClawChatResponse(args: {
           // Settle the spawn-time stub write first so it can never race (and
           // clobber) the authoritative transcript saved below.
           await stubWrite;
-          const existing = await loadConversation(sessionId);
-          // First-turn visibility (cave-0g2x): drop the spawn-time stub turn
-          // so the authoritative user turn below re-lands under the same id.
-          const hadFirstTurnStub = existing
-            ? stripConversationStubTurn(existing, pendingUserTurnId)
-            : false;
-          const isFirstExchange = !existing || hadFirstTurnStub;
-          const now = new Date().toISOString();
-          const userTurnId = pendingUserTurnId;
-          const assistantTurnId = crypto.randomUUID();
-          const chatTitle = existing?.title ?? defaultChatTitleForSession(sessionId);
-          if (!existing) await setDefaultSessionTitleIfMissing(sessionId, chatTitle);
-          // Branching: same logic as the coven-run path — client-supplied
-          // parentTurnId takes precedence; falls back to prior activeLeafId for
-          // normal (non-branch) sends so the linear chain is preserved.
-          const branchParentId =
-            args.body.parentTurnId !== undefined
-              ? args.body.parentTurnId
-              : existing?.activeLeafId ?? null;
-          const conv = existing ?? {
-            sessionId,
-            familiarId: args.body.familiarId,
-            harness: "openclaw",
-            model: responseMetadata.model,
-            runtime: responseMetadata.runtime,
-            title: chatTitle,
-            ...(args.body.origin ? { origin: args.body.origin } : {}),
-            createdAt: now,
-            updatedAt: now,
-            turns: [],
-          };
-          conv.model = responseMetadata.model;
-          conv.runtime = responseMetadata.runtime;
-          persistSendModelIntent(conv, args.body, args.modelState);
-          // Work-branch snapshot from the chat's own cwd — per-session PR
-          // attribution (badges + merged-PR auto-archive). Best-effort; a
-          // failed capture keeps the previous snapshot.
-          const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
-          if (workBranch) conv.branch = workBranch;
-          // Transcript PR snapshot: the reply's last reported PR URL (fallback
-          // attribution for chats whose work happens in agent worktrees).
-          const reportedPrUrl = latestPrUrlFromText(assistantText);
-          if (reportedPrUrl) conv.prUrl = reportedPrUrl;
-          conv.turns.push(
-            {
-              id: userTurnId,
-              role: "user",
-              text: args.promptText,
-              ...(args.attachments.length ? { attachments: args.attachments } : {}),
+          const isFirstExchange = await withConversationLock(sessionId, async () => {
+            const existing = await loadConversation(sessionId);
+            // First-turn visibility (cave-0g2x): drop the spawn-time stub turn
+            // so the authoritative user turn below re-lands under the same id.
+            const hadFirstTurnStub = existing
+              ? stripConversationStubTurn(existing, pendingUserTurnId)
+              : false;
+            const firstExchange = !existing || hadFirstTurnStub;
+            const now = new Date().toISOString();
+            const userTurnId = pendingUserTurnId;
+            const assistantTurnId = crypto.randomUUID();
+            const chatTitle = existing?.title ?? defaultChatTitleForSession(sessionId);
+            if (!existing) await setDefaultSessionTitleIfMissing(sessionId, chatTitle);
+            // Branching: same logic as the coven-run path — client-supplied
+            // parentTurnId takes precedence; falls back to prior activeLeafId for
+            // normal (non-branch) sends so the linear chain is preserved.
+            const branchParentId =
+              args.body.parentTurnId !== undefined
+                ? args.body.parentTurnId
+                : existing?.activeLeafId ?? null;
+            const conv = existing ?? {
+              sessionId,
+              familiarId: args.body.familiarId,
+              harness: "openclaw",
+              model: responseMetadata.model,
+              runtime: responseMetadata.runtime,
+              title: chatTitle,
+              ...(args.body.origin ? { origin: args.body.origin } : {}),
               createdAt: now,
-              ...(branchParentId != null ? { parentId: branchParentId } : {}),
-            },
-            {
-              id: assistantTurnId,
-              role: "assistant",
-              text: assistantText.trim(),
-              createdAt: new Date().toISOString(),
-              durationMs,
-              isError,
-              parentId: userTurnId,
-              responseMetadata,
-              ...(cancelledByUser ? { cancelled: true } : {}),
-            },
-          );
-          conv.activeLeafId = assistantTurnId;
-          await saveConversation(conv);
+              updatedAt: now,
+              turns: [],
+            };
+            conv.model = responseMetadata.model;
+            conv.runtime = responseMetadata.runtime;
+            persistSendModelIntent(
+              conv,
+              args.body,
+              args.modelState,
+              args.initialModelIntent,
+            );
+            // Work-branch snapshot from the chat's own cwd — per-session PR
+            // attribution (badges + merged-PR auto-archive). Best-effort; a
+            // failed capture keeps the previous snapshot.
+            const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
+            if (workBranch) conv.branch = workBranch;
+            // Transcript PR snapshot: the reply's last reported PR URL (fallback
+            // attribution for chats whose work happens in agent worktrees).
+            const reportedPrUrl = latestPrUrlFromText(assistantText);
+            if (reportedPrUrl) conv.prUrl = reportedPrUrl;
+            conv.turns.push(
+              {
+                id: userTurnId,
+                role: "user",
+                text: args.promptText,
+                ...(args.attachments.length ? { attachments: args.attachments } : {}),
+                ...persistedTurnControls(args.body, responseMetadata.retryModel),
+                createdAt: now,
+                ...(branchParentId != null ? { parentId: branchParentId } : {}),
+              },
+              {
+                id: assistantTurnId,
+                role: "assistant",
+                text: assistantText.trim(),
+                createdAt: new Date().toISOString(),
+                durationMs,
+                isError,
+                parentId: userTurnId,
+                responseMetadata,
+                ...(cancelledByUser ? { cancelled: true } : {}),
+              },
+            );
+            conv.activeLeafId = assistantTurnId;
+            await saveConversation(conv);
+            return firstExchange;
+          });
           if (isFirstExchange && !isError) {
             await autoNameSessionFromFirstExchange(sessionId, args.promptText);
           }
@@ -1237,6 +1254,7 @@ export async function POST(req: Request) {
       : `local:${cwd}`,
     desiredModel,
     confirmedModel: undefined,
+    retryModel: turnRetryModel({ requestedModel: body.modelOverride }),
     modelSource: modelState.source,
     modelApplicationState: modelState.applicationState,
     modelApplicationReason: modelState.reason,
@@ -1339,6 +1357,7 @@ export async function POST(req: Request) {
       attachments: persistedAttachments,
       desiredModel,
       modelState,
+      initialModelIntent: existingConversation?.modelIntent?.model ?? null,
     });
   }
 
@@ -1922,10 +1941,12 @@ export async function POST(req: Request) {
           ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
           title: chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
           ...(body.origin ? { origin: body.origin } : {}),
+          modelIntent: modelIntentForSend(body, modelState),
           userTurn: {
             id: pendingUserTurnId,
             text: promptText,
             ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
+            ...persistedTurnControls(body, responseMetadata.retryModel),
           },
         }).catch(() => undefined);
         push({ kind: "session", sessionId: announcedId });
@@ -3489,6 +3510,16 @@ export async function POST(req: Request) {
         modelState.applicationState = application.state;
         modelState.reason = application.reason;
       }
+      const routedTurnModel = copilotStream
+        ? cleanModelId(desiredModel)
+        : grokDirect
+          ? grokForwardModel
+          : forwardModel;
+      responseMetadata.retryModel = turnRetryModel({
+        requestedModel: body.modelOverride,
+        confirmedModel: responseMetadata.confirmedModel,
+        routedModel: routedTurnModel,
+      });
       const finalSessionId = body.sessionId && !openCodeUnrecordedResume
         ? body.sessionId
         : sessionId;
@@ -3502,93 +3533,104 @@ export async function POST(req: Request) {
         // Settle any in-flight stub write first so it can never race (and
         // clobber) the authoritative transcript saved below.
         if (stubWrite) await stubWrite;
-        const existing = await loadConversation(finalSessionId);
-        // First-turn visibility (cave-0g2x): drop the announce-time stub turn
-        // so the authoritative user turn below re-lands under the same id.
-        // True only when this run's stub created the conversation, which keeps
-        // first-exchange behaviors (auto-naming) firing for new chats.
-        const hadFirstTurnStub = existing
-          ? stripConversationStubTurn(existing, pendingUserTurnId)
-          : false;
-        const isFirstExchange = !existing || hadFirstTurnStub;
-        const now = new Date().toISOString();
-        const userTurnId = pendingUserTurnId;
-        const assistantTurnId = crypto.randomUUID();
-        const chatTitle = existing?.title ?? defaultChatTitleForSession(finalSessionId);
-        if (!existing) await setDefaultSessionTitleIfMissing(finalSessionId, chatTitle);
-        // Branching: when the client passes parentTurnId, the new user turn is
-        // parented there (its prior sibling stays in the tree). For a normal
-        // (non-branch) send, fall back to the prior activeLeafId so the
-        // conversation stays a linear chain identical to the pre-branching
-        // behaviour. First turn of a new chat gets null (no parent).
-        const branchParentId =
-          body.parentTurnId !== undefined ? body.parentTurnId : existing?.activeLeafId ?? null;
-        const userTurn: ChatTurn = {
-          id: userTurnId,
-          role: "user",
-          text: promptText,
-          ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
-          createdAt: now,
-          ...(branchParentId != null ? { parentId: branchParentId } : {}),
-        };
-        // Persist the turn's tool rows: the live chips exist only in client
-        // state fed by SSE; without this, refresh/chat-switch loses them.
-        // Offsets were stamped against the untrimmed stream — shift by the
-        // leading trim so interleaving matches the saved text.
-        const persistedTools = toPersistedTools(toolTracker.snapshot(),
-          assistantText.length - assistantText.trimStart().length,
-        );
-        const assistantTurn: ChatTurn = {
-          id: assistantTurnId,
-          role: "assistant",
-          text: cleanedAssistantText,
-          ...(agentAttachments.length ? { attachments: agentAttachments } : {}),
-          createdAt: new Date().toISOString(),
-          durationMs: result.duration_ms,
-          isError: result.is_error,
-          ...(cancelledByUser ? { cancelled: true } : {}),
-          ...(result.usage ? { usage: result.usage } : {}),
-          ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
-          ...(persistedTools ? { tools: persistedTools } : {}),
-          ...(persistedOpenCodeDiagnostics.length ? { progress: persistedOpenCodeDiagnostics } : {}),
-          parentId: userTurnId,
-          responseMetadata,
-        };
-        const conv = existing ?? {
-          sessionId: finalSessionId,
-          familiarId: body.familiarId,
-          harness: binding.harness,
-          model: responseMetadata.model,
-          runtime: responseMetadata.runtime,
-          title: chatTitle,
-          ...(body.origin ? { origin: body.origin } : {}),
-          createdAt: now,
-          updatedAt: now,
-          turns: [],
-        };
-        conv.model = responseMetadata.model;
-        conv.runtime = responseMetadata.runtime;
-        persistSendModelIntent(conv, body, modelState);
-        // Work-branch snapshot from the chat's own cwd — per-session PR
-        // attribution (badges + merged-PR auto-archive). Best-effort; a
-        // failed capture keeps the previous snapshot.
-        const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
-        if (workBranch) conv.branch = workBranch;
-        // Transcript PR snapshot: the reply's last reported PR URL (fallback
-        // attribution for chats whose work happens in agent worktrees).
-        const reportedPrUrl = latestPrUrlFromText(cleanedAssistantText);
-        if (reportedPrUrl) conv.prUrl = reportedPrUrl;
-        if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
-        else if (openCodeDirect && existingConversation && !openCodeNativeResumeUsed) {
-          // A fresh compatibility fallback intentionally did not use the
-          // prior native session. Persist that invalidation so a later client
-          // upgrade cannot silently resume context that excludes this turn.
-          delete conv.harnessSessionId;
-        }
-        if (grokDirect && grokSessionId) conv.grokSandboxProfile = grokSandboxProfile;
-        conv.turns.push(userTurn, assistantTurn);
-        conv.activeLeafId = assistantTurnId;
-        await saveConversation(conv);
+        const isFirstExchange = await withConversationLock(finalSessionId, async () => {
+          const existing = await loadConversation(finalSessionId);
+          // First-turn visibility (cave-0g2x): drop the announce-time stub turn
+          // so the authoritative user turn below re-lands under the same id.
+          // True only when this run's stub created the conversation, which keeps
+          // first-exchange behaviors (auto-naming) firing for new chats.
+          const hadFirstTurnStub = existing
+            ? stripConversationStubTurn(existing, pendingUserTurnId)
+            : false;
+          const firstExchange = !existing || hadFirstTurnStub;
+          const now = new Date().toISOString();
+          const userTurnId = pendingUserTurnId;
+          const assistantTurnId = crypto.randomUUID();
+          const chatTitle = existing?.title ?? defaultChatTitleForSession(finalSessionId);
+          if (!existing) await setDefaultSessionTitleIfMissing(finalSessionId, chatTitle);
+          // Branching: when the client passes parentTurnId, the new user turn is
+          // parented there (its prior sibling stays in the tree). For a normal
+          // (non-branch) send, fall back to the prior activeLeafId so the
+          // conversation stays a linear chain identical to the pre-branching
+          // behaviour. First turn of a new chat gets null (no parent).
+          const branchParentId =
+            body.parentTurnId !== undefined ? body.parentTurnId : existing?.activeLeafId ?? null;
+          const userTurn: ChatTurn = {
+            id: userTurnId,
+            role: "user",
+            text: promptText,
+            ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
+            ...persistedTurnControls(body, responseMetadata.retryModel),
+            createdAt: now,
+            ...(branchParentId != null ? { parentId: branchParentId } : {}),
+          };
+          // Persist the turn's tool rows: the live chips exist only in client
+          // state fed by SSE; without this, refresh/chat-switch loses them.
+          // Offsets were stamped against the untrimmed stream — shift by the
+          // leading trim so interleaving matches the saved text.
+          const persistedTools = toPersistedTools(toolTracker.snapshot(),
+            assistantText.length - assistantText.trimStart().length,
+          );
+          const assistantTurn: ChatTurn = {
+            id: assistantTurnId,
+            role: "assistant",
+            text: cleanedAssistantText,
+            ...(agentAttachments.length ? { attachments: agentAttachments } : {}),
+            createdAt: new Date().toISOString(),
+            durationMs: result.duration_ms,
+            isError: result.is_error,
+            ...(cancelledByUser ? { cancelled: true } : {}),
+            ...(result.usage ? { usage: result.usage } : {}),
+            ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
+            ...(persistedTools ? { tools: persistedTools } : {}),
+            ...(persistedOpenCodeDiagnostics.length
+              ? { progress: persistedOpenCodeDiagnostics }
+              : {}),
+            parentId: userTurnId,
+            responseMetadata,
+          };
+          const conv = existing ?? {
+            sessionId: finalSessionId,
+            familiarId: body.familiarId,
+            harness: binding.harness,
+            model: responseMetadata.model,
+            runtime: responseMetadata.runtime,
+            title: chatTitle,
+            ...(body.origin ? { origin: body.origin } : {}),
+            createdAt: now,
+            updatedAt: now,
+            turns: [],
+          };
+          conv.model = responseMetadata.model;
+          conv.runtime = responseMetadata.runtime;
+          persistSendModelIntent(
+            conv,
+            body,
+            modelState,
+            existingConversation?.modelIntent?.model ?? null,
+          );
+          // Work-branch snapshot from the chat's own cwd — per-session PR
+          // attribution (badges + merged-PR auto-archive). Best-effort; a
+          // failed capture keeps the previous snapshot.
+          const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
+          if (workBranch) conv.branch = workBranch;
+          // Transcript PR snapshot: the reply's last reported PR URL (fallback
+          // attribution for chats whose work happens in agent worktrees).
+          const reportedPrUrl = latestPrUrlFromText(cleanedAssistantText);
+          if (reportedPrUrl) conv.prUrl = reportedPrUrl;
+          if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
+          else if (openCodeDirect && existingConversation && !openCodeNativeResumeUsed) {
+            // A fresh compatibility fallback intentionally did not use the
+            // prior native session. Persist that invalidation so a later client
+            // upgrade cannot silently resume context that excludes this turn.
+            delete conv.harnessSessionId;
+          }
+          if (grokDirect && grokSessionId) conv.grokSandboxProfile = grokSandboxProfile;
+          conv.turns.push(userTurn, assistantTurn);
+          conv.activeLeafId = assistantTurnId;
+          await saveConversation(conv);
+          return firstExchange;
+        });
         if (isFirstExchange && !result.is_error && !cancelledByUser) {
           await autoNameSessionFromFirstExchange(finalSessionId, promptText);
         }
