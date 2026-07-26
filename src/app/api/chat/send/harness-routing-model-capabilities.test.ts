@@ -47,8 +47,18 @@ assert.match(
 );
 assert.match(
   capabilityProbes,
-  /export function hermesChatSupportsModel\(\)/,
-  "Direct Hermes model forwarding must probe hermes chat --help independently of coven run",
+  /export function hermesChatSupportsModel\(launch:/,
+  "Direct Hermes model forwarding must probe hermes chat --help through its resolved launch plan",
+);
+assert.match(
+  chatRoute,
+  /const readyHermesLaunch = hermesLaunch\?\.state === "ready" \? hermesLaunch : null;[\s\S]*?hermesChatSupportsModel\(readyHermesLaunch\)/,
+  "Hermes capability probing must use the preflighted command and scoped environment without treating a missing --model flag as missing Hermes",
+);
+assert.match(
+  chatRoute,
+  /command: readyHermesLaunch!\.command,[\s\S]*?hermesDirect\s*\? readyHermesLaunch!\.env/,
+  "The direct Hermes spawn must receive the resolver's exact command and environment",
 );
 
 assert.match(

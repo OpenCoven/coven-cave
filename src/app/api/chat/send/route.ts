@@ -62,7 +62,11 @@ import {
 } from "@/lib/grok-build";
 import { grokLaunchCommand } from "@/lib/grok-bin";
 import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
-import { evaluateRuntimeAvailability, missingRunnerMessage } from "@/lib/runtime-availability";
+import {
+  evaluateRuntimeAvailability,
+  missingRunnerMessage,
+  resolveHermesLaunch,
+} from "@/lib/runtime-availability";
 import {
   quarantineOpenCodeSchema,
   redactedOpenCodeEventFingerprint,
@@ -982,9 +986,17 @@ export async function POST(req: Request) {
         HERMES_API_KEY?: string;
       })
     : null;
+  // The API integration has its own HTTP transport. The direct CLI fallback
+  // gets one server-owned native launch plan before capability probing, then
+  // hands that exact command and scoped environment to spawn below.
+  const hermesLaunch = hermesDirect && hermesApi === null
+    ? resolveHermesLaunch({ familiarId: body.familiarId })
+    : null;
+  const readyHermesLaunch = hermesLaunch?.state === "ready" ? hermesLaunch : null;
   const modelForwardingEnabled =
     hermesDirect
-      ? hermesApi !== null || await hermesChatSupportsModel()
+      ? hermesApi !== null ||
+        (readyHermesLaunch !== null && await hermesChatSupportsModel(readyHermesLaunch))
       : openCodeDirect
         ? openCodeCompatibility?.capabilities.model ?? false
         : binding.harness === "grok" ||
@@ -2737,6 +2749,58 @@ export async function POST(req: Request) {
               // location detail.
               : openCodeDirect ? undefined : familiarCwd ?? cwd,
           );
+          const reportLaunchFailure = (err: NodeJS.ErrnoException) => {
+            // OpenCode launch errors can include the PowerShell shim's
+            // absolute path (and platform error details). Keep compatibility
+            // diagnostics value-free rather than surfacing local filesystem
+            // information.
+            const launchError = openCodeDirect
+              ? "OpenCode failed to start. Check its installation and try again."
+              : hermesDirect
+                ? "Hermes failed to start. Check its installation and try again."
+              : err.message;
+            // Race-safe fallback (#3856): preflight can pass and a native
+            // executable can still disappear or fail between stat and spawn.
+            // Mark this before empty-output handling so it can never become an
+            // authentication/no-output assistant response.
+            result.is_error = true;
+            launchFailure ??= {
+              code: err.code === "ENOENT" ? "ENOENT" : "runtime_launch_failed",
+              message: launchError,
+            };
+            pushProgress(
+              "harness-start",
+              `${binding.harness} failed to start`,
+              "error",
+              launchError,
+              Date.now() - attemptStartedAt,
+            );
+            if (err.code === "ENOENT") {
+              push({
+                kind: "error",
+                code: "ENOENT",
+                // SSH is a remote transport, not a direct runner; every local
+                // runner shares the pre-spawn gate's remediation copy so the
+                // two failure paths cannot drift.
+                message:
+                  sshRuntime
+                    ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
+                    : missingRunnerMessage(
+                        copilotStream
+                          ? "copilot"
+                          : grokDirect
+                            ? "grok"
+                          : openCodeDirect
+                            ? "opencode"
+                          : hermesDirect
+                            ? "hermes"
+                            : "coven",
+                      ),
+              });
+            } else {
+              push({ kind: "error", message: launchError });
+            }
+          };
           const child = sshRuntime
             ? (() => {
                 const sshArgs = spawnArgs;
@@ -2746,6 +2810,30 @@ export async function POST(req: Request) {
                 });
               })()
             : (() => {
+                // Hermes's direct CLI plan is resolved before capability
+                // probing. Do not turn its non-ready states into a bare spawn
+                // (or a generic no-output/authentication diagnosis).
+                if (hermesDirect && !readyHermesLaunch) {
+                  // `runAttempt` reaches this branch only for the direct CLI
+                  // fallback, which always created `hermesLaunch` above.
+                  // Keep the impossible cases explicit so TypeScript preserves
+                  // the shared non-ready error shape below.
+                  if (!hermesLaunch || hermesLaunch.state === "ready") {
+                    throw new Error("Hermes launch plan was unavailable");
+                  }
+                  const availability = hermesLaunch;
+                  launchFailure = { code: availability.code, message: availability.message };
+                  result.is_error = true;
+                  pushProgress(
+                    "harness-start",
+                    `${binding.harness} failed to start`,
+                    "error",
+                    availability.message,
+                    Date.now() - attemptStartedAt,
+                  );
+                  push({ kind: "error", code: availability.code, message: availability.message });
+                  return null;
+                }
                 // Copilot, Grok Build, Hermes, and OpenCode use documented
                 // direct CLI integrations. Every other local harness goes
                 // through `coven run`.
@@ -2755,7 +2843,7 @@ export async function POST(req: Request) {
                     ? grokLaunchCommand()
                   : hermesDirect
                     ? {
-                        command: process.platform === "win32" ? "hermes.exe" : "hermes",
+                        command: readyHermesLaunch!.command,
                         fixedArgs: [] as string[],
                       }
                     : covenLaunchCommand();
@@ -2765,6 +2853,8 @@ export async function POST(req: Request) {
                 // plus its own grants (cave-4nu6).
                 const spawnEnv = openCodeDirect
                   ? openCodeSpawnEnv(body.familiarId)
+                  : hermesDirect
+                    ? readyHermesLaunch!.env
                   : harnessSpawnEnv(body.familiarId);
                 // Pre-spawn availability gate (#3856): verify the EXACT
                 // command/env this attempt is about to spawn, using bounded
@@ -2805,18 +2895,24 @@ export async function POST(req: Request) {
                 }
                 const command = openCodeLaunchCommand
                   ?? { command: launch.command, args: [...launch.fixedArgs, ...spawnArgs] };
-                const child = spawn(command.command, command.args, {
-                  // Spawn IN the familiar's workspace when no project root was
-                  // supplied, so coven's project-root resolver picks that dir as
-                  // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
-                  // from the familiar's home. When a project root IS supplied,
-                  // honor that instead.
-                  cwd: familiarCwd ?? cwd,
-                  stdio: openCodeLaunchCommand?.input === undefined
-                    ? ["ignore", "pipe", "pipe"]
-                    : ["pipe", "pipe", "pipe"],
-                  env: spawnEnv,
-                }) as ChildProcessWithoutNullStreams;
+                let child: ChildProcessWithoutNullStreams;
+                try {
+                  child = spawn(command.command, command.args, {
+                    // Spawn IN the familiar's workspace when no project root was
+                    // supplied, so coven's project-root resolver picks that dir as
+                    // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
+                    // from the familiar's home. When a project root IS supplied,
+                    // honor that instead.
+                    cwd: familiarCwd ?? cwd,
+                    stdio: openCodeLaunchCommand?.input === undefined
+                      ? ["ignore", "pipe", "pipe"]
+                      : ["pipe", "pipe", "pipe"],
+                    env: spawnEnv,
+                  }) as ChildProcessWithoutNullStreams;
+                } catch (error) {
+                  reportLaunchFailure(error as NodeJS.ErrnoException);
+                  return null;
+                }
                 if (openCodeLaunchCommand) {
                   writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
                 }
@@ -2916,53 +3012,7 @@ export async function POST(req: Request) {
           });
 
           child.on("error", (err: NodeJS.ErrnoException) => {
-            // OpenCode launch errors can include the PowerShell shim's absolute
-            // path (and platform error details). Keep compatibility diagnostics
-            // value-free rather than surfacing local filesystem information.
-            const launchError = openCodeDirect
-              ? "OpenCode failed to start. Check its installation and try again."
-              : err.message;
-            // Race-safe fallback (#3856): the pre-spawn gate can pass and the
-            // binary still vanish before spawn. Mark the run errored BEFORE
-            // the empty-output diagnostic can run, so a launch failure is
-            // never misreported as "installed but not authenticated".
-            result.is_error = true;
-            launchFailure ??= {
-              code: err.code === "ENOENT" ? "ENOENT" : "runtime_launch_failed",
-              message: launchError,
-            };
-            pushProgress(
-              "harness-start",
-              `${binding.harness} failed to start`,
-              "error",
-              launchError,
-              Date.now() - attemptStartedAt,
-            );
-            if (err.code === "ENOENT") {
-              push({
-                kind: "error",
-                code: "ENOENT",
-                // SSH is a remote transport, not a direct runner; every local
-                // runner shares the pre-spawn gate's remediation copy so the
-                // two failure paths cannot drift.
-                message:
-                  sshRuntime
-                    ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
-                    : missingRunnerMessage(
-                        copilotStream
-                          ? "copilot"
-                          : grokDirect
-                            ? "grok"
-                          : openCodeDirect
-                            ? "opencode"
-                          : hermesDirect
-                            ? "hermes"
-                            : "coven",
-                      ),
-              });
-            } else {
-              push({ kind: "error", message: launchError });
-            }
+            reportLaunchFailure(err);
             req.signal.removeEventListener("abort", onAbort);
             resolve();
             close();
