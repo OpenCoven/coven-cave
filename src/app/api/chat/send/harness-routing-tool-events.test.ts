@@ -550,6 +550,27 @@ assert.match(
   );
 }
 
+// A lost pre hook for one call followed by a same-name later call must not
+// overwrite the completed first envelope when their inputs distinguish them.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  tracker.envelopeToolResult("toolu_first", "first result", false);
+  tracker.envelopeToolUse("toolu_first", "Read", '{"path":"first.md"}');
+
+  const secondHook = tracker.hookStart("Read", '{"path":"second.md"}');
+  assert.notEqual(secondHook.id, "toolu_first");
+  tracker.hookEnd("Read", "second hook result", false);
+
+  assert.deepEqual(
+    tracker.snapshot().map(({ id, input, output }) => ({ id, input, output })),
+    [
+      { id: "toolu_first", input: '{"path":"first.md"}', output: "first result" },
+      { id: secondHook.id, input: '{"path":"second.md"}', output: "second hook result" },
+    ],
+    "a late completed envelope cannot steal a distinct same-name hook call",
+  );
+}
+
 // Behavioral: payload formatters used by both event sources.
 {
   assert.equal(formatToolPayload(""), undefined);

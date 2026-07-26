@@ -180,9 +180,19 @@ export class ToolCallTracker {
     this.settledEnvelopeCalls.set(call.name, queue);
   }
 
-  private takeSettledEnvelopeCall(name: string): OpenCall | undefined {
+  private takeSettledEnvelopeCall(name: string, input?: string): OpenCall | undefined {
     const queue = this.settledEnvelopeCalls.get(name);
-    const call = queue?.shift();
+    // A completed envelope is retained only to reconcile a late hook. Do not
+    // let it absorb a later same-name invocation whose input proves it is a
+    // different call; that would overwrite the completed call with the later
+    // hook's output and leave the actual envelope call orphaned.
+    const index = input === undefined
+      ? 0
+      : queue?.findIndex((call) => {
+          const recordedInput = this.recorded.get(call.id)?.input;
+          return recordedInput === undefined || recordedInput === input;
+        }) ?? -1;
+    const call = index >= 0 ? queue?.splice(index, 1)[0] : undefined;
     if (queue?.length === 0) this.settledEnvelopeCalls.delete(name);
     return call;
   }
@@ -268,7 +278,7 @@ export class ToolCallTracker {
       this.record(ev, textOffset);
       return ev;
     }
-    const settledEnvelopeCall = this.takeSettledEnvelopeCall(name);
+    const settledEnvelopeCall = this.takeSettledEnvelopeCall(name, input);
     if (settledEnvelopeCall) {
       // The user result has already completed this envelope, but a late hook
       // still owns the authoritative timing/output. Reuse the native id so the
