@@ -13,7 +13,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { Segmented } from "@/components/ui/settings-controls";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import { Popover, PopoverBody } from "@/components/ui/popover";
+import { Popover, PopoverBody, usePopoverInitialFocus } from "@/components/ui/popover";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useAppPreferences, updateAppPreferences } from "@/lib/app-preferences";
@@ -28,6 +28,9 @@ type OrgLoad =
 
 type ScopeMode = "all" | "selected";
 
+const GITHUB_ORG_POPOVER_SELECTOR =
+  '[role="dialog"][aria-label="GitHub organization settings"]';
+
 export function GithubOrganizationSettings() {
   const baseId = useId();
   const anchorRef = useRef<HTMLButtonElement>(null);
@@ -38,6 +41,8 @@ export function GithubOrganizationSettings() {
   const [open, setOpen] = useState(false);
   const [load, setLoad] = useState<OrgLoad>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
+
+  usePopoverInitialFocus(open, GITHUB_ORG_POPOVER_SELECTOR);
 
   useEffect(() => {
     if (!open) return;
@@ -74,26 +79,44 @@ export function GithubOrganizationSettings() {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [memberships, scope]);
 
+  const focusScopeControl = useCallback(() => {
+    requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(GITHUB_ORG_POPOVER_SELECTOR)
+        ?.querySelector<HTMLButtonElement>(
+          'button[aria-label="GitHub organization scope: All"]',
+        )
+        ?.focus();
+    });
+  }, []);
+
   const setMode = useCallback(
     (mode: ScopeMode) => {
       if (mode === "all") {
         updateAppPreferences({ github: { orgScope: [] } });
         announce("GitHub scope set to all organizations", "polite");
+        // Reset and unchecking the final row both unmount the focused control.
+        // Move focus to the stable mode control instead of dropping it to body.
+        focusScopeControl();
       } else {
         // Enter subset mode seeded with every membership selected, so nothing
         // disappears until the operator unchecks something.
         updateAppPreferences({ github: { orgScope: normalizeOrgScope(memberships) } });
       }
     },
-    [memberships, announce],
+    [memberships, announce, focusScopeControl],
   );
 
   const toggleOrg = useCallback(
     (org: string) => {
       const next = scope.includes(org) ? scope.filter((o) => o !== org) : [...scope, org];
+      if (next.length === 0) {
+        setMode("all");
+        return;
+      }
       updateAppPreferences({ github: { orgScope: next } });
     },
-    [scope],
+    [scope, setMode],
   );
 
   const canSelect = memberships.length > 0 || scoped;
@@ -104,6 +127,7 @@ export function GithubOrganizationSettings() {
         ref={anchorRef}
         icon="ph:gear-six-bold"
         size="sm"
+        className="github-org-settings__trigger"
         aria-label="GitHub organization settings"
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -115,10 +139,9 @@ export function GithubOrganizationSettings() {
         onOpenChange={setOpen}
         anchorRef={anchorRef}
         placement="bottom-end"
-        minWidth={320}
         ariaLabel="GitHub organization settings"
       >
-        <PopoverBody className="w-80">
+        <PopoverBody className="w-[min(20rem,calc(100vw-1rem))]">
           <header className="border-b border-[var(--border-hairline)] px-2 pb-3 pt-2">
             <h2 id={`${baseId}-title`} className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">
               GitHub organizations
@@ -139,18 +162,20 @@ export function GithubOrganizationSettings() {
                   : "All organizations you belong to."}
               </p>
             </div>
-            <Segmented
-              options={["all", "selected"] as const}
-              value={scoped ? "selected" : "all"}
-              onChange={setMode}
-              getLabel={(option) => (option === "all" ? "All" : "Selected")}
-              getTitle={(option) =>
-                option === "all"
-                  ? "Include every organization you belong to"
-                  : "Include only the organizations you choose below"
-              }
-              ariaLabel="GitHub organization scope"
-            />
+            <div className="github-org-settings__segments">
+              <Segmented
+                options={["all", "selected"] as const}
+                value={scoped ? "selected" : "all"}
+                onChange={setMode}
+                getLabel={(option) => (option === "all" ? "All" : "Selected")}
+                getTitle={(option) =>
+                  option === "all"
+                    ? "Include every organization you belong to"
+                    : "Include only the organizations you choose below"
+                }
+                ariaLabel="GitHub organization scope"
+              />
+            </div>
           </div>
 
           <div className="max-h-64 overflow-y-auto px-2 py-3" aria-labelledby={`${baseId}-title`}>
@@ -167,7 +192,12 @@ export function GithubOrganizationSettings() {
                 <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
                   Couldn’t read your organizations.
                 </p>
-                <Button variant="ghost" size="xs" onClick={() => setReloadKey((key) => key + 1)}>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="github-org-settings__action"
+                  onClick={() => setReloadKey((key) => key + 1)}
+                >
                   Try again
                 </Button>
               </div>
@@ -185,7 +215,7 @@ export function GithubOrganizationSettings() {
                     const stale = !memberships.includes(org);
                     return (
                       <li key={org}>
-                        <label className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]">
+                        <label className="github-org-settings__row flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]">
                           <input
                             type="checkbox"
                             className="focus-ring h-4 w-4 accent-[var(--accent-presence)]"
@@ -214,6 +244,7 @@ export function GithubOrganizationSettings() {
                   <Button
                     variant="ghost"
                     size="xs"
+                    className="github-org-settings__action"
                     leadingIcon="ph:arrow-counter-clockwise"
                     onClick={() => setMode("all")}
                   >

@@ -7,6 +7,7 @@ const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url)
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const codeView = readFileSync(new URL("./code-view.tsx", import.meta.url), "utf8");
 const view = readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8");
+const primitives = readFileSync(new URL("../styles/globals/primitives.css", import.meta.url), "utf8");
 
 test("GitHub is removed from the Settings catalog, search, and shell", () => {
   assert.doesNotMatch(sections, /\|\s*"github"/);
@@ -37,6 +38,28 @@ test("the Code popover reads memberships from the activity API and stays accessi
   assert.match(section, /\/api\/github\/activity/);
   assert.match(section, /type="checkbox"/);
   assert.match(section, /role="alert"/);
+  assert.match(section, /usePopoverInitialFocus\(open, GITHUB_ORG_POPOVER_SELECTOR\)/);
+  assert.match(section, /focusScopeControl/);
+  assert.match(section, /w-\[min\(20rem,calc\(100vw-1rem\)\)\]/);
+});
+
+test("the Code popover preserves compact pointer rhythm and coarse-pointer targets", () => {
+  for (const className of [
+    "github-org-settings__trigger",
+    "github-org-settings__segments",
+    "github-org-settings__row",
+    "github-org-settings__action",
+  ]) {
+    assert.match(section, new RegExp(className));
+  }
+  assert.match(
+    primitives,
+    /@media \(hover: none\) and \(pointer: coarse\) \{[\s\S]*?\.github-org-settings__trigger[\s\S]*?min-height: var\(--touch-target\)/,
+  );
+  assert.match(
+    primitives,
+    /\.github-org-settings__segments button,[\s\S]*?\.github-org-settings__row,[\s\S]*?\.github-org-settings__action/,
+  );
 });
 
 test("the GitHub surface applies the configured org scope", () => {
