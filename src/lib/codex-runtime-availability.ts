@@ -74,6 +74,7 @@ export function classifyCodexAdapterFailure(text: string): "missing" | "unlaunch
   }
   if (
     /(?:unsupported|unknown|unrecognized)\s+(?:harness|adapter)\s+[`'"]?codex/i.test(text) ||
+    /(?:unsupported|unknown|unrecognized)\s+(?:subcommand|command)\s+[`'"]?adapter/i.test(text) ||
     /(?:(?:harness|adapter)\s+)?[`'"]?codex[`'"]?\s+(?:is\s+)?not\s+configured/i.test(text) ||
     /codex\s+(?:harness|adapter)\s+(?:is\s+)?not\s+configured/i.test(text)
   ) {
