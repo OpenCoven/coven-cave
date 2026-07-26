@@ -7,6 +7,13 @@ import { covenHome } from "../coven-paths.ts";
 
 export type SpeechEngineKind = "stt" | "tts";
 
+export type SpeechModelCompanionAsset = {
+  url: string;
+  sha256: string;
+  sizeBytes: number;
+  fileName: string;
+};
+
 export type SpeechModelRegistryEntry = {
   id: string;
   name: string;
@@ -17,12 +24,13 @@ export type SpeechModelRegistryEntry = {
   sizeBytes: number;
   license: string;
   fileName: string;
-  companion?: {
-    url: string;
-    sha256: string;
-    sizeBytes: number;
-    fileName: string;
-  };
+  /** Additional verified artifacts required beside the weights (Piper's
+   *  voice config; Kokoro's speaker embeddings and token table). Order is
+   *  part of the contract — consumers address companions by fileName. */
+  companions?: readonly SpeechModelCompanionAsset[];
+  /** Kokoro packs many speakers into one voices file; this selects the
+   *  reviewed default speaker for the entry's voiceName. */
+  kokoroSpeakerId?: number;
 };
 
 export type SpeechModelReadiness = SpeechModelRegistryEntry & {
@@ -30,7 +38,8 @@ export type SpeechModelReadiness = SpeechModelRegistryEntry & {
   verified: boolean;
   diskSizeBytes: number;
   path: string;
-  companionPath?: string;
+  /** Absolute paths for each registry companion, in registry order. */
+  companionPaths?: string[];
   missingReason?: "missing" | "size_mismatch" | "checksum_mismatch" | "unreadable";
 };
 
@@ -96,12 +105,12 @@ export const SPEECH_MODEL_REGISTRY: readonly SpeechModelRegistryEntry[] = [
     // Piper requires the voice config beside the ONNX weights. Treat both as
     // one verified model so /api/voice/engines never advertises an unusable
     // voice as ready.
-    companion: {
+    companions: [{
       url: "https://huggingface.co/rhasspy/piper-voices/resolve/0d907f158acc877ddeebcbf827659ee13bea8bcd/en/en_US/amy/medium/en_US-amy-medium.onnx.json",
       sha256: "95a23eb4d42909d38df73bb9ac7f45f597dbfcde2d1bf9526fdeaf5466977d77",
       sizeBytes: 4_882,
       fileName: "en_US-amy-medium.onnx.json",
-    },
+    }],
   },
   // Signature voice roster (cave-vony): only license-vetted voices ship here.
   // Rejected during vetting: ryan/hfc_male/hfc_female (CC BY-NC-SA datasets),
@@ -116,12 +125,12 @@ export const SPEECH_MODEL_REGISTRY: readonly SpeechModelRegistryEntry[] = [
     sizeBytes: 63_201_294,
     license: "CC-BY-4.0",
     fileName: "en_GB-alba-medium.onnx",
-    companion: {
+    companions: [{
       url: "https://huggingface.co/rhasspy/piper-voices/resolve/0d907f158acc877ddeebcbf827659ee13bea8bcd/en/en_GB/alba/medium/en_GB-alba-medium.onnx.json",
       sha256: "aa965a2f02ecced632c2694e1fc72bbff6d65f265fab567ca945918c73dd89f4",
       sizeBytes: 4_888,
       fileName: "en_GB-alba-medium.onnx.json",
-    },
+    }],
   },
   {
     id: "piper-joe-medium-en-us",
@@ -133,12 +142,12 @@ export const SPEECH_MODEL_REGISTRY: readonly SpeechModelRegistryEntry[] = [
     sizeBytes: 63_201_294,
     license: "CC0-1.0",
     fileName: "en_US-joe-medium.onnx",
-    companion: {
+    companions: [{
       url: "https://huggingface.co/rhasspy/piper-voices/resolve/0d907f158acc877ddeebcbf827659ee13bea8bcd/en/en_US/joe/medium/en_US-joe-medium.onnx.json",
       sha256: "3d6d5410b3795cb1950595247ef8f06190719e6fdbfa3a2356d8ec368e1aad33",
       sizeBytes: 4_794,
       fileName: "en_US-joe-medium.onnx.json",
-    },
+    }],
   },
   {
     id: "piper-kristin-medium-en-us",
@@ -150,12 +159,44 @@ export const SPEECH_MODEL_REGISTRY: readonly SpeechModelRegistryEntry[] = [
     sizeBytes: 63_531_379,
     license: "Public domain (LibriVox dataset)",
     fileName: "en_US-kristin-medium.onnx",
-    companion: {
+    companions: [{
       url: "https://huggingface.co/rhasspy/piper-voices/resolve/0d907f158acc877ddeebcbf827659ee13bea8bcd/en/en_US/kristin/medium/en_US-kristin-medium.onnx.json",
       sha256: "5681426d4aead22195de70531eeeeddb46493cfaffc5764b2ea3db73428b651c",
       sizeBytes: 4_968,
       fileName: "en_US-kristin-medium.onnx.json",
-    },
+    }],
+  },
+  // Kokoro (cave-tr09i): one reviewed model bundle serves many speakers via
+  // the voices file. The runner additionally needs espeak-ng-data, which
+  // ships with the sherpa-onnx runtime beside its executable (like Piper's),
+  // not through this flat-file downloader.
+  {
+    id: "kokoro-en-v0-19",
+    name: "Kokoro English v0.19",
+    engine: "kokoro",
+    kind: "tts",
+    url: "https://huggingface.co/csukuangfj/kokoro-en-v0_19/resolve/92805c485745946a0d945562d3aba19e7cbb2104/model.onnx",
+    sha256: "10ff414106a038ce7e9e0126c6461e4dc8a86efaa89dc91d2009d69fe635e339",
+    sizeBytes: 345_555_491,
+    license: "Apache-2.0",
+    fileName: "model.onnx",
+    // Speaker 0 ("af", the reviewed default blend) keeps this entry a single
+    // selectable voiceName; the roster of named speakers is follow-up work.
+    kokoroSpeakerId: 0,
+    companions: [
+      {
+        url: "https://huggingface.co/csukuangfj/kokoro-en-v0_19/resolve/92805c485745946a0d945562d3aba19e7cbb2104/voices.bin",
+        sha256: "a372c67b056ef0b695c375d39b99630d23fb07ad4c8d87aa32a19a62fca523ad",
+        sizeBytes: 5_755_904,
+        fileName: "voices.bin",
+      },
+      {
+        url: "https://huggingface.co/csukuangfj/kokoro-en-v0_19/resolve/92805c485745946a0d945562d3aba19e7cbb2104/tokens.txt",
+        sha256: "4f31c71282d14af4e926cd12462078fe9d20d00c589e63fe2750a8f56d6d7f7b",
+        sizeBytes: 1_078,
+        fileName: "tokens.txt",
+      },
+    ],
   },
 ] as const;
 
@@ -238,13 +279,13 @@ export function speechModelPath(model: SpeechModelRegistryEntry, root = speechMo
   return speechModelAssetPath(model, model.fileName, root);
 }
 
-export function speechModelCompanionPath(
+export function speechModelCompanionPaths(
   model: SpeechModelRegistryEntry,
   root = speechModelsRoot(),
-): string | null {
-  return model.companion
-    ? speechModelAssetPath(model, model.companion.fileName, root)
-    : null;
+): string[] {
+  return (model.companions ?? []).map((companion) =>
+    speechModelAssetPath(model, companion.fileName, root),
+  );
 }
 
 function speechModelAssetPath(
@@ -283,16 +324,14 @@ export async function speechModelReadiness(
   root = speechModelsRoot(),
 ): Promise<SpeechModelReadiness> {
   const modelPath = speechModelPath(model, root);
-  const companionPath = speechModelCompanionPath(model, root);
+  const companionPaths = speechModelCompanionPaths(model, root);
   const assets = [
     { path: modelPath, sizeBytes: model.sizeBytes, sha256: model.sha256 },
-    ...(model.companion && companionPath
-      ? [{
-          path: companionPath,
-          sizeBytes: model.companion.sizeBytes,
-          sha256: model.companion.sha256,
-        }]
-      : []),
+    ...(model.companions ?? []).map((companion, index) => ({
+      path: companionPaths[index],
+      sizeBytes: companion.sizeBytes,
+      sha256: companion.sha256,
+    })),
   ];
   let diskSizeBytes = 0;
   for (const asset of assets) {
@@ -306,7 +345,7 @@ export async function speechModelReadiness(
           verified: false,
           diskSizeBytes,
           path: modelPath,
-          ...(companionPath ? { companionPath } : {}),
+          ...(companionPaths.length ? { companionPaths } : {}),
           missingReason: "unreadable",
         };
       }
@@ -317,7 +356,7 @@ export async function speechModelReadiness(
           verified: false,
           diskSizeBytes,
           path: modelPath,
-          ...(companionPath ? { companionPath } : {}),
+          ...(companionPaths.length ? { companionPaths } : {}),
           missingReason: "size_mismatch",
         };
       }
@@ -328,7 +367,7 @@ export async function speechModelReadiness(
           verified: false,
           diskSizeBytes,
           path: modelPath,
-          ...(companionPath ? { companionPath } : {}),
+          ...(companionPaths.length ? { companionPaths } : {}),
           missingReason: "checksum_mismatch",
         };
       }
@@ -339,7 +378,7 @@ export async function speechModelReadiness(
         verified: false,
         diskSizeBytes,
         path: modelPath,
-        ...(companionPath ? { companionPath } : {}),
+        ...(companionPaths.length ? { companionPaths } : {}),
         missingReason:
           (error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable",
       };
@@ -351,7 +390,7 @@ export async function speechModelReadiness(
     verified: true,
     diskSizeBytes,
     path: modelPath,
-    ...(companionPath ? { companionPath } : {}),
+    ...(companionPaths.length ? { companionPaths } : {}),
   };
 }
 
@@ -528,7 +567,7 @@ export async function runSpeechModelDownload(
     /* turbopackIgnore: true */ path.dirname(dir),
     `.${model.id}.${job.id}.download`,
   );
-  const totalBytes = model.sizeBytes + (model.companion?.sizeBytes ?? 0);
+  const totalBytes = model.sizeBytes + (model.companions ?? []).reduce((sum, companion) => sum + companion.sizeBytes, 0);
   const assets = [
     {
       url: model.url,
@@ -536,7 +575,7 @@ export async function runSpeechModelDownload(
       sizeBytes: model.sizeBytes,
       fileName: model.fileName,
     },
-    ...(model.companion ? [model.companion] : []),
+    ...(model.companions ?? []),
   ];
   try {
     if (cancelledDownloadJobs.has(job.id)) throw new Error("download_cancelled");
@@ -628,7 +667,7 @@ export async function startSpeechModelDownload(
       modelId: model.id,
       status: "cancelled",
       receivedBytes: 0,
-      totalBytes: model.sizeBytes + (model.companion?.sizeBytes ?? 0),
+      totalBytes: model.sizeBytes + (model.companions ?? []).reduce((sum, companion) => sum + companion.sizeBytes, 0),
       startedAt: now,
       updatedAt: now,
       ready: false,
@@ -642,7 +681,7 @@ export async function startSpeechModelDownload(
       modelId: model.id,
       status: "done",
       receivedBytes: ready.diskSizeBytes,
-      totalBytes: model.sizeBytes + (model.companion?.sizeBytes ?? 0),
+      totalBytes: model.sizeBytes + (model.companions ?? []).reduce((sum, companion) => sum + companion.sizeBytes, 0),
       startedAt: now,
       updatedAt: now,
       ready: true,
@@ -657,7 +696,7 @@ export async function startSpeechModelDownload(
     modelId: model.id,
     status: "running",
     receivedBytes: 0,
-    totalBytes: model.sizeBytes + (model.companion?.sizeBytes ?? 0),
+    totalBytes: model.sizeBytes + (model.companions ?? []).reduce((sum, companion) => sum + companion.sizeBytes, 0),
     startedAt: now,
     updatedAt: now,
   });

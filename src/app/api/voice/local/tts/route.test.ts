@@ -185,7 +185,7 @@ test("POST local TTS rejects unknown, unready, and unsupported-engine voices", a
     {
       readiness: async () => ({
         ...readyVoice,
-        engine: "kokoro",
+        engine: "espeak",
       }),
     },
   );
@@ -194,6 +194,66 @@ test("POST local TTS rejects unknown, unready, and unsupported-engine voices", a
     (await unsupported.json()).error,
     "local_tts_engine_unavailable",
   );
+});
+
+test("POST local TTS dispatches Kokoro voices with their positional companions", async () => {
+  let invocation = null;
+  const req = request({ text: "  Hello locally.  ", voiceName: "kokoro-en-v0-19" });
+  const res = await handleLocalTtsPost(
+    req,
+    {
+      readiness: async (voiceName) => {
+        assert.equal(voiceName, "kokoro-en-v0-19");
+        return {
+          ...readyVoice,
+          id: "kokoro-en-v0-19",
+          engine: "kokoro",
+          // Registry order contract: [voices.bin, tokens.txt].
+          companionPaths: ["C:\\voice-models\\voices.bin", "C:\\voice-models\\tokens.txt"],
+        };
+      },
+      kokoro: async (assets, text, signal) => {
+        invocation = { assets, text, signal };
+        return new Uint8Array([82, 73, 70, 70]);
+      },
+    },
+  );
+
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "audio/wav");
+  assert.deepEqual(invocation, {
+    assets: {
+      modelPath: readyVoice.path,
+      voicesPath: "C:\\voice-models\\voices.bin",
+      tokensPath: "C:\\voice-models\\tokens.txt",
+      // kokoroSpeakerId comes from the reviewed registry entry, not readiness.
+      speakerId: 0,
+    },
+    text: "Hello locally.",
+    signal: req.signal,
+  });
+});
+
+test("POST local TTS refuses a Kokoro voice whose companions are missing", async () => {
+  let ran = false;
+  const res = await handleLocalTtsPost(
+    request({ text: "hello", voiceName: "kokoro-en-v0-19" }),
+    {
+      readiness: async () => ({
+        ...readyVoice,
+        id: "kokoro-en-v0-19",
+        engine: "kokoro",
+        companionPaths: ["C:\\voice-models\\voices.bin"],
+      }),
+      kokoro: async () => {
+        ran = true;
+        return new Uint8Array([82]);
+      },
+    },
+  );
+  assert.equal(res.status, 409);
+  assert.equal((await res.json()).error, "local_voice_not_ready");
+  assert.equal(ran, false, "an incomplete Kokoro bundle must never reach the runner");
 });
 
 test("POST local TTS preserves runner machine codes and hints", async () => {

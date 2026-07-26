@@ -92,9 +92,18 @@ const defaultPiperTiming: PiperTiming = {
   forceKillSettleMs: PIPER_FORCE_KILL_SETTLE_MS,
 };
 
-/** Probe Piper with the same bounded termination policy as synthesis. */
-export async function probePiperRuntime(
+type LocalTtsProbeHints = {
+  /** The runtime binary could not be spawned at all. */
+  install: string;
+  /** The runtime spawned but had to be terminated after the probe timeout. */
+  unresponsive: string;
+  /** The runtime exited with a non-zero status. */
+  broken: string;
+};
+
+async function probeLocalTtsRuntime(
   executable: string,
+  hints: LocalTtsProbeHints,
   dependencies: {
     spawnImpl?: PiperSpawn;
     timeoutMs?: number;
@@ -125,7 +134,7 @@ export async function probePiperRuntime(
         windowsHide: true,
       });
     } catch {
-      finish({ available: false, hint: "Install the local Piper runtime before selecting a Piper voice." });
+      finish({ available: false, hint: hints.install });
       return;
     }
     timeout = setTimeout(() => {
@@ -137,29 +146,43 @@ export async function probePiperRuntime(
       }
       // A corrupted runtime can ignore SIGTERM on POSIX. Escalate before
       // reporting it unavailable so repeated catalog refreshes cannot leak
-      // background Piper probes.
+      // background probe processes.
       forceKillTimer = setTimeout(() => {
         try {
           child.kill("SIGKILL");
         } catch {
           // The process may have exited while the timer was pending.
         }
-        finish({ available: false, hint: "Piper did not respond. Install the supported local Piper runtime." });
+        finish({ available: false, hint: hints.unresponsive });
       }, terminationGraceMs);
     }, timeoutMs);
     child.once("error", () => {
-      finish(terminating
-        ? { available: false, hint: "Piper did not respond. Install the supported local Piper runtime." }
-        : { available: false, hint: "Install the local Piper runtime before selecting a Piper voice." });
+      finish({ available: false, hint: terminating ? hints.unresponsive : hints.install });
     });
     child.once("close", (code) => {
       finish(terminating
-        ? { available: false, hint: "Piper did not respond. Install the supported local Piper runtime." }
+        ? { available: false, hint: hints.unresponsive }
         : code === 0
           ? { available: true }
-          : { available: false, hint: "The local Piper runtime is unavailable. Check its installation." });
+          : { available: false, hint: hints.broken });
     });
   });
+}
+
+/** Probe Piper with the same bounded termination policy as synthesis. */
+export async function probePiperRuntime(
+  executable: string,
+  dependencies: {
+    spawnImpl?: PiperSpawn;
+    timeoutMs?: number;
+    terminationGraceMs?: number;
+  } = {},
+): Promise<PiperRuntimeAvailability> {
+  return probeLocalTtsRuntime(executable, {
+    install: "Install the local Piper runtime before selecting a Piper voice.",
+    unresponsive: "Piper did not respond. Install the supported local Piper runtime.",
+    broken: "The local Piper runtime is unavailable. Check its installation.",
+  }, dependencies);
 }
 
 /** Probe the controlled, minimal environment used for synthesis. */
@@ -179,59 +202,99 @@ export async function piperRuntimeAvailability(): Promise<PiperRuntimeAvailabili
   return value;
 }
 
-export async function runPiperWithDependencies(
-  modelPath: string,
-  text: string,
-  signal?: AbortSignal,
+let kokoroAvailability: { checkedAt: number; value: PiperRuntimeAvailability } | null = null;
+
+/**
+ * Kokoro synthesis runs through the sherpa-onnx offline TTS CLI. Packaged
+ * builds will inject COVEN_KOKORO_BIN once the runtime ships as a signed app
+ * resource (packaging follow-up to cave-tr09i); until then PATH resolution is
+ * development-only so a packaged app never executes an arbitrary binary.
+ */
+export function kokoroExecutable(env: NodeJS.ProcessEnv = process.env): string | null {
+  const configured = env.COVEN_KOKORO_BIN?.trim();
+  if (configured) return existsSync(configured) ? configured : null;
+  return env.COVEN_CAVE_BUNDLE === "1" ? null : "sherpa-onnx-offline-tts";
+}
+
+/** Probe the sherpa-onnx Kokoro runtime with the same termination policy. */
+export async function probeKokoroRuntime(
+  executable: string,
   dependencies: {
     spawnImpl?: PiperSpawn;
-    executable?: string | null;
-    timing?: Partial<PiperTiming>;
-    removeImpl?: typeof rm;
+    timeoutMs?: number;
+    terminationGraceMs?: number;
   } = {},
-): Promise<Uint8Array> {
-  const spawnImpl = dependencies.spawnImpl ?? spawn;
-  const removeImpl = dependencies.removeImpl ?? rm;
-  const timing = { ...defaultPiperTiming, ...dependencies.timing };
-  const executable = dependencies.executable ?? piperExecutable();
+): Promise<PiperRuntimeAvailability> {
+  return probeLocalTtsRuntime(executable, {
+    install: "Install the sherpa-onnx-offline-tts runtime before selecting a Kokoro voice.",
+    unresponsive: "The Kokoro runtime did not respond. Install the supported sherpa-onnx-offline-tts runtime.",
+    broken: "The local Kokoro runtime is unavailable. Check its installation.",
+  }, dependencies);
+}
+
+export async function kokoroRuntimeAvailability(): Promise<PiperRuntimeAvailability> {
+  if (kokoroAvailability && Date.now() - kokoroAvailability.checkedAt < PIPER_PROBE_TIMEOUT_MS) {
+    return kokoroAvailability.value;
+  }
+  const executable = kokoroExecutable();
   if (!executable) {
-    throw new LocalTtsSynthesisError(
-      "local_tts_engine_unavailable",
-      "The bundled Piper runtime is missing. Reinstall CovenCave before selecting a Piper voice.",
-    );
+    return {
+      available: false,
+      hint: "This CovenCave build doesn't bundle the Kokoro runtime yet. Kokoro voices need the sherpa-onnx-offline-tts runtime.",
+    };
   }
-  // Piper consumes stdin line-by-line. Collapse all user whitespace before
-  // adding the one protocol newline so a streamed response cannot become
-  // multiple synthesis requests writing to the same WAV path.
-  const utterance = text.replace(/\s+/gu, " ").trim();
-  if (!utterance) {
-    throw new LocalTtsSynthesisError("local_tts_failed", "Piper received an empty utterance.");
-  }
+  const value = await probeKokoroRuntime(executable);
+  kokoroAvailability = { checkedAt: Date.now(), value };
+  return value;
+}
+
+// Both local runtimes consume exactly one utterance per request. Collapse all
+// user whitespace up front so streamed text cannot become multiple synthesis
+// requests (Piper treats each stdin line as a request) or mangled argv
+// (Kokoro receives the utterance as a positional argument).
+function normalizeLocalTtsUtterance(text: string): string {
+  return text.replace(/\s+/gu, " ").trim();
+}
+
+type LocalTtsChildRequest = {
+  /** Prefix for user-facing failure messages, e.g. "Piper failed: …". */
+  label: "Piper" | "Kokoro";
+  /** mkdtemp prefix for the private WAV output directory. */
+  tempPrefix: string;
+  executable: string;
+  /** argv given the private WAV output path chosen by the harness. */
+  buildArgs: (outputPath: string) => string[];
+  /** When set, written to the child's stdin with the protocol newline;
+   *  otherwise stdin is not opened at all. */
+  stdinUtterance?: string;
+  /** ENOENT at spawn time, phrased per engine. */
+  engineUnavailableMessage: string;
+  signal?: AbortSignal;
+  spawnImpl: PiperSpawn;
+  timing: PiperTiming;
+  removeImpl: typeof rm;
+};
+
+/**
+ * Shared hardened child-to-WAV harness: private 0o700 temp directory,
+ * scrubbed environment, bounded runtime with SIGTERM→SIGKILL escalation,
+ * bounded output size, and guaranteed temp cleanup.
+ */
+async function synthesizeWithLocalTtsChild(request: LocalTtsChildRequest): Promise<Uint8Array> {
+  const { label, signal, spawnImpl, timing, removeImpl } = request;
   const outputDirectory = await mkdtemp(
-    path.join(/* turbopackIgnore: true */ os.tmpdir(), "coven-piper-"),
+    path.join(/* turbopackIgnore: true */ os.tmpdir(), request.tempPrefix),
   );
   const outputPath = path.join(/* turbopackIgnore: true */ outputDirectory, "speech.wav");
   try {
     // mkdtemp creates a private directory on POSIX; chmod makes that privacy
-    // boundary explicit before Piper receives a path to write conversational
-    // audio into. Windows ignores POSIX permission bits safely.
+    // boundary explicit before the runtime receives a path to write
+    // conversational audio into. Windows ignores POSIX permission bits safely.
     await chmod(/* turbopackIgnore: true */ outputDirectory, 0o700);
     await new Promise<void>((resolve, reject) => {
-      // Piper's Windows/macOS/Linux archives keep espeak-ng-data beside the
-      // executable. The sidecar runs from resources/server, so leaving this to
-      // Piper's cwd-relative default makes every packaged voice fail to
-      // phonemize despite the bundled runtime being present.
-      const bundledEspeakData = path.join(
-        /* turbopackIgnore: true */ path.dirname(executable),
-        "espeak-ng-data",
-      );
-      const args = ["-m", modelPath, "-f", outputPath];
-      if (existsSync(bundledEspeakData)) {
-        args.push("--espeak_data", bundledEspeakData);
-      }
-      const child: ChildProcess = spawnImpl(executable, args, {
+      const child: ChildProcess = spawnImpl(request.executable, request.buildArgs(outputPath), {
         env: piperSpawnEnv(),
-        stdio: ["pipe", "ignore", "pipe"],
+        stdio: [request.stdinUtterance === undefined ? "ignore" : "pipe", "ignore", "pipe"],
         windowsHide: true,
       });
       let stderr = "";
@@ -282,7 +345,7 @@ export async function runPiperWithDependencies(
       ));
       const timeout = setTimeout(() => terminate(new LocalTtsSynthesisError(
         "local_tts_failed",
-        "Piper took too long to synthesize this utterance.",
+        `${label} took too long to synthesize this utterance.`,
       )), timing.timeoutMs);
       const fileCheck = setInterval(() => {
         if (checkingFile || terminating) return;
@@ -292,7 +355,7 @@ export async function runPiperWithDependencies(
             if (info.size > MAX_AUDIO_BYTES) {
               terminate(new LocalTtsSynthesisError(
                 "local_tts_failed",
-                "Piper produced oversized audio.",
+                `${label} produced oversized audio.`,
               ));
             }
           })
@@ -312,14 +375,14 @@ export async function runPiperWithDependencies(
         if (terminating) return;
         terminate(new LocalTtsSynthesisError(
           "local_tts_failed",
-          `Piper input stream failed (${error.message}).`,
+          `${label} input stream failed (${error.message}).`,
         ));
       });
       child.on("error", (error: NodeJS.ErrnoException) => {
         if (terminating) return finish(terminating);
         finish(error.code === "ENOENT"
-          ? new LocalTtsSynthesisError("local_tts_engine_unavailable", "The local Piper runtime isn't available. Install it before selecting a Piper voice.")
-          : new LocalTtsSynthesisError("local_tts_failed", `Piper couldn't start (${error.message}).`));
+          ? new LocalTtsSynthesisError("local_tts_engine_unavailable", request.engineUnavailableMessage)
+          : new LocalTtsSynthesisError("local_tts_failed", `${label} couldn't start (${error.message}).`));
       });
       child.on("close", (code) => {
         if (terminating) return finish(terminating);
@@ -327,19 +390,19 @@ export async function runPiperWithDependencies(
         const detail = stderr.trim();
         finish(new LocalTtsSynthesisError(
           "local_tts_failed",
-          detail ? `Piper failed: ${detail}` : `Piper exited with code ${code ?? "unknown"}.`,
+          detail ? `${label} failed: ${detail}` : `${label} exited with code ${code ?? "unknown"}.`,
         ));
       });
       if (signal?.aborted) abort();
       else signal?.addEventListener("abort", abort, { once: true });
-      // Piper reads one utterance per stdin line. Do not pass text as argv:
-      // that path is rejected by Piper's argument parser.
-      child.stdin?.end(`${utterance}\n`);
+      if (request.stdinUtterance !== undefined) {
+        child.stdin?.end(`${request.stdinUtterance}\n`);
+      }
     });
 
     const info = await stat(/* turbopackIgnore: true */ outputPath);
     if (!info.isFile() || info.size === 0 || info.size > MAX_AUDIO_BYTES) {
-      throw new LocalTtsSynthesisError("local_tts_failed", "Piper returned invalid or oversized audio.");
+      throw new LocalTtsSynthesisError("local_tts_failed", `${label} returned invalid or oversized audio.`);
     }
     return new Uint8Array(await readFile(/* turbopackIgnore: true */ outputPath));
   } finally {
@@ -355,10 +418,148 @@ export async function runPiperWithDependencies(
   }
 }
 
+export async function runPiperWithDependencies(
+  modelPath: string,
+  text: string,
+  signal?: AbortSignal,
+  dependencies: {
+    spawnImpl?: PiperSpawn;
+    executable?: string | null;
+    timing?: Partial<PiperTiming>;
+    removeImpl?: typeof rm;
+  } = {},
+): Promise<Uint8Array> {
+  const executable = dependencies.executable ?? piperExecutable();
+  if (!executable) {
+    throw new LocalTtsSynthesisError(
+      "local_tts_engine_unavailable",
+      "The bundled Piper runtime is missing. Reinstall CovenCave before selecting a Piper voice.",
+    );
+  }
+  const utterance = normalizeLocalTtsUtterance(text);
+  if (!utterance) {
+    throw new LocalTtsSynthesisError("local_tts_failed", "Piper received an empty utterance.");
+  }
+  return synthesizeWithLocalTtsChild({
+    label: "Piper",
+    tempPrefix: "coven-piper-",
+    executable,
+    buildArgs: (outputPath) => {
+      // Piper's Windows/macOS/Linux archives keep espeak-ng-data beside the
+      // executable. The sidecar runs from resources/server, so leaving this to
+      // Piper's cwd-relative default makes every packaged voice fail to
+      // phonemize despite the bundled runtime being present.
+      const bundledEspeakData = path.join(
+        /* turbopackIgnore: true */ path.dirname(executable),
+        "espeak-ng-data",
+      );
+      const args = ["-m", modelPath, "-f", outputPath];
+      if (existsSync(bundledEspeakData)) {
+        args.push("--espeak_data", bundledEspeakData);
+      }
+      return args;
+    },
+    // Piper reads one utterance per stdin line. Do not pass text as argv:
+    // that path is rejected by Piper's argument parser.
+    stdinUtterance: utterance,
+    engineUnavailableMessage:
+      "The local Piper runtime isn't available. Install it before selecting a Piper voice.",
+    signal,
+    spawnImpl: dependencies.spawnImpl ?? spawn,
+    timing: { ...defaultPiperTiming, ...dependencies.timing },
+    removeImpl: dependencies.removeImpl ?? rm,
+  });
+}
+
 /**
  * Run Piper as a local child of the Node sidecar. Packaged builds use the
  * signed resource path injected by the desktop launcher.
  */
 export const runPiper: PiperRunner = async (modelPath, text, signal) => {
   return runPiperWithDependencies(modelPath, text, signal);
+};
+
+export type KokoroModelAssets = {
+  modelPath: string;
+  voicesPath: string;
+  tokensPath: string;
+  /** Registry-pinned row inside the voices file (sherpa-onnx --sid). */
+  speakerId: number;
+};
+
+export type KokoroRunner = (
+  assets: KokoroModelAssets,
+  text: string,
+  signal?: AbortSignal,
+) => Promise<Uint8Array>;
+
+export async function runKokoroWithDependencies(
+  assets: KokoroModelAssets,
+  text: string,
+  signal?: AbortSignal,
+  dependencies: {
+    spawnImpl?: PiperSpawn;
+    executable?: string | null;
+    timing?: Partial<PiperTiming>;
+    removeImpl?: typeof rm;
+  } = {},
+): Promise<Uint8Array> {
+  const executable = dependencies.executable ?? kokoroExecutable();
+  if (!executable) {
+    throw new LocalTtsSynthesisError(
+      "local_tts_engine_unavailable",
+      "This CovenCave build doesn't bundle the Kokoro runtime yet. Kokoro voices need the sherpa-onnx-offline-tts runtime.",
+    );
+  }
+  // The speaker id is registry data, but it still becomes argv for a child
+  // process: reject anything that isn't a plain non-negative integer.
+  if (!Number.isSafeInteger(assets.speakerId) || assets.speakerId < 0) {
+    throw new LocalTtsSynthesisError("local_tts_failed", "Kokoro received an invalid speaker id.");
+  }
+  const utterance = normalizeLocalTtsUtterance(text);
+  if (!utterance) {
+    throw new LocalTtsSynthesisError("local_tts_failed", "Kokoro received an empty utterance.");
+  }
+  return synthesizeWithLocalTtsChild({
+    label: "Kokoro",
+    tempPrefix: "coven-kokoro-",
+    executable,
+    buildArgs: (outputPath) => {
+      // sherpa-onnx archives keep espeak-ng-data beside the executable,
+      // mirroring Piper's layout. Kokoro phonemization needs the explicit
+      // path for the same reason Piper does: the sidecar's cwd is not the
+      // runtime directory.
+      const bundledEspeakData = path.join(
+        /* turbopackIgnore: true */ path.dirname(executable),
+        "espeak-ng-data",
+      );
+      return [
+        `--kokoro-model=${assets.modelPath}`,
+        `--kokoro-voices=${assets.voicesPath}`,
+        `--kokoro-tokens=${assets.tokensPath}`,
+        ...(existsSync(bundledEspeakData)
+          ? [`--kokoro-data-dir=${bundledEspeakData}`]
+          : []),
+        `--sid=${assets.speakerId}`,
+        `--output-filename=${outputPath}`,
+        // sherpa-onnx-offline-tts takes the utterance as its positional
+        // argument and ignores stdin entirely (the opposite of Piper).
+        utterance,
+      ];
+    },
+    engineUnavailableMessage:
+      "The local Kokoro runtime isn't available. Install sherpa-onnx-offline-tts before selecting a Kokoro voice.",
+    signal,
+    spawnImpl: dependencies.spawnImpl ?? spawn,
+    timing: { ...defaultPiperTiming, ...dependencies.timing },
+    removeImpl: dependencies.removeImpl ?? rm,
+  });
+}
+
+/**
+ * Run Kokoro (via sherpa-onnx) as a local child of the Node sidecar, under
+ * the same isolation contract as Piper.
+ */
+export const runKokoro: KokoroRunner = async (assets, text, signal) => {
+  return runKokoroWithDependencies(assets, text, signal);
 };
