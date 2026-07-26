@@ -1259,7 +1259,7 @@ export const SUITES = {
     "scripts/ios-motion-polish.test.mjs",
     "scripts/ios-chat-draft-lag.test.mjs",
     "scripts/ios-chat-thread-no-search.test.mjs",
-    "scripts/ios-chat-hides-tab-bar.test.mjs",
+    "scripts/ios-chat-tab-free.test.mjs",
     "scripts/ios-development-terminal-chrome.test.mjs",
     "scripts/ios-surface-failures.test.mjs",
     "scripts/ios-surface-load-discipline.test.mjs",
