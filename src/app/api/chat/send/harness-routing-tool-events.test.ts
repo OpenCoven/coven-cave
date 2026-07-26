@@ -79,6 +79,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /const claudeToolsEnabled =\s*binding\.harness !== "claude" \|\|\s*\(claudeCompatibility\?\.kind === "compatible" && !claudeCompatibility\.stale\);[\s\S]*?binding\.harness === "claude" &&\s*claudeCompatibility\?\.kind === "compatible" &&\s*!claudeCompatibility\.stale/,
+  "an expired profile must preserve text-only Claude chat while disabling both hook and envelope tool decoding",
+);
+
+assert.match(
+  chatRoute,
   /hasUnsupportedClaudeToolFrame\(ev, claudeCompatibility\.profile\)[\s\S]*?reportUnsupportedClaudeToolFrame\(ev\)/,
   "a malformed or unknown profiled tool block should emit one redacted compatibility diagnostic instead of silently creating a bubble",
 );

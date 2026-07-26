@@ -190,7 +190,7 @@ export async function resolveInstalledClaudeCompatibility(
 export function claudeCompatibilityDiagnostic(resolution: CompatibilityResolution): string | null {
   if (resolution.kind === "compatible") {
     return resolution.stale
-      ? "The cached Claude Code tool-activity profile has expired; tool activity may be outdated until a trusted profile refresh succeeds."
+      ? "The cached Claude Code tool-activity profile has expired; tool bubbles are disabled until a trusted profile refresh succeeds."
       : null;
   }
   switch (resolution.reason) {

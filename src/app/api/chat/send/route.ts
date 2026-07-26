@@ -1537,7 +1537,8 @@ export async function POST(req: Request) {
       // same-name hook cannot upsert over the first attempt's tool bubble.
       const priorAttemptTools: ReturnType<ToolCallTracker["snapshot"]> = [];
       const claudeToolsEnabled =
-        binding.harness !== "claude" || claudeCompatibility?.kind === "compatible";
+        binding.harness !== "claude" ||
+        (claudeCompatibility?.kind === "compatible" && !claudeCompatibility.stale);
       const claudeDiagnostic = claudeCompatibility
         ? claudeCompatibilityDiagnostic(claudeCompatibility)
         : binding.harness === "claude" && sshRuntime
@@ -1956,7 +1957,11 @@ export async function POST(req: Request) {
                 assistantText += filtered;
                 push({ kind: "assistant_chunk", text: filtered });
               }
-            } else if (binding.harness === "claude" && claudeCompatibility?.kind === "compatible") {
+            } else if (
+              binding.harness === "claude" &&
+              claudeCompatibility?.kind === "compatible" &&
+              !claudeCompatibility.stale
+            ) {
               // Profile-selected decoding keeps version-specific envelope names
               // outside this route. The shared tracker continues to provide
               // stable ids, hook/envelope deduplication, and persisted state.
