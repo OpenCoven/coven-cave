@@ -138,8 +138,8 @@ assert.match(root, /Text\("Connecting to your desktop"\)/, "connecting state nam
 assert.match(root, /if let host = app\.connection\?\.host/, "connecting state renders the real saved host");
 assert.match(
   root,
-  /Text\(host\)[\s\S]*?\.font\(\.caption\.monospaced\(\)\)[\s\S]*?\.truncationMode\(\.middle\)/,
-  "connecting host is compact, monospaced, and truncates in the middle",
+  /Text\(host\)[\s\S]*?\.font\(\.caption\.monospaced\(\)\)[\s\S]*?\.foregroundStyle\(chrome\.textSecondary\)[\s\S]*?\.truncationMode\(\.middle\)/,
+  "connecting host uses readable secondary text, monospaced type, and middle truncation",
 );
 assert.match(root, /PhaseAnimator\(\[0, 1, 2\]\)/, "connecting state has indeterminate signal motion");
 assert.match(root, /if reduceMotion[\s\S]*?staticSignal/, "connecting motion has a static fallback");

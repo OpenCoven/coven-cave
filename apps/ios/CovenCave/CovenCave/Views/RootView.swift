@@ -294,7 +294,7 @@ struct ConnectingView: View {
             if let host = app.connection?.host, !host.isEmpty {
                 Text(host)
                     .font(.caption.monospaced())
-                    .foregroundStyle(chrome.textMuted)
+                    .foregroundStyle(chrome.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .padding(.top, 22)
