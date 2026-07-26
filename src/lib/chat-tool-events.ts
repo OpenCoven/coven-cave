@@ -236,6 +236,8 @@ export class ToolCallTracker {
     if (!call.hookStarted) return;
     const queue = this.settledHookCalls.get(call.name) ?? [];
     queue.push(call);
+    const MAX_RECONCILE_CALLS_PER_NAME = 25;
+    while (queue.length > MAX_RECONCILE_CALLS_PER_NAME) queue.shift();
     this.settledHookCalls.set(call.name, queue);
   }
 
