@@ -153,6 +153,16 @@ html[data-backdrop-on] .familiar-tab {
   --text-muted: var(--text-secondary);
 }
 
+/* Chat Settings tab: same dense small-type-on-photo problem as the familiar
+   tab (kickers, row descriptions, hints sit straight on the image), so it
+   earns the same deep-blur glass ground. */
+html[data-backdrop-on] .chat-settings-view {
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+  backdrop-filter: blur(50px) saturate(var(--glass-saturate));
+  border-radius: var(--radius-xl);
+  --text-muted: var(--text-secondary);
+}
+
 /* And the same quiet-text contrast lift Home-side. */
 html[data-backdrop-on] .home-composer-root {
   --text-muted: var(--text-secondary);
@@ -166,6 +176,7 @@ html[data-backdrop-on] .home-composer-root {
     background: color-mix(in oklch, var(--bg-base) 92%, transparent);
   }
 
+  html[data-backdrop-on] .chat-settings-view,
   html[data-backdrop-on] .cave-chat-empty-shell,
   html[data-backdrop-on] .familiar-tab {
     background: color-mix(in oklch, var(--bg-base) 92%, transparent);
@@ -203,6 +214,12 @@ html[data-backdrop-on] .home-composer-root {
 
   /* No image layer → the familiar tab sits on the base surface again. */
   html[data-backdrop-on] .familiar-tab {
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  /* Same for the chat settings tab. */
+  html[data-backdrop-on] .chat-settings-view {
     background: transparent;
     backdrop-filter: none;
   }

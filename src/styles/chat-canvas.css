@@ -254,7 +254,8 @@
   border-radius: var(--radius-pill);
   padding: var(--space-1) var(--space-2);
 }
-.chat-canvas-preview__close {
+.chat-canvas-preview__close,
+.chat-canvas-preview__expand {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -267,9 +268,21 @@
   color: var(--text-muted);
   cursor: pointer;
 }
-.chat-canvas-preview__close:hover {
+.chat-canvas-preview__close:hover,
+.chat-canvas-preview__expand:hover {
   color: var(--text-primary);
   background: var(--bg-raised);
+}
+/* Expanded: the dialog fills the viewport edge-to-edge (chrome drops with it,
+   same idiom as the editor's in-app expand). */
+.chat-canvas-preview-backdrop[data-expanded] {
+  padding: 0;
+}
+.chat-canvas-preview[data-expanded] {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
 }
 .chat-canvas-preview__body {
   display: flex;
