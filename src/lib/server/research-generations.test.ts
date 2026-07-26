@@ -8,6 +8,7 @@ import type {
   ResearchArtifactRef,
   ResearchMission,
 } from "../research-missions.ts";
+import { RESEARCH_THREAD_POST_MAX_CHARS } from "../research-generations.ts";
 
 const tmp = await mkdtemp(path.join(tmpdir(), "cave-research-generations-"));
 const originalGenerationsDir = process.env.COVEN_RESEARCH_GENERATIONS_DIR;
@@ -333,9 +334,14 @@ test("thread = hook from the mission title + claims from bold lines and headings
   assert.equal(content?.kind, "thread");
   if (content?.kind !== "thread") return;
   const total = content.posts.length;
+  assert.ok(total <= 8, "the thread never exceeds MAX_THREAD_POSTS");
   assert.equal(content.posts[0].text, "Eval-harness pricing landscape", "hook = mission title");
   content.posts.forEach((post, index) => {
     assert.equal(post.pre, `${index + 1}/${total}`, "n/N prefixes are pure structure");
+    assert.ok(
+      post.text.length <= RESEARCH_THREAD_POST_MAX_CHARS,
+      `post ${index + 1} fits the social budget`,
+    );
   });
   assert.ok(
     content.posts.some((post) => post.text === "Retrieval beats stuffing on cost across model families."
@@ -346,6 +352,51 @@ test("thread = hook from the mission title + claims from bold lines and headings
     content.posts.some((post) => post.text.startsWith("Key numbers — ")),
     "heading claims pair the heading with its first bullet",
   );
+  // The closer is fixed boilerplate around verbatim titles (same shape as the
+  // blog provenance line) — the thread always says where it came from.
+  const closer = content.posts[total - 1].text;
+  assert.match(closer, /^Full findings: /);
+  assert.ok(closer.includes("Findings — eval pricing"), "closer names the artifact");
+  assert.ok(closer.includes("Eval-harness pricing landscape"), "closer names the run");
+  // Remaining room is filled with the sections' other bullets, verbatim.
+  assert.ok(
+    content.posts.some((post) => post.text === "200K-token synthesis threshold"),
+    "extra section bullets fill remaining posts",
+  );
+});
+
+test("thread posts clamp at a word boundary and dedupe against the hook", () => {
+  const longClaim =
+    "Retrieval-augmented evaluation pipelines consistently outperform naive context stuffing on both cost and accuracy across every model family we measured, with the gap widening as corpora grow beyond the two-hundred-thousand-token synthesis threshold that hosted tiers meter so aggressively today";
+  assert.ok(longClaim.length > RESEARCH_THREAD_POST_MAX_CHARS, "fixture must exceed the budget");
+  const markdown = [
+    "# Doc",
+    "",
+    `**${longClaim}**`,
+    "",
+    "**Eval-harness pricing landscape** repeated as bold.",
+    "",
+  ].join("\n");
+  const content = draftGenerationContent("thread", {
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown,
+  });
+  assert.equal(content.kind, "thread");
+  if (content.kind !== "thread") return;
+  const clamped = content.posts.find((post) => post.text.endsWith("…"));
+  assert.ok(clamped, "over-budget claims are clamped with a visible ellipsis");
+  assert.ok(clamped.text.length <= RESEARCH_THREAD_POST_MAX_CHARS);
+  assert.ok(
+    longClaim.startsWith(clamped.text.slice(0, -1)),
+    "clamp truncates verbatim text — never rephrases",
+  );
+  assert.notEqual(clamped.text.at(-2), " ", "clamp cuts at a word boundary");
+  // A bold line repeating the mission title doesn't produce a duplicate post.
+  const hookMatches = content.posts.filter(
+    (post) => post.text === "Eval-harness pricing landscape",
+  );
+  assert.equal(hookMatches.length, 1, "the hook is never duplicated by a bold claim");
 });
 
 test("diagram = mermaid built from phase steps + artifact section structure", async () => {

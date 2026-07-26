@@ -439,13 +439,14 @@ test.describe("research desk tabs", () => {
       await expect(media.filter({ hasText: label })).toContainText("not available yet");
     }
 
-    // Create a diagram from the completed mission.
+    // Create a diagram from the completed mission — the source is a labelled
+    // dropdown valued by mission id.
     await studio.locator('button.research-studio-card[data-kind="diagram"]').click();
     const dialog = page.getByRole("dialog", { name: "Generate Diagram" });
     await expect(dialog).toBeVisible();
-    const doneChip = dialog.getByRole("button", { name: COMPLETED_MISSION.title });
-    await doneChip.click();
-    await expect(doneChip).toHaveAttribute("aria-pressed", "true");
+    const sourceSelect = dialog.getByLabel("Research run");
+    await sourceSelect.selectOption(COMPLETED_MISSION.id);
+    await expect(sourceSelect).toHaveValue(COMPLETED_MISSION.id);
     await dialog.getByRole("button", { name: "✦ Generate Diagram" }).click();
 
     // The POST carried the selected mission (directions empty → omitted).
@@ -453,13 +454,30 @@ test.describe("research desk tabs", () => {
       .poll(() => handles.createdGenerationBodies.at(-1))
       .toEqual({ familiarId: FAMILIAR_ID, kind: "diagram", sourceMissionId: COMPLETED_MISSION.id });
 
-    // The ready record renders as a row; its Mermaid is viewable verbatim.
+    // The ready record renders as a row; its diagram renders through the chat
+    // mermaid pipeline (real SVG, not raw source in a <pre>).
     await expect(dialog).toHaveCount(0);
     const row = studio.locator(".research-studio-row", { hasText: "Diagram — Embedded analytics benchmark" });
     await expect(row).toBeVisible();
     await expect(row).toContainText("ready · mermaid");
-    await row.getByRole("button", { name: "⌗ View Mermaid" }).click();
-    await expect(row.locator(".research-studio__code")).toContainText("graph TD;");
+    await row.getByRole("button", { name: "◇ View diagram" }).click();
+    // Two SVGs live in the diagram card (flowchart + expand-button icon) —
+    // assert the mermaid document itself.
+    await expect(
+      row.locator(".cm-mermaid-diagram svg[aria-roledescription]"),
+    ).toBeVisible({ timeout: 20_000 });
+    await row.getByRole("button", { name: "◇ Hide diagram" }).click();
+    await expect(row.locator(".cm-mermaid-diagram")).toHaveCount(0);
+
+    // The viewer modal (opened from the row title) renders the diagram too,
+    // with the mermaid source still inspectable under a disclosure.
+    await row.getByRole("button", { name: "Diagram — Embedded analytics benchmark" }).click();
+    const viewer = page.getByRole("dialog", { name: /Diagram — Embedded analytics benchmark/ });
+    await expect(
+      viewer.locator(".cm-mermaid-diagram svg[aria-roledescription]"),
+    ).toBeVisible({ timeout: 20_000 });
+    await viewer.getByText("Mermaid source").click();
+    await expect(viewer.locator(".research-studio__code")).toContainText("graph TD;");
   });
 
   test("Resources groups links by category and the detail overlay opens and closes with focus handling", async ({ page }) => {

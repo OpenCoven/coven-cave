@@ -77,9 +77,20 @@ export type ResearchGenerationSlide = {
 export type ResearchGenerationThreadPost = {
   /** Position marker, e.g. "1/4" — pure structure, not content. */
   pre: string;
-  /** Post text lifted from the mission title or artifact claims. */
+  /**
+   * Post text lifted from the mission title or artifact claims, clamped to
+   * RESEARCH_THREAD_POST_MAX_CHARS at a word boundary (mechanical truncation
+   * marked with "…" — never rephrased).
+   */
   text: string;
 };
+
+/**
+ * Social post budget: the thread drafter clamps each post's text to this many
+ * characters (the common short-post ceiling), and the Studio viewer shows the
+ * per-post count against it.
+ */
+export const RESEARCH_THREAD_POST_MAX_CHARS = 280;
 
 export type ResearchGenerationStat = {
   /** The extracted number token, e.g. "4–9×", "$120", "68%". */

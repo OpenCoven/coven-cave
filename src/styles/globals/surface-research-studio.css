@@ -118,6 +118,35 @@
   color: var(--text-muted);
   font-style: italic;
 }
+/* Native select for the source research run — labelled, one obvious current
+   value, and it scales past the handful of runs chips could. Chevron follows
+   the .required-inputs-select recipe (primitives.css). */
+.research-studio__select {
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-8) var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background-color: color-mix(in oklch, var(--bg-base) 55%, transparent);
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) center, calc(100% - 11px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+.research-studio__select:hover {
+  border-color: color-mix(in oklch, var(--research-accent) 45%, transparent);
+}
+.research-studio__select:focus-visible {
+  outline: none;
+  border-color: var(--accent-presence, var(--research-accent));
+}
 
 /* ── Generation type grid (design 320–329) ── */
 .research-studio__grid {
@@ -404,6 +433,17 @@
   overflow-x: auto;
   white-space: pre;
 }
+/* Rendered mermaid diagram — MarkdownBlock's .cave-md carries the chat
+   diagram card (cave-md/tables-mermaid.css); this wrapper only sizes it. */
+.research-studio__diagram {
+  min-width: 0;
+}
+.research-studio__diagram .cave-md > .cm-mermaid-diagram {
+  margin: 0;
+}
+.research-studio-row__diagram {
+  margin-top: var(--space-2);
+}
 
 /* ── Notes / errors / empty state ── */
 .research-studio__note {
@@ -577,6 +617,10 @@
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
+.research-studio-config__hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
 .research-studio-config__error {
   margin: 0;
   font-size: var(--text-sm);
@@ -712,10 +756,23 @@
   background: var(--research-accent);
 }
 .research-studio-viewer__code-wrap,
-.research-studio-viewer__points {
+.research-studio-viewer__points,
+.research-studio-viewer__diagram {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+/* Collapsible mermaid source under the rendered diagram. */
+.research-studio-viewer__code-details summary {
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.research-studio-viewer__code-details summary:hover {
+  color: var(--text-secondary);
+}
+.research-studio-viewer__code-details[open] summary {
+  margin-bottom: var(--space-2);
 }
 .research-studio-viewer__point-list {
   list-style: none;
@@ -744,6 +801,14 @@
   font-size: var(--text-sm);
   line-height: 1.5;
   color: var(--text-secondary);
+}
+/* Per-post length against the social budget (thread viewer). */
+.research-studio-viewer__point-note {
+  display: block;
+  margin-top: var(--space-1);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
 }
 .research-studio-viewer__point .research-studio-act--tiny {
   margin-left: auto;
@@ -839,6 +904,7 @@
    Studio moves for users who asked it not to. ── */
 @media (prefers-reduced-motion: reduce) {
   .research-studio__chip,
+  .research-studio__select,
   .research-studio-card,
   .research-studio-act {
     transition: none;

@@ -7,8 +7,8 @@
  *
  * Honesty contract (see src/lib/research-generations.ts):
  * - Sources are ONLY missions with a live markdown artifact (published or
- *   working) — the same rule the server's drafting uses, so the chips never
- *   offer a run the POST would 409.
+ *   working) — the same rule the server's drafting uses, so the source
+ *   dropdown never offers a run the POST would 409.
  * - The five creatable kinds come from RESEARCH_GENERATION_KINDS; the three
  *   media kinds (podcast / short video / long video) render from
  *   RESEARCH_GENERATION_MEDIA_KINDS as visibly disabled cards with their
@@ -39,6 +39,7 @@ import {
   MarkdownEditorModal,
   STUDIO_KIND_META,
   STUDIO_MEDIA_PRESENTATION,
+  StudioMermaidDiagram,
   generationStatusText,
   generationTitle,
   missionHasMarkdownArtifact,
@@ -211,26 +212,32 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
         <p>Turn finished research into shareable drafts — extracted from each run&rsquo;s cited findings.</p>
       </header>
 
-      <div className="research-studio__sources" role="group" aria-label="Generation source">
-        <span className="research-studio__sources-label">Source:</span>
+      <div className="research-studio__sources">
         {sources.length === 0 ? (
-          <span className="research-studio__sources-hint">
-            No runs with a markdown artifact yet — the Studio drafts from finished research.
-          </span>
+          <>
+            <span className="research-studio__sources-label">Draft from</span>
+            <span className="research-studio__sources-hint">
+              No runs with a markdown artifact yet — the Studio drafts from finished research.
+            </span>
+          </>
         ) : (
-          <div className="research-studio__chips">
-            {sources.map((source) => (
-              <button
-                key={source.id}
-                type="button"
-                className="research-studio__chip"
-                aria-pressed={source.id === effectiveSourceId}
-                onClick={() => setSourceId(source.id)}
-              >
-                {source.title}
-              </button>
-            ))}
-          </div>
+          <>
+            <label className="research-studio__sources-label" htmlFor="research-studio-source">
+              Draft from
+            </label>
+            <select
+              id="research-studio-source"
+              className="research-studio__select"
+              value={effectiveSourceId ?? ""}
+              onChange={(event) => setSourceId(event.target.value)}
+            >
+              {sources.map((source) => (
+                <option key={source.id} value={source.id}>
+                  {source.title}
+                </option>
+              ))}
+            </select>
+          </>
         )}
       </div>
 
@@ -410,7 +417,11 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
                 <span className="research-studio-row__status" data-status={generation.status}>
                   {generationStatusText(generation)}
                 </span>
-                {mermaidOpen ? <pre className="research-studio__code">{mermaid}</pre> : null}
+                {mermaidOpen ? (
+                  <div className="research-studio-row__diagram">
+                    <StudioMermaidDiagram mermaid={mermaid} />
+                  </div>
+                ) : null}
                 {removeError?.id === generation.id ? (
                   <span className="research-studio__error" role="alert">
                     {removeError.message}
@@ -430,7 +441,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
                         )
                       }
                     >
-                      {mermaidOpen ? "⌗ Hide Mermaid" : "⌗ View Mermaid"}
+                      {mermaidOpen ? "◇ Hide diagram" : "◇ View diagram"}
                     </button>
                     <button
                       type="button"
