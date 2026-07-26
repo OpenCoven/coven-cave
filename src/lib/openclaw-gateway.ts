@@ -14,6 +14,7 @@ const GATEWAY_URL_ENV = "OPENCLAW_GATEWAY_URL";
 const GATEWAY_TOKEN_ENV = "OPENCLAW_GATEWAY_TOKEN";
 const GATEWAY_DEVICE_TOKEN_ENV = "OPENCLAW_GATEWAY_DEVICE_TOKEN";
 const STARTUP_TIMEOUT_MS = 3_000;
+const REQUIRED_GATEWAY_METHODS = ["chat.send", "chat.abort", "sessions.messages.subscribe"];
 
 export type OpenClawGatewayChatEvent =
   | { kind: "status"; phase: string }
@@ -75,8 +76,8 @@ function supportedHello(hello: GatewayHello): string | null {
     return "Gateway did not grant operator.read and operator.write";
   }
   const methods = new Set(hello.features.methods);
-  if (!methods.has("chat.send") || !methods.has("sessions.messages.subscribe")) {
-    return "Gateway does not advertise the required chat.send and sessions.messages.subscribe methods";
+  if (REQUIRED_GATEWAY_METHODS.some((method) => !methods.has(method))) {
+    return "Gateway does not advertise the required chat.send, chat.abort, and sessions.messages.subscribe methods";
   }
   if (!hello.features.events.includes("chat")) return "Gateway does not advertise the versioned chat event";
   return null;
@@ -106,7 +107,7 @@ export function normalizeOpenClawGatewayChatEvent(
   if (!Value.Check(ChatEventSchema, payload)) return null;
   const event = payload as GatewayChatPayload;
   if (event.runId !== expected.runId || event.sessionKey !== expected.sessionKey) return null;
-  if (event.agentId !== undefined && event.agentId !== expected.agentId) return null;
+  if (event.agentId !== expected.agentId) return null;
   return event;
 }
 
@@ -254,7 +255,6 @@ export async function dispatchOpenClawGatewayTurn(args: {
     mode: "backend",
     role: "operator",
     scopes: ["operator.read", "operator.write"],
-    caps: ["tool-events"],
     minProtocol: PROTOCOL_VERSION,
     maxProtocol: PROTOCOL_VERSION,
     connectChallengeTimeoutMs: STARTUP_TIMEOUT_MS,

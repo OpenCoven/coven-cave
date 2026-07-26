@@ -37,6 +37,12 @@ assert.equal(
   null,
   "agent-scoped routing is required in addition to canonical session keys",
 );
+const { agentId: _omittedAgentId, ...chatEventWithoutAgentId } = delta;
+assert.equal(
+  normalizeOpenClawGatewayChatEvent(chatEventWithoutAgentId, expected),
+  null,
+  "frames without the dispatched agent id cannot be attributed to this turn",
+);
 assert.equal(
   normalizeOpenClawGatewayChatEvent({ ...delta, seq: "4" }, expected),
   null,
@@ -91,6 +97,7 @@ const dispatch = await dispatchOpenClawGatewayTurn({
   onEvent: (event) => emitted.push(event),
   clientFactory: (options) => {
     clientOptions = options;
+    assert.equal(options.caps, undefined, "chat-only dispatch must not request unpublished tool-event capabilities");
     return {
       start() {
         queueMicrotask(() =>
@@ -98,7 +105,7 @@ const dispatch = await dispatchOpenClawGatewayTurn({
             type: "hello-ok",
             protocol: 4,
             server: { version: "2026.7.2-beta.4", connId: "test-connection" },
-            features: { methods: ["chat.send", "sessions.messages.subscribe"], events: ["chat"] },
+            features: { methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"], events: ["chat"] },
             snapshot: {
               presence: [],
               health: {},
@@ -148,7 +155,7 @@ const dispatch = await dispatchOpenClawGatewayTurn({
 });
 
 assert.equal(dispatch.kind, "accepted", "a documented accepted run id enables Gateway ownership");
-assert.equal(clientOptions.caps?.[0], "tool-events", "the official client requests tool events without parsing unpublished tools");
+assert.equal(clientOptions.caps, undefined, "chat-only dispatch must not request unpublished tool-event capabilities");
 assert.equal(clientOptions.minProtocol, 4);
 assert.equal(clientOptions.maxProtocol, 4);
 if (dispatch.kind === "accepted") {
@@ -209,7 +216,7 @@ function helloOk() {
     type: "hello-ok",
     protocol: 4,
     server: { version: "2026.7.2-beta.4", connId: "reconnect-connection" },
-    features: { methods: ["chat.send", "sessions.messages.subscribe"], events: ["chat"] },
+    features: { methods: ["chat.send", "chat.abort", "sessions.messages.subscribe"], events: ["chat"] },
     snapshot: {
       presence: [],
       health: {},
