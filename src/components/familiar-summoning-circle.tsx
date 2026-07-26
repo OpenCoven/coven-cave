@@ -817,11 +817,6 @@ function StageVessel({
               <p className="text-[length:var(--text-xs)] text-[var(--color-warning)]">
                 No chat-capable runtime found. Run setup to install one (Codex, Claude Code, Copilot…), then return to the circle.
               </p>
-              {unavailableHarnesses.map((h) => (
-                <p key={h.id} role="status" className="text-[length:var(--text-xs)] text-[var(--color-warning)]">
-                  {h.label}: {h.availability.message}
-                </p>
-              ))}
               <button
                 type="button"
                 onClick={() => window.dispatchEvent(new CustomEvent("cave:onboarding-open"))}
@@ -847,6 +842,11 @@ function StageVessel({
               ))}
             </div>
           )}
+          {unavailableHarnesses.map((h) => (
+            <p key={h.id} role="status" className="mt-2 text-[length:var(--text-xs)] text-[var(--color-warning)]">
+              {h.label}: {h.availability.message}
+            </p>
+          ))}
         </div>
       ) : null}
 

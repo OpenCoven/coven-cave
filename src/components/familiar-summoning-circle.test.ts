@@ -56,6 +56,11 @@ assert.match(
   "the summoning picker shows safe remediation for installed-but-unlaunchable runtimes",
 );
 assert.match(
+  source,
+  /className="summoning-chiprow"[\s\S]*?<\/div>\s*\)}\s*\{unavailableHarnesses\.map/,
+  "an unavailable runtime remains explained even when another runtime is ready to select",
+);
+assert.match(
   harnessesRoute,
   /runtimeHost: hostname\(\)/,
   "the harness probe reports the hostname of the Cave runtime host",
