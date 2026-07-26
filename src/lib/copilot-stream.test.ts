@@ -311,6 +311,7 @@ const freshArgs = buildCopilotStreamArgs({
 assert.deepEqual(
   freshArgs,
   [
+    "--no-auto-update",
     "--session-id",
     "11111111-2222-4333-8444-555555555555",
     "--model",
@@ -342,6 +343,7 @@ const resumeArgs = buildCopilotStreamArgs({
 assert.deepEqual(
   resumeArgs,
   [
+    "--no-auto-update",
     "--resume",
     "aaaa1111-2222-4333-8444-555555555555",
     "--add-dir",
@@ -385,6 +387,7 @@ const unattendedArgs = buildCopilotStreamArgs({
 assert.deepEqual(
   unattendedArgs,
   [
+    "--no-auto-update",
     "--session-id",
     "22222222-3333-4444-8555-666666666666",
     "--add-dir",
