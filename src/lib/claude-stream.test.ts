@@ -79,6 +79,14 @@ assert.equal(
   "unknown user tool frames surface one compatibility diagnostic instead of being silently ignored",
 );
 assert.equal(
+  hasUnsupportedClaudeToolFrame({
+    type: "user",
+    message: { content: [{ type: "tool_result", tool_use_id: "toolu-new", is_error: "true" }] },
+  }, v2),
+  true,
+  "a malformed error flag must not turn a failed tool result into an ok bubble",
+);
+assert.equal(
   hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: { type: "tool_use" } } }, v2),
   true,
   "partial message envelopes are compatibility failures rather than silent drops",

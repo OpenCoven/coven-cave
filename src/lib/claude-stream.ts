@@ -121,7 +121,9 @@ export function hasUnsupportedClaudeToolFrame(
       const block = record(value);
       if (!block) return true;
       if (block.type !== profile.eventTypes.toolResult) return true;
-      return typeof block.tool_use_id !== "string" || !block.tool_use_id;
+      return typeof block.tool_use_id !== "string" ||
+        !block.tool_use_id ||
+        (block.is_error !== undefined && typeof block.is_error !== "boolean");
     });
   }
   return false;
