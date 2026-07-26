@@ -45,7 +45,6 @@ import { DaemonSection } from "./settings-daemon";
 import { SettingsTabbed } from "./settings-section-tabs";
 import type { TabItem } from "@/components/ui/tabs";
 import { ProfileSection } from "./settings-profile";
-import { GithubSection } from "./settings-github";
 import { SettingsOverview } from "./settings-overview";
 import { AboutSection } from "./settings-about";
 import {
@@ -356,7 +355,6 @@ export function SettingsShell() {
               onTabTargetConsumed={() => setFamiliarsTabTarget(null)}
             />
           )}
-          {section === "github"   && <GithubSection />}
           {section === "mobile"   && <MobileSection onUseAsHub={(url) => { setSuggestedHubUrl(url); openSection("daemon"); }} />}
           {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
           {section === "about"    && <AboutSection />}
