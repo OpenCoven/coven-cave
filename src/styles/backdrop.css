@@ -63,6 +63,42 @@ html[data-backdrop] .cave-backdrop-layer::after {
   }
 }
 
+/* Crossfade the surface/thread washes in step with the scrim's opacity fade.
+   Toggling a backdrop (entering chat, switching familiar/mode) flips
+   html[data-backdrop-on], which swaps these backgrounds and blurs; without a
+   transition they pop solid↔translucent one frame ahead of the 260ms scrim
+   fade — the visible "blink". Declared on the base selectors so it eases in
+   BOTH directions; only background/backdrop-filter animate (padding/radius
+   snap to avoid reflow jank). */
+.shell-root,
+.shell-detail,
+.chat-surface,
+.cave-chat-linear,
+.cave-chat-linear .cave-chat-thread,
+.cave-chat-linear-header,
+.cave-group-chat-shell,
+.cave-chat-empty-shell,
+.home-hearth-card,
+.familiar-tab {
+  transition:
+    background var(--duration-slow, 260ms) ease,
+    backdrop-filter var(--duration-slow, 260ms) ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell-root,
+  .shell-detail,
+  .chat-surface,
+  .cave-chat-linear,
+  .cave-chat-linear .cave-chat-thread,
+  .cave-chat-linear-header,
+  .cave-group-chat-shell,
+  .cave-chat-empty-shell,
+  .home-hearth-card,
+  .familiar-tab {
+    transition: none;
+  }
+}
+
 /* The big opaque paints over the layer go translucent while a backdrop
    surface (home/chat) is frontmost — the layer component flips
    html[data-backdrop-on]. Side panes (nav, list) keep their own solid
