@@ -533,7 +533,17 @@ export class ToolCallTracker {
   envelopeToolUse(id: string, name: string, input?: string, textOffset?: number): ToolStreamEvent | null {
     this.prunePendingEnvelopeResults();
     this.prunePendingEnvelopeProgress();
-    if (utf8Bytes(id) > 512 || utf8Bytes(name) > 512 || this.byEnvelopeId.has(id) || this.settledEnvelopeIds.has(id)) return null;
+    // The recent-id window is bounded, but a duplicate start for an already
+    // recorded call must never reopen that terminal UI record after the window
+    // evicts its id. `recorded` is itself bounded and retains every emitted
+    // call in its window, so it also provides a stable deduplication boundary.
+    if (
+      utf8Bytes(id) > 512 ||
+      utf8Bytes(name) > 512 ||
+      this.byEnvelopeId.has(id) ||
+      this.settledEnvelopeIds.has(id) ||
+      this.recorded.has(this.streamId(id))
+    ) return null;
     if (this.byEnvelopeId.size >= MAX_OPEN_ENVELOPE_CALLS) return null;
     const queue = this.queueFor(name);
     const inputFingerprint = toolInputFingerprint(input);

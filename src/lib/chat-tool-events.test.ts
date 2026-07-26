@@ -75,7 +75,11 @@ for (let index = 0; index <= MAX_SETTLED_ENVELOPE_IDS; index += 1) {
   assert.ok(terminalWindow.envelopeToolResult(id, "ok", false));
 }
 assert.equal(terminalWindow.envelopeToolUse(`settled-${MAX_SETTLED_ENVELOPE_IDS}`, "read"), null, "recent terminal ids still suppress retransmitted starts");
-assert.ok(terminalWindow.envelopeToolUse("settled-0", "read"), "the bounded terminal-id window evicts only the oldest completed id");
+assert.equal(
+  terminalWindow.envelopeToolUse("settled-0", "read"),
+  null,
+  "a retransmitted start remains a no-op after the bounded terminal-id window evicts it, so it cannot reopen the persisted call",
+);
 terminalWindow.hookEnd("never-started", undefined, false);
 assert.equal(
   terminalWindow.envelopeToolUse("after-empty-hook-end", "never-started"),
