@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -89,6 +89,15 @@ const exitTwo = parseCodexStreamEvent({ type: "item.completed", item: { id: "cal
 assert.equal(exitTwo?.kind === "tool_end" && exitTwo.isError, true, "all nonzero shell exit codes settle as errors");
 const exitCamel = parseCodexStreamEvent({ type: "item.completed", item: { id: "call-a", type: "command_execution", exitCode: 127 } }, selected.schema);
 assert.equal(exitCamel?.kind === "tool_end" && exitCamel.isError, true, "camel-case nonzero exit codes settle as errors");
+const declined = parseCodexStreamEvent({ type: "item.completed", item: { id: "call-a", type: "command_execution", status: "declined" } }, selected.schema);
+assert.equal(declined?.kind === "tool_end" && declined.isError, true, "declined Codex commands settle as failed activity even without an exit code");
+for (const controlType of ["reasoning", "todo_list", "error"]) {
+  assert.deepEqual(
+    parseCodexStreamEvent({ type: "item.completed", item: { id: `control-${controlType}`, type: controlType } }, selected.schema),
+    { kind: "ignored" },
+    `${controlType} lifecycle items are known non-user-facing protocol controls`,
+  );
+}
 assert.deepEqual(
   parseCodexStreamEvent({ type: "item.completed", item: { id: "message-a", type: "agent_message", text: "visible answer" } }, selected.schema),
   { kind: "text", text: "visible answer" },
@@ -162,6 +171,10 @@ const oversized = oversizedDecoder.push("x".repeat(256 * 1024 + 1), selected.sch
 assert.equal(oversized.events[0]?.kind, "unknown", "oversized unterminated JSONL records are quarantined before buffering unbounded data");
 const afterOversized = oversizedDecoder.push(`\n{"type":"item.completed","item":{"id":"after-large","type":"agent_message","text":"recovered"}}\n`, selected.schema);
 assert.equal(afterOversized.passthrough.includes("recovered"), true, "a later record is processed after discarding the oversized line");
+const oversizedWithSuffix = new CodexJsonlDecoder();
+const recoveredSameChunk = oversizedWithSuffix.push(`${"x".repeat(256 * 1024 + 1)}\n{"type":"item.completed","item":{"id":"same-chunk","type":"agent_message","text":"recovered in same chunk"}}\n`, selected.schema);
+assert.equal(recoveredSameChunk.events.some((event) => event.kind === "unknown"), true, "an oversized record reports a shape-only diagnostic");
+assert.equal(recoveredSameChunk.passthrough.includes("recovered in same chunk"), true, "valid records after an oversized line in the same chunk are retained");
 
 const mixed = new CodexJsonlDecoder().push(
   'codex\n{"type":"thread.started","thread_id":"thread-mixed"}\n{"type":"item.started","item":{"id":"call-mixed","type":"command_execution","command":"pwd"}}\nprose after\n',
@@ -252,6 +265,13 @@ for (const [version, expectedEvents] of [["0.144.2", 3], ["0.145.0", 6]] as cons
   const fixtureEvents = new CodexJsonlDecoder().push(`codex\n${fixture}`, fixtureSchema.schema);
   assert.equal(fixtureEvents.events.length, expectedEvents, `${version} fixture parses every protocol event`);
   assert.equal(fixtureEvents.events.some((event) => event.kind === "unknown"), false, `${version} fixture has no unsupported shapes`);
+  if (version === "0.145.0") {
+    assert.equal(
+      fixtureEvents.events.some((event) => event.kind === "tool_end" && event.isError),
+      true,
+      "the observed 0.145 completed-item failure fixture settles its tool as an error",
+    );
+  }
 }
 
 const unsignedPayload = {
@@ -385,6 +405,12 @@ try {
   const abandonedLockCachePath = path.join(cacheDir, "abandoned-lock.json");
   await writeFile(`${abandonedLockCachePath}.lock`, JSON.stringify({ token: "crashed-owner", pid: 2_147_483_647 }));
   assert.equal(await writeCodexSchemaCache(abandonedLockCachePath, document, verify, new Date("2026-07-24T12:00:00.000Z")), true, "an abandoned owner lease is reclaimed without deleting an active replacement lock");
+  const malformedLockCachePath = path.join(cacheDir, "malformed-lock.json");
+  const malformedLockPath = `${malformedLockCachePath}.lock`;
+  await writeFile(malformedLockPath, "{ interrupted");
+  const staleLockTime = new Date(Date.now() - 3_000);
+  await utimes(malformedLockPath, staleLockTime, staleLockTime);
+  assert.equal(await writeCodexSchemaCache(malformedLockCachePath, document, verify, new Date("2026-07-24T12:00:00.000Z")), true, "an old malformed lease is recovered behind the atomic takeover guard");
   const expiredNewerPayload = {
     ...unsignedPayload,
     provenance: {

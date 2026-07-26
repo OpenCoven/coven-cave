@@ -198,6 +198,7 @@ const CHAT_DETACH_MAX_MS = Math.max(
   60_000,
   Number(process.env.COVEN_CAVE_CHAT_DETACH_MAX_MS ?? 10 * 60_000) || 10 * 60_000,
 );
+const MAX_DIRECT_CODEX_STDOUT_RECORD_CHARS = 256 * 1024;
 
 type SendBody = {
   familiarId: string;
@@ -998,6 +999,7 @@ export async function POST(req: Request) {
     && (!resumeTarget || (
       codexCapabilities?.resume
       && codexCapabilities.resumeJson === true
+      && codexCapabilities.resumeSkipGitRepoCheck === true
       && !codexResumeNeedsGenericFallback
     ));
   const modelForwardingEnabled =
@@ -1417,9 +1419,11 @@ export async function POST(req: Request) {
         if (forwardPermission) a.push("--sandbox", forwardPermission === "read-only" ? "read-only" : "workspace-write");
         for (const dir of forwardAddDirs) a.push("--add-dir", dir);
       }
-      if (resumeSessionId) a.push(resumeSessionId);
-      // A prompt beginning with `--` is user content, never a Codex option.
+      // Both positional arguments are data, never Codex options. This keeps
+      // a dash-prefixed resume token from selecting a CLI option such as
+      // `--last` before Cave can verify its native thread identity.
       a.push("--");
+      if (resumeSessionId) a.push(resumeSessionId);
       a.push(prompt);
       return a;
     }
@@ -1598,6 +1602,7 @@ export async function POST(req: Request) {
       let assistantText = "";
       let jsonBuf = "";
       let stdoutDecoder = new StringDecoder("utf8");
+      let discardingOversizedDirectCodexRecord = false;
       let result: {
         duration_ms?: number;
         is_error?: boolean;
@@ -2049,8 +2054,6 @@ export async function POST(req: Request) {
               total_cost_usd?: number;
               usage?: unknown;
               text?: string;
-              /** Explicit Coven adapter attestation for native Codex JSONL. */
-              codex_jsonl?: boolean;
               message?: {
                 content?: Array<{
                   type?: string;
@@ -2089,16 +2092,12 @@ export async function POST(req: Request) {
               };
             } else if (ev.type === "output" && typeof ev.text === "string") {
               // Captured stdout is also where a user-requested JSON/code
-              // response arrives. Decode only an adapter-attested native
-              // channel, never a thread-shaped JSON value in ordinary text.
+              // response arrives. A generic stdout envelope cannot attest
+              // its own nested text as native Codex JSONL, so preserve it for
+              // the established transcript filter instead of minting tools
+              // or a native resume id from assistant-authored content.
               const cleaned = resolveBackspaces(stripAnsi(ev.text));
-              const trustedCodexJsonl = binding.harness === "codex" && ev.codex_jsonl === true;
-              if (trustedCodexJsonl && !codexDecoder) {
-                codexDecoder = new CodexJsonlDecoder({ trustThreadPreamble: true });
-              }
-              const passthrough = trustedCodexJsonl
-                ? handleCodexEvents(cleaned)
-                : cleaned;
+              const passthrough = cleaned;
               recordStdoutErrorTail(passthrough);
               const filtered = assistantFilter.push(passthrough);
               if (filtered) {
@@ -2300,11 +2299,32 @@ export async function POST(req: Request) {
             // Decode one continuous UTF-8 stream. A JSONL boundary can split
             // any multibyte character across pipe callbacks.
             jsonBuf += stdoutDecoder.write(data);
+            if (codexDirect && discardingOversizedDirectCodexRecord) {
+              const newline = jsonBuf.indexOf("\n");
+              if (newline < 0) {
+                jsonBuf = "";
+                return;
+              }
+              jsonBuf = jsonBuf.slice(newline + 1);
+              discardingOversizedDirectCodexRecord = false;
+            }
             let idx;
             while ((idx = jsonBuf.indexOf("\n")) >= 0) {
               const line = jsonBuf.slice(0, idx);
               jsonBuf = jsonBuf.slice(idx + 1);
+              if (codexDirect && line.length > MAX_DIRECT_CODEX_STDOUT_RECORD_CHARS) {
+                pushProgress("codex-jsonl", "Discarded an oversized Codex protocol record", "error", "oversized-jsonl");
+                continue;
+              }
               handleLine(line);
+            }
+            if (codexDirect && jsonBuf.length > MAX_DIRECT_CODEX_STDOUT_RECORD_CHARS) {
+              // Bound the raw pipe before a newline reaches the JSONL decoder.
+              // Discard exactly through this record's next delimiter so a
+              // later well-formed assistant event is still processed.
+              jsonBuf = "";
+              discardingOversizedDirectCodexRecord = true;
+              pushProgress("codex-jsonl", "Discarded an oversized Codex protocol record", "error", "oversized-jsonl");
             }
           });
 
@@ -2374,7 +2394,7 @@ export async function POST(req: Request) {
               Date.now() - attemptStartedAt,
             );
             jsonBuf += stdoutDecoder.end();
-            if (jsonBuf) handleLine(jsonBuf);
+            if (jsonBuf && !(codexDirect && (discardingOversizedDirectCodexRecord || jsonBuf.length > MAX_DIRECT_CODEX_STDOUT_RECORD_CHARS))) handleLine(jsonBuf);
             if (codexDecoder?.hasPendingRecord) {
               // Terminate the buffered record through the same ordered event
               // handler. JSONL does not require a final newline, so this
@@ -2421,6 +2441,7 @@ export async function POST(req: Request) {
         // tool offsets must remain meaningful after the replacement attempt.
         jsonBuf = "";
         stdoutDecoder = new StringDecoder("utf8");
+        discardingOversizedDirectCodexRecord = false;
         result = {};
         settleToolCallsBeforeRetry();
         toolAttempt += 1;
@@ -2466,6 +2487,7 @@ export async function POST(req: Request) {
         // Keep already-streamed prose for live/reloaded transcript parity.
         jsonBuf = "";
         stdoutDecoder = new StringDecoder("utf8");
+        discardingOversizedDirectCodexRecord = false;
         result = {};
         settleToolCallsBeforeRetry();
         toolAttempt += 1;

@@ -311,10 +311,16 @@ assert.match(
   "Codex parsing must probe the same credential-sanitized executable it later launches",
 );
 
+assert.doesNotMatch(
+  chatRoute,
+  /codex_jsonl\?: boolean|ev\.codex_jsonl/,
+  "generic captured stdout cannot self-attest as Codex JSONL from assistant-authored content",
+);
+
 assert.match(
   chatRoute,
-  /const trustedCodexJsonl = binding\.harness === "codex" && ev\.codex_jsonl === true;[\s\S]*?new CodexJsonlDecoder\(\{ trustThreadPreamble: true \}\)/,
-  "Codex JSONL decoding requires an explicit adapter transport attestation, not assistant-authored payload shape",
+  /let codexDecoder: CodexJsonlDecoder \| null = codexDirect[\s\S]*?new CodexJsonlDecoder\(\{ trustThreadPreamble: true \}\)/,
+  "Codex JSONL decoding is created only for Cave's direct native process channel",
 );
 
 assert.match(
@@ -351,6 +357,12 @@ assert.match(
   chatRoute,
   /let codexHarnessSessionId: string \| null = null;[\s\S]*?codexHarnessSessionId = event\.sessionId/,
   "Codex's resume handle is retained separately from Cave's stable conversation id",
+);
+
+assert.match(
+  chatRoute,
+  /const MAX_DIRECT_CODEX_STDOUT_RECORD_CHARS = 256 \* 1024;[\s\S]*?discardingOversizedDirectCodexRecord[\s\S]*?line\.length > MAX_DIRECT_CODEX_STDOUT_RECORD_CHARS[\s\S]*?jsonBuf\.length > MAX_DIRECT_CODEX_STDOUT_RECORD_CHARS/,
+  "direct Codex stdout bounds unterminated and complete records before JSONL buffering",
 );
 
 assert.match(

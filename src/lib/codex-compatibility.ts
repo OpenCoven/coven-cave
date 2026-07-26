@@ -10,7 +10,7 @@
 
 import { createHash, createPublicKey, verify as verifySignature } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -32,6 +32,7 @@ const MAX_SCHEMA_CANONICAL_DEPTH = 40;
 const MAX_SCHEMA_CANONICAL_NODES = 20_000;
 const CODEX_SCHEMA_REGISTRY_ORIGIN = "https://raw.githubusercontent.com";
 const CODEX_SCHEMA_REGISTRY_PATH_PREFIX = "/OpenCoven/coven-runtimes/";
+const KNOWN_CODEX_CONTROL_ITEM_TYPES = new Set(["reasoning", "todo_list", "error"]);
 
 export type CodexCapabilities = {
   jsonEvents: boolean;
@@ -421,22 +422,39 @@ function pidIsAlive(pid: number): boolean {
   }
 }
 
-/** Move, never unlink, a crashed owner's lease so a racing writer cannot lose a new lock. */
+/**
+ * Move a crashed owner's lease only after acquiring a separate atomic
+ * takeover guard. The guard serializes reclaimers: without it, a delayed
+ * reclaimer could rename a lock that another reclaimer has just replaced.
+ */
 async function reclaimAbandonedCacheLock(lockPath: string): Promise<boolean> {
-  let observed: CacheLockLease | null = null;
+  const guardPath = `${lockPath}.takeover`;
+  let guard: Awaited<ReturnType<typeof open>> | null = null;
   try {
-    observed = parseCacheLockLease(await readFile(lockPath, "utf8"));
+    guard = await open(guardPath, "wx", 0o600);
   } catch {
     return false;
   }
-  if (!observed || pidIsAlive(observed.pid)) return false;
-  const tombstone = `${lockPath}.abandoned.${observed.token}`;
   try {
+    const raw = await readFile(lockPath, "utf8");
+    const observed = parseCacheLockLease(raw);
+    if (observed && pidIsAlive(observed.pid)) return false;
+    if (!observed) {
+      const metadata = await stat(lockPath);
+      // A just-created lock can be momentarily empty while its creator writes
+      // the lease. Only recover malformed locks after the normal bounded
+      // acquisition window has elapsed.
+      if (Date.now() - metadata.mtimeMs < CACHE_LOCK_TIMEOUT_MS) return false;
+    }
+    const tombstone = `${lockPath}.abandoned.${observed?.token ?? crypto.randomUUID()}`;
     await rename(lockPath, tombstone);
     try { await unlink(tombstone); } catch { /* best effort */ }
     return true;
   } catch {
     return false;
+  } finally {
+    try { await guard.close(); } catch { /* best effort */ }
+    try { await unlink(guardPath); } catch { /* best effort */ }
   }
 }
 
@@ -450,12 +468,15 @@ async function acquireCacheWriteLock(cachePath: string): Promise<(() => Promise<
   const lockPath = `${cachePath}.lock`;
   const startedAt = Date.now();
   while (Date.now() - startedAt < CACHE_LOCK_TIMEOUT_MS) {
+    let handle: Awaited<ReturnType<typeof open>> | null = null;
+    let ownershipToken: string | null = null;
     try {
       await mkdir(path.dirname(cachePath), { recursive: true });
-      const handle = await open(lockPath, "wx", 0o600);
-      const ownershipToken = crypto.randomUUID();
+      handle = await open(lockPath, "wx", 0o600);
+      ownershipToken = crypto.randomUUID();
       await handle.writeFile(JSON.stringify({ token: ownershipToken, pid: process.pid }), "utf8");
       await handle.close();
+      handle = null;
       return async () => {
         try {
           // Never delete a replacement lock acquired by another process after
@@ -465,6 +486,12 @@ async function acquireCacheWriteLock(cachePath: string): Promise<(() => Promise<
         } catch { /* best effort */ }
       };
     } catch (error) {
+      try { await handle?.close(); } catch { /* best effort */ }
+      if (ownershipToken) {
+        try {
+          if (parseCacheLockLease(await readFile(lockPath, "utf8"))?.token === ownershipToken) await unlink(lockPath);
+        } catch { /* best effort */ }
+      }
       const code = error && typeof error === "object" && "code" in error ? error.code : null;
       if (code !== "EEXIST") return null;
       if (await reclaimAbandonedCacheLock(lockPath)) continue;
@@ -1060,6 +1087,11 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
       // text. They are not compatibility failures.
       : { kind: "ignored" };
   }
+  // These observed 0.145 items describe planning and nonfatal runtime
+  // notices. They never represent user-facing prose or a tool lifecycle.
+  if (typeof item.type === "string" && KNOWN_CODEX_CONTROL_ITEM_TYPES.has(item.type)) {
+    return { kind: "ignored" };
+  }
   if (
     (event.type === "item.started" || event.type === "item.updated" || event.type === "item.completed" || event.type === "item.failed") &&
     (typeof item.id !== "string" || typeof item.type !== "string" || !schema.toolItemTypes.includes(item.type))
@@ -1097,7 +1129,10 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
       : typeof item.exitCode === "number"
         ? item.exitCode
         : null;
-    const isError = event.type === "item.failed" || item.status === "failed" || (exitCode !== null && Number.isFinite(exitCode) && exitCode !== 0);
+    const isError = event.type === "item.failed"
+      || item.status === "failed"
+      || item.status === "declined"
+      || (exitCode !== null && Number.isFinite(exitCode) && exitCode !== 0);
     return {
       kind: "tool_end",
       id: item.id,
@@ -1149,10 +1184,24 @@ export class CodexJsonlDecoder {
       // Drop only the oversized record and consume through its next newline
       // before accepting later valid JSONL. Never retain attacker-controlled
       // partial data just because it lacks a newline.
-      this.pending = "";
-      this.discardingOversizedRecord = true;
       const event: CodexStreamEvent = { kind: "unknown", fingerprint: "oversized-jsonl" };
-      return { events: [event], passthrough: "", tokens: [event] };
+      const newline = this.pending.indexOf("\n");
+      if (newline < 0) {
+        this.pending = "";
+        this.discardingOversizedRecord = true;
+        return { events: [event], passthrough: "", tokens: [event] };
+      }
+      // The current chunk can contain both the abusive record and valid
+      // records after its newline. Drop exactly the former, then keep
+      // decoding the suffix in-order rather than losing a valid reply.
+      const suffix = this.pending.slice(newline + 1);
+      this.pending = "";
+      const recovered = this.push(suffix, schema);
+      return {
+        events: [event, ...recovered.events],
+        passthrough: recovered.passthrough,
+        tokens: [event, ...recovered.tokens],
+      };
     }
     const lines = this.pending.split(/\r?\n/);
     this.pending = lines.pop() ?? "";

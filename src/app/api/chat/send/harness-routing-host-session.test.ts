@@ -83,8 +83,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /codexResumeNeedsGenericFallback[\s\S]*?\["exec", "resume", "--json", "--skip-git-repo-check"\][\s\S]*?if \(!resumeSessionId\)[\s\S]*?"--sandbox"[\s\S]*?"--add-dir"[\s\S]*?if \(resumeSessionId\) a\.push\(resumeSessionId\);[\s\S]*?a\.push\("--"\);/,
-  "Resumed direct Codex chats use only supported resume flags; constrained sessions retain the generic safe path",
+  /codexResumeNeedsGenericFallback[\s\S]*?codexCapabilities\.resumeSkipGitRepoCheck === true[\s\S]*?\["exec", "resume", "--json"\][\s\S]*?if \(!resumeSessionId\)[\s\S]*?"--sandbox"[\s\S]*?"--add-dir"[\s\S]*?a\.push\("--"\);[\s\S]*?if \(resumeSessionId\) a\.push\(resumeSessionId\);/,
+  "Resumed direct Codex chats require non-Git resume support and terminate options before the native thread id",
 );
 
 assert.match(
