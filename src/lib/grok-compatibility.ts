@@ -195,6 +195,7 @@ export type GrokParsedEvent =
 const MAX_BUNDLE_BYTES = 256 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
 const MAX_SCHEMAS = 32;
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const CACHE_LOCK_STALE_MS = 30_000;
 const CACHE_LOCK_WAIT_MS = 500;
 const CACHE_LOCK_POLL_MS = 20;
@@ -461,18 +462,26 @@ async function readTrustAnchor(file: string): Promise<TrustAnchor | null> {
   } catch { return null; }
 }
 
+async function cacheRecordExists(file: string): Promise<boolean> {
+  try {
+    return (await fs.stat(file)).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function meetsTrustAnchor(bundle: GrokSchemaBundle, anchor: TrustAnchor | null): boolean {
   return !anchor || bundle.sequence > anchor.sequence || (bundle.sequence === anchor.sequence && grokSchemaBundlePayloadHash(bundle) === anchor.payloadHash);
 }
 
-async function readCache(file: string, keys: GrokRegistryKeyring, now: number, anchor: TrustAnchor | null): Promise<GrokSchemaBundle | null> {
+async function readCache(file: string, keys: GrokRegistryKeyring, now: number, anchor: TrustAnchor | null): Promise<Cached | null> {
   try {
     const raw = await fs.readFile(file, "utf8");
     if (Buffer.byteLength(raw) > MAX_CACHE_BYTES) return null;
     const cached = JSON.parse(raw) as Cached;
     return isRecord(cached) && Object.keys(cached).length === 2 && Number.isSafeInteger(cached.checkedAt)
       && verifyGrokSchemaBundle(cached.bundle, keys, now) && meetsTrustAnchor(cached.bundle, anchor)
-      ? cached.bundle
+      ? cached
       : null;
   } catch { return null; }
 }
@@ -487,16 +496,30 @@ async function writeJsonAtomic(file: string, value: unknown): Promise<boolean> {
   } catch { return false; /* Cache is an optimization; a failed write never broadens parsing. */ }
 }
 
-async function acquireCacheLock(file: string): Promise<(() => Promise<void>) | null> {
+type CacheLock = {
+  owns: () => Promise<boolean>;
+  release: () => Promise<void>;
+};
+
+async function acquireCacheLock(file: string): Promise<CacheLock | null> {
   const lock = cacheLockPath(file);
   const deadline = Date.now() + CACHE_LOCK_WAIT_MS;
   while (Date.now() < deadline) {
     try {
       await fs.mkdir(path.dirname(file), { recursive: true });
       const handle = await fs.open(lock, "wx", 0o600);
-      await handle.writeFile(`${process.pid}:${randomBytes(8).toString("hex")}`);
+      const token = `${process.pid}:${randomBytes(8).toString("hex")}`;
+      await handle.writeFile(token);
       await handle.close();
-      return async () => { await fs.rm(lock, { force: true }); };
+      const owns = async () => {
+        try { return await fs.readFile(lock, "utf8") === token; } catch { return false; }
+      };
+      return {
+        owns,
+        // A stale-lock taker may install its own lock before this writer
+        // resumes. Never let the former owner remove that newer lock.
+        release: async () => { if (await owns()) await fs.rm(lock, { force: true }); },
+      };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;
       try {
@@ -510,16 +533,18 @@ async function acquireCacheLock(file: string): Promise<(() => Promise<void>) | n
 }
 
 /** Returns false when another process has already committed a newer anchor. */
-async function writeCache(file: string, bundle: GrokSchemaBundle): Promise<boolean> {
-  const release = await acquireCacheLock(file);
-  if (!release) return false;
+async function writeCache(file: string, bundle: GrokSchemaBundle, checkedAt = Date.now()): Promise<boolean> {
+  const lock = await acquireCacheLock(file);
+  if (!lock) return false;
   try {
+    if (!await lock.owns()) return false;
     if (!meetsTrustAnchor(bundle, await readTrustAnchor(file))) return false;
   // Anchor first: an interruption can make the cache unavailable, never make
   // an older cache appear acceptable after a newer bundle was trusted.
     if (!await writeJsonAtomic(trustAnchorPath(file), { sequence: bundle.sequence, payloadHash: grokSchemaBundlePayloadHash(bundle) })) return false;
-    return writeJsonAtomic(file, { checkedAt: Date.now(), bundle });
-  } finally { await release(); }
+    if (!await lock.owns()) return false;
+    return writeJsonAtomic(file, { checkedAt, bundle });
+  } finally { await lock.release(); }
 }
 
 function trustedBundle(bundle: GrokSchemaBundle, checkpoint?: GrokRegistryCheckpoint): boolean {
@@ -535,9 +560,18 @@ export async function resolveGrokCompatibility(capabilities: GrokRunCapabilities
   const cacheFile = source.cachePath ?? defaultCachePath();
   let bundle = BUILTIN_GROK_SCHEMA_BUNDLE; let bundleSource: GrokCompatibility["bundleSource"] = "built-in"; let diagnostic: GrokCompatibilityDiagnostic | undefined;
   const anchor = Object.keys(keys).length ? await readTrustAnchor(cacheFile) : null;
-  const cached = Object.keys(keys).length ? await readCache(cacheFile, keys, now, anchor) : null;
-  if (cached && trustedBundle(cached, source.checkpoint)) { bundle = cached; bundleSource = "cache"; }
-  if (source.url && Object.keys(keys).length) {
+  // A verified remote cache without its matching high-water anchor is not a
+  // valid offline contract. Treat it as a trust failure rather than allowing
+  // a lower signed response to establish a new history after the anchor was
+  // deleted or corrupted.
+  const cacheAnchorMissing = Object.keys(keys).length > 0 && !anchor && await cacheRecordExists(cacheFile);
+  const cached = Object.keys(keys).length && !cacheAnchorMissing ? await readCache(cacheFile, keys, now, anchor) : null;
+  if (cached && trustedBundle(cached.bundle, source.checkpoint)) { bundle = cached.bundle; bundleSource = "cache"; }
+  const cacheFresh = !!cached && trustedBundle(cached.bundle, source.checkpoint)
+    && now - cached.checkedAt >= 0 && now - cached.checkedAt < CACHE_TTL_MS;
+  if (cacheAnchorMissing) {
+    diagnostic = "cached-schema-unavailable";
+  } else if (source.url && Object.keys(keys).length && !cacheFresh) {
     try {
       if (!isSafeRegistryUrl(source.url)) throw new Error("unsafe registry URL");
       const response = await (source.fetch ?? fetch)(source.url, { signal: AbortSignal.timeout(5_000), credentials: "omit", redirect: "error" });
@@ -545,13 +579,13 @@ export async function resolveGrokCompatibility(capabilities: GrokRunCapabilities
       if (!response.ok) throw new Error("untrusted registry response");
       const remote = JSON.parse(body);
       if (!verifyGrokSchemaBundle(remote, keys, now) || !trustedBundle(remote, source.checkpoint) || !meetsTrustAnchor(remote, anchor)) throw new Error("untrusted registry bundle");
-      if (await writeCache(cacheFile, remote)) {
+      if (await writeCache(cacheFile, remote, now)) {
         bundle = remote; bundleSource = "remote";
       } else {
         const currentAnchor = await readTrustAnchor(cacheFile);
         const currentCache = await readCache(cacheFile, keys, now, currentAnchor);
-        if (!currentCache || !trustedBundle(currentCache, source.checkpoint)) throw new Error("registry cache write rejected");
-        bundle = currentCache; bundleSource = "cache"; diagnostic = "schema-registry-refresh-rejected";
+        if (!currentCache || !trustedBundle(currentCache.bundle, source.checkpoint)) throw new Error("registry cache write rejected");
+        bundle = currentCache.bundle; bundleSource = "cache"; diagnostic = "schema-registry-refresh-rejected";
       }
     } catch {
       // `writeCache` commits the high-water anchor before its cache record.

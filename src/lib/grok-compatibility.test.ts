@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   BUILTIN_GROK_SCHEMA_BUNDLE,
   grokProbeEnvironment,
   grokRunCapabilitiesFromHelp,
+  grokSchemaBundlePayloadHash,
   grokSchemaBundleSigningPayload,
   isGrokSchemaBundle,
   resolveGrokCompatibility,
@@ -68,9 +69,30 @@ const cachePath = path.join(cacheDirectory, "schema.json");
 try {
   const refreshed = await resolveGrokCompatibility(supported, { publicKeys: keyring, cachePath, url: "https://registry.example/grok.json", fetch: async () => new Response(JSON.stringify(highWater)) });
   assert.equal(refreshed.bundleSource, "remote");
-  const rollback = await resolveGrokCompatibility(supported, { publicKeys: keyring, cachePath, url: "https://registry.example/grok.json", fetch: async () => new Response(JSON.stringify(signed)) });
+  let freshCacheFetched = false;
+  const freshCache = await resolveGrokCompatibility(supported, {
+    publicKeys: keyring,
+    cachePath,
+    url: "https://registry.example/grok.json",
+    fetch: async () => { freshCacheFetched = true; return new Response(JSON.stringify(signed)); },
+  });
+  assert.equal(freshCache.bundleSource, "cache", "a fresh verified cache remains available without a network round trip");
+  assert.equal(freshCacheFetched, false, "a fresh cache does not delay every chat on registry I/O");
+  const rollback = await resolveGrokCompatibility(supported, { publicKeys: keyring, cachePath, now: () => Date.now() + 7 * 60 * 60 * 1000, url: "https://registry.example/grok.json", fetch: async () => new Response(JSON.stringify(signed)) });
   assert.equal(rollback.bundleSource, "cache", "a lower signed sequence cannot replace the local high-water contract");
   assert.equal(rollback.diagnostic, "schema-registry-refresh-rejected");
+
+  // Losing the durable anchor must not turn the still-present cache into a
+  // first-use state where an older signed response can replace it.
+  await rm(`${cachePath}.anchor`);
+  const missingAnchor = await resolveGrokCompatibility(supported, {
+    publicKeys: keyring,
+    cachePath,
+    url: "https://registry.example/grok.json",
+    fetch: async () => new Response(JSON.stringify(signed)),
+  });
+  assert.equal(missingAnchor.bundleSource, "built-in", "a cache without its durable high-water anchor is never selected or refreshed");
+  assert.equal(missingAnchor.diagnostic, "cached-schema-unavailable");
 
   // Simulate an interruption after the high-water anchor is committed but
   // before the replacement cache file can be installed. The prior cache was
@@ -81,9 +103,12 @@ try {
     algorithm: "ed25519",
     value: sign(null, Buffer.from(grokSchemaBundleSigningPayload(interruptedBundle)), privateKey).toString("base64"),
   };
+  // Restore the expected anchor before exercising an interrupted update.
+  await writeFile(`${cachePath}.anchor`, JSON.stringify({ sequence: highWater.sequence, payloadHash: grokSchemaBundlePayloadHash(highWater) }));
   const interruptedRefresh = await resolveGrokCompatibility(supported, {
     publicKeys: keyring,
     cachePath,
+    now: () => Date.now() + 14 * 60 * 60 * 1000,
     url: "https://registry.example/grok.json",
     fetch: async () => {
       await rm(cachePath, { force: true });
