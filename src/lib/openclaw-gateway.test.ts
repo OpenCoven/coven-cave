@@ -90,6 +90,27 @@ assert.deepEqual(
   "without a stable Cave request id the route retains the CLI fallback",
 );
 
+const unpairedDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "hello",
+  idempotencyKey: "cave-request-unpaired",
+  env: {
+    OPENCLAW_GATEWAY_DISPATCH: "1",
+    OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+    OPENCLAW_GATEWAY_TOKEN: "must-not-activate-direct-dispatch",
+  },
+  onEvent: () => assert.fail("an unpaired Gateway must not emit events"),
+});
+assert.deepEqual(
+  unpairedDispatch,
+  {
+    kind: "unavailable",
+    reason: "Cave has no cross-platform OS-backed paired-device credential store for OpenClaw Gateway dispatch",
+  },
+  "an environment token alone must never activate a write-capable Gateway dispatch",
+);
+
 // The direct dispatcher is tested through the same official-client callback
 // contract that production uses: it waits for hello and subscription, binds
 // the acknowledged run id, and ignores a foreign run with the same session.
@@ -103,10 +124,19 @@ const dispatch = await dispatchOpenClawGatewayTurn({
   env: {
     OPENCLAW_GATEWAY_DISPATCH: "1",
     OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+    OPENCLAW_GATEWAY_TOKEN: "must-not-reach-the-client",
+    OPENCLAW_GATEWAY_DEVICE_TOKEN: "must-not-reach-the-client",
   },
   onEvent: (event) => emitted.push(event),
   clientFactory: (options) => {
     clientOptions = options;
+    assert.equal(options.token, undefined, "Gateway process tokens must not reach the client");
+    assert.equal(options.deviceToken, undefined, "Gateway process device tokens must not reach the client");
+    assert.deepEqual(
+      options.env,
+      { NODE_ENV: process.env.NODE_ENV ?? "production" },
+      "Gateway auth must not inherit Cave's process environment",
+    );
     assert.equal(options.caps, undefined, "chat-only dispatch must not request unpublished tool-event capabilities");
     return {
       start() {

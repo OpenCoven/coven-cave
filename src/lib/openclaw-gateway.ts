@@ -11,8 +11,6 @@ import { Value } from "typebox/value";
  */
 const GATEWAY_DISPATCH_ENV = "OPENCLAW_GATEWAY_DISPATCH";
 const GATEWAY_URL_ENV = "OPENCLAW_GATEWAY_URL";
-const GATEWAY_TOKEN_ENV = "OPENCLAW_GATEWAY_TOKEN";
-const GATEWAY_DEVICE_TOKEN_ENV = "OPENCLAW_GATEWAY_DEVICE_TOKEN";
 const STARTUP_TIMEOUT_MS = 3_000;
 const REQUIRED_GATEWAY_METHODS = ["chat.send", "chat.abort", "sessions.messages.subscribe"];
 
@@ -158,6 +156,14 @@ export async function dispatchOpenClawGatewayTurn(args: {
 }): Promise<OpenClawGatewayDispatch> {
   const env = args.env ?? process.env;
   if (!gatewayDispatchEnabled(env)) return { kind: "unavailable", reason: "Gateway dispatch is disabled" };
+  const pairedDeviceAuth = openClawGatewayPairedDeviceAuthStatus();
+  // Keep this guard in the dispatcher as well as the route. A future caller
+  // must not be able to turn an environment token into a write-capable
+  // Gateway session simply by bypassing the route-level fallback choice. The
+  // injectable port is test-only and cannot create a real Gateway connection.
+  if (!pairedDeviceAuth.available && !args.clientFactory) {
+    return { kind: "unavailable", reason: pairedDeviceAuth.reason ?? "Gateway paired-device authentication is unavailable" };
+  }
   if (!nonEmptyString(args.idempotencyKey)) {
     return { kind: "unavailable", reason: "Gateway dispatch requires a Cave request id" };
   }
@@ -258,8 +264,11 @@ export async function dispatchOpenClawGatewayTurn(args: {
 
   const clientOptions: ConstructorParameters<typeof GatewayClient>[0] = {
     url,
-    token: env[GATEWAY_TOKEN_ENV],
-    deviceToken: env[GATEWAY_DEVICE_TOKEN_ENV],
+    // Never let the Gateway client read Cave's process environment. The
+    // future paired-device boundary must provide identity and token lifecycle
+    // through hostDeps, rather than reviving token/device-token env auth.
+    // `GatewayClientOptions.env` requires NODE_ENV, which is non-secret.
+    env: { NODE_ENV: process.env.NODE_ENV ?? "production" },
     clientName: "gateway-client",
     clientDisplayName: "Coven Cave",
     clientVersion: "2026.7.2-beta.4",
