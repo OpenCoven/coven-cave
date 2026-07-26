@@ -1998,6 +1998,12 @@ function StepRuntimes({
           const job = oneClick ? installJobs[oneClick.target] : undefined;
           const busy = job?.status === "running";
           const openClaw = adapter.id === "openclaw";
+          const availabilityMessage =
+            adapter.availability && adapter.availability.state !== "ready"
+              ? adapter.availability.message
+              : null;
+          const availabilityProblem = !openClaw && availabilityMessage !== null;
+          const launchable = adapter.installed && !availabilityProblem;
           return (
             <div
               key={adapter.id}
@@ -2006,7 +2012,7 @@ function StepRuntimes({
                   ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]"
                   : openClaw
                     ? "border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)]"
-                    : adapter.installed
+                    : launchable
                   ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_8%,transparent)]"
                   : "border-[var(--border-hairline)] bg-[var(--bg-base)]/45"
               }`}
@@ -2033,6 +2039,13 @@ function StepRuntimes({
                       <Icon name="ph:git-fork" /> bridge
                     </span>
                   </div>
+                ) : availabilityProblem ? (
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 text-[length:var(--text-xs)] text-[var(--color-warning)]"
+                    title={availabilityMessage}
+                  >
+                    <Icon name="ph:warning-circle" /> unavailable
+                  </span>
                 ) : adapter.installed ? (
                   <span className="inline-flex items-center gap-1 text-[length:var(--text-xs)] text-[var(--color-success)]">
                     <Icon name="ph:check-bold" /> installed
@@ -2040,10 +2053,15 @@ function StepRuntimes({
                 ) : null}
               </div>
               <div className="mt-1 truncate font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                {adapter.installed
+                {launchable
                   ? (adapter.path ?? adapter.binary)
                   : adapter.binary}
               </div>
+              {availabilityMessage ? (
+                <p role="status" className="mt-2 text-[length:var(--text-xs)] leading-4 text-[var(--color-warning)]">
+                  {availabilityMessage}
+                </p>
+              ) : null}
               {openClaw ? (
                 <div className="mt-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 px-3 py-2 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
                   Agents are discovered from{" "}

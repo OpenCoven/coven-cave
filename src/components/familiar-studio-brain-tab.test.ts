@@ -88,6 +88,11 @@ assert.match(
 );
 assert.match(
   source,
+  /h\.availability && h\.availability\.state !== "ready"[\s\S]{0,180}" \(unavailable\)"[\s\S]{0,160}detail: h\.availability\?\.state !== "ready"/,
+  "Runtime picker labels a discovered-but-unlaunchable CLI as unavailable and shows the shared remediation",
+);
+assert.match(
+  source,
   /\/api\/capabilities\?harness=/,
   "Brain tab should fetch the daemon capabilities manifest for the selected harness",
 );
