@@ -110,7 +110,16 @@ export function OverflowMenu({
     const item = (e.target as Element).closest?.(
       '[role="menuitem"], [role="menuitemradio"]',
     );
-    if (item && !(item as HTMLButtonElement).disabled) setOpen(false);
+    if (
+      item &&
+      !(item as HTMLButtonElement).disabled &&
+      item.getAttribute("aria-disabled") !== "true"
+    ) {
+      setOpen(false);
+      requestAnimationFrame(() => {
+        if (document.activeElement === document.body) triggerRef.current?.focus();
+      });
+    }
   }, []);
 
   return (

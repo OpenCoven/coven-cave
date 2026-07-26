@@ -86,6 +86,20 @@ assert.match(surfaceRail, /aria-expanded=\{isExpanded\}/, "control exposes its d
 assert.match(surfaceRail, /aria-controls=\{railId\}/, "control identifies its own unique rail");
 assert.match(surfaceRail, /id=\{railId\}/, "rail owns the target id referenced by its control");
 assert.match(surfaceRail, /role-surface-rail--expanded/, "SurfaceRail exposes its expanded presentation state");
+assert.ok(
+  /useRef<HTMLButtonElement \| null>\(null\)/.test(surfaceRail) &&
+    /useRef<HTMLElement \| null>\(null\)/.test(surfaceRail) &&
+    /useEffect\([\s\S]*?requestAnimationFrame\([\s\S]*?querySelector<HTMLElement>[\s\S]*?\.focus\(\)/.test(surfaceRail) &&
+    /e\.key !== "Escape"/.test(surfaceRail) &&
+    /setExpanded\(false\)/.test(surfaceRail) &&
+    /requestAnimationFrame\([\s\S]*?disclosureRef\.current\?\.focus\(\)/.test(surfaceRail) &&
+    /ref=\{disclosureRef\}/.test(surfaceRail) &&
+    /className=\{`role-surface-disclosure[\s\S]*?focus-ring/.test(surfaceRail) &&
+    /ref=\{railRef\}/.test(surfaceRail) &&
+    /tabIndex=\{-1\}/.test(surfaceRail) &&
+    /onKeyDown=\{onRailKeyDown\}/.test(surfaceRail),
+  "adaptive rail overlays focus on open and close with Escape back to their own trigger",
+);
 
 assert.match(host, /<OverflowMenu\b/, "host uses OverflowMenu in JSX");
 assert.doesNotMatch(host, /role-surface-commands-menu/, "host no longer contains role-surface-commands-menu");
@@ -102,6 +116,11 @@ const columnsBlock = extractBlock(css, ".role-surface-columns");
 assert.match(columnsBlock, /position:\s*relative/, "room columns anchor on-demand rail overlays");
 const disclosureBlock = extractBlock(css, ".role-surface-disclosures");
 assert.match(disclosureBlock, /display:\s*none/, "wide rooms hide disclosure controls");
+assert.match(
+  css,
+  /@media\s*\(pointer:\s*coarse\)\s*\{[\s\S]*?\.role-surface-disclosure\s*\{[\s\S]*?min-width:\s*var\(--touch-target\)[\s\S]*?min-height:\s*var\(--touch-target\)/,
+  "coarse-pointer rail disclosures use the shared touch target",
+);
 const mediumRoomBlock = extractBlock(css, "@container role-surface-room (max-width: 860px)");
 assert.match(mediumRoomBlock, /\.role-surface-disclosures\s*\{[\s\S]*?display:\s*flex/, "medium rooms show disclosures");
 assert.match(

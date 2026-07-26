@@ -13,9 +13,12 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useId,
+  useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -26,6 +29,9 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { Icon, type IconName } from "@/lib/icon";
 
 type RailSide = "left" | "right";
+
+const RAIL_FOCUSABLE_SELECTOR =
+  'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 type SurfaceRailProps = {
   side: RailSide;
@@ -97,14 +103,35 @@ export function SurfaceRail({
   onExpandedChange,
 }: SurfaceRailProps) {
   const disclosureTarget = useContext(RailDisclosureContext);
+  const disclosureRef = useRef<HTMLButtonElement | null>(null);
+  const railRef = useRef<HTMLElement | null>(null);
   const railId = `${useId()}-rail`;
   const [localExpanded, setLocalExpanded] = useState(false);
   const isExpanded = expanded ?? localExpanded;
 
-  const toggleExpanded = () => {
-    const next = !isExpanded;
+  const setExpanded = (next: boolean) => {
     if (expanded === undefined) setLocalExpanded(next);
     onExpandedChange?.(next);
+  };
+
+  const toggleExpanded = () => setExpanded(!isExpanded);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    const focusFrame = requestAnimationFrame(() => {
+      const rail = railRef.current;
+      const focusTarget = rail?.querySelector<HTMLElement>(RAIL_FOCUSABLE_SELECTOR) ?? rail;
+      focusTarget?.focus();
+    });
+    return () => cancelAnimationFrame(focusFrame);
+  }, [isExpanded]);
+
+  const onRailKeyDown = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Escape" || !isExpanded) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setExpanded(false);
+    requestAnimationFrame(() => disclosureRef.current?.focus());
   };
 
   return (
@@ -112,9 +139,10 @@ export function SurfaceRail({
       {disclosureTarget
         ? createPortal(
             <Button
+              ref={disclosureRef}
               size="sm"
               variant="ghost"
-              className={`role-surface-disclosure role-surface-disclosure--${side}`}
+              className={`role-surface-disclosure role-surface-disclosure--${side} focus-ring`}
               leadingIcon={side === "left" ? "ph:sidebar-simple" : undefined}
               trailingIcon={side === "right" ? "ph:sidebar-simple" : undefined}
               aria-label={`${isExpanded ? "Hide" : "Show"} ${label}`}
@@ -128,9 +156,12 @@ export function SurfaceRail({
           )
         : null}
       <aside
+        ref={railRef}
         id={railId}
         className={`role-surface-rail role-surface-rail--${side}${isExpanded ? " role-surface-rail--expanded" : ""}`}
         aria-label={label}
+        tabIndex={-1}
+        onKeyDown={onRailKeyDown}
       >
         {children}
       </aside>

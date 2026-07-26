@@ -7,6 +7,7 @@
    tab. Glass panels, minimal chrome, no admin-dashboard flatness. */
 
 .role-surface-host {
+  container: role-surface-host / inline-size;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -17,6 +18,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
   padding: 10px var(--space-4);
   border-bottom: 1px solid var(--border-hairline);
   background: var(--glass-raised);
@@ -32,6 +34,9 @@
 }
 
 .role-surface-header-title h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--text-base);
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -42,6 +47,7 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   margin-left: auto;
   font-size: var(--text-xs);
   color: var(--text-secondary);
@@ -70,6 +76,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  flex-shrink: 0;
 }
 
 .role-surface-chip {
@@ -116,6 +124,42 @@
   font-size: var(--text-2xs);
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+@container role-surface-host (max-width: 520px) {
+  .role-surface-header {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .role-surface-header-title {
+    flex: 1 1 0;
+  }
+
+  .role-surface-header-title h2 {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .role-surface-header-status {
+    order: 3;
+    flex: 1 1 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .role-surface-status {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .role-surface-header-actions {
+    max-width: 100%;
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 }
 
 .role-surface-notices {
@@ -189,6 +233,13 @@
 
 .role-surface-disclosure--right {
   margin-left: auto;
+}
+
+@media (pointer: coarse) {
+  .role-surface-disclosure {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
 }
 
 .role-surface-columns {

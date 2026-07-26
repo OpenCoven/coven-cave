@@ -63,6 +63,13 @@ assert.match(
   "auto-closes on menuitem activation",
 );
 assert.match(src, /!\(item as HTMLButtonElement\)\.disabled/, "disabled items don't close the menu");
+assert.ok(
+  /item\.getAttribute\("aria-disabled"\) !== "true"/.test(src) &&
+    /setOpen\(false\)[\s\S]*?requestAnimationFrame\([\s\S]*?document\.activeElement === document\.body[\s\S]*?triggerRef\.current\?\.focus\(\)/.test(
+      src,
+    ),
+  "enabled item activation restores body focus to the overflow trigger after unmount",
+);
 
 // Default glyph is the chrome-action dots (bold weight per icon conventions),
 // default placement hugs the trailing edge where overflow triggers live.
