@@ -28,7 +28,10 @@ import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
-import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
+import {
+  copilotCapabilityFailureMessage,
+  probeCopilotCapability,
+} from "@/lib/server/copilot-capability-probe";
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { copilotStreamSpec } from "@/lib/copilot-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
@@ -262,6 +265,14 @@ export async function startFlowSession(
       probeCopilotCapability(),
       resolveRuntimeCompatibility("copilot"),
     ]);
+    const capabilityFailure = copilotCapabilityFailureMessage(capability);
+    if (capabilityFailure) {
+      return {
+        ok: false,
+        status: 409,
+        error: capabilityFailure,
+      };
+    }
     const spec = copilotStreamSpec(
       capability.version,
       compatibility?.eventProtocols,

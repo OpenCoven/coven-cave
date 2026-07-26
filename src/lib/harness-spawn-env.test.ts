@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { restoreAllowedGitHubTokenEnv, restoreGrantedVaultGitHubTokenEnv, subtractScopedVaultKeys } from "./harness-spawn-env.ts";
+import {
+  canonicalProbeSpawnEnv,
+  restoreAllowedGitHubTokenEnv,
+  restoreGrantedVaultGitHubTokenEnv,
+  subtractScopedVaultKeys,
+  vaultFreeDiscoveryEnv,
+} from "./harness-spawn-env.ts";
 import { isVaultKeyGrantedTo, loadVaultMap, normalizeVaultScope, saveVaultMap } from "./vault.ts";
 import { setLocalEncryptedSecret } from "./local-encrypted-vault.ts";
 
@@ -50,6 +56,114 @@ const baseEnv = () => ({
   NOBODY: "x",
   UNRELATED: "keep",
 });
+
+{
+  const sourceEnv = baseEnv();
+  const sourceSnapshot = { ...sourceEnv };
+  const discoveryEnv = vaultFreeDiscoveryEnv(sourceEnv, map);
+  assert.deepEqual(
+    discoveryEnv,
+    {
+      PATH: "/usr/bin",
+      HOME: "/Users/example",
+      UNRELATED: "keep",
+    },
+    "discovery removes every shared and familiar-scoped vault key while preserving ordinary env",
+  );
+  assert.notEqual(discoveryEnv, sourceEnv, "discovery returns a scrubbed copy");
+  assert.deepEqual(sourceEnv, sourceSnapshot, "discovery does not mutate its source env");
+}
+
+{
+  const windowsSource = {
+    Path: "C:\\Windows\\System32",
+    OpenAI_Api_Key: "vault-secret",
+    cOvEn_CaVe_AuTh_ToKeN: "sidecar-secret",
+    gItHuB_tOkEn: "github-secret",
+    Ordinary_Value: "keep",
+  };
+  const windowsSnapshot = { ...windowsSource };
+  assert.deepEqual(
+    vaultFreeDiscoveryEnv(
+      windowsSource,
+      { OPENAI_API_KEY: { ref: "op://a/b/c" } },
+      "win32",
+    ),
+    {
+      Path: "C:\\Windows\\System32",
+      Ordinary_Value: "keep",
+    },
+    "Windows discovery compares Vault, sidecar, and forbidden aliases case-insensitively",
+  );
+  assert.deepEqual(
+    windowsSource,
+    windowsSnapshot,
+    "Windows case-insensitive discovery still leaves its source untouched",
+  );
+}
+
+for (const platform of ["linux", "darwin"]) {
+  const posixSource = {
+    PATH: "/usr/bin",
+    OpenAI_Api_Key: "differently-cased-vault-name",
+    Coven_Cave_Auth_Token: "differently-cased-sidecar-name",
+    Github_Token: "differently-cased-github-name",
+    Ordinary_Value: "keep",
+  };
+  assert.deepEqual(
+    vaultFreeDiscoveryEnv(
+      posixSource,
+      { OPENAI_API_KEY: { ref: "op://a/b/c" } },
+      platform,
+    ),
+    posixSource,
+    `${platform} discovery keeps differently-cased env names`,
+  );
+}
+
+{
+  let mapLoads = 0;
+  let discoveryCalls = 0;
+  const probeSource = {
+    PATH: "/launch-path",
+    SHARED_TOKEN: "shared-secret",
+    NOVA_ONLY: "scoped-secret",
+    COVEN_CAVE_AUTH_TOKEN: "sidecar-secret",
+    UNRELATED: "keep",
+  };
+  const probeEnv = canonicalProbeSpawnEnv(
+    { discoveryDeadline: 2_500, now: () => 1_000 },
+    {
+      sourceEnv: probeSource,
+      loadMap: () => {
+        mapLoads += 1;
+        return map;
+      },
+      spawnEnv: (options) => {
+        discoveryCalls += 1;
+        assert.equal(options.discoveryDeadline, 2_500);
+        assert.equal(options.discoveryEnv?.SHARED_TOKEN, undefined);
+        assert.equal(options.discoveryEnv?.NOVA_ONLY, undefined);
+        assert.equal(options.discoveryEnv?.COVEN_CAVE_AUTH_TOKEN, undefined);
+        assert.equal(options.discoveryEnv?.PATH, "/launch-path");
+        return {
+          ...probeSource,
+          PATH: "/canonical-path",
+        };
+      },
+    },
+  );
+  assert.equal(mapLoads, 1, "the probe uses one Vault-map snapshot for discovery and final scrub");
+  assert.equal(discoveryCalls, 1);
+  assert.deepEqual(
+    probeEnv,
+    {
+      PATH: "/canonical-path",
+      UNRELATED: "keep",
+    },
+    "the probe preserves canonical PATH and unrelated values while stripping every mapped/sidecar key",
+  );
+}
 
 const forNova = subtractScopedVaultKeys(baseEnv(), map, "nova");
 assert.equal(forNova.SHARED_TOKEN, "s");
@@ -142,6 +256,17 @@ assert.match(
   /restoreGrantedVaultGitHubTokenEnv[\s\S]*isVaultKeyGrantedTo\(entry, familiarId\)[\s\S]*resolveVaultManagedSecret\(key, entry\)\?\.trim\(\)/,
   "a Vault-managed GitHub alias is restored only for the granted familiar after the generic child-env scrub",
 );
+{
+  const helperStart = helperSource.indexOf("export function canonicalProbeSpawnEnv");
+  const helperEnd = helperSource.indexOf("/**\n * `covenSpawnEnv()` minus scoped", helperStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart, "the canonical probe helper is present");
+  const probeHelperSource = helperSource.slice(helperStart, helperEnd);
+  assert.doesNotMatch(
+    probeHelperSource,
+    /restoreGrantedVaultGitHubTokenEnv|restoreAllowedGitHubTokenEnv|resolveVaultManagedSecret/,
+    "probe environment construction never restores or materializes familiar/shared credentials",
+  );
+}
 
 // Generic harnesses (Codex, Hermes, OpenCode, etc.) must receive a granted
 // Vault token rather than a same-named launcher variable.
