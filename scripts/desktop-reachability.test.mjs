@@ -8,7 +8,7 @@ const [
   setup,
   startup,
   lifecycle,
-  settings,
+  phoneSettings,
   bridge,
   mobileScript,
   uninstall,
@@ -18,7 +18,7 @@ const [
   read("../src-tauri/src/tauri_setup.rs"),
   read("../src-tauri/src/sidecar_startup.rs"),
   read("../src-tauri/src/sidecar_lifecycle.rs"),
-  read("../src/components/settings-shell.tsx"),
+  read("../src/components/settings-phone.tsx"),
   read("../src/lib/desktop-reachability.ts"),
   read("./mobile-tailscale.sh"),
   read("./uninstall-app.sh"),
@@ -187,12 +187,11 @@ assert.match(
   "the dev mobile runner must carry its fallback port into Serve setup",
 );
 
-assert.match(settings, /label="Keep Mac awake for phone"/);
-assert.match(settings, /label="Only keep awake on power"/);
-assert.match(settings, /label="Background availability"/);
-assert.match(settings, /aria-label=\{[\s\S]*Keep Mac awake for phone/);
-const reachabilityGroup = settings.indexOf('<SettingsGroup label="Keep this Mac reachable">');
-const phoneWriteAccessGroup = settings.indexOf('<SettingsGroup label="Phone write access">');
+assert.match(phoneSettings, /renderSwitch\("preventSleep", "Stay awake while paired"\)/);
+assert.match(phoneSettings, /"preventSleepOnAcOnly",[\s\S]*"Only keep awake on power"/);
+assert.match(phoneSettings, /"daemonMode",[\s\S]*"Background availability"/);
+const reachabilityGroup = phoneSettings.indexOf('settingsGroupId("Keep this Mac reachable")');
+const phoneWriteAccessGroup = phoneSettings.indexOf('settingsGroupId("Phone write access")');
 assert.ok(
   reachabilityGroup !== -1 && phoneWriteAccessGroup !== -1 && reachabilityGroup < phoneWriteAccessGroup,
   "desktop reachability must remain before Phone write access in the Phone settings flow",
