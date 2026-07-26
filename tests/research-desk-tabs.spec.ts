@@ -374,7 +374,7 @@ test.describe("research desk tabs", () => {
     const railTabs = desk.getByRole("tablist", { name: "Rail contents" });
     await expect(railTabs.getByRole("tab", { name: /^Sources/ })).toHaveAttribute("aria-selected", "true");
     const sourcesPane = desk.getByRole("tabpanel", { name: /^Sources/ });
-    await expect(sourcesPane.getByText("Vendor benchmarks blog")).toBeVisible();
+    await expect(sourcesPane.getByRole("button", { name: /^Vendor benchmarks blog/ })).toBeVisible();
     await expect(sourcesPane.getByRole("button", { name: "Verify next pass" })).toBeVisible();
 
     // Toggling shows the artifacts in the same pane — one list at a time, both
