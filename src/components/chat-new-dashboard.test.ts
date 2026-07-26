@@ -23,6 +23,7 @@ import { readFile } from "node:fs/promises";
 const dash = await readFile(new URL("./chat-new-dashboard.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const homeComposer = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const boardHook = await readFile(new URL("./home/use-dashboard-board.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-dashboard.css", import.meta.url), "utf8");
 
 // ── (1) chat-view's empty-state split ────────────────────────────────────
@@ -118,6 +119,46 @@ assert.match(
 assert.match(dash, /const boardCards = useDashboardBoard\(\)/, "the board reads the live Tasks board");
 assert.match(dash, /fetch\("\/api\/inbox", \{ cache: "no-store"/, "the needs-you tier reads the live inbox");
 assert.match(dash, /groupInboxFeed\(items\)\.needsYou/, "needs-you uses the same attention tier as the bell");
+assert.match(
+  boardHook,
+  /familiarId: string \| null/,
+  "the lean dashboard-card projection must retain familiar ownership",
+);
+assert.match(
+  boardHook,
+  /familiarId: c\.familiarId \?\? null/,
+  "the Board response must carry familiar ownership into the dashboard model",
+);
+assert.match(
+  dash,
+  /filterFamiliarOwned\(boardCards,\s*familiar\.id\)/,
+  "Board open work must scope to the selected familiar before row derivation",
+);
+assert.match(
+  dash,
+  /filterFamiliarOwned\(needsYou,\s*familiar\.id\)/,
+  "Needs-you inbox work must scope to the selected familiar before row derivation",
+);
+assert.match(
+  dash,
+  /openWorkRows\(scopedBoardCards\)/,
+  "open-work counts, caps, and empty states must derive from scoped Board cards",
+);
+assert.match(
+  dash,
+  /scopedNeedsYou\.map/,
+  "open-work counts, caps, and empty states must derive from scoped Needs-you items",
+);
+assert.match(
+  dash,
+  /workFilter === "inbox" && scopedNeedsYou\.length > 0/,
+  "the Needs-you section link must use the familiar-scoped count",
+);
+assert.match(
+  dash,
+  /filterVisibleChatSessions\(sessions,\s*familiar\.id\)[\s\S]{0,300}?\.slice\(0,\s*RECENT_THREADS_CAP\)/,
+  "Recent threads must apply shared familiar visibility before the three-row cap",
+);
 assert.match(dash, /OPEN_WORK_FILTERS\.map/, "the board renders the trimmed filter tabs");
 assert.match(
   dash,
