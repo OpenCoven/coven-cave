@@ -10,10 +10,10 @@ const source = [
 // Setup status actions stay together as one compact row. On narrow panes the
 // row scrolls within its own width instead of wrapping or widening the page.
 const setupHeader = source.match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
-const setupActionsClasses =
-  setupHeader
-    .match(/<div\s+className="([^"]*\boverflow-x-auto\b[^"]*)"/)?.[1]
-    .split(/\s+/) ?? [];
+const setupActionsMatch = setupHeader.match(
+  /<div\s+className="([^"]*\boverflow-x-auto\b[^"]*)"/,
+);
+const setupActionsClasses = setupActionsMatch?.[1]?.split(/\s+/) ?? [];
 for (const className of [
   "flex",
   "w-full",
