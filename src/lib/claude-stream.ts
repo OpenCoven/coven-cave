@@ -101,7 +101,10 @@ export function hasUnsupportedClaudeToolFrame(
   const envelope = record(value);
   const message = record(envelope?.message);
   const content = message?.content;
-  if (!envelope) return false;
+  // `JSON.parse` accepts primitive and array roots too. Neither is a valid
+  // Claude stream envelope, so do not silently drop it without the one
+  // redacted compatibility diagnostic required for unknown frames.
+  if (!envelope) return true;
   const isAssistant = envelope.type === profile.eventTypes.assistant;
   const isUser = envelope.type === profile.eventTypes.user;
   // System/result envelopes have their own route handling. In particular,

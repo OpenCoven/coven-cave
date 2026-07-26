@@ -159,6 +159,11 @@ assert.equal(
   "unknown frames without a message field must not be silently dropped",
 );
 assert.equal(
+  hasUnsupportedClaudeToolFrame(["malformed", "root"], v2),
+  true,
+  "a syntactically valid JSON array root is still an invalid Claude stream frame",
+);
+assert.equal(
   hasUnsupportedClaudeToolFrame({ type: "system", subtype: "init" }, v2),
   false,
   "known stream metadata is not a compatibility failure",
