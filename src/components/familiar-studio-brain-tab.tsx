@@ -653,6 +653,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     localProviderSelected && isLocalTtsVoiceName(draftVoiceName);
   const savedLocalVoiceUnavailable =
     localProviderSelected &&
+    localCatalogReady &&
     isLocalTtsVoiceName(draftVoiceName) &&
     !localVoiceCatalog.voices.some((voice) => voice.id === draftVoiceName);
 
@@ -1206,7 +1207,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                       </p>
                     ) : null}
                   </label>
-                ) : localProviderSelected && localCatalogReady ? (
+                ) : localProviderSelected ? (
                   <label className="familiar-studio-brain__row">
                     <span className="familiar-studio-brain__label">Voice</span>
                     <div className="familiar-studio-brain__control">

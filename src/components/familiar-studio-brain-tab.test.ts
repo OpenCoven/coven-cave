@@ -247,6 +247,16 @@ assert.match(
 );
 assert.match(
   source,
+  /\) : localProviderSelected \? \(/,
+  "Local voice configuration keeps the restricted picker while readiness loads or fails, so an arbitrary piper- id cannot be entered through the system-voice fallback",
+);
+assert.match(
+  source,
+  /localProviderSelected &&\s*localCatalogReady &&\s*isLocalTtsVoiceName\(draftVoiceName\)/,
+  "A saved local voice is called unavailable only after a completed catalog check, not while refresh is still loading",
+);
+assert.match(
+  source,
   /fetch\("\/api\/voice\/local\/tts"/,
   "local voice previews use the same authenticated sidecar TTS endpoint as calls",
 );
