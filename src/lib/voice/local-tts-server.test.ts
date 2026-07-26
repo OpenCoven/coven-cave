@@ -8,10 +8,13 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import {
+  kokoroExecutable,
   LocalTtsSynthesisError,
   piperExecutable,
   piperSpawnEnv,
+  probeKokoroRuntime,
   probePiperRuntime,
+  runKokoroWithDependencies,
   runPiperWithDependencies,
 } from "./local-tts-server.ts";
 
@@ -270,4 +273,148 @@ test("packaged builds require the managed Piper resource instead of PATH", () =>
     null,
   );
   assert.equal(piperExecutable({ PATH: "development-path" }), "piper");
+});
+
+const kokoroAssets = {
+  modelPath: "kokoro-model.onnx",
+  voicesPath: "voices.bin",
+  tokensPath: "tokens.txt",
+  speakerId: 4,
+};
+
+test("Kokoro runner passes the utterance as argv and cleans its bounded WAV output", async () => {
+  let command = null;
+  let argv = null;
+  let options = null;
+  let outputDirectory = null;
+  const fakeRunner = (receivedCommand, receivedArgs, receivedOptions) => {
+    command = receivedCommand;
+    argv = receivedArgs;
+    options = receivedOptions;
+    const child = new EventEmitter();
+    child.stderr = new PassThrough();
+    child.kill = () => true;
+    const outputPath = receivedArgs
+      .find((arg) => arg.startsWith("--output-filename="))
+      .slice("--output-filename=".length);
+    outputDirectory = path.dirname(outputPath);
+    assert.notEqual(outputDirectory, os.tmpdir());
+    assert.match(path.basename(outputDirectory), /^coven-kokoro-/);
+    writeFileSync(outputPath, Buffer.from("RIFF"));
+    queueMicrotask(() => child.emit("close", 0));
+    return child;
+  };
+
+  const wav = await runKokoroWithDependencies(
+    kokoroAssets,
+    "  Hello from\r\nKokoro.  ",
+    undefined,
+    { spawnImpl: fakeRunner },
+  );
+
+  assert.equal(command, "sherpa-onnx-offline-tts");
+  assert.deepEqual(argv.slice(0, 3), [
+    "--kokoro-model=kokoro-model.onnx",
+    "--kokoro-voices=voices.bin",
+    "--kokoro-tokens=tokens.txt",
+  ]);
+  assert.ok(argv.includes("--sid=4"));
+  // sherpa-onnx ignores stdin: the normalized utterance must be the final
+  // positional argument, and no stdin pipe is opened at all.
+  assert.equal(argv[argv.length - 1], "Hello from Kokoro.");
+  assert.equal(options.stdio[0], "ignore");
+  assert.equal(options.windowsHide, true);
+  assert.deepEqual([...wav], [82, 73, 70, 70]);
+  assert.equal(existsSync(outputDirectory), false, "the private audio directory is removed");
+});
+
+test("Kokoro runner passes the managed runtime's espeak data directory", async () => {
+  const runtimeDir = await mkdtemp(path.join(os.tmpdir(), "coven-kokoro-runtime-"));
+  await mkdir(path.join(runtimeDir, "espeak-ng-data"));
+  let argv = null;
+  const fakeRunner = (_command, args) => {
+    argv = args;
+    const child = new EventEmitter();
+    child.stderr = new PassThrough();
+    child.kill = () => true;
+    const outputPath = args
+      .find((arg) => arg.startsWith("--output-filename="))
+      .slice("--output-filename=".length);
+    writeFileSync(outputPath, Buffer.from("RIFF"));
+    queueMicrotask(() => child.emit("close", 0));
+    return child;
+  };
+
+  try {
+    await runKokoroWithDependencies(kokoroAssets, "Packaged voice.", undefined, {
+      executable: path.join(runtimeDir, process.platform === "win32" ? "sherpa-onnx-offline-tts.exe" : "sherpa-onnx-offline-tts"),
+      spawnImpl: fakeRunner,
+    });
+    assert.ok(
+      argv.includes(`--kokoro-data-dir=${path.join(runtimeDir, "espeak-ng-data")}`),
+    );
+  } finally {
+    await remove(runtimeDir, { recursive: true, force: true });
+  }
+});
+
+test("Kokoro runner rejects invalid speaker ids and empty utterances before spawning", async () => {
+  let spawned = false;
+  const mustNotSpawn = () => { spawned = true; throw new Error("must not spawn"); };
+  await assert.rejects(
+    () => runKokoroWithDependencies({ ...kokoroAssets, speakerId: 1.5 }, "Hello.", undefined, {
+      spawnImpl: mustNotSpawn,
+    }),
+    (error) => error instanceof LocalTtsSynthesisError && error.code === "local_tts_failed",
+  );
+  await assert.rejects(
+    () => runKokoroWithDependencies(kokoroAssets, " \n\t ", undefined, {
+      spawnImpl: mustNotSpawn,
+    }),
+    (error) => error instanceof LocalTtsSynthesisError && error.code === "local_tts_failed",
+  );
+  assert.equal(spawned, false);
+});
+
+test("Kokoro runner reports a missing runtime as engine-unavailable", async () => {
+  const missingRunner = () => {
+    const child = new EventEmitter();
+    child.stderr = new PassThrough();
+    child.kill = () => true;
+    queueMicrotask(() => child.emit("error", Object.assign(new Error("missing"), { code: "ENOENT" })));
+    return child;
+  };
+  await assert.rejects(
+    () => runKokoroWithDependencies(kokoroAssets, "Hello locally.", undefined, { spawnImpl: missingRunner }),
+    (error) =>
+      error instanceof LocalTtsSynthesisError &&
+      error.code === "local_tts_engine_unavailable" &&
+      /sherpa-onnx/.test(error.message),
+  );
+});
+
+test("Kokoro availability probe mirrors the Piper probe contract", async () => {
+  const healthy = () => {
+    const child = new EventEmitter();
+    child.kill = () => true;
+    queueMicrotask(() => child.emit("close", 0));
+    return child;
+  };
+  assert.deepEqual(
+    await probeKokoroRuntime("sherpa-onnx-offline-tts", { spawnImpl: healthy }),
+    { available: true },
+  );
+
+  const missing = () => { throw new Error("spawn ENOENT"); };
+  const unavailable = await probeKokoroRuntime("sherpa-onnx-offline-tts", { spawnImpl: missing });
+  assert.equal(unavailable.available, false);
+  assert.match(unavailable.hint, /sherpa-onnx/);
+});
+
+test("packaged builds require a managed Kokoro resource instead of PATH", () => {
+  assert.equal(
+    kokoroExecutable({ COVEN_CAVE_BUNDLE: "1", PATH: "untrusted-path" }),
+    null,
+  );
+  assert.equal(kokoroExecutable({ PATH: "development-path" }), "sherpa-onnx-offline-tts");
 });

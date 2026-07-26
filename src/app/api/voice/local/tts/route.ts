@@ -7,7 +7,9 @@ import {
 } from "../../../../../lib/voice/speech-models.ts";
 import {
   LocalTtsSynthesisError,
+  runKokoro,
   runPiper,
+  type KokoroRunner,
   type PiperRunner,
 } from "../../../../../lib/voice/local-tts-server.ts";
 import {
@@ -27,6 +29,7 @@ export const LOCAL_TTS_MAX_BODY_BYTES = LOCAL_TTS_MAX_CHARS * 4 + 1_024;
 type LocalTtsRouteDependencies = {
   readiness?: (voiceName: string) => Promise<SpeechModelReadiness | null>;
   piper?: PiperRunner;
+  kokoro?: KokoroRunner;
 };
 
 async function defaultReadiness(
@@ -135,7 +138,37 @@ export async function handleLocalTtsPost(
           { status: 409 },
         );
       }
-      if (readiness.engine !== "piper") {
+      let audio: Uint8Array;
+      if (readiness.engine === "piper") {
+        audio = await (dependencies.piper ?? runPiper)(
+          readiness.path,
+          text,
+          req.signal,
+        );
+      } else if (readiness.engine === "kokoro") {
+        // Companion order is a registry contract: [voices.bin, tokens.txt].
+        const [voicesPath, tokensPath] = readiness.companionPaths ?? [];
+        if (!voicesPath || !tokensPath) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: "local_voice_not_ready",
+              hint: `Download and verify ${readiness.name} in Settings before using it.`,
+            },
+            { status: 409 },
+          );
+        }
+        audio = await (dependencies.kokoro ?? runKokoro)(
+          {
+            modelPath: readiness.path,
+            voicesPath,
+            tokensPath,
+            speakerId: registeredVoice.kokoroSpeakerId ?? 0,
+          },
+          text,
+          req.signal,
+        );
+      } else {
         return NextResponse.json(
           {
             ok: false,
@@ -145,12 +178,6 @@ export async function handleLocalTtsPost(
           { status: 503 },
         );
       }
-
-      const audio = await (dependencies.piper ?? runPiper)(
-        readiness.path,
-        text,
-        req.signal,
-      );
       const body = Uint8Array.from(audio).buffer;
       return new Response(body, {
         status: 200,
