@@ -123,6 +123,7 @@ function probeHelp(
   matches: (help: string) => boolean,
   env = harnessSpawnEnv(),
   input?: string,
+  acceptNonZeroExit = true,
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let output = "";
@@ -149,9 +150,9 @@ function probeHelp(
         }
         done(false);
       }, openCodeCapabilityProbeTimeoutMs());
-      child.on("close", () => {
+      child.on("close", (code) => {
         clearTimeout(timeout);
-        done(matches(output));
+        done((acceptNonZeroExit || code === 0) && matches(output));
       });
       child.on("error", () => {
         clearTimeout(timeout);
@@ -457,6 +458,8 @@ export function hermesChatSupportsModel(launch: {
     ["chat", "--help"],
     hermesHelpSupportsModel,
     launch.env,
+    undefined,
+    false,
   );
 }
 
