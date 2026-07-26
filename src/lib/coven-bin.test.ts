@@ -185,6 +185,7 @@ assert.match(
   const env = scrubSidecarInternalEnv({
     PATH: "/usr/bin",
     HOME: "/Users/witch",
+    SHELL: "/bin/zsh",
     COVEN_CAVE_BUNDLE: "1",
     COVEN_CAVE_AUTH_TOKEN: "sidecar-secret",
     COVEN_CAVE_ACCESS_TOKEN: "mobile-secret",
@@ -196,12 +197,44 @@ assert.match(
     COVEN_GITHUB_TOKEN: "coven-github-token",
     GH_TOKEN: "gh-token",
     GITHUB_PERSONAL_ACCESS_TOKEN: "marketplace-token",
+    NODE_OPTIONS: "--require=attacker.cjs",
+    NPM_CONFIG_NODE_OPTIONS: "--require=attacker.cjs",
+    COVEN_BIN: "/tmp/attacker-bin",
+    COVEN_VAULT_FILE: "/tmp/attacker-vault.yaml",
     MY_APP_TOKEN: "kept",
   });
   assert.deepEqual(
     env,
-    { PATH: "/usr/bin", HOME: "/Users/witch", MY_APP_TOKEN: "kept" },
-    "scrubSidecarInternalEnv drops every COVEN_CAVE_*/__NEXT_PRIVATE_* var and forbidden token keys, keeping user env intact",
+    {
+      PATH: "/usr/bin",
+      HOME: "/Users/witch",
+      SHELL: "/bin/zsh",
+      MY_APP_TOKEN: "kept",
+    },
+    "scrubSidecarInternalEnv drops sidecar secrets and runtime-control keys while keeping the user environment intact",
+  );
+}
+{
+  const env = scrubSidecarInternalEnv({
+    PATH: "C:\\Windows\\System32",
+    HOME: "C:\\Users\\witch",
+    CoVeN_CaVe_Auth_Token: "sidecar-mixed-case-secret",
+    __next_private_origin: "next-mixed-case-secret",
+    GitHub_Pat: "ghp_mixed_case",
+    Node_Options: "--require=attacker.cjs",
+    Npm_Config_Node_Options: "--require=attacker.cjs",
+    Coven_Bin: "C:\\attacker\\coven.exe",
+    Coven_Vault_File: "C:\\attacker\\vault.yaml",
+    MY_APP_TOKEN: "kept",
+  }, "win32");
+  assert.deepEqual(
+    env,
+    {
+      PATH: "C:\\Windows\\System32",
+      HOME: "C:\\Users\\witch",
+      MY_APP_TOKEN: "kept",
+    },
+    "Windows scrubbing compares internal, credential, and runtime-control keys case-insensitively",
   );
 }
 // Every other spawn site that spreads process.env wraps it in the scrub —

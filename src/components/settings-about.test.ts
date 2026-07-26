@@ -16,7 +16,10 @@ const component = existsSync(componentUrl) ? readFileSync(componentUrl, "utf8") 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const cssUrl = new URL("../styles/settings-about.css", import.meta.url);
 const css = existsSync(cssUrl) ? readFileSync(cssUrl, "utf8") : "";
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const themeCss = [
+  readFileSync(new URL("../styles/globals/foundations.css", import.meta.url), "utf8"),
+  readFileSync(new URL("../styles/globals/themes.css", import.meta.url), "utf8"),
+].join("\n");
 
 test("Settings delegates the About surface to a focused component", () => {
   assert.match(shell, /import \{ AboutSection \} from "\.\/settings-about"/);
@@ -127,7 +130,7 @@ test("About hero text and sigil keep computed contrast across all palettes", () 
   const failures: string[] = [];
   for (const id of THEME_IDS) {
     for (const mode of ["dark", "light"] as const) {
-      const tokens = themeTokens(globals, id, mode);
+      const tokens = themeTokens(themeCss, id, mode);
       const base = resolveThemeColor(tokens, "--bg-base");
       const panelRaw = resolveThemeColor(tokens, "--bg-panel");
       assert.ok(base && panelRaw, `${id}/${mode} resolves About surfaces`);

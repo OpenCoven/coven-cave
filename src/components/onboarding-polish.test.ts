@@ -7,6 +7,36 @@ const source = [
   readFileSync(new URL("./onboarding-model.ts", import.meta.url), "utf8"),
 ].join("\n");
 
+// Setup status actions stay together as one compact row. On narrow panes the
+// row scrolls within its own width instead of wrapping or widening the page.
+const setupHeader = source.match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
+assert.match(
+  setupHeader,
+  /className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto lg:w-auto lg:shrink-0"/,
+  "Re-check, Copy diagnostics, and readiness render in one contained non-wrapping row",
+);
+assert.equal(
+  setupHeader.match(/focus-ring-inset/g)?.length,
+  2,
+  "scrollable setup actions keep their focus indicator inside the clipped row",
+);
+assert.equal(
+  setupHeader.match(/shrink-0 whitespace-nowrap/g)?.length,
+  3,
+  "each setup status action keeps its label on one line",
+);
+
+assert.doesNotMatch(
+  source,
+  /SalemPathfinder(?:Entry|Request)|Ask Salem for setup help/,
+  "the setup page no longer mounts or prepares the Ask Salem entry",
+);
+assert.doesNotMatch(
+  source,
+  /Installing the CovenCave app itself|platformCopy\.caveInstall/,
+  "the setup page no longer renders the redundant app-install accordion",
+);
+
 // Refresh-failure tracking
 assert.match(
   source,
