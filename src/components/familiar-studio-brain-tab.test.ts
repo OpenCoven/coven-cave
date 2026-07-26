@@ -469,6 +469,16 @@ assert.match(
 );
 assert.match(
   source,
+  /availability\?: \{[\s\S]*?state: "ready" \| "missing" \| "unlaunchable" \| "probe_failed" \| "unsupported_runtime"[\s\S]*?message\?: string;/,
+  "the runtime picker receives the launchability summary returned by /api/harnesses",
+);
+assert.match(
+  source,
+  /const selectedHarnessAvailability = harnesses\.find\(\(item\) => item\.id === harnessId\)\?\.availability;[\s\S]*?selectedHarnessAvailability\.state !== "ready"[\s\S]*?selectedHarnessAvailability\.message/,
+  "the selected runtime shows truthful launch remediation rather than only an install bit",
+);
+assert.match(
+  source,
   /kind === "on-device"[\s\S]{0,200}runs fully on-device/,
   "the ready state confirms recognition stays on-device",
 );

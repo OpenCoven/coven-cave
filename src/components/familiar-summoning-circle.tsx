@@ -772,8 +772,14 @@ function StageVessel({
   // launcher. Hide it for SSH rather than letting a selection fall back to an
   // incompatible `coven run --stream-json` path.
   const installedHarnesses = (harnesses ?? []).filter(
-    (h) => h.installed && (vessel !== "ssh" || h.id !== "grok"),
+    (h) => h.installed && (h.availability?.state ?? "ready") === "ready" && (vessel !== "ssh" || h.id !== "grok"),
   );
+  const unavailableHarnesses = (harnesses ?? []).flatMap((h) => {
+    const availability = h.availability;
+    return h.installed && availability && availability.state !== "ready"
+      ? [{ ...h, availability }]
+      : [];
+  });
   return (
     <div className="flex flex-col gap-3">
       <div role="radiogroup" aria-label="Vessel" className="summoning-vessels">
@@ -811,6 +817,11 @@ function StageVessel({
               <p className="text-[length:var(--text-xs)] text-[var(--color-warning)]">
                 No chat-capable runtime found. Run setup to install one (Codex, Claude Code, Copilot…), then return to the circle.
               </p>
+              {unavailableHarnesses.map((h) => (
+                <p key={h.id} role="status" className="text-[length:var(--text-xs)] text-[var(--color-warning)]">
+                  {h.label}: {h.availability.message}
+                </p>
+              ))}
               <button
                 type="button"
                 onClick={() => window.dispatchEvent(new CustomEvent("cave:onboarding-open"))}

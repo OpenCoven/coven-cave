@@ -46,6 +46,16 @@ assert.match(
   "local/SSH vessels list installed runtimes from /api/harnesses",
 );
 assert.match(
+  source,
+  /const installedHarnesses = \(harnesses \?\? \[\]\)\.filter\([\s\S]*?\(h\.availability\?\.state \?\? "ready"\) === "ready"/,
+  "the summoning picker only offers runtimes proven safe to launch",
+);
+assert.match(
+  source,
+  /const unavailableHarnesses = \(harnesses \?\? \[\]\)\.flatMap\([\s\S]*?availability\.state !== "ready"[\s\S]*?unavailableHarnesses\.map\(\(h\) => \([\s\S]*?h\.availability\.message/,
+  "the summoning picker shows safe remediation for installed-but-unlaunchable runtimes",
+);
+assert.match(
   harnessesRoute,
   /runtimeHost: hostname\(\)/,
   "the harness probe reports the hostname of the Cave runtime host",

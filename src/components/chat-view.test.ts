@@ -226,8 +226,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const covenMissing = useMemo\(\s*\(\) => \/Coven CLI not found on PATH\/i\.test\(message\) \|\| code === "ENOENT"/,
-  "the error strip detects the coven-CLI-missing failure class",
+  /const runtimeMissing = useMemo\(\s*\(\) => code === "runtime_missing" \|\| \/Coven CLI not found on PATH\/i\.test\(message\) \|\| code === "ENOENT"/,
+  "the error strip detects a missing runtime reported by preflight",
 );
 assert.match(
   source,
