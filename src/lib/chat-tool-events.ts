@@ -245,6 +245,16 @@ export class ToolCallTracker {
     return Array.from(this.recorded.values());
   }
 
+  /** Shift tool positions after an authoritative stream-text correction. */
+  rebaseTextOffsets(after: number, delta: number): void {
+    if (!delta) return;
+    for (const [id, event] of this.recorded) {
+      if (event.textOffset !== undefined && event.textOffset >= after) {
+        this.recorded.set(id, { ...event, textOffset: Math.max(0, event.textOffset + delta) });
+      }
+    }
+  }
+
   /** pre_tool_use (or bare tool_use) hook line: a call is starting. */
   hookStart(name: string, input?: string, textOffset?: number): ToolStreamEvent {
     const queue = this.queueFor(name);
@@ -478,6 +488,11 @@ export class ToolCallTracker {
     };
     this.record(ev);
     return ev;
+  }
+
+  /** True after an envelope completion has already been recorded. */
+  hasSettledEnvelopeId(id: string): boolean {
+    return this.settledEnvelopeIds.has(id);
   }
 }
 

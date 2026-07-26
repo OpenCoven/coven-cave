@@ -14,6 +14,8 @@ import {
   ToolCallTracker,
   toPersistedTools,
 } from "../../../../lib/chat-tool-events.ts";
+import { buildCopilotStreamArgs } from "../../../../lib/copilot-stream.ts";
+import { prepareCopilotChatRouting, resolveCopilotChatRouting } from "./copilot-routing.ts";
 
 const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
@@ -41,11 +43,85 @@ const chatView = await readFile(
 // directly with its manifest-declared stream args and parse its JSONL events;
 // every other adapter (and SSH runtimes) keeps the coven run path.
 
-assert.match(
-  chatRoute,
-  /import \{[\s\S]*?copilotStreamSpec,[\s\S]*?\} from "@\/lib\/copilot-stream";/,
-  "Chat send should source copilot stream wiring from the shared copilot-stream lib",
+const directCopilot = resolveCopilotChatRouting({
+  harness: "copilot",
+  isSshRuntime: false,
+  capabilityVersion: "1.0.70",
+});
+assert.equal(directCopilot.mode, "direct-jsonl");
+assert.ok(directCopilot.spec, "a supported local Copilot runtime selects the direct JSONL launch");
+assert.equal(directCopilot.spec.executable, "copilot");
+assert.deepEqual(
+  buildCopilotStreamArgs({
+    spec: directCopilot.spec,
+    prompt: "route behavior",
+    resumeSessionId: null,
+    newSessionId: null,
+    model: null,
+    permissionMode: "full",
+    addDirs: [],
+  }).slice(0, 5),
+  ["--allow-all", "--output-format", "json", "--stream", "on"],
+  "the direct full-mode routing decision keeps its approval flag before the reviewed JSONL launch contract",
 );
+
+for (const capabilityVersion of [null, "1.0.70.1", "0.9.9", "2.0.0", "2.0.0-rc.1"]) {
+  const routing = resolveCopilotChatRouting({
+    harness: "copilot",
+    isSshRuntime: false,
+    capabilityVersion,
+  });
+  assert.equal(routing.mode, "plain", `${capabilityVersion ?? "unavailable"} must use generic chat`);
+  assert.equal(routing.spec, null, "the fallback must never direct-spawn the JSONL parser");
+  assert.match(routing.compatibilityDiagnostic ?? "", /not yet compatible/);
+}
+
+assert.deepEqual(
+  resolveCopilotChatRouting({
+    harness: "copilot",
+    isSshRuntime: true,
+    capabilityVersion: "1.0.70",
+  }),
+  { mode: "plain", spec: null, compatibilityDiagnostic: null },
+  "remote Copilot routing keeps the remote generic execution path",
+);
+
+let resolveProbe!: (value: { version: string; launchCommand: { command: string; fixedArgs: string[] } }) => void;
+let resolveRegistry!: (value: { eventProtocols: unknown[] }) => void;
+let probeStarted = false;
+let registryStarted = false;
+const preparedDirect = prepareCopilotChatRouting({
+  harness: "copilot",
+  isSshRuntime: false,
+  probe: () => new Promise((resolve) => {
+    probeStarted = true;
+    resolveProbe = resolve;
+  }),
+  resolveCompatibility: () => new Promise((resolve) => {
+    registryStarted = true;
+    resolveRegistry = resolve;
+  }),
+});
+assert.equal(probeStarted, true, "the route preparation starts the version probe");
+assert.equal(registryStarted, true, "the route preparation starts registry resolution without awaiting the probe");
+resolveProbe({ version: "1.0.70", launchCommand: { command: "node", fixedArgs: ["copilot-entry.js"] } });
+resolveRegistry({ eventProtocols: [] });
+const preparedDirectResult = await preparedDirect;
+assert.equal(preparedDirectResult.mode, "direct-jsonl", "a supported mocked runtime selects the direct JSONL route");
+assert.deepEqual(
+  preparedDirectResult.spec?.launchCommand,
+  { command: "node", fixedArgs: ["copilot-entry.js"] },
+  "the direct route reuses the exact bounded-probe launcher instead of discovering one while streaming",
+);
+
+const preparedFallback = await prepareCopilotChatRouting({
+  harness: "copilot",
+  isSshRuntime: false,
+  probe: async () => ({ version: "2.0.0" }),
+  resolveCompatibility: async () => ({ eventProtocols: [] }),
+});
+assert.equal(preparedFallback.mode, "plain", "an unsupported mocked runtime retains generic plain chat");
+assert.match(preparedFallback.compatibilityDiagnostic ?? "", /not yet compatible/);
 
 // ── Grok Build JSONL stream wiring ─────────────────────────────────────────
 
@@ -117,8 +193,23 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const copilotStream =\s*\n?\s*!sshRuntime && binding\.harness === "copilot" \? copilotStreamSpec\(\) : null;/,
-  "The copilot stream path is gated to local copilot chats and falls back to passthrough when the manifest stops declaring stream mode",
+  /copilotProtocolDiagnostic\(raw, protocol\)/,
+  "unknown tool-event shapes must become a redacted compatibility diagnostic instead of being silently dropped",
+);
+assert.match(
+  chatRoute,
+  /recordStdoutErrorTail\("Copilot emitted a malformed protocol frame\.", true\)/,
+  "malformed Copilot JSONL records only a fixed redacted diagnostic, never the raw frame",
+);
+assert.match(
+  chatRoute,
+  /recordStdoutErrorTail\("Copilot emitted an unrecognized protocol frame\.", true\)/,
+  "unframed Copilot stdout is recorded only as a fixed redacted protocol diagnostic",
+);
+assert.match(
+  chatRoute,
+  /kind: "assistant_replace", text: assistantText/,
+  "an authoritative Copilot full frame replaces divergent streamed text in the live and persisted turn",
 );
 
 assert.match(
@@ -129,8 +220,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /if \(copilotStream\) \{\s*\n\s*handleCopilotLine\(line, isJson\);\s*\n\s*return;/,
-  "Copilot stdout routes through the copilot JSONL handler, never the AssistantFilter (raw JSON frames must not leak into the bubble)",
+  /if \(copilotStream\) \{[\s\S]*?handleCopilotLine\(line, isJson \|\| line\.trimStart\(\)\.startsWith\("\{"\)\);[\s\S]*?return;/,
+  "Complete and truncated Copilot JSONL frames route through the redacted protocol handler, never the AssistantFilter",
 );
 
 assert.match(
@@ -156,7 +247,11 @@ assert.match(
   /copilotText\.reset\(\);/,
   "The resume retry must clear per-attempt copilot text-dedup state alongside the tracker",
 );
-
+assert.match(
+  chatRoute,
+  /\(openCodeDirect \|\| copilotStream\) && code !== 0[\s\S]*?is_error: true/,
+  "a nonzero direct Copilot process exit persists the turn as an error even without a final result frame",
+);
 assert.match(
   chatRoute,
   /const a = \["run", binding\.harness, "--stream-json"\];/,

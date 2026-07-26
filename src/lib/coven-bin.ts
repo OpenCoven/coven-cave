@@ -35,6 +35,8 @@ let cachedToolPath: string | null = null;
 export type CovenLaunchCommand = {
   command: string;
   fixedArgs: string[];
+  /** Resolution exceeded a bounded discovery deadline; callers must not spawn. */
+  resolutionTimedOut?: true;
   // A .cmd/.bat shim was found but its target could not be proven. Callers
   // that only need a version must report it as unknown instead of asking
   // Windows to run an ambiguous batch file (or substituting another binary).

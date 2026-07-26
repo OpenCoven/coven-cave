@@ -6,6 +6,7 @@ enum StreamEvent {
     case session(sessionId: String)
     case user(text: String)
     case assistantChunk(text: String)
+    case assistantReplace(text: String)
     case progress(id: String?, label: String, detail: String?, status: String?, durationMs: Int?)
     case toolUse(id: String?, name: String, input: String?, output: String?, status: String?, durationMs: Int?)
     case done(isError: Bool, sessionId: String?)
@@ -26,6 +27,8 @@ enum StreamEvent {
             return .user(text: obj["text"] as? String ?? "")
         case "assistant_chunk":
             return .assistantChunk(text: obj["text"] as? String ?? "")
+        case "assistant_replace":
+            return .assistantReplace(text: obj["text"] as? String ?? "")
         case "progress":
             return .progress(
                 id: obj["id"] as? String,

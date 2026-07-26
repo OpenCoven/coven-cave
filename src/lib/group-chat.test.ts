@@ -67,6 +67,13 @@ test("applyGroupEvent: chunks append and flip status to streaming", () => {
   assert.equal(r.status, "streaming");
 });
 
+test("applyGroupEvent: authoritative replacements overwrite stale chunks", () => {
+  let r = baseReply();
+  r = applyGroupEvent(r, { kind: "assistant_chunk", text: "stale" });
+  r = applyGroupEvent(r, { kind: "assistant_replace", text: "authoritative" });
+  assert.equal(r.text, "authoritative");
+});
+
 test("applyGroupEvent: progress sets activity but a chunk clears it", () => {
   let r = baseReply();
   r = applyGroupEvent(r, { kind: "progress", label: "Thinking", status: "running" });

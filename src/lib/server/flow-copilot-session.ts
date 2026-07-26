@@ -17,9 +17,12 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { saveConversation } from "../cave-conversations.ts";
+import { formatToolInputValue, toPersistedTools, ToolCallTracker } from "../chat-tool-events.ts";
 import {
   buildCopilotStreamArgs,
   copilotIdentityPreamble,
+  copilotProtocolDiagnostic,
+  CopilotTextAssembler,
   parseCopilotChatEvent,
   type CopilotStreamSpec,
 } from "../copilot-stream.ts";
@@ -44,6 +47,10 @@ export type CopilotFlowLaunch = {
    * be listed (cave-n1yc contract).
    */
   addDirs?: string[];
+  /** Only trusted local automation may pre-approve tools and URLs. */
+  permissionMode?: "read" | "unattended";
+  /** Injected only by direct-spawn tests; production resolves the CLI safely. */
+  spawnCommand?: { command: string; fixedArgs: string[] };
 };
 
 export type CopilotFlowStart = {
@@ -92,11 +99,17 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     // iteration "completes" with an untouched workspace (the research-mission
     // "completed without artifacts/primary.md" failure). Path verification
     // stays on — writes are confined to the spawn cwd plus addDirs.
-    permissionMode: "unattended",
+    // Webhook payloads are untrusted prompt data. Only a caller that has
+    // explicitly established a local automation boundary may pre-approve.
+    permissionMode: launch.permissionMode ?? "read",
     addDirs,
   });
 
-  const child = spawn(launch.spec.executable, args, {
+  const command = launch.spawnCommand ?? launch.spec.launchCommand ?? {
+    command: launch.spec.executable,
+    fixedArgs: [],
+  };
+  const child = spawn(command.command, [...command.fixedArgs, ...args], {
     cwd: launch.projectRoot,
     env: harnessSpawnEnv(launch.familiarId),
     stdio: ["ignore", "pipe", "pipe"],
@@ -106,27 +119,112 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
   const startedAt = new Date().toISOString();
   let assistantText = "";
   const deltaByMessage = new Map<string, string>();
-  let stderrTail = "";
+  const textAssembler = new CopilotTextAssembler();
+  const toolTracker = new ToolCallTracker();
+  const pendingToolCompletions = new Map<string, { output: string | undefined; isError: boolean }>();
+  const MAX_PENDING_TOOL_COMPLETIONS = 64;
+  const compatibilityDiagnostics = new Map<string, string>();
+  let protocolReportedFailure = false;
+
+  const rememberPendingToolCompletion = (
+    toolCallId: string,
+    completion: { output: string | undefined; isError: boolean },
+  ) => {
+    // First terminal frame wins, matching ToolCallTracker's settled-call
+    // policy. Replayed/reordered completions must not replace it.
+    if (pendingToolCompletions.has(toolCallId)) return;
+    if (!pendingToolCompletions.has(toolCallId) && pendingToolCompletions.size >= MAX_PENDING_TOOL_COMPLETIONS) {
+      const oldest = pendingToolCompletions.keys().next().value;
+      if (oldest) pendingToolCompletions.delete(oldest);
+      compatibilityDiagnostics.set(
+        "orphan-tool-completion-limit",
+        "Copilot emitted too many unmatched tool completions; some tool details were discarded.",
+      );
+    }
+    pendingToolCompletions.set(toolCallId, completion);
+  };
 
   const rl = createInterface({ input: child.stdout });
   rl.on("line", (line) => {
     const trimmed = line.trim();
-    if (!trimmed.startsWith("{")) return;
+    if (!trimmed) return;
+    if (!trimmed.startsWith("{")) {
+      compatibilityDiagnostics.set(
+        "unframed-output",
+        "Copilot emitted an unrecognized protocol frame.",
+      );
+      protocolReportedFailure = true;
+      return;
+    }
     let raw: unknown;
-    try { raw = JSON.parse(trimmed); } catch { return; }
-    const event = parseCopilotChatEvent(raw);
-    if (!event) return;
+    try { raw = JSON.parse(trimmed); } catch {
+      compatibilityDiagnostics.set("malformed-jsonl", "Copilot emitted a malformed protocol frame.");
+      return;
+    }
+    const event = parseCopilotChatEvent(raw, launch.spec.protocol);
+    if (!event) {
+      const diagnostic = copilotProtocolDiagnostic(raw, launch.spec.protocol);
+      if (diagnostic) compatibilityDiagnostics.set(diagnostic.code, diagnostic.message);
+      return;
+    }
     if (event.kind === "text_delta") {
-      deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + event.text);
+      const append = textAssembler.delta(event.messageId, event.text, event.frameId);
+      if (append) deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + append);
     } else if (event.kind === "message") {
       // The final frame carries the complete content — prefer it over deltas.
+      const messageEntries = [...deltaByMessage.entries()];
+      const messageIndex = messageEntries.findIndex(([id]) => id === event.messageId);
+      const previousContent = deltaByMessage.get(event.messageId) ?? "";
+      const precedingMessages = messageIndex >= 0 ? messageEntries.slice(0, messageIndex) : messageEntries;
+      const messageStart = precedingMessages
+        .reduce((length, [, content]) => length + content.length + 1, 0);
+      textAssembler.message(event.messageId, event.content);
       deltaByMessage.set(event.messageId, event.content);
+      toolTracker.rebaseTextOffsets(
+        messageStart + previousContent.length,
+        event.content.length - previousContent.length,
+      );
+      if (event.malformedToolRequests) {
+        compatibilityDiagnostics.set(
+          "malformed-tool-event",
+          "Copilot CLI emitted a malformed tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",
+        );
+      }
+      for (const request of event.toolRequests) {
+        toolTracker.envelopeToolUse(
+          request.toolCallId,
+          request.name,
+          formatToolInputValue(request.input),
+          [...deltaByMessage.values()].join("\n").length,
+        );
+        const completion = pendingToolCompletions.get(request.toolCallId);
+        if (completion && toolTracker.envelopeToolResult(request.toolCallId, completion.output, completion.isError)) {
+          pendingToolCompletions.delete(request.toolCallId);
+        }
+      }
+    } else if (event.kind === "tool_start") {
+      toolTracker.envelopeToolUse(
+        event.toolCallId,
+        event.toolName,
+        formatToolInputValue(event.input),
+        [...deltaByMessage.values()].join("\n").length,
+      );
+      const completion = pendingToolCompletions.get(event.toolCallId);
+      if (completion && toolTracker.envelopeToolResult(event.toolCallId, completion.output, completion.isError)) {
+        pendingToolCompletions.delete(event.toolCallId);
+      }
+    } else if (event.kind === "tool_end") {
+      if (!toolTracker.envelopeToolResult(event.toolCallId, event.output, event.isError)) {
+        if (!toolTracker.hasSettledEnvelopeId(event.toolCallId)) {
+          rememberPendingToolCompletion(event.toolCallId, { output: event.output, isError: event.isError });
+        }
+      }
+    } else if (event.kind === "result") {
+      protocolReportedFailure ||= event.isError;
     }
   });
 
-  child.stderr.on("data", (chunk: Buffer) => {
-    stderrTail = (stderrTail + chunk.toString()).slice(-2_000);
-  });
+  child.stderr.resume();
 
   const timeout = setTimeout(() => {
     try { child.kill("SIGKILL"); } catch { /* already gone */ }
@@ -144,16 +242,26 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
       finalized = true;
       clearTimeout(timeout);
       ACTIVE_RUNS.delete(sessionId);
-      assistantText = [...deltaByMessage.values()].join("\n").trim();
+      for (const pending of textAssembler.flushUnconfirmed()) {
+        deltaByMessage.set(pending.messageId, pending.text);
+      }
+      const reconciledAssistantText = [...deltaByMessage.values()].join("\n");
+      assistantText = reconciledAssistantText.trim();
+      const persistedTools = toPersistedTools(
+        toolTracker.snapshot(),
+        reconciledAssistantText.length - reconciledAssistantText.trimStart().length,
+      );
       // Any non-zero (or missing) exit code is an error — even with partial
       // output, the run didn't finish cleanly and the diagnostics must not
       // be dropped. Captured text is preserved ahead of the exit note.
-      const failed = code !== 0;
-      const exitNote = failed
-        ? `copilot exited with code ${code ?? "?"}${stderrTail.trim() ? `:\n${stderrTail.trim()}` : ""}`
-        : "";
+      const failed = code !== 0 || protocolReportedFailure;
+      const exitNote = code !== 0
+        ? `Copilot exited with code ${code ?? "?"}.`
+        : protocolReportedFailure
+          ? "Copilot reported a failed result."
+          : "";
       const finishedAt = new Date().toISOString();
-      const text = [assistantText, exitNote].filter(Boolean).join("\n\n");
+      const text = [assistantText, ...compatibilityDiagnostics.values(), exitNote].filter(Boolean).join("\n\n");
       void (async () => {
         try {
           const userTurnId = randomUUID();
@@ -173,6 +281,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
                 role: "assistant",
                 text,
                 createdAt: finishedAt,
+                ...(persistedTools ? { tools: persistedTools } : {}),
                 ...(failed ? { isError: true } : {}),
               },
             ],
@@ -184,8 +293,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
         resolve();
       })();
     };
-    child.on("error", (err) => {
-      stderrTail = `${stderrTail}\n${err.message}`.slice(-2_000);
+    child.on("error", () => {
       // Give a same-tick "close" the chance to carry the real exit code;
       // finalize from here only if it never arrives.
       setImmediate(() => finalize(null));
