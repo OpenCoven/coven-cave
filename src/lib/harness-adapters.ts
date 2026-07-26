@@ -326,6 +326,12 @@ export function mergeAdapterReports(
 
   for (const coven of covenReports) {
     const existing = merged.get(coven.id);
+    // Direct-chat availability is the executable contract. A daemon may see a
+    // Windows `.cmd` shim as installed even though Cave must not launch it;
+    // never let that generic report turn an unlaunchable direct runtime into
+    // an installed/ready picker entry.
+    const directLaunchUnavailable = existing?.availability?.state !== undefined
+      && existing.availability.state !== "ready";
     merged.set(coven.id, {
       id: coven.id,
       // Cave's curated label wins over the daemon manifest's — otherwise a
@@ -334,7 +340,7 @@ export function mergeAdapterReports(
       label: existing?.label ?? coven.label,
       binary: coven.executable,
       chatSupported: existing?.chatSupported ?? isTrustedChatHarness(coven.id),
-      installed: coven.available || existing?.installed === true,
+      installed: directLaunchUnavailable ? false : coven.available || existing?.installed === true,
       path: existing?.path ?? null,
       version: existing?.version ?? null,
       installHint: coven.install_hint || existing?.installHint || "",

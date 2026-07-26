@@ -162,6 +162,36 @@ const mergedGrok = mergeAdapterReports(
 assert.deepEqual(mergedGrok[0].models, [{ id: "grok-4.5", label: "grok-4.5 (default)" }]);
 assert.equal(mergedGrok[0].defaultModel, "grok-4.5");
 
+const mergedUnlaunchableHermes = mergeAdapterReports(
+  [{
+    id: "hermes",
+    label: "Hermes",
+    binary: "hermes",
+    installed: false,
+    path: null,
+    version: null,
+    availability: {
+      state: "unlaunchable",
+      code: "runtime_unlaunchable",
+      message: "Hermes CLI is installed as a Windows command shim that a direct launch cannot run.",
+    },
+  }],
+  [{
+    id: "hermes",
+    label: "Hermes Agent",
+    executable: "hermes",
+    available: true,
+    install_hint: "Install Hermes.",
+    source: "manifest",
+  }],
+);
+assert.equal(
+  mergedUnlaunchableHermes[0].installed,
+  false,
+  "a daemon's shim-only Hermes discovery cannot override Cave's unlaunchable direct-launch contract",
+);
+assert.equal(mergedUnlaunchableHermes[0].availability?.state, "unlaunchable");
+
 const merged = mergeAdapterReports(
   [
     {
