@@ -13,8 +13,6 @@ import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
-import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
-import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
 import { openExternalUrl } from "@/lib/open-external";
 import {
   hasVerifiedLatestVersion,
@@ -965,16 +963,6 @@ export function OnboardingOverlay({
     );
   }, [open, status, activeStepKey, steps, announce]);
 
-  // Safe machine-state context for Setup Salem — platform + detected runtime
-  // health only; never secrets, tokens, or logs (design §"Privacy").
-  const salemMachineState = useMemo<SalemPathfinderRequest["machineState"]>(() => ({
-    platform:
-      platform === "mac" ? "macos" : platform === "windows" ? "windows" : platform === "linux" ? "linux" : "unknown",
-    covenCli: status ? (status.steps.covenCli.ok ? "healthy" : "missing") : "unknown",
-    daemon: status ? (status.steps.daemon.ok ? "running" : "stopped") : "unknown",
-    familiarCount: status?.steps.familiars.ok ? 1 : 0,
-  }), [platform, status]);
-
   // With every required step done, rest on the daemon step (the last one) —
   // familiar creation itself lives in the app's summoning circle now.
   const openStepKey = expandedStep ?? activeStepKey ?? "daemon";
@@ -1012,12 +1000,12 @@ export function OnboardingOverlay({
               re-checks every 2 seconds until everything is ready.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto lg:w-auto lg:shrink-0">
             <button
               onClick={() => void recheckNow()}
               disabled={rechecking}
               aria-busy={rechecking}
-              className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-70"
+              className="focus-ring inline-flex shrink-0 whitespace-nowrap items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-70"
             >
               <Icon
                 name="ph:arrows-clockwise-bold"
@@ -1028,7 +1016,7 @@ export function OnboardingOverlay({
             <button
               onClick={() => void copyDiagnostics()}
               aria-live="polite"
-              className={`focus-ring inline-flex items-center gap-2 rounded-md border px-3 py-2 text-[length:var(--text-sm)] hover:border-[var(--border-strong)] ${
+              className={`focus-ring inline-flex shrink-0 whitespace-nowrap items-center gap-2 rounded-md border px-3 py-2 text-[length:var(--text-sm)] hover:border-[var(--border-strong)] ${
                 diagCopy === "copied"
                   ? "border-[color-mix(in_oklch,var(--color-success)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_12%,transparent)] text-[var(--color-success)]"
                   : diagCopy === "failed"
@@ -1051,7 +1039,7 @@ export function OnboardingOverlay({
                   ? "Copy failed"
                   : "Copy diagnostics"}
             </button>
-            <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+            <div className="shrink-0 whitespace-nowrap rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
               {ready}/{total} ready
             </div>
           </div>
@@ -1214,20 +1202,6 @@ export function OnboardingOverlay({
                 Dismiss
               </button>
             </div>
-          </section>
-        ) : null}
-
-        {!status?.complete ? (
-          <section className="mt-5" aria-label="Ask Salem for setup help">
-            <SalemPathfinderEntry
-              mode="setup"
-              density="slim"
-              defaultMessage="Help me get my first familiar running in Cave"
-              machineState={salemMachineState}
-              currentSurface="setup"
-              onRunDoctor={() => void recheckNow()}
-              onRoute={() => onDismiss()}
-            />
           </section>
         ) : null}
 
@@ -1477,15 +1451,6 @@ export function OnboardingOverlay({
               );
             })}
           </ol>
-
-          <details className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4">
-            <summary className="cursor-pointer text-[length:var(--text-sm)] font-semibold text-[var(--text-secondary)]">
-              Installing the CovenCave app itself ({platformCopy.label})
-            </summary>
-            <div className="mt-3">
-              <InstructionList title="" items={platformCopy.caveInstall} />
-            </div>
-          </details>
 
           <MaintenancePanel prune={prune} setPrune={setPrune} />
         </main>
