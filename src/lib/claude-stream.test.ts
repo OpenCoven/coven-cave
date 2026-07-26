@@ -68,6 +68,16 @@ assert.equal(
   true,
   "malformed tool blocks are visible compatibility failures, not tool bubbles",
 );
+assert.deepEqual(
+  parseClaudeMessageEnvelope({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu-missing-input", name: "Read" }] } }, v2),
+  [],
+  "a tool_use block without its required input does not create an incomplete tool bubble",
+);
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu-missing-input", name: "Read" }] } }, v2),
+  true,
+  "a missing tool input is a malformed profile frame rather than an empty invocation",
+);
 assert.equal(
   hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: [{ type: "text", text: "ordinary text" }] } }, v2),
   false,

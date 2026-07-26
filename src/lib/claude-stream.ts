@@ -11,6 +11,10 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
 /** Decode only assistant text for the compatibility fallback. In particular,
  * malformed sibling blocks must not make a valid later text block disappear,
  * and this path must never manufacture a tool activity event. */
@@ -56,7 +60,8 @@ export function parseClaudeMessageEnvelope(
         typeof block.id === "string" &&
         typeof block.name === "string" &&
         block.id &&
-        block.name
+        block.name &&
+        hasOwn(block, "input")
       ) {
         events.push({ kind: "tool-use", id: block.id, name: block.name, input: block.input });
       }
@@ -113,7 +118,11 @@ export function hasUnsupportedClaudeToolFrame(
       if (!block) return true;
       if (block.type === "text") return typeof block.text !== "string";
       if (block.type !== profile.eventTypes.toolUse) return true;
-      return typeof block.id !== "string" || !block.id || typeof block.name !== "string" || !block.name;
+      return typeof block.id !== "string" ||
+        !block.id ||
+        typeof block.name !== "string" ||
+        !block.name ||
+        !hasOwn(block, "input");
     });
   }
   if (isUser) {
