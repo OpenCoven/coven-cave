@@ -16,6 +16,13 @@ const surface = readFileSync(new URL("./sentinel-surface.tsx", import.meta.url),
 const register = readFileSync(new URL("./register.tsx", import.meta.url), "utf8");
 const docs = readFileSync(new URL("../../../docs/role-surfaces.md", import.meta.url), "utf8");
 
+const section = (start: string, end: string) => {
+  const from = surface.indexOf(start);
+  const to = surface.indexOf(end, from + start.length);
+  assert.ok(from >= 0 && to > from, `${start} section missing`);
+  return surface.slice(from, to);
+};
+
 // ── Alert semantics (behavioral, real module) ────────────────────────────────
 
 const NOW = Date.parse("2026-07-14T12:00:00Z");
@@ -151,16 +158,17 @@ test("surface exposes errors and selection state accessibly", () => {
 });
 
 test("surface keeps alert and host failures retryable and distinct from empty data", () => {
+  const alertBoard = section('<SurfaceCanvas label="Alert board"', '<SurfaceRail side="right"');
   assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /const \[alertsError, setAlertsError\] = useState<string \| null>\(null\)/);
   assert.match(surface, /const loadAlerts = useCallback\(async \(\) =>/);
   assert.doesNotMatch(surface, /setAlerts\(\(prev\) => prev \?\? \[\]\)/);
   assert.match(
-    surface,
+    alertBoard,
     /alertsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadAlerts\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
   );
-  assert.match(surface, /filtered\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+  assert.match(alertBoard, /filtered\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
 
   assert.match(surface, /const \[hostsError, setHostsError\] = useState<string \| null>\(null\)/);
   assert.match(surface, /const loadHosts = useCallback\(async \(\) =>/);
@@ -194,6 +202,11 @@ test("alert-derived secondary panels stay truthful while alerts load or fail", (
   assert.match(
     queues,
     /alertsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadAlerts\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(
+    queues,
+    /alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?\)\s*:\s*\([\s\S]*?<ul className="role-surface-list"/,
+    "successful alert data renders the queue list",
   );
 
   assert.match(

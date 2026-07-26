@@ -15,6 +15,13 @@ const surface = readFileSync(new URL("./navigator-surface.tsx", import.meta.url)
 const register = readFileSync(new URL("./register.tsx", import.meta.url), "utf8");
 const docs = readFileSync(new URL("../../../docs/role-surfaces.md", import.meta.url), "utf8");
 
+const section = (start: string, end: string) => {
+  const from = surface.indexOf(start);
+  const to = surface.indexOf(end, from + start.length);
+  assert.ok(from >= 0 && to > from, `${start} section missing`);
+  return surface.slice(from, to);
+};
+
 // ── Charting rules (behavioral, real module) ─────────────────────────────────
 
 test("scopeCards keeps this familiar's cards and unassigned ones only", () => {
@@ -107,6 +114,7 @@ test("the room exposes errors and selection accessibly", () => {
 });
 
 test("board failures stay retryable and distinct from loading and empty data", () => {
+  const chartedCards = section('<SurfaceCanvas label="Charted cards"', '<SurfaceRail side="right"');
   assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /const \[cards, setCards\] = useState<Card\[\] \| null>\(null\)/);
@@ -114,10 +122,10 @@ test("board failures stay retryable and distinct from loading and empty data", (
   assert.match(surface, /const loadBoard = useCallback\(async \(\) =>/);
   assert.doesNotMatch(surface, /setCards\(\(prev\) => prev \?\? \[\]\)/);
   assert.match(
-    surface,
+    chartedCards,
     /boardError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadBoard\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
   );
-  assert.match(surface, /visible\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+  assert.match(chartedCards, /visible\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
 });
 
 test("board load failures remain visibly and assertively reported", () => {
@@ -151,6 +159,11 @@ test("card-derived drawers and lane counts stay truthful while the board loads o
   assert.match(
     courseLanes,
     /boardError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadBoard\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(
+    courseLanes,
+    /cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?\)\s*:\s*\([\s\S]*?<ul className="role-surface-list"/,
+    "successful board data renders the course lane list",
   );
 });
 

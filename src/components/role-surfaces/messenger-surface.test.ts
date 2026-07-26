@@ -12,6 +12,7 @@ const section = (start: string, end: string) => {
 };
 
 test("inbox loading, failure, and successful empty states stay distinct", () => {
+  const inbox = section('<RailSection title="Inbox"', '<RailSection title="Awaiting approval"');
   assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /const \[inbox, setInbox\] = useState<InboxItemWire\[\] \| null>\(null\)/);
@@ -23,10 +24,10 @@ test("inbox loading, failure, and successful empty states stay distinct", () => 
     "an inbox failure must not masquerade as a successful empty inbox",
   );
   assert.match(
-    surface,
+    inbox,
     /inboxError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadInbox\}[\s\S]*?\)\s*:\s*inbox == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
   );
-  assert.match(surface, /inbox\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+  assert.match(inbox, /inbox\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
 });
 
 test("scheduled deliveries do not turn inbox loading or failure into an empty schedule", () => {

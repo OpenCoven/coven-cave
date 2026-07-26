@@ -4,17 +4,28 @@ import test from "node:test";
 
 const surface = readFileSync(new URL("./indexer-surface.tsx", import.meta.url), "utf8");
 
+const section = (start: string, end: string) => {
+  const from = surface.indexOf(start);
+  const to = surface.indexOf(end, from + start.length);
+  assert.ok(from >= 0 && to > from, `${start} section missing`);
+  return surface.slice(from, to);
+};
+
 test("memory inventory keeps retryable failure separate from loading and empty data", () => {
+  const collections = section(
+    '<RailSection title="Knowledge collections"',
+    '<RailSection title="Embeddings & indexes"',
+  );
   assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /const \[entries, setEntries\] = useState<SurfaceMemoryEntry\[\] \| null>\(null\)/);
   assert.match(surface, /const \[entriesError, setEntriesError\] = useState<string \| null>\(null\)/);
   assert.match(surface, /const loadEntries = useCallback\(async \(\) =>/);
   assert.match(
-    surface,
+    collections,
     /entriesError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadEntries\}[\s\S]*?\)\s*:\s*entries == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
   );
-  assert.match(surface, /collections\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+  assert.match(collections, /collections\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
 });
 
 test("memory reads keep retryable failure separate from loading and successful content", () => {
