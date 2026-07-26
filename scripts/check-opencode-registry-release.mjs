@@ -26,7 +26,13 @@ if (!url || !keyring || typeof keyring !== "object" || Array.isArray(keyring) ||
   fail("OpenCode compatibility registry URL, Ed25519 public key/keyring, and immutable sequence checkpoint must be configured for every desktop release.");
 } else {
   try {
-    if (new URL(url).protocol !== "https:") throw new Error("registry URL must use HTTPS");
+    const registryUrl = new URL(url);
+    // This value is compiled into every desktop artifact. Reject URL userinfo
+    // rather than accidentally distributing a publisher credential embedded
+    // in an otherwise-valid HTTPS endpoint.
+    if (registryUrl.protocol !== "https:" || registryUrl.username || registryUrl.password) {
+      throw new Error("registry URL must use HTTPS without credentials");
+    }
     const entries = Object.entries(keyring);
     if (!entries.length || entries.length > 4) throw new Error("registry keyring must contain one to four keys");
     for (const [id, pem] of entries) {
