@@ -179,17 +179,28 @@ export async function refreshClaudeCompatibilityProfiles(
     // but an older cache can never become selectable after restart.
     if (maximum > acceptedProfileSequence) {
       const watermark = { schemaVersion: 1 as const, maxSequence: maximum };
+      let durableWatermarkWritten = false;
       if (dependencies.writeWatermark) {
         await dependencies.writeWatermark(dependencies.watermarkPath ?? profileCacheWatermarkPath(), watermark);
+        durableWatermarkWritten = true;
       } else if (!dependencies.write) {
         const target = dependencies.watermarkPath ?? profileCacheWatermarkPath();
         await mkdir(path.dirname(target), { recursive: true });
         await writeJsonAtomic(target, watermark);
+        durableWatermarkWritten = true;
       }
       // Keep the current process on the same high-water mark as disk even if
       // the following profile promotion fails. Retrying the same signed set
       // is allowed; accepting a lower one is not.
       acceptedProfileSequence = maximum;
+      // The durable rollback barrier is now ahead of the selectable cache.
+      // Fail closed during this promotion (and permanently if it throws):
+      // continuing to resolve from `profileCache` here would select a profile
+      // known to be older than the durable high-water mark until restart.
+      if (durableWatermarkWritten) {
+        profileCacheTrustFailure = true;
+        cached = null;
+      }
     }
     if (dependencies.write) {
       await dependencies.write(dependencies.path ?? profileCachePath(), document);

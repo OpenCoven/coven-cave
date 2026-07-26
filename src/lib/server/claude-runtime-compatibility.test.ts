@@ -146,6 +146,29 @@ assert.equal(
 // watermark writer. Reset before modelling the next process that performs the
 // successful accepted refresh below.
 resetClaudeCompatibilityCacheForTest();
+let watermarkBeforeFailedPromotion: unknown = null;
+await assert.rejects(
+  refreshClaudeCompatibilityProfiles([...CLAUDE_COMPATIBILITY_PROFILES, signedV3], {
+    path: "ignored",
+    write: async () => { throw new Error("profile write failed after watermark"); },
+    watermarkPath: "ignored-watermark",
+    writeWatermark: async (_path, value) => { watermarkBeforeFailedPromotion = value; },
+  }),
+  /profile write failed after watermark/,
+  "a profile-cache write failure remains visible after the durable rollback barrier advances",
+);
+assert.deepEqual(watermarkBeforeFailedPromotion, { schemaVersion: 1, maxSequence: signedV3.sequence });
+const failedPromotionResolution = await resolveInstalledClaudeCompatibility({
+  version: async () => "2.1.179 (Claude Code)",
+  help: async () => "--output-format stream-json",
+  now: () => Date.parse("2026-07-24T00:00:00.000Z"),
+});
+assert.deepEqual(
+  failedPromotionResolution,
+  { kind: "fallback", reason: "invalid-profile" },
+  "the current process must not keep selecting a profile below a durable rollback barrier after cache promotion fails",
+);
+resetClaudeCompatibilityCacheForTest();
 let refreshed: unknown = null;
 let persistedWatermark: unknown = null;
 assert.equal(
