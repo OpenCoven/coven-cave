@@ -233,6 +233,33 @@ assert.match(
   assert.equal(erroredDone?.status, "error", "is_error tool_result blocks settle as errors");
 }
 
+// Behavioral: a reordered user result can settle an envelope before a late
+// pre-hook arrives. That hook is live again and must receive a terminal SSE
+// update when its matching post hook is lost before the turn ends.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  tracker.envelopeToolResult("toolu-late-hook", "done", false);
+  const settledEnvelope = tracker.envelopeToolUse("toolu-late-hook", "Bash", "{\"command\":\"ls\"}");
+  assert.equal(settledEnvelope?.status, "ok");
+  t = 50;
+  const lateHook = tracker.hookStart("Bash", "{\"command\":\"ls\"}");
+  assert.equal(lateHook.id, "toolu-late-hook");
+  assert.equal(lateHook.status, "running");
+  t = 100;
+  assert.deepEqual(
+    tracker.settleUnfinished(),
+    [{
+      id: "toolu-late-hook",
+      name: "Bash",
+      output: "[tool did not settle before the turn ended]",
+      status: "error",
+      durationMs: 50,
+    }],
+    "a late hook without post_tool_use must not leave the live tool chip running after done",
+  );
+}
+
 // Unknown result ids are retained briefly to recover reordered JSONL, but a
 // malformed stream cannot grow that recovery buffer without bound.
 {

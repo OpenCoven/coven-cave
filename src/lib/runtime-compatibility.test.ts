@@ -87,13 +87,27 @@ assert.deepEqual(
 const cache = new RuntimeCompatibilityCache([CLAUDE_COMPATIBILITY_PROFILES[1]]);
 assert.equal(cache.refresh([CLAUDE_COMPATIBILITY_PROFILES[0]], NOW), false, "a lower profile sequence cannot roll back last-known-good data");
 assert.equal(cache.current()[0].id, "claude-stream-json-v2");
-assert.equal(cache.refresh([tampered], NOW), false, "invalid refreshes preserve last-known-good data");
+assert.equal(
+  cache.refresh([CLAUDE_COMPATIBILITY_PROFILES[1], CLAUDE_COMPATIBILITY_PROFILES[0]], NOW),
+  true,
+  "a refresh may add an older signed profile while retaining every accepted profile",
+);
+assert.equal(
+  cache.refresh([CLAUDE_COMPATIBILITY_PROFILES[1]], NOW),
+  false,
+  "a partial cache document cannot remove a previously trusted profile",
+);
+assert.equal(
+  cache.refresh([CLAUDE_COMPATIBILITY_PROFILES[0], tampered], NOW),
+  false,
+  "invalid refreshes preserve last-known-good data",
+);
 const duplicateSequence = structuredClone(CLAUDE_COMPATIBILITY_PROFILES[1]);
 duplicateSequence.id = "claude-stream-json-v2-duplicate";
 const { contentHash: _duplicateHash, ...duplicateUnsigned } = duplicateSequence;
 duplicateSequence.contentHash = createHash("sha256").update(JSON.stringify(duplicateUnsigned)).digest("hex");
 assert.equal(
-  cache.refresh([CLAUDE_COMPATIBILITY_PROFILES[1], duplicateSequence], NOW),
+  cache.refresh([CLAUDE_COMPATIBILITY_PROFILES[0], CLAUDE_COMPATIBILITY_PROFILES[1], duplicateSequence], NOW),
   false,
   "a refresh cannot introduce two profiles at the same sequence",
 );

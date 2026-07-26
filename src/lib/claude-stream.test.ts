@@ -93,6 +93,16 @@ assert.equal(
   true,
   "unknown partial message frames still surface the compatibility diagnostic",
 );
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "future", payload: "untrusted" }, v2),
+  true,
+  "unknown frames without a message field must not be silently dropped",
+);
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "system", subtype: "init" }, v2),
+  false,
+  "known stream metadata is not a compatibility failure",
+);
 assert.deepEqual(parseClaudeMessageEnvelope({ type: "future", payload: "untrusted" }, v2), []);
 assert.deepEqual(
   parseClaudeTextOnlyEnvelope({

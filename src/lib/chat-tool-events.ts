@@ -259,7 +259,11 @@ export class ToolCallTracker {
       // hook updates the original UI record rather than adding another call.
       settledEnvelopeCall.hookStarted = true;
       settledEnvelopeCall.startedAt = this.now();
-      this.rememberSettledHookCall(settledEnvelopeCall);
+      // This hook is now live even though its envelope result arrived first.
+      // Keep it in the open queue so a missing post hook is settled at turn
+      // end; remembering it only as completed would leave the live SSE chip
+      // running forever.
+      this.queueFor(name).push(settledEnvelopeCall);
       const ev: ToolStreamEvent = { id: settledEnvelopeCall.id, name, input, status: "running" };
       this.record(ev, textOffset);
       return ev;

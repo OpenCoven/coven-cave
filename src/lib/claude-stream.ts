@@ -96,10 +96,12 @@ export function hasUnsupportedClaudeToolFrame(
   if (!envelope) return false;
   const isAssistant = envelope.type === profile.eventTypes.assistant;
   const isUser = envelope.type === profile.eventTypes.user;
-  // System/result envelopes have their own route handling. An unknown envelope
-  // only needs a compatibility diagnostic when it looks like a message frame;
-  // otherwise ordinary stream metadata would create false alarms.
-  if (!isAssistant && !isUser) return Object.hasOwn(envelope, "message");
+  // System/result/output envelopes have their own route handling. Everything
+  // else is an unrecognised protocol frame, even when it has no `message`
+  // field: silently dropping one would hide a newly introduced tool event.
+  if (!isAssistant && !isUser) {
+    return !["system", "result", "output"].includes(String(envelope.type));
+  }
   if (!Array.isArray(content)) return true;
   if (isAssistant) {
     return content.some((value) => {

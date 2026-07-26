@@ -235,6 +235,11 @@ export class RuntimeCompatibilityCache {
       new Set(valid.map((entry) => entry.sequence)).size !== valid.length
     ) return false;
     if (this.profiles.some((entry) => byId.get(entry.id)?.contentHash !== entry.contentHash)) return false;
+    // The cache document is a complete accepted snapshot, not a delta. Every
+    // previously trusted profile must remain in it: otherwise a validly signed
+    // partial document could selectively make an installed older CLI fall back
+    // and defeat the append-only/rollback guarantee.
+    if (this.profiles.some((entry) => !byId.has(entry.id))) return false;
     const currentMax = Math.max(...this.profiles.map((entry) => entry.sequence));
     const nextMax = Math.max(...valid.map((entry) => entry.sequence));
     if (nextMax < currentMax) return false;
