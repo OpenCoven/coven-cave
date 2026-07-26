@@ -433,8 +433,8 @@ for (const contract of contracts) {
   const runRegistrations = [...sendSource.matchAll(/= registerChatRun\(/g)];
   assert.equal(
     runRegistrations.length,
-    2,
-    "/chat/send: both adapter paths must register with the stop registry",
+    3,
+    "/chat/send: all three dispatch paths must register with the stop registry",
   );
   assert.match(
     sendSource,
@@ -475,8 +475,8 @@ for (const contract of contracts) {
   ];
   assert.equal(
     cancelledFlags.length,
-    2,
-    "/chat/send: both adapter paths must persist cancelled: true on the assistant turn",
+    4,
+    "/chat/send: every adapter path must mark both its assistant turn and terminal event as cancelled",
   );
   assert.match(
     sendSource,
