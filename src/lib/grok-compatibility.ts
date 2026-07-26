@@ -309,6 +309,21 @@ function validOptions(value: unknown): value is string[] {
   return Array.isArray(value) && value.length <= 16 && value.every((option) => typeof option === "string" && /^--[a-z][a-z0-9-]{0,63}$/.test(option)) && new Set(value).size === value.length;
 }
 
+/** Keep rotation configuration as strict as the signed bundle's key-id rules. */
+function validKeyring(value: unknown): value is GrokRegistryKeyring {
+  if (!isRecord(value)) return false;
+  const entries = Object.entries(value);
+  if (entries.length < 1 || entries.length > 4) return false;
+  try {
+    for (const [id, pem] of entries) {
+      if (!validName(id) || typeof pem !== "string" || createPublicKey(pem).asymmetricKeyType !== "ed25519") return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function validSchema(value: unknown): value is GrokEventSchema {
   if (!isRecord(value) || !validName(value.id) || !isRecord(value.requires) || value.requires.streamingJson !== true || !isRecord(value.eventTypes) || !isRecord(value.fields) || !isRecord(value.launch)) return false;
   if (!Object.keys(value).every((key) => ["id", "priority", "requires", "eventTypes", "fields", "launch"].includes(key))) return false;
@@ -357,6 +372,7 @@ export function isGrokSchemaBundle(value: unknown, now = Date.now(), allowExpire
 export function verifyGrokSchemaBundle(value: unknown, publicKeys: string | GrokRegistryKeyring, now = Date.now()): value is GrokSchemaBundle {
   if (!isGrokSchemaBundle(value, now) || !value.signature) return false;
   const keys = typeof publicKeys === "string" ? { legacy: publicKeys } : publicKeys;
+  if (!validKeyring(keys)) return false;
   if (Object.keys(keys).length > 1 && value.keyId === undefined) return false;
   const candidates = Object.entries(keys).filter(([id, pem]) => validName(id) && typeof pem === "string" && (value.keyId === undefined || value.keyId === id));
   if (candidates.length === 0 || candidates.length > 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.signature.value)) return false;
@@ -409,7 +425,7 @@ function configuredGrokRegistrySource(): RegistrySource {
     const parsed = url ? new URL(url) : null;
     if (parsed && (parsed.protocol !== "https:" || parsed.username || parsed.password)) return {};
   } catch { return {}; }
-  if (!checkpoint || !Number.isSafeInteger(checkpoint.sequence) || checkpoint.sequence < 1 || !/^[a-f0-9]{64}$/.test(checkpoint.payloadHash)) return {};
+  if (!validKeyring(publicKeys) || !checkpoint || !Number.isSafeInteger(checkpoint.sequence) || checkpoint.sequence < 1 || !/^[a-f0-9]{64}$/.test(checkpoint.payloadHash)) return {};
   return { url, publicKeys, checkpoint };
 }
 

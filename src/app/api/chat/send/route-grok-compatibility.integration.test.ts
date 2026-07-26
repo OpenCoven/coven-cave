@@ -31,8 +31,9 @@ const windowsShimProgram = [
   "if (command === '--help') { if (process.env.XAI_API_KEY) process.exit(12); console.log(['plain', 'plain-structured'].includes(process.env.GROK_TEST_MODE ?? '') ? '  --output-format <format>  Output format: text' : '  --output-format <format>  Output format: text, streaming-json'); process.exit(0); }",
   "if (command === '--version') { if (process.env.XAI_API_KEY) process.exit(12); console.log('1.0.0'); process.exit(0); }",
   "if (process.env.GROK_TEST_MODE === 'plain') console.log('plain fallback reply');",
-  "else if (process.env.GROK_TEST_MODE === 'plain-structured') console.log('{\\\"type\\\":\\\"tool_started\\\",\\\"input\\\":\\\"private tool payload\\\"}');",
+  "else if (process.env.GROK_TEST_MODE === 'plain-structured') console.log(' {\\\"type\\\":\\\"tool_started\\\",\\\"input\\\":\\\"private tool payload\\\"}');",
   "else if (process.env.GROK_TEST_MODE === 'malformed') console.log('unframed private tool payload');",
+  "else if (process.env.GROK_TEST_MODE === 'exit-error') { console.error('private Grok stderr payload'); process.exit(3); }",
   "else console.log('{\\\"type\\\":\\\"text\\\",\\\"data\\\":\\\"verified route reply\\\"}\\n{\\\"type\\\":\\\"end\\\",\\\"sessionId\\\":\\\"native_grok_session\\\"}');",
 ].join("\n");
 const launcher = process.platform === "win32"
@@ -49,8 +50,9 @@ const launcher = process.platform === "win32"
       "fi",
       "if [ \"$1\" = \"--version\" ]; then [ -z \"$XAI_API_KEY\" ] || exit 12; printf '%s\\n' '1.0.0'; exit 0; fi",
       "if [ \"$GROK_TEST_MODE\" = \"plain\" ]; then printf '%s\\n' 'plain fallback reply'; exit 0; fi",
-      "if [ \"$GROK_TEST_MODE\" = \"plain-structured\" ]; then printf '%s\\n' '{\"type\":\"tool_started\",\"input\":\"private tool payload\"}'; exit 0; fi",
+      "if [ \"$GROK_TEST_MODE\" = \"plain-structured\" ]; then printf '%s\\n' ' {\"type\":\"tool_started\",\"input\":\"private tool payload\"}'; exit 0; fi",
       "if [ \"$GROK_TEST_MODE\" = \"malformed\" ]; then printf '%s\\n' 'unframed private tool payload'; exit 0; fi",
+      "if [ \"$GROK_TEST_MODE\" = \"exit-error\" ]; then printf '%s\\n' 'private Grok stderr payload' >&2; exit 3; fi",
       "printf '%s\\n' '{\"type\":\"text\",\"data\":\"verified route reply\"}' '{\"type\":\"end\",\"sessionId\":\"native_grok_session\"}'",
     ].join("\n");
 const launcherPath = path.join(bin, executable);
@@ -110,6 +112,14 @@ try {
   })));
   assert.match(malformed.body, /unframed-jsonl-event/, "unframed selected-schema output emits an accessible compatibility diagnostic");
   assert.doesNotMatch(malformed.body, /private tool payload/, "unframed structured payloads never enter assistant text or diagnostics");
+
+  process.env.GROK_TEST_MODE = "exit-error";
+  const exited = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "exit error", projectRoot: familiarWorkspace }),
+  })));
+  assert.equal(exited.events.findLast((event) => event.kind === "done")?.isError, true, "a non-zero Grok process cannot be persisted as a successful turn");
+  assert.doesNotMatch(exited.body, /private Grok stderr payload/, "Grok stderr values never enter assistant-visible or persisted diagnostics");
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME; else process.env.COVEN_HOME = previousHome;
   if (previousCaveHome === undefined) delete process.env.COVEN_CAVE_HOME; else process.env.COVEN_CAVE_HOME = previousCaveHome;

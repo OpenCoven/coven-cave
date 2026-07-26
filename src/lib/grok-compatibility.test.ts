@@ -38,6 +38,13 @@ const signedWithoutKeyId = {
   signature: { algorithm: "ed25519" as const, value: sign(null, Buffer.from(grokSchemaBundleSigningPayload(unsignedWithoutKeyId)), privateKey).toString("base64") },
 };
 assert.equal(verifyGrokSchemaBundle(signedWithoutKeyId, { "test-key": keyring["test-key"], next: keyring["test-key"] }), false, "rotating keyrings require an explicit signed key id");
+assert.equal(
+  verifyGrokSchemaBundle(signed, {
+    "test-key": keyring["test-key"], one: keyring["test-key"], two: keyring["test-key"], three: keyring["test-key"], four: keyring["test-key"],
+  }),
+  false,
+  "key rotation fails closed when more than four configured public keys are supplied",
+);
 
 assert.deepEqual(
   grokRunCapabilitiesFromHelp("  --output-format FORMAT  Choose text or streaming-json\n  --model MODEL\n"),

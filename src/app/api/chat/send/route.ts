@@ -2651,6 +2651,8 @@ export async function POST(req: Request) {
           return;
         }
         if (grokDirect) {
+          // Plain Grok fallback must not make a structured envelope with
+          // leading whitespace look like harmless assistant prose.
           handleGrokLine(line, isJson || /^[{\[]/.test(line.trimStart()));
           return;
         }
@@ -3346,6 +3348,9 @@ export async function POST(req: Request) {
                 stdoutErrTail.push("Copilot exited before completing its response.");
               }
             }
+            // Grok's stderr can include provider request details or local
+            // paths. Its structured errors already yield a fixed diagnostic;
+            // an unframed non-zero exit must receive the same redaction.
             if (grokDirect) {
               stderrTail.length = 0;
               stdoutErrTail.length = 0;
