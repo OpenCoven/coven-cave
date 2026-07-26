@@ -22,7 +22,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const hermesLaunch = h\.id === "hermes" \? resolveHermesLaunch\(\) : null;[\s\S]*?h\.id === "hermes" && hermesLaunch[\s\S]*?hermesLaunch\.command/,
+  /if \(id === "hermes"\) \{[\s\S]*?const hermesLaunch = resolveHermesLaunch\(\{ env \}\);[\s\S]*?hermesLaunch,[\s\S]*?const hermesLaunch = runtime\.hermesLaunch;[\s\S]*?h\.id === "hermes" && hermesLaunch[\s\S]*?hermesLaunch\.command/,
   "Hermes status must use the same resolved native launch plan as chat instead of a generic which/where shim result",
 );
 assert.match(

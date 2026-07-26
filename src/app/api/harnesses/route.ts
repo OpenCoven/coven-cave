@@ -26,6 +26,7 @@ import {
   evaluateRuntimeAvailability,
   resolveHermesLaunch,
   summarizeRuntimeAvailability,
+  type HermesLaunchResolution,
   type RuntimeAvailabilitySummary,
 } from "@/lib/runtime-availability";
 
@@ -60,6 +61,8 @@ type AdapterAvailability = {
   availability: RuntimeAvailabilitySummary;
   /** Internal-only exact Copilot plan; never serialized inside availability. */
   copilotLaunch?: CopilotRuntimeLaunch;
+  /** Internal-only Hermes plan shared by availability, path, and version. */
+  hermesLaunch?: HermesLaunchResolution;
 };
 
 // Mirrors the send route's launch dispatch: copilot/grok/hermes/opencode use
@@ -103,8 +106,10 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
     };
   }
   if (id === "hermes") {
+    const hermesLaunch = resolveHermesLaunch({ env });
     return {
-      availability: summarizeRuntimeAvailability(resolveHermesLaunch({ env })),
+      availability: summarizeRuntimeAvailability(hermesLaunch),
+      hermesLaunch,
     };
   }
   const launch = covenLaunchCommand();
@@ -283,7 +288,7 @@ export async function GET() {
       // from the summoning circle even though the chat launcher can execute it.
       const runtime = await adapterAvailability(h.id);
       const copilotLaunch = runtime.copilotLaunch;
-      const hermesLaunch = h.id === "hermes" ? resolveHermesLaunch() : null;
+      const hermesLaunch = runtime.hermesLaunch;
       const resolvedBinary = h.id === "grok" ? grokBin() : h.binary;
       const path =
         copilotLaunch

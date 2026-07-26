@@ -307,7 +307,7 @@ try {
   );
 
   const hermesPlan = resolveHermesLaunch({
-    env: { Path: "C:\\bin" },
+    env: { ...process.env, Path: "C:\\bin" },
     platform: "win32",
     statFile: winStats(["C:\\bin\\hermes.exe"]),
   });
@@ -317,13 +317,13 @@ try {
     assert.equal(hermesPlan.env.Path, "C:\\bin");
   }
   const hermesCmdOnly = resolveHermesLaunch({
-    env: { Path: "C:\\bin" },
+    env: { ...process.env, Path: "C:\\bin" },
     platform: "win32",
     statFile: winStats(["C:\\bin\\hermes.cmd"]),
   });
   assert.equal(hermesCmdOnly.state, "unlaunchable", "a Windows Hermes .cmd shim is not a direct launch target");
   const relativeHermes = resolveHermesLaunch({
-    env: { PATH: "bin" },
+    env: { ...process.env, PATH: "bin" },
     cwd: "/virtual/workspace",
     platform: "linux",
     statFile: (candidate) => candidate === "/virtual/workspace/bin/hermes",
