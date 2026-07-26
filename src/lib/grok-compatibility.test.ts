@@ -90,6 +90,20 @@ try {
   assert.equal(rollback.bundleSource, "cache", "a lower signed sequence cannot replace the local high-water contract");
   assert.equal(rollback.diagnostic, "schema-registry-refresh-rejected");
 
+  const stalledRefresh = await Promise.race([
+    resolveGrokCompatibility(supported, {
+      publicKeys: keyring,
+      cachePath,
+      now: () => Date.now() + 14 * 60 * 60 * 1000,
+      url: "https://registry.example/grok.json",
+      refreshTimeoutMs: 10,
+      fetch: async () => new Response(new ReadableStream()),
+    }),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Grok registry body read was not bounded")), 500)),
+  ]);
+  assert.equal(stalledRefresh.bundleSource, "cache", "a registry response that never finishes falls back to the verified cache");
+  assert.equal(stalledRefresh.diagnostic, "schema-registry-refresh-rejected", "the bounded body timeout is an accessible refresh failure");
+
   const expiredRemote = await resolveGrokCompatibility(supported, {
     publicKeys: keyring,
     cachePath,

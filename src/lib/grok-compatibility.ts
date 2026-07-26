@@ -417,15 +417,38 @@ export function quarantineGrokSchema(schema: GrokEventSchema | undefined): void 
   schemaQuarantine.set(schema.id, createHash("sha256").update(stableJson(schema)).digest("hex"));
 }
 
-type RegistrySource = { url?: string; publicKeys?: GrokRegistryKeyring; checkpoint?: GrokRegistryCheckpoint; now?: () => number; fetch?: typeof globalThis.fetch; cachePath?: string };
+type RegistrySource = {
+  url?: string;
+  publicKeys?: GrokRegistryKeyring;
+  checkpoint?: GrokRegistryCheckpoint;
+  now?: () => number;
+  fetch?: typeof globalThis.fetch;
+  cachePath?: string;
+  /** Test-only override; production refreshes are bounded to five seconds. */
+  refreshTimeoutMs?: number;
+};
 type Cached = { bundle: GrokSchemaBundle; checkedAt: number };
 type TrustAnchor = { sequence: number; payloadHash: string };
 
+// Release-time public verification material becomes the production trust
+// anchor. Mutable COVEN_* values remain a development/test escape hatch only;
+// a production process environment must not replace its packaged keyring or
+// checkpoint after the app has been built.
+const PACKAGED_GROK_REGISTRY_URL = process.env.NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_URL;
+const PACKAGED_GROK_REGISTRY_PUBLIC_KEY = process.env.NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEY;
+const PACKAGED_GROK_REGISTRY_PUBLIC_KEYS = process.env.NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEYS;
+const PACKAGED_GROK_REGISTRY_CHECKPOINT = process.env.NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT;
+
 function configuredGrokRegistrySource(): RegistrySource {
-  const url = process.env.NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_URL || process.env.COVEN_GROK_SCHEMA_REGISTRY_URL;
-  const single = process.env.NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEY || process.env.COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEY;
-  const rawKeyring = process.env.NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEYS || process.env.COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEYS;
-  const rawCheckpoint = process.env.NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT || process.env.COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT;
+  const production = process.env.NODE_ENV === "production";
+  const url = PACKAGED_GROK_REGISTRY_URL
+    ?? (production ? undefined : process.env.COVEN_GROK_SCHEMA_REGISTRY_URL);
+  const single = PACKAGED_GROK_REGISTRY_PUBLIC_KEY
+    ?? (production ? undefined : process.env.COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEY);
+  const rawKeyring = PACKAGED_GROK_REGISTRY_PUBLIC_KEYS
+    ?? (production ? undefined : process.env.COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEYS);
+  const rawCheckpoint = PACKAGED_GROK_REGISTRY_CHECKPOINT
+    ?? (production ? undefined : process.env.COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT);
   let publicKeys: GrokRegistryKeyring | undefined;
   let checkpoint: GrokRegistryCheckpoint | undefined;
   try { publicKeys = rawKeyring ? JSON.parse(rawKeyring) : single ? { legacy: single } : undefined; } catch { /* invalid config fails closed */ }
@@ -475,7 +498,12 @@ async function readBoundedRegistryBody(response: Response): Promise<string> {
       if (total > MAX_BUNDLE_BYTES) throw new Error("oversized registry response");
       chunks.push(part.value);
     }
-  } finally { reader.releaseLock(); }
+  } finally {
+    // A registry server can leave a chunked response open forever. The outer
+    // refresh deadline races this read, and cancellation makes that deadline
+    // release its socket/body reader rather than leaving it pinned in Node.
+    await reader.cancel().catch(() => undefined);
+  }
   const bytes = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
@@ -651,6 +679,43 @@ function trustedBundle(bundle: GrokSchemaBundle, checkpoint?: GrokRegistryCheckp
   return !checkpoint || bundle.sequence > checkpoint.sequence || (bundle.sequence === checkpoint.sequence && grokSchemaBundlePayloadHash(bundle) === checkpoint.payloadHash);
 }
 
+/** The refresh deadline covers headers and an indefinitely open response body. */
+async function fetchGrokSchemaBundle(
+  url: string,
+  fetcher: typeof globalThis.fetch,
+  timeoutMs: number,
+): Promise<string> {
+  const controller = new AbortController();
+  let response: Response | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      void response?.body?.cancel().catch(() => undefined);
+      reject(new Error("registry refresh timed out"));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      (async () => {
+        response = await fetcher(url, {
+          signal: controller.signal,
+          credentials: "omit",
+          redirect: "error",
+          headers: { accept: "application/json" },
+        });
+        if (timedOut || !response.ok) throw new Error("untrusted registry response");
+        return readBoundedRegistryBody(response);
+      })(),
+      deadline,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function resolveGrokCompatibility(capabilities: GrokRunCapabilities, source: RegistrySource = configuredGrokRegistrySource()): Promise<GrokCompatibility> {
   if (!capabilities.streamingJson) return { mode: "plain", capabilities, bundleSource: "built-in", diagnostic: "streaming-json-unavailable" };
   const now = source.now?.() ?? Date.now();
@@ -683,9 +748,7 @@ export async function resolveGrokCompatibility(capabilities: GrokRunCapabilities
   } else if (source.url && Object.keys(keys).length && !cacheFresh) {
     try {
       if (!isSafeRegistryUrl(source.url)) throw new Error("unsafe registry URL");
-      const response = await (source.fetch ?? fetch)(source.url, { signal: AbortSignal.timeout(5_000), credentials: "omit", redirect: "error" });
-      const body = await readBoundedRegistryBody(response);
-      if (!response.ok) throw new Error("untrusted registry response");
+      const body = await fetchGrokSchemaBundle(source.url, source.fetch ?? fetch, source.refreshTimeoutMs ?? 5_000);
       const remote = JSON.parse(body);
       if (!verifyGrokSchemaBundle(remote, keys, now) || !trustedBundle(remote, source.checkpoint) || !meetsTrustAnchor(remote, anchor)) throw new Error("untrusted registry bundle");
       if (await writeCache(cacheFile, remote, now)) {
