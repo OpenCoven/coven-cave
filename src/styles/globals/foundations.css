@@ -97,6 +97,8 @@
      card. These are documents/scannables, not interface surfaces, so the
      ground is deliberately identical in both modes (cave-yxiz). */
   --surface-paper: #ffffff;
+  --surface-paper-ink: #111;
+  --surface-paper-muted: #444;
   --border-hairline: var(--border);
   --fg-base: var(--text-primary);
   --fg-muted: var(--text-secondary);

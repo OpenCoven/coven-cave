@@ -6,6 +6,7 @@ const shellEntry = readFileSync(new URL("./settings-shell.tsx", import.meta.url)
 const daemonUrl = new URL("./settings-daemon.tsx", import.meta.url);
 const daemon = existsSync(daemonUrl) ? readFileSync(daemonUrl, "utf8") : "";
 const shell = `${shellEntry}\n${daemon}`;
+const phone = readFileSync(new URL("./settings-phone.tsx", import.meta.url), "utf8");
 const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
 const daemonCssUrl = new URL("../styles/settings-daemon.css", import.meta.url);
 const daemonCss = existsSync(daemonCssUrl) ? readFileSync(daemonCssUrl, "utf8") : "";
@@ -118,7 +119,7 @@ assert.match(shell, /http:\/\/\$\{host\}:8787/, "selecting a device should build
 assert.match(shell, /fetch\("\/api\/daemon\/probe"/, "hub URL saves should probe daemon health first");
 assert.match(shell, /Save anyway/, "an unreachable hub should require an explicit override");
 assert.match(shell, /Configured but unreachable/, "hub status should distinguish configured from connected");
-assert.match(shell, /Use this device as hub/, "phone pairing should offer its known tailnet host to Server Hub");
+assert.match(phone, /Use this device as hub/, "phone pairing should offer its known tailnet host to Server Hub");
 assert.match(shell, /classifyTailscaleFailure/, "discovery and pairing should share friendly Tailscale failure copy");
 
 assert.match(

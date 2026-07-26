@@ -67,7 +67,7 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "familiars", group: "Projects", familiarTab: "projects", keywords: "projects access grants allow deny tool policy guard security audit requests permissions read write level" },
   { section: "familiars", group: "Access groups", keywords: "access groups group grants base projects read write level team role shared membership permissions" },
   { section: "familiars", group: "Vault", familiarTab: "vault", keywords: "vault secrets env environment keys tokens credentials 1password" },
-  { section: "mobile", group: "Steps", keywords: "phone mobile connect qr pair tailscale" },
+  { section: "mobile", group: "Pair", keywords: "phone mobile connect qr pair tailscale" },
   { section: "mobile", group: "Why there’s no password", keywords: "password security auth login" },
   { section: "mobile", group: "Get the app", keywords: "app download ios testflight install" },
   { section: "appearance", group: "Mode", keywords: "mode dark light system appearance scheme" },
