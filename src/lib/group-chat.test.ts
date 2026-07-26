@@ -391,6 +391,30 @@ test("isCovenDelegationTaskVisible: requires the hidden task to be present in th
   );
 });
 
+test("isCovenDelegationTaskVisible: ignores task text inside documentation ranges", () => {
+  const delegation = {
+    targetFamiliarId: "charm",
+    task: "@Charm Review the design.",
+  };
+  for (const visible of [
+    "> @Charm Review the design.",
+    "`@Charm Review the design.`",
+    "```\n@Charm Review the design.\n```",
+  ]) {
+    assert.equal(isCovenDelegationTaskVisible(visible, delegation), false);
+  }
+});
+
+test("isCovenDelegationTaskVisible: normalizes visible and hidden whitespace", () => {
+  assert.equal(
+    isCovenDelegationTaskVisible("@Charm\nReview   the design.", {
+      targetFamiliarId: "charm",
+      task: "@Charm Review the\tdesign.",
+    }),
+    true,
+  );
+});
+
 test("extractCovenDelegations: ignores quoted, inline-code, and fenced marker examples", () => {
   const quoted = '> <coven:delegation target="charm">quoted</coven:delegation>';
   const indentedQuote = '  > <coven:delegation target="charm">quoted</coven:delegation>';

@@ -272,6 +272,19 @@ function normalizeDelegationTaskText(text: string): string {
   return text.trim().replace(/\s+/g, " ");
 }
 
+function delegationInstructionSegments(text: string): string[] {
+  const ignored = delegationIgnoredRanges(text).sort(([startA], [startB]) => startA - startB);
+  const segments: string[] = [];
+  let cursor = 0;
+  for (const [start, end] of ignored) {
+    if (end <= cursor) continue;
+    if (start > cursor) segments.push(text.slice(cursor, start));
+    cursor = end;
+  }
+  if (cursor < text.length) segments.push(text.slice(cursor));
+  return segments;
+}
+
 /**
  * Delegation controls are model output, so the hidden routed task must be a
  * verbatim visible task, modulo whitespace. This keeps the visible @mention as
@@ -280,7 +293,12 @@ function normalizeDelegationTaskText(text: string): string {
  */
 export function isCovenDelegationTaskVisible(visible: string, delegation: CovenDelegation): boolean {
   const task = normalizeDelegationTaskText(delegation.task);
-  return task.length > 0 && normalizeDelegationTaskText(visible).includes(task);
+  return (
+    task.length > 0 &&
+    delegationInstructionSegments(visible).some((segment) =>
+      normalizeDelegationTaskText(segment).includes(task),
+    )
+  );
 }
 
 /** True for a char that may not abut the end of a matched `@name` (a word char,
