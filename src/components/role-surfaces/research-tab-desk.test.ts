@@ -67,7 +67,9 @@ test("running and completed blocks stay honest about their data", () => {
   assert.doesNotMatch(detail, /1[34]:\d\d/); // no fake clock times
   // Completed abstract is the iteration summary; meta counts are real; the
   // design's findings chips are not derivable and are skipped.
-  assert.match(detail, /research-desk-block__abstract"?>\{iteration\.summary\}/);
+  // …rendered through the line-clamp so a long abstract stays compact with a
+  // "View more" toggle, but it is still the raw iteration summary.
+  assert.match(detail, /<ClampedText className="research-desk-block__abstract" text=\{iteration\.summary\} \/>/);
   assert.match(detail, /\{mission\.sources\.length\} sources · \{sourceCounts\.used\} used/);
   assert.doesNotMatch(detail, /Finding 1|compFindings/);
 });

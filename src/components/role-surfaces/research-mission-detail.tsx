@@ -23,6 +23,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { CitationSources } from "@/components/ui/citation";
+import { ClampedText } from "@/components/ui/clamped-text";
 import { sourcesToCitations } from "@/lib/citations";
 import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
@@ -475,7 +476,7 @@ export function ResearchMissionDetail({
                 ) : null}
               </div>
               {iteration?.summary ? (
-                <p className="research-desk-block__note">{iteration.summary}</p>
+                <ClampedText className="research-desk-block__note" text={iteration.summary} />
               ) : null}
               {/* The sources the mission actually leaned on, rendered as
                   citations under the synthesis (the same shared component the
@@ -527,7 +528,7 @@ export function ResearchMissionDetail({
                 </span>
               </div>
               {iteration?.summary ? (
-                <p className="research-desk-block__abstract">{iteration.summary}</p>
+                <ClampedText className="research-desk-block__abstract" text={iteration.summary} />
               ) : (
                 <p className="research-desk-block__empty">
                   The run finished without a written summary — open the artifacts for the findings.
