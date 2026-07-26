@@ -369,10 +369,20 @@ test.describe("research desk tabs", () => {
     await expect(actions.getByRole("button", { name: "Archive" })).toBeVisible();
     await expect(desk.getByText("Refine direction before continuing")).toBeVisible();
 
-    // The evidence-delta rail triages the conflicting source.
-    const delta = desk.getByRole("region", { name: "Evidence delta" });
-    await expect(delta.getByText("Vendor benchmarks blog")).toBeVisible();
-    await expect(delta.getByRole("button", { name: "Verify next pass" })).toBeVisible();
+    // The rail is one Artifacts|Sources toggle over a single pane. A run at a
+    // checkpoint opens on Sources, where the conflicting source can be triaged.
+    const railTabs = desk.getByRole("tablist", { name: "Rail contents" });
+    await expect(railTabs.getByRole("tab", { name: /^Sources/ })).toHaveAttribute("aria-selected", "true");
+    const sourcesPane = desk.getByRole("tabpanel", { name: /^Sources/ });
+    await expect(sourcesPane.getByRole("button", { name: /^Vendor benchmarks blog/ })).toBeVisible();
+    await expect(sourcesPane.getByRole("button", { name: "Verify next pass" })).toBeVisible();
+
+    // Toggling shows the artifacts in the same pane — one list at a time, both
+    // complete, with no second copy stacked below.
+    await railTabs.getByRole("tab", { name: /^Artifacts/ }).click();
+    const artifactsPane = desk.getByRole("tabpanel", { name: /^Artifacts/ });
+    await expect(artifactsPane.getByText("Working synthesis")).toBeVisible();
+    await expect(sourcesPane).toBeHidden();
 
     // Selecting the failed run surfaces its lastError and a Retry action.
     await rail.getByRole("button", { name: /Rust GUI toolkit scan/ }).click();

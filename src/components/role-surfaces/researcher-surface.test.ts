@@ -274,11 +274,11 @@ test("timestamps are relative and schedules read as prose, not raw data", () => 
 });
 
 test("ledger errors stay visible regardless of the active output tab", () => {
-  // The error paragraph renders between the tab strip and the first tab panel,
-  // not inside a panel that may be hidden.
+  // The error paragraph renders above both tab panels, not inside a panel that
+  // may be hidden. (The tablist itself lives in the rail now.)
   assert.match(
     ledger,
-    /\{error \? <p className="research-mission-error" role="alert">\{error\}<\/p> : null\}\s*<section\s+id="research-output-panel-artifacts"/,
+    /\{error \? <p className="research-mission-error" role="alert">\{error\}<\/p> : null\}\s*\{hint \?[\s\S]{0,140}<section\s+id="research-output-panel-artifacts"/,
   );
 });
 
@@ -406,7 +406,7 @@ test("routed Prompt modes are one-shot — consumed then cleared", () => {
 test("forms expose errors and narrow outputs become keyboard tabs", () => {
   assert.match(composer, /aria-invalid=\{Boolean\(error\) \|\| intentTooShort\}/);
   assert.match(composer, /role="alert"/);
-  assert.match(ledger, /<Tabs<"artifacts" \| "sources">/);
+  assert.match(detail, /<Tabs<ResearchOutputTab>/);
   assert.match(ledger, /role="tabpanel"/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /@container research-desk \(max-width: 760px\)/);
