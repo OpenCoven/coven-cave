@@ -212,8 +212,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /if \(grokDirect\) \{\s*handleGrokLine\(line, isJson\);\s*return;/,
-  "Grok stdout routes through the native JSONL parser, never generic stream-json parsing",
+  /if \(grokDirect\) \{[\s\S]*?handleGrokLine\(line, isJson \|\| [\s\S]*?line\.trimStart\(\)\)\);\s*return;/,
+  "Grok stdout routes through the native parser, rejecting whitespace-prefixed object and array envelopes before plain fallback persistence",
 );
 assert.match(
   chatRoute,
@@ -254,6 +254,26 @@ assert.match(
   chatRoute,
   /Grok Build chats currently run on this Cave host/,
   "SSH Grok must fail explicitly instead of falling back to coven run",
+);
+assert.match(
+  chatRoute,
+  /const grokCapabilities = grokDirect[\s\S]*?probeReadyLocalRuntimeCapability\([\s\S]*?runner: "grok",[\s\S]*?probe: \(\) => probeGrokRunCapabilities\([\s\S]*?command: localRuntimePlan!\.command,[\s\S]*?fixedArgs: localRuntimePlan!\.fixedArgs[\s\S]*?localRuntimePlan!\.env[\s\S]*?const grokCompatibility = grokCapabilities[\s\S]*?resolveGrokCompatibility\(grokCapabilities\)/,
+  "Grok must probe the exact preflight-approved launcher and environment before selecting a structured schema",
+);
+assert.match(
+  chatRoute,
+  /outputFormat: grokCompatibility\?\.mode === "structured" \? "streaming-json" : null/,
+  "an unverified Grok client must use plain output rather than an assumed JSON protocol",
+);
+assert.match(
+  chatRoute,
+  /case "tool_start":[\s\S]*?envelopeToolUse[\s\S]*?consumePendingEnvelopeProgress[\s\S]*?consumePendingEnvelopeResult/,
+  "selected Grok schemas must reconcile reordered progress and terminal tool results through the shared tracker",
+);
+assert.match(
+  chatRoute,
+  /case "unknown":[\s\S]*?quarantineGrokSchema[\s\S]*?redactedGrokEventFingerprint/,
+  "unknown selected-schema events must quarantine future structured launches with a redacted diagnostic",
 );
 
 assert.match(
@@ -324,8 +344,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /\(openCodeDirect \|\| copilotStream\) && code !== 0[\s\S]*?is_error: true/,
-  "a nonzero direct Copilot process exit persists the turn as an error even without a final result frame",
+  /\(openCodeDirect \|\| copilotStream \|\| grokDirect\) && code !== 0[\s\S]*?is_error: true/,
+  "a nonzero direct Copilot or Grok process exit persists the turn as an error even without a final result frame",
 );
 assert.match(
   chatRoute,
