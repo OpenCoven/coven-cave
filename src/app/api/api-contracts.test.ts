@@ -462,8 +462,18 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /code: "ENOENT",[\s\S]{0,400}?: missingRunnerMessage\(/,
-    "/chat/send: the post-spawn ENOENT race copy must come from the shared missingRunnerMessage helper so it cannot drift from the pre-spawn gate",
+    /err\.code === "ENOENT" && launchFailureCode === RUNTIME_AVAILABILITY_ERROR_CODES\.missing[\s\S]{0,600}?missingRunnerMessage\(/,
+    "/chat/send: a generic post-spawn ENOENT race must use the shared missingRunnerMessage helper so it cannot drift from the pre-spawn gate",
+  );
+  assert.match(
+    sendSource,
+    /const hermesSpawnAvailability = hermesDirect && readyHermesLaunch[\s\S]{0,700}?evaluateRuntimeAvailability\(/,
+    "/chat/send: a direct Hermes post-spawn race must re-evaluate the shared launch availability contract",
+  );
+  assert.match(
+    sendSource,
+    /hermesSpawnAvailability && hermesSpawnAvailability\.state !== "ready"[\s\S]{0,200}?hermesSpawnAvailability\.message/,
+    "/chat/send: a failed Hermes recheck must surface the shared availability remediation instead of generic launch copy",
   );
   assert.match(
     sendSource,
