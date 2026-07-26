@@ -510,7 +510,7 @@ export class ToolCallTracker {
     };
     queue.push(call);
     this.byEnvelopeId.set(id, call);
-    const ev: ToolStreamEvent = { id: call.id, name, input, status: "running" };
+    const ev: ToolStreamEvent = { id: call.id, name, input: capLiveToolPayload(input, LIVE_TOOL_INPUT_CAP), status: "running" };
     this.record(ev, textOffset);
     return ev;
   }
