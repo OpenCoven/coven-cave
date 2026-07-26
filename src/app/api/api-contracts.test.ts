@@ -462,7 +462,7 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /code: "ENOENT",[\s\S]{0,400}?: missingRunnerMessage\(/,
+    /if \(err\.code === "ENOENT"\) \{[\s\S]{0,700}?missingRunnerMessage\(/,
     "/chat/send: the post-spawn ENOENT race copy must come from the shared missingRunnerMessage helper so it cannot drift from the pre-spawn gate",
   );
   assert.match(
