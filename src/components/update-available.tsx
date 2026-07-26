@@ -554,7 +554,7 @@ export function UpdateSettingsRow({
     });
   }, []);
 
-  useImperativeHandle(actionRef ?? null, () => ({ check }), [check]);
+  useImperativeHandle(actionRef, () => ({ check }), [check]);
 
   useEffect(() => {
     mounted.current = true;
