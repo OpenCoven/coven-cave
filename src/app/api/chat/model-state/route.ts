@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
 import {
+  isSafeConversationSessionId,
   loadConversation,
   saveConversation,
   withConversationLock,
@@ -74,6 +75,9 @@ export async function GET(req: Request) {
   const familiarId = cleanText(url.searchParams.get("familiarId"));
   const sessionId = cleanText(url.searchParams.get("sessionId"));
   if (!familiarId) return jsonError("familiarId is required", 400);
+  if (sessionId && !isSafeConversationSessionId(sessionId)) {
+    return jsonError("invalid session id", 400);
+  }
 
   const state = await currentState(familiarId, sessionId);
   // Also hand back the pickable model menu for this chat's runtime so non-web
@@ -114,6 +118,9 @@ export async function PATCH(req: Request) {
   const scope = body.scope;
 
   if (!familiarId) return jsonError("familiarId is required", 400);
+  if (sessionId && !isSafeConversationSessionId(sessionId)) {
+    return jsonError("invalid session id", 400);
+  }
   if (!model) return jsonError("invalid model", 400);
   if (scope === "next-message") {
     return jsonError("next-message scope is composer-local", 400);
