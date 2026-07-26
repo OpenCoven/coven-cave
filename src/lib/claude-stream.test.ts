@@ -96,6 +96,22 @@ assert.equal(
   true,
   "a malformed error flag must not turn a failed tool result into an ok bubble",
 );
+assert.deepEqual(
+  parseClaudeMessageEnvelope({
+    type: "user",
+    message: { content: [{ type: "tool_result", tool_use_id: "toolu-missing-content" }] },
+  }, v2),
+  [],
+  "a partial tool_result without its required content cannot settle a tool bubble",
+);
+assert.equal(
+  hasUnsupportedClaudeToolFrame({
+    type: "user",
+    message: { content: [{ type: "tool_result", tool_use_id: "toolu-missing-content" }] },
+  }, v2),
+  true,
+  "a tool_result missing content is a malformed profile frame rather than a successful empty result",
+);
 assert.equal(
   hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: { type: "tool_use" } } }, v2),
   true,

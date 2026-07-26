@@ -72,7 +72,8 @@ export function parseClaudeMessageEnvelope(
       if (
         block?.type === profile.eventTypes.toolResult &&
         typeof block.tool_use_id === "string" &&
-        block.tool_use_id
+        block.tool_use_id &&
+        hasOwn(block, "content")
       ) {
         events.push({
           kind: "tool-result",
@@ -132,6 +133,7 @@ export function hasUnsupportedClaudeToolFrame(
       if (block.type !== profile.eventTypes.toolResult) return true;
       return typeof block.tool_use_id !== "string" ||
         !block.tool_use_id ||
+        !hasOwn(block, "content") ||
         (block.is_error !== undefined && typeof block.is_error !== "boolean");
     });
   }
