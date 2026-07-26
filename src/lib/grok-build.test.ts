@@ -8,6 +8,11 @@ import {
   parseGrokModels,
   parseGrokStreamEvent,
 } from "./grok-build.ts";
+import {
+  BUILTIN_GROK_SCHEMA_BUNDLE,
+  parseGrokCompatibilityEvent,
+  type GrokEventSchema,
+} from "./grok-compatibility.ts";
 
 const catalog = parseGrokModels(`You are logged in with grok.com.\n\nDefault model: grok-4.5\n\nAvailable models:\n  * grok-4.5 (default)\n  * grok-code-fast-1`);
 assert.equal(catalog.defaultModel, "grok-4.5");
@@ -29,6 +34,7 @@ assert.deepEqual(
     permissionMode: "read",
     grantDirs: ["/work/project", ""],
     identityRules: "You are Nova.",
+    outputFormat: "streaming-json",
   }),
   [
     "--no-auto-update", "--output-format", "streaming-json",
@@ -50,6 +56,7 @@ assert.ok(
     permissionMode: "full",
     grantDirs: [],
     identityRules: "",
+    outputFormat: "streaming-json",
   }).includes("--sandbox"),
   "resumed chats preserve Grok's session-bound sandbox instead of failing on a changed composer mode",
 );
@@ -63,6 +70,7 @@ assert.deepEqual(
     permissionMode: "full",
     grantDirs: [],
     identityRules: "",
+    outputFormat: "streaming-json",
   }),
   [
     "--no-auto-update", "--output-format", "streaming-json",
@@ -93,6 +101,24 @@ assert.deepEqual(
   { kind: "error", message: "not authenticated", usage: undefined, totalCostUsd: 0 },
 );
 assert.deepEqual(parseGrokStreamEvent({ type: "thought", data: "hidden" }), { kind: "ignore" });
+assert.deepEqual(
+  parseGrokCompatibilityEvent({ type: "tool_started", id: "call-1", name: "read_file", input: { path: "secret" } }, BUILTIN_GROK_SCHEMA_BUNDLE.schemas[0]),
+  { kind: "unknown" },
+  "undocumented tool names never become activity in the built-in schema",
+);
+const verifiedToolSchema: GrokEventSchema = {
+  ...BUILTIN_GROK_SCHEMA_BUNDLE.schemas[0],
+  id: "fixture-verified-tool-schema",
+  eventTypes: {
+    ...BUILTIN_GROK_SCHEMA_BUNDLE.schemas[0].eventTypes,
+    toolStart: ["tool_started"], toolProgress: ["tool_progress"], toolEnd: ["tool_finished"], toolComplete: ["tool_complete"],
+  },
+};
+assert.deepEqual(
+  parseGrokCompatibilityEvent({ type: "tool_started", id: "call-1", name: "read_file", input: { path: "README.md" } }, verifiedToolSchema),
+  { kind: "tool_start", id: "call-1", name: "read_file", input: { path: "README.md" } },
+  "a selected verified schema can declare a complete tool lifecycle without hardcoded protocol guesses",
+);
 
 assert.equal(grokSandboxProfileForPermission("read"), "read");
 assert.equal(grokSandboxProfileForPermission(undefined), "full");

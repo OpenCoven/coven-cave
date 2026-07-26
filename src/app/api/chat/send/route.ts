@@ -62,6 +62,13 @@ import {
   parseGrokStreamEvent,
 } from "@/lib/grok-build";
 import { grokLaunchCommand } from "@/lib/grok-bin";
+import {
+  parseGrokCompatibilityEvent,
+  probeGrokRunCapabilities,
+  quarantineGrokSchema,
+  redactedGrokEventFingerprint,
+  resolveGrokCompatibility,
+} from "@/lib/grok-compatibility";
 import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import {
   evaluateRuntimeAvailability,
@@ -1160,6 +1167,22 @@ export async function POST(req: Request) {
   const openCodeCompatibility = openCodeCapabilities
     ? await resolveOpenCodeCompatibility(openCodeCapabilities)
     : null;
+  // Probe the same ready local launcher/environment that the direct run will
+  // use. A missing or changed CLI remains a truthful preflight failure; it
+  // never turns undocumented output into tool activity.
+  const grokCapabilities = grokDirect
+    ? await probeReadyLocalRuntimeCapability({
+        plan: localRuntimePlan,
+        runner: "grok",
+        probe: () => probeGrokRunCapabilities(
+          { command: localRuntimePlan!.command, fixedArgs: localRuntimePlan!.fixedArgs },
+          localRuntimePlan!.env,
+        ),
+      })
+    : null;
+  const grokCompatibility = grokCapabilities
+    ? await resolveGrokCompatibility(grokCapabilities)
+    : null;
   const hermesModelCapability =
     hermesDirect && hermesApi === null
       ? await probeReadyLocalRuntimeCapability({
@@ -1649,6 +1672,7 @@ export async function POST(req: Request) {
           binding.display_name,
           binding.role,
         ),
+        outputFormat: grokCompatibility?.mode === "structured" ? "streaming-json" : null,
       });
     }
     if (openCodeDirect) {
@@ -1810,7 +1834,7 @@ export async function POST(req: Request) {
       // Compatibility notices are deliberately value-free and must survive
       // transcript reloads; the live SSE buffer alone expires after two
       // minutes. Keep only this narrowly-scoped subset of progress rows.
-      const persistedOpenCodeDiagnostics: NonNullable<ChatTurn["progress"]> = [];
+      const persistedCompatibilityDiagnostics: NonNullable<ChatTurn["progress"]> = [];
       const pushProgress = (
         id: string,
         label: string,
@@ -1818,8 +1842,8 @@ export async function POST(req: Request) {
         detail?: string,
         durationMs?: number,
       ) => {
-        if (id === "opencode-compatibility") {
-          persistedOpenCodeDiagnostics.push({
+        if (id === "opencode-compatibility" || id === "grok-compatibility") {
+          persistedCompatibilityDiagnostics.push({
             id,
             label,
             status,
@@ -1988,6 +2012,24 @@ export async function POST(req: Request) {
       let openCodeProtocolQuarantineNoticeSent = false;
       let openCodeStructuredProtocolQuarantined = false;
       let openCodeModelRejected = false;
+      let grokCompatibilityHealthNoticeSent = false;
+      let grokStructuredProtocolQuarantined = false;
+      let grokProtocolQuarantineNoticeSent = false;
+      const quarantineGrokProtocol = (
+        detail: "malformed-jsonl-event" | "unframed-jsonl-event" | `unknown-event:${string}`,
+      ) => {
+        grokStructuredProtocolQuarantined = true;
+        quarantineGrokSchema(grokCompatibility?.schema);
+        recordStdoutErrorTail("Grok Build emitted a malformed structured event", true);
+        if (grokProtocolQuarantineNoticeSent) return;
+        grokProtocolQuarantineNoticeSent = true;
+        pushProgress(
+          "grok-compatibility",
+          "Grok Build sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
+          "error",
+          detail,
+        );
+      };
       const quarantineOpenCodeProtocol = (
         label: string,
         detail: "malformed-json-event" | "oversized-jsonl-event",
@@ -2297,12 +2339,56 @@ export async function POST(req: Request) {
       };
 
       const handleGrokLine = (line: string, isJson: boolean) => {
+        if (!grokCompatibilityHealthNoticeSent && grokCompatibility?.diagnostic) {
+          grokCompatibilityHealthNoticeSent = true;
+          const label = grokCompatibility.diagnostic === "streaming-json-unavailable"
+            ? "This Grok Build client does not advertise streaming JSON; continuing without tool activity"
+            : grokCompatibility.diagnostic === "built-in-schema-expired"
+              ? "Grok Build's built-in compatibility schema has expired; continuing without tool activity"
+              : grokCompatibility.diagnostic === "no-compatible-schema"
+                ? "This Grok Build client has no verified tool-event schema; continuing without tool activity"
+                : "Grok Build's structured event protocol is unavailable; continuing without tool activity";
+          pushProgress("grok-compatibility", label, "error", grokCompatibility.diagnostic);
+        }
+        if (grokCompatibility?.mode === "plain") {
+          let unverifiedStructuredOutput = false;
+          if (isJson) {
+            try {
+              const candidate = JSON.parse(line);
+              unverifiedStructuredOutput = !!candidate && typeof candidate === "object";
+            } catch {
+              // Plain prose can begin with a brace or bracket.
+            }
+          }
+          if (unverifiedStructuredOutput) {
+            recordStdoutErrorTail("Grok Build emitted an unverified structured event", true);
+            if (!grokProtocolQuarantineNoticeSent) {
+              grokProtocolQuarantineNoticeSent = true;
+              pushProgress(
+                "grok-compatibility",
+                "Grok Build emitted unverified structured output; continuing without tool activity",
+                "error",
+                "unverified-structured-output",
+              );
+            }
+            return;
+          }
+          const text = `${resolveBackspaces(stripAnsi(line))}\n`;
+          if (!grokSessionId && grokSessionHint) grokSessionId = grokSessionHint;
+          if (!sessionId && grokSessionHint) announceSession(grokSessionHint);
+          assistantText += text;
+          push({ kind: "assistant_chunk", text });
+          return;
+        }
         if (!isJson) {
-          recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+          quarantineGrokProtocol("unframed-jsonl-event");
           return;
         }
         try {
-          const event = parseGrokStreamEvent(JSON.parse(line));
+          const raw = JSON.parse(line);
+          const event = grokStructuredProtocolQuarantined
+            ? parseGrokStreamEvent(raw, grokCompatibility?.schema)
+            : parseGrokCompatibilityEvent(raw, grokCompatibility?.schema);
           // A fresh native session's id is assigned by Cave because Grok only
           // returns it in its final frame. Once its first response frame
           // confirms the process is live, retain that id for a cancelled
@@ -2324,7 +2410,7 @@ export async function POST(req: Request) {
               // launch means its --model contract accepted the selected id.
               if (!confirmedModel && grokForwardModel) confirmedModel = desiredModel;
               result = {
-                is_error: event.isError,
+                is_error: false,
                 usage: parseStreamJsonUsage(event.usage),
                 costUsd: parseCostUsd(event.totalCostUsd),
               };
@@ -2335,7 +2421,49 @@ export async function POST(req: Request) {
                 usage: parseStreamJsonUsage(event.usage),
                 costUsd: parseCostUsd(event.totalCostUsd),
               };
-              recordStdoutErrorTail(event.message);
+              recordStdoutErrorTail("Grok Build returned a structured error", true);
+              return;
+            case "tool_start": {
+              boundarySentinel?.observe(event.name, event.input);
+              const started = toolTracker.envelopeToolUse(event.id, event.name, formatToolInputValue(event.input), assistantText.length);
+              if (started) push({ kind: "tool_use", ...started });
+              const progress = toolTracker.consumePendingEnvelopeProgress(event.id);
+              if (progress) push({ kind: "tool_use", ...progress });
+              const ended = toolTracker.consumePendingEnvelopeResult(event.id);
+              if (ended) push({ kind: "tool_use", ...ended });
+              return;
+            }
+            case "tool_progress": {
+              const progress = toolTracker.envelopeToolProgress(event.id, typeof event.output === "string" ? event.output : formatToolInputValue(event.output));
+              if (progress) push({ kind: "tool_use", ...progress });
+              return;
+            }
+            case "tool_end": {
+              const ended = toolTracker.envelopeToolResult(event.id, typeof event.output === "string" ? event.output : formatToolInputValue(event.output), event.isError);
+              if (ended) push({ kind: "tool_use", ...ended });
+              return;
+            }
+            case "tool_complete": {
+              boundarySentinel?.observe(event.name, event.input);
+              const started = toolTracker.envelopeToolUse(event.id, event.name, formatToolInputValue(event.input), assistantText.length);
+              if (started) push({ kind: "tool_use", ...started });
+              const ended = toolTracker.envelopeToolResult(event.id, typeof event.output === "string" ? event.output : formatToolInputValue(event.output), event.isError);
+              if (ended) push({ kind: "tool_use", ...ended });
+              return;
+            }
+            case "unknown":
+              grokStructuredProtocolQuarantined = true;
+              quarantineGrokSchema(grokCompatibility?.schema);
+              recordStdoutErrorTail("Grok Build emitted a malformed structured event", true);
+              if (!grokProtocolQuarantineNoticeSent) {
+                grokProtocolQuarantineNoticeSent = true;
+                pushProgress(
+                  "grok-compatibility",
+                  "Grok Build sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
+                  "error",
+                  `unknown-event:${redactedGrokEventFingerprint(raw)}`,
+                );
+              }
               return;
             case "ignore":
               return;
@@ -2343,7 +2471,7 @@ export async function POST(req: Request) {
         } catch {
           /* not valid JSON after all — fall through to the error tail */
         }
-        recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+        quarantineGrokProtocol("malformed-jsonl-event");
       };
 
       const handleOpenCodeLine = (line: string) => {
@@ -2517,7 +2645,7 @@ export async function POST(req: Request) {
           return;
         }
         if (grokDirect) {
-          handleGrokLine(line, isJson);
+          handleGrokLine(line, isJson || /^[{\[]/.test(line.trimStart()));
           return;
         }
         if (openCodeDirect) {
@@ -3199,7 +3327,7 @@ export async function POST(req: Request) {
             // OpenCode normally emits a JSON error envelope, but older CLI
             // builds can exit non-zero with only stderr. Do not mistake that
             // failed invocation for a successful model application below.
-            if ((openCodeDirect || copilotStream) && code !== 0) {
+            if ((openCodeDirect || copilotStream || grokDirect) && code !== 0) {
               result = { ...result, is_error: true };
             }
             // Copilot JSONL stderr can contain raw prompt or tool payloads on
@@ -3211,6 +3339,11 @@ export async function POST(req: Request) {
                 stdoutErrTail.length = 0;
                 stdoutErrTail.push("Copilot exited before completing its response.");
               }
+            }
+            if (grokDirect) {
+              stderrTail.length = 0;
+              stdoutErrTail.length = 0;
+              if (code !== 0) stdoutErrTail.push("Grok Build exited before completing its response.");
             }
             pushProgress(
               "harness-start",
@@ -3406,7 +3539,7 @@ export async function POST(req: Request) {
         // OpenCode stderr can include request bodies, provider diagnostics, or
         // local paths. It is useful for other harnesses' existing recovery
         // guidance, but must never become assistant-visible/persisted text.
-        const tailBlock = !openCodeDirect && tailSource.length
+        const tailBlock = !openCodeDirect && !grokDirect && tailSource.length
           ? `\n\n\`\`\`\n${tailSource.slice(-5).join("\n")}\n\`\`\``
           : "";
         const diagnostic = result.is_error
@@ -3472,11 +3605,11 @@ export async function POST(req: Request) {
       // us to normalize provider text. Preserve its leading indentation and
       // trailing blank lines in the durable transcript as well as the live
       // stream; other harnesses retain their established trim behavior.
-      const assistantTextForPersistence = openCodeDirect && openCodeCompatibility?.mode === "plain"
+      const assistantTextForPersistence = (openCodeDirect && openCodeCompatibility?.mode === "plain") || (grokDirect && grokCompatibility?.mode === "plain")
         ? assistantText
         : assistantText.trim();
       const { text: cleanedAssistantText, attachments: agentAttachments } =
-        openCodeDirect && openCodeCompatibility?.mode === "plain"
+        (openCodeDirect && openCodeCompatibility?.mode === "plain") || (grokDirect && grokCompatibility?.mode === "plain")
           ? { text: assistantTextForPersistence, attachments: [] }
           : parseAgentAttachments(assistantTextForPersistence, {
               allowedRoots: sshRuntime ? [] : [cwd, ...grantedProjectRoots],
@@ -3610,8 +3743,8 @@ export async function POST(req: Request) {
             ...(result.usage ? { usage: result.usage } : {}),
             ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
             ...(persistedTools ? { tools: persistedTools } : {}),
-            ...(persistedOpenCodeDiagnostics.length
-              ? { progress: persistedOpenCodeDiagnostics }
+            ...(persistedCompatibilityDiagnostics.length
+              ? { progress: persistedCompatibilityDiagnostics }
               : {}),
             parentId: userTurnId,
             responseMetadata,
