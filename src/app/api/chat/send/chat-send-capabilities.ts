@@ -353,8 +353,8 @@ function advertisedStructuredSwitches(options: string[], noValueOptions: string[
 type OpenCodeRunContractProbe = { helpProbe: ProbeOutput; versionProbe: ProbeOutput };
 
 async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCodeRunContractProbe> {
-  const helpLaunch = openCodeLaunch(["run", "--help"]);
-  const versionLaunch = openCodeLaunch(["--version"]);
+  const helpLaunch = openCodeLaunch(["run", "--help"], process.platform, env);
+  const versionLaunch = openCodeLaunch(["--version"], process.platform, env);
   const [helpProbe, versionProbe] = await Promise.all([
     probeOutput(helpLaunch.command, helpLaunch.args, env, helpLaunch.input),
     probeOutput(versionLaunch.command, versionLaunch.args, env, versionLaunch.input),
@@ -452,12 +452,13 @@ export function hermesChatSupportsModel(): Promise<boolean> {
 
 /** OpenCode is direct-spawned so its own documented capability is authoritative. */
 export function openCodeRunSupportsModel(): Promise<boolean> {
-  const launch = openCodeLaunch(["run", "--help"]);
+  const env = openCodeSpawnEnv();
+  const launch = openCodeLaunch(["run", "--help"], process.platform, env);
   return (openCodeModelFlagProbe ??= probeHelp(
     launch.command,
     launch.args,
     (help) => /(^|\s)--model(?![\w-])/m.test(help),
-    openCodeSpawnEnv(),
+    env,
     launch.input,
   ));
 }
