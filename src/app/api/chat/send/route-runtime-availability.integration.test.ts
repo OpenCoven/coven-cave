@@ -1,7 +1,9 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { createHook } from "node:async_hooks";
+import childProcess from "node:child_process";
 import { chmod, mkdtemp, mkdir, rm, unlink, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -234,8 +236,8 @@ try {
     } else {
       assert.equal(
         error.code,
-        "ENOENT",
-        "the missing shebang interpreter reaches the post-spawn ENOENT handler",
+        "runtime_missing",
+        "the missing shebang interpreter stays in the structured missing-runtime contract",
       );
       assert.equal(
         error.message,
@@ -259,6 +261,39 @@ try {
       new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
       "post-spawn diagnostics must never expose the runner path",
     );
+
+    const done = events.findLast((event) => event.kind === "done");
+    assert.equal(done?.isError, true, "the post-spawn ENOENT completes the stream as an error");
+  }
+
+  // Scenario 3 — Windows can throw synchronously for an invalid executable
+  // instead of returning a child that emits error. It must use the same
+  // structured, no-fabricated-response completion as an async launch race.
+  {
+    await writeFile(pinnedGrok, "present for synchronous spawn\n", { mode: 0o755 });
+    if (process.platform !== "win32") await chmod(pinnedGrok, 0o755);
+    const originalSpawn = childProcess.spawn;
+    childProcess.spawn = (() => {
+      throw Object.assign(new Error("synthetic synchronous spawn failure"), { code: "UNKNOWN" });
+    }) as typeof childProcess.spawn;
+    syncBuiltinESMExports();
+    try {
+      const response = await POST(new Request("http://localhost/api/chat/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ familiarId: "opal", prompt: "hello synchronous failure", projectRoot: familiarWorkspace }),
+      }));
+      const { body, events } = await readSse(response);
+      const error = events.find((event) => event.kind === "error");
+      assert.equal(error?.code, "runtime_launch_failed");
+      assert.equal(error?.message, runtimeLaunchFailedMessage("grok"));
+      assertNoFabricatedAssistantResponse(body, events);
+      const done = events.findLast((event) => event.kind === "done");
+      assert.equal(done?.isError, true, "a synchronous spawn failure completes the stream as an error");
+    } finally {
+      childProcess.spawn = originalSpawn;
+      syncBuiltinESMExports();
+    }
   }
   // A direct Copilot configuration never falls through to generic Coven when
   // the exact local CLI plan is absent.

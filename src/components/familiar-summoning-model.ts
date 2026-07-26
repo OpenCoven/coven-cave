@@ -1,4 +1,5 @@
 import type { IconName } from "@/lib/icon";
+import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 
 export type VesselKind = "local" | "ssh" | "openclaw";
 
@@ -7,10 +8,7 @@ export type HarnessReport = {
   label: string;
   chatSupported: boolean;
   installed: boolean;
-  availability?: {
-    state: "ready" | "missing" | "unlaunchable" | "probe_failed" | "unsupported_runtime";
-    message?: string;
-  };
+  availability?: RuntimeAvailabilitySummary;
 };
 
 export type OpenClawAgent = {

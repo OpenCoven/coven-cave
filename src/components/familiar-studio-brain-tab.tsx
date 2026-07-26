@@ -11,6 +11,7 @@ import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select
 import { isBindableRuntimeChoice } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import type { RuntimeModelOption } from "@/lib/grok-build";
+import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
 import { IconButton } from "@/components/ui/icon-button";
@@ -71,10 +72,7 @@ type HarnessReport = {
   id: string;
   label: string;
   installed: boolean;
-  availability?: {
-    state: "ready" | "missing" | "unlaunchable" | "probe_failed" | "unsupported_runtime";
-    message?: string;
-  };
+  availability?: RuntimeAvailabilitySummary;
   models?: RuntimeModelOption[];
   defaultModel?: string | null;
 };
@@ -842,12 +840,24 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         // per-familiar runtime choices.
                         options: harnesses
                           .filter((h) => isBindableRuntimeChoice(h.id))
-                          .map((h) => ({
-                            value: h.id,
-                            label: h.availability && h.availability.state !== "ready"
-                              ? `${h.label} (${h.availability.message ?? "not ready"})`
-                              : `${h.label}${h.installed ? "" : " (not installed)"}`,
-                          })),
+                          .map((h) => {
+                            const availabilityMessage = h.availability && h.availability.state !== "ready"
+                              ? h.availability.message
+                              : undefined;
+                            return {
+                              value: h.id,
+                              label: `${h.label}${
+                                h.availability && h.availability.state !== "ready"
+                                  ? h.availability.state === "missing"
+                                    ? " (not installed)"
+                                    : " (unavailable)"
+                                  : h.installed ? "" : " (not installed)"
+                              }`,
+                              detail: h.availability?.state !== "ready"
+                                ? h.availability?.message
+                                : availabilityMessage,
+                            };
+                          }),
                       } satisfies StandardSelectGroup<string>,
                     ]}
                   />

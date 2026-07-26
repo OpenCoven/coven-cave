@@ -11,6 +11,37 @@ export type NativeUpdateCheckResult =
 
 type Listener = (snapshot: NativeUpdateSnapshot) => void;
 
+/**
+ * Latest-result guard for a mounted updater surface. Coordinator snapshots can
+ * arrive while that surface's own async check is still pending; superseding
+ * the local sequence prevents the older promise from repainting stale state.
+ */
+export class NativeUpdateCheckSequence {
+  private sequence = 0;
+  private pending = false;
+
+  get inFlight(): boolean {
+    return this.pending;
+  }
+
+  begin(): number {
+    this.pending = true;
+    this.sequence += 1;
+    return this.sequence;
+  }
+
+  supersede(): void {
+    this.pending = false;
+    this.sequence += 1;
+  }
+
+  settle(sequence: number): boolean {
+    if (sequence !== this.sequence) return false;
+    this.pending = false;
+    return true;
+  }
+}
+
 function compareVersions(left: string, right: string): number {
   const parse = (version: string) => {
     const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(version);

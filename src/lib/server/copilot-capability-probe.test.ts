@@ -120,6 +120,36 @@ assert.equal(
   "a missing runtime is not collapsed into version-unavailable",
 );
 
+// A bounded launch-identity check can time out before the version process is
+// started. The failed probe must still return its exact resolved plan so chat
+// preflights that plan rather than falling back to a different bare command.
+clearCopilotCapabilityProbeCache();
+const identityTimedOut = await probeCopilotCapability("copilot-identity-timeout-fixture", {
+  binaryIdentity: async () => "",
+  resolveRuntimeLaunch: async () => ({
+    env: { NODE_ENV: "test", PATH: "" },
+    command: "copilot-identity-timeout-fixture",
+    fixedArgs: [],
+    requiredFiles: [],
+    deadline: Date.now() + 1_500,
+    availability: {
+      state: "ready",
+      runner: "copilot",
+      resolvedPath: "copilot-identity-timeout-fixture",
+    },
+  }),
+  spawnImpl: (() => {
+    throw new Error("the version probe must not run after identity timeout");
+  }) as typeof import("node:child_process").spawn,
+});
+assert.equal(identityTimedOut.version, null);
+assert.equal(identityTimedOut.diagnostic, "probe-timeout");
+assert.deepEqual(
+  identityTimedOut.launchCommand,
+  { command: "copilot-identity-timeout-fixture", fixedArgs: [], requiredFiles: [] },
+  "a timed-out identity check retains the resolved direct launch plan",
+);
+
 // The cache is keyed by the resolved binary identity, not merely its command
 // name. An in-place CLI upgrade must be re-probed before Cave selects JSONL.
 clearCopilotCapabilityProbeCache();

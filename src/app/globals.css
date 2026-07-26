@@ -13,6 +13,7 @@
 @import "../styles/globals/themes.css";
 @import "../styles/globals/desktop-chrome.css";
 @import "../styles/globals/shell-responsive.css";
+@import "../styles/settings-familiars.css";
 @import "../styles/globals/calendar-agenda.css";
 @import "../styles/globals/surface-compact-calendar.css";
 @import "../styles/globals/surface-reporting.css";

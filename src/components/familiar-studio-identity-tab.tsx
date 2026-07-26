@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { IconButton } from "@/components/ui/icon-button";
+import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import {
   setFamiliarOverride,
   clearFamiliarOverrideField,
@@ -13,6 +16,7 @@ import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { FamiliarStudioLookTab } from "@/components/familiar-studio-look-tab";
 import { FamiliarLifecycleSection } from "@/components/familiar-lifecycle-section";
+import type { ContractReport } from "@/lib/familiar-contract";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type Props = {
@@ -63,9 +67,171 @@ export function FamiliarStudioIdentityTab({
           onReset={() => clearFamiliarOverrideField(familiar.id, f.key)}
         />
       ))}
+      <FamiliarGrimoireFiles familiarId={familiar.id} />
       <FamiliarStudioLookTab familiar={familiar} allFamiliars={allFamiliars} />
       <FamiliarLifecycleSection familiar={familiar} onRosterChanged={onRosterChanged} />
     </div>
+  );
+}
+
+type ContractFileKey = "soul" | "identity" | "ward" | "memory";
+
+type ContractPayload = {
+  ok?: boolean;
+  present?: Record<ContractFileKey, boolean>;
+  report?: ContractReport;
+  error?: string;
+};
+
+type ContractState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | {
+      status: "ready";
+      present: Record<ContractFileKey, boolean>;
+      report: ContractReport;
+    };
+
+const GRIMOIRE_FILES: Array<{
+  key: ContractFileKey;
+  name: string;
+  kind: string;
+  description: string;
+}> = [
+  {
+    key: "soul",
+    name: "SOUL.md",
+    kind: "MD",
+    description: "Voice, temperament, and reasoning style.",
+  },
+  {
+    key: "identity",
+    name: "IDENTITY.md",
+    kind: "MD",
+    description: "Name, pronouns, avatar, and public identity.",
+  },
+  {
+    key: "ward",
+    name: "ward.toml",
+    kind: "TOML",
+    description: "Guardrails, protected files, and approval tiers.",
+  },
+  {
+    key: "memory",
+    name: "MEMORY.md",
+    kind: "MD",
+    description: "Long-term memory; manage entries from the Memory tab.",
+  },
+];
+
+function FamiliarGrimoireFiles({ familiarId }: { familiarId: string }) {
+  const [state, setState] = useState<ContractState>({ status: "loading" });
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    setState({ status: "loading" });
+    try {
+      const response = await fetch(
+        `/api/familiars/${encodeURIComponent(familiarId)}/contract`,
+        { cache: "no-store", signal },
+      );
+      const payload = await response.json().catch(() => null) as ContractPayload | null;
+      if (signal?.aborted) return;
+      if (!response.ok || !payload?.ok || !payload.present || !payload.report) {
+        throw new Error(payload?.error || `contract check failed (${response.status})`);
+      }
+      setState({
+        status: "ready",
+        present: payload.present,
+        report: payload.report,
+      });
+    } catch (error) {
+      if (signal?.aborted) return;
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Contract check failed",
+      });
+    }
+  }, [familiarId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
+
+  return (
+    <section
+      className="familiar-studio-grimoire"
+      aria-labelledby={`familiar-grimoire-heading-${familiarId}`}
+      tabIndex={-1}
+    >
+      <div className="familiar-studio-grimoire__heading">
+        <h2 id={`familiar-grimoire-heading-${familiarId}`}>Grimoire files</h2>
+        {state.status === "ready" ? (
+          <>
+            <span className="familiar-studio-grimoire__count">
+              {Object.values(state.present).filter(Boolean).length} of {GRIMOIRE_FILES.length} found
+            </span>
+            <span
+              className="familiar-studio-grimoire__compliance"
+              data-pass={state.report.pass || undefined}
+            >
+              {state.report.pass
+                ? "Compliant"
+                : `${state.report.violations.length} ${state.report.violations.length === 1 ? "issue" : "issues"}`}
+            </span>
+          </>
+        ) : null}
+        <span className="familiar-studio-grimoire__rule" aria-hidden />
+      </div>
+
+      {state.status === "loading" ? (
+        <div role="status" aria-label="Checking Grimoire files">
+          <SkeletonRows count={2} />
+        </div>
+      ) : state.status === "error" ? (
+        <ErrorState
+          compact
+          headline="Couldn't check Grimoire files"
+          subtitle={state.message}
+          actions={(
+            <Button size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+              Retry
+            </Button>
+          )}
+        />
+      ) : (
+        <div className="familiar-studio-grimoire__grid">
+          {GRIMOIRE_FILES.map((file) => {
+            const present = state.present[file.key];
+            const issues = state.report.violations.filter(
+              (violation) => violation.file === file.name,
+            ).length;
+            return (
+              <article
+                key={file.key}
+                className="familiar-studio-grimoire__file"
+                data-present={present || undefined}
+              >
+                <div className="familiar-studio-grimoire__file-head">
+                  <span className="familiar-studio-grimoire__kind">{file.kind}</span>
+                  <code>{file.name}</code>
+                  <span className="familiar-studio-grimoire__state">
+                    {present ? "Found" : "Missing"}
+                  </span>
+                </div>
+                <p>{file.description}</p>
+                {issues > 0 ? (
+                  <span className="familiar-studio-grimoire__issues">
+                    {issues} {issues === 1 ? "issue" : "issues"}
+                  </span>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
