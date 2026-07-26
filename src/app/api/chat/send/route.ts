@@ -304,6 +304,22 @@ function createLocalRuntimePlan(input: {
   };
 }
 
+function hermesLaunchFailure(plan?: LocalRuntimePlan): { code: string; message: string } {
+  const availability = plan && evaluateRuntimeAvailability({
+    runner: "hermes",
+    command: plan.command,
+    env: plan.env,
+    cwd: plan.cwd,
+  });
+  if (availability && availability.state !== "ready") {
+    return { code: availability.code, message: availability.message };
+  }
+  return {
+    code: "runtime_unlaunchable",
+    message: "Hermes failed to start. Check its installation and try again.",
+  };
+}
+
 type SendBody = {
   familiarId: string;
   prompt?: string;
@@ -3486,29 +3502,11 @@ export async function POST(req: Request) {
               : openCodeDirect ? undefined : cwd,
           );
           const reportLaunchFailure = (err: NodeJS.ErrnoException) => {
-            const hermesSpawnAvailability = hermesDirect && localRuntimePlan
-              ? evaluateRuntimeAvailability({
-                  runner: "hermes",
-                  command: localRuntimePlan.command,
-                  env: localRuntimePlan.env,
-                  cwd: localRuntimePlan.cwd,
-                })
-              : null;
             let localLaunchError: { code: string; message: string } = localRuntimeLaunchError(
               localRuntimePlan?.runner ?? "coven",
               err.code,
             );
-            if (hermesSpawnAvailability && hermesSpawnAvailability.state !== "ready") {
-              localLaunchError = {
-                code: hermesSpawnAvailability.code,
-                message: hermesSpawnAvailability.message,
-              };
-            } else if (hermesDirect) {
-              localLaunchError = {
-                code: "runtime_unlaunchable",
-                message: "Hermes failed to start. Check its installation and try again.",
-              };
-            }
+            if (hermesDirect) localLaunchError = hermesLaunchFailure(localRuntimePlan ?? undefined);
             const launchError = sshRuntime
               ? err.code === "ENOENT"
                 ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
