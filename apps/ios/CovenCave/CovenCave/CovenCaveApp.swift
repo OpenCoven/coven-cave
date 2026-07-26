@@ -30,11 +30,14 @@ struct CovenCaveApp: App {
                 .tint(resolved.chrome.accent)
                 .preferredColorScheme(resolved.scheme)
                 .task {
-                    app.startConnectionSupervisor()
                     // Route notification taps (reminders, chat replies) to the
                     // deep-link handler, and show banners while foregrounded.
                     notificationDelegate.onOpen = { app.handleDeepLink($0) }
                     UNUserNotificationCenter.current().delegate = notificationDelegate
+                    #if DEBUG
+                    guard !app.isConnectingPreview else { return }
+                    #endif
+                    app.startConnectionSupervisor()
                     if app.connection != nil {
                         await app.connectWithRetry()
                     }

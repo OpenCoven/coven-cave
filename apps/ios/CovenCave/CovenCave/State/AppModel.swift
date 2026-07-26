@@ -77,6 +77,12 @@ final class AppModel {
     /// matching hydrated thread can be opened, then is consumed exactly once.
     var launchThreadId: String?
 
+    #if DEBUG
+    /// Process-lifetime marker for the deterministic cold-connection preview.
+    /// The app lifecycle uses it to skip only live connection work.
+    var isConnectingPreview = false
+    #endif
+
     // MARK: - Cross-view command routing
 
     /// The selected primary destination. Mounted by `MainShellView`; set by
@@ -294,6 +300,14 @@ final class AppModel {
         connection = CaveConnection.load()
         launchThreadId = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"]
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-connecting") {
+            connection = CaveConnection(host: "cave-desktop.example")
+            connectionState = .checking
+            isConnectingPreview = true
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
         // Deterministic native screenshot fixture for the canonical empty-chat
         // surface. Launch with `--ui-preview-empty-chat` and
         // `CAVE_OPEN_THREAD=ui-preview-empty-chat`; release builds never carry

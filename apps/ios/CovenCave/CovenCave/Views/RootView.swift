@@ -255,16 +255,87 @@ private enum MainOverlay: String, Identifiable {
 
 struct ConnectingView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 16) {
-            ProgressView().controlSize(.large)
-            Text("Connecting to your desktop…")
-                .foregroundStyle(.secondary)
-            if let host = app.connection?.host {
-                Text(host).font(.footnote.monospaced()).foregroundStyle(.tertiary)
+        VStack(spacing: 0) {
+            Spacer()
+
+            ZStack {
+                RadialGradient(
+                    colors: [chrome.accent.opacity(0.18), .clear],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 56
+                )
+                .frame(width: 112, height: 112)
+
+                Image(systemName: "moon.stars.fill")
+                    .font(.system(size: 27, weight: .medium))
+                    .foregroundStyle(chrome.accent)
+            }
+            .accessibilityHidden(true)
+            .padding(.bottom, 34)
+
+            Text("Opening the Cave")
+                .font(.title.weight(.medium))
+                .fontDesign(.serif)
+                .italic()
+
+            Text("Connecting to your desktop")
+                .font(.subheadline)
+                .foregroundStyle(chrome.textSecondary)
+                .padding(.top, 12)
+
+            connectionSignal
+                .padding(.top, 24)
+
+            if let host = app.connection?.host, !host.isEmpty {
+                Text(host)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(chrome.textMuted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.top, 22)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Connecting to your desktop")
+        .accessibilityValue(app.connection?.host ?? "")
+    }
+
+    @ViewBuilder
+    private var connectionSignal: some View {
+        if reduceMotion {
+            staticSignal
+        } else {
+            PhaseAnimator([0, 1, 2]) { phase in
+                signalDots(active: phase)
+            } animation: { _ in
+                .easeInOut(duration: 0.34)
             }
         }
-        .padding()
+    }
+
+    private var staticSignal: some View {
+        signalDots(active: 1)
+    }
+
+    private func signalDots(active: Int) -> some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3) { index in
+                Circle()
+                    .fill(chrome.accent)
+                    .frame(width: 5, height: 5)
+                    .opacity(index == active ? 1 : 0.24)
+                    .scaleEffect(index == active ? 1.12 : 1)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }

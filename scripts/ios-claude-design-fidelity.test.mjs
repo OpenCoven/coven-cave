@@ -21,6 +21,7 @@ const client = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.sw
 const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
 const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
+const caveApp = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
 const tasks = await read("apps/ios/CovenCave/CovenCave/Views/TasksView.swift");
 const terminal = await read("apps/ios/CovenCave/CovenCave/Views/TerminalView.swift");
 const settings = await read("apps/ios/CovenCave/CovenCave/Views/SettingsView.swift");
@@ -129,6 +130,34 @@ assert.doesNotMatch(glass, /UITabBar(?:Appearance)?|tabAppearance|liveTabBars/,
   "the chrome system no longer styles an unavailable native tab bar");
 assert.match(glass, /UINavigationBarAppearance\.glass/,
   "the chrome system still styles live navigation bars");
+
+// Quiet Portal keeps the cold connection state honest, themed, deterministic,
+// and accessible without inventing stages the runtime cannot prove.
+assert.match(root, /Text\("Opening the Cave"\)/, "connecting state uses the approved headline");
+assert.match(root, /Text\("Connecting to your desktop"\)/, "connecting state names the live operation");
+assert.match(root, /if let host = app\.connection\?\.host/, "connecting state renders the real saved host");
+assert.match(
+  root,
+  /Text\(host\)[\s\S]*?\.font\(\.caption\.monospaced\(\)\)[\s\S]*?\.truncationMode\(\.middle\)/,
+  "connecting host is compact, monospaced, and truncates in the middle",
+);
+assert.match(root, /PhaseAnimator\(\[0, 1, 2\]\)/, "connecting state has indeterminate signal motion");
+assert.match(root, /if reduceMotion[\s\S]*?staticSignal/, "connecting motion has a static fallback");
+assert.match(
+  root,
+  /\.accessibilityElement\(children: \.ignore\)[\s\S]*?\.accessibilityLabel\("Connecting to your desktop"\)[\s\S]*?\.accessibilityValue\(app\.connection\?\.host \?\? ""\)/,
+  "connecting state exposes one honest accessibility status",
+);
+assert.match(
+  appModel,
+  /--ui-preview-connecting[\s\S]*?CaveConnection\(host: "cave-desktop\.example"\)[\s\S]*?connectionState = \.checking[\s\S]*?isConnectingPreview = true/,
+  "connecting state has a deterministic saved-host preview fixture",
+);
+assert.match(
+  caveApp,
+  /notificationDelegate\.onOpen[\s\S]*?UNUserNotificationCenter\.current\(\)\.delegate[\s\S]*?guard !app\.isConnectingPreview else \{ return \}[\s\S]*?app\.startConnectionSupervisor\(\)[\s\S]*?await app\.connectWithRetry\(\)/,
+  "connecting preview configures notifications but skips live connection work",
+);
 assert.match(
   drawer,
   /Color\.black\.opacity\(isOpen \? 0\.46 : 0\)/,
