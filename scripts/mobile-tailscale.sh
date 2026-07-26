@@ -342,8 +342,9 @@ load_or_create_token() {
 
 # Legacy stale-state sentinel: SIDECAR_TOKEN_FILE was written by older builds that ran a sidecar-gated server
 # (populating COVEN_CAVE_AUTH_TOKEN / SidecarAuthBridge). That mode and load_or_create_sidecar_token have been
-# removed. The file is kept as a detection marker only — its presence signals that the port is occupied by an
-# older-style run — and is deleted on app-mode start and on stop.
+# removed. The file is now only a detection marker — its presence is checked by the app-mode guard in
+# start_next_server to reject a port already occupied by an older-style run — and is deleted on app-mode start
+# and on stop.
 ensure_tailscale() {
   need node
   need "$TAILSCALE_BIN"
