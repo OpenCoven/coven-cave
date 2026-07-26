@@ -11,13 +11,9 @@ export type ChatProjectAccessArgs = {
   resumeCwd?: string;
   /** The cwd the runtime scope resolved for this turn. */
   resolvedCwd: string;
-  /** The requesting familiar's own workspace dir (realpath-resolved), when it exists. */
+  /** Legacy caller context. Familiar workspaces no longer bypass project registration. */
   familiarWorkspace?: string;
 };
-
-function samePath(a: string, b: string): boolean {
-  return path.resolve(a) === path.resolve(b);
-}
 
 /**
  * The registered project whose `.worktrees/` directory contains `root`, if
@@ -40,14 +36,9 @@ function worktreeParentProject(root: string, projects: CaveProject[]): CaveProje
  * the request is not project-scoped (no permission check applies).
  *
  * Registered projects win: an explicit or resumed root that maps to a project
- * returns that project's id so the grant check runs. An explicit root that
- * matches no project fails closed as `unregistered:<root>` — audited through
- * the shared permission chokepoint, and only Supreme can proceed — with one
- * exemption: the familiar's OWN workspace. Chats with no project selected
- * boot there, the daemon records that dir as the session's cwd, and clients
- * echo the recorded cwd back as an explicit projectRoot on later turns.
- * Fail-closing on it denied the familiar its own home ("project access
- * denied" 403 on turn 2 of every no-project chat).
+ * returns that project's id so the grant check runs. A root that matches no
+ * project fails closed as `unregistered:<root>`. Familiar workspaces are not
+ * exempt: Chat requires a registered project for new and continued turns.
  *
  * A second carve-out routes rather than skips the check: an explicit root
  * sitting below a registered project's `.worktrees/` directory authorizes
@@ -69,13 +60,7 @@ export function chatProjectAccessId(args: ChatProjectAccessArgs): string | null 
     projectForRoot(args.resolvedCwd, args.projects);
   if (project) return project.id;
 
-  if (!explicitRoot) return null;
-
-  if (args.familiarWorkspace && samePath(explicitRoot, args.familiarWorkspace)) {
-    return null;
-  }
-
-  const worktreeParent = worktreeParentProject(explicitRoot, args.projects);
+  const worktreeParent = worktreeParentProject(projectRoot, args.projects);
   if (worktreeParent) return worktreeParent.id;
 
   return `unregistered:${projectRoot}`;

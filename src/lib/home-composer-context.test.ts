@@ -16,7 +16,11 @@ test("home composer excludes archived familiars and falls back from an archived 
 test("home composer project selection honors no-project and stable fallback", () => {
   const projects = [{ id: "one", name: "One" }, { id: "two", name: "Two" }] as never[];
   assert.equal(resolveHomeComposerProject(projects, "two", "__no-project__")?.id, "two");
-  assert.equal(resolveHomeComposerProject(projects, "missing", "__no-project__")?.id, "one");
+  assert.equal(
+    resolveHomeComposerProject(projects, "missing", "__no-project__"),
+    null,
+    "a stale explicit id never silently substitutes another project",
+  );
   assert.equal(resolveHomeComposerProject(projects, "__no-project__", "__no-project__"), null);
 });
 
