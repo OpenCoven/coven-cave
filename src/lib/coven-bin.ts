@@ -27,13 +27,18 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+<<<<<<< HEAD
 import {
   scrubSidecarInternalEnv,
   vaultFreeDiscoveryEnv,
 } from "./child-spawn-env.ts";
+import { managedNodePaths, managedNodeSpawnEnv } from "./server/managed-node-toolchain.ts";
 import { loadVaultMap } from "./vault.ts";
 
 export { scrubSidecarInternalEnv } from "./child-spawn-env.ts";
+=======
+import { managedNodePaths, managedNodeSpawnEnv } from "./server/managed-node-toolchain.ts";
+>>>>>>> b5fd3d1b (feat(onboarding): manage prerequisite toolchain installs)
 
 let cachedBin: string | null = null;
 let cachedPath: string | null = null;
@@ -214,7 +219,12 @@ function windowsNpmBinDirs(discovery: DiscoveryOptions): string[] {
 }
 
 function candidateDirs(discovery = discoveryOptions()): string[] {
+  const managed = managedNodePaths();
   return [
+    // Cave's verified user-scoped Node/npm lane precedes opportunistic host
+    // managers. It never edits system PATH; this only affects Cave children.
+    managed?.npmBin,
+    managed ? path.dirname(managed.node) : null,
     ...nodeNvmBinDirs(discovery),
     ...fnmBinDirs(discovery),
     ...windowsNpmBinDirs(discovery),
@@ -231,7 +241,7 @@ function candidateDirs(discovery = discoveryOptions()): string[] {
     // ~/.cargo/bin last: often holds a stale `cargo install` of coven that's
     // missing flags. Prefer the npm-published binary when both exist.
     path.join(/* turbopackIgnore: true */ HOME, ".cargo", "bin"),
-  ].filter((d) => existsSync(/* turbopackIgnore: true */ d));
+  ].filter((d): d is string => !!d && existsSync(/* turbopackIgnore: true */ d));
 }
 
 function candidateBinNames(): string[] {
@@ -513,6 +523,8 @@ function augmentedSpawnPath(
 
 function spawnEnv(pathValue: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, PATH: pathValue };
+  const managed = managedNodeSpawnEnv(env);
+  if (managed) Object.assign(env, managed);
   env.COVEN_HARNESS_ADAPTER_DIRS = covenAdapterDirsEnvValue(
     process.env.COVEN_HARNESS_ADAPTER_DIRS,
     process.env.COVEN_HOME,

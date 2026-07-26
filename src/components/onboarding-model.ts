@@ -65,12 +65,12 @@ export type HarnessReport = {
 };
 
 export type InstallTarget =
+  | "managed-node"
   | "coven-cli"
   | "codex"
   | "claude"
   | "copilot"
-  | "openclaw"
-  | "hermes";
+  | "openclaw";
 
 export type InstallResult = {
   ok: boolean;
@@ -109,13 +109,13 @@ export type InstallJobView = {
 /** Mirrors the server's per-target install mechanism (route.ts INSTALL_TARGETS).
  *  npm-kind installs are mutually exclusive — the route 409s — so they share
  *  one client-side busy lock. */
-export const INSTALL_TARGET_KIND: Record<InstallTarget, "npm" | "script"> = {
+export const INSTALL_TARGET_KIND: Record<InstallTarget, "managed-node" | "npm"> = {
+  "managed-node": "managed-node",
   "coven-cli": "npm",
   codex: "npm",
   claude: "npm",
   copilot: "npm",
   openclaw: "npm",
-  hermes: "script",
 };
 export const ALL_INSTALL_TARGETS = Object.keys(INSTALL_TARGET_KIND) as InstallTarget[];
 export const NPM_INSTALL_TARGETS = ALL_INSTALL_TARGETS.filter(
@@ -134,43 +134,43 @@ export const HARNESS_RETRY_BUDGET = 15;
 export const OPENCLAW_AGENT_ROOT = "~/.openclaw/agents";
 export const OPENCLAW_WORKSPACE_ROOT = "~/.openclaw/workspace";
 
-/** Every chat harness Cave can install itself. `command` is the manual
- *  equivalent shown beside the button; `windowsCommand` overrides it on
- *  Windows when the official installer differs (Hermes). */
+/** Every chat harness Cave can install itself. The displayed command documents
+ * the reviewed Cave-managed lane; the browser still submits only a target. */
 export const HARNESS_ONE_CLICK: Partial<
   Record<
     string,
     {
       target: InstallTarget;
       command: string;
-      windowsCommand?: string;
       afterInstall: string;
     }
   >
 > = {
   codex: {
     target: "codex",
-    command: "npm install -g @openai/codex",
+    command: "Cave-managed npm install --global @openai/codex@0.145.0",
     afterInstall: "then run `codex login` in a terminal to sign in",
   },
   claude: {
     target: "claude",
-    command: "npm install -g @anthropic-ai/claude-code",
+    command: "Cave-managed npm install --global @anthropic-ai/claude-code@2.1.220",
     afterInstall: "then run `claude doctor` in a terminal to finish setup",
   },
   copilot: {
     target: "copilot",
-    command: "npm install -g @github/copilot",
+    command: "Cave-managed npm install --global @github/copilot@1.0.75",
     afterInstall:
       "then run `copilot` in a terminal and sign in with `/login` (or set GH_TOKEN)",
   },
   openclaw: {
     target: "openclaw",
-    command: "npm i -g openclaw@latest",
+    command: "Cave-managed npm install --global openclaw@2026.7.1-2",
     afterInstall:
       `then summon a familiar from an agent in ${OPENCLAW_AGENT_ROOT} once you're inside Cave (Familiars → Summon familiar)`,
   },
-  hermes: {
+  /* Hermes only publishes a mutable remote script today. It remains manual-only
+     until a versioned, hash-verifiable artifact is available. */
+  /*
     target: "hermes",
     command:
       "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
@@ -178,6 +178,19 @@ export const HARNESS_ONE_CLICK: Partial<
     afterInstall:
       "then run `hermes setup` in a terminal (installer can take several minutes — it bootstraps its own toolchain)",
   },
+  */
+};
+
+export type OnboardingPrerequisite = {
+  id: string;
+  label: string;
+  tier: "native-launch" | "local-runtime" | "feature";
+  state: "pass" | "fail" | "unknown";
+  detail: string;
+  manualRecovery: string;
+  installable: boolean;
+  requiresPrivilege: boolean;
+  restart: "none" | "app" | "system";
 };
 
 export const PLATFORM_COPY: Record<
@@ -200,7 +213,7 @@ export const PLATFORM_COPY: Record<
       href: "https://support.microsoft.com/en-us/topic/what-is-smart-app-control-285ea03d-fa88-4d56-882e-6698afdb7003",
     },
     nodeSetup: [
-      "Install Node.js LTS from https://nodejs.org, or run winget install OpenJS.NodeJS.LTS.",
+      "Choose Install Cave-managed Node.js and npm in onboarding.",
       "Restart Cave afterwards so the new PATH applies.",
       "Click the Install button again — Cave re-finds npm automatically.",
     ],
@@ -211,7 +224,7 @@ export const PLATFORM_COPY: Record<
       "Install CovenCave, then open it from Start.",
     ],
     cliInstall: [
-      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Install the reviewed Coven CLI through Cave after its managed toolchain is ready.",
       "Make sure coven.exe is on PATH after the global npm install.",
       "Click Re-check after Windows can run coven from a new terminal.",
     ],
@@ -219,7 +232,7 @@ export const PLATFORM_COPY: Record<
   linux: {
     label: "Linux",
     nodeSetup: [
-      "Install Node.js LTS from https://nodejs.org or your package manager (e.g. sudo apt install nodejs npm).",
+      "Choose Install Cave-managed Node.js and npm in onboarding.",
       "Open a new terminal so PATH updates apply.",
       "Click the Install button again — Cave re-finds npm automatically.",
     ],
@@ -229,7 +242,7 @@ export const PLATFORM_COPY: Record<
       "Launch the AppImage from your file manager or terminal.",
     ],
     cliInstall: [
-      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Install the reviewed Coven CLI through Cave after its managed toolchain is ready.",
       "Make sure coven is on PATH after the global npm install.",
       "If your desktop shell has an older PATH, restart Cave after installing the tools.",
     ],
@@ -237,7 +250,7 @@ export const PLATFORM_COPY: Record<
   mac: {
     label: "macOS",
     nodeSetup: [
-      "Install Node.js LTS from https://nodejs.org, or run brew install node.",
+      "Choose Install Cave-managed Node.js and npm in onboarding.",
       "Open a new terminal so PATH updates apply.",
       "Click the Install button again — Cave re-finds npm automatically.",
     ],
@@ -247,7 +260,7 @@ export const PLATFORM_COPY: Record<
       "Open CovenCave from Applications.",
     ],
     cliInstall: [
-      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Install the reviewed Coven CLI through Cave after its managed toolchain is ready.",
       "Make sure a terminal can run coven after the global npm install.",
       "Click Re-check here after install.",
     ],
@@ -255,7 +268,7 @@ export const PLATFORM_COPY: Record<
   unknown: {
     label: "Your platform",
     nodeSetup: [
-      "Install Node.js LTS from https://nodejs.org.",
+      "Choose Install Cave-managed Node.js and npm in onboarding.",
       "Open a new terminal so PATH updates apply.",
       "Click the Install button again — Cave re-finds npm automatically.",
     ],
@@ -265,7 +278,7 @@ export const PLATFORM_COPY: Record<
       "Open CovenCave and continue setup here.",
     ],
     cliInstall: [
-      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Install the reviewed Coven CLI through Cave after its managed toolchain is ready.",
       "Make sure coven is on PATH.",
       "Click Re-check here after install.",
     ],

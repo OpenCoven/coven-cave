@@ -46,6 +46,14 @@ export type NodeArchive = {
   format: "zip" | "tar.gz";
 };
 
+/** Recovery metadata only: native Linux packages must be installed before
+ * Cave can render, so onboarding never attempts to invoke a package manager. */
+export const LINUX_DESKTOP_RECOVERY_PACKAGES = {
+  debian: ["libgtk-3-0", "libwebkit2gtk-4.1-0", "libfuse2"],
+  fedora: ["gtk3", "webkit2gtk4.1", "fuse-libs"],
+  arch: ["gtk3", "webkit2gtk-4.1", "fuse2"],
+} as const;
+
 export type NpmPackage = {
   packageName: string;
   version: string;
@@ -55,7 +63,7 @@ export type NpmPackage = {
 
 export type InstallStrategy =
   | { kind: "native"; manualRecovery: string }
-  | { kind: "managed-node"; artifacts: Record<`${PrerequisitePlatform}-${PrerequisiteArchitecture}`, NodeArchive> }
+  | { kind: "managed-node"; artifacts: Partial<Record<`${PrerequisitePlatform}-${PrerequisiteArchitecture}`, NodeArchive>> }
   | { kind: "managed-npm"; package: NpmPackage }
   | { kind: "manual"; manualRecovery: string };
 
@@ -115,7 +123,7 @@ const managedNodeArtifacts = {
     maxBytes: NODE_MAX_BYTES,
     format: "tar.gz",
   },
-} satisfies Record<`${PrerequisitePlatform}-${PrerequisiteArchitecture}`, NodeArchive>;
+} satisfies Partial<Record<`${PrerequisitePlatform}-${PrerequisiteArchitecture}`, NodeArchive>>;
 
 const npmPackage = (
   packageName: string,
