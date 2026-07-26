@@ -125,6 +125,7 @@ export function VoiceEngineSettings() {
       {models.map((model) => {
         const job = jobs.find((candidate) => candidate.modelId === model.id);
         const ready = model.ready && model.verified;
+        const downloadRunning = job?.status === "running";
         const busy = busyModelId === model.id;
         return (
           <div key={model.id} className="flex items-center justify-between gap-4 px-4 py-3">
@@ -132,10 +133,10 @@ export function VoiceEngineSettings() {
               <p className="text-[length:var(--text-base)] text-[var(--text-primary)]">{model.name}</p>
               <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{downloadLabel(job) ?? (ready ? "Downloaded and verified." : "Not downloaded.")}</p>
             </div>
-            {ready ? (
-              <Button size="xs" variant="danger-ghost" loading={busy} disabled={busy} onClick={() => void manage(model.id, "remove")} leadingIcon="ph:trash">Remove</Button>
+            {ready || downloadRunning ? (
+              <Button size="xs" variant="danger-ghost" loading={busy} disabled={busy} onClick={() => void manage(model.id, "remove")} leadingIcon="ph:trash">{downloadRunning ? "Cancel download" : "Remove"}</Button>
             ) : (
-              <Button size="xs" loading={busy || job?.status === "running"} disabled={busy || job?.status === "running"} onClick={() => void manage(model.id, "download")} leadingIcon="ph:download-simple">Download</Button>
+              <Button size="xs" loading={busy} disabled={busy} onClick={() => void manage(model.id, "download")} leadingIcon="ph:download-simple">Download</Button>
             )}
           </div>
         );

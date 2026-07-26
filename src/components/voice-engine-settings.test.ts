@@ -10,6 +10,8 @@ test("local speech settings manages the verified model registry through supporte
   assert.match(source, /fetch\("\/api\/voice\/engines\/downloads", \{ cache: "no-store" \}\)/);
   assert.match(source, /method: action === "download" \? "POST" : "DELETE"/);
   assert.match(source, /model\.ready && model\.verified/);
+  assert.match(source, /const downloadRunning = job\?\.status === "running"/);
+  assert.match(source, /ready \|\| downloadRunning[\s\S]{0,280}Cancel download/);
   assert.match(source, /cave:voice-engines-refresh/);
   assert.match(source, /setTimeout\(\(\) => \{ void refresh\(true\); \}, 1_000\)/);
   assert.match(source, /if \(hadActiveDownload\.current\)[\s\S]{0,120}notifyCatalogChanged\(\)/);
