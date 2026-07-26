@@ -62,8 +62,8 @@ assert.match(
 );
 assert.match(
   githubView,
-  /\.\.\.\(activity\?\.organizations \?\? \[\]\)/,
-  "organization options should include authenticated memberships even without open activity",
+  /\.\.\.filtered\.map\(\(i\) => orgOf\(i\.repo\)\)/,
+  "organization options derive from the orgs present in the current table rows, not from every membership",
 );
 assert.match(
   githubView,
