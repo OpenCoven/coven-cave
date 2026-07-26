@@ -71,6 +71,7 @@ import { readableTextColor } from "@/lib/readable-text-color";
 import { openExternalUrl } from "@/lib/open-external";
 import { copyText } from "@/lib/clipboard";
 import { BackdropSettings } from "@/components/backdrop-settings";
+import { VoiceEngineSettings } from "@/components/voice-engine-settings";
 import {
   flushAppPreferences,
   readAppPreferences,
@@ -439,6 +440,7 @@ function GeneralSection() {
       <SettingsGroup label="Chat">
         <StopPhraseField />
       </SettingsGroup>
+      <VoiceEngineSettings />
       <SettingsGroup label="Progression">
         <CelebrationsToggle />
       </SettingsGroup>

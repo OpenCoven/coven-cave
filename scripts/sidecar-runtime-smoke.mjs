@@ -25,6 +25,13 @@ const bundledWhisper = path.join(
   "whisper",
   process.platform === "win32" ? "whisper-cli.exe" : "whisper-cli",
 );
+const bundledPiper = path.join(
+  root,
+  "src-tauri",
+  "resources",
+  "piper",
+  process.platform === "win32" ? "piper.exe" : "piper",
+);
 const token = "sidecar-runtime-smoke-token";
 
 function reservePort() {
@@ -112,6 +119,7 @@ function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port }) {
       PORT: String(port),
       COVEN_CAVE_BUNDLE: "1",
       COVEN_WHISPER_CPP_BIN: bundledWhisper,
+      COVEN_PIPER_BIN: bundledPiper,
       COVEN_CAVE_AUTH_TOKEN: token,
       COVEN_HOME: covenHome,
       NEXT_TELEMETRY_DISABLED: "1",
@@ -199,6 +207,7 @@ async function main() {
   await access(sidecarServer);
   await access(bundledNode);
   await access(bundledWhisper);
+  await access(bundledPiper);
   if (process.platform === "win32") {
     for (const runtimeDll of ["MSVCP140.dll", "VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "VCOMP140.dll"]) {
       await access(path.join(path.dirname(bundledWhisper), runtimeDll));
@@ -215,6 +224,15 @@ async function main() {
     whisperVersion.status,
     0,
     `packaged Whisper CLI must launch from resources: ${whisperVersion.stderr || whisperVersion.error}`,
+  );
+
+  const piperHelp = spawnSync(bundledPiper, ["--help"], {
+    encoding: "utf8",
+  });
+  assert.equal(
+    piperHelp.status,
+    0,
+    `packaged Piper runtime must launch from resources: ${piperHelp.stderr || piperHelp.error}`,
   );
 
   const nativeModules = spawnSync(
@@ -265,6 +283,17 @@ async function main() {
     assert.equal(meta.format, "png");
     assert.equal(meta.width, 256, "avatar should be downscaled to the packaged route max dimension");
     assert.equal(meta.height, 128, "avatar should preserve aspect ratio during sidecar transcode");
+
+    const enginesResponse = await fetch(`${baseUrl}/api/voice/engines`, {
+      headers: authenticatedHeaders(baseUrl),
+    });
+    assert.equal(enginesResponse.status, 200, "packaged sidecar must expose local voice readiness");
+    const engines = await enginesResponse.json();
+    assert.equal(
+      engines.runtimes?.piper?.available,
+      true,
+      "the sidecar must execute the managed Piper resource, not fall back to PATH",
+    );
 
     const marketplaceResponse = await fetch(`${baseUrl}/api/marketplace`, {
       headers: { "x-coven-cave-token": token },

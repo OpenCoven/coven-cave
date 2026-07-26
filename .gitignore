@@ -20,6 +20,8 @@ src-tauri/resources/node/*
 !src-tauri/resources/node/placeholder.txt
 src-tauri/resources/whisper/*
 !src-tauri/resources/whisper/placeholder.txt
+src-tauri/resources/piper/*
+!src-tauri/resources/piper/placeholder.txt
 
 # Notarized release artifacts
 release/

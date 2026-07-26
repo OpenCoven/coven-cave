@@ -43,6 +43,22 @@ pub(super) fn bundled_node_path(resource_dir: &Path) -> PathBuf {
         .join("node")
 }
 
+#[cfg(all(desktop, target_os = "windows"))]
+pub(super) fn bundled_piper_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("piper")
+        .join("piper.exe")
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+pub(super) fn bundled_piper_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("piper")
+        .join("piper")
+}
+
 /// Find a usable `node` binary. Release builds include a Node runtime under
 /// bundled resources so clean user machines can boot the sidecar. Development
 /// builds can still fall back to common local Node installs.
