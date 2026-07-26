@@ -95,8 +95,11 @@ struct ChatsHomeView: View {
             // subsequent reloads, so re-appearing destinations don't refetch the list.
             .task { if !app.sessionsLoaded { await app.loadSessions() } }
             .onAppear {
-                openDeepLinkedThread()
+                consumeLaunchThreadIntent()
                 consumeGlobalRequests()
+            }
+            .onChange(of: app.threads.map(\.id)) { _, _ in
+                consumeLaunchThreadIntent()
             }
             // A slash command (`/new`, `/familiar <name>`) or a task link asked to
             // open a specific thread — surface it in the detail column.
@@ -187,18 +190,9 @@ struct ChatsHomeView: View {
         return nil
     }
 
-    /// Open a thread named by the `CAVE_OPEN_THREAD` launch env var. This is the
-    /// same hook Phase 2 notification taps will use to jump straight into a chat.
     /// Start a brand-new chat with a familiar and open it (familiar-row action).
     private func startNewChat(with familiar: Familiar) {
         let thread = app.startFreshThread(familiarIds: [familiar.id])
-        open(.thread(thread))
-    }
-
-    private func openDeepLinkedThread() {
-        guard selection == nil,
-              let id = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"],
-              let thread = app.threads.first(where: { $0.id == id }) else { return }
         open(.thread(thread))
     }
 
@@ -385,6 +379,11 @@ struct ChatsHomeView: View {
             searchFocused = true
             app.chatSearchRequested = false
         }
+    }
+
+    private func consumeLaunchThreadIntent() {
+        guard let thread = app.consumeLaunchThreadIntent() else { return }
+        open(.thread(thread))
     }
 
     /// Consume a cross-destination thread handoff on first appearance and on

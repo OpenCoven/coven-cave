@@ -3,6 +3,41 @@ import XCTest
 final class DrawerNavigationUITests: XCTestCase {
 
     @MainActor
+    func testLaunchThreadIntentDoesNotReopenAfterChatsRemounts() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview-empty-chat"]
+        app.launchEnvironment["CAVE_OPEN_THREAD"] = "ui-preview-empty-chat"
+        app.launch()
+
+        let threadTitle = "Chat with Nyx on Jul 26"
+        XCTAssertTrue(app.navigationBars[threadTitle].waitForExistence(timeout: 10),
+                      "the launch thread opens on the first Chats mount")
+
+        let back = app.navigationBars.buttons["BackButton"].firstMatch
+        if back.waitForExistence(timeout: 3) {
+            back.tap()
+        } else {
+            app.swipeRight()
+        }
+
+        let openNavigation = app.buttons["Open navigation"]
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
+                      "leaving the launch thread returns to Chats home")
+        openNavigation.tap()
+        app.buttons["Terminal"].tap()
+
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
+                      "Terminal exposes the navigation drawer")
+        openNavigation.tap()
+        app.buttons["Chats"].tap()
+
+        XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
+                      "remounted Chats stays at its home destination")
+        XCTAssertFalse(app.navigationBars[threadTitle].exists,
+                       "the consumed launch thread is not reopened after remounting Chats")
+    }
+
+    @MainActor
     func testDrawerRecentThreadOpensAfterChatsIsMounted() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-preview-empty-chat", "--ui-tab", "terminal"]

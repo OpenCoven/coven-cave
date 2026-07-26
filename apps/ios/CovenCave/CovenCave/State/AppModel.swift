@@ -73,6 +73,9 @@ final class AppModel {
     var familiarOrder: [String] = []
 
     var threads: [ChatThread] = []
+    /// Process-lifetime launch intent. It survives destination remounts until a
+    /// matching hydrated thread can be opened, then is consumed exactly once.
+    var launchThreadId: String?
 
     // MARK: - Cross-view command routing
 
@@ -127,6 +130,17 @@ final class AppModel {
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
         threadToOpen = thread
+    }
+
+    /// Consume the launch-thread intent only after its thread is available.
+    /// A delayed thread restore leaves the id pending for `ChatsHomeView` to
+    /// retry when hydration publishes its matching thread.
+    func consumeLaunchThreadIntent() -> ChatThread? {
+        guard let launchThreadId,
+              let thread = threads.first(where: { $0.id == launchThreadId })
+        else { return nil }
+        self.launchThreadId = nil
+        return thread
     }
 
     /// Ask the Tasks destination to open a card's detail (selects Tasks first).
@@ -278,6 +292,7 @@ final class AppModel {
 
     init() {
         connection = CaveConnection.load()
+        launchThreadId = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"]
         #if DEBUG
         // Deterministic native screenshot fixture for the canonical empty-chat
         // surface. Launch with `--ui-preview-empty-chat` and

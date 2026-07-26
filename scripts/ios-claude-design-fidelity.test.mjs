@@ -84,6 +84,22 @@ assert.match(
   /--ui-preview-empty-chat/,
   "the canonical empty-session surface has a deterministic simulator preview",
 );
+assert.match(appModel, /var launchThreadId: String\?/, "the launch thread intent belongs to AppModel");
+assert.match(
+  appModel,
+  /func consumeLaunchThreadIntent\(\) -> ChatThread\?/,
+  "the launch thread intent waits for a matching thread before consuming",
+);
+assert.doesNotMatch(
+  home,
+  /ProcessInfo\.processInfo\.environment\["CAVE_OPEN_THREAD"\]/,
+  "Chats does not reread the process launch intent on every mount",
+);
+assert.match(
+  home,
+  /onChange\(of: app\.threads\.map\(\\\.id\)\)[\s\S]{0,120}consumeLaunchThreadIntent\(\)/,
+  "Chats retries a pending launch intent when hydration adds threads",
+);
 
 // Authored navigation and discovery surfaces.
 assert.match(
