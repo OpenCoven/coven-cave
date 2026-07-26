@@ -76,9 +76,18 @@ const dispatch = await dispatchOpenClawGatewayTurn({
       start() {
         queueMicrotask(() =>
           options.onHelloOk?.({
+            type: "hello-ok",
             protocol: 4,
+            server: { version: "2026.7.2-beta.4", connId: "test-connection" },
             features: { methods: ["chat.send", "sessions.messages.subscribe"], events: ["chat"] },
+            snapshot: {
+              presence: [],
+              health: {},
+              stateVersion: { presence: 0, health: 0 },
+              uptimeMs: 0,
+            },
             auth: { role: "operator", scopes: ["operator.read", "operator.write"] },
+            policy: { maxPayload: 1024, maxBufferedBytes: 1024, tickIntervalMs: 1000 },
           }),
         );
       },
