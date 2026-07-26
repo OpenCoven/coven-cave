@@ -280,7 +280,7 @@ struct ConnectingView: View {
             .accessibilityHidden(true)
             .padding(.bottom, 34)
 
-            Text("Opening the Cave")
+            Text("Entering the Cave")
                 .font(.title.weight(.medium))
                 .fontDesign(.serif)
                 .italic()
