@@ -237,7 +237,8 @@ and server builds.
 
 ```bash
 pnpm mobile:tailscale          # browser-based mobile dogfooding over Tailscale
-pnpm mobile:tailscale:native   # native iOS development
+pnpm mobile:tailscale:app      # pair the native iOS app to a daemon over Tailscale
+pnpm mobile:ios:sim            # build & run the native iOS app in the simulator
 ```
 
 The native SwiftUI app has its own notes in

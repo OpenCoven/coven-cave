@@ -250,7 +250,7 @@ hand-rolled and race-prone.
    `!cancelled()` and publishes entries for the platforms that built, with a
    warning in the release body; `verify-release-updater.mjs` gains
    `--allow-partial` for CI use only.
-3. (`cave-ef6f`) `scripts/stamp-release.mjs`: bumps the six version
+3. (`cave-ef6f`) `scripts/stamp-release.mjs`: bumps the four version
    locations, drafts the changelog section from `git log <last-tag>..`,
    opens the PR — and refuses when another stamp PR is already open.
 

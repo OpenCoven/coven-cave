@@ -7,7 +7,6 @@
 > §5 (Take Cave with you) and the mobile docs
 > ([`mobile-readiness.md`](mobile-readiness.md),
 > [`mobile-tailscale.md`](mobile-tailscale.md),
-> [`mobile-tailscale-native.md`](mobile-tailscale-native.md),
 > [`ios-native-rebuild.md`](ios-native-rebuild.md)).
 
 ## Where we already are (shipped lineage)
@@ -77,9 +76,9 @@ packaged users**:
 
 **Stale artifacts found:** `cave-gwyw` specs an in-app QR scanner that
 already shipped (#2320, VisionKit `DataScannerViewController`);
-`golden-paths.md` §5 item 3 asserts "no in-app scan" — stale;
-`mobile-tailscale-native.md:18` claims ATS arbitrary loads are disabled —
-contradicts `Info.plist:64` (see cave-vcyh.1).
+`golden-paths.md` §5 item 3 asserts "no in-app scan" — stale. (A prior
+`mobile-tailscale-native.md` note on ATS arbitrary loads was resolved when the
+Tauri iOS shell was retired in favor of the native Swift app; see cave-vcyh.1.)
 
 ### Overhaul phases
 

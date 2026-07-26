@@ -1,8 +1,0 @@
-{
-  "build": {
-    "beforeBuildCommand": "TAURI_PLATFORM=ios bash scripts/sidecar-bundle.sh"
-  },
-  "bundle": {
-    "resources": []
-  }
-}

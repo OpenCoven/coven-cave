@@ -13,11 +13,9 @@ const packageJson = JSON.parse(
 
 test("mobile tailscale runner exposes operator commands", () => {
   assert.match(script, /COMMAND="\$\{1:-start\}"/);
-  assert.match(script, /start\|invite\|native\|app\|status\|stop/);
+  assert.match(script, /start\|invite\|app\|status\|stop/);
   assert.match(packageJson.scripts["mobile:tailscale"], /mobile-tailscale\.sh start/);
   assert.match(packageJson.scripts["mobile:tailscale:invite"], /mobile-tailscale\.sh invite/);
-  assert.match(packageJson.scripts["mobile:tailscale:native"], /mobile-tailscale\.sh native/);
-  assert.match(packageJson.scripts["mobile:tailscale:native:device"], /CAVE_MOBILE_DEVICE=1/);
   assert.match(packageJson.scripts["mobile:tailscale:app"], /mobile-tailscale\.sh app/);
   assert.match(packageJson.scripts["mobile:tailscale:status"], /mobile-tailscale\.sh status/);
   assert.match(packageJson.scripts["mobile:tailscale:stop"], /mobile-tailscale\.sh stop/);

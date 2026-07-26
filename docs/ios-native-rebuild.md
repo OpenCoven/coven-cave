@@ -19,8 +19,7 @@
 > - `src/proxy.ts` — the mobile-access host gate (security-sensitive), and the matching PTY
 >   WebSocket upgrade gate in `server.ts`.
 > - Tests pinning the above: `src/middleware.test.ts`, `src/proxy-behavior.test.ts`,
->   `src/server-pty-ws.test.ts`, `scripts/mobile-tailscale.test.mjs`,
->   `scripts/mobile-tailscale-native.test.mjs`.
+>   `src/server-pty-ws.test.ts`, `scripts/mobile-tailscale.test.mjs`.
 >
 > **Why (concrete history):**
 > - 2026-06-20: #1319 (scaffold + tokenless script) → #1329 (tailnet-trust fix + 18px rounded

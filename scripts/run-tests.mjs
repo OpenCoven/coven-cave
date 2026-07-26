@@ -1263,7 +1263,6 @@ export const SUITES = {
     "scripts/ios-surface-failures.test.mjs",
     "scripts/ios-surface-load-discipline.test.mjs",
     "scripts/mobile-tailscale.test.mjs",
-    "scripts/mobile-tailscale-native.test.mjs",
     "src/components/mobile-handoff.test.ts",
     "src/components/shell-drawer-smoke.test.ts",
     "src/app/composer-zoom-smoke.test.ts",
