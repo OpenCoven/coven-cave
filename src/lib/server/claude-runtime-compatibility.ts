@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
+import { covenSpawnEnv } from "../coven-bin.ts";
 import { pickVersionLine } from "../harness-version.ts";
 import {
   CLAUDE_COMPATIBILITY_PROFILES,
@@ -11,12 +12,31 @@ import {
   type RuntimeCapability,
   type RuntimeCompatibilityReport,
 } from "../runtime-compatibility.ts";
-import { harnessSpawnEnv } from "../harness-spawn-env.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 
 const PROBE_TTL_MS = 60_000;
 const PROBE_MAX_OUTPUT_BYTES = 64 * 1024;
 const PROBE_FORCE_KILL_GRACE_MS = 250;
+// Metadata probes never need provider credentials, Cave configuration, or
+// arbitrary launcher variables. Keep the executable-discovery and OS runtime
+// variables required by CLI shims, but do not hand a PATH-resolved binary any
+// secrets merely to answer --version/--help.
+const PROBE_ENV_KEYS = new Set([
+  "PATH",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "WINDIR",
+  "COMSPEC",
+  "HOME",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+]);
 // Cache a probe only until either the ordinary probe TTL or the selected
 // profile's expiry, whichever arrives first. Otherwise a profile that expires
 // during the 60-second TTL could remain enabled after its trust window ends.
@@ -29,6 +49,15 @@ let profileCacheLoaded = false;
 // would turn cache loss into a rollback after restart.
 let profileCacheTrustFailure = false;
 let refreshQueue: Promise<void> = Promise.resolve();
+
+/** Remove credentials and configuration from the direct Claude metadata probe.
+ * Exported so the privacy boundary can be regression-tested without spawning a
+ * local executable. */
+export function claudeProbeEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(env).filter(([key, value]) => value !== undefined && PROBE_ENV_KEYS.has(key.toUpperCase())),
+  );
+}
 
 type ProfileCacheDocument = { schemaVersion: 1; profiles: unknown[] };
 type ProfileCacheWatermark = { schemaVersion: 1; maxSequence: number };
@@ -198,7 +227,11 @@ function runClaude(args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn("claude", args, { env: harnessSpawnEnv(), stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      child = spawn("claude", args, {
+        env: claudeProbeEnvironment(covenSpawnEnv()),
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
     } catch {
       resolve(null);
       return;

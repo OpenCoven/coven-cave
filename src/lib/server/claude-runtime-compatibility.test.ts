@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   claudeCompatibilityDiagnostic,
+  claudeProbeEnvironment,
   loadClaudeCompatibilityCache,
   refreshClaudeCompatibilityProfiles,
   resetClaudeCompatibilityCacheForTest,
@@ -14,6 +15,19 @@ const compatibilitySource = await readFile(
   "utf8",
 );
 resetClaudeCompatibilityCacheForTest();
+assert.deepEqual(
+  claudeProbeEnvironment({
+    PATH: "/bin",
+    HOME: "/home/cave",
+    SystemRoot: "C:\\Windows",
+    ANTHROPIC_API_KEY: "secret",
+    OPENAI_API_KEY: "secret",
+    COVEN_HUB_ACCESS_TOKEN: "secret",
+    CUSTOM_LAUNCHER_TOKEN: "secret",
+  }),
+  { PATH: "/bin", HOME: "/home/cave", SystemRoot: "C:\\Windows" },
+  "Claude metadata probes retain only runtime variables and never inherit credentials",
+);
 assert.match(
   compatibilitySource,
   /child\.on\("close", \(code\) => \{[\s\S]*?finish\(code === 0 \? output : null\)/,
