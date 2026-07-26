@@ -452,13 +452,18 @@ for (const contract of contracts) {
   );
   const guardedDiagnostics = [
     ...sendSource.matchAll(
-      /if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)\) \{/g,
+      /if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)(?: && !launchFailure)?\) \{/g,
     ),
   ];
   assert.equal(
     guardedDiagnostics.length,
     2,
     "/chat/send: the empty-response error diagnostic must be skipped when the user cancelled",
+  );
+  assert.match(
+    sendSource,
+    /code: "ENOENT",[\s\S]{0,400}?: missingRunnerMessage\(/,
+    "/chat/send: the post-spawn ENOENT race copy must come from the shared missingRunnerMessage helper so it cannot drift from the pre-spawn gate",
   );
   assert.match(
     sendSource,
