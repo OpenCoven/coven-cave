@@ -52,6 +52,7 @@ export const SUITES = {
     "src/lib/research-findings-doc.test.ts",
     "src/lib/role-surface-state.test.ts",
     "src/components/role-surface-shell.test.ts",
+    "src/components/role-surfaces/surface-room.test.ts",
     "src/components/role-surfaces/researcher-surface.test.ts",
     "src/components/role-surfaces/research-evidence-ledger.test.ts",
     "src/components/role-surfaces/research-artifact-actions.test.ts",

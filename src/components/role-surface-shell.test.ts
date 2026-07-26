@@ -60,4 +60,11 @@ assert.match(
   "workspace imports the manifest for its side effect only",
 );
 
+const roleSurfaceHost = stripComments(read("src/components/role-surface-host.tsx"));
+assert.doesNotMatch(
+  roleSurfaceHost,
+  /role-surface-header-role/,
+  "role-surface-host no longer renders the role chip",
+);
+
 console.log("role-surface shell purity: ok");
