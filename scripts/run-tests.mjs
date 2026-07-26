@@ -417,6 +417,7 @@ export const SUITES = {
     "src/components/recent-activity-rollup.test.ts",
     "src/components/sidebar-familiar-filter.test.ts",
     "src/components/shell-edge-rails.test.ts",
+    "src/components/shell-first-paint.test.ts",
     "src/components/shell-left-panels-fit.test.ts",
     "src/components/shell-nav-memory.test.ts",
     "src/components/workflows-view.test.ts",

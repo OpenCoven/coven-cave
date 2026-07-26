@@ -14,6 +14,7 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -135,7 +136,14 @@ export function HomeComposer({
   onOpenSession,
   onStartVoiceCall,
 }: Props) {
-  const [text, setText] = useState(() => readComposerDraft(HOME_DRAFT_KEY));
+  // Hydrate from the same empty draft SSR emitted, then restore local storage
+  // before paint so textarea and Send-button state update in one React commit.
+  const [text, setText] = useState("");
+  const [draftRestored, setDraftRestored] = useState(false);
+  useLayoutEffect(() => {
+    setText(readComposerDraft(HOME_DRAFT_KEY));
+    setDraftRestored(true);
+  }, []);
   const [destination, setDestination] = useState<Destination>("chat");
   const [sending, setSending] = useState(false);
   // In-flight guard for the voice-call mint: onStartVoiceCall is an async
@@ -932,6 +940,7 @@ export function HomeComposer({
           placeholder={PLACEHOLDERS[destination]}
           rows={1}
           value={text}
+          readOnly={!draftRestored}
           onChange={(e) => setText(e.target.value)}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
