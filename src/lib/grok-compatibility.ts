@@ -168,6 +168,7 @@ export type GrokSchemaBundle = {
 
 export type GrokCompatibilityDiagnostic =
   | "streaming-json-unavailable"
+  | "built-in-schema-expired"
   | "no-compatible-schema"
   | "schema-quarantined"
   | "schema-registry-refresh-rejected"
@@ -662,6 +663,17 @@ export async function resolveGrokCompatibility(capabilities: GrokRunCapabilities
   // a lower signed response to establish a new history after the anchor was
   // deleted or corrupted.
   const cacheAnchorMissing = Object.keys(keys).length > 0 && !anchor && await cacheRecordExists(cacheFile);
+  // Once a client has accepted a newer remote contract, the compiled parser
+  // is no longer an offline fallback: its aliases may describe an older wire
+  // format. A missing/corrupt cache anchor has the same fail-closed outcome.
+  const builtInAnchor = {
+    sequence: BUILTIN_GROK_SCHEMA_BUNDLE.sequence,
+    payloadHash: grokSchemaBundlePayloadHash(BUILTIN_GROK_SCHEMA_BUNDLE),
+  };
+  const remoteSchemaRequired = cacheAnchorMissing || (
+    !!anchor
+    && (anchor.sequence !== builtInAnchor.sequence || anchor.payloadHash !== builtInAnchor.payloadHash)
+  );
   const cached = Object.keys(keys).length && !cacheAnchorMissing ? await readCache(cacheFile, keys, now, anchor) : null;
   if (cached && trustedBundle(cached.bundle, source.checkpoint)) { bundle = cached.bundle; bundleSource = "cache"; }
   const cacheFresh = !!cached && trustedBundle(cached.bundle, source.checkpoint)
@@ -696,6 +708,17 @@ export async function resolveGrokCompatibility(capabilities: GrokRunCapabilities
       }
       diagnostic = "schema-registry-refresh-rejected";
     }
+  }
+  if (remoteSchemaRequired && bundleSource === "built-in") {
+    return {
+      mode: "plain",
+      capabilities,
+      bundleSource,
+      diagnostic: diagnostic ?? "cached-schema-unavailable",
+    };
+  }
+  if (bundleSource === "built-in" && Date.parse(BUILTIN_GROK_SCHEMA_BUNDLE.expiresAt) <= now) {
+    return { mode: "plain", capabilities, bundleSource, diagnostic: "built-in-schema-expired" };
   }
   const remoteById = new Map(bundle.schemas.map((schema) => [schema.id, schema]));
   const candidates = bundleSource === "built-in" ? bundle.schemas : [...bundle.schemas, ...BUILTIN_GROK_SCHEMA_BUNDLE.schemas.filter((schema) => !bundle.retiredSchemaIds?.includes(schema.id) && !remoteById.has(schema.id))];

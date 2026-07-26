@@ -90,6 +90,16 @@ try {
   assert.equal(rollback.bundleSource, "cache", "a lower signed sequence cannot replace the local high-water contract");
   assert.equal(rollback.diagnostic, "schema-registry-refresh-rejected");
 
+  const expiredRemote = await resolveGrokCompatibility(supported, {
+    publicKeys: keyring,
+    cachePath,
+    now: () => Date.parse("2031-01-01T00:00:00.000Z"),
+    url: "https://registry.example/grok.json",
+    fetch: async () => new Response(JSON.stringify(signed)),
+  });
+  assert.equal(expiredRemote.mode, "plain", "an expired previously trusted remote contract cannot fall back to the older built-in parser");
+  assert.equal(expiredRemote.diagnostic, "schema-registry-refresh-rejected");
+
   // The immutable journal survives loss of the replaceable recovery sidecar,
   // so a stale writer cannot erase high-water state by replacing that sidecar.
   await rm(`${cachePath}.anchor`);
@@ -101,6 +111,16 @@ try {
   });
   assert.equal(missingAnchor.bundleSource, "cache", "the immutable high-water journal keeps the verified cache available after sidecar loss");
   assert.equal(missingAnchor.diagnostic, undefined);
+
+  await rm(`${cachePath}.anchor.journal`, { recursive: true, force: true });
+  const lostAnchor = await resolveGrokCompatibility(supported, {
+    publicKeys: keyring,
+    cachePath,
+    url: "https://registry.example/grok.json",
+    fetch: async () => new Response(JSON.stringify(signed)),
+  });
+  assert.equal(lostAnchor.mode, "plain", "a remote cache without any high-water anchor cannot revive the older built-in parser");
+  assert.equal(lostAnchor.diagnostic, "cached-schema-unavailable");
 
   // Simulate an interruption after the high-water anchor is committed but
   // before the replacement cache file can be installed. The prior cache was
@@ -129,5 +149,11 @@ try {
 } finally {
   await rm(cacheDirectory, { recursive: true, force: true });
 }
+
+const expiredBuiltIn = await resolveGrokCompatibility(supported, {
+  now: () => Date.parse("2031-01-01T00:00:00.000Z"),
+});
+assert.equal(expiredBuiltIn.mode, "plain", "the shipped parser expires instead of continuing to parse future Grok output");
+assert.equal(expiredBuiltIn.diagnostic, "built-in-schema-expired");
 
 console.log("grok compatibility tests passed");
