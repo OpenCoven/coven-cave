@@ -9,17 +9,19 @@ import path from "node:path";
 // must still suppress fabricated assistant/auth copy if the file disappears or
 // fails when spawn reaches it.
 const home = await mkdtemp(path.join(homedir(), "cave-hermes-availability-"));
-const bin = path.join(home, "bin");
 const familiarWorkspace = path.join(home, "familiars", "ember");
-await mkdir(bin, { recursive: true });
+const bin = path.join(familiarWorkspace, "bin");
 await mkdir(familiarWorkspace, { recursive: true });
+await mkdir(bin, { recursive: true });
 
 const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousPath = process.env.PATH;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
-process.env.PATH = bin;
+// A relative PATH entry must resolve from the familiar workspace used by the
+// preflight, model probe, and direct child — not from the test/server cwd.
+process.env.PATH = "bin";
 
 async function readSse(response) {
   assert.equal(response.status, 200, await response.clone().text());
