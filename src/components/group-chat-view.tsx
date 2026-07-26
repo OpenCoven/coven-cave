@@ -18,6 +18,7 @@ import "@/styles/coven-tab.css";
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -99,6 +100,38 @@ type Props = {
   onDebugSession?: (sessionId: string, familiarId: string) => void;
 };
 
+function CovenMentionPills({
+  familiars,
+  emptyHint,
+  align = "start",
+  id,
+}: {
+  familiars: ResolvedFamiliar[];
+  emptyHint?: string;
+  align?: "start" | "end";
+  id?: string;
+}) {
+  if (familiars.length === 0 && !emptyHint) return null;
+  const names = familiars.map((f) => f.display_name);
+  return (
+    <div
+      id={id}
+      role="note"
+      className={`coven-tab__mention-strip${align === "end" ? " coven-tab__mention-strip--end" : ""}`}
+      aria-label={names.length > 0 ? `Tagged familiars: ${names.join(", ")}` : emptyHint}
+    >
+      <span className="coven-tab__mention-guidance">
+        {names.length > 0 ? "Tagged" : emptyHint}
+      </span>
+      {familiars.map((f) => (
+        <span key={f.id} className="coven-tab__mention-chip" aria-hidden="true">
+          @{f.display_name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 const EMPTY_FAMILIAR_IDS: readonly string[] = [];
 
 export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugSession }: Props) {
@@ -124,6 +157,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const dtPrefs = useDateTimePrefs();
   const confirm = useConfirm();
   const { announce } = useAnnouncer();
+  const mentionGuidanceId = useId();
 
   const addBtnRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -141,6 +175,9 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   // Caret to restore after we programmatically rewrite the draft (mention insert).
   const pendingCaretRef = useRef<number | null>(null);
+  // Picker-confirmed names stay complete while the user continues ordinary
+  // prose. This is autocomplete state only; visible text remains authoritative.
+  const completedMentionNameRef = useRef<string | null>(null);
   const groupsRef = useRef<CovenGroup[]>(groups);
   groupsRef.current = groups;
   // Live mirror of the transcript so retry can read the answered user turn
@@ -153,6 +190,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const draftsByGroupRef = useRef(new Map<string, string>());
+  const completedMentionsByGroupRef = useRef(new Map<string, string>());
   const draftOwnerRef = useRef<string | null>(null);
   // Which group the in-memory transcript belongs to (set by the swap effect).
   // The persist effect must not save until the swap has caught up, or the
@@ -231,10 +269,22 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     // Swap the composer draft along with the transcript: stash the outgoing
     // coven's draft and restore the incoming one's (or a clean slate).
     if (draftOwnerRef.current !== activeId) {
-      if (draftOwnerRef.current) draftsByGroupRef.current.set(draftOwnerRef.current, draftRef.current);
+      const outgoingGroupId = draftOwnerRef.current;
+      if (outgoingGroupId) {
+        draftsByGroupRef.current.set(outgoingGroupId, draftRef.current);
+        const completedName = completedMentionNameRef.current;
+        if (completedName) {
+          completedMentionsByGroupRef.current.set(outgoingGroupId, completedName);
+        } else {
+          completedMentionsByGroupRef.current.delete(outgoingGroupId);
+        }
+      }
       draftOwnerRef.current = activeId;
       setDraft(activeId ? draftsByGroupRef.current.get(activeId) ?? "" : "");
       setMention(null);
+      completedMentionNameRef.current = activeId
+        ? completedMentionsByGroupRef.current.get(activeId) ?? null
+        : null;
     }
     if (!activeId) {
       setTranscript([]);
@@ -396,6 +446,11 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         }
       }
       draftsByGroupRef.current.delete(id);
+      completedMentionsByGroupRef.current.delete(id);
+      if (draftOwnerRef.current === id) {
+        draftOwnerRef.current = null;
+        completedMentionNameRef.current = null;
+      }
       if (typeof localStorage !== "undefined") {
         try {
           localStorage.removeItem(`cave:group-chat:transcript:${id}`);
@@ -656,6 +711,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       setTranscript((prev) => [...prev, userTurn, ...replies]);
       setDraft("");
       setMention(null);
+      completedMentionNameRef.current = null;
       setBusy(true);
       const controller = new AbortController();
       abortRef.current = controller;
@@ -947,6 +1003,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     () => (mention ? matchMentions(mention.query, mentionable) : []),
     [mention, mentionable],
   );
+  const composerTargets = useMemo(
+    () =>
+      parseMentions(draft, mentionable)
+        .map((id) => byId.get(id))
+        .filter((f): f is ResolvedFamiliar => Boolean(f)),
+    [draft, mentionable, byId],
+  );
   // Open whenever an @token is being typed (a no-match query shows the
   // "No matching familiar in this coven" empty state instead of vanishing);
   // key navigation below only engages while there are matches.
@@ -956,7 +1019,16 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const syncMention = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
-    const next = findActiveMention(el.value, el.selectionStart ?? el.value.length);
+    const caret = el.selectionStart ?? el.value.length;
+    const raw = findActiveMention(el.value, caret);
+    const next = findActiveMention(
+      el.value,
+      caret,
+      completedMentionNameRef.current ?? undefined,
+    );
+    if (raw && next && completedMentionNameRef.current) {
+      completedMentionNameRef.current = null;
+    }
     setMention(next);
     setMentionIndex(0);
   }, []);
@@ -965,11 +1037,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     (f: MentionableFamiliar) => {
       if (!mention) return;
       const { text, caret } = applyMention(draft, mention.start, mention.query, f.name);
+      completedMentionNameRef.current = f.name.trim();
       pendingCaretRef.current = caret;
       setDraft(text);
       setMention(null);
+      announce(`Tagged ${f.name}.`);
     },
-    [mention, draft],
+    [mention, draft, announce],
   );
 
   // --- derived transcript view --------------------------------------------
@@ -1384,14 +1458,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                       : undefined;
                     return (
                     <div key={user.id} className="flex flex-col gap-2">
-                      {targets && targets.length > 0 && (
-                        <div className="flex items-center gap-1.5 self-end text-[length:var(--text-xs)] [color:var(--text-muted)]!">
-                          <Icon name="ph:at" width={12} height={12} />
-                          <span>
-                            to {targets.map((f) => f.display_name).join(", ")}
-                          </span>
-                        </div>
-                      )}
+                      <CovenMentionPills familiars={targets ?? []} align="end" />
                       <div className="cave-group-chat-turn cave-group-chat-turn--user">
                         {delegator ? (
                           <div className="cave-group-chat-avatar">
@@ -1423,6 +1490,9 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                           // The parsed lines render as click-to-send chips below.
                           const { visible: withoutNextPaths, suggestions } = extractNextPaths(r.text);
                           const { visible: visibleText } = extractCovenDelegations(withoutNextPaths);
+                          const replyTargets = parseMentions(visibleText, mentionable)
+                            .map((id) => byId.get(id))
+                            .filter((target): target is ResolvedFamiliar => Boolean(target));
                           return (
                             <div key={r.id} className="cave-group-chat-turn cave-group-chat-turn--assistant">
                               <div className="cave-group-chat-avatar">
@@ -1443,6 +1513,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                                     {formatChatRecency(r.createdAt, dtPrefs)}
                                   </time>
                                 </div>
+                                <CovenMentionPills familiars={replyTargets} />
                                 <MessageBubble
                                   role="assistant"
                                   label={f?.display_name ?? r.familiarId}
@@ -1548,61 +1619,69 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 </p>
               ) : null}
               <div ref={composerRef} className="mx-auto flex max-w-3xl items-end gap-2">
-                <textarea
-                  ref={textareaRef}
-                  value={draft}
-                  onChange={(e) => {
-                    setDraft(e.target.value);
-                    syncMention();
-                  }}
-                  onKeyUp={syncMention}
-                  onClick={syncMention}
-                  onBlur={() => setMention(null)}
-                  onKeyDown={(e) => {
-                    // `isComposing` is true for the Enter/Tab that confirms an
-                    // IME candidate (CJK input) — confirming a character must
-                    // never pick a mention or broadcast the half-composed
-                    // draft. Mirrors ChatView's composer guard.
-                    if (e.nativeEvent.isComposing) return;
-                    if (mentionOpen) {
-                      if (e.key === "ArrowDown" && mentionMatches.length > 0) {
-                        e.preventDefault();
-                        setMentionIndex((i) => (i + 1) % mentionMatches.length);
-                        return;
+                <div className="coven-tab__composer-field">
+                  <CovenMentionPills
+                    id={mentionGuidanceId}
+                    familiars={composerTargets}
+                    emptyHint={participants.length > 0 ? "Use @ to tag a familiar" : undefined}
+                  />
+                  <textarea
+                    ref={textareaRef}
+                    value={draft}
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      syncMention();
+                    }}
+                    onKeyUp={syncMention}
+                    onClick={syncMention}
+                    onBlur={() => setMention(null)}
+                    onKeyDown={(e) => {
+                      // `isComposing` is true for the Enter/Tab that confirms an
+                      // IME candidate (CJK input) — confirming a character must
+                      // never pick a mention or broadcast the half-composed
+                      // draft. Mirrors ChatView's composer guard.
+                      if (e.nativeEvent.isComposing) return;
+                      if (mentionOpen) {
+                        if (e.key === "ArrowDown" && mentionMatches.length > 0) {
+                          e.preventDefault();
+                          setMentionIndex((i) => (i + 1) % mentionMatches.length);
+                          return;
+                        }
+                        if (e.key === "ArrowUp" && mentionMatches.length > 0) {
+                          e.preventDefault();
+                          setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
+                          return;
+                        }
+                        if ((e.key === "Enter" || e.key === "Tab") && mentionMatches.length > 0) {
+                          e.preventDefault();
+                          chooseMention(mentionMatches[mentionIndex] ?? mentionMatches[0]);
+                          return;
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setMention(null);
+                          return;
+                        }
                       }
-                      if (e.key === "ArrowUp" && mentionMatches.length > 0) {
+                      if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
-                        setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
-                        return;
+                        void send();
                       }
-                      if ((e.key === "Enter" || e.key === "Tab") && mentionMatches.length > 0) {
-                        e.preventDefault();
-                        chooseMention(mentionMatches[mentionIndex] ?? mentionMatches[0]);
-                        return;
-                      }
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        setMention(null);
-                        return;
-                      }
+                    }}
+                    rows={1}
+                    aria-label={activeGroup ? `Message the ${activeGroup.name} coven` : "Message the coven"}
+                    aria-describedby={participants.length > 0 ? mentionGuidanceId : undefined}
+                    placeholder={
+                      participants.length === 0
+                        ? "Add familiars to this coven first…"
+                        : !projectLaunchReady
+                          ? "Choose a shared project above…"
+                        : `Message ${participants.length} familiar${participants.length === 1 ? "" : "s"}…`
                     }
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void send();
-                    }
-                  }}
-                  rows={1}
-                  aria-label={activeGroup ? `Message the ${activeGroup.name} coven` : "Message the coven"}
-                  placeholder={
-                    participants.length === 0
-                      ? "Add familiars to this coven first…"
-                      : !projectLaunchReady
-                        ? "Choose a shared project above…"
-                      : `Message ${participants.length} familiar${participants.length === 1 ? "" : "s"}… (@ to tag one)`
-                  }
-                  disabled={participants.length === 0}
-                  className="max-h-40 min-h-[var(--space-10)] flex-1 resize-none rounded-lg border px-3 py-2 text-[length:var(--text-md)] outline-none disabled:opacity-50 [border-color:var(--border-hairline)]! [background:color-mix(in_oklch,var(--bg-raised)_70%,transparent)]! [color:var(--text-primary)]!"
-                />
+                    disabled={participants.length === 0}
+                    className="max-h-40 min-h-[var(--space-10)] w-full resize-none rounded-lg border px-3 py-2 text-[length:var(--text-md)] outline-none disabled:opacity-50 [border-color:var(--border-hairline)]! [background:color-mix(in_oklch,var(--bg-raised)_70%,transparent)]! [color:var(--text-primary)]!"
+                  />
+                </div>
                 <Popover
                   open={mentionOpen}
                   onOpenChange={(next) => {

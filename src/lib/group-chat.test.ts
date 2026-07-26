@@ -504,6 +504,33 @@ test("findActiveMention: bare @ has an empty query", () => {
   assert.deepEqual(findActiveMention(text, text.length), { start: 4, query: "" });
 });
 
+test("findActiveMention: picker-confirmed mention stays complete while prose continues", () => {
+  const selected = applyMention("hello @sa", 6, "sa", "Sage");
+  assert.equal(findActiveMention(selected.text, selected.caret, "Sage"), null);
+
+  const continued = `${selected.text}what do you think?`;
+  assert.equal(findActiveMention(continued, continued.length, "Sage"), null);
+});
+
+test("findActiveMention: picker-confirmed mention stays complete before punctuation", () => {
+  const punctuated = "@Sage, what do you think?";
+  assert.equal(findActiveMention(punctuated, punctuated.length, "Sage"), null);
+
+  const longerName = "@Sagebrush";
+  assert.deepEqual(findActiveMention(longerName, longerName.length, "Sage"), {
+    start: 0,
+    query: "Sagebrush",
+  });
+});
+
+test("findActiveMention: a new @ starts a fresh search after a completed mention", () => {
+  const text = "hello @Sage what do you think? @";
+  assert.deepEqual(findActiveMention(text, text.length, "Sage"), {
+    start: text.length - 1,
+    query: "",
+  });
+});
+
 test("findActiveMention: not in a token returns null", () => {
   assert.equal(findActiveMention("plain text", 5), null);
 });
@@ -558,6 +585,7 @@ test("renderCovenRoster: marks only the receiving familiar (you)", () => {
 test("renderCovenRoster: instructs the model to count everyone present", () => {
   const out = renderCovenRoster(COVEN, "nova");
   assert.match(out, /count everyone/i);
+  assert.match(out, /tag them with @ followed by their exact display name/i);
   assert.match(out, /<coven_roster>[\s\S]*<\/coven_roster>/);
 });
 

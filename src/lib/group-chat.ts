@@ -378,17 +378,29 @@ export function mentionSuggestionAuthor(suggestion: string, displayName: string)
  * Locate the `@mention` token the caret is currently editing, for autocomplete.
  * Returns the `@`'s index and the partial query typed after it, or `null` when
  * the caret is not inside a mention. The token starts at an `@` preceded by
- * whitespace/start and does not span an `@` or newline.
+ * whitespace/start and does not span an `@` or newline. A picker-confirmed
+ * display name keeps that token complete while ordinary prose continues.
  */
 export function findActiveMention(
   text: string,
   caret: number,
+  completedName?: string,
 ): { start: number; query: string } | null {
   let i = caret - 1;
   while (i >= 0 && text[i] !== "@" && text[i] !== "\n") i--;
   if (i < 0 || text[i] !== "@") return null;
   if (!isMentionBoundary(i === 0 ? "" : text[i - 1])) return null;
-  return { start: i, query: text.slice(i + 1, caret) };
+  const query = text.slice(i + 1, caret);
+  const completed = completedName?.trim().toLocaleLowerCase();
+  const normalizedQuery = query.toLocaleLowerCase();
+  if (
+    completed &&
+    normalizedQuery.startsWith(completed) &&
+    !isWordChar(normalizedQuery[completed.length])
+  ) {
+    return null;
+  }
+  return { start: i, query };
 }
 
 /**
@@ -600,6 +612,7 @@ export function renderCovenRoster(
     'You are in a group chat ("coven") with these participants:',
     ...lines,
     "When asked who is present or how many are in this chat, count everyone listed above (including yourself and the human).",
+    "When addressing another familiar in this coven, tag them with @ followed by their exact display name as listed above.",
     "</coven_roster>",
   ].join("\n");
 }
