@@ -109,8 +109,8 @@ assert.match(
 
 assert.match(
   source,
-  /npmMissing/,
-  "a missing npm is detected and routed to Node.js setup guidance",
+  /managedNodeMissing/,
+  "a missing Cave-managed Node.js toolchain is detected and routed to setup guidance",
 );
 
 assert.match(
@@ -252,8 +252,8 @@ assert.match(
 
 assert.match(
   source,
-  /or run it yourself:/,
-  "every one-click action keeps the manual command alongside",
+  /onClick=\{\(\) => onInstall\("managed-node"\)\}/,
+  "the startup tools step offers its Cave-managed Node.js prerequisite installer",
 );
 
 assert.match(
@@ -360,8 +360,8 @@ assert.match(
 
 assert.match(
   source,
-  /<CommandRow command=\{manualInstallCommand\}/,
-  "the startup tools step shows a manual command matching the needed OpenCoven tools",
+  /\{managedNodeBusy \? "Installing…" : "Install Node\/npm"\}/,
+  "the startup tools step names its managed Node.js prerequisite action",
 );
 
 assert.match(

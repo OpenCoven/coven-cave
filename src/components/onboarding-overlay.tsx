@@ -1809,8 +1809,7 @@ function StepCovenCli({
       <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
         Cave needs one tool — the <strong>Coven CLI</strong> powers everything.
         Use the main action to install or update it — Cave runs npm installs
-        one after another so they never collide — or copy the matching command
-        to run it yourself.
+        one after another so they never collide.
       </p>
       <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/45 p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
