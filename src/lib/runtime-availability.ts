@@ -146,11 +146,11 @@ export function localRuntimeLaunchError(
   runner: DirectRunnerId,
   errorCode: string | undefined,
 ): {
-  code: "ENOENT" | "runtime_launch_failed";
+  code: "runtime_missing" | "runtime_launch_failed";
   message: string;
 } {
   return errorCode === "ENOENT"
-    ? { code: "ENOENT", message: missingRunnerMessage(runner) }
+    ? { code: "runtime_missing", message: missingRunnerMessage(runner) }
     : {
         code: "runtime_launch_failed",
         message: runtimeLaunchFailedMessage(runner),

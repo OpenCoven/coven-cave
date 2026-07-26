@@ -486,6 +486,16 @@ assert.match(
   /<HermesSetupNext onCopy/,
   "a successful Hermes install surfaces the setup next-step at a render site",
 );
+assert.match(
+  source,
+  /const availabilityMessage =[\s\S]{0,160}adapter\.availability\.state !== "ready"/,
+  "runtime cards derive their unavailable state from the shared availability summary",
+);
+assert.match(
+  source,
+  /\{availabilityMessage\}/,
+  "runtime cards render the shared unavailable-runtime remediation",
+);
 
 assert.match(
   source,

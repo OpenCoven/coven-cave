@@ -52,13 +52,13 @@ assert.match(
 );
 assert.match(
   source,
-  /const unavailableHarnesses = vessel === "local" \? \(harnesses \?\? \[\]\)\.flatMap\([\s\S]*?availability\.state !== "ready"[\s\S]*?unavailableHarnesses\.map\(\(h\) => \([\s\S]*?h\.availability\.message/,
-  "the summoning picker shows safe local remediation without treating its local probe as an SSH capability check",
+  /h\.installed &&[\s\S]{0,120}\(h\.availability\?\.state \?\? "ready"\) === "ready"/,
+  "the familiar picker excludes runners that the shared availability contract cannot launch",
 );
 assert.match(
   source,
-  /className="summoning-chiprow"[\s\S]*?<\/div>\s*\)}\s*\{unavailableHarnesses\.map/,
-  "an unavailable local runtime remains explained even when another runtime is ready to select",
+  /const unavailableHarness = \(harnesses \?\? \[\]\)\.find\([\s\S]*?h\.availability !== undefined[\s\S]*?h\.availability\.state !== "ready"[\s\S]*?const unavailableAvailability = unavailableHarness\?\.availability;[\s\S]*?unavailableAvailability\.message/,
+  "the familiar picker surfaces shared availability remediation for both missing and unlaunchable runtimes",
 );
 assert.match(
   harnessesRoute,

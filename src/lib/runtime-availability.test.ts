@@ -12,7 +12,9 @@ import path from "node:path";
 
 import {
   evaluateRuntimeAvailability,
+  localRuntimeLaunchError,
   missingRunnerMessage,
+  runtimeLaunchFailedMessage,
   summarizeRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
 } from "./runtime-availability.ts";
@@ -20,11 +22,28 @@ import { openCodeCommand, openCodeLaunch } from "./opencode-bin.ts";
 
 const scratch = mkdtempSync(path.join(tmpdir(), "runtime-availability-"));
 try {
+  assert.deepEqual(
+    localRuntimeLaunchError("grok", "ENOENT"),
+    {
+      code: "runtime_missing",
+      message: missingRunnerMessage("grok"),
+    },
+    "a post-spawn missing-interpreter race retains the missing-runner contract",
+  );
+  assert.deepEqual(
+    localRuntimeLaunchError("grok", "UNKNOWN"),
+    {
+      code: "runtime_launch_failed",
+      message: runtimeLaunchFailedMessage("grok"),
+    },
+    "every non-ENOENT local spawn error uses the normalized launch-failure contract",
+  );
   const binDir = path.join(scratch, "bin");
   const emptyDir = path.join(scratch, "empty");
   mkdirSync(binDir);
   mkdirSync(emptyDir);
-  const executable = path.join(binDir, "grok");
+  const grokFilename = process.platform === "win32" ? "grok.exe" : "grok";
+  const executable = path.join(binDir, grokFilename);
   writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   chmodSync(executable, 0o755);
 
@@ -35,35 +54,27 @@ try {
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
     command: "grok",
-    env: { PATH: `/runtime-availability/empty:${posixBinDir}` },
-    platform: "linux",
-    statFile: (candidate) => candidate === `${posixBinDir}/grok`,
+    env: { PATH: `${emptyDir}${path.delimiter}${binDir}` },
+    platform: process.platform,
   });
   assert.equal(ready.state, "ready", "a bare command on the spawn PATH is ready");
   assert.equal(
-    ready.state === "ready" && ready.resolvedPath,
-    `${posixBinDir}/grok`,
+    ready.state === "ready" && path.win32.resolve(ready.resolvedPath),
+    path.win32.resolve(executable),
     "ready reports where the exact spawn command resolved",
   );
 
   const absoluteReady = evaluateRuntimeAvailability({
     runner: "coven",
-    command: `${posixBinDir}/grok`,
+    command: executable,
     env: { PATH: "" },
-    platform: "linux",
-    statFile: (candidate) => candidate === `${posixBinDir}/grok`,
+    platform: process.platform,
   });
-  assert.equal(absoluteReady.state, "ready", "an absolute launch command is stat'd directly");
-
-  if (process.platform !== "win32") {
-    const executableReady = evaluateRuntimeAvailability({
-      runner: "coven",
-      command: executable,
-      env: { PATH: "" },
-      platform: "linux",
-    });
-    assert.equal(executableReady.state, "ready", "a mode-0755 regular file is launchable on POSIX");
-  }
+  assert.equal(
+    absoluteReady.state,
+    "ready",
+    "a mode-0755 regular file is launchable on POSIX",
+  );
 
   if (process.platform !== "win32") {
     const directoryCandidate = path.join(binDir, "grok-directory");

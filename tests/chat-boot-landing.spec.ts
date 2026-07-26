@@ -36,7 +36,7 @@ const SESSION_S1 = {
   updated_at: iso(2),
 };
 
-// Unassigned inbox card — fair game for this familiar's resume pills.
+// Familiar-owned inbox card — this landing must only surface Nova's work.
 const BOARD = {
   ok: true,
   cards: [
@@ -45,7 +45,7 @@ const BOARD = {
       title: "Fix login flow",
       status: "inbox",
       priority: "medium",
-      familiarId: null,
+      familiarId: "nova",
       projectId: null,
       cwd: null,
       createdAt: iso(6),

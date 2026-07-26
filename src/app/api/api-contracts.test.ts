@@ -462,8 +462,8 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /launchFailure \?\?= \{[\s\S]{0,400}?message: launchError,[\s\S]{0,400}?pushProgress\([\s\S]{0,220}?launchError,[\s\S]{0,800}?code: launchFailure\.code,\s*message: launchError/,
-    "/chat/send: launch state, progress, and the post-spawn race event must reuse one normalized message and structured code",
+  /launchFailure \?\?= \{[\s\S]{0,400}?message: launchError,[\s\S]{0,400}?pushProgress\([\s\S]{0,220}?launchError,[\s\S]{0,800}?code: launchFailure\.code,\s*message: launchError/,
+  "/chat/send: launch state, progress, and the post-spawn race event must reuse one normalized message and structured code",
   );
   assert.match(
     sendSource,
