@@ -36,6 +36,7 @@ const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousCovenBin = process.env.COVEN_BIN;
 const previousGrokBin = process.env.GROK_BIN;
+const previousPath = process.env.PATH;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.GROK_BIN = pinnedGrok;
@@ -68,7 +69,7 @@ function assertNoFabricatedAssistantResponse(body, events) {
 }
 
 try {
-  const { covenLaunchCommand, refreshCovenBin } = await import("@/lib/coven-bin");
+  const { covenLaunchCommand, refreshCovenBin, refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
   refreshCovenBin();
   const { grokBin } = await import("@/lib/grok-bin");
   assert.equal(grokBin(), pinnedGrok, "the test pins Grok discovery to its isolated override");
@@ -259,6 +260,26 @@ try {
       "post-spawn diagnostics must never expose the runner path",
     );
   }
+  // A direct Copilot configuration never falls through to generic Coven when
+  // the exact local CLI plan is absent.
+  {
+    const { clearCopilotCapabilityProbeCache } = await import("@/lib/server/copilot-capability-probe");
+    process.env.PATH = "";
+    refreshCovenBin();
+    refreshCovenSpawnEnv();
+    clearCopilotCapabilityProbeCache();
+    await saveConfig({ familiars: { opal: { harness: "copilot" } } });
+    const response = await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "opal", prompt: "copilot preflight", projectRoot: familiarWorkspace }),
+    }));
+    const { body, events } = await readSse(response);
+    const error = events.find((event) => event.kind === "error");
+    assert.equal(error?.code, "runtime_missing");
+    assert.match(String(error?.message), /copilot CLI not found on PATH/i);
+    assertNoFabricatedAssistantResponse(body, events);
+  }
 } finally {
   process.env.COVEN_HOME = previousHome;
   process.env.COVEN_CAVE_HOME = previousCaveHome;
@@ -266,6 +287,10 @@ try {
   else process.env.COVEN_BIN = previousCovenBin;
   if (previousGrokBin === undefined) delete process.env.GROK_BIN;
   else process.env.GROK_BIN = previousGrokBin;
+  if (previousPath === undefined) delete process.env.PATH;
+  else process.env.PATH = previousPath;
+  const { refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
+  refreshCovenSpawnEnv();
   await rm(home, { recursive: true, force: true });
 }
 

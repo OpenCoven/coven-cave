@@ -7,6 +7,10 @@ export type HarnessReport = {
   label: string;
   chatSupported: boolean;
   installed: boolean;
+  availability?: {
+    state: "ready" | "missing" | "unlaunchable" | "probe_failed" | "unsupported_runtime";
+    message?: string;
+  };
 };
 
 export type OpenClawAgent = {

@@ -28,6 +28,11 @@ assert.match(
   /fetch\("\/api\/familiars",\s*\{[\s\S]*?method:\s*"POST"/,
   "the circle should POST to /api/familiars",
 );
+assert.match(
+  source,
+  /vessel !== "local" \|\| h\.availability\?\.state === undefined \|\| h\.availability\.state === "ready"/,
+  "Local runtime choices must exclude installed runners the shared preflight says are not launchable",
+);
 assert.doesNotMatch(
   source,
   /onboarding\/setup/,

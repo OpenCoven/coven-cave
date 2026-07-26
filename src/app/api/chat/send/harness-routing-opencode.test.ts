@@ -67,7 +67,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const openCodeLaunchCommand = openCodeDirect[\s\S]*?command: localPlan\.command,[\s\S]*?args: \[\.\.\.localPlan\.fixedArgs\],[\s\S]*?input: JSON\.stringify\(spawnArgs\)[\s\S]*?const availability =[\s\S]*?command: localPlan\.command,[\s\S]*?env: localPlan\.env,[\s\S]*?let child: ChildProcessWithoutNullStreams;[\s\S]*?child = spawn\(command\.command, command\.args, \{[\s\S]*?env: localPlan\.env,[\s\S]*?writeOpenCodeLaunchInput\(child, openCodeLaunchCommand\)/,
+  /const openCodeLaunchCommand = openCodeDirect[\s\S]*?command: localPlan\.command,[\s\S]*?args: \[\.\.\.localPlan\.fixedArgs\],[\s\S]*?input: JSON\.stringify\(spawnArgs\)[\s\S]*?const availability =[\s\S]*?command: localPlan\.command,[\s\S]*?env: localPlan\.env,[\s\S]*?let child:[\s\S]*?try \{[\s\S]*?child = spawn\(command\.command, command\.args, \{[\s\S]*?env: localPlan\.env,[\s\S]*?writeOpenCodeLaunchInput\(child, openCodeLaunchCommand\)/,
   "OpenCode carries one Windows-safe outer host, inner command, and scoped environment from early preflight through the immediate spawn recheck",
 );
 assert.match(
@@ -174,8 +174,8 @@ assert.match(
 );
 assert.match(
   route,
-  /child\.on\("close", \(code\) => \{[\s\S]*?if \(\(openCodeDirect \|\| copilotStream\) && code !== 0\)[\s\S]*?is_error: true/,
-  "a non-zero direct OpenCode or Copilot exit cannot be treated as a successful run when no JSON error arrives",
+  /child\.on\("close", \(code\) => \{[\s\S]*?if \(\(openCodeDirect \|\| copilotStream \|\| grokDirect\) && code !== 0\)[\s\S]*?is_error: true/,
+  "a non-zero direct OpenCode, Copilot, or Grok exit cannot be treated as a successful run when no JSON error arrives",
 );
 assert.match(
   route,
@@ -184,8 +184,8 @@ assert.match(
 );
 assert.match(
   route,
-  /const tailBlock = !openCodeDirect && tailSource\.length/,
-  "OpenCode stderr never becomes assistant-visible or persisted empty-response diagnostics",
+  /const tailBlock = !openCodeDirect && !grokDirect && tailSource\.length/,
+  "OpenCode and Grok stderr never become assistant-visible or persisted empty-response diagnostics",
 );
 assert.match(
   route,
@@ -224,8 +224,8 @@ assert.match(
 );
 assert.match(
   route,
-  /persistedOpenCodeDiagnostics[\s\S]*?id === "opencode-compatibility"[\s\S]*?progress: persistedOpenCodeDiagnostics/,
-  "safe OpenCode compatibility diagnostics persist with the completed assistant turn",
+  /persistedCompatibilityDiagnostics[\s\S]*?id === "opencode-compatibility" \|\| id === "grok-compatibility"[\s\S]*?progress: persistedCompatibilityDiagnostics/,
+  "safe OpenCode and Grok compatibility diagnostics persist with the completed assistant turn",
 );
 assert.match(
   route,

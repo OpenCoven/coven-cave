@@ -10,6 +10,7 @@ import { readFile } from "node:fs/promises";
 import {
   buildCopilotStreamArgs,
   compareRuntimeClientVersions,
+  copilotDirectStreamConfigured,
   copilotIdentityPreamble,
   copilotProtocolDiagnostic,
   copilotStreamSpec,
@@ -32,6 +33,7 @@ import {
 
 const spec = copilotStreamSpec();
 assert.ok(spec, "registry manifest declares copilot stream mode");
+assert.equal(copilotDirectStreamConfigured(), true, "the synced registry explicitly opts Copilot into the direct JSONL transport");
 assert.equal(spec.protocol.id, "copilot-jsonl-v1", "legacy callers use the verified registry baseline");
 assert.equal(spec.executable, "copilot");
 assert.deepEqual(

@@ -70,7 +70,9 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
   if (id === "copilot") {
     const stream = copilotStreamSpec();
     if (stream) {
-      const copilotLaunch = await resolveCopilotRuntimeLaunch(stream.executable);
+      const copilotLaunch = await resolveCopilotRuntimeLaunch(stream.executable, {
+        spawnEnv: () => harnessSpawnEnv(null),
+      });
       return {
         availability: summarizeRuntimeAvailability(copilotLaunch.availability),
         copilotLaunch,
