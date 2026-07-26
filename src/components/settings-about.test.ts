@@ -96,6 +96,30 @@ test("About follows the revised handoff artwork and full-width release rail", ()
   );
 });
 
+test("About podcast fills the default four-column row remainder", () => {
+  const defaultCss =
+    css.split("@container settings-about (max-width: 55rem)")[0] ?? "";
+
+  assert.match(
+    defaultCss,
+    /\.settings-about-link-card--podcast\s*\{[^}]*grid-column:\s*span 3;/,
+  );
+});
+
+test("About podcast shares the intermediate two-column row", () => {
+  const [, afterIntermediateStart = ""] = css.split(
+    "@container settings-about (max-width: 55rem)",
+  );
+  const [intermediateCss = ""] = afterIntermediateStart.split(
+    "@container settings-about (max-width: 36rem)",
+  );
+
+  assert.match(
+    intermediateCss,
+    /\.settings-about-link-card--podcast\s*\{[^}]*grid-column:\s*span 1;/,
+  );
+});
+
 test("About CSS follows the token, focus, motion, and narrow-pane contracts", () => {
   assert.match(css, /\.settings-about\s*\{[\s\S]*container-type:\s*inline-size/);
   assert.match(css, /\.settings-about-control-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(2/);
