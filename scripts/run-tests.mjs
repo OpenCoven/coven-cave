@@ -763,6 +763,7 @@ export const SUITES = {
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
     "src/lib/design-token-drift.test.ts",
+    "src/lib/dev-shell-recovery.test.ts",
     "src/lib/cave-backdrop.test.ts",
     "src/lib/cave-backdrop-blaze.test.ts",
     "src/components/backdrop-scrim.test.ts",
@@ -948,6 +949,7 @@ export const SUITES = {
     "scripts/dependency-policy.test.mjs",
     "scripts/build-sandbox-runtime.test.mjs",
     "scripts/dev-app.test.mjs",
+    "scripts/dev-app-teardown.test.mjs",
     "scripts/sync-runtimes.test.mjs",
     "scripts/surface-claim-guard.test.mjs",
     "scripts/worktree-guard.test.mjs",
@@ -1295,6 +1297,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-compatibility.test.ts",
   "src/lib/opencode-stream.test.ts",
   "src/lib/cave-conversations.test.ts",

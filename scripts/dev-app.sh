@@ -54,8 +54,66 @@ else
 fi
 
 TAURI_OVERRIDE_CONFIG="$(mktemp)"
-cleanup() { rm -f "$TAURI_OVERRIDE_CONFIG"; }
+WATCHDOG_VERDICT="$(mktemp)"
+tauri_pid=""
+watchdog_pid=""
+
+# Every descendant of a pid, children before parents. Tauri's `beforeDevCommand`
+# runs as its child, so walking the tree from the Tauri pid reaches the Next dev
+# server without ever guessing at unrelated processes that merely hold the port.
+list_process_tree() {
+  local pid="$1" child
+  if command -v pgrep >/dev/null 2>&1; then
+    for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+      list_process_tree "$child"
+    done
+  fi
+  printf '%s\n' "$pid"
+}
+
+signal_process_tree() {
+  local pid="$1" signal="$2" member
+  if command -v taskkill >/dev/null 2>&1 && [ "$signal" = "KILL" ]; then
+    taskkill //PID "$pid" //T //F >/dev/null 2>&1 || true
+    return
+  fi
+  for member in $(list_process_tree "$pid"); do
+    kill -"$signal" "$member" 2>/dev/null || true
+  done
+}
+
+# Give the tree a chance to flush and shut down, then insist. Without this an
+# interrupted wrapper leaves an orphaned Next dev server holding the port and a
+# detached Tauri window attached to it.
+terminate_process_tree() {
+  local pid="$1" waited=0
+  [ -n "$pid" ] || return 0
+  kill -0 "$pid" 2>/dev/null || return 0
+  signal_process_tree "$pid" TERM
+  while [ "$waited" -lt 50 ] && kill -0 "$pid" 2>/dev/null; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    signal_process_tree "$pid" KILL
+  fi
+}
+
+cleanup() {
+  trap - EXIT INT TERM HUP
+  if [ -n "$watchdog_pid" ]; then
+    kill "$watchdog_pid" 2>/dev/null || true
+    watchdog_pid=""
+  fi
+  terminate_process_tree "$tauri_pid"
+  if [ "${should_start_server:-false}" = true ] && port_is_listening "$dev_port" >/dev/null 2>&1; then
+    echo "[dev:app] warning: 127.0.0.1:${dev_port} is still listening after teardown" >&2
+  fi
+  rm -f "$TAURI_OVERRIDE_CONFIG" "$WATCHDOG_VERDICT"
+}
 trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM HUP
 
 # A Tauri dev process and its `beforeDevCommand` inherit this secret together.
 # The server therefore requires the browser-side bridge token too; carry it in
@@ -88,4 +146,55 @@ else
 CONF
 fi
 
-exec pnpm exec tauri dev --config "$TAURI_OVERRIDE_CONFIG" "$@"
+# The desktop shell must not stay attached to a loopback origin that is never
+# coming back. The in-app recovery overlay covers restarts, so the watchdog only
+# fires after a long silence: past that, the dev server is gone for good and a
+# surviving window would just show stale Turbopack chunks.
+DEV_SERVER_GRACE_SECONDS="${COVEN_CAVE_DEV_SERVER_GRACE_SECONDS:-30}"
+case "$DEV_SERVER_GRACE_SECONDS" in
+  ''|*[!0-9]*)
+    echo "[dev:app] ERROR: COVEN_CAVE_DEV_SERVER_GRACE_SECONDS must be a whole number of seconds" >&2
+    exit 1
+    ;;
+esac
+
+watch_dev_server() {
+  local down_for=0
+  # Only start judging once the server has actually come up.
+  until port_is_listening "$dev_port" >/dev/null 2>&1; do
+    kill -0 "$tauri_pid" 2>/dev/null || return 0
+    sleep 2
+  done
+  while kill -0 "$tauri_pid" 2>/dev/null; do
+    if port_is_listening "$dev_port" >/dev/null 2>&1; then
+      down_for=0
+    else
+      down_for=$((down_for + 2))
+      if [ "$down_for" -ge "$DEV_SERVER_GRACE_SECONDS" ]; then
+        echo "[dev:app] dev server on 127.0.0.1:${dev_port} has been unreachable for ${down_for}s; shutting the desktop shell down" >&2
+        printf 'dev-server-lost\n' >"$WATCHDOG_VERDICT"
+        terminate_process_tree "$tauri_pid"
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+}
+
+pnpm exec tauri dev --config "$TAURI_OVERRIDE_CONFIG" "$@" &
+tauri_pid=$!
+
+if [ "$DEV_SERVER_GRACE_SECONDS" -gt 0 ]; then
+  watch_dev_server &
+  watchdog_pid=$!
+fi
+
+tauri_status=0
+wait "$tauri_pid" || tauri_status=$?
+tauri_pid=""
+
+if [ -s "$WATCHDOG_VERDICT" ]; then
+  exit 1
+fi
+
+exit "$tauri_status"
