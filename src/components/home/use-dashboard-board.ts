@@ -6,7 +6,7 @@
 // cards — the timeout badge inputs (runningSince/timeoutMs). A failed fetch
 // leaves the empty list so the board degrades to an empty state, never errors.
 //
-// This is a SEPARATE fetch from use-board-cards (the suggestion/pending-task
+// This is a dedicated dashboard fetch for suggestion and pending-task
 // helper) because the dashboard needs the richer per-card lifecycle fields
 // that helper deliberately drops.
 

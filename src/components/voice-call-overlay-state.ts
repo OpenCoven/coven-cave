@@ -1,4 +1,4 @@
-import type { VoiceEarsEngine } from "@/lib/voice/types";
+import type { VoiceEarsEngine, VoiceMouthEngine } from "@/lib/voice/types";
 
 export type CallStateName =
   | "idle"
@@ -20,6 +20,7 @@ export type CallState = {
   hint?: string;
   /** How a live loop-based call hears (cave-vpe1); unset for realtime providers. */
   earsEngine?: VoiceEarsEngine;
+  mouthEngine?: VoiceMouthEngine;
 };
 
 export const initialState: CallState = { state: "idle", muted: false };
@@ -30,7 +31,7 @@ export type CallEvent =
   | { type: "MIC_DENIED" }
   | { type: "SESSION_GRANTED"; callId: string }
   | { type: "SESSION_FAILED"; errorCode: string; missingKey?: string; hint?: string }
-  | { type: "CONNECTED"; startedAt: number; earsEngine?: VoiceEarsEngine }
+  | { type: "CONNECTED"; startedAt: number; earsEngine?: VoiceEarsEngine; mouthEngine?: VoiceMouthEngine }
   | { type: "DISCONNECTED" }
   | { type: "PROVIDER_ERROR"; errorCode: string; hint?: string }
   | { type: "CLOSE_REQUEST" }
@@ -60,7 +61,7 @@ export function reduce(s: CallState, ev: CallEvent): CallState {
       };
     case "CONNECTED":
       if (s.state !== "connecting") return s;
-      return { ...s, state: "live", startedAt: ev.startedAt, earsEngine: ev.earsEngine };
+      return { ...s, state: "live", startedAt: ev.startedAt, earsEngine: ev.earsEngine, mouthEngine: ev.mouthEngine };
     case "PROVIDER_ERROR":
       // Explicitly clear missingKey — a stale key name from an earlier mint
       // failure must not dress an unrelated connect error as key-fixable.

@@ -2468,16 +2468,16 @@ export function GitHubView({
     return orgScope.length === 0 ? byKind : byKind.filter((i) => orgScope.includes(orgOf(i.repo)));
   }, [items, filter, orgScope]);
 
-  // Memberships define the account's organization scope; activity adds any
-  // organization represented by the current items. Repository options still
-  // narrow to the chosen org so the two selects cascade (org → repo).
+  // Org filter options are derived only from organizations represented in the
+  // current base item set (after kind + orgScope filtering, but before org/repo
+  // filters and the search query). The active orgFilter is still included so a
+  // selection whose rows dropped out doesn't fall out of the select's options.
   const orgOptions = useMemo(
     () => Array.from(new Set([
-      ...(activity?.organizations ?? []).filter((o) => orgScope.length === 0 || orgScope.includes(o)),
       ...filtered.map((i) => orgOf(i.repo)),
       ...(orgFilter === "all" ? [] : [orgFilter]),
     ])).sort((a, b) => a.localeCompare(b)),
-    [activity?.organizations, filtered, orgFilter, orgScope],
+    [filtered, orgFilter],
   );
   const repoOptions = useMemo(() => {
     const base = orgFilter === "all" ? filtered : filtered.filter((i) => orgOf(i.repo) === orgFilter);

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { MAX_RECORDED_TOOL_EVENTS, MAX_SETTLED_ENVELOPE_IDS, ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
+import { MAX_RECORDED_TOOL_EVENTS, MAX_SETTLED_ENVELOPE_IDS, MAX_SETTLED_RECONCILIATION_CALLS, ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
 
 const tracker = new ToolCallTracker(() => 1_000);
 assert.equal(tracker.envelopeToolResult("call_1", "late terminal output", false), null);
@@ -88,5 +88,19 @@ for (let index = 0; index <= MAX_RECORDED_TOOL_EVENTS; index += 1) {
   assert.ok(recordedWindow.envelopeToolResult(id, "ok", false));
 }
 assert.equal(recordedWindow.snapshot().length, MAX_RECORDED_TOOL_EVENTS, "a long-running runtime cannot retain unbounded settled tool records");
+
+const lateReconciliationWindow = new ToolCallTracker(() => 1_000);
+for (let index = 0; index <= MAX_SETTLED_RECONCILIATION_CALLS; index += 1) {
+  const name = `tool-${index}`;
+  assert.ok(lateReconciliationWindow.envelopeToolUse(`reconcile-${index}`, name));
+  assert.ok(lateReconciliationWindow.envelopeToolResult(`reconcile-${index}`, "ok", false));
+}
+const retainedLateEnvelopeCalls = Array.from((lateReconciliationWindow as any).settledEnvelopeCalls.values())
+  .reduce((total: number, queue: unknown[]) => total + queue.length, 0);
+assert.equal(
+  retainedLateEnvelopeCalls,
+  MAX_SETTLED_RECONCILIATION_CALLS,
+  "completed envelope calls retained for late hooks stay globally bounded across distinct tool names",
+);
 
 console.log("chat-tool-events.test.ts: ok");

@@ -22,7 +22,6 @@
   var reading = appearance.reading && typeof appearance.reading === "object" ? appearance.reading : {};
   var datetime = appearance.datetime && typeof appearance.datetime === "object" ? appearance.datetime : {};
   var backdrop = appearance.backdrop && typeof appearance.backdrop === "object" ? appearance.backdrop : {};
-  var general = bootstrap && bootstrap.general && typeof bootstrap.general === "object" ? bootstrap.general : {};
   var phone = bootstrap && bootstrap.phone && typeof bootstrap.phone === "object" ? bootstrap.phone : {};
 
   function safeGet(key) {
@@ -195,7 +194,6 @@
       accentSeed: backdrop.accentSeed || null,
       style: backdrop.style === "blaze" ? "blaze" : backdrop.style === "off" ? "off" : "image"
     }));
-    safeSet("cave:home-news-enabled", general.newsHeadlines === false ? "false" : "true");
     safeSet("cave:mobile-mode-enabled", phone.mobileMode === false ? "false" : "true");
   }
 

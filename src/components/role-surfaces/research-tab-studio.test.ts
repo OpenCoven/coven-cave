@@ -38,8 +38,8 @@ test("create failures surface the server's message inline (409 no-artifact inclu
   assert.match(tab, /setCreateError\(result\.error \?\? "Generation failed"\)/);
   assert.match(modals, /role="alert"/);
   assert.match(modals, /\{error\}/);
-  // The chips only offer missions the server would draft from — mirroring the
-  // published-or-working markdown artifact rule.
+  // The source dropdown only offers missions the server would draft from —
+  // mirroring the published-or-working markdown artifact rule.
   assert.match(modals, /endsWith\("\.md"\)/);
   assert.match(modals, /artifact\.state === "published" \|\| artifact\.state === "working"/);
 });
@@ -129,9 +129,9 @@ test("filter chips cover only kinds that can exist, with real counts", () => {
   assert.match(tab, /disabled=\{\(counts\.get\(kind\) \?\? 0\) === 0\}/);
 });
 
-test("per-kind actions stay honest: mermaid inline + copy, open per kind, no fake exports", () => {
-  assert.match(tab, /⌗ Hide Mermaid/);
-  assert.match(tab, /⌗ View Mermaid/);
+test("per-kind actions stay honest: diagram renders + copy, open per kind, no fake exports", () => {
+  assert.match(tab, /◇ Hide diagram/);
+  assert.match(tab, /◇ View diagram/);
   assert.match(tab, /⧉ Copy Mermaid/);
   assert.match(tab, /↗ Open draft/);
   // Remove confirms inline — never a native confirm dialog.
@@ -141,6 +141,43 @@ test("per-kind actions stay honest: mermaid inline + copy, open per kind, no fak
   assert.match(modals, /Download \.md/);
   assert.match(modals, /new Blob\(\[markdown\], \{ type: "text\/markdown" \}\)/);
   assert.doesNotMatch(source, /Export (pptx|pdf|png|mp3|mp4)/i);
+});
+
+test("diagrams render through the chat mermaid pipeline, source stays inspectable", () => {
+  // One shared renderer: StudioMermaidDiagram wraps MarkdownBlock with a
+  // ```mermaid fence, so the Studio inherits the chat pipeline (sanitized
+  // SVG, theme-aware, expand-to-fullscreen wiring) instead of a raw <pre>.
+  assert.match(modals, /function StudioMermaidDiagram/);
+  assert.match(modals, /```mermaid/);
+  assert.match(modals, /<MarkdownBlock/);
+  // Row toggle and viewer modal both render the diagram…
+  assert.match(tab, /<StudioMermaidDiagram mermaid=\{mermaid\} \/>/);
+  assert.match(modals, /<StudioMermaidDiagram mermaid=\{content\.mermaid\} \/>/);
+  // …and the viewer keeps the mermaid source readable under a disclosure.
+  assert.match(modals, /Mermaid source/);
+  assert.match(modals, /research-studio-viewer__code-details/);
+});
+
+test("source runs pick from a labelled dropdown — tab and config modal", () => {
+  // Tab-level picker: a real <select> with a visible label, valued by mission
+  // id, listing only qualifying sources.
+  assert.match(tab, /htmlFor="research-studio-source"/);
+  assert.match(tab, /id="research-studio-source"/);
+  assert.match(tab, /className="research-studio__select"/);
+  assert.match(tab, /\{sources\.map\(\(source\) => \(\s*<option/);
+  // Config modal mirrors it (same class, own id + label).
+  assert.match(modals, /htmlFor="research-studio-config-source"/);
+  assert.match(modals, /id="research-studio-config-source"/);
+  // Sources are no longer chip buttons anywhere.
+  assert.doesNotMatch(source, /research-studio__chip"[\s\S]{0,120}aria-pressed/);
+});
+
+test("thread viewer shows each post's length against the shared budget", () => {
+  // The 280 budget lives in the lib (server clamps with it; viewer counts
+  // with it) — no magic numbers in the surface.
+  assert.match(modals, /RESEARCH_THREAD_POST_MAX_CHARS/);
+  assert.match(modals, /\$\{post\.text\.length\}\/\$\{RESEARCH_THREAD_POST_MAX_CHARS\}/);
+  assert.doesNotMatch(source, /\/280/);
 });
 
 test("familiar switches can't leak another familiar's generations (loadSeq guard)", () => {

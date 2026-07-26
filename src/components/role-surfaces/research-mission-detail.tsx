@@ -23,6 +23,8 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { CitationSources } from "@/components/ui/citation";
+import { ClampedText } from "@/components/ui/clamped-text";
+import { Tabs } from "@/components/ui/tabs";
 import { sourcesToCitations } from "@/lib/citations";
 import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
@@ -42,7 +44,7 @@ import {
 import { relativeTime } from "@/lib/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { ResearchArtifactActions, fetchResearchWorkspacePath } from "./research-artifact-actions";
-import { ResearchEvidenceLedger } from "./research-evidence-ledger";
+import { ResearchEvidenceLedger, type ResearchOutputTab } from "./research-evidence-ledger";
 
 type Props = {
   mission: ResearchMission | null;
@@ -87,7 +89,6 @@ const END_ACTIONS: ReadonlySet<ResearchMissionAction> = new Set(["cancel", "arch
 
 /** Note marker appended by "Verify next pass" — the source stays conflicting
  *  so the agent re-checks it, and the marker records the request. */
-const VERIFY_NOTE = "Verify next pass";
 
 const LIVE_STATUSES = new Set<ResearchMission["status"]>(["queued", "planning", "running"]);
 
@@ -113,6 +114,23 @@ export function ResearchMissionDetail({
   // by copyTimer below.
   const [workspaceCopied, setWorkspaceCopied] = useState(false);
   const missionId = mission?.id ?? null;
+  // Which rail pane opens on a fresh mission: a run still gathering or waiting
+  // on triage opens on Sources; a settled run opens on what it produced.
+  const missionStatus = mission?.status ?? null;
+  const defaultRailTab: ResearchOutputTab = missionStatus
+    && (missionStatus === "checkpoint" || missionStatus === "paused" || LIVE_STATUSES.has(missionStatus))
+    ? "sources"
+    : "artifacts";
+  const [railTab, setRailTab] = useState<ResearchOutputTab>(defaultRailTab);
+  // A mission switch re-opens the rail on that mission's default pane. Deriving
+  // it during render (React's derive-state-from-props pattern) avoids painting
+  // one frame of the previous mission's pane choice; a status change inside the
+  // same mission leaves the reader's chosen pane alone.
+  const [railTabMission, setRailTabMission] = useState(missionId);
+  if (railTabMission !== missionId) {
+    setRailTabMission(missionId);
+    setRailTab(defaultRailTab);
+  }
   // Tracks the mission currently on screen so an action that settles after
   // the user switched missions is discarded instead of applying its
   // busy/error/announce state to the wrong mission's view.
@@ -174,10 +192,20 @@ export function ResearchMissionDetail({
   );
   const isCheckpointLike = mission.status === "checkpoint" || mission.status === "paused";
   const isLive = LIVE_STATUSES.has(mission.status);
+  // One line of run context above the open pane — the state the two stacked
+  // rail panels used to carry in their titles and hints.
+  const railHint = railTab === "sources"
+    ? isCheckpointLike
+      ? `Evidence delta — pass ${iteration?.number ?? 0}. Triage now or leave it for the agent to resolve next pass.`
+      : isLive
+        ? `${mission.sources.length} of ${mission.bounds.sourceTarget} targeted — streaming in, review anytime.`
+        : null
+    : mission.status === "failed" && iteration
+      ? `From pass ${iteration.number}.`
+      : null;
   // Archived missions are read-only: automation controls gate on this the
   // same way "Create schedule" already does.
   const isArchived = mission.status === "archived";
-  const showArtifactRail = !isCheckpointLike && !isLive;
 
   // Root-blocked failures get a self-healing Retry: untouched config clears the
   // rejected root so the retried iteration runs in the mission workspace.
@@ -228,16 +256,6 @@ export function ResearchMissionDetail({
     } finally {
       if (stillCurrent()) setBusy(false);
     }
-  };
-  // Publishing is offered on settled missions only — a cancelled/archived run
-  // should not gain a fresh Grimoire entry after the fact.
-  const settled = ["checkpoint", "completed", "failed"].includes(mission.status);
-  const publishArtifact = (artifactKey: string) => {
-    void runMissionAction(
-      "Artifact could not be published",
-      () => onAction({ action: "publish-artifact", artifactKey }),
-      () => announce("Artifact published to the Grimoire."),
-    );
   };
   const runAction = (input: ResearchMissionActionInput) => runMissionAction(
     "Research action failed",
@@ -295,25 +313,6 @@ export function ResearchMissionDetail({
 
   // Evidence-delta triage reuses the ledger's exact source-update mechanism:
   // Keep → used, Reject → rejected, Verify → stays conflicting + appends note.
-  const keepSource = (source: ResearchSourceRef) => runAction({
-    action: "update-source",
-    sourceId: source.id,
-    patch: { status: "used" },
-  });
-  const rejectSource = (source: ResearchSourceRef) => runAction({
-    action: "update-source",
-    sourceId: source.id,
-    patch: { status: "rejected" },
-  });
-  const verifySourceNextPass = (source: ResearchSourceRef) => runAction({
-    action: "update-source",
-    sourceId: source.id,
-    patch: {
-      status: "conflicting",
-      note: source.note ? `${source.note}\n${VERIFY_NOTE}` : VERIFY_NOTE,
-    },
-  });
-
   const renderActionButton = (action: ResearchMissionAction) => (
     <Button
       key={action}
@@ -341,20 +340,6 @@ export function ResearchMissionDetail({
     </Button>
   );
 
-  const renderSourceTitle = (source: ResearchSourceRef) => source.url ? (
-    <button
-      type="button"
-      className="research-desk-delta__title"
-      onClick={() => onOpenUrl(source.url!)}
-    >
-      <strong>{source.title}</strong>
-      <Icon name="ph:arrow-square-out" width={11} height={11} aria-hidden />
-      <span className="sr-only"> — opens the source</span>
-    </button>
-  ) : (
-    <strong>{source.title}</strong>
-  );
-
   return (
     <section className="research-mission-detail" aria-labelledby="research-mission-title">
       <div className="research-mission-detail__body">
@@ -368,7 +353,7 @@ export function ResearchMissionDetail({
                 <time dateTime={mission.updatedAt}>updated {relativeTime(mission.updatedAt) || "just now"}</time>
               </span>
               <h2 id="research-mission-title">{mission.title}</h2>
-              {researchIntentAddsContext(mission) ? <p>{mission.intent}</p> : null}
+              {researchIntentAddsContext(mission) ? <ClampedText lines={4} text={mission.intent} /> : null}
             </div>
             {sessionId ? (
               <Button
@@ -475,7 +460,7 @@ export function ResearchMissionDetail({
                 ) : null}
               </div>
               {iteration?.summary ? (
-                <p className="research-desk-block__note">{iteration.summary}</p>
+                <ClampedText className="research-desk-block__note" text={iteration.summary} />
               ) : null}
               {/* The sources the mission actually leaned on, rendered as
                   citations under the synthesis (the same shared component the
@@ -527,7 +512,7 @@ export function ResearchMissionDetail({
                 </span>
               </div>
               {iteration?.summary ? (
-                <p className="research-desk-block__abstract">{iteration.summary}</p>
+                <ClampedText className="research-desk-block__abstract" text={iteration.summary} />
               ) : (
                 <p className="research-desk-block__empty">
                   The run finished without a written summary — open the artifacts for the findings.
@@ -680,118 +665,36 @@ export function ResearchMissionDetail({
           ) : null}
         </div>
 
-        {/* ── Right rail: state-dependent evidence, quick links, ledger. ── */}
+        {/* ── Right rail: one toggle (Artifacts | Sources) over a pane that
+              spans the rail, plus pinned quick links. The pane is the full
+              evidence ledger — the rail no longer stacks a partial state panel
+              above a collapsed copy of the same data. ── */}
         <aside className="research-desk-rail" aria-label="Run evidence and links">
-          {isCheckpointLike ? (
-            <section className="research-desk-rail__panel" aria-label="Evidence delta">
-              <h3 className="research-desk-rail__title">
-                Evidence delta — pass {iteration?.number ?? 0}
-              </h3>
-              <p className="research-desk-rail__hint">
-                Triage now or leave it for the agent to resolve next pass.
-              </p>
-              {mission.sources.length === 0 ? (
-                <p className="research-desk-block__empty">No sources in the ledger yet.</p>
-              ) : (
-                <ul className="research-desk-delta">
-                  {mission.sources
-                    .filter((source) => source.status !== "rejected")
-                    .slice(-6)
-                    .map((source) => (
-                      <li
-                        key={source.id}
-                        className={`research-desk-delta__card research-desk-delta__card--${source.status}`}
-                      >
-                        <span className={`research-source-status research-source-status--${source.status}`}>
-                          <i aria-hidden />{source.status}
-                        </span>
-                        {renderSourceTitle(source)}
-                        {source.claim ? <p>{source.claim}</p> : null}
-                        {source.status === "conflicting" || source.status === "candidate" ? (
-                          <div className="research-desk-delta__actions">
-                            <Button size="xs" variant="secondary" disabled={busy} onClick={() => void keepSource(source)}>
-                              Keep
-                            </Button>
-                            <Button size="xs" variant="secondary" disabled={busy} onClick={() => void rejectSource(source)}>
-                              Reject
-                            </Button>
-                            {source.status === "conflicting" ? (
-                              <Button
-                                size="xs"
-                                variant="ghost"
-                                disabled={busy || (source.note ?? "").includes(VERIFY_NOTE)}
-                                onClick={() => void verifySourceNextPass(source)}
-                              >
-                                Verify next pass
-                              </Button>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </li>
-                    ))}
-                </ul>
-              )}
-            </section>
-          ) : null}
-
-          {isLive ? (
-            <section className="research-desk-rail__panel" aria-label="Sources streaming in">
-              <h3 className="research-desk-rail__title">Sources streaming in</h3>
-              <p className="research-desk-rail__hint">
-                {mission.sources.length} of {mission.bounds.sourceTarget} targeted — review anytime.
-              </p>
-              {mission.sources.length === 0 ? (
-                <p className="research-desk-block__empty">No sources recorded yet.</p>
-              ) : (
-                <ul className="research-desk-stream">
-                  {mission.sources.slice(-6).map((source, index, recent) => {
-                    const latest = index === recent.length - 1;
-                    return (
-                      <li key={source.id} className={latest ? "is-latest" : undefined}>
-                        <i aria-hidden />
-                        <span>{source.title}</span>
-                        {latest ? <span className="sr-only"> — most recently added</span> : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-          ) : null}
-
-          {showArtifactRail ? (
-            <section className="research-desk-rail__panel" aria-label="Artifacts">
-              <h3 className="research-desk-rail__title">
-                {mission.status === "failed" && iteration
-                  ? `Artifacts from pass ${iteration.number}`
-                  : "Artifacts"}
-              </h3>
-              {mission.artifacts.length === 0 ? (
-                <p className="research-desk-block__empty">No artifacts yet.</p>
-              ) : (
-                <ul className="research-desk-artifacts">
-                  {mission.artifacts.map((artifact) => (
-                    <li key={artifact.key} className="research-desk-artifact">
-                      <span className="research-desk-artifact__kicker">
-                        {artifact.kind} · {artifact.state}
-                      </span>
-                      <strong>{artifact.title}</strong>
-                      <span className="research-desk-artifact__meta">
-                        iteration {artifact.iteration} ·{" "}
-                        <time dateTime={artifact.updatedAt}>{relativeTime(artifact.updatedAt) || "just now"}</time>
-                      </span>
-                      <ResearchArtifactActions
-                        mission={mission}
-                        artifact={artifact}
-                        busy={busy}
-                        onPublish={settled ? publishArtifact : undefined}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ) : null}
+          <Tabs<ResearchOutputTab>
+            className="research-desk-rail__toggle"
+            idPrefix="research-output"
+            ariaLabel="Rail contents"
+            variant="segment"
+            size="sm"
+            fill
+            value={railTab}
+            onChange={setRailTab}
+            items={[
+              { id: "artifacts", label: "Artifacts", count: mission.artifacts.length },
+              { id: "sources", label: "Sources", count: mission.sources.length },
+            ]}
+          />
+          <div className="research-desk-rail__pane">
+            <ResearchEvidenceLedger
+              mission={mission}
+              onAction={onAction}
+              onOpenUrl={onOpenUrl}
+              tab={railTab}
+              hint={railHint}
+              triage={isCheckpointLike}
+              highlightLatest={isLive}
+            />
+          </div>
 
           <div className="research-desk-rail__links">
             {sessionId ? (
@@ -815,18 +718,6 @@ export function ResearchMissionDetail({
               <span className="research-desk-rail__link-chevron" aria-hidden>›</span>
             </button>
           </div>
-
-          {/* Full evidence ledger stays reachable below the state panel. */}
-          <details className="research-desk-rail__ledger">
-            <summary>
-              Evidence ledger
-              <span>
-                {mission.artifacts.length} artifact{mission.artifacts.length === 1 ? "" : "s"} ·{" "}
-                {mission.sources.length} source{mission.sources.length === 1 ? "" : "s"}
-              </span>
-            </summary>
-            <ResearchEvidenceLedger mission={mission} onAction={onAction} onOpenUrl={onOpenUrl} />
-          </details>
         </aside>
       </div>
     </section>

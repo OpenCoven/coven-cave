@@ -94,7 +94,7 @@ export const mockTranscript: TranscriptEntry[] = [
   {
     id: "assistant-6",
     kind: "assistant",
-    text: "I added a preview route at `/mockup/familiar-chatout-codex` so Val can review the new surface without flipping the global flag.",
+    text: "I wired the feature preview so Val can review the new surface without changing the default experience.",
   },
   {
     id: "pill-1",
@@ -109,7 +109,7 @@ export const mockTranscript: TranscriptEntry[] = [
   {
     id: "assistant-7",
     kind: "assistant",
-    text: "The package is ready for review. The feature flag remains off by default, and the mock route always renders the new scaffold for design review.",
+    text: "The package is ready for review. The feature flag remains off by default, and the scaffold is available for design review.",
   },
   {
     id: "card-3",
@@ -125,7 +125,7 @@ export const mockTranscript: TranscriptEntry[] = [
       files: [
         { path: "src/components/familiar-chatout-codex/mockTranscript.ts", additions: 83, deletions: 0 },
         { path: "src/components/familiar-chatout-codex/styles.module.css", additions: 186, deletions: 12 },
-        { path: "src/app/mockup/familiar-chatout-codex/page.tsx", additions: 91, deletions: 0 },
+        { path: "src/components/familiar-chatout-codex/FamiliarChatoutCodex.tsx", additions: 91, deletions: 0 },
         { path: "src/components/familiar-chatout-codex/TranscriptCard.tsx", additions: 88, deletions: 6 },
         { path: "src/components/familiar-chatout-codex/EnvironmentInspector.tsx", additions: 42, deletions: 0 },
         { path: "src/components/familiar-chatout-codex/SubagentsList.tsx", additions: 47, deletions: 3 },

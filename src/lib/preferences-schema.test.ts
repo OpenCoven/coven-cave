@@ -17,7 +17,6 @@ assert.equal(defaults.initialized, false);
 assert.equal(defaults.appearance.theme.id, "coven");
 assert.equal(defaults.appearance.fonts.sans, "inter");
 assert.equal(defaults.appearance.datetime.clock, "12h");
-assert.equal(defaults.general.newsHeadlines, true);
 assert.equal(defaults.general.celebrations, true, "progression celebrations default on");
 assert.equal(defaults.phone.mobileMode, true);
 
@@ -44,7 +43,7 @@ const fullPatch = validatePreferencesPatch({
       accentSeed: { L: 0.6, a: 0.1, b: -0.08 },
     },
   },
-  general: { newsHeadlines: false, celebrations: false },
+  general: { celebrations: false },
   phone: { mobileMode: false },
 });
 
@@ -62,7 +61,6 @@ assert.equal(initialized.appearance.reading.width, "narrow");
 assert.equal(initialized.appearance.datetime.density, "verbose");
 assert.equal(initialized.appearance.cornerRadius, "round");
 assert.equal(initialized.appearance.backdrop.intensity, 64);
-assert.equal(initialized.general.newsHeadlines, false);
 assert.equal(initialized.general.celebrations, false, "celebrations patch lands");
 assert.equal(initialized.phone.mobileMode, false);
 
@@ -147,6 +145,7 @@ for (const invalid of [
   { appearance: { theme: { id: "not-a-theme" } } },
   { appearance: { fonts: { sans: "remote-font-url" } } },
   { appearance: { backdrop: { image: { mime: "image/svg+xml" } } } },
+  { general: { newsHeadlines: false } },
   { phone: { mobileMode: "yes" } },
 ]) {
   assert.throws(
@@ -186,7 +185,6 @@ const legacyPatch = legacyStorageToPreferencesPatch({
   "cave:reading-width": "medium",
   "cave:datetime-clock": "24h",
   "cave:corner-radius": "sharp",
-  "cave:home-news-enabled": "false",
   "cave:mobile-mode-enabled": "false",
   "cave:backdrop:v1": JSON.stringify({ enabled: true, intensity: 70 }),
   authToken: "ignored",
@@ -199,7 +197,6 @@ assert.equal(legacyPatch.appearance?.reading?.width, "medium");
 assert.equal(legacyPatch.appearance?.datetime?.clock, "24h");
 assert.equal(legacyPatch.appearance?.cornerRadius, "sharp");
 assert.equal(legacyPatch.appearance?.backdrop?.enabled, true);
-assert.equal(legacyPatch.general?.newsHeadlines, false);
 assert.equal(legacyPatch.phone?.mobileMode, false);
 assert.equal(Object.hasOwn(legacyPatch, "authToken"), false);
 

@@ -72,9 +72,9 @@ flowchart TB
 
   subgraph SURFACEMENUS["Surface-level progressive disclosure"]
     direction LR
-    UI --> BOARDMENU["Tasks · More task actions"]:::submenu
-    BOARDMENU --> BMULTI["Select multiple"]:::action
-    BOARDMENU --> BCLEAR["Clear done → inline confirm"]:::danger
+    UI --> BOARDTRASH["Tasks · Trash button"]:::action
+    BOARDTRASH --> BDELSEL["Delete selected → confirm popover"]:::danger
+    BOARDTRASH --> BCLEAR["Clear done → inline confirm"]:::danger
     UI --> PROJECTMENU["Project options"]:::submenu
     PROJECTMENU --> PEDIT["Rename · Edit folder"]:::action
     PROJECTMENU --> PICON["Upload / generate / remove image"]:::action

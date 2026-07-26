@@ -340,20 +340,11 @@ load_or_create_token() {
   export ACCESS_TOKEN
 }
 
-# Sidecar auth token for the native iOS app (persisted per state dir / running server). Distinct from the mobile
-# ACCESS token above: this one populates COVEN_CAVE_AUTH_TOKEN, which gates /api/ (proxy.ts) and which the
-# in-app SidecarAuthBridge expects via ?covenCaveToken=. Stored in its own file so the access-token reuse guards
-# stay independent.
-load_or_create_sidecar_token() {
-  ensure_state_dir
-  if [ ! -s "$SIDECAR_TOKEN_FILE" ]; then
-    node -e "console.log(require(\"node:crypto\").randomBytes(32).toString(\"base64url\"))" >"$SIDECAR_TOKEN_FILE"
-  fi
-  chmod 600 "$SIDECAR_TOKEN_FILE"
-  SIDECAR_AUTH_TOKEN="$(cat "$SIDECAR_TOKEN_FILE")"
-  export SIDECAR_AUTH_TOKEN
-}
-
+# Legacy stale-state sentinel: SIDECAR_TOKEN_FILE was written by older builds that ran a sidecar-gated server
+# (populating COVEN_CAVE_AUTH_TOKEN / SidecarAuthBridge). That mode and load_or_create_sidecar_token have been
+# removed. The file is now only a detection marker — its presence is checked by the app-mode guard in
+# start_next_server to reject a port already occupied by an older-style run — and is deleted on app-mode start
+# and on stop.
 ensure_tailscale() {
   need node
   need "$TAILSCALE_BIN"
@@ -393,19 +384,8 @@ start_with_tmux() {
     return 0
   fi
 
-  if [ "${CAVE_MOBILE_NATIVE:-0}" = "1" ]; then
-    # Native iOS app: keep the mobile ACCESS gate open (Tailscale Serve proxies to
-    # loopback, so the host gate already passes) but DO set the persisted sidecar
-    # auth token from our file so /api/ is authenticated and the in-app
-    # SidecarAuthMonitor is satisfied. The matching token reaches the webview via
-    # ?covenCaveToken= in CAVE_MOBILE_DEV_URL. Read from the file (ignoring any
-    # inherited COVEN_CAVE_AUTH_TOKEN) so the env can't smuggle a mismatched value.
-    tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
-      "bash -lc 'unset COVEN_CAVE_ACCESS_TOKEN; export COVEN_CAVE_AUTH_TOKEN=\"\$(cat \"$SIDECAR_TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\"; exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
-  else
-    tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
-      "bash -lc 'COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\" exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
-  fi
+  tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
+    "bash -lc 'COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\" exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
   tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}' >"$PID_FILE"
 }
 
@@ -421,13 +401,7 @@ start_with_nohup() {
     return 0
   fi
 
-  if [ "${CAVE_MOBILE_NATIVE:-0}" = "1" ]; then
-    # Native iOS app: ACCESS gate stays open (loopback host), but set the sidecar
-    # auth token so /api/ is authenticated. See start_with_tmux for the rationale.
-    COVEN_CAVE_AUTH_TOKEN="$SIDECAR_AUTH_TOKEN" HOSTNAME="$HOST" PORT="$PORT" nohup env -u COVEN_CAVE_ACCESS_TOKEN pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
-  else
-    nohup env COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" HOSTNAME="$HOST" PORT="$PORT" pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
-  fi
+  nohup env COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" HOSTNAME="$HOST" PORT="$PORT" pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
   echo "$!" >"$PID_FILE"
 }
 
@@ -449,19 +423,8 @@ start_next_server() {
         exit 1
       fi
       require_recorded_server
+      load_or_create_token
       echo "CovenCave native-app server is already listening on ${HOST}:${PORT}."
-      return 0
-    fi
-    if [ "${CAVE_MOBILE_NATIVE:-0}" = "1" ]; then
-      # Refuse to reuse a server that may be token-gated from a prior non-native start.
-      if [ -n "${COVEN_CAVE_ACCESS_TOKEN:-}" ] || [ -s "$TOKEN_FILE" ]; then
-        echo "Error: port ${PORT} is already in use by a token-gated server. Run 'pnpm mobile:tailscale:stop' first." >&2
-        exit 1
-      fi
-      # Reuse only works if the running server holds this sidecar token; load it
-      # so native_command can hand the matching value to the webview.
-      load_or_create_sidecar_token
-      echo "CovenCave native mobile server is already listening on ${HOST}:${PORT}."
       return 0
     fi
     require_recorded_server
@@ -472,14 +435,10 @@ start_next_server() {
 
   if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
     # App mode serves the full API surface through Tailscale, so mint/load the
-    # mobile access token and clear only stale sidecar tokens from native runs.
+    # mobile access token and clear any stale sidecar token left by an older build.
     rm -f "$SIDECAR_TOKEN_FILE"
-    load_or_create_token
-  elif [ "${CAVE_MOBILE_NATIVE:-0}" != "1" ]; then
-    load_or_create_token
-  else
-    load_or_create_sidecar_token
   fi
+  load_or_create_token
   : >"$LOG_FILE"
   echo "Starting Next server on ${HOST}:${PORT}"
   if [ "$USE_TMUX" = "1" ] && command -v tmux >/dev/null 2>&1; then
@@ -491,8 +450,6 @@ start_next_server() {
   fi
   if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
     write_server_mode app
-  elif [ "${CAVE_MOBILE_NATIVE:-0}" = "1" ]; then
-    write_server_mode native
   else
     write_server_mode invite
   fi
@@ -563,57 +520,6 @@ const ipv4 = ips.find((ip) => /^100\.\d+\.\d+\.\d+$/.test(ip));
 if (!ipv4) process.exit(1);
 console.log(ipv4);
 NODE
-}
-
-resolve_ios_device_name() {
-  if [ "${CAVE_MOBILE_DEVICE:-0}" != "1" ]; then
-    return 0
-  fi
-
-  if [ -n "${CAVE_MOBILE_DEVICE_NAME:-}" ]; then
-    printf '%s\n' "$CAVE_MOBILE_DEVICE_NAME"
-    return 0
-  fi
-
-  need xcrun
-  local device_json
-  device_json="$(mktemp)"
-
-  if ! xcrun devicectl list devices --json-output "$device_json" >/dev/null; then
-    rm -f "$device_json"
-    echo "Unable to list iOS devices. Open Xcode, unlock/trust the device, then retry." >&2
-    exit 1
-  fi
-
-  if ! node - "$device_json" <<'NODE'
-const fs = require("node:fs");
-
-const devices = JSON.parse(fs.readFileSync(process.argv[2], "utf8"))?.result?.devices ?? [];
-const connected = devices.filter((device) => {
-  const props = device.deviceProperties ?? {};
-  const hardware = device.hardwareProperties ?? {};
-  const connection = device.connectionProperties ?? {};
-  return (
-    hardware.platform === "iOS" &&
-    Boolean(props.name) &&
-    connection.tunnelState !== "unavailable" &&
-    props.developerModeStatus !== "disabled"
-  );
-});
-
-if (connected.length === 0) {
-  console.error("No connected iOS device found. Unlock/trust the device and enable Developer Mode, or set CAVE_MOBILE_DEVICE_NAME.");
-  process.exit(1);
-}
-
-console.log(connected[0].deviceProperties.name);
-NODE
-  then
-    rm -f "$device_json"
-    exit 1
-  fi
-
-  rm -f "$device_json"
 }
 
 create_invite() {
@@ -709,60 +615,6 @@ start_command() {
   print_invite_summary
   echo
   masked_serve_status
-}
-
-native_command() {
-  ensure_tailscale
-  CAVE_MOBILE_NATIVE=1 start_next_server
-
-  TAILSCALE_BACKEND="$(backend_url)"
-  tailscale_cmd serve --bg "$TAILSCALE_BACKEND" >/dev/null
-
-  status_json="$(tailscale_capture serve status --json)"
-  CAVE_MOBILE_DEV_URL="$(serve_url_from_status "$TAILSCALE_BACKEND" "$status_json")"
-  if [ -z "$CAVE_MOBILE_DEV_URL" ]; then
-    echo "Unable to resolve Tailscale Serve URL for ${TAILSCALE_BACKEND}." >&2
-    exit 1
-  fi
-
-  # Hand the persisted sidecar auth token to the webview via the URL HASH (not a
-  # query string). A query string on the dev document URL corrupts Turbopack dev
-  # chunk URLs inside the iOS WKWebView — chunk requests resolve to
-  # /?covenCaveToken=.../_next/... and the server returns HTML instead of JS, so
-  # the app never hydrates and shows a blank shell. The hash is excluded from
-  # chunk URL resolution, so it's safe. SidecarAuthBridge reads it from the hash,
-  # stores it (sessionStorage), strips it from the visible URL, and attaches it to
-  # every /api/ request (x-coven-cave-token header / EventSource covenCaveToken
-  # param) so the gated proxy authenticates them.
-  CAVE_MOBILE_DEV_URL="$(
-    node - "$CAVE_MOBILE_DEV_URL" "$SIDECAR_AUTH_TOKEN" <<'NODE'
-const [base, token] = process.argv.slice(2);
-const url = new URL(base);
-url.hash = new URLSearchParams({ covenCaveToken: token }).toString();
-console.log(url.toString());
-NODE
-  )"
-  export CAVE_MOBILE_DEV_URL
-  tauri_config="$(
-    node - "$CAVE_MOBILE_DEV_URL" <<'NODE'
-const devUrl = process.argv[2];
-console.log(JSON.stringify({ build: { devUrl, beforeDevCommand: null } }));
-NODE
-  )"
-
-  echo "Launching CovenCave native iOS app through Tailscale Serve."
-  tauri_args=(
-    ios
-    dev
-    --no-dev-server-wait
-    --config
-    "$tauri_config"
-  )
-  if [ "${CAVE_MOBILE_DEVICE:-0}" = "1" ]; then
-    device_name="$(resolve_ios_device_name)"
-    tauri_args+=("$device_name")
-  fi
-  pnpm exec tauri "${tauri_args[@]}"
 }
 
 print_terminal_qr() {
@@ -887,13 +739,12 @@ stop_command() {
 case "$COMMAND" in
   start) resolve_active_port; maybe_fallback_port; start_command ;;
   invite) resolve_active_port; invite_command ;;
-  native) resolve_active_port; maybe_fallback_port; native_command ;;
   app) resolve_active_port; maybe_fallback_port; app_command ;;
   status) resolve_active_port; status_command ;;
   stop) stop_command ;;
   *)
-    echo "Usage: pnpm mobile:tailscale[:invite|:native|:app|:status|:stop]" >&2
-    echo "       bash scripts/mobile-tailscale.sh {start|invite|native|app|status|stop}" >&2
+    echo "Usage: pnpm mobile:tailscale[:invite|:app|:status|:stop]" >&2
+    echo "       bash scripts/mobile-tailscale.sh {start|invite|app|status|stop}" >&2
     exit 2
     ;;
 esac

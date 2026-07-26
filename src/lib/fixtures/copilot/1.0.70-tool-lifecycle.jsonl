@@ -1,0 +1,5 @@
+{"type":"assistant.message_delta","data":{"messageId":"m-1","deltaContent":"Looking up files"}}
+{"type":"assistant.message","data":{"messageId":"m-1","content":"Looking up files","toolRequests":[{"toolCallId":"call-1","name":"shell","arguments":{"command":"pwd"}}],"model":"gpt-5"}}
+{"type":"tool.execution_start","data":{"toolCallId":"call-1","toolName":"shell","arguments":{"command":"pwd"}}}
+{"type":"tool.execution_complete","data":{"toolCallId":"call-1","success":true,"result":{"content":"/workspace"}}}
+{"type":"result","sessionId":"session-1","exitCode":0,"usage":{"sessionDurationMs":42}}

@@ -6,7 +6,6 @@ const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
-const agentPanel = readFileSync(new URL("./familiar-panel.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -64,7 +63,7 @@ assert.doesNotMatch(
 );
 
 assert.doesNotMatch(
-  `${chatRouter}\n${agentPanel}`,
+  chatRouter,
   /from the rail/,
   "Visible empty states should point users to the sidebar selector, not the removed familiar rail",
 );

@@ -40,4 +40,35 @@ assert.match(
   "both launcher paths must use the token-bearing dev URL",
 );
 
+assert.doesNotMatch(
+  source,
+  /^exec pnpm exec tauri dev/m,
+  "the launcher must stay alive to own teardown instead of exec'ing into Tauri",
+);
+assert.match(
+  source,
+  /trap cleanup EXIT[\s\S]*?trap 'cleanup; exit 130' INT[\s\S]*?trap 'cleanup; exit 143' TERM HUP/,
+  "an interrupted launcher must run the same teardown as a clean exit",
+);
+assert.match(
+  source,
+  /terminate_process_tree\(\) \{[\s\S]*?signal_process_tree "\$pid" TERM[\s\S]*?signal_process_tree "\$pid" KILL/,
+  "teardown must escalate from TERM to KILL so no owned process survives",
+);
+assert.match(
+  source,
+  /cleanup\(\) \{[\s\S]*?terminate_process_tree "\$tauri_pid"[\s\S]*?rm -f "\$TAURI_OVERRIDE_CONFIG"/,
+  "cleanup must reap the Tauri tree and remove the generated override config",
+);
+assert.match(
+  source,
+  /DEV_SERVER_GRACE_SECONDS="\$\{COVEN_CAVE_DEV_SERVER_GRACE_SECONDS:-30\}"/,
+  "the dev-server watchdog must have a documented, overridable grace window",
+);
+assert.match(
+  source,
+  /watch_dev_server\(\) \{[\s\S]*?down_for=\$\(\(down_for \+ 2\)\)[\s\S]*?terminate_process_tree "\$tauri_pid"/,
+  "the shell must not outlive a loopback dev server that is never coming back",
+);
+
 console.log("dev-app: ok");

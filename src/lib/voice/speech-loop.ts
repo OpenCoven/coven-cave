@@ -18,7 +18,7 @@
 // talking before the harness turn finishes) while recognition stays hushed
 // until the whole queue drains.
 
-import type { LiveSession, VoiceCallbacks, VoiceEarsEngine } from "./types.ts";
+import type { LiveSession, VoiceCallbacks, VoiceEarsEngine, VoiceMouthEngine } from "./types.ts";
 import { VoiceConnectError } from "./types.ts";
 
 /** One user turn in → the full final reply text out. Implementations may call
@@ -218,6 +218,10 @@ export type SpeechLoopOptions = {
   voiceName?: string;
   /** Custom mouth (e.g. ElevenLabs TTS). Defaults to the system synthesizer. */
   mouth?: SpeechMouth;
+  /** Engine label for the supplied `mouth`, surfaced on the LiveSession so
+   *  the call UI can say how it speaks (cave-vony). Ignored when `mouth` is
+   *  absent — the system-synth fallback labels itself. */
+  mouthEngine?: VoiceMouthEngine;
   /** Custom ears (e.g. the native macOS engine). Defaults to WebSpeech. */
   ears?: SpeechEarsFactory;
   /** Engine label for the supplied `ears`, surfaced on the LiveSession so
@@ -364,6 +368,9 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     // How this call hears (cave-vpe1): the supplied ears' label, or the
     // WebSpeech fallback labeling itself.
     earsEngine: opts.ears ? opts.earsEngine : "web-speech",
+    // How this call speaks (cave-vony): the supplied mouth's label, or the
+    // system-synth fallback labeling itself.
+    mouthEngine: opts.mouth ? opts.mouthEngine : "system-synth",
     setMuted(next: boolean) {
       muted = next;
       for (const track of mic.getAudioTracks()) track.enabled = !next;

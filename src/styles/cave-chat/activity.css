@@ -908,11 +908,14 @@ details[open] > .cave-tool-summary::before {
   display: grid;
   min-height: 120px;
   place-items: center;
+  gap: var(--space-2);
   padding: var(--space-5) var(--space-4);
 }
 
-/* How the call hears (cave-vpe1): honest engine label on live calls. */
-.voice-call-overlay__ears {
+/* How the call hears (cave-vpe1) and speaks (cave-vony): honest engine
+   labels on live calls. */
+.voice-call-overlay__ears,
+.voice-call-overlay__mouth {
   font-size: var(--text-xs);
   color: var(--text-muted);
   border: 1px solid var(--border-hairline);

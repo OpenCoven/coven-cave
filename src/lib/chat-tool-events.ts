@@ -44,6 +44,8 @@ const PENDING_TOOL_RESULT_TTL_MS = 60_000;
 const MAX_OPEN_ENVELOPE_CALLS = 200;
 /** Keep a bounded recent window to suppress terminal-frame retransmits. */
 export const MAX_SETTLED_ENVELOPE_IDS = 512;
+/** Completed calls retained only for late hook/envelope reconciliation. */
+export const MAX_SETTLED_RECONCILIATION_CALLS = 512;
 /** A malicious or runaway runtime must not grow the persisted event index forever. */
 export const MAX_RECORDED_TOOL_EVENTS = 512;
 
@@ -239,6 +241,7 @@ export class ToolCallTracker {
     const MAX_RECONCILE_CALLS_PER_NAME = 25;
     while (queue.length > MAX_RECONCILE_CALLS_PER_NAME) queue.shift();
     this.settledHookCalls.set(call.name, queue);
+    this.trimSettledReconciliationCalls(this.settledHookCalls);
   }
 
   private takeSettledHookCall(name: string, unlinkedOnly = false, input?: string): OpenCall | undefined {
@@ -267,6 +270,20 @@ export class ToolCallTracker {
     const queue = this.settledEnvelopeCalls.get(call.name) ?? [];
     queue.push(call);
     this.settledEnvelopeCalls.set(call.name, queue);
+    this.trimSettledReconciliationCalls(this.settledEnvelopeCalls);
+  }
+
+  private trimSettledReconciliationCalls(calls: Map<string, OpenCall[]>): void {
+    let retained = 0;
+    for (const queue of calls.values()) retained += queue.length;
+    while (retained > MAX_SETTLED_RECONCILIATION_CALLS) {
+      const oldest = calls.entries().next().value as [string, OpenCall[]] | undefined;
+      if (!oldest) break;
+      const [name, queue] = oldest;
+      queue.shift();
+      retained -= 1;
+      if (queue.length === 0) calls.delete(name);
+    }
   }
 
   private takeSettledEnvelopeCall(name: string, input?: string): OpenCall | undefined {
@@ -339,6 +356,16 @@ export class ToolCallTracker {
       settled.push(ev);
     }
     return settled;
+  }
+
+  /** Shift tool positions after an authoritative stream-text correction. */
+  rebaseTextOffsets(after: number, delta: number): void {
+    if (!delta) return;
+    for (const [id, event] of this.recorded) {
+      if (event.textOffset !== undefined && event.textOffset >= after) {
+        this.recorded.set(id, { ...event, textOffset: Math.max(0, event.textOffset + delta) });
+      }
+    }
   }
 
   /** pre_tool_use (or bare tool_use) hook line: a call is starting. */
@@ -459,7 +486,6 @@ export class ToolCallTracker {
     this.prunePendingEnvelopeProgress();
     if (utf8Bytes(id) > 512 || utf8Bytes(name) > 512 || this.byEnvelopeId.has(id) || this.settledEnvelopeIds.has(id)) return null;
     if (this.byEnvelopeId.size >= MAX_OPEN_ENVELOPE_CALLS) return null;
-    const pending = this.pendingEnvelopeResults.get(id);
     const queue = this.queueFor(name);
     // A hook pre may have surfaced this call already under a minted id. Link
     // the native id to the oldest unlinked hook call rather than emitting a
@@ -660,6 +686,11 @@ export class ToolCallTracker {
     };
     this.record(ev);
     return ev;
+  }
+
+  /** True after an envelope completion has already been recorded. */
+  hasSettledEnvelopeId(id: string): boolean {
+    return this.settledEnvelopeIds.has(id);
   }
 }
 

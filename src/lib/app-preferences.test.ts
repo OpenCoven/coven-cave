@@ -58,7 +58,6 @@ for (const representative of [
   "cave:datetime-clock",
   "cave:corner-radius",
   "cave:backdrop:v1",
-  "cave:home-news-enabled",
   "cave:mobile-mode-enabled",
 ]) {
   assert.ok(legacyBlock.includes(`"${representative}"`), `migration allowlist includes ${representative}`);

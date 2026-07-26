@@ -383,6 +383,10 @@ final class ChatThread: Identifiable, Hashable {
                 guard let self else { return }
                 self.flush(coalescer, into: messageId, onChange: onChange)
             }
+        case .assistantReplace(let text):
+            flush(coalescer, into: messageId, onChange: onChange)
+            mutate(messageId) { $0.text = text; $0.streaming = true }
+            onChange()
         case .done(let isError, let sid):
             if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
             flush(coalescer, into: messageId, onChange: onChange)

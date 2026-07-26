@@ -7,12 +7,47 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-26
+
+> 🗣️ **The Cave gets a voice, ears, and a Code room of its own.** Local Piper TTS with a signature voice roster and sidecar Whisper speech-to-text land fully offline. A dedicated Code Workshop becomes the Coding familiar's room, Research Studio gains mermaid diagrams and a typeset Reader, encrypted backups run on a schedule, and the Tauri mobile remnants are gone — iOS continues as the native design-handoff app.
+
+### Added
+- **Local voice (mouth)** — managed local Piper TTS with fail-closed probes, model download management, and a signature voice roster with mouth-engine badge parity (#3830, #3888).
+- **Local voice (ears)** — sidecar Whisper speech-to-text with locale-aware model guards and ARM runtime bounds (#3826, #3864).
+- **Scheduled encrypted backup sync** — daily + on-quit snapshot push (#3881).
+- **Research Studio** — mermaid diagram rendering, budget-aware threads, and source dropdowns (#3885); typeset Research Reader for findings deliverables (#3837); Desk chrome refreshed to the design handoff (#3840); final research artifacts produced and saved (#3786); long mission summaries clamp behind a "View more" toggle (#3879, #3886).
+- **Code Workshop** — dedicated Code surface with Diff/Files/Terminal tabs, PR pipeline (checks, review threads, merge), session inspector, follow-up composer, mobile drill-in, and file/diff opens routed to the surface (#3716, #3719, #3722, #3724, #3727, #3728, #3730, #3731, #3732, #3735, #3760).
+- **Citations** — shared Citation UI for chat and research, plus a directive teaching familiars to cite sources (#3817, #3822).
+- **Projects** — per-familiar access matrix with registry CRUD, grouped/flat toggle, ad-hoc chat folders as projects, GitHub repo ties, and new chats inheriting the most recent project (#3712, #3713, #3723, #3797, #3835, #3872).
+- **Chat** — queued follow-up messages (#3709), opt-in periodic auto-rename (#3755), runtime tool-call adapter seam with copilot decoder (#3867), and resilient tool activity for Hermes, OpenCode, and Codex runtimes (#3849, #3851, #3853).
+- **Canvas** — preview expand toggle, edge-to-edge editor stage, opaque grounds over backdrop (#3871); viewport presets for sketch preview (#3744).
+- **Review Deck** — rebuilt as a tri-pane change-review surface (#3767).
+- **Marketplace** — "Explore" redesign merging Browse + Skills into one pool (#3775).
+- **Analytics** — modernized Familiar Analytics surface, contract review launch, and double-blind eval arm-token routing (#3769, #3776, #3814).
+- **macOS reachability** — the desktop app stays reachable via a hardened sidecar lifecycle with ownership + uninstall verification (#3828, #3875).
+- **MCP doctor** — health probes for the Cave's MCP registry (#3715).
+- **Backdrop** — Blaze animated style, explicit Off style, and WebGL context-loss remount (#3764, #3778).
+- **iOS (native design app)** — redesign v2 with Chats/Tasks/Terminal/Settings tabs, terminal reliability, Settings IA redesign, and install-QR on the Phone card (#3815, #3818, #3874).
+
 ### Changed
-- **Code becomes the Coding familiar's room** — the Code workbench now lives as a Role Surface room ("Code Workshop") granted by an explicit familiar Type, matching how Research gates its desk. Familiar Studio → Identity gains a Type picker (General, Coding, Research, Review, Writing, Comms, Watch, Planning, Indexing) that unlocks the matching room; role labels keep granting rooms as before (types add, never subtract). The standalone GitHub surface returns as a quiet sidebar row for every familiar, hiding only while the active familiar's Code room is visible. `?mode=code` deep links now alias onto the room.
-- **OpenAI theme renamed to Codex** — same void-dark monochrome palette under `data-theme="codex"`; stored `openai` preferences migrate automatically via the legacy rename map.
+- **Code becomes the Coding familiar's room** — the Code workbench now lives as a Role Surface room ("Code Workshop") granted by an explicit familiar Type, matching how Research gates its desk. Familiar Studio → Identity gains a multiselect Type picker that unlocks matching rooms; role labels keep granting rooms as before (types add, never subtract). `?mode=code` deep links alias onto the room (#3741, #3816).
+- **Home** — launcher redesign 3a work-led dashboard, then hearth Home restored with the work dashboard moved to the new-chat view (#3758, #3777, #3789).
+- **Tasks & Queue** — toolbar redesigns with tokenized search and first-class verbs; Queue tab meta row + scope segment; trash button owns Clear done (#3746, #3748, #3782, #3877).
+- **OpenAI theme renamed to Codex** — same void-dark monochrome palette under `data-theme="codex"`; stored `openai` preferences migrate automatically (#3718).
+- **Familiar Studio** — consolidated to five tabs, merging Look + lifecycle into Identity (#3751).
+- **Sessions list** — single click opens the session (#3754).
 
 ### Fixed
-- **Button label visibility** — filled primary buttons (`.ui-btn--primary`, calendar Salem go) now use the paired on-accent foreground token instead of `--text-primary`/hard-coded white, which rendered labels invisible on the Codex theme's monochrome accent.
+- **Hermes transport hardening** — a deep sweep across SSE framing, resume retries, lifecycle recovery, streamed tool arguments, and Windows launch safety (#3704, #3864).
+- **Dev shell recovery** — the Tauri shell recovers after a Next/Turbopack crash instead of stranding a dead pane (#3854, #3890); plain-pane fallback after the peel context-loss cap (#3878).
+- **Windows** — MSI updater log-argument quoting, sidecar bundle detection, archive preserved on manifest publish failure, and npm-global coven CLI resolution (#3747, #3819, #3821).
+- **Board & workflows** — task sessions launch non-interactively (no more coven.sqlite3 bloat), familiar rosters scope by project, stale sessions reset on reassignment (#3796, #3798, #3801, #3855, #3863).
+- **UI polish** — chat page no longer blinks on backdrop toggle (#3873), ClampedText resets on text change (#3882), modal Escape gated during submit (#3869), WCAG AA hover contrast for accent CTAs (#3729), button labels visible on monochrome accents, HiDPI native webview alignment (#3823).
+- **Reliability** — Cave home reconciliation classified with lazy hashing (#3884), collision-safe corrupt-aside names across JSON stores (#3726), workspace Back/Forward history (#3833), GitHub org listing scoped to current table (#3876).
+
+### Removed
+- **Tauri mobile remnants** — iOS-via-Tauri and Android build scaffolding removed; iOS continues as the native design-handoff app (#3887).
+- **Orphaned skill-browser component** (#3868).
 
 
 ## [0.1.6] - 2026-07-22

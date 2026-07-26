@@ -33,7 +33,6 @@ import { UpdateSettingsRow } from "@/components/update-available";
 import { classifyAboutDaemonStatus, type AboutDaemonState } from "@/lib/about-status";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useCelebrationsEnabled, writeCelebrationsEnabled } from "@/lib/celebrations-pref";
-import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
 import {
   DEFAULT_STOP_PHRASE,
   STOP_PHRASE_MAX_LENGTH,
@@ -434,9 +433,6 @@ function GeneralSection() {
           <WorkspacePathField />
         </SettingsRow>
       </SettingsGroup>
-      <SettingsGroup label="Home">
-        <HomeNewsToggle />
-      </SettingsGroup>
       <SettingsGroup label="Chat">
         <StopPhraseField />
       </SettingsGroup>
@@ -450,32 +446,6 @@ function GeneralSection() {
         <SettingsRow label="Open to" description="Which view to show on launch." comingSoon />
       </SettingsGroup>
     </SettingsPage>
-  );
-}
-
-// News on Home is opt-out here rather than dismissible inline — the carousel
-// row carries no X, so this switch is the one place the choice lives (and it
-// persists across visits, unlike the old per-mount dismiss). Rendered as a
-// minimal track/knob switch (user-requested): the row label carries the
-// meaning, so the control itself needs no On/Off text.
-function HomeNewsToggle() {
-  const newsEnabled = useHomeNewsEnabled();
-  return (
-    <SettingsRow
-      label="News headlines"
-      description="Show the News carousel on the Home screen's daily summary."
-    >
-      <button
-        type="button"
-        role="switch"
-        aria-checked={newsEnabled}
-        aria-label="News headlines"
-        onClick={() => writeHomeNewsEnabled(!newsEnabled)}
-        className={`settings-switch focus-ring${newsEnabled ? " is-on" : ""}`}
-      >
-        <span className="settings-switch__knob" aria-hidden />
-      </button>
-    </SettingsRow>
   );
 }
 
@@ -649,7 +619,220 @@ function BackupSettingsGroup() {
           {status ? <p className="text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">{status}</p> : null}
         </div>
       </SettingsRow>
+      <ScheduledSyncSettings />
     </SettingsGroup>
+  );
+}
+
+type BackupSyncOverview = {
+  config: {
+    enabled: boolean;
+    directory: string | null;
+    retainCount: number;
+    intervalHours: number;
+    onQuitPush: boolean;
+  };
+  status: {
+    lastAttemptAt: string | null;
+    lastSuccessAt: string | null;
+    lastSuccessFile: string | null;
+    lastError: string | null;
+    lastReason: string | null;
+    retainedCount: number | null;
+  };
+  defaultDirectory: string;
+  effectiveDirectory: string;
+  passphraseSet: boolean;
+  due: boolean;
+};
+
+// Scheduled encrypted sync (Persistence P2): a daily snapshot pushed into a
+// user-owned folder (iCloud Drive by default) plus an on-quit push, so machine
+// loss costs at most a day. The passphrase saves into the local encrypted
+// vault for unattended runs; restoring still asks for it manually above.
+function ScheduledSyncSettings() {
+  const { announce } = useAnnouncer();
+  const [overview, setOverview] = useState<BackupSyncOverview | null>(null);
+  const [directoryDraft, setDirectoryDraft] = useState<string | null>(null);
+  const [retainDraft, setRetainDraft] = useState<string | null>(null);
+  const [passphraseDraft, setPassphraseDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const ctl = new AbortController();
+    fetch("/api/backup/sync", { cache: "no-store", signal: ctl.signal })
+      .then((r) => r.json())
+      .then((json: BackupSyncOverview & { ok?: boolean }) => {
+        if (!ctl.signal.aborted && json?.ok) setOverview(json);
+      })
+      .catch(() => {});
+    return () => ctl.abort();
+  }, []);
+
+  const update = async (patch: Record<string, unknown>, announcement: string) => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/backup/sync", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) throw new Error(json?.error || `sync update failed (${res.status})`);
+      setOverview(json as BackupSyncOverview);
+      announce(announcement);
+    } catch (err) {
+      const text = err instanceof Error ? err.message : "sync update failed";
+      setMessage(text);
+      announce(`Scheduled sync update failed: ${text}`, "assertive");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runNow = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/backup/sync/run", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) throw new Error(json?.error || `backup failed (${res.status})`);
+      const refreshed = await fetch("/api/backup/sync", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
+      if (refreshed?.ok) setOverview(refreshed as BackupSyncOverview);
+      setMessage("Snapshot saved.");
+      announce("Backup snapshot saved.");
+    } catch (err) {
+      const text = err instanceof Error ? err.message : "backup failed";
+      setMessage(text);
+      announce(`Backup failed: ${text}`, "assertive");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!overview) return null;
+  const { config, status: sync } = overview;
+  const enabled = config.enabled;
+  const freshness = sync.lastSuccessAt
+    ? `Last snapshot ${relativeTime(sync.lastSuccessAt)}${typeof sync.retainedCount === "number" ? ` · ${sync.retainedCount} kept` : ""}`
+    : "No snapshots yet.";
+
+  return (
+    <>
+      <SettingsRow
+        label="Scheduled sync"
+        description="Push an encrypted snapshot to a folder you own once a day and when Cave quits."
+      >
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Scheduled sync"
+          disabled={busy}
+          onClick={() => update({ enabled: !enabled }, enabled ? "Scheduled sync off." : "Scheduled sync on.")}
+          className={`settings-switch focus-ring${enabled ? " is-on" : ""}`}
+        >
+          <span className="settings-switch__knob" aria-hidden />
+        </button>
+      </SettingsRow>
+      {enabled ? (
+        <>
+          <SettingsRow
+            label="Destination"
+            description="Folder that receives snapshots. Leave empty to use iCloud Drive when available."
+          >
+            <input
+              value={directoryDraft ?? config.directory ?? ""}
+              onChange={(e) => setDirectoryDraft(e.target.value)}
+              onBlur={() => {
+                if (directoryDraft === null) return;
+                const next = directoryDraft.trim();
+                setDirectoryDraft(null);
+                if (next === (config.directory ?? "")) return;
+                void update({ directory: next || null }, "Backup destination saved.");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              placeholder={overview.defaultDirectory}
+              aria-label="Backup destination folder"
+              className="focus-ring w-full max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)] outline-none"
+            />
+          </SettingsRow>
+          <SettingsRow
+            label="Sync passphrase"
+            description="Saved in the local encrypted vault so scheduled snapshots can encrypt unattended. Restore always asks for it."
+          >
+            <div className="flex w-full max-w-md flex-wrap items-center gap-2">
+              <input
+                type="password"
+                value={passphraseDraft}
+                onChange={(e) => setPassphraseDraft(e.target.value)}
+                placeholder={overview.passphraseSet ? "Passphrase saved" : "Sync passphrase"}
+                aria-label="Sync passphrase"
+                className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] outline-none"
+              />
+              <Button
+                size="sm"
+                disabled={busy || passphraseDraft.length < 8}
+                onClick={() => {
+                  void update({ passphrase: passphraseDraft }, "Sync passphrase saved.").then(() => setPassphraseDraft(""));
+                }}
+              >
+                Save passphrase
+              </Button>
+              {overview.passphraseSet ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => update({ clearPassphrase: true }, "Sync passphrase cleared.")}
+                >
+                  Clear
+                </Button>
+              ) : null}
+            </div>
+          </SettingsRow>
+          <SettingsRow label="Keep snapshots" description="How many snapshots to retain in the destination before pruning the oldest.">
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={retainDraft ?? String(config.retainCount)}
+              onChange={(e) => setRetainDraft(e.target.value)}
+              onBlur={() => {
+                if (retainDraft === null) return;
+                const next = Number(retainDraft);
+                setRetainDraft(null);
+                if (!Number.isFinite(next) || next === config.retainCount) return;
+                void update({ retainCount: next }, "Snapshot retention saved.");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              aria-label="Snapshots to keep"
+              className="focus-ring w-20 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] outline-none"
+            />
+          </SettingsRow>
+          <SettingsRow label="Freshness" description={freshness}>
+            <div className="flex w-full max-w-md flex-col gap-2">
+              <Button size="sm" onClick={runNow} disabled={busy || !overview.passphraseSet} leadingIcon="ph:arrow-clockwise">
+                {busy ? "Backing up…" : "Back up now"}
+              </Button>
+              {!overview.passphraseSet ? (
+                <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Save a sync passphrase to start scheduled snapshots.</p>
+              ) : null}
+              {sync.lastError ? (
+                <p className="text-[length:var(--text-xs)] leading-5 text-[var(--danger-text)]">{sync.lastError}</p>
+              ) : null}
+              {message ? <p className="text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">{message}</p> : null}
+            </div>
+          </SettingsRow>
+        </>
+      ) : null}
+    </>
   );
 }
 
