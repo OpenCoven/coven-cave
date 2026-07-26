@@ -140,6 +140,7 @@ export function validateRuntimeCompatibilityProfile(
   if (maxExclusive && compareVersion(p.version.min, p.version.maxExclusive!)! >= 0) return false;
   if (
     !Array.isArray(p.requires) ||
+    !p.requires.includes("stream-json") ||
     new Set(p.requires).size !== p.requires.length ||
     p.requires.some((cap) => !["stream-json", "tool-envelopes", "tool-hooks"].includes(cap))
   ) return false;

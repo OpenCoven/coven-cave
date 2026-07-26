@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import {
   CLAUDE_COMPATIBILITY_PROFILES,
   redactedEventFingerprint,
@@ -38,6 +39,11 @@ assert.deepEqual(
   { kind: "fallback", reason: "probe-failed" },
 );
 assert.equal(validateRuntimeCompatibilityProfile({ ...CLAUDE_COMPATIBILITY_PROFILES[1], version: null }, NOW), false);
+assert.match(
+  await readFile(new URL("./runtime-compatibility.ts", import.meta.url), "utf8"),
+  /!p\.requires\.includes\("stream-json"\)/,
+  "a Claude stream profile must require the documented stream-json capability before it can enable tool decoding",
+);
 assert.deepEqual(
   resolveRuntimeCompatibility({ ...current, version: "2.1.179.1" }, CLAUDE_COMPATIBILITY_PROFILES, NOW),
   { kind: "fallback", reason: "unsupported-version" },
