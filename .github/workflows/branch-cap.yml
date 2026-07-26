@@ -1,0 +1,34 @@
+# GitHub.com has no native numeric branch-count rule. This workflow rolls back
+# only the newly created topic branch when the repository exceeds 40 branches.
+# Automatic head-branch deletion after merge is enabled separately in the
+# repository settings so normal PR completion continuously frees capacity.
+
+name: Enforce repository branch cap
+
+on:
+  create:
+
+permissions:
+  contents: write
+
+jobs:
+  enforce:
+    if: github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check out trusted enforcement code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Enforce 40-branch cap
+        env:
+          CREATED_BRANCH: ${{ github.event.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+          MAX_BRANCHES: "40"
+        run: node scripts/enforce-branch-cap.mjs

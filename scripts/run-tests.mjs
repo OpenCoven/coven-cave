@@ -102,6 +102,8 @@ export const SUITES = {
     "scripts/codemods/tokenize-tsx-design.test.mjs",
     "scripts/eslint/design-system-plugin.test.mjs",
     "scripts/bundle-budget.test.mjs",
+    "scripts/enforce-branch-cap.test.mjs",
+    "scripts/branch-cap-workflow.test.mjs",
     "scripts/check-opencode-registry-release.test.mjs",
     "src/components/open-coven-tools-update.test.ts",
     "src/lib/opencoven-tools-state.test.ts",
