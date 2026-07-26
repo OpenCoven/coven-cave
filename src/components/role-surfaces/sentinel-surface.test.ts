@@ -150,6 +150,44 @@ test("surface exposes errors and selection state accessibly", () => {
   assert.match(surface, /aria-pressed=\{state\.severity === severity\}/);
 });
 
+test("surface keeps alert and host failures retryable and distinct from empty data", () => {
+  assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /const \[alertsError, setAlertsError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /const loadAlerts = useCallback\(async \(\) =>/);
+  assert.doesNotMatch(surface, /setAlerts\(\(prev\) => prev \?\? \[\]\)/);
+  assert.match(
+    surface,
+    /alertsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadAlerts\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(surface, /filtered\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+
+  assert.match(surface, /const \[hostsError, setHostsError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /const loadHosts = useCallback\(async \(\) =>/);
+  assert.doesNotMatch(
+    surface,
+    /catch\s*\{[\s\S]*?setHosts\(\[\]\)[\s\S]*?\}/,
+    "a host failure must not masquerade as no registered hosts",
+  );
+  assert.match(
+    surface,
+    /hostsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadHosts\}[\s\S]*?\)\s*:\s*hosts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(surface, /hosts\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+});
+
+test("surface announces successful triage and assertively announces failures", () => {
+  assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
+  assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
+  assert.match(surface, /announce\(`Resolved "\$\{title\}"\.`\)/);
+  assert.match(surface, /announce\(`Moved "\$\{title\}" to \$\{STATE_LABELS\[nextState\]\}\.`\)/);
+  assert.equal(
+    surface.match(/announce\(message, "assertive"\)/g)?.length,
+    4,
+    "alert loads, host loads, triage writes, and alert RPCs announce their visible failures",
+  );
+});
+
 test("registration names the Watchtower with its own accent and drawer chrome", () => {
   assert.match(register, /id: SENTINEL_SURFACE_ID/);
   assert.match(register, /role: "sentinel"/);

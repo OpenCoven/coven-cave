@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
@@ -29,7 +30,15 @@ import {
   type AlertScope,
   type AlertSeverityFilter,
 } from "./sentinel-watch";
-import { RailSection, SurfaceCanvas, SurfaceEmpty, SurfaceRail, SurfaceRoom } from "./surface-room";
+import {
+  RailSection,
+  SurfaceCanvas,
+  SurfaceEmpty,
+  SurfaceError,
+  SurfaceLoading,
+  SurfaceRail,
+  SurfaceRoom,
+} from "./surface-room";
 import { SENTINEL_SURFACE_ID } from "./ids";
 
 export type SentinelState = {
@@ -75,6 +84,7 @@ const STATE_LABELS: Record<Escalation["state"], string> = {
 export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
   const familiarId = context.activeFamiliar.id;
   const [state, patch] = useRoleSurfaceState<SentinelState>(familiarId, SENTINEL_SURFACE_ID, SENTINEL_INITIAL_STATE);
+  const { announce } = useAnnouncer();
 
   // ── Alerts: the Cave's real escalations ────────────────────────────────────
   const [alerts, setAlerts] = useState<Escalation[] | null>(null);
@@ -89,31 +99,34 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
       const summary = summarizeAlerts(json.items);
       patch({ lastSummary: { open: summary.open, critical: summary.critical } });
     } catch {
-      setAlertsError("Couldn't load escalations.");
-      setAlerts((prev) => prev ?? []);
+      const message = "Couldn't load escalations.";
+      setAlertsError(message);
+      announce(message, "assertive");
     }
-  }, [patch]);
+  }, [announce, patch]);
   useEffect(() => {
     void loadAlerts();
   }, [loadAlerts]);
 
   // ── Perimeter: registered hosts with live reachability probes ─────────────
   const [hosts, setHosts] = useState<HostWire[] | null>(null);
+  const [hostsError, setHostsError] = useState<string | null>(null);
+  const loadHosts = useCallback(async () => {
+    setHostsError(null);
+    try {
+      const res = await fetch("/api/hosts", { cache: "no-store" });
+      const json = res.ok ? ((await res.json()) as { ok?: boolean; hosts?: HostWire[] }) : null;
+      if (!Array.isArray(json?.hosts)) throw new Error("bad response");
+      setHosts(json.hosts);
+    } catch {
+      const message = "Couldn't probe registered hosts.";
+      setHostsError(message);
+      announce(message, "assertive");
+    }
+  }, [announce]);
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/hosts", { cache: "no-store" });
-        const json = res.ok ? ((await res.json()) as { ok?: boolean; hosts?: HostWire[] }) : null;
-        if (!cancelled) setHosts(json?.hosts ?? []);
-      } catch {
-        if (!cancelled) setHosts([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void loadHosts();
+  }, [loadHosts]);
 
   const summary = useMemo(() => summarizeAlerts(alerts ?? []), [alerts]);
   const filtered = useMemo(
@@ -139,6 +152,8 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const act = useCallback(
     async (id: string, body: Record<string, string>, actionKey: string) => {
+      const title = (alerts ?? []).find((alert) => alert.id === id)?.title ?? "Alert";
+      const nextState = body.state as Escalation["state"] | undefined;
       setBusyAction(actionKey);
       setActionError(null);
       try {
@@ -149,13 +164,20 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
         await loadAlerts();
+        if (nextState === "resolved") {
+          announce(`Resolved "${title}".`);
+        } else if (nextState) {
+          announce(`Moved "${title}" to ${STATE_LABELS[nextState]}.`);
+        }
       } catch {
-        setActionError("Action failed — the escalation store didn't accept the change.");
+        const message = "Action failed — the escalation store didn't accept the change.";
+        setActionError(message);
+        announce(message, "assertive");
       } finally {
         setBusyAction(null);
       }
     },
-    [loadAlerts],
+    [alerts, announce, loadAlerts],
   );
 
   const runAlertAction = useCallback(
@@ -170,13 +192,16 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
         const res = await fetch(action.target, { method: "POST" });
         if (!res.ok) throw new Error(`status ${res.status}`);
         await loadAlerts();
+        announce(`Ran "${action.label}".`);
       } catch {
-        setActionError(`"${action.label}" failed.`);
+        const message = `"${action.label}" failed.`;
+        setActionError(message);
+        announce(message, "assertive");
       } finally {
         setBusyAction(null);
       }
     },
-    [context, loadAlerts],
+    [announce, context, loadAlerts],
   );
 
   const closed = selected != null && (selected.state === "resolved" || selected.state === "dismissed");
@@ -280,8 +305,14 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
           </ul>
         </RailSection>
         <RailSection title="Perimeter" iconName="ph:globe">
-          {hosts == null ? (
-            <SurfaceEmpty title="Probing perimeter…" hint="Checking each registered host over ssh." />
+          {hostsError ? (
+            <SurfaceError
+              title={hostsError}
+              hint="Check the host configuration, then retry."
+              onRetry={loadHosts}
+            />
+          ) : hosts == null ? (
+            <SurfaceLoading label="Probing registered hosts…" />
           ) : hosts.length === 0 ? (
             <SurfaceEmpty title="No hosts registered." hint="Register remote hosts from the chat host picker." />
           ) : (
@@ -324,15 +355,13 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
             </button>
           </div>
           {alertsError ? (
-            <div role="alert" className="role-surface-hint">
-              {alertsError}{" "}
-              <button type="button" className="role-surface-chip focus-ring" onClick={() => void loadAlerts()}>
-                Try again
-              </button>
-            </div>
-          ) : null}
-          {alerts == null ? (
-            <SurfaceEmpty title="Sweeping escalations…" />
+            <SurfaceError
+              title={alertsError}
+              hint="Check the Cave connection, then retry the sweep."
+              onRetry={loadAlerts}
+            />
+          ) : alerts == null ? (
+            <SurfaceLoading label="Sweeping escalations…" />
           ) : filtered.length === 0 ? (
             <SurfaceEmpty
               iconName="ph:binoculars"

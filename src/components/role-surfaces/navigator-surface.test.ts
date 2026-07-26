@@ -106,6 +106,33 @@ test("the room exposes errors and selection accessibly", () => {
   assert.match(surface, /aria-label="Move card to lane"/);
 });
 
+test("board failures stay retryable and distinct from loading and empty data", () => {
+  assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /const \[cards, setCards\] = useState<Card\[\] \| null>\(null\)/);
+  assert.match(surface, /const \[boardError, setBoardError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /const loadBoard = useCallback\(async \(\) =>/);
+  assert.doesNotMatch(surface, /setCards\(\(prev\) => prev \?\? \[\]\)/);
+  assert.match(
+    surface,
+    /boardError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadBoard\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(surface, /visible\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+});
+
+test("board mutations announce success and assertively announce visible failures", () => {
+  assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
+  assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
+  assert.match(surface, /announce\(`Charted "\$\{title\}" in \$\{LANE_LABELS\.backlog\}\.`\)/);
+  assert.match(surface, /announce\(`Moved "\$\{title\}" to \$\{LANE_LABELS\[status\]\}\.`\)/);
+  assert.match(surface, /const \[chartError, setChartError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /setChartError\(message\)[\s\S]*?announce\(message, "assertive"\)/);
+  assert.match(surface, /const \[moveError, setMoveError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /setMoveError\(message\)[\s\S]*?announce\(message, "assertive"\)/);
+  assert.match(surface, /\{chartError \? \([\s\S]*?role="alert"[\s\S]*?\{chartError\}/);
+  assert.match(surface, /\{moveError \? \([\s\S]*?role="alert"[\s\S]*?\{moveError\}/);
+});
+
 test("registration names the Chart Room with its own accent and drawer chrome", () => {
   assert.match(register, /id: NAVIGATOR_SURFACE_ID/);
   assert.match(register, /role: "navigator"/);

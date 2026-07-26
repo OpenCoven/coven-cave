@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
@@ -28,7 +29,15 @@ import {
   scopeCards,
   upcomingLegs,
 } from "./navigator-charts";
-import { RailSection, SurfaceCanvas, SurfaceEmpty, SurfaceRail, SurfaceRoom } from "./surface-room";
+import {
+  RailSection,
+  SurfaceCanvas,
+  SurfaceEmpty,
+  SurfaceError,
+  SurfaceLoading,
+  SurfaceRail,
+  SurfaceRoom,
+} from "./surface-room";
 import { NAVIGATOR_SURFACE_ID } from "./ids";
 
 export type NavigatorState = {
@@ -62,6 +71,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     NAVIGATOR_SURFACE_ID,
     NAVIGATOR_INITIAL_STATE,
   );
+  const { announce } = useAnnouncer();
 
   // ── The real board ─────────────────────────────────────────────────────────
   const [cards, setCards] = useState<Card[] | null>(null);
@@ -83,7 +93,6 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       });
     } catch {
       setBoardError("Couldn't load the board.");
-      setCards((prev) => prev ?? []);
     }
   }, [familiarId, patch]);
   useEffect(() => {
@@ -114,13 +123,13 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
   // ── Real writes: chart a task, move a card ─────────────────────────────────
   const [draftTitle, setDraftTitle] = useState("");
   const [charting, setCharting] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [chartError, setChartError] = useState<string | null>(null);
 
   const chartTask = async () => {
     const title = draftTitle.trim();
     if (!title || charting) return;
     setCharting(true);
-    setActionError(null);
+    setChartError(null);
     try {
       const res = await fetch("/api/board", {
         method: "POST",
@@ -131,18 +140,23 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       publishBoardChanged();
       setDraftTitle("");
       await loadBoard();
+      announce(`Charted "${title}" in ${LANE_LABELS.backlog}.`);
     } catch {
-      setActionError("Couldn't chart the task — the board didn't accept it.");
+      const message = "Couldn't chart the task — the board didn't accept it.";
+      setChartError(message);
+      announce(message, "assertive");
     } finally {
       setCharting(false);
     }
   };
 
   const [moving, setMoving] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const moveSelected = async (status: CardStatus) => {
     if (!selected || moving) return;
+    const title = selected.title;
     setMoving(true);
-    setActionError(null);
+    setMoveError(null);
     try {
       const res = await fetch(`/api/board/${encodeURIComponent(selected.id)}`, {
         method: "PATCH",
@@ -152,8 +166,11 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       if (!res.ok) throw new Error(`status ${res.status}`);
       publishBoardChanged();
       await loadBoard();
+      announce(`Moved "${title}" to ${LANE_LABELS[status]}.`);
     } catch {
-      setActionError("Move failed — the board didn't accept the change.");
+      const message = "Move failed — the board didn't accept the change.";
+      setMoveError(message);
+      announce(message, "assertive");
     } finally {
       setMoving(false);
     }
@@ -223,6 +240,11 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
               <Icon name="ph:plus" width={11} height={11} aria-hidden /> {charting ? "Charting…" : "Chart"}
             </button>
           </form>
+          {chartError ? (
+            <p role="alert" className="role-surface-hint">
+              {chartError}
+            </p>
+          ) : null}
           <p className="role-surface-hint">Charts a real board card in Backlog, assigned to this familiar.</p>
         </RailSection>
         <RailSection title="Course lanes" iconName="ph:kanban">
@@ -252,8 +274,10 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
           </ul>
         </RailSection>
         <RailSection title="Upcoming legs" iconName="ph:calendar-blank">
-          {cards == null ? (
-            <SurfaceEmpty title="Loading charts…" />
+          {boardError ? (
+            <SurfaceError title={boardError} hint="Check the Cave connection, then retry." onRetry={loadBoard} />
+          ) : cards == null ? (
+            <SurfaceLoading label="Loading charts…" />
           ) : legs.length === 0 ? (
             <SurfaceEmpty title="No dated legs." hint="Cards with start or end dates chart the voyage here." />
           ) : (
@@ -280,15 +304,13 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       <SurfaceCanvas label="Charted cards">
         <div className="role-surface-canvas-stack">
           {boardError ? (
-            <div role="alert" className="role-surface-hint">
-              {boardError}{" "}
-              <button type="button" className="role-surface-chip focus-ring" onClick={() => void loadBoard()}>
-                Try again
-              </button>
-            </div>
-          ) : null}
-          {cards == null ? (
-            <SurfaceEmpty title="Loading the board…" />
+            <SurfaceError
+              title={boardError}
+              hint="Check the Cave connection, then retry."
+              onRetry={loadBoard}
+            />
+          ) : cards == null ? (
+            <SurfaceLoading label="Loading the board…" />
           ) : visible.length === 0 ? (
             <SurfaceEmpty
               iconName="ph:compass"
@@ -391,9 +413,9 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
               </RailSection>
             )}
             <RailSection title="Move to" iconName="ph:kanban">
-              {actionError ? (
+              {moveError ? (
                 <p role="alert" className="role-surface-hint">
-                  {actionError}
+                  {moveError}
                 </p>
               ) : null}
               <div className="role-surface-btn-row" role="group" aria-label="Move card to lane">

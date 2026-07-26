@@ -14,11 +14,19 @@
  * and the delivery panel says so honestly.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
-import { RailSection, SurfaceCanvas, SurfaceEmpty, SurfaceRail, SurfaceRoom } from "./surface-room";
+import {
+  RailSection,
+  SurfaceCanvas,
+  SurfaceEmpty,
+  SurfaceError,
+  SurfaceLoading,
+  SurfaceRail,
+  SurfaceRoom,
+} from "./surface-room";
 import { MESSENGER_SURFACE_ID } from "./ids";
 
 export type MessageChannel = "email" | "discord" | "slack" | "sms" | "teams" | "social";
@@ -82,23 +90,22 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
 
   // Real inbound items from the Cave inbox, scoped to this familiar.
   const [inbox, setInbox] = useState<InboxItemWire[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/inbox", { cache: "no-store" });
-        const json = res.ok ? ((await res.json()) as { items?: InboxItemWire[] }) : null;
-        if (!cancelled) {
-          setInbox((json?.items ?? []).filter((item) => !item.familiarId || item.familiarId === familiarId));
-        }
-      } catch {
-        if (!cancelled) setInbox([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const [inboxError, setInboxError] = useState<string | null>(null);
+  const loadInbox = useCallback(async () => {
+    setInboxError(null);
+    try {
+      const res = await fetch("/api/inbox", { cache: "no-store" });
+      const json = res.ok ? ((await res.json()) as { items?: InboxItemWire[] }) : null;
+      if (!Array.isArray(json?.items)) throw new Error("bad response");
+      setInbox(json.items.filter((item) => !item.familiarId || item.familiarId === familiarId));
+    } catch {
+      setInboxError("Couldn't load the inbox.");
+    }
   }, [familiarId]);
+  useEffect(() => {
+    setInbox(null);
+    void loadInbox();
+  }, [loadInbox]);
 
   const selected = state.drafts.find((d) => d.id === state.selectedDraftId) ?? null;
 
@@ -212,8 +219,14 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
           )}
         </RailSection>
         <RailSection title="Inbox" iconName="ph:tray">
-          {inbox == null ? (
-            <SurfaceEmpty title="Loading inbox…" />
+          {inboxError ? (
+            <SurfaceError
+              title={inboxError}
+              hint="Check the Cave connection, then retry."
+              onRetry={loadInbox}
+            />
+          ) : inbox == null ? (
+            <SurfaceLoading label="Loading inbox…" />
           ) : inbox.length === 0 ? (
             <SurfaceEmpty title="Inbox is clear." />
           ) : (

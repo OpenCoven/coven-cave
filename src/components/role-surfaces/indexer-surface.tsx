@@ -14,11 +14,20 @@
  * have no backing services yet — those panels say so instead of pretending.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { SearchInput } from "@/components/ui/search-input";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
-import { RailSection, SurfaceCanvas, SurfaceEmpty, SurfaceRail, SurfaceRoom } from "./surface-room";
+import {
+  RailSection,
+  SurfaceCanvas,
+  SurfaceEmpty,
+  SurfaceError,
+  SurfaceLoading,
+  SurfaceRail,
+  SurfaceRoom,
+} from "./surface-room";
 import { INDEXER_SURFACE_ID } from "./ids";
 
 export type IndexerState = {
@@ -59,15 +68,19 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
   const [state, patch] = useRoleSurfaceState<IndexerState>(familiarId, INDEXER_SURFACE_ID, INDEXER_INITIAL_STATE);
 
   const [entries, setEntries] = useState<SurfaceMemoryEntry[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    context.memory.listEntries().then((loaded) => {
-      if (!cancelled) setEntries(loaded);
-    });
-    return () => {
-      cancelled = true;
-    };
+  const [entriesError, setEntriesError] = useState<string | null>(null);
+  const loadEntries = useCallback(async () => {
+    setEntriesError(null);
+    try {
+      setEntries(await context.memory.listEntries());
+    } catch {
+      setEntriesError("Couldn't load memory inventory.");
+    }
   }, [context.memory]);
+  useEffect(() => {
+    setEntries(null);
+    void loadEntries();
+  }, [loadEntries]);
 
   const collections = useMemo(() => groupMemoryCollections(entries ?? []), [entries]);
 
@@ -87,17 +100,22 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
 
   // Selected memory content, read through the shared adapter (redacted).
   const [content, setContent] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
+  const [contentError, setContentError] = useState<string | null>(null);
+  const loadContent = useCallback(async () => {
+    setContentError(null);
     setContent(null);
     if (!selected) return;
-    context.memory.readFile(selected.fullPath).then((file) => {
-      if (!cancelled) setContent(file?.content ?? null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [selected, context.memory]);
+    try {
+      const file = await context.memory.readFile(selected.fullPath);
+      if (!file) throw new Error("missing file");
+      setContent(file.content);
+    } catch {
+      setContentError(`Couldn't read ${selected.relPath}.`);
+    }
+  }, [context.memory, selected]);
+  useEffect(() => {
+    void loadContent();
+  }, [loadContent]);
 
   const [tagDraft, setTagDraft] = useState("");
   const selectedTags = selected ? (state.tags[selected.fullPath] ?? []) : [];
@@ -164,8 +182,10 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
     >
       <SurfaceRail side="left" label="Collections">
         <RailSection title="Knowledge collections" iconName="ph:folder">
-          {entries == null ? (
-            <SurfaceEmpty title="Loading inventory…" />
+          {entriesError ? (
+            <SurfaceError title={entriesError} hint="Check the memory source, then retry." onRetry={loadEntries} />
+          ) : entries == null ? (
+            <SurfaceLoading label="Loading memory inventory…" />
           ) : collections.length === 0 ? (
             <SurfaceEmpty title="No memory on file for this familiar." />
           ) : (
@@ -203,10 +223,11 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
       <SurfaceCanvas label="Clustering workspace">
         <div className="role-surface-canvas-stack">
           <div className="role-surface-inline-form">
-            <input
+            <SearchInput
               value={state.filter}
-              onChange={(e) => patch({ filter: e.target.value })}
+              onValueChange={(next) => patch({ filter: next })}
               placeholder="Filter memories…"
+              onClear={() => patch({ filter: "" })}
               aria-label="Filter memories"
             />
           </div>
@@ -221,8 +242,10 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
               ))}
             </div>
           )}
-          {entries == null ? (
-            <SurfaceEmpty title="Loading inventory…" />
+          {entriesError ? (
+            <SurfaceError title={entriesError} hint="Check the memory source, then retry." onRetry={loadEntries} />
+          ) : entries == null ? (
+            <SurfaceLoading label="Loading memory inventory…" />
           ) : filtered.length === 0 ? (
             <SurfaceEmpty
               iconName="ph:tree-structure"
@@ -325,8 +348,14 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
               )}
             </RailSection>
             <RailSection title="Content" iconName="ph:files">
-              {content == null ? (
-                <SurfaceEmpty title="Loading…" hint="Content is shown redacted." />
+              {contentError ? (
+                <SurfaceError
+                  title={contentError}
+                  hint="Check the memory source, then retry."
+                  onRetry={loadContent}
+                />
+              ) : content == null ? (
+                <SurfaceLoading label="Loading memory content…" />
               ) : (
                 <pre className="role-surface-content">{content.slice(0, 4000)}</pre>
               )}
