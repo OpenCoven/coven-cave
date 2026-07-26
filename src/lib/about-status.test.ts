@@ -14,6 +14,33 @@ assert.deepEqual(
   "a healthy daemon reports its running version",
 );
 
+for (const hostileVersion of [
+  "/Users/val/.coven/token",
+  "ghp_deadbeef",
+  "daemon 0.0.54",
+  "0.0.54/../../secret",
+]) {
+  assert.deepEqual(
+    classifyAboutDaemonStatus({
+      responseOk: true,
+      checkedAt,
+      payload: { running: true, covenVersion: hostileVersion },
+    }),
+    { kind: "running", version: null, checkedAt },
+    `About discards an unsafe daemon version: ${hostileVersion}`,
+  );
+}
+
+assert.deepEqual(
+  classifyAboutDaemonStatus({
+    responseOk: true,
+    checkedAt,
+    payload: { running: true, covenVersion: "v0.0.54-beta.1" },
+  }),
+  { kind: "running", version: "0.0.54-beta.1", checkedAt },
+  "About normalizes a v-prefixed exact semver",
+);
+
 assert.equal(
   classifyAboutDaemonStatus({
     responseOk: true,

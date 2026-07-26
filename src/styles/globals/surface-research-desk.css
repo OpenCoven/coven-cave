@@ -482,121 +482,23 @@
 .research-desk-rail {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
   gap: 14px;
   padding: var(--space-4) 14px 22px;
   border-left: 1px solid var(--border);
 }
-.research-desk-rail__panel { display: flex; flex-direction: column; gap: 8px; }
-.research-desk-rail__title {
-  margin: 0;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
 .research-desk-rail__hint { margin: 0; font-size: var(--text-2xs); color: var(--text-muted); }
 
-.research-desk-delta {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.research-desk-delta__card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
-}
-.research-desk-delta__card--conflicting {
-  border-color: color-mix(in oklch, oklch(0.8 0.13 75) 40%, transparent);
-}
-.research-desk-delta__card strong { font-size: var(--text-xs); font-weight: 500; line-height: 1.3; color: var(--text-primary); }
-.research-desk-delta__card p { margin: 0; font-size: var(--text-2xs); line-height: 1.45; color: var(--text-muted); overflow-wrap: anywhere; }
-.research-desk-delta__title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-.research-desk-delta__title svg { flex: none; color: var(--research-accent); }
-.research-desk-delta__title:hover strong { color: var(--research-accent); }
-.research-desk-delta__title:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: 2px;
-}
+/* Triage buttons on a source card awaiting a verdict. */
 .research-desk-delta__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
 
-.research-desk-stream {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
+/* Live runs mark the newest source in the ledger pane. */
+.research-source-card.is-latest {
+  border-color: color-mix(in oklch, var(--research-accent) 45%, transparent);
+  background: var(--research-accent-soft);
 }
-.research-desk-stream li { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.research-desk-stream li span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.research-desk-stream i {
-  flex: none;
-  width: 5px;
-  height: 5px;
-  border-radius: var(--radius-pill);
-  background: oklch(0.72 0.14 155);
-}
-.research-desk-stream li.is-latest i {
-  background: var(--research-accent);
-  box-shadow: 0 0 0 3px var(--research-accent-soft);
-}
-.research-desk-stream li.is-latest span { color: var(--text-primary); }
 
-.research-desk-artifacts {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.research-desk-artifact {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
-}
-.research-desk-artifact__kicker {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-2xs);
-  text-transform: uppercase;
-  color: var(--research-accent);
-}
-.research-desk-artifact strong { font-size: var(--text-xs); font-weight: 500; line-height: 1.3; color: var(--text-primary); }
-.research-desk-artifact__meta { font-size: var(--text-2xs); color: var(--text-muted); }
-.research-desk-artifact__meta time { text-transform: none; }
 .research-desk-artifact__open {
   display: inline-flex;
   align-items: center;
@@ -617,6 +519,7 @@
 /* Quick links: bordered rows with accent-on-hover (design 238–253). */
 .research-desk-rail__links {
   display: flex;
+  flex: none;
   flex-direction: column;
   gap: 6px;
   padding-top: 14px;
@@ -643,35 +546,20 @@
 }
 .research-desk-rail__link-chevron { margin-left: auto; color: var(--text-muted); }
 
-/* Full evidence ledger folded into a disclosure — always reachable. */
-.research-desk-rail__ledger {
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-}
-.research-desk-rail__ledger > summary {
+/* ── Rail toggle + pane: one Artifacts|Sources switch over a pane that takes
+   the rail's remaining height, so the open list scrolls on its own instead of
+   pushing the quick links out of reach. ── */
+.research-desk-rail__toggle { flex: none; }
+.research-desk-rail__pane {
   display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  width: fit-content;
-  cursor: pointer;
-  list-style: none;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
-.research-desk-rail__ledger > summary::-webkit-details-marker { display: none; }
-.research-desk-rail__ledger > summary:hover { color: var(--text-secondary); }
-.research-desk-rail__ledger > summary span {
-  font-family: inherit;
-  font-weight: 400;
-  letter-spacing: normal;
-  text-transform: none;
-  font-size: var(--text-2xs);
-}
-.research-desk-rail__ledger[open] > summary { margin-bottom: 10px; }
+.research-desk-rail__pane > .research-output-shelf { flex: 1; min-height: 0; }
+.research-desk-rail__pane .research-output-shelf > section[hidden] { display: none; }
 
 /* ── Responsive: follow the desk's existing container breakpoints. The
    base overrides above out-specify the workspaces-sheet collapses, so the

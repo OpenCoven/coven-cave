@@ -35,6 +35,8 @@ export type CovenGroup = {
   familiarIds: string[];
   /** Per-familiar resumed session ids so each thread survives reloads. */
   sessions: Record<string, string>;
+  /** Registered project every participant can access. Required before launch. */
+  projectId?: string;
   /** How a multi-recipient human turn is dispatched. */
   responseMode: CovenResponseMode;
   /** Familiar that should lead the next multi-recipient round-robin turn. */
@@ -100,6 +102,7 @@ export type GroupStreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
+  | { kind: "assistant_replace"; text: string }
   | { kind: "progress"; label?: string; status?: "running" | "done" | "error" }
   | { kind: "tool_use"; name?: string; status?: "running" | "ok" | "error" }
   | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string; costUsd?: number }
@@ -116,6 +119,8 @@ export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupR
       return { ...reply, sessionId: ev.sessionId };
     case "assistant_chunk":
       return { ...reply, status: "streaming", activity: undefined, text: reply.text + ev.text };
+    case "assistant_replace":
+      return { ...reply, status: "streaming", activity: undefined, text: ev.text };
     case "progress":
       return {
         ...reply,
@@ -261,6 +266,39 @@ export function extractCovenDelegations(text: string): ExtractedCovenDelegations
     visible = visible.slice(0, partial);
   }
   return { visible: visible.trimEnd(), delegations };
+}
+
+function normalizeDelegationTaskText(text: string): string {
+  return text.trim().replace(/\s+/g, " ");
+}
+
+function delegationInstructionSegments(text: string): string[] {
+  const ignored = delegationIgnoredRanges(text).sort(([startA], [startB]) => startA - startB);
+  const segments: string[] = [];
+  let cursor = 0;
+  for (const [start, end] of ignored) {
+    if (end <= cursor) continue;
+    if (start > cursor) segments.push(text.slice(cursor, start));
+    cursor = end;
+  }
+  if (cursor < text.length) segments.push(text.slice(cursor));
+  return segments;
+}
+
+/**
+ * Delegation controls are model output, so the hidden routed task must be a
+ * verbatim visible task, modulo whitespace. This keeps the visible @mention as
+ * the operator-auditable source of truth and prevents a hidden trailer from
+ * smuggling a different instruction.
+ */
+export function isCovenDelegationTaskVisible(visible: string, delegation: CovenDelegation): boolean {
+  const task = normalizeDelegationTaskText(delegation.task);
+  return (
+    task.length > 0 &&
+    delegationInstructionSegments(visible).some((segment) =>
+      normalizeDelegationTaskText(segment).includes(task),
+    )
+  );
 }
 
 /** True for a char that may not abut the end of a matched `@name` (a word char,
@@ -420,6 +458,26 @@ export function setGroupSession(
   if (sessionId) sessions[familiarId] = sessionId;
   else delete sessions[familiarId];
   return { ...group, sessions, updatedAt: now };
+}
+
+/**
+ * Change the group's project context. Existing harness session ids are
+ * cwd-scoped, so a project change must start fresh participant sessions rather
+ * than resuming those tokens in a different root.
+ */
+export function setGroupProject(
+  group: CovenGroup,
+  projectId: string | null,
+  now: string,
+): CovenGroup {
+  const nextProjectId = projectId?.trim() || undefined;
+  if (nextProjectId === group.projectId) return group;
+  return {
+    ...group,
+    projectId: nextProjectId,
+    sessions: {},
+    updatedAt: now,
+  };
 }
 
 /** Update a group's participant roster, dropping orphaned session pins. */
@@ -827,5 +885,9 @@ function normalizeCovenGroup(group: CovenGroup): CovenGroup {
     // the details drawer.
     subject: typeof group.subject === "string" ? group.subject : undefined,
     summary: typeof group.summary === "string" ? group.summary : undefined,
+    projectId:
+      typeof group.projectId === "string" && group.projectId.trim()
+        ? group.projectId.trim()
+        : undefined,
   };
 }

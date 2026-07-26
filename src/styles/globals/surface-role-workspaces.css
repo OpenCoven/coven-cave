@@ -1029,7 +1029,6 @@
 .research-mission-decision p { color: var(--text-secondary); }
 
 .research-output-shelf { display: flex; flex-direction: column; gap: 10px; }
-.research-output-tabs { width: 100%; }
 .research-output-shelf > section { padding: 10px; }
 .research-output-shelf > section:focus-visible { outline: var(--ring-width) solid var(--ring-focus); outline-offset: 2px; }
 .research-output-shelf h3 { margin-bottom: 7px; }

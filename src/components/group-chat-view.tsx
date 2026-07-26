@@ -25,6 +25,7 @@ import {
 import { Icon } from "@/lib/icon";
 import { extractNextPaths } from "@/lib/next-paths";
 import { Button } from "@/components/ui/button";
+import { ProjectPicker } from "@/components/project-picker";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
@@ -53,9 +54,11 @@ import {
   upsertGroup,
   removeGroup,
   setGroupSession,
+  setGroupProject,
   setGroupParticipants,
   parseMentions,
   extractCovenDelegations,
+  isCovenDelegationTaskVisible,
   resolveGroupMessageTargets,
   mentionSuggestionAuthor,
   setGroupResponseMode,
@@ -83,6 +86,7 @@ import {
 } from "@/lib/group-chat";
 import { newId, nowIso } from "@/lib/group-chat-ids";
 import { groupChatTranscriptThreads } from "@/lib/group-chat-transcript";
+import { useGroupProjects } from "@/lib/use-group-projects";
 
 type Props = {
   familiars: ResolvedFamiliar[];
@@ -94,6 +98,8 @@ type Props = {
    *  debug modal latched — the coven tab itself has no DebugPane host. */
   onDebugSession?: (sessionId: string, familiarId: string) => void;
 };
+
+const EMPTY_FAMILIAR_IDS: readonly string[] = [];
 
 export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugSession }: Props) {
   const profileSnapshot = useUserProfile();
@@ -176,6 +182,28 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     () => groups.find((g) => g.id === activeId) ?? null,
     [groups, activeId],
   );
+  const {
+    projects: groupProjects,
+    loading: groupProjectsLoading,
+    error: groupProjectsError,
+    loadedSuccessfully: groupProjectsLoadedSuccessfully,
+  } = useGroupProjects(activeGroup?.familiarIds ?? EMPTY_FAMILIAR_IDS);
+  const selectedGroupProject =
+    groupProjects.find((project) => project.id === activeGroup?.projectId) ?? null;
+  const projectLaunchReady =
+    groupProjectsLoadedSuccessfully &&
+    !groupProjectsLoading &&
+    !groupProjectsError &&
+    Boolean(selectedGroupProject);
+  const projectLaunchMessage = groupProjectsLoading
+    ? "Checking shared project access…"
+    : groupProjectsError
+      ? "Shared projects are unavailable. Retry before sending."
+      : !groupProjectsLoadedSuccessfully
+        ? "Checking shared project access…"
+        : groupProjects.length === 0
+          ? "No project is accessible to every familiar in this coven."
+          : "Choose a project every familiar in this coven can access.";
   const activeGroupRef = useRef<CovenGroup | null>(activeGroup);
   activeGroupRef.current = activeGroup;
 
@@ -285,6 +313,34 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     setGroups(next);
     saveGroups(next);
   }, []);
+
+  const changeGroupProject = useCallback(
+    (projectId: string) => {
+      const group = activeGroupRef.current;
+      if (!group || busy) return;
+      const next = setGroupProject(group, projectId, nowIso());
+      if (next === group) return;
+      persistGroups(upsertGroup(groupsRef.current, next));
+      announce("Coven project changed. New participant sessions will start there.");
+    },
+    [announce, busy, persistGroups],
+  );
+
+  // A deleted project, revoked grant, or roster edit can invalidate the saved
+  // intersection. Once the fresh participant scopes settle, clear both the
+  // stale choice and its cwd-scoped session pins before another send.
+  useEffect(() => {
+    const group = activeGroupRef.current;
+    if (!groupProjectsLoadedSuccessfully || !group?.projectId || selectedGroupProject) return;
+    const next = setGroupProject(group, null, nowIso());
+    persistGroups(upsertGroup(groupsRef.current, next));
+    announce("Choose another project before sending to this coven.", "assertive");
+  }, [
+    announce,
+    groupProjectsLoadedSuccessfully,
+    persistGroups,
+    selectedGroupProject,
+  ]);
 
   const updateReply = useCallback(
     (replyId: string, fn: (r: GroupReply) => GroupReply) => {
@@ -453,7 +509,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
 
   // --- mode-aware group send ----------------------------------------------
   const streamOne = useCallback(
-    async (group: CovenGroup, reply: GroupReply, prompt: string, signal: AbortSignal): Promise<GroupReply> => {
+    async (
+      group: CovenGroup,
+      reply: GroupReply,
+      prompt: string,
+      projectRoot: string,
+      signal: AbortSignal,
+    ): Promise<GroupReply> => {
       // `settled` mirrors the live React state so callers can await the final
       // reply state without waiting for React to render. Apply every update to both.
       let settled = reply;
@@ -461,6 +523,15 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         settled = fn(settled);
         updateReply(reply.id, fn);
       };
+      if (!projectRoot) {
+        apply((current) =>
+          applyGroupEvent(current, {
+            kind: "error",
+            message: "Choose a shared project before sending.",
+          }),
+        );
+        return settled;
+      }
       try {
         const res = await fetch("/api/chat/send", {
           method: "POST",
@@ -469,6 +540,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
             familiarId: reply.familiarId,
             prompt,
             sessionId: reply.sessionId,
+            projectRoot,
           }),
           signal,
         });
@@ -514,6 +586,11 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       const group = activeGroupRef.current;
       const text = rawText.trim();
       if (!group || group.familiarIds.length === 0 || !text || busy || abortRef.current) return;
+      if (!projectLaunchReady || !selectedGroupProject) {
+        announce(projectLaunchMessage, "assertive");
+        return;
+      }
+      const projectRoot = selectedGroupProject.root;
       // Suggestion chips carry their author's id explicitly. Visible mentions in
       // generated suggestion text must not widen that authoritative destination.
       // Composer messages still target their @mentions or the full coven.
@@ -610,7 +687,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 userText: text,
                 targeted,
               });
-          return streamOne(group, reply, prompt, controller.signal);
+          return streamOne(group, reply, prompt, projectRoot, controller.signal);
         },
       });
       // A familiar can perform an explicit human-requested handoff by emitting
@@ -643,6 +720,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
               targetId === source.familiarId ||
               !group.familiarIds.includes(targetId) ||
               !visibleTargets.has(targetId) ||
+              !isCovenDelegationTaskVisible(visible, delegation) ||
               !parseMentions(delegation.task, mentionable).includes(targetId) ||
               lineage.has(targetId) ||
               delivered.has(dedupeKey)
@@ -683,6 +761,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 userText: `Delegated by @${delegatedBy}:\n${delegation.task}`,
                 targeted: true,
               }),
+              projectRoot,
               controller.signal,
             );
             await runDelegations([child], depth + 1, new Set([...lineage, targetId]));
@@ -711,7 +790,18 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         announce(`${total - failed} of ${total} familiars replied; ${failed} failed.`, "assertive");
       }
     },
-    [advanceRoundRobinLead, busy, streamOne, byId, announce, operatorDisplayName, updateReply],
+    [
+      advanceRoundRobinLead,
+      busy,
+      streamOne,
+      byId,
+      announce,
+      operatorDisplayName,
+      projectLaunchMessage,
+      projectLaunchReady,
+      selectedGroupProject,
+      updateReply,
+    ],
   );
 
   // Composer sends and suggestion chips share the stream path, but a suggestion
@@ -733,6 +823,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     async (reply: GroupReply) => {
       const group = activeGroupRef.current;
       if (!group || busy || abortRef.current) return;
+      if (!projectLaunchReady || !selectedGroupProject) {
+        announce(projectLaunchMessage, "assertive");
+        return;
+      }
       const userTurn = transcriptRef.current.find(
         (t): t is GroupUserTurn => t.role === "user" && t.id === reply.replyTo,
       );
@@ -788,6 +882,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
               userText: retryText,
               targeted: Boolean(userTurn.targetFamiliarIds && userTurn.targetFamiliarIds.length > 0),
             }),
+        selectedGroupProject.root,
         controller.signal,
       );
       // Ownership-guarded (see broadcast): don't clobber a newer stream's wiring.
@@ -801,7 +896,17 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
         settled.status === "error" ? "assertive" : "polite",
       );
     },
-    [busy, byId, updateReply, streamOne, announce, operatorDisplayName],
+    [
+      busy,
+      byId,
+      updateReply,
+      streamOne,
+      announce,
+      operatorDisplayName,
+      projectLaunchMessage,
+      projectLaunchReady,
+      selectedGroupProject,
+    ],
   );
 
   // Recovery for a harness/runtime failure on one reply: rebind that familiar
@@ -1082,6 +1187,20 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                 </button>
               </div>
               <div className="coven-tab__mode">
+                <ProjectPicker
+                  projects={groupProjects}
+                  value={activeGroup.projectId ?? null}
+                  onChange={changeGroupProject}
+                  defaultToFirst={false}
+                  disabled={
+                    busy ||
+                    participants.length === 0 ||
+                    groupProjectsLoading ||
+                    Boolean(groupProjectsError)
+                  }
+                  ariaLabel="Project for this coven"
+                  className="max-w-52"
+                />
                 <fieldset disabled={busy} className="disabled:opacity-60">
                   <Segmented
                     options={COVEN_RESPONSE_MODES}
@@ -1238,6 +1357,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                     subtitle={
                       participants.length === 0
                         ? "A coven is a group chat — pick who's in it."
+                        : !projectLaunchReady
+                          ? projectLaunchMessage
                         : activeGroup.responseMode === "broadcast"
                           ? "Every familiar responds at once in its own thread."
                           : "Familiars respond in turn and see earlier replies."
@@ -1418,6 +1539,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
 
             {/* Composer */}
             <div className="border-t px-5 py-3.5 [border-color:var(--border-hairline)]!">
+              {participants.length > 0 && !projectLaunchReady ? (
+                <p
+                  role={groupProjectsError ? "alert" : "status"}
+                  className="mx-auto mb-2 max-w-3xl text-[length:var(--text-xs)] [color:var(--text-muted)]!"
+                >
+                  {projectLaunchMessage}
+                </p>
+              ) : null}
               <div ref={composerRef} className="mx-auto flex max-w-3xl items-end gap-2">
                 <textarea
                   ref={textareaRef}
@@ -1467,6 +1596,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                   placeholder={
                     participants.length === 0
                       ? "Add familiars to this coven first…"
+                      : !projectLaunchReady
+                        ? "Choose a shared project above…"
                       : `Message ${participants.length} familiar${participants.length === 1 ? "" : "s"}… (@ to tag one)`
                   }
                   disabled={participants.length === 0}
@@ -1529,7 +1660,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                   <Button
                     variant="primary"
                     leadingIcon="ph:arrow-up-bold"
-                    disabled={participants.length === 0 || !draft.trim()}
+                    disabled={participants.length === 0 || !draft.trim() || !projectLaunchReady}
                     onClick={() => void send()}
                   >
                     Send

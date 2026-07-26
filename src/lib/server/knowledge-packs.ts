@@ -16,7 +16,6 @@ import {
   type KnowledgePackTemplateMeta,
 } from "../knowledge-pack-types.ts";
 import {
-  readCollectionMeta,
   collectionMetaExists,
   readKnowledgeEntry,
   writeCollectionMeta,

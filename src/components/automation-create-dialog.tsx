@@ -32,21 +32,10 @@ export type AutomationCreateInput = {
   skill_path: string | null;
 };
 
-export type AutomationCreateInitialValues = {
-  name?: string;
-  scheduleMode?: ScheduleMode;
-  time?: string;
-  days?: string[];
-  rawRrule?: string;
-  goals?: string;
-};
-
 type Props = {
   resolvedFamiliars: ResolvedFamiliar[];
   onClose: () => void;
   onCreate: (input: AutomationCreateInput) => void;
-  /** Pre-fill fields when opening from a template. */
-  initialValues?: AutomationCreateInitialValues;
 };
 
 const fieldBaseClass =
@@ -56,16 +45,16 @@ const selectClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
 const textareaClass = `${fieldBaseClass} resize-y px-2 py-2 text-[length:var(--text-sm)] leading-relaxed`;
 const monoTextareaClass = `${textareaClass} font-mono text-[length:var(--text-xs)]`;
 
-export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, initialValues }: Props) {
+export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
 
-  const [name, setName] = useState(initialValues?.name ?? "");
-  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>(initialValues?.scheduleMode ?? "daily");
-  const [time, setTime] = useState(initialValues?.time ?? "09:00");
-  const [days, setDays] = useState<string[]>(initialValues?.days ?? []);
-  const [rawRrule, setRawRrule] = useState(initialValues?.rawRrule ?? "");
-  const [goals, setGoals] = useState(initialValues?.goals ?? "");
+  const [name, setName] = useState("");
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("daily");
+  const [time, setTime] = useState("09:00");
+  const [days, setDays] = useState<string[]>([]);
+  const [rawRrule, setRawRrule] = useState("");
+  const [goals, setGoals] = useState("");
   const [deliverables, setDeliverables] = useState("");
   const [model, setModel] = useState("");
   const [reasoningEffort, setReasoningEffort] = useState("medium");

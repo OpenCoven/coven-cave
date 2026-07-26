@@ -4,7 +4,11 @@ import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { withCaveHomeReconciledStore, withCaveHomeReconciledStores } from "./server/cave-home-migration.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
-import { rememberHubAccessToken, splitHubAccessToken } from "./hub-access-token.ts";
+import {
+  reconcileHubAccessTokenForOrigin,
+  rememberHubAccessToken,
+  splitHubAccessToken,
+} from "./hub-access-token.ts";
 import {
   type ChatAutoArchivePolicy,
   extendUntilIso,
@@ -67,27 +71,6 @@ const DEFAULT_CONFIG: CaveConfig = {
     exposeHostsInComposer: true,
   },
   remoteHosts: [],
-};
-
-const DEFAULT_STATE: CaveState = {
-  sessionFamiliar: {},
-  sessionTitles: {},
-  sessionTitleAuto: {},
-  sessionArchived: {},
-  sessionSacrificed: {},
-  sessionKeep: {},
-  sessionArchiveExtendedUntil: {},
-  sessionOwned: {},
-  mergedPrAutoArchived: {},
-  travel: {
-    manualOffline: false,
-    hubUnreachableSince: null,
-    lastHubReachableAt: null,
-    staleCache: false,
-    localSubdaemonWakeRequestedAt: null,
-    localBindHost: "127.0.0.1",
-    offlineQueue: [],
-  },
 };
 
 function defaultConfig(): CaveConfig {
@@ -402,11 +385,11 @@ async function loadConfigUnlocked(): Promise<CaveConfig> {
         ? { chatAutoRename: normalizeChatAutoRenamePolicy(parsed.chatAutoRename) }
         : {}),
     };
-    // Self-healing migration (cave-1v95): a pre-existing config may still
-    // embed the hub access token in multiHost.hubUrl. Move it to the local
-    // encrypted vault and rewrite the file once, so config.json stops being a
-    // credential store. Best-effort — a failed vault write keeps the embedded
-    // token working exactly as before.
+    // Self-healing migration (cave-1v95): move an embedded token to
+    // origin-bound vault custody and rewrite the config once. Token-free URLs
+    // also reconcile legacy raw custody or clear custody bound to another
+    // origin. Best-effort — a failed vault write keeps an embedded token
+    // working exactly as before.
     if (sanitizeMultiHostHubToken(config)) {
       await writeJsonAtomic(CONFIG_PATH, config).catch(() => {});
     }
@@ -420,13 +403,17 @@ export function loadConfig(): Promise<CaveConfig> {
   return withCaveHomeReconciledStore("cave-config.json", loadConfigUnlocked);
 }
 
-/** Split an embedded access token out of `config.multiHost.hubUrl` into the
- *  local encrypted vault, in place. Returns whether the URL was rewritten. */
+/** Reconcile the configured hub URL with origin-bound vault custody, splitting
+ *  an embedded access token in place. Returns whether the URL was rewritten. */
 function sanitizeMultiHostHubToken(config: Pick<CaveConfig, "multiHost">): boolean {
   const { url, token } = splitHubAccessToken(config.multiHost.hubUrl);
-  if (!token || !rememberHubAccessToken(token)) return false;
-  config.multiHost = { ...config.multiHost, hubUrl: url };
-  return true;
+  if (token) {
+    if (!rememberHubAccessToken(token, url)) return false;
+    config.multiHost = { ...config.multiHost, hubUrl: url };
+    return true;
+  }
+  reconcileHubAccessTokenForOrigin(url);
+  return false;
 }
 
 function mergeFamiliarConfigs(

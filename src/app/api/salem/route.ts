@@ -192,6 +192,10 @@ async function askLocalFamiliar(args: {
       body: JSON.stringify({
         familiarId: args.familiarId,
         prompt: args.message,
+        // Ask Salem synthesis is a hidden, read-only docs generation rather
+        // than a user Chat thread. Keep it on the bounded projectless lane.
+        origin: "enhance",
+        permissionMode: "read",
         ...(args.model ? { modelOverride: args.model, modelOverrideScope: "next-message" } : {}),
       }),
       signal: controller.signal,
@@ -219,6 +223,10 @@ async function askLocalFamiliar(args: {
           try {
             const event = JSON.parse(line.slice(5).trim()) as { kind?: string; text?: string };
             if (event.kind === "assistant_chunk" && event.text) parts.push(event.text);
+            else if (event.kind === "assistant_replace") {
+              parts.length = 0;
+              if (event.text) parts.push(event.text);
+            }
           } catch {
             /* ignore malformed SSE frames */
           }

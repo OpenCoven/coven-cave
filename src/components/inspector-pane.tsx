@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import type { Familiar } from "@/lib/types";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { Icon, type IconName } from "@/lib/icon";
-import { SkeletonRows } from "@/components/ui/skeleton";
 import { Tabs } from "@/components/ui/tabs";
 import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
 import { openGrimoireDoc } from "@/lib/grimoire-link";

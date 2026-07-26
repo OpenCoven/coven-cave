@@ -102,7 +102,6 @@ export type CavePreferences = {
     backdrop: CaveBackdropPreferences;
   };
   general: {
-    newsHeadlines: boolean;
     /**
      * Comma-separated composer phrases, any of which halts a running chat
      * task; "" disables the feature.
@@ -215,7 +214,7 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
         image: { present: false, mime: null, updatedAt: "" },
       },
     },
-    general: { newsHeadlines: true, stopPhrase: DEFAULT_STOP_PHRASE, celebrations: true },
+    general: { stopPhrase: DEFAULT_STOP_PHRASE, celebrations: true },
     phone: { mobileMode: true },
     github: { orgScope: [] },
   };
@@ -448,7 +447,6 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
       },
     },
     general: {
-      newsHeadlines: general.newsHeadlines !== false,
       stopPhrase: normalizeStopPhrase(general.stopPhrase),
       celebrations: general.celebrations !== false,
     },
@@ -688,11 +686,8 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
 
   if (Object.hasOwn(input, "general")) {
     const general = strictRecord(input.general, "general");
-    assertAllowedKeys(general, ["newsHeadlines", "stopPhrase", "celebrations"], "general");
+    assertAllowedKeys(general, ["stopPhrase", "celebrations"], "general");
     const generalPatch: NonNullable<CavePreferencesPatch["general"]> = {};
-    if (Object.hasOwn(general, "newsHeadlines")) {
-      generalPatch.newsHeadlines = strictBoolean(general.newsHeadlines, "general.newsHeadlines");
-    }
     if (Object.hasOwn(general, "celebrations")) {
       generalPatch.celebrations = strictBoolean(general.celebrations, "general.celebrations");
     }
@@ -835,7 +830,6 @@ export const LEGACY_PREFERENCE_STORAGE_KEYS = [
   "cave:datetime-density",
   "cave:corner-radius",
   "cave:backdrop:v1",
-  "cave:home-news-enabled",
   "cave:mobile-mode-enabled",
 ] as const;
 
@@ -868,7 +862,6 @@ export function preferencesToLegacyStorage(input: CavePreferences): Record<strin
       accentSeed: appearance.backdrop.accentSeed,
       style: appearance.backdrop.style,
     }),
-    "cave:home-news-enabled": String(preferences.general.newsHeadlines),
     "cave:mobile-mode-enabled": String(preferences.phone.mobileMode),
   };
   if (appearance.theme.custom) values["coven-custom-theme"] = JSON.stringify(appearance.theme.custom);
@@ -975,8 +968,6 @@ export function legacyStorageToPreferencesPatch(values: Record<string, unknown>)
 
   const patch: CavePreferencesPatch = {};
   if (Object.keys(appearance).length > 0) patch.appearance = appearance;
-  const news = storageString(values, "cave:home-news-enabled");
-  if (news === "true" || news === "false") patch.general = { newsHeadlines: news !== "false" };
   const mobile = storageString(values, "cave:mobile-mode-enabled");
   if (mobile === "true" || mobile === "false") patch.phone = { mobileMode: mobile !== "false" };
   return patch;

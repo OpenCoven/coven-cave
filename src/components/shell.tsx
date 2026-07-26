@@ -11,7 +11,7 @@ import {
   type GroupImperativeHandle,
   type PanelImperativeHandle,
 } from "react-resizable-panels";
-import { Icon, CAVE_ICON_SIZE, type IconName } from "@/lib/icon";
+import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
@@ -683,11 +683,23 @@ function ShellInner({
     const toggleDrawerSlot = (slot: NonNullable<MobileDrawerSlot>) => {
       setMobileDrawer((curr) => (curr === slot ? null : slot));
     };
+    const toggleDesktopNav = () => {
+      const panel = navRef.current;
+      if (!panel) return;
+
+      if (panel.isCollapsed()) {
+        panel.expand();
+        setNavOpen(true);
+      } else {
+        panel.collapse();
+        setNavOpen(false);
+      }
+    };
     const handler = (e: KeyboardEvent) => {
       if (matchesPanelShortcut(e, panelShortcuts.toggleLeftPanel)) {
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("nav");
-        else togglePanel(navRef.current);
+        else toggleDesktopNav();
         return;
       }
       const key = e.key.toLowerCase();
@@ -711,7 +723,7 @@ function ShellInner({
     // without owning its panel ref.
     const onToggleLeft = () => {
       if (isMobile) toggleDrawerSlot("nav");
-      else togglePanel(navRef.current);
+      else toggleDesktopNav();
     };
     window.addEventListener("keydown", handler);
     window.addEventListener("keydown", bottomToggle);

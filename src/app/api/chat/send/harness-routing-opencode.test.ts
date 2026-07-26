@@ -12,8 +12,18 @@ assert.match(
 );
 assert.match(
   route,
-  /resolveOpenCodeCompatibility\(await openCodeRunCapabilities\(body\.familiarId\)\)/,
-  "OpenCode capability discovery uses the same familiar scope as its launched runtime",
+  /let localRuntimePlan: LocalRuntimePlan \| null = null;[\s\S]*?const openCodeCapabilities = openCodeDirect[\s\S]*?probeReadyLocalRuntimeCapability\(\{[\s\S]*?plan: localRuntimePlan,[\s\S]*?runner: "opencode",[\s\S]*?probe: \(\) => openCodeRunCapabilities\(body\.familiarId, undefined, localRuntimePlan\?\.env\),[\s\S]*?resolveOpenCodeCompatibility\(openCodeCapabilities\)/,
+  "OpenCode capability discovery starts only after its exact local launch plan is ready",
+);
+assert.match(
+  route,
+  /const hermesModelCapability =[\s\S]*?hermesDirect && hermesApi === null[\s\S]*?probeReadyLocalRuntimeCapability\(\{[\s\S]*?plan: localRuntimePlan,[\s\S]*?runner: "hermes",[\s\S]*?probe: hermesChatSupportsModel/,
+  "Hermes CLI capability discovery goes through the same exact-plan behavior gate while the API path bypasses it",
+);
+assert.match(
+  route,
+  /const probeCovenCapability = <T,>\(probe: \(\) => Promise<T>\) =>[\s\S]*?probeReadyLocalRuntimeCapability\(\{[\s\S]*?plan: localRuntimePlan,[\s\S]*?runner: "coven",[\s\S]*?allowWithoutLocalPlan: Boolean\(sshRuntime\)/,
+  "Coven capability discovery requires its exact local plan and preserves only the explicit SSH bypass",
 );
 assert.match(
   route,
@@ -52,24 +62,66 @@ assert.match(
 );
 assert.match(
   route,
-  /const openCodeLaunchCommand = openCodeDirect \? openCodeLaunch\(spawnArgs\) : null;[\s\S]*?const child = spawn\(command\.command, command\.args, \{[\s\S]*?env: openCodeDirect\s*\? openCodeSpawnEnv\(body\.familiarId\)[\s\S]*?writeOpenCodeLaunchInput\(child, openCodeLaunchCommand\)/,
-  "OpenCode uses its Windows-safe launcher, passes its argv over stdin, and keeps the scoped WSL-compatible spawn environment",
+  /const launch = openCodeLaunch\(\[\], process\.platform, env\);[\s\S]*?launch: \{ command: launch\.command, fixedArgs: launch\.args \}[\s\S]*?powerShellHostedCommand:[\s\S]*?launch\.input !== undefined \? openCodeCommand\(\) : undefined/,
+  "OpenCode's passive plan owns the exact outer host, PowerShell argv, and inner command",
+);
+assert.match(
+  route,
+  /const openCodeLaunchCommand = openCodeDirect[\s\S]*?command: localPlan\.command,[\s\S]*?args: \[\.\.\.localPlan\.fixedArgs\],[\s\S]*?input: JSON\.stringify\(spawnArgs\)[\s\S]*?const availability =[\s\S]*?command: localPlan\.command,[\s\S]*?env: localPlan\.env,[\s\S]*?let child:[\s\S]*?try \{[\s\S]*?child = spawn\(command\.command, command\.args, \{[\s\S]*?env: localPlan\.env,[\s\S]*?writeOpenCodeLaunchInput\(child, openCodeLaunchCommand\)/,
+  "OpenCode carries one Windows-safe outer host, inner command, and scoped environment from early preflight through the immediate spawn recheck",
+);
+assert.match(
+  route,
+  /const env = openCodeSpawnEnv\(body\.familiarId\);[\s\S]*?const launch = openCodeLaunch\(\[\], process\.platform, env\);[\s\S]*?runner: "opencode",[\s\S]*?powerShellHostedCommand:[\s\S]*?launch\.input !== undefined \? openCodeCommand\(\) : undefined[\s\S]*?const availability =[\s\S]*?command: localPlan\.command,[\s\S]*?powerShellHostedCommand:[\s\S]*?localPlan\.powerShellHostedCommand,[\s\S]*?if \(availability\.state !== "ready"\) \{[\s\S]*?launchFailure = \{ code: availability\.code, message: availability\.message \};[\s\S]*?return null;/,
+  "OpenCode preflights the exact PowerShell/JSON-stdin plan and returns the shared structured error before spawn",
+);
+assert.match(
+  route,
+  /child\.on\("error", \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?const openCodeWindowsOuterLaunchFailure =[\s\S]*?process\.platform === "win32" && err\.code === "ENOENT";[\s\S]*?const openCodeCommandMissing =[\s\S]*?!openCodeWindowsOuterLaunchFailure[\s\S]*?launchFailure \?\?= \{[\s\S]*?"runtime_missing"[\s\S]*?"runtime_launch_failed"/,
+  "an ambiguous Windows outer-process race stays generic while a missing POSIX OpenCode command remains distinct",
+);
+assert.match(
+  route,
+  /OPENCODE_COMMAND_NOT_FOUND_MARKER[\s\S]*?OPENCODE_LAUNCH_FAILED_MARKER[\s\S]*?launchFailure = \{[\s\S]*?code: commandMissing \? "runtime_missing" : "runtime_launch_failed"[\s\S]*?push\(\{ kind: "error", code: launchFailure\.code, message: launchError \}\)/,
+  "a PowerShell-hosted inner OpenCode race is streamed as a launch failure instead of becoming synthetic no-output text",
 );
 assert.match(
   capabilities,
-  /const launch = openCodeLaunch\(\["run", "--help"\]\);[\s\S]*?launch\.command,[\s\S]*?launch\.args,[\s\S]*?openCodeSpawnEnv\(\),/,
+  /async function probeOpenCodeRunContract\(env: NodeJS\.ProcessEnv\)[\s\S]*?const helpLaunch = openCodeLaunch\(\["run", "--help"\], process\.platform, env\);[\s\S]*?probeOutput\(helpLaunch\.command, helpLaunch\.args, env, helpLaunch\.input\)/,
   "OpenCode probes its CLI with the same Windows-safe command and WSL-compatible environment as a chat run",
 );
 assert.match(
   route,
-  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*\(await covenRunSupportsPermission\(\)\)/,
+  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*\(\(await probeCovenCapability\(covenRunSupportsPermission\)\) \?\? false\)/,
   "OpenCode and Grok do not require the Coven CLI to probe unrelated permission support",
 );
 assert.match(
   route,
-  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*\(await covenRunSupportsAddDir\(\)\)/,
+  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*\(\(await probeCovenCapability\(covenRunSupportsAddDir\)\) \?\? false\)/,
   "OpenCode and Grok do not require the Coven CLI to probe unrelated directory support",
 );
+{
+  const earlyGate = route.indexOf("const openCodeCapabilities");
+  assert.ok(earlyGate >= 0, "capability routing begins only after local plans are established");
+  for (const capabilityCall of [
+    "openCodeRunCapabilities(body.familiarId, undefined, localRuntimePlan?.env)",
+    "probe: hermesChatSupportsModel",
+    "probeCovenCapability(covenRunSupportsModel)",
+    "probeCovenCapability(covenRunSupportsPermission)",
+    "probeCovenCapability(covenRunSupportsAddDir)",
+  ]) {
+    assert.ok(
+      earlyGate < route.indexOf(capabilityCall),
+      `passive preflight must be established before ${capabilityCall}`,
+    );
+  }
+  const copilotResolution = route.match(/resolveCopilotRuntimeLaunch\(/g) ?? [];
+  assert.equal(
+    copilotResolution.length,
+    1,
+    "chat resolves the exact Copilot launch once and reuses it for capability and model phases",
+  );
+}
 assert.match(
   route,
   /if \(openCodeDirect && body\.permissionMode === "read"\)[\s\S]*?status: 501/,
@@ -110,6 +162,11 @@ assert.match(
   /compatibility registry is unavailable; continuing in plain chat without tool activity/,
   "an unavailable expired registry accurately reports plain fallback rather than a parser that is not active",
 );
+assert.match(
+  route,
+  /Couldn't verify OpenCode JSON events; continuing in plain chat without tool activity[\s\S]*?capability-probe-unavailable[\s\S]*?capability-probe-fallback[\s\S]*?\? "done"\s*:\s*"error"/,
+  "an unavailable capability probe is distinct from confirmed JSON incompatibility and does not create a false error issue",
+);
 assert.doesNotMatch(
   route,
   /openCodeStructuredIncompatibility|structured-stream-quarantined/,
@@ -132,8 +189,8 @@ assert.match(
 );
 assert.match(
   route,
-  /child\.on\("close", \(code\) => \{[\s\S]*?if \(openCodeDirect && code !== 0\)[\s\S]*?is_error: true/,
-  "a non-zero OpenCode exit cannot be treated as a successful model run when no JSON error arrives",
+  /child\.on\("close", \(code\) => \{[\s\S]*?if \(\(openCodeDirect \|\| copilotStream \|\| grokDirect\) && code !== 0\)[\s\S]*?is_error: true/,
+  "a non-zero direct OpenCode, Copilot, or Grok exit cannot be treated as a successful run when no JSON error arrives",
 );
 assert.match(
   route,
@@ -142,8 +199,8 @@ assert.match(
 );
 assert.match(
   route,
-  /const tailBlock = !openCodeDirect && tailSource\.length/,
-  "OpenCode stderr never becomes assistant-visible or persisted empty-response diagnostics",
+  /const tailBlock = !openCodeDirect && !grokDirect && tailSource\.length/,
+  "OpenCode and Grok stderr never become assistant-visible or persisted empty-response diagnostics",
 );
 assert.match(
   route,
@@ -182,8 +239,8 @@ assert.match(
 );
 assert.match(
   route,
-  /persistedOpenCodeDiagnostics[\s\S]*?id === "opencode-compatibility"[\s\S]*?progress: persistedOpenCodeDiagnostics/,
-  "safe OpenCode compatibility diagnostics persist with the completed assistant turn",
+  /persistedCompatibilityDiagnostics[\s\S]*?id === "opencode-compatibility" \|\| id === "grok-compatibility"[\s\S]*?progress: persistedCompatibilityDiagnostics/,
+  "safe OpenCode and Grok compatibility diagnostics persist with the completed assistant turn",
 );
 assert.match(
   route,
@@ -218,7 +275,7 @@ assert.match(
 assert.doesNotMatch(
   capabilities,
   /openCodeCapabilitiesProbe/,
-  "OpenCode must not retain capability evidence that could be stale after an in-place same-version CLI upgrade; chat-send-capabilities tests this behavior with two probes",
+  "OpenCode does not use a normal TTL cache that would skip re-probing after an in-place same-version CLI upgrade",
 );
 
 console.log("opencode harness routing tests passed");

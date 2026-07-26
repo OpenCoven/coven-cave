@@ -7,6 +7,50 @@ const source = [
   readFileSync(new URL("./onboarding-model.ts", import.meta.url), "utf8"),
 ].join("\n");
 
+// Setup status actions stay together as one compact row. On narrow panes the
+// row scrolls within its own width instead of wrapping or widening the page.
+const setupHeader = source.match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
+const setupActionsMatch = setupHeader.match(
+  /<div\s+className="([^"]*\boverflow-x-auto\b[^"]*)"/,
+);
+const setupActionsClasses = setupActionsMatch?.[1]?.split(/\s+/) ?? [];
+for (const className of [
+  "flex",
+  "w-full",
+  "flex-nowrap",
+  "items-center",
+  "gap-2",
+  "overflow-x-auto",
+  "lg:w-auto",
+  "lg:shrink-0",
+]) {
+  assert.ok(
+    setupActionsClasses.includes(className),
+    `setup actions retain ${className} without pinning harmless class order`,
+  );
+}
+assert.equal(
+  setupHeader.match(/focus-ring-inset/g)?.length,
+  2,
+  "scrollable setup actions keep their focus indicator inside the clipped row",
+);
+assert.equal(
+  setupHeader.match(/shrink-0 whitespace-nowrap/g)?.length,
+  3,
+  "each setup status action keeps its label on one line",
+);
+
+assert.doesNotMatch(
+  source,
+  /SalemPathfinder(?:Entry|Request)|Ask Salem for setup help/,
+  "the setup page no longer mounts or prepares the Ask Salem entry",
+);
+assert.doesNotMatch(
+  source,
+  /Installing the CovenCave app itself|platformCopy\.caveInstall/,
+  "the setup page no longer renders the redundant app-install accordion",
+);
+
 // Refresh-failure tracking
 assert.match(
   source,
@@ -370,6 +414,20 @@ assert.match(
   source,
   /if \(!setupError \|\| setupRetryBusy\) return;/,
   "retry is a no-op while the action is already in flight (no stacked requests)",
+);
+
+// A failed Codex adapter probe is not proof that the executable is missing.
+// Setup must surface the exact availability remediation rather than offering a
+// misleading generic install card.
+assert.match(
+  source,
+  /const availabilityIssue = adapter\.availability\?\.state && adapter\.availability\.state !== "ready"/,
+  "runtime cards distinguish launch availability from executable installation",
+);
+assert.match(
+  source,
+  /\{availabilityIssue\?\.message \? \([\s\S]{0,600}?role="alert"[\s\S]{0,600}?\{availabilityIssue\.message\}[\s\S]{0,600}?\) : !adapter\.installed \? \(/,
+  "an unavailable runtime shows its probe remediation before the generic install action",
 );
 
 console.log("onboarding-polish.test.ts: ok");

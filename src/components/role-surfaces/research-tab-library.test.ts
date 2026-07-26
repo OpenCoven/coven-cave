@@ -176,6 +176,64 @@ test("library offers view/download for unpublished artifacts without publish", (
   assert.doesNotMatch(tab, /onPublish=/, "library never offers publishing");
 });
 
+// ── Sage autoresearch receipts (cave-19a34) ─────────────────────────────────
+
+test("autoresearch receipts stream from the local read-only API and clean up on unmount", () => {
+  assert.match(tab, /new EventSource\("\/api\/research\/autoloop\/stream"\)/);
+  assert.match(tab, /isAutoresearchSnapshot\(parsed\)/);
+  assert.match(tab, /source\.close\(\)/);
+  assert.match(tab, /autoresearchAvailable \|\| autoresearchError/);
+  assert.match(tab, /autoresearchError && autoresearchRows\.length === 0/);
+  assert.doesNotMatch(tab, /setInterval|usePausablePoll/);
+  assert.doesNotMatch(tab, /method:\s*"(?:POST|PUT|PATCH|DELETE)"/);
+});
+
+test("autoresearch iterations are a collapsed region above mission artifacts", () => {
+  assert.match(tab, /<details className="research-library-autoloop">/);
+  assert.match(
+    tab,
+    /<section className="research-library-autoloop__region" role="region" aria-label="Autoresearch iterations">/,
+  );
+  const autoresearch = tab.indexOf('className="research-library-autoloop"');
+  const artifacts = tab.indexOf("{artifactCount === 0");
+  assert.ok(autoresearch !== -1 && artifacts !== -1 && autoresearch < artifacts);
+  for (const heading of ["Iter", "Date", "Research", "Score", "Verdict", "Skill"]) {
+    assert.match(tab, new RegExp(`<th[^>]*>${heading}<\\/th>`));
+  }
+  assert.match(tab, /row\.score === null \? "—" : `\$\{row\.score\}\/30`/);
+  assert.match(tab, /data-verdict=\{row\.verdict\}/);
+  assert.match(tab, /formatDate\(row\.timestamp, dateTimePrefs, \{ year: true \}\)/);
+  assert.match(tab, /key=\{`\$\{row\.timestamp\}:\$\{row\.iter\}:\$\{row\.slug\}`\}/);
+  assert.doesNotMatch(tab, /key=\{[^}]*index/);
+});
+
+test("autoresearch synthesis and staged skills open in an accessible Markdown reader", () => {
+  assert.match(
+    tab,
+    /fetch\(\s*`\/api\/research\/autoloop\/document\?path=\$\{encodeURIComponent\(documentPath\)\}`/,
+  );
+  assert.match(tab, /<Modal[\s\S]*breadcrumb=\{\["Research library", autoresearchDocument\.title\]\}/);
+  assert.match(tab, /<MarkdownBlock text=\{autoresearchDocument\.content\}/);
+  assert.match(tab, /role="status">Loading research document…/);
+  assert.match(tab, /role="alert">\{autoresearchDocument\.error\}/);
+  assert.match(tab, /aria-label=\{`Open \$\{row\.slug\} synthesis`\}/);
+  assert.match(tab, /aria-label=\{`Open staged skill for \$\{row\.slug\}`\}/);
+});
+
+test("autoresearch verdict badges use one-token derived tints and words", () => {
+  assert.match(css, /\.research-library-autoloop__verdict\[data-verdict="PROMOTE"\]/);
+  assert.match(css, /color-mix\(in oklch, var\(--color-success\) 14%, transparent\)/);
+  assert.match(css, /color-mix\(in oklch, var\(--color-warning\) 14%, transparent\)/);
+  assert.match(
+    css,
+    /\.research-library-autoloop__verdict:where\(\[data-verdict="REJECT"\], \[data-verdict="REVISE"\]\)/,
+  );
+  assert.match(
+    css,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.research-library-autoloop__caret[\s\S]*transition: none/,
+  );
+});
+
 test("library styles ride the desk container and coven tokens", () => {
   assert.match(css, /@container research-desk \(max-width: 900px\)/);
   assert.match(css, /@container research-desk \(max-width: 560px\)/);

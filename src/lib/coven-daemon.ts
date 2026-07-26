@@ -107,9 +107,10 @@ function hubTargetFromUrl(rawUrl: string): Extract<DaemonTarget, { mode: "hub" }
   const url = new URL(normalized);
   // An embedded token (a freshly pasted invite URL, or an env-provided URL)
   // wins; otherwise fall back to the out-of-config custody the config
-  // sanitizer maintains (cave-1v95): env override, then the encrypted vault.
+  // sanitizer maintains (cave-1v95): global env override, then encrypted
+  // custody bound to this exact origin.
   const embedded = url.searchParams.get("coven_access_token")?.trim();
-  const accessToken = embedded || storedHubAccessToken() || undefined;
+  const accessToken = embedded || storedHubAccessToken(url.toString()) || undefined;
   url.search = "";
   url.hash = "";
   return {

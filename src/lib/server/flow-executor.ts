@@ -28,6 +28,11 @@ import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
+import {
+  copilotCapabilityFailureMessage,
+  probeCopilotCapability,
+} from "@/lib/server/copilot-capability-probe";
+import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { copilotStreamSpec } from "@/lib/copilot-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
@@ -256,7 +261,23 @@ export async function startFlowSession(
   const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
   const hubAuthority = config.multiHost?.mode === "hub";
   if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
-    const spec = copilotStreamSpec();
+    const [capability, compatibility] = await Promise.all([
+      probeCopilotCapability(),
+      resolveRuntimeCompatibility("copilot"),
+    ]);
+    const capabilityFailure = copilotCapabilityFailureMessage(capability);
+    if (capabilityFailure) {
+      return {
+        ok: false,
+        status: 409,
+        error: capabilityFailure,
+      };
+    }
+    const spec = copilotStreamSpec(
+      capability.version,
+      compatibility?.eventProtocols,
+      capability.launchCommand,
+    );
     if (spec) {
       const { sessionId } = startCopilotFlowRun({
         spec,
@@ -269,9 +290,15 @@ export async function startFlowSession(
           ...(options.addDirs ?? []),
           ...await flowFamiliarAddDirs(familiarId, projectRoot),
         ],
+        permissionMode: options.triggerInput?.source === "webhook" ? "read" : "unattended",
       });
       return finishStart(sessionId);
     }
+    return {
+      ok: false,
+      status: 409,
+      error: "This Copilot CLI version is not compatible with Cave flow execution. Update the Copilot runtime schema or CLI.",
+    };
   }
 
   const res = await callDaemon<{ id: string; status: string }>({

@@ -8,6 +8,10 @@ import {
   parseGrokModels,
   parseGrokStreamEvent,
 } from "./grok-build.ts";
+import {
+  BUILTIN_GROK_SCHEMA_BUNDLE,
+  parseGrokCompatibilityEvent,
+} from "./grok-compatibility.ts";
 
 const catalog = parseGrokModels(`You are logged in with grok.com.\n\nDefault model: grok-4.5\n\nAvailable models:\n  * grok-4.5 (default)\n  * grok-code-fast-1`);
 assert.equal(catalog.defaultModel, "grok-4.5");
@@ -29,6 +33,7 @@ assert.deepEqual(
     permissionMode: "read",
     grantDirs: ["/work/project", ""],
     identityRules: "You are Nova.",
+    outputFormat: "streaming-json",
   }),
   [
     "--no-auto-update", "--output-format", "streaming-json",
@@ -50,6 +55,7 @@ assert.ok(
     permissionMode: "full",
     grantDirs: [],
     identityRules: "",
+    outputFormat: "streaming-json",
   }).includes("--sandbox"),
   "resumed chats preserve Grok's session-bound sandbox instead of failing on a changed composer mode",
 );
@@ -63,6 +69,7 @@ assert.deepEqual(
     permissionMode: "full",
     grantDirs: [],
     identityRules: "",
+    outputFormat: "streaming-json",
   }),
   [
     "--no-auto-update", "--output-format", "streaming-json",
@@ -93,6 +100,11 @@ assert.deepEqual(
   { kind: "error", message: "not authenticated", usage: undefined, totalCostUsd: 0 },
 );
 assert.deepEqual(parseGrokStreamEvent({ type: "thought", data: "hidden" }), { kind: "ignore" });
+assert.deepEqual(
+  parseGrokCompatibilityEvent({ type: "future_event" }, BUILTIN_GROK_SCHEMA_BUNDLE.schemas[0]),
+  { kind: "unknown" },
+  "unknown future frames never become activity in the built-in schema",
+);
 
 assert.equal(grokSandboxProfileForPermission("read"), "read");
 assert.equal(grokSandboxProfileForPermission(undefined), "full");

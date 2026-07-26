@@ -277,7 +277,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
       if (patch.startDate || patch.endDate) onPatch(row.cardId, patch);
     }
   };
-  const endDrag = (e: React.PointerEvent, row: GanttRow) => {
+  const endDrag = (row: GanttRow) => {
     const d = dragRef.current;
     const active = drag;
     dragRef.current = null;
@@ -786,7 +786,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                     ? {
                         onPointerDown: (e: React.PointerEvent) => beginDrag(e, row.rowId, "move"),
                         onPointerMove: moveDrag,
-                        onPointerUp: (e: React.PointerEvent) => endDrag(e, row),
+                        onPointerUp: () => endDrag(row),
                       }
                     : {};
                   // Edge handles share the move pointer plumbing but start in a
@@ -796,7 +796,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                       className={`cg-bar__resize cg-bar__resize--${which}`}
                       onPointerDown={(e) => beginDrag(e, row.rowId, which === "start" ? "resize-start" : "resize-end")}
                       onPointerMove={moveDrag}
-                      onPointerUp={(e) => endDrag(e, row)}
+                      onPointerUp={() => endDrag(row)}
                       aria-hidden
                     />
                   );

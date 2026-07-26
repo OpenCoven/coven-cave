@@ -154,6 +154,7 @@ const contracts: RouteContract[] = [
   { route: "/omnigent/sessions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/omnigent/status", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/onboarding/install", methods: ["GET", "DELETE", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/onboarding/prerequisites", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/onboarding/setup", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/onboarding/codex-port-preflight", methods: ["POST"], kind: "json" },
   { route: "/onboarding/ssh-check", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -187,6 +188,8 @@ const contracts: RouteContract[] = [
   { route: "/roles/crafts", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/runtime-models/opencode", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/autoloop/document", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/autoloop/stream", methods: ["GET"], kind: "stream", localOriginGuard: true },
   { route: "/research/generations", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/missions/[id]/actions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
@@ -231,7 +234,7 @@ const contracts: RouteContract[] = [
   { route: "/threads/[id]/audit", methods: ["GET"], kind: "json" },
   { route: "/threads/[id]/strands", methods: ["GET"], kind: "json" },
   { route: "/travel/client", methods: ["GET", "PATCH"], kind: "json", readsJson: true },
-  { route: "/vault", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
+  { route: "/vault", methods: ["GET", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/voice/elevenlabs/catalog", methods: ["GET"], kind: "json" },
   { route: "/voice/elevenlabs/tts", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/voice/engines", methods: ["GET"], kind: "json" },
@@ -431,8 +434,8 @@ for (const contract of contracts) {
   const runRegistrations = [...sendSource.matchAll(/= registerChatRun\(/g)];
   assert.equal(
     runRegistrations.length,
-    2,
-    "/chat/send: both adapter paths must register with the stop registry",
+    3,
+    "/chat/send: all three dispatch paths must register with the stop registry",
   );
   assert.match(
     sendSource,
@@ -450,13 +453,38 @@ for (const contract of contracts) {
   );
   const guardedDiagnostics = [
     ...sendSource.matchAll(
-      /if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)\) \{/g,
+      /if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)(?: && !launchFailure)?\) \{/g,
     ),
   ];
   assert.equal(
     guardedDiagnostics.length,
     2,
     "/chat/send: the empty-response error diagnostic must be skipped when the user cancelled",
+  );
+  assert.match(
+    sendSource,
+    /const reportLaunchFailure = \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?const launchCode =[\s\S]*?launchFailure \?\?= \{[\s\S]*?code: sshRuntime \? err\.code \?\? "runtime_launch_failed" : launchCode,[\s\S]*?message: launchError,[\s\S]*?pushProgress\([\s\S]*?launchError,[\s\S]*?code: launchFailure\.code[\s\S]*?message: launchError/,
+    "/chat/send: launch state, progress, and the post-spawn race event must reuse one normalized message and structured code",
+  );
+  assert.match(
+    sendSource,
+    /const localLaunchError = localRuntimeLaunchError\([\s\S]{0,200}?err\.code,[\s\S]{0,800}?const launchError = sshRuntime[\s\S]{0,600}?: localLaunchError\.message/,
+    "/chat/send: every local post-spawn failure uses the shared runner-specific normalizer while SSH retains transport diagnostics",
+  );
+  assert.match(
+    sendSource,
+    /binding\.harness === "claude"[\s\S]*?evaluateCovenBackedRuntimeAvailability\(\{[\s\S]*?runner: "claude",[\s\S]*?covenCommand: launch\.command,[\s\S]*?env,[\s\S]*?unresolvedCovenWindowsShim:[\s\S]*?launch\.unresolvedWindowsShim === true/,
+    "/chat/send: Claude preflight must verify both the Coven launcher and Claude in the exact later spawn environment",
+  );
+  assert.match(
+    sendSource,
+    /binding\.harness === "claude"[\s\S]*?claudeInnerLaunchMissing[\s\S]*?RUNTIME_AVAILABILITY_ERROR_CODES\.claude_missing/,
+    "/chat/send: a post-preflight inner Claude disappearance remains a structured launch failure",
+  );
+  assert.doesNotMatch(
+    sendSource,
+    /(?:launchFailure \?\?=|pushProgress\(|kind: "error")[\s\S]{0,160}?message: err\.message/,
+    "/chat/send: local runner state, progress, and SSE diagnostics never copy a raw OS launch error",
   );
   assert.match(
     sendSource,
@@ -468,8 +496,8 @@ for (const contract of contracts) {
   ];
   assert.equal(
     cancelledFlags.length,
-    2,
-    "/chat/send: both adapter paths must persist cancelled: true on the assistant turn",
+    4,
+    "/chat/send: every adapter path must mark both its assistant turn and terminal event as cancelled",
   );
   assert.match(
     sendSource,

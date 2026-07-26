@@ -5,32 +5,43 @@
 // flow transcript endpoint and the research-mission reconcile look first.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, chmodSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const REAL_HOME = process.env.HOME;
+const REAL_CAVE_HOME = process.env.COVEN_CAVE_HOME;
 const TMP = mkdtempSync(join(tmpdir(), "flow-copilot-session-"));
 process.env.HOME = TMP;
+process.env.COVEN_CAVE_HOME = join(TMP, ".coven", "cave");
 
-after(() => { process.env.HOME = REAL_HOME; });
+after(() => {
+  process.env.HOME = REAL_HOME;
+  if (REAL_CAVE_HOME === undefined) delete process.env.COVEN_CAVE_HOME;
+  else process.env.COVEN_CAVE_HOME = REAL_CAVE_HOME;
+});
 
-// A fake copilot binary (node shebang) that records its full argv (to
-// cwd/argv.json) and emits two JSONL frames like the real CLI's stream mode.
-const FAKE = join(TMP, "fake-copilot");
-writeFileSync(FAKE, `#!/usr/bin/env node
+// Invoke the current Node executable with a JavaScript fixture rather than a
+// POSIX shebang. This exercises the direct spawn path on Windows too.
+const FAKE = join(TMP, "fake-copilot.js");
+writeFileSync(FAKE, `
 const { writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 writeFileSync(join(process.cwd(), "argv.json"), JSON.stringify(process.argv.slice(2)));
 console.log(JSON.stringify({ type: "assistant.message_delta", data: { messageId: "m1", deltaContent: "@@research-control\\n" } }));
-console.log(JSON.stringify({ type: "assistant.message", data: { messageId: "m1", content: "done.\\n@@research-control\\n{\\"decision\\":\\"complete\\",\\"reason\\":\\"ok\\",\\"confidence\\":1}" } }));
+console.log(JSON.stringify({ type: "tool.execution_complete", data: { toolCallId: "call-1", success: true, result: { content: "/workspace" } } }));
+console.log(JSON.stringify({ type: "assistant.message", data: { messageId: "m1", content: "done.\\n@@research-control\\n{\\"decision\\":\\"complete\\",\\"reason\\":\\"ok\\",\\"confidence\\":1}", toolRequests: [{ toolCallId: "call-1", name: "shell", arguments: { command: "pwd" } }] } }));
+console.log(JSON.stringify({ type: "tool.execution_start", data: { toolCallId: "call-1", toolName: "shell", arguments: { command: "pwd" } } }));
 `);
-chmodSync(FAKE, 0o755);
 
 const { startCopilotFlowRun } = await import("./flow-copilot-session.ts");
+const { copilotStreamSpec } = await import("../copilot-stream.ts");
+const protocol = copilotStreamSpec()?.protocol;
+assert.ok(protocol, "the registered Copilot flow fixture uses a validated event protocol");
 
 const SPEC = {
-  executable: FAKE,
+  protocol,
+  executable: "copilot",
   prefixArgs: ["--output-format", "json", "--stream", "on", "-p"],
   sessionIdFlag: "--session-id",
   resumeFlag: "--resume",
@@ -39,6 +50,7 @@ const SPEC = {
   sandboxFullArgs: ["--allow-all"],
   sandboxReadOnlyArgs: [],
 };
+const FAKE_LAUNCH = { command: process.execPath, fixedArgs: [FAKE] };
 
 test("spawns with the prompt as one argv element and persists the transcript", async () => {
   const argvOut = join(TMP, "argv.json");
@@ -50,6 +62,8 @@ test("spawns with the prompt as one argv element and persists the transcript", a
     familiarId: "sage",
     familiarName: "Sage",
     familiarRole: "Researcher",
+    permissionMode: "unattended",
+    spawnCommand: FAKE_LAUNCH,
   });
   assert.match(sessionId, /^[0-9a-f-]{36}$/);
   await done;
@@ -81,6 +95,21 @@ test("spawns with the prompt as one argv element and persists the transcript", a
   assert.match(conv.turns[1].text, /@@research-control/);
   assert.match(conv.turns[1].text, /"decision":"complete"/);
   assert.ok(!conv.turns[1].isError, "successful run is not an error turn");
+  assert.equal(conv.turns[1].tools?.length, 1, "flow transcripts persist parsed Copilot tool lifecycle activity");
+  assert.deepEqual(
+    { ...conv.turns[1].tools[0], durationMs: undefined },
+    {
+      id: "call-1",
+      name: "shell",
+      input: '{\n  "command": "pwd"\n}',
+      output: "/workspace",
+      status: "ok",
+      textOffset: conv.turns[1].text.length,
+      durationMs: undefined,
+    },
+    "a completion received before its declaration settles the later tool record",
+  );
+  assert.ok(typeof conv.turns[1].tools[0].durationMs === "number", "the persisted tool duration is recorded when available");
 });
 
 test("addDirs ride as repeatable --add-dir trust flags ahead of the prompt", async () => {
@@ -93,6 +122,7 @@ test("addDirs ride as repeatable --add-dir trust flags ahead of the prompt", asy
     projectRoot: runRoot,
     familiarId: "sage",
     addDirs: [` ${workspace} `, "", runRoot, workspace, secondWorkspace],
+    spawnCommand: FAKE_LAUNCH,
   });
   await done;
   const argv = JSON.parse(readFileSync(join(runRoot, "argv.json"), "utf8"));
@@ -120,22 +150,22 @@ test("a failed spawn persists an error turn instead of dropping the run", async 
   const conv = JSON.parse(readFileSync(convPath, "utf8"));
   const assistant = conv.turns.find((t) => t.role === "assistant");
   assert.ok(assistant.isError, "failure is an error turn");
-  assert.match(assistant.text, /copilot exited|ENOENT/);
+  assert.match(assistant.text, /Copilot exited with code \?\./);
 });
 
 test("a non-zero exit with partial output keeps the text AND the exit diagnostics", async () => {
-  const PARTIAL = join(TMP, "fake-copilot-partial");
-  writeFileSync(PARTIAL, `#!/usr/bin/env node
+  const PARTIAL = join(TMP, "fake-copilot-partial.js");
+  writeFileSync(PARTIAL, `
 console.log(JSON.stringify({ type: "assistant.message", data: { messageId: "m1", content: "partial findings before the crash" } }));
 console.error("boom: model backend dropped");
 process.exit(3);
 `);
-  chmodSync(PARTIAL, 0o755);
   const { sessionId, done } = startCopilotFlowRun({
-    spec: { ...SPEC, executable: PARTIAL },
+    spec: SPEC,
     prompt: "hello",
     projectRoot: TMP,
     familiarId: null,
+    spawnCommand: { command: process.execPath, fixedArgs: [PARTIAL] },
   });
   await done;
   const convPath = join(TMP, ".coven", "cave", "conversations", `${sessionId}.json`);
@@ -143,6 +173,26 @@ process.exit(3);
   const assistant = conv.turns.find((t) => t.role === "assistant");
   assert.ok(assistant.isError, "non-zero exit is an error even with partial output");
   assert.match(assistant.text, /partial findings before the crash/);
-  assert.match(assistant.text, /copilot exited with code 3/);
-  assert.match(assistant.text, /boom: model backend dropped/);
+  assert.match(assistant.text, /Copilot exited with code 3\./);
+  assert.doesNotMatch(assistant.text, /boom: model backend dropped/, "raw CLI stderr is never persisted");
+});
+
+test("a protocol failure result marks a zero-exit flow run as failed", async () => {
+  const RESULT_FAILURE = join(TMP, "fake-copilot-result-failure.js");
+  writeFileSync(RESULT_FAILURE, `
+console.log(JSON.stringify({ type: "assistant.message", data: { messageId: "m1", content: "the CLI reported a failure" } }));
+console.log(JSON.stringify({ type: "result", sessionId: "result-failure", exitCode: 1, usage: { durationMs: 12 } }));
+`);
+  const { sessionId, done } = startCopilotFlowRun({
+    spec: SPEC,
+    prompt: "hello",
+    projectRoot: TMP,
+    familiarId: null,
+    spawnCommand: { command: process.execPath, fixedArgs: [RESULT_FAILURE] },
+  });
+  await done;
+  const conv = JSON.parse(readFileSync(join(TMP, ".coven", "cave", "conversations", `${sessionId}.json`), "utf8"));
+  const assistant = conv.turns.find((turn) => turn.role === "assistant");
+  assert.ok(assistant.isError, "a protocol-reported failure is not persisted as successful");
+  assert.match(assistant.text, /Copilot reported a failed result\./);
 });

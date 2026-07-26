@@ -6,12 +6,22 @@
 // shell tool call and a follow-up text reply.
 
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   buildCopilotStreamArgs,
+  compareRuntimeClientVersions,
+  copilotDirectStreamConfigured,
   copilotIdentityPreamble,
+  copilotProtocolDiagnostic,
   copilotStreamSpec,
+  CopilotMessageTranscript,
   CopilotTextAssembler,
+  COPILOT_EVENT_PROTOCOL_SCHEMAS,
+  isSafeCopilotResumeSessionId,
+  parseRuntimeClientVersion,
   parseCopilotChatEvent,
+  runtimeEventProtocolSchemas,
+  selectRuntimeEventProtocol,
 } from "./copilot-stream.ts";
 import {
   formatToolInputValue,
@@ -23,6 +33,8 @@ import {
 
 const spec = copilotStreamSpec();
 assert.ok(spec, "registry manifest declares copilot stream mode");
+assert.equal(copilotDirectStreamConfigured(), true, "the synced registry explicitly opts Copilot into the direct JSONL transport");
+assert.equal(spec.protocol.id, "copilot-jsonl-v1", "legacy callers use the verified registry baseline");
 assert.equal(spec.executable, "copilot");
 assert.deepEqual(
   spec.prefixArgs,
@@ -45,6 +57,248 @@ assert.deepEqual(spec.sandboxReadOnlyArgs, [
   "shell",
 ]);
 
+// ── versioned protocol selection and redacted diagnostics ───────────────────
+
+assert.equal(parseRuntimeClientVersion("copilot version 1.0.70"), "1.0.70");
+assert.equal(parseRuntimeClientVersion("Copilot CLI v2.4.0"), "2.4.0");
+assert.equal(
+  parseRuntimeClientVersion("GitHub Copilot CLI 1.0.75.\nRun 'copilot update' to check for updates."),
+  "1.0.75",
+  "accepts Copilot's documented banner and update notice",
+);
+assert.equal(parseRuntimeClientVersion("warning only"), null);
+assert.equal(parseRuntimeClientVersion("copilot version 1.0.70.1"), null, "invalid trailing version syntax fails closed");
+assert.equal(parseRuntimeClientVersion("copilot version 01.0.0"), null, "leading-zero SemVer identifiers fail closed");
+assert.equal(parseRuntimeClientVersion("dependency version 1.0.70\ncopilot version 2.0.0"), null, "ambiguous output fails closed");
+assert.ok((compareRuntimeClientVersions("1.0.70", "1.0.9") ?? 0) > 0);
+assert.equal(compareRuntimeClientVersions("9007199254740993.0.0", "9007199254740992.0.0"), 1, "large SemVer identifiers retain exact precedence");
+assert.equal(compareRuntimeClientVersions("1.0.0-rc.1", "1.0.0"), -1);
+const prereleaseBoundarySchema = {
+  ...COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  id: "copilot-prerelease-boundary-fixture",
+  minClientVersion: "1.0.0-a",
+  maxClientVersionExclusive: null,
+};
+assert.equal(
+  selectRuntimeEventProtocol("1.0.0-B", [prereleaseBoundarySchema]),
+  null,
+  "ASCII SemVer ordering keeps B below a instead of locale-sorting it above",
+);
+assert.equal(selectRuntimeEventProtocol("1.0.0-b", [prereleaseBoundarySchema])?.id, prereleaseBoundarySchema.id);
+assert.equal(selectRuntimeEventProtocol("0.9.9"), null, "pre-protocol clients fail closed");
+assert.equal(selectRuntimeEventProtocol("1.0.70")?.id, "copilot-jsonl-v1");
+assert.equal(selectRuntimeEventProtocol("2.0.0"), null, "an unknown future major fails closed");
+assert.equal(selectRuntimeEventProtocol("2.0.0-rc.1"), null, "future-major prereleases fail closed");
+assert.equal(selectRuntimeEventProtocol("not-a-version"), null, "unparseable clients fail closed");
+assert.equal(
+  copilotStreamSpec("0.9.9"),
+  null,
+  "a caller that has an incompatible client version must retain the generic plain-chat path",
+);
+
+const V2_SCHEMA = {
+  ...COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  id: "copilot-jsonl-v2-fixture",
+  minClientVersion: "2.0.0",
+  maxClientVersionExclusive: null,
+  eventTypes: {
+    textDelta: ["assistant.delta"],
+    message: ["assistant.complete"],
+    toolStart: ["tool.started"],
+    toolEnd: ["tool.finished"],
+    result: ["run.finished"],
+  },
+  fields: {
+    ...COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!.fields,
+    data: ["payload"],
+    messageId: ["message_id"],
+    deltaContent: ["delta"],
+    toolCallId: ["call_id"],
+    toolName: ["tool"],
+    arguments: ["input"],
+    resultContent: ["text"],
+    sessionId: ["session_id"],
+    exitCode: ["exit_code"],
+    durationMs: ["duration_ms"],
+  },
+};
+assert.deepEqual(
+  runtimeEventProtocolSchemas([V2_SCHEMA]).map((schema) => schema.id),
+  ["copilot-jsonl-v2-fixture"],
+  "a validated registry schema can extend support without a new normalized event implementation",
+);
+
+const flagShapedModelArgs = buildCopilotStreamArgs({
+  spec,
+  prompt: "safe prompt",
+  resumeSessionId: null,
+  newSessionId: null,
+  model: "openai/--allow-all-tools",
+  permissionMode: "read",
+  addDirs: [],
+});
+assert.ok(!flagShapedModelArgs.includes("--model"), "a provider prefix cannot turn a model value into a Copilot flag");
+assert.ok(!flagShapedModelArgs.includes("--allow-all-tools"), "stripped flag-shaped model values never reach spawn argv");
+assert.deepEqual(
+  runtimeEventProtocolSchemas([{ ...V2_SCHEMA, fields: { data: ["payload"] } }]),
+  [],
+  "a partial or malformed registry schema cannot select the event parser",
+);
+assert.equal(
+  selectRuntimeEventProtocol("2.0.1", [COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!, V2_SCHEMA])?.id,
+  "copilot-jsonl-v2-fixture",
+  "newer registry schemas win without changing the normalized chat contract",
+);
+const refreshedProtocolSpec = copilotStreamSpec("2.0.1", [V2_SCHEMA]);
+assert.equal(
+  refreshedProtocolSpec?.protocol.id,
+  "copilot-jsonl-v2-fixture",
+  "a refreshed registry protocol activates without allowing it to alter Cave's spawn manifest",
+);
+assert.equal(refreshedProtocolSpec?.executable, "copilot", "refreshed metadata cannot replace the launch executable");
+assert.deepEqual(refreshedProtocolSpec?.sandboxReadOnlyArgs, ["--deny-tool", "write", "--deny-tool", "shell"], "refreshed metadata cannot weaken read-only sandbox argv");
+assert.deepEqual(
+  parseCopilotChatEvent(
+    {
+      type: "tool.finished",
+      payload: { call_id: "new-tool", success: false, result: { text: "denied" } },
+    },
+    V2_SCHEMA,
+  ),
+  { kind: "tool_end", toolCallId: "new-tool", output: "denied", isError: true, model: undefined },
+  "schema aliases normalize a changed event envelope into the same tool lifecycle",
+);
+assert.deepEqual(
+  parseCopilotChatEvent(
+    { type: "run.finished", payload: { exit_code: 7, session_id: "v2-session", usage: { duration_ms: 44 } } },
+    V2_SCHEMA,
+  ),
+  { kind: "result", sessionId: "v2-session", isError: true, durationMs: 44 },
+  "schema-selected result envelopes preserve failure state and duration",
+);
+assert.equal(
+  parseCopilotChatEvent(
+    { type: "run.finished", payload: "malformed", exit_code: 0 },
+    V2_SCHEMA,
+  ),
+  null,
+  "a declared malformed result envelope cannot fall back to top-level aliases",
+);
+assert.deepEqual(
+  runtimeEventProtocolSchemas([{
+    ...V2_SCHEMA,
+    eventTypes: { ...V2_SCHEMA.eventTypes, toolEnd: ["tool.started"] },
+  }]),
+  [],
+  "overlapping lifecycle event aliases are rejected before they can select a parser",
+);
+const alternateDiscriminatorSchema = { ...V2_SCHEMA, eventTypeFields: ["event"] };
+assert.deepEqual(
+  parseCopilotChatEvent(
+    { event: "assistant.delta", payload: { message_id: "alternate", delta: "schema-selected key" } },
+    alternateDiscriminatorSchema,
+  ),
+  { kind: "text_delta", messageId: "alternate", text: "schema-selected key", model: undefined },
+  "a refreshed schema can select its own top-level event discriminator key",
+);
+assert.equal(
+  copilotProtocolDiagnostic(
+    { type: "operation.progress", payload: {} },
+    { ...V2_SCHEMA, diagnosticEventPrefixes: ["operation."] },
+  )?.code,
+  "unsupported-tool-event",
+  "a refreshed schema defines which unknown event namespaces signal protocol drift",
+);
+const unknownDiagnostic = copilotProtocolDiagnostic(
+  { type: "tool.execution_progress", data: { toolCallId: "secret-id", output: "/private/path" } },
+  COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+);
+assert.equal(unknownDiagnostic?.code, "unsupported-tool-event");
+assert.doesNotMatch(JSON.stringify(unknownDiagnostic), /secret-id|private\/path/);
+assert.equal(
+  copilotProtocolDiagnostic(
+    { type: "tool.execution_partial_result", data: { toolCallId: "t1", partialOutput: "safe" } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  null,
+  "known partial-result noise is deliberately ignored rather than shown as an error",
+);
+assert.equal(
+  copilotProtocolDiagnostic(
+    { type: "assistant.tool_call_started", data: { toolCallId: "secret-id" } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  )?.code,
+  "unsupported-tool-event",
+  "unknown assistant-namespaced tool events are never silently dropped",
+);
+assert.equal(
+  parseCopilotChatEvent(
+    { type: "tool.execution_complete", data: { toolCallId: "t1", result: { content: "unknown" } } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  null,
+  "completion frames without a boolean success state are malformed",
+);
+assert.deepEqual(
+  parseCopilotChatEvent(
+    { type: "assistant.message", data: { messageId: "m", content: "text", toolRequests: [{ name: "shell" }] } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  {
+    kind: "message",
+    messageId: "m",
+    content: "text",
+    toolRequests: [],
+    malformedToolRequests: true,
+    model: undefined,
+  },
+  "malformed declared tool requests retain safe message text and flag the dropped tool activity",
+);
+assert.deepEqual(
+  parseCopilotChatEvent(
+    { type: "assistant.message", data: { messageId: "m", content: "text", toolRequests: { unexpected: true } } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  {
+    kind: "message",
+    messageId: "m",
+    content: "text",
+    toolRequests: [],
+    malformedToolRequests: true,
+    model: undefined,
+  },
+  "a non-array declared tool request collection also retains safe message text",
+);
+assert.equal(
+  parseCopilotChatEvent(
+    { type: "assistant.message", data: { messageId: "m", content: { unexpected: true } } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  null,
+  "present non-string message content is malformed rather than silently emptied",
+);
+assert.equal(
+  parseCopilotChatEvent(
+    { type: "tool.execution_complete", data: { toolCallId: "t1", success: true, result: { content: [] } } },
+    COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  ),
+  null,
+  "present non-string tool result content is malformed rather than silently omitted",
+);
+
+const v1Fixture = await readFile(
+  new URL("./fixtures/copilot/1.0.70-tool-lifecycle.jsonl", import.meta.url),
+  "utf8",
+);
+const v1Events = v1Fixture.trim().split(/\r?\n/).map((line) =>
+  parseCopilotChatEvent(JSON.parse(line), COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!),
+);
+assert.deepEqual(
+  v1Events.map((event) => event?.kind),
+  ["text_delta", "message", "tool_start", "tool_end", "result"],
+  "the recorded 1.0.70 lifecycle fixture covers every normalised bubble state",
+);
+
 // ── argv builder ──────────────────────────────────────────────────────────────
 
 const freshArgs = buildCopilotStreamArgs({
@@ -59,6 +313,7 @@ const freshArgs = buildCopilotStreamArgs({
 assert.deepEqual(
   freshArgs,
   [
+    "--no-auto-update",
     "--session-id",
     "11111111-2222-4333-8444-555555555555",
     "--model",
@@ -67,6 +322,7 @@ assert.deepEqual(
     "/Users/example/projects/alpha",
     "--add-dir",
     "/Users/example/.coven/workspaces/familiars/sage",
+    "--allow-all",
     "--output-format",
     "json",
     "--stream",
@@ -74,7 +330,7 @@ assert.deepEqual(
     "-p",
     "do the thing",
   ],
-  "fresh turns pre-assign the session id, strip the model namespace, trust each granted root via repeatable --add-dir (empty entries dropped), leave full access implicit, and trail the prompt after -p",
+  "fresh full-permission turns preserve the manifest approval argv with their session, model, trust grants, and trailing prompt",
 );
 
 const resumeArgs = buildCopilotStreamArgs({
@@ -89,6 +345,7 @@ const resumeArgs = buildCopilotStreamArgs({
 assert.deepEqual(
   resumeArgs,
   [
+    "--no-auto-update",
     "--resume",
     "aaaa1111-2222-4333-8444-555555555555",
     "--add-dir",
@@ -107,6 +364,19 @@ assert.deepEqual(
   "resumed read-only turns use --resume, still trust granted roots via --add-dir (cave-n1yc: read-only sessions previously got no grant access at all), and keep the manifest's deny-tool sandbox args",
 );
 
+const unsafeResumeArgs = buildCopilotStreamArgs({
+  spec,
+  prompt: "fresh after an invalid resume id",
+  resumeSessionId: "--allow-all",
+  newSessionId: null,
+  model: null,
+  permissionMode: "full",
+  addDirs: [],
+});
+assert.ok(!unsafeResumeArgs.includes("--resume"), "flag-shaped resume ids never enter argv");
+assert.equal(isSafeCopilotResumeSessionId("--allow-all"), false, "flag-shaped resume ids are rejected before session routing");
+assert.equal(isSafeCopilotResumeSessionId("safe-session-id"), true, "ordinary native session ids remain resumable");
+
 const unattendedArgs = buildCopilotStreamArgs({
   spec,
   prompt: "run one bounded iteration",
@@ -119,6 +389,7 @@ const unattendedArgs = buildCopilotStreamArgs({
 assert.deepEqual(
   unattendedArgs,
   [
+    "--no-auto-update",
     "--session-id",
     "22222222-3333-4444-8555-666666666666",
     "--add-dir",
@@ -191,6 +462,12 @@ assert.equal(
 assert.equal(parseCopilotChatEvent("not an object"), null);
 assert.equal(parseCopilotChatEvent({ type: 42 }), null);
 
+assert.deepEqual(
+  parseCopilotChatEvent(JSON.parse(FIXTURE[10])),
+  { kind: "text_delta", messageId: "m2", text: "The command ", frameId: "e11", model: undefined },
+  "the parser preserves the schema-declared frame identity for replay suppression",
+);
+
 const resultEv = parseCopilotChatEvent(JSON.parse(FIXTURE[14]));
 assert.deepEqual(resultEv, {
   kind: "result",
@@ -202,6 +479,16 @@ assert.deepEqual(
   parseCopilotChatEvent({ type: "result", exitCode: 1 }),
   { kind: "result", sessionId: undefined, isError: true, durationMs: undefined },
   "nonzero exit codes surface as errors",
+);
+assert.equal(
+  parseCopilotChatEvent({ type: "result", exitCode: "1" }),
+  null,
+  "a malformed declared result exit code fails closed",
+);
+assert.equal(
+  parseCopilotChatEvent({ type: "result" }),
+  null,
+  "a result frame missing its declared exit code fails closed",
 );
 
 // ── full pipeline: fixture → tracker + text assembly (what the route runs) ───
@@ -219,7 +506,7 @@ assert.deepEqual(
     if (ev.kind !== "result" && ev.model && !model) model = ev.model;
     switch (ev.kind) {
       case "text_delta": {
-        assistantText += text.delta(ev.messageId, ev.text);
+        assistantText += text.delta(ev.messageId, ev.text, ev.frameId);
         break;
       }
       case "message": {
@@ -313,22 +600,65 @@ assert.deepEqual(
     "a message with no prior deltas contributes its full content",
   );
   assert.equal(text.message("solo", "No deltas came first."), "", "repeats add nothing");
+  assert.equal(text.message("solo", "Corrected full text."), "", "a changed replay is emitted through replacement");
+  assert.deepEqual(
+    text.takeReplacement("solo"),
+    { previous: "No deltas came first.", content: "Corrected full text." },
+    "a later authoritative full frame corrects an earlier full frame",
+  );
+  assert.equal(text.delta("solo", "No deltas came first."), "", "a delayed replay after a full message never duplicates text");
 
-  assert.equal(text.delta("m", "Hello "), "Hello ");
+  assert.equal(text.delta("m", "Hello "), "Hello ", "deltas stream before an authoritative full frame arrives");
   assert.equal(text.delta("m", "world"), "world");
   assert.equal(
     text.message("m", "Hello world!"),
     "!",
-    "a final message longer than its deltas contributes only the tail",
+    "a final message appends only the suffix after streamed deltas",
   );
   assert.equal(
     text.message("m", "Hello"),
     "",
     "a final message shorter than its streamed deltas never duplicates",
   );
+  assert.equal(text.delta("m", "world"), "", "deltas arriving after the authoritative full frame are ignored");
+
+  assert.equal(text.delta("repeat", "ha"), "ha");
+  assert.equal(text.delta("repeat", "ha"), "ha", "equal neighboring deltas remain valid assistant text");
+  assert.equal(text.message("repeat", "haha"), "", "the full message reconciles repeated streamed chunks without duplication");
+
+  assert.equal(text.delta("replay", "Hello ", "frame-1"), "Hello ");
+  assert.equal(text.delta("replay", "Hello ", "frame-1"), "", "a repeated JSONL frame id is ignored as a replay");
+  assert.equal(text.delta("replay", "Hello ", "frame-2"), "Hello ", "different frame ids preserve identical adjacent chunks while streaming");
+  assert.equal(text.message("replay", "Hello Hello "), "", "the final frame confirms the replay-safe streamed content");
+
+  assert.equal(text.delta("diverged", "Hello old", "frame-old"), "Hello old");
+  assert.equal(
+    text.message("diverged", "Hello new"),
+    "",
+    "a divergent full frame is reconciled through a replacement event",
+  );
+  assert.deepEqual(
+    text.takeReplacement("diverged"),
+    { previous: "Hello old", content: "Hello new" },
+    "a divergent authoritative message replaces stale streamed text",
+  );
+
+  assert.equal(text.delta("interrupted", "partial response", "frame-partial"), "partial response");
+  assert.deepEqual(text.flushUnconfirmed(), [{ messageId: "interrupted", text: "partial response" }], "a process that exits before its full frame retains buffered partial text");
 
   text.reset();
   assert.equal(text.message("m", "fresh"), "fresh", "reset clears per-attempt state");
+}
+
+{
+  const transcript = new CopilotMessageTranscript();
+  transcript.appendDelta("first", "Hello old");
+  transcript.appendDelta("later", " and later");
+  assert.equal(
+    transcript.setMessage("first", "Hello new"),
+    "Hello new and later",
+    "a corrected earlier message retains interleaved later message text",
+  );
 }
 
 console.log("copilot-stream: ok");

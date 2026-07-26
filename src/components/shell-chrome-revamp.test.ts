@@ -11,12 +11,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
-const sidebarCss = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
+const sidebarCss = readFileSync(new URL("../styles/sidebar-minimal/activity-rail.css", import.meta.url), "utf8");
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const statusBar = readFileSync(new URL("./status-bar.tsx", import.meta.url), "utf8");
 const statusBarCss = readFileSync(new URL("../styles/status-bar.css", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const desktopChrome = readFileSync(new URL("../styles/globals/desktop-chrome.css", import.meta.url), "utf8");
 
 // ── 1. Icon rail ─────────────────────────────────────────────────────────────
 assert.match(
@@ -70,10 +71,10 @@ assert.match(
 );
 
 // ── 2. Top command bar ───────────────────────────────────────────────────────
-assert.match(
+assert.doesNotMatch(
   menuBar,
-  /const searchTarget = activeFamiliarName\?\.trim\(\) \|\| "Salem";/,
-  "the command bar addresses the active familiar, falling back to Salem",
+  /searchTarget|activeFamiliarName/,
+  "the fixed Cave search placeholder should not retain an unused familiar-name target",
 );
 assert.match(
   menuBar,
@@ -105,8 +106,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=\{activeId\}\s*\n\s*activeFamiliarName=\{active\?\.display_name \?\? null\}[\s\S]{0,400}?<RunningSessionsPopover\s*\n\s*sessions=\{runningSessions\}/,
-  "the menu bar receives the active familiar name and the running-processes popover",
+  /<FamiliarMenuBar\s*\n\s*activeFamiliarId=\{activeId\}[\s\S]{0,400}?<RunningSessionsPopover\s*\n\s*sessions=\{runningSessions\}/,
+  "the menu bar receives the active familiar id and the running-processes popover",
 );
 assert.match(
   workspace,
@@ -115,7 +116,7 @@ assert.match(
 );
 // The bell popover must not be clipped by the slim band.
 assert.match(
-  globals,
+  desktopChrome,
   /\.shell-top \{[^}]*overflow: visible;/,
   "shell-top no longer clips (the bell popover hangs below the band)",
 );

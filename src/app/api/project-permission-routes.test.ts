@@ -17,10 +17,6 @@ const projectTreeClient = await readFile(
   "utf8",
 );
 const chatView = await readFile(new URL("../../components/chat-view.tsx", import.meta.url), "utf8");
-const codeQuickOpen = await readFile(
-  new URL("../../components/code-quick-open.tsx", import.meta.url),
-  "utf8",
-);
 
 assert.match(
   helper,
@@ -144,11 +140,6 @@ assert.match(
   chatView,
   /new URLSearchParams\(\{ root: mentionRoot, familiarId: familiar\.id \}\)/,
   "chat mention file index should pass the active familiarId",
-);
-assert.match(
-  codeQuickOpen,
-  /new URLSearchParams\(\{ root, familiarId \}\)/,
-  "code quick open should pass familiarId to the file index",
 );
 
 console.log("project-permission-routes.test.ts: ok");

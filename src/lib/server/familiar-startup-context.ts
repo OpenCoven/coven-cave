@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import type { UserProfile } from "../user-profile-shared.ts";
+import { userDisplayName, userFullName, type UserProfile } from "../user-profile-shared.ts";
+import { mbtiAxisSummary, mbtiCode } from "../settings-profile-form.ts";
 
 export type FamiliarStartupContextFile = {
   relativePath: string;
@@ -57,9 +58,17 @@ export function buildOperatorProfileContext(
 ): FamiliarStartupContextFile | null {
   if (!profile) return null;
   const lines: string[] = [];
-  if (profile.name) lines.push(`Name: ${profile.name}`);
+  const displayName = userDisplayName(profile);
+  const fullName = userFullName(profile);
+  if (displayName !== "You") lines.push(`Name: ${displayName}`);
+  if (fullName && fullName !== displayName) lines.push(`Full name: ${fullName}`);
   if (profile.pronouns) lines.push(`Pronouns: ${profile.pronouns}`);
   if (profile.timezone) lines.push(`Timezone: ${profile.timezone}`);
+  if (profile.personality) {
+    lines.push(
+      `Personality: ${mbtiCode(profile.personality)} (${mbtiAxisSummary(profile.personality)})`,
+    );
+  }
   if (profile.bio) lines.push(`Bio: ${profile.bio}`);
   if (profile.links?.length) {
     lines.push("Links:");

@@ -24,6 +24,7 @@ assert.match(
 for (const view of [
   "ChatsHomeView.swift",
   "FamiliarThreadsView.swift",
+  "TasksView.swift",
 ]) {
   const src = await read(`Views/${view}`);
   assert.match(
@@ -33,14 +34,18 @@ for (const view of [
   );
 }
 
-// Inset-grouped surfaces adopt the same modifier (the themed bgBase floor shows
-// behind the cards), applied after .listStyle(.insetGrouped).
-for (const view of ["TasksView.swift"]) {
-  const src = await read(`Views/${view}`);
+// Task cards keep a single mobile gutter inside the full-width plain list.
+{
+  const tasks = await read("Views/TasksView.swift");
   assert.match(
-    src,
-    /\.listStyle\(\.insetGrouped\)\s*\n\s*\.themedListBackground\(\)/,
-    `${view} should apply .themedListBackground() right after .listStyle(.insetGrouped)`,
+    tasks,
+    /\.listRowInsets\(EdgeInsets\(top: 5, leading: 16, bottom: 5, trailing: 16\)\)/,
+    "TasksView should keep the 16pt task-card gutter",
+  );
+  assert.doesNotMatch(
+    tasks,
+    /\.listStyle\(\.insetGrouped\)/,
+    "TasksView should not add the system inset-grouped gutter around task cards",
   );
 }
 

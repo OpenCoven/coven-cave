@@ -74,18 +74,22 @@ test("running and completed blocks stay honest about their data", () => {
   assert.doesNotMatch(detail, /Finding 1|compFindings/);
 });
 
-// ── Evidence delta triage: exact ledger source-update mechanism ─────────────
+// ── Evidence triage: exact ledger source-update mechanism ──────────────────
+// Triage lives in the ledger now — the rail's Sources pane IS the ledger, so
+// the checkpoint verdicts ride the same source cards as the full list.
 
 test("Keep/Reject/Verify map onto the ledger's update-source action", () => {
-  assert.match(detail, /action: "update-source",\s*sourceId: source\.id,\s*patch: \{ status: "used" \}/);
-  assert.match(detail, /action: "update-source",\s*sourceId: source\.id,\s*patch: \{ status: "rejected" \}/);
+  assert.match(ledger, /action: "update-source",\s*sourceId: source\.id,\s*patch: \{ status: "used" \}/);
+  assert.match(ledger, /action: "update-source",\s*sourceId: source\.id,\s*patch: \{ status: "rejected" \}/);
   // Verify keeps the source conflicting and appends a note instead of
   // changing status.
-  assert.match(detail, /status: "conflicting",\s*note: source\.note \? `\$\{source\.note\}\\n\$\{VERIFY_NOTE\}` : VERIFY_NOTE/);
+  assert.match(ledger, /status: "conflicting",\s*note: source\.note \? `\$\{source\.note\}\\n\$\{VERIFY_NOTE\}` : VERIFY_NOTE/);
   // Re-verifying is inert: the button disables once the marker is present.
-  assert.match(detail, /\(source\.note \?\? ""\)\.includes\(VERIFY_NOTE\)/);
-  // Triage actions only appear where they make sense.
-  assert.match(detail, /source\.status === "conflicting" \|\| source\.status === "candidate"/);
+  assert.match(ledger, /\(source\.note \?\? ""\)\.includes\(VERIFY_NOTE\)/);
+  // Triage actions only appear at a checkpoint, on sources still awaiting a
+  // verdict; the status control below them stays available always.
+  assert.match(ledger, /triage && \(source\.status === "candidate" \|\| source\.status === "conflicting"\)/);
+  assert.match(detail, /triage=\{isCheckpointLike\}/);
 });
 
 // ── Command bar: real destinations only ─────────────────────────────────────
@@ -138,17 +142,35 @@ test("planning missions read as active work in the runs rail", () => {
 
 // ── Right rail: state switching + reachable ledger ──────────────────────────
 
-test("the right rail switches panels by mission state", () => {
-  // checkpoint/paused → evidence delta; live → streaming sources;
-  // failed/completed/other settled → artifact cards.
-  assert.match(detail, /mission\.status === "checkpoint" \|\| mission\.status === "paused"/);
-  assert.match(detail, /new Set<ResearchMission\["status"\]>\(\["queued", "planning", "running"\]\)/);
-  assert.match(detail, /const showArtifactRail = !isCheckpointLike && !isLive/);
+test("the right rail is one Artifacts|Sources toggle over a full-height pane", () => {
+  // No stacked state panels: a single segmented toggle drives one pane that
+  // takes the rail's remaining height, with the quick links pinned under it.
+  assert.match(detail, /<Tabs<ResearchOutputTab>/);
+  assert.match(detail, /variant="segment"/);
+  assert.match(detail, /\{ id: "artifacts", label: "Artifacts", count: mission\.artifacts\.length \}/);
+  assert.match(detail, /\{ id: "sources", label: "Sources", count: mission\.sources\.length \}/);
+  assert.match(detail, /className="research-desk-rail__pane"/);
+  assert.match(css, /\.research-desk-rail__pane \{[^}]*flex: 1;[^}]*min-height: 0;[^}]*overflow-y: auto;/);
+  assert.match(css, /\.research-desk-rail__links \{[^}]*flex: none;/);
+  // The old stacked panels are gone.
+  assert.doesNotMatch(detail, /research-desk-rail__panel/);
+  assert.doesNotMatch(detail, /Sources streaming in/);
+});
+
+test("run state picks the opening pane and the pane's context line", () => {
+  // checkpoint/paused/live open on Sources (triage + arrivals); settled runs
+  // open on what they produced. A mission switch re-derives it; a status
+  // change inside one mission leaves the reader's choice alone.
+  assert.match(detail, /missionStatus === "checkpoint" \|\| missionStatus === "paused" \|\| LIVE_STATUSES\.has\(missionStatus\)/);
+  assert.match(detail, /\? "sources"\s*: "artifacts"/);
+  assert.match(detail, /if \(railTabMission !== missionId\) \{\s*setRailTabMission\(missionId\);\s*setRailTab\(defaultRailTab\);\s*\}/);
+  // The context the stacked panel titles used to carry survives as one hint.
   assert.match(detail, /Evidence delta — pass/);
-  assert.match(detail, /Sources streaming in/);
-  assert.match(detail, /Artifacts from pass/);
-  // Streaming list highlights the most recent source without faking times.
-  assert.match(detail, /is-latest/);
+  assert.match(detail, /targeted — streaming in, review anytime/);
+  assert.match(detail, /highlightLatest=\{isLive\}/);
+  // The streaming highlight marks the newest ledger entry without faking times.
+  assert.match(ledger, /mission\.sources\[mission\.sources\.length - 1\]\.id/);
+  assert.match(ledger, /is-latest/);
   assert.doesNotMatch(detail, /Reading: /);
 });
 
@@ -161,11 +183,15 @@ test("quick links exist only when their destinations do", () => {
   assert.doesNotMatch(detail, /Create task/);
 });
 
-test("the full evidence ledger stays reachable inside the rail disclosure", () => {
-  assert.match(detail, /research-desk-rail__ledger/);
-  assert.match(detail, /<ResearchEvidenceLedger mission=\{mission\} onAction=\{onAction\} onOpenUrl=\{onOpenUrl\} \/>/);
-  // The ledger keeps its own tab ids — pinned by researcher-surface.test.ts.
-  assert.match(ledger, /idPrefix="research-output"/);
+test("the full evidence ledger is the rail pane, not a nested disclosure", () => {
+  // One copy of the evidence: the ledger renders the open pane directly, so
+  // there is no collapsed duplicate of the same artifacts/sources below it.
+  assert.match(detail, /<ResearchEvidenceLedger\s+mission=\{mission\}[\s\S]{0,300}tab=\{railTab\}/);
+  assert.doesNotMatch(detail, /research-desk-rail__ledger/);
+  // The tablist moved to the rail, so the ledger renders panels only — their
+  // ids still match the rail toggle's idPrefix.
+  assert.match(detail, /idPrefix="research-output"/);
+  assert.doesNotMatch(ledger, /<Tabs/);
   assert.match(ledger, /id="research-output-panel-artifacts"/);
   assert.match(ledger, /id="research-output-panel-sources"/);
 });
@@ -240,11 +266,11 @@ test("desk-tab responsive collapses match the existing container breakpoints", (
 
 // ── Artifact actions: shared component mounted on rail + saved summary ──────
 
-test("desk rail renders shared artifact actions with publish on settled missions", () => {
-  assert.match(detail, /ResearchArtifactActions/);
-  assert.match(detail, /onPublish=\{settled \? publishArtifact : undefined\}/);
-  assert.match(detail, /action: "publish-artifact"/);
-  assert.match(detail, /Artifact published to the Grimoire\./);
+test("rail artifacts render shared artifact actions with publish on settled missions", () => {
+  assert.match(ledger, /ResearchArtifactActions/);
+  assert.match(ledger, /onPublish=\{settled \? publishArtifact : undefined\}/);
+  assert.match(ledger, /action: "publish-artifact"/);
+  assert.match(ledger, /Artifact published to the Grimoire\./);
 });
 
 test("desk shows a saved-artifacts summary with a copy-workspace-path affordance", () => {

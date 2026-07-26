@@ -1,9 +1,15 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
+  openCodeCapabilityLaunchIdentity,
   openCodeCapabilityProbeCacheable,
   openCodeCapabilityProbeScope,
   openCodeCapabilityProbeTimeoutMs,
+  openCodeVerifiedCapabilityFallbackTtlMs,
+  openCodeVerifiedCapabilityFallbackLimit,
   openCodeProbeCleanupGraceMs,
   openCodeProbeSpawnOptions,
   openCodeProbeTreeKillCommand,
@@ -14,6 +20,8 @@ import {
 assert.equal(openCodeCapabilityProbeTimeoutMs("linux"), 2_500, "non-Windows capability probes retain the short bounded deadline");
 assert.equal(openCodeCapabilityProbeTimeoutMs("win32"), 6_000, "Windows PowerShell/npm launchers receive a bounded cold-start allowance");
 assert.equal(openCodeProbeCleanupGraceMs(), 1_000, "timed-out probe cleanup has a short final deadline so chat can fall back");
+assert.equal(openCodeVerifiedCapabilityFallbackTtlMs(), 60_000, "only a short-lived verified OpenCode contract can survive a transient probe failure");
+assert.equal(openCodeVerifiedCapabilityFallbackLimit(), 64, "verified capability evidence remains bounded across scoped launches");
 assert.equal(openCodeCapabilityProbeCacheable("linux"), false, "POSIX clients are reprobed rather than reusing a same-version help contract");
 assert.equal(openCodeCapabilityProbeCacheable("win32"), false, "Windows launcher shims are reprobed rather than reusing stale downstream capability evidence");
 assert.notEqual(
@@ -24,16 +32,117 @@ assert.notEqual(
 assert.equal(openCodeCapabilityProbeScope(), "default", "the unscoped probe cache has a stable explicit scope");
 assert.deepEqual(openCodeProbeSpawnOptions("linux"), { detached: true }, "POSIX OpenCode probes create an isolated process group that timeout cleanup can terminate");
 assert.deepEqual(openCodeProbeSpawnOptions("win32"), { detached: false }, "Windows probes rely on taskkill's explicit process-tree cleanup rather than a detached process group");
-const firstCapabilities = await openCodeRunCapabilities("probe-fixture", async () => ({
-  helpProbe: { complete: true, output: "  --format <format>  Output format: text, json\n" },
-  versionProbe: { complete: true, output: "opencode 1.0.0" },
-}));
+const probeEnv = { PATH: "/scoped/opencode", XDG_RUNTIME_DIR: "/tmp" };
+let observedProbeEnv: NodeJS.ProcessEnv | undefined;
+const firstCapabilities = await openCodeRunCapabilities("probe-fixture", async (env) => {
+  observedProbeEnv = env;
+  return {
+    helpProbe: { complete: true, output: "  --format <format>  Output format: text, json\n" },
+    versionProbe: { complete: true, output: "opencode 1.0.0" },
+  };
+}, probeEnv);
+assert.equal(observedProbeEnv, probeEnv, "callers can retain one scoped environment for preflight, probes, and launch");
 const replacementCapabilities = await openCodeRunCapabilities("probe-fixture", async () => ({
   helpProbe: { complete: true, output: "  --format <format>  Output format: text\n" },
   versionProbe: { complete: true, output: "opencode 1.0.0" },
-}));
+}), () => "probe-fixture-launcher");
 assert.equal(firstCapabilities.json, true);
 assert.equal(replacementCapabilities.json, false, "an in-place same-version CLI replacement is reprobed before Cave chooses JSON argv");
+
+let fallbackClock = 1_000;
+const fallbackIdentity = () => "C:\\npm\\opencode.cmd\0 42\0 100";
+const fallbackSeed = await openCodeRunCapabilities("fallback-fixture", async () => ({
+  helpProbe: { complete: true, output: "  --format <format>  Output format: text, json\n" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), fallbackIdentity, () => fallbackClock);
+assert.equal(fallbackSeed.probeStatus, "verified");
+const transientFallback = await openCodeRunCapabilities("fallback-fixture", async () => ({
+  helpProbe: { complete: false, output: "" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), fallbackIdentity, () => fallbackClock);
+assert.equal(transientFallback.probeStatus, "fallback", "a failed help probe can use only a recent complete contract for the same launcher");
+assert.equal(transientFallback.json, true, "the verified JSON contract survives a transient probe failure without guessing new argv");
+const changedIdentity = await openCodeRunCapabilities("fallback-fixture", async () => ({
+  helpProbe: { complete: false, output: "" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), () => "C:\\npm\\opencode.cmd\0 43\0 101", () => fallbackClock);
+assert.equal(changedIdentity.probeStatus, "unavailable", "a changed launcher file never inherits a prior capability contract");
+fallbackClock += openCodeVerifiedCapabilityFallbackTtlMs();
+const expiredFallback = await openCodeRunCapabilities("fallback-fixture", async () => ({
+  helpProbe: { complete: false, output: "" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), fallbackIdentity, () => fallbackClock);
+assert.equal(expiredFallback.probeStatus, "unavailable", "expired verified evidence cannot mask a later failed probe");
+const noJsonHelp = await openCodeRunCapabilities("no-json-fixture", async () => ({
+  helpProbe: { complete: true, output: "  --format <format>  Output format: text\n" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), fallbackIdentity, () => fallbackClock);
+assert.equal(noJsonHelp.probeStatus, "verified");
+assert.equal(noJsonHelp.json, false, "a complete help response without JSON remains a confirmed plain-mode capability");
+const versionlessIdentity = () => "versionless-launcher";
+await openCodeRunCapabilities("versionless-fixture", async () => ({
+  helpProbe: { complete: true, output: "  --format <format>  Output format: text, json\n" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), versionlessIdentity, () => fallbackClock);
+await openCodeRunCapabilities("versionless-fixture", async () => ({
+  helpProbe: { complete: true, output: "  --format <format>  Output format: text\n" },
+  versionProbe: { complete: false, output: "" },
+}), versionlessIdentity, () => fallbackClock);
+const versionlessFallback = await openCodeRunCapabilities("versionless-fixture", async () => ({
+  helpProbe: { complete: false, output: "" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), versionlessIdentity, () => fallbackClock);
+assert.equal(versionlessFallback.probeStatus, "unavailable", "a complete capability response without a version invalidates every older launcher contract");
+const raceIdentities = ["launcher-before", "launcher-after"];
+const racedProbe = await openCodeRunCapabilities("probe-race", async () => ({
+  helpProbe: { complete: true, output: "  --format <format>  Output format: text, json\n" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), () => raceIdentities.shift() ?? "launcher-after", () => fallbackClock);
+assert.equal(racedProbe.probeStatus, "verified", "a complete probe remains usable for its current turn even when the launcher changes during probing");
+const racedFallback = await openCodeRunCapabilities("probe-race", async () => ({
+  helpProbe: { complete: false, output: "" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), () => "launcher-after", () => fallbackClock);
+assert.equal(racedFallback.probeStatus, "unavailable", "a launcher changed during a complete probe cannot seed later fallback evidence");
+
+if (process.platform === "win32") {
+  const identityRoot = mkdtempSync(path.join(tmpdir(), "cave-opencode-identity-"));
+  try {
+    const localBin = path.join(identityRoot, "node_modules", ".bin");
+    const packageBin = path.join(identityRoot, "node_modules", "opencode-ai", "bin");
+    mkdirSync(localBin, { recursive: true });
+    mkdirSync(packageBin, { recursive: true });
+    writeFileSync(path.join(localBin, "opencode.cmd"), "@echo off\r\n");
+    writeFileSync(path.join(localBin, "opencode.exe"), "direct-executable");
+    const packageExecutable = path.join(packageBin, "opencode.exe");
+    writeFileSync(packageExecutable, "package-target-one");
+    const cmdIdentity = await openCodeCapabilityLaunchIdentity({ PATH: localBin, PATHEXT: ".CMD;.EXE" }, "win32");
+    const exeIdentity = await openCodeCapabilityLaunchIdentity({ PATH: localBin, PATHEXT: ".EXE;.CMD" }, "win32");
+    assert.notEqual(cmdIdentity, exeIdentity, "PATHEXT order selects and fingerprints only the actual Windows launcher");
+    const timestamp = new Date("2026-01-01T00:00:00.000Z");
+    utimesSync(packageExecutable, timestamp, timestamp);
+    writeFileSync(packageExecutable, "package-target-two");
+    utimesSync(packageExecutable, timestamp, timestamp);
+    const replacementIdentity = await openCodeCapabilityLaunchIdentity({ PATH: localBin, PATHEXT: ".CMD;.EXE" }, "win32");
+    assert.notEqual(cmdIdentity, replacementIdentity, "a same-size package replacement with a restored timestamp changes the content fingerprint");
+  } finally {
+    rmSync(identityRoot, { recursive: true, force: true });
+  }
+}
+
+const boundedClock = 10_000;
+for (let index = 0; index <= openCodeVerifiedCapabilityFallbackLimit(); index += 1) {
+  const identity = () => `bounded-launcher-${index}`;
+  await openCodeRunCapabilities(`bounded-${index}`, async () => ({
+    helpProbe: { complete: true, output: "  --format <format>  Output format: text, json\n" },
+    versionProbe: { complete: true, output: "opencode 1.18.5" },
+  }), identity, () => boundedClock);
+}
+const evictedFallback = await openCodeRunCapabilities("bounded-0", async () => ({
+  helpProbe: { complete: false, output: "" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), () => "bounded-launcher-0", () => boundedClock);
+assert.equal(evictedFallback.probeStatus, "unavailable", "bounded evidence evicts the oldest verified contract rather than retaining it indefinitely");
 assert.deepEqual(
   openCodeProbeTreeKillCommand(4242, "win32"),
   { command: "taskkill.exe", args: ["/PID", "4242", "/T", "/F"] },

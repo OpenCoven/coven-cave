@@ -1,4 +1,5 @@
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+import type { RuntimeAvailabilitySummary } from "./runtime-availability.ts";
 
 export type CompatibilityAdapter = {
   id: string;
@@ -41,6 +42,9 @@ export type AdapterReport = {
   /** Runtime-discovered model choices, when the local CLI exposes them. */
   models?: Array<{ id: string; label: string }>;
   defaultModel?: string | null;
+  /** Chat launch-vehicle availability (#3856): whether the send route could
+   * actually spawn this adapter's launch command right now. */
+  availability?: RuntimeAvailabilitySummary;
 };
 
 export type AdapterSetupState =
@@ -316,11 +320,17 @@ export function mergeAdapterReports(
       manifestPath: local.manifestPath ?? null,
       ...(local.models ? { models: local.models } : {}),
       ...(local.defaultModel ? { defaultModel: local.defaultModel } : {}),
+      ...(local.availability ? { availability: local.availability } : {}),
     });
   }
 
   for (const coven of covenReports) {
     const existing = merged.get(coven.id);
+    // A runner-specific launch probe is stricter than the broad adapter list:
+    // do not let a report produced under another spawn environment turn a
+    // known-unlaunchable local chat runner back into an "installed" UI row.
+    const launchUnavailable = existing?.availability?.state !== undefined
+      && existing.availability.state !== "ready";
     merged.set(coven.id, {
       id: coven.id,
       // Cave's curated label wins over the daemon manifest's — otherwise a
@@ -329,7 +339,7 @@ export function mergeAdapterReports(
       label: existing?.label ?? coven.label,
       binary: coven.executable,
       chatSupported: existing?.chatSupported ?? isTrustedChatHarness(coven.id),
-      installed: coven.available || existing?.installed === true,
+      installed: launchUnavailable ? false : coven.available || existing?.installed === true,
       path: existing?.path ?? null,
       version: existing?.version ?? null,
       installHint: coven.install_hint || existing?.installHint || "",
@@ -337,6 +347,7 @@ export function mergeAdapterReports(
       manifestPath: coven.manifest_path ?? existing?.manifestPath ?? null,
       ...(existing?.models ? { models: existing.models } : {}),
       ...(existing?.defaultModel ? { defaultModel: existing.defaultModel } : {}),
+      ...(existing?.availability ? { availability: existing.availability } : {}),
     });
   }
 

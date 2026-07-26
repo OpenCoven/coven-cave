@@ -8,9 +8,6 @@ type Props = {
   /** Gates the Enhance action (needs a selected familiar). Familiar SELECTION
    *  itself lives in the sidenav header switcher (cave-vtk9), not this bar. */
   activeFamiliarId: string | null;
-  /** Active familiar display name — personalizes the command-bar placeholder
-   *  ("Search or ask <name>…"). Falls back to Salem, the docs familiar. */
-  activeFamiliarName?: string | null;
   /** Running-processes control (waveform trigger + popover), rendered by the
    *  workspace (it owns the sessions state and chat navigation) so this bar
    *  stays markup-thin. Hidden at zero by the control itself. */
@@ -59,7 +56,6 @@ function fmtBadge(n: number): string {
  */
 export function FamiliarMenuBar({
   activeFamiliarId,
-  activeFamiliarName,
   runningStatus,
   bell,
   taskCount,
@@ -80,10 +76,6 @@ export function FamiliarMenuBar({
       ? `${enrichProgress.done}/${enrichProgress.total}`
       : "Starting..."
     : "Enhance";
-  // The command bar addresses whoever is summoned; without a scoped familiar
-  // it falls back to Salem, the docs familiar, who answers doc questions.
-  const searchTarget = activeFamiliarName?.trim() || "Salem";
-
   return (
     <nav className="menu-bar" aria-label="Chat with familiars and view tasks">
       {/* Familiar scope moved to the sidenav header (cave-vtk9) — present on

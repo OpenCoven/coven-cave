@@ -14,8 +14,8 @@ assert.match(context, /"projects"/, "studio tab union includes projects");
 assert.match(inline, /id: "projects", label: "Projects"/, "inline studio exposes a Projects tab");
 assert.match(
   inline,
-  /activeTab === "projects" \? <FamiliarStudioProjectsTab familiar=\{familiar\} \/>/,
-  "inline studio renders the Projects tab body for the selected familiar",
+  /activeTab === "projects" \? \([\s\S]*?<FamiliarStudioProjectsTab familiar=\{familiar\} \/>[\s\S]*?<AccessGroupsSection familiars=\{resolved\} \/>[\s\S]*?\) : null/,
+  "inline studio renders project grants and access groups together for the selected familiar",
 );
 
 // ── The standalone Settings → Permissions section is gone ────────────────────

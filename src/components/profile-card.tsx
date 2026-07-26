@@ -165,7 +165,7 @@ export function ProfileCard({
   const profile = isHuman ? vm.userProfile ?? snapshot?.profile ?? null : null;
 
   const name = isHuman ? userDisplayName(profile) : vm.familiar?.display_name ?? "familiar";
-  const handle = isHuman ? humanHandle(profile?.name) : vm.familiar?.id ?? "";
+  const handle = isHuman ? humanHandle(name === "You" ? null : name) : vm.familiar?.id ?? "";
   const bio = isHuman
     ? [profile?.pronouns, profile?.bio].filter(Boolean).join(" · ") || "operator of this coven"
     : [vm.familiar?.role, vm.familiar?.description].filter(Boolean).join(" · ");

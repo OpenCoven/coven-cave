@@ -204,6 +204,7 @@ async function connect(
       voiceId: connection.voiceId || DEFAULT_ELEVENLABS_VOICE_ID,
       modelId: connection.modelId || DEFAULT_ELEVENLABS_MODEL_ID,
     }),
+    mouthEngine: "elevenlabs",
     callbacks,
     brainErrorCode: "familiar_brain_failed",
     brainErrorHint: FAMILIAR_BRAIN_ERROR_HINT,

@@ -79,4 +79,97 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
   }
 }
 
+// ── Replacement frames supersede earlier draft text ─────────────────────────
+// Native-chat adapters can replace the running response after emitting chunks.
+// Journal generation must preserve that stream contract while handling drops.
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "assistant_chunk", text: "Draft reflection." },
+            { kind: "assistant_replace", text: "Final reflection." },
+            { kind: "done", sessionId: "j2", isError: false },
+          ];
+          frames.forEach((frame, index) => {
+            controller.enqueue(encoder.encode(`id: ${index + 1}\ndata: ${JSON.stringify(frame)}\n\n`));
+          });
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(result.error, null, "a replacement frame is not an error");
+    assert.equal(result.text, "Final reflection.", "replacement text supersedes earlier chunks");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// ── Mid-stream failures become normal results instead of wedging the UI ──────
+// ReadableStream reader.read() rejects when the connection drops after headers.
+// The journal used to let that rejection escape, leaving JournalEntries'
+// `generating` state stuck forever. Preserve any partial text and surface the
+// transport failure just like the working Canvas generation path.
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  let pulls = 0;
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) {
+            controller.enqueue(
+              encoder.encode('id: 1\ndata: {"kind":"assistant_chunk","text":"A partial reflection."}\n\n'),
+            );
+            return;
+          }
+          controller.error(new Error("connection dropped"));
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(result.text, "A partial reflection.", "partial text survives a stream failure");
+    assert.match(result.error ?? "", /connection dropped/, "the stream rejection is returned as an actionable error");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// A semantic SSE error is more actionable than the transport failure that can
+// follow it while the server closes the stream. Preserve the first error.
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  let pulls = 0;
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) {
+            controller.enqueue(
+              encoder.encode('id: 1\ndata: {"kind":"error","message":"Familiar runtime is unavailable."}\n\n'),
+            );
+            return;
+          }
+          controller.error(new Error("socket reset"));
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(result.error, "Familiar runtime is unavailable.", "a later reader rejection does not replace the SSE error");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 console.log("journal-generate.test.ts: ok");

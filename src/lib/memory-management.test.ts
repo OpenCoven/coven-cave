@@ -33,7 +33,7 @@ assert.equal(file.size, 12);
 assert.equal(file.kind, "coven-origin");
 assert.equal(file.updatedAt, Date.parse("2001-09-09T01:46:40.000Z"));
 
-import { classifyProtection, isStructuralMemoryPath, detectStale, ruleBasedStaleScorer } from "./memory-management.ts";
+import { classifyProtection, isStructuralMemoryPath, detectStale } from "./memory-management.ts";
 import type { StaleScorer, ManagedMemoryEntry } from "./memory-management.ts";
 
 assert.equal(classifyProtection("/h/.coven/memory/kitty/MEMORY.md"), "structural");

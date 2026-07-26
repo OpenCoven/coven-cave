@@ -40,7 +40,7 @@ function downloadLabel(job: DownloadJob | undefined): string | null {
 export function VoiceEngineSettings() {
   const [models, setModels] = useState<VoiceModel[]>([]);
   const [jobs, setJobs] = useState<DownloadJob[]>([]);
-  const [runtime, setRuntime] = useState<RuntimeStatus | null>(null);
+  const [runtimes, setRuntimes] = useState<{ piper?: RuntimeStatus; kokoro?: RuntimeStatus } | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [busyModelId, setBusyModelId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,14 +55,17 @@ export function VoiceEngineSettings() {
         fetch("/api/voice/engines", { cache: "no-store" }),
         fetch("/api/voice/engines/downloads", { cache: "no-store" }),
       ]);
-      const engines = await enginesResponse.json().catch(() => null) as { ok?: unknown; tts?: unknown; runtimes?: { piper?: RuntimeStatus } } | null;
+      const engines = await enginesResponse.json().catch(() => null) as { ok?: unknown; tts?: unknown; runtimes?: { piper?: RuntimeStatus; kokoro?: RuntimeStatus } } | null;
       const downloadJobs = await jobsResponse.json().catch(() => null) as { ok?: unknown; jobs?: unknown } | null;
       if (!enginesResponse.ok || engines?.ok !== true || !Array.isArray(engines.tts) || !jobsResponse.ok || downloadJobs?.ok !== true || !Array.isArray(downloadJobs.jobs)) {
         throw new Error("The local speech service returned an invalid response.");
       }
       setModels(engines.tts.filter(isVoiceModel));
       setJobs(downloadJobs.jobs.filter(isDownloadJob));
-      setRuntime(engines.runtimes?.piper ?? { available: false });
+      setRuntimes({
+        piper: engines.runtimes?.piper ?? { available: false },
+        kokoro: engines.runtimes?.kokoro ?? { available: false },
+      });
       setStatus("ready");
     } catch (cause) {
       setStatus("error");
@@ -117,9 +120,16 @@ export function VoiceEngineSettings() {
   return (
     <SettingsGroup label="Local speech" description="Downloaded voices stay on this device and are verified before Piper can use them.">
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4 py-3">
-        <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]" role="status">
-          {status === "loading" ? "Loading local voices…" : runtime?.available === true ? "Piper runtime ready." : runtime?.hint ?? "Piper runtime unavailable. Downloaded voices remain unavailable until Piper is installed."}
-        </p>
+        <div className="min-w-0">
+          <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]" role="status">
+            {status === "loading" ? "Loading local voices…" : runtimes?.piper?.available === true ? "Piper runtime ready." : runtimes?.piper?.hint ?? "Piper runtime unavailable. Downloaded voices remain unavailable until Piper is installed."}
+          </p>
+          {status !== "loading" && models.some((model) => model.engine === "kokoro") ? (
+            <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+              {runtimes?.kokoro?.available === true ? "Kokoro runtime ready." : runtimes?.kokoro?.hint ?? "Kokoro runtime unavailable. Kokoro voices remain unavailable until it is installed."}
+            </p>
+          ) : null}
+        </div>
         <Button size="xs" variant="ghost" onClick={() => void refresh()} loading={status === "loading"} leadingIcon="ph:arrows-clockwise">Refresh</Button>
       </div>
       {models.map((model) => {

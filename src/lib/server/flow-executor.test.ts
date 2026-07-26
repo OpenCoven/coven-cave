@@ -41,6 +41,26 @@ assert.match(
   /const hubAuthority = config\.multiHost\?\.mode === "hub";[\s\S]*binding\.harness === "copilot" && !sshBound && !hubAuthority/,
   "direct copilot flow spawn must not bypass configured hub authority",
 );
+assert.match(
+  source,
+  /Promise\.all\(\[\s*probeCopilotCapability\(\),\s*resolveRuntimeCompatibility\("copilot"\),[\s\S]*copilotStreamSpec\(\s*capability\.version,\s*compatibility\?\.eventProtocols,/,
+  "direct Copilot flow runs consume versioned protocol metadata without allowing it to alter argv",
+);
+assert.match(
+  source,
+  /if \(binding\.harness === "copilot" && !sshBound && !hubAuthority\)[\s\S]*?if \(spec\)[\s\S]*?return \{\s*ok: false,\s*status: 409,/,
+  "an unsupported local Copilot flow fails explicitly instead of falling through to the known prompt-mangling daemon path",
+);
+assert.match(
+  source,
+  /const capabilityFailure = copilotCapabilityFailureMessage\(capability\);[\s\S]*?if \(capabilityFailure\)[\s\S]*?status: 409[\s\S]*?const spec = copilotStreamSpec\(/,
+  "a direct Copilot flow returns the shared truthful capability cause before checking schema compatibility",
+);
+assert.match(
+  source,
+  /if \(capabilityFailure\)[\s\S]*?return \{[\s\S]*?status: 409[\s\S]*?startCopilotFlowRun\(/,
+  "a failed capability gate cannot start a direct flow session",
+);
 
 // Flow prompts direct familiars to write memory/self-reports into their own
 // workspace, but the spawn cwd is the project root and a non-interactive run

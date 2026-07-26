@@ -1,27 +1,53 @@
 "use client";
 
-import { useEffect, useMemo, type CSSProperties } from "react";
-import { Icon, type IconName } from "@/lib/icon";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent,
+} from "react";
+
+import { AccessGroupsSection } from "@/components/access-groups-section";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { FamiliarStudioBrainTab } from "@/components/familiar-studio-brain-tab";
+import { FamiliarStudioIdentityTab } from "@/components/familiar-studio-identity-tab";
+import { FamiliarStudioMemoryTab } from "@/components/familiar-studio-memory-tab";
+import { FamiliarStudioProjectsTab } from "@/components/familiar-studio-projects-tab";
+import { SettingsFamiliarPicker } from "@/components/settings-familiar-picker";
+import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
-import { useFamiliarStudio, BRAIN_STUDIO_FAMILIAR_KEY, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
+import { VaultPanel } from "@/components/vault-panel";
 import { useDaemonSyncStatus } from "@/lib/daemon-sync-status";
+import {
+  BRAIN_STUDIO_FAMILIAR_KEY,
+  useFamiliarStudio,
+  type FamiliarStudioTab,
+} from "@/lib/familiar-studio-context";
+import {
+  FAMILIAR_IMAGE_ACCEPT,
+  useFamiliarImageUpload,
+} from "@/lib/familiar-image-upload";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
-import { FamiliarStudioIdentityTab } from "./familiar-studio-identity-tab";
-import { FamiliarStudioBrainTab } from "./familiar-studio-brain-tab";
-import { FamiliarStudioMemoryTab } from "./familiar-studio-memory-tab";
-import { FamiliarStudioProjectsTab } from "./familiar-studio-projects-tab";
-import { SettingsFamiliarPicker } from "./settings-familiar-picker";
-import { VaultPanel } from "./vault-panel";
+import { resolveFamiliarTypes, FAMILIAR_TYPES } from "@/lib/familiar-types";
+import { streamFamiliarText } from "@/lib/familiar-stream";
+import { runtimeDisplayLabel } from "@/lib/harness-adapters";
+import { Icon, type IconName } from "@/lib/icon";
+import { requestAgentsNewChat } from "@/lib/agents-new-chat";
 import type { Familiar } from "@/lib/types";
+import { useProjects } from "@/lib/use-projects";
 
 type Props = {
-  /** Raw daemon roster — fed to the tab bodies that diff against pre-override values. */
+  /** Raw daemon roster — fed to tab bodies that diff against pre-override values. */
   familiars: Familiar[];
-  /** Resolved roster (cave overrides applied) — drives the master list + tab bodies. */
+  /** Resolved roster (Cave overrides applied) — drives the roster and Studio. */
   resolved: ResolvedFamiliar[];
-  /** Opens the summoning circle from the familiar picker's fixed footer. */
+  /** Opens the production summoning circle. */
   onSummon?: () => void;
-  /** Re-fetch the roster after the Identity tab's lifecycle section removes/restores a familiar. */
+  /** Re-fetch after lifecycle controls remove or restore a familiar. */
   onRosterChanged?: () => void;
 };
 
@@ -34,49 +60,88 @@ const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
 ];
 
 /**
- * Inline, non-modal Familiar Studio for the Settings → Familiars section.
+ * Settings → Familiars control sheet.
  *
- * Unlike the global `<FamiliarStudio>` drawer (mounted in the Workspace), this
- * is a master-detail panel: a familiar dropdown above the studio settings tabs
- * for the selected familiar. The Settings route mounts the
- * `FamiliarStudioProvider` but never the drawer, so the per-card "Edit" buttons
- * used to set context state that nothing rendered — this surface is what makes
- * editing a familiar actually work inside Settings.
- *
- * It reuses the same context for selection (so `activeTab` persistence and the
- * deep-link `openFamiliarStudio(id, tab)` semantics carry over) and the same
- * tab-body components as the drawer. The Settings provider instance is isolated
- * from the Workspace one, so selecting here never auto-opens the drawer there.
+ * The Settings shell already owns the app navigation rail. This component
+ * supplies the second and third panes from the handoff: a persistent familiar
+ * roster and one scroll-contained detail sheet. The existing Studio tabs,
+ * mutations, summoning circle, lifecycle flow, and daemon-sync contracts stay
+ * authoritative underneath the new layout.
  */
-export function FamiliarStudioInlinePanel({ familiars, resolved, onSummon, onRosterChanged }: Props) {
-  const { activeFamiliarId, activeTab, setActiveTab, openFamiliarStudio } = useFamiliarStudio();
+export function FamiliarStudioInlinePanel({
+  familiars,
+  resolved,
+  onSummon,
+  onRosterChanged,
+}: Props) {
+  const {
+    activeFamiliarId,
+    activeTab,
+    setActiveTab,
+    openFamiliarStudio,
+  } = useFamiliarStudio();
   const daemonSync = useDaemonSyncStatus();
+  const [testRunOpen, setTestRunOpen] = useState(false);
 
   const familiar = useMemo(
-    () => resolved.find((f) => f.id === activeFamiliarId) ?? null,
+    () => resolved.find((item) => item.id === activeFamiliarId) ?? null,
     [resolved, activeFamiliarId],
   );
+  const { projects, loading: projectsLoading } = useProjects({
+    familiarId: familiar?.id ?? null,
+    enabled: Boolean(familiar),
+  });
+  const memoryCount = useFamiliarMemoryCount(familiar?.id ?? null);
+  const displayedTab = activeTab === "contract" ? "identity" : activeTab;
 
   // Auto-select a familiar so the detail pane is never empty on entry, and
-  // recover if the current selection vanishes (archived/removed) while open.
-  // Prefer the one-shot handoff id written by "Open Brain Studio" so the right
-  // familiar opens (not just the first), then fall back to the first.
+  // recover if the current selection vanishes after archive/removal. Prefer
+  // the one-shot "Open Brain Studio" handoff id when present.
   useEffect(() => {
     if (resolved.length === 0) return;
-    if (!activeFamiliarId || !resolved.some((f) => f.id === activeFamiliarId)) {
+    if (!activeFamiliarId || !resolved.some((item) => item.id === activeFamiliarId)) {
       let handoff: string | null = null;
       try {
         const stored = window.localStorage.getItem(BRAIN_STUDIO_FAMILIAR_KEY);
         if (stored) {
           window.localStorage.removeItem(BRAIN_STUDIO_FAMILIAR_KEY);
-          if (resolved.some((f) => f.id === stored)) handoff = stored;
+          if (resolved.some((item) => item.id === stored)) handoff = stored;
         }
       } catch {
-        /* ignore storage failures */
+        /* storage can be unavailable */
       }
       openFamiliarStudio(handoff ?? resolved[0].id);
     }
   }, [resolved, activeFamiliarId, openFamiliarStudio]);
+
+  // Contract used to be a standalone Studio tab. The handoff folds its
+  // Grimoire files into Identity, so old links and persisted tab state land on
+  // the real section instead of leaving the new five-tab sheet blank.
+  useEffect(() => {
+    if (activeTab !== "contract") return;
+    setActiveTab("identity");
+    const raf = requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(".familiar-studio-grimoire")?.focus({
+        preventScroll: true,
+      });
+      document.querySelector<HTMLElement>(".familiar-studio-grimoire")?.scrollIntoView({
+        block: "nearest",
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [activeTab, setActiveTab]);
+
+  const openLifecycle = useCallback(
+    (id: string) => {
+      openFamiliarStudio(id, "identity");
+      requestAnimationFrame(() => {
+        const lifecycle = document.querySelector<HTMLElement>(".familiar-studio-lifecycle");
+        lifecycle?.scrollIntoView({ block: "start" });
+        lifecycle?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+      });
+    },
+    [openFamiliarStudio],
+  );
 
   if (resolved.length === 0) {
     return (
@@ -91,56 +156,87 @@ export function FamiliarStudioInlinePanel({ familiars, resolved, onSummon, onRos
   return (
     <div
       className="familiar-studio-inline"
-      style={familiar ? ({ ["--familiar-accent"]: familiar.color } as CSSProperties) : undefined}
+      style={familiar
+        ? ({ ["--familiar-accent"]: familiar.color } as CSSProperties)
+        : undefined}
     >
       <SettingsFamiliarPicker
         familiars={resolved}
         value={activeFamiliarId}
         onChange={(id) => openFamiliarStudio(id, activeTab)}
         onSummon={onSummon}
+        onManageLifecycle={openLifecycle}
       />
 
       <div className="familiar-studio-inline__detail">
         {familiar ? (
           <>
-            <Tabs
-              variant="underline"
-              idPrefix="familiar-studio-inline"
-              ariaLabel="Studio sections"
-              value={activeTab}
-              onChange={setActiveTab}
-              items={TABS.map((t) => ({ id: t.id, label: t.label, icon: t.icon }))}
+            <FamiliarStudioHero
+              familiar={familiar}
+              projectCount={projects.length}
+              projectsLoading={projectsLoading}
+              memoryCount={memoryCount}
+              onTestRun={() => setTestRunOpen(true)}
             />
+
+            <div className="familiar-studio-inline__tabs">
+              <Tabs
+                variant="underline"
+                idPrefix="familiar-studio-inline"
+                ariaLabel="Studio sections"
+                value={displayedTab}
+                onChange={setActiveTab}
+                items={TABS.map((tab) => ({
+                  id: tab.id,
+                  label: tab.label,
+                  icon: tab.icon,
+                }))}
+              />
+            </div>
 
             <div
               role="tabpanel"
-              id={`familiar-studio-inline-panel-${activeTab}`}
-              aria-labelledby={`familiar-studio-inline-tab-${activeTab}`}
+              id={`familiar-studio-inline-panel-${displayedTab}`}
+              aria-labelledby={`familiar-studio-inline-tab-${displayedTab}`}
               className="familiar-studio__body familiar-studio-inline__body"
             >
-              {activeTab === "identity" ? (
+              {displayedTab === "identity" ? (
                 <FamiliarStudioIdentityTab
                   familiar={familiar}
                   rawDaemonValues={{
-                    display_name: familiars.find((f) => f.id === familiar.id)?.display_name,
-                    role: familiars.find((f) => f.id === familiar.id)?.role,
-                    pronouns: familiars.find((f) => f.id === familiar.id)?.pronouns,
-                    description: familiars.find((f) => f.id === familiar.id)?.description,
+                    display_name: familiars.find((item) => item.id === familiar.id)?.display_name,
+                    role: familiars.find((item) => item.id === familiar.id)?.role,
+                    pronouns: familiars.find((item) => item.id === familiar.id)?.pronouns,
+                    description: familiars.find((item) => item.id === familiar.id)?.description,
                   }}
                   allFamiliars={resolved}
                   onRosterChanged={onRosterChanged}
                 />
               ) : null}
-              {activeTab === "brain" ? <FamiliarStudioBrainTab familiar={familiar} /> : null}
-              {activeTab === "memory" ? (
-                <FamiliarStudioMemoryTab familiar={familiar} allFamiliars={familiars} />
+              {activeTab === "brain" ? (
+                <FamiliarStudioBrainTab familiar={familiar} />
               ) : null}
-              {activeTab === "projects" ? <FamiliarStudioProjectsTab familiar={familiar} /> : null}
-              {activeTab === "vault" ? <VaultPanel /> : null}
+              {activeTab === "memory" ? (
+                <FamiliarStudioMemoryTab
+                  familiar={familiar}
+                  allFamiliars={familiars}
+                />
+              ) : null}
+              {activeTab === "projects" ? (
+                <div className="familiar-studio-control__projects">
+                  <FamiliarStudioProjectsTab familiar={familiar} />
+                  <AccessGroupsSection familiars={resolved} />
+                </div>
+              ) : null}
+              {activeTab === "vault" ? (
+                <VaultPanel familiarId={familiar.id} />
+              ) : null}
             </div>
 
             <footer className="familiar-studio__footer">
-              <span className="familiar-studio__autosave">Changes save automatically</span>
+              <span className="familiar-studio__autosave">
+                Changes save automatically
+              </span>
               {daemonSync.offline ? (
                 <span
                   className="familiar-studio__sync-warn"
@@ -150,8 +246,19 @@ export function FamiliarStudioInlinePanel({ familiars, resolved, onSummon, onRos
                   <Icon name="ph:warning-circle" width={11} />
                   Saved locally, daemon offline
                 </span>
-              ) : null}
+              ) : (
+                <span className="familiar-studio-control__current">
+                  {familiar.display_name}
+                </span>
+              )}
             </footer>
+
+            <FamiliarTestRunModal
+              familiar={familiar}
+              open={testRunOpen}
+              onClose={() => setTestRunOpen(false)}
+              memoryCount={memoryCount}
+            />
           </>
         ) : (
           <div className="familiar-studio__empty">Select a familiar to edit.</div>
@@ -159,4 +266,348 @@ export function FamiliarStudioInlinePanel({ familiars, resolved, onSummon, onRos
       </div>
     </div>
   );
+}
+
+function FamiliarStudioHero({
+  familiar,
+  projectCount,
+  projectsLoading,
+  memoryCount,
+  onTestRun,
+}: {
+  familiar: ResolvedFamiliar;
+  projectCount: number;
+  projectsLoading: boolean;
+  memoryCount: number | null;
+  onTestRun: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const { onFile, toast } = useFamiliarImageUpload(familiar.id);
+  const types = resolveFamiliarTypes(familiar.familiarType);
+  const visibleTypes = types.length > 0 ? types : [FAMILIAR_TYPES[0]];
+  const runtime = familiar.harness ?? familiar.defaultHarness ?? "";
+  const voice = familiar.voiceProvider === "off"
+    ? "Text only"
+    : familiar.voiceName || familiar.voiceProvider || "Voice inherited";
+  const status = familiar.status || (
+    (familiar.active_sessions ?? 0) > 0 ? "working" : "status unknown"
+  );
+  const stats = [
+    {
+      label: runtime ? runtimeDisplayLabel(runtime) : "Runtime inherited",
+      tone: "success",
+    },
+    { label: familiar.model || "Model inherited", tone: "accent" },
+    { label: voice, tone: familiar.voiceProvider === "off" ? "muted" : "success" },
+    {
+      label: projectsLoading
+        ? "Projects…"
+        : `${projectCount} ${projectCount === 1 ? "project" : "projects"}`,
+      tone: projectCount > 0 ? "accent" : "muted",
+    },
+    {
+      label: memoryCount === null
+        ? "Memories…"
+        : `${memoryCount} ${memoryCount === 1 ? "memory" : "memories"}`,
+      tone: (memoryCount ?? 0) > 0 ? "accent" : "muted",
+    },
+  ];
+
+  const acceptAvatar = (file: File | undefined) => {
+    if (file) void onFile(file);
+  };
+  const dropAvatar = (event: DragEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setDragging(false);
+    acceptAvatar(event.dataTransfer.files[0]);
+  };
+
+  return (
+    <header className="familiar-studio-control__hero">
+      <div className="familiar-studio-control__avatar-wrap">
+        <button
+          type="button"
+          className="familiar-studio-control__avatar focus-ring"
+          data-dragging={dragging || undefined}
+          aria-label={`Replace ${familiar.display_name}'s portrait`}
+          title="Click or drop an image to replace the portrait"
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={dropAvatar}
+        >
+          <FamiliarAvatar
+            familiar={familiar}
+            size="xl"
+            className="familiar-studio-control__avatar-image"
+          />
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          hidden
+          accept={FAMILIAR_IMAGE_ACCEPT}
+          onChange={(event) => {
+            acceptAvatar(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
+        {toast ? (
+          <span className="familiar-studio-control__avatar-note" role="status">
+            {toast}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="familiar-studio-control__identity">
+        <div className="familiar-studio-control__name-row">
+          <h1>{familiar.display_name}</h1>
+          {familiar.role ? (
+            <span className="familiar-studio-control__role">{familiar.role}</span>
+          ) : null}
+        </div>
+        <div className="familiar-studio-control__meta">
+          <div className="familiar-studio-control__types" aria-label="Familiar types">
+            {visibleTypes.map((type) => (
+              <span key={type.id}>{type.label}</span>
+            ))}
+          </div>
+          <span className="familiar-studio-control__divider" aria-hidden />
+          <div className="familiar-studio-control__stats">
+            {stats.map((stat) => (
+              <span
+                key={stat.label}
+                className="familiar-studio-control__stat"
+                title={stat.label}
+              >
+                <span data-tone={stat.tone} aria-hidden />
+                {stat.label}
+              </span>
+            ))}
+          </div>
+        </div>
+        <span className="sr-only">Status: {status}</span>
+      </div>
+
+      <div className="familiar-studio-control__actions">
+        <Button
+          variant="primary"
+          size="sm"
+          leadingIcon="ph:chat-circle-dots"
+          onClick={() => requestAgentsNewChat({ familiarId: familiar.id })}
+        >
+          Open chat
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          leadingIcon="ph:sparkle"
+          onClick={onTestRun}
+        >
+          Test run
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+function FamiliarTestRunModal({
+  familiar,
+  open,
+  onClose,
+  memoryCount,
+}: {
+  familiar: ResolvedFamiliar;
+  open: boolean;
+  onClose: () => void;
+  memoryCount: number | null;
+}) {
+  const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [response, setResponse] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+
+  const run = useCallback(async () => {
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setState("running");
+    setResponse("");
+    setError(null);
+    try {
+      const result = await streamFamiliarText({
+        familiarId: familiar.id,
+        prompt: "Reply with one short sentence confirming your identity and readiness. Do not call tools or change files.",
+        origin: "enhance",
+        permissionMode: "read",
+        signal: controller.signal,
+        onText: setResponse,
+      });
+      if (controller.signal.aborted) return;
+      if (result.error) {
+        setError(result.error);
+        setState("error");
+        return;
+      }
+      setResponse(result.text);
+      setState("done");
+    } catch (cause) {
+      if (controller.signal.aborted) return;
+      setError(cause instanceof Error ? cause.message : "Test run failed");
+      setState("error");
+    }
+  }, [familiar.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    void run();
+    return () => controllerRef.current?.abort();
+  }, [open, run]);
+
+  const close = () => {
+    controllerRef.current?.abort();
+    onClose();
+  };
+  const runtime = familiar.harness ?? familiar.defaultHarness;
+  const checks = [
+    {
+      label: "Runtime",
+      detail: runtime ? runtimeDisplayLabel(runtime) : "Inherited from Coven",
+      status: "ready",
+    },
+    {
+      label: "Model",
+      detail: familiar.model || "Runtime default",
+      status: "ready",
+    },
+    {
+      label: "Voice",
+      detail: familiar.voiceProvider === "off"
+        ? "Off for this familiar"
+        : familiar.voiceName || familiar.voiceProvider || "Inherited",
+      status: familiar.voiceProvider === "off" ? "skipped" : "ready",
+    },
+    {
+      label: "Memory",
+      detail: memoryCount === null
+        ? "Count unavailable"
+        : `${memoryCount} ${memoryCount === 1 ? "entry" : "entries"} visible`,
+      status: memoryCount === null ? "unknown" : "ready",
+    },
+    {
+      label: "Live response",
+      detail: state === "running"
+        ? "Waiting for a read-only reply…"
+        : state === "done"
+          ? "Response received"
+          : state === "error"
+            ? error || "Run failed"
+            : "Queued",
+      status: state,
+    },
+  ];
+
+  return (
+    <Modal
+      open={open}
+      onClose={close}
+      dismissOnBackdrop={state !== "running"}
+      dismissOnEscape={state !== "running"}
+      breadcrumb={["Familiars", familiar.display_name, "Test run"]}
+      footerActions={(
+        <>
+          <Button variant="secondary" onClick={close}>Close</Button>
+          <Button
+            variant="primary"
+            leadingIcon="ph:sparkle"
+            loading={state === "running"}
+            onClick={() => void run()}
+          >
+            Run again
+          </Button>
+        </>
+      )}
+    >
+      <div className="familiar-test-run">
+        <div className="familiar-test-run__summary">
+          <div>
+            <h2>Read-only readiness check</h2>
+            <p>Confirms the configured route and asks the familiar for one harmless reply.</p>
+          </div>
+          <span data-state={state}>{state}</span>
+        </div>
+        <div className="familiar-test-run__checks">
+          {checks.map((check) => (
+            <div key={check.label} className="familiar-test-run__check">
+              <span className="familiar-test-run__check-icon" data-state={check.status} aria-hidden>
+                {check.status === "ready" || check.status === "done"
+                  ? "✓"
+                  : check.status === "running"
+                    ? "•"
+                    : "–"}
+              </span>
+              <span>
+                <strong>{check.label}</strong>
+                <small>{check.detail}</small>
+              </span>
+              <span className="familiar-test-run__badge" data-state={check.status}>
+                {check.status}
+              </span>
+            </div>
+          ))}
+        </div>
+        {response ? (
+          <div className="familiar-test-run__response" aria-live="polite">
+            <span>Response</span>
+            <p>{response}</p>
+          </div>
+        ) : null}
+      </div>
+    </Modal>
+  );
+}
+
+function useFamiliarMemoryCount(familiarId: string | null): number | null {
+  const [count, setCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!familiarId) {
+      setCount(null);
+      return;
+    }
+    const controller = new AbortController();
+    setCount(null);
+    const loadEntries = async (url: string) => {
+      const response = await fetch(url, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("Memory count unavailable");
+      return response.json();
+    };
+    void Promise.all([
+      loadEntries("/api/coven-memory"),
+      loadEntries("/api/memory"),
+    ])
+      .then(([coven, files]) => {
+        if (controller.signal.aborted) return;
+        const covenCount = Array.isArray(coven?.entries)
+          ? coven.entries.filter((entry: { familiar_id?: string }) => entry.familiar_id === familiarId).length
+          : 0;
+        const fileCount = Array.isArray(files?.entries)
+          ? files.entries.filter((entry: { familiarId?: string }) => entry.familiarId === familiarId).length
+          : 0;
+        setCount(covenCount + fileCount);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setCount(null);
+      });
+    return () => controller.abort();
+  }, [familiarId]);
+
+  return count;
 }

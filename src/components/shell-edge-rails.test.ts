@@ -20,7 +20,7 @@ const css = [
 const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 assert.match(
   shell,
-  /import \{ Icon, CAVE_ICON_SIZE, type IconName \} from "@\/lib\/icon"/,
+  /import \{ Icon, CAVE_ICON_SIZE \} from "@\/lib\/icon"/,
   "Shell should import the shared icon size constants with the Icon wrapper",
 );
 
@@ -228,8 +228,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*togglePanel\(navRef\.current\)/,
-  "left panel toggles from the resolved left-panel shortcut",
+  /const toggleDesktopNav = \(\) => \{[\s\S]*?panel\.isCollapsed\(\)[\s\S]*?panel\.expand\(\);[\s\S]*?setNavOpen\(true\);[\s\S]*?panel\.collapse\(\);[\s\S]*?setNavOpen\(false\);[\s\S]*?matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*?else toggleDesktopNav\(\)/,
+  "left panel shortcut toggles the resolved panel and synchronizes its visible state",
 );
 assert.doesNotMatch(
   shell,

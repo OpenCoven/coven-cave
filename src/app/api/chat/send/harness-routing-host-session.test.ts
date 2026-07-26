@@ -77,8 +77,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?await hermesChatSupportsModel\(\)/,
-  "Hermes model forwarding must probe its direct CLI instead of assuming the coven-run capability applies",
+  /const hermesModelCapability\s*=[\s\S]*?probe:\s*hermesChatSupportsModel[\s\S]*?const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?\(hermesModelCapability \?\? false\)/,
+  "Hermes model forwarding must consume its ready-plan-gated direct CLI probe instead of assuming the coven-run capability applies",
 );
 
 assert.match(
@@ -110,8 +110,8 @@ assert.doesNotMatch(
 // the flag; "full" stays implicit so the harness keeps its default sandbox.
 assert.match(
   chatRoute,
-  /covenRunSupportsPermission\(\)/,
-  "route capability-probes coven run --permission before forwarding",
+  /probeCovenCapability\(covenRunSupportsPermission\)/,
+  "route capability-probes coven run --permission through the ready-plan gate before forwarding",
 );
 assert.match(
   chatRoute,
@@ -236,6 +236,19 @@ assert.match(
   "OpenClaw agent listing should launch Windows npm .cmd shims correctly",
 );
 
+const malformedOpenClawIndex = chatRoute.indexOf('assistantText = "The OpenClaw bridge emitted an invalid response."');
+const openClawFinalizationIndex = chatRoute.indexOf('if (sessionId) push({ kind: "session", sessionId });', malformedOpenClawIndex);
+assert.ok(
+  malformedOpenClawIndex >= 0 && openClawFinalizationIndex > malformedOpenClawIndex,
+  "malformed OpenClaw stdout records a fixed diagnostic and continues through normal stream finalization",
+);
+const openClawMalformedWindow = chatRoute.slice(malformedOpenClawIndex, openClawFinalizationIndex);
+assert.doesNotMatch(
+  openClawMalformedWindow,
+  /copilotProtocolDiagnosticCodes|return;/,
+  "OpenClaw malformed-output handling is isolated from Copilot diagnostics and cannot abandon completion",
+);
+
 assert.match(
   chatRoute,
   /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*const spawnArgv = \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\];[\s\S]*spawn\(openclawLaunch\.command, spawnArgv,[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: false/,
@@ -313,13 +326,13 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /persistSendModelIntent\(conv, args\.body, args\.modelState\)/,
-  "OpenClaw transcript persistence should save direct session-scoped model intent",
+  /persistSendModelIntent\(\s*conv,\s*args\.body,\s*args\.modelState,\s*args\.initialModelIntent,\s*\)/,
+  "OpenClaw transcript persistence should guard session model intent against a newer mid-stream PATCH",
 );
 assert.match(
   chatRoute,
-  /persistSendModelIntent\(conv, body, modelState\)/,
-  "Native transcript persistence should save direct session-scoped model intent",
+  /persistSendModelIntent\(\s*conv,\s*body,\s*modelState,\s*existingConversation\?\.modelIntent\?\.model \?\? null,\s*\)/,
+  "Native transcript persistence should guard session model intent against a newer mid-stream PATCH",
 );
 assert.match(
   chatRoute,
@@ -376,6 +389,20 @@ assert.match(
   modelHelpers,
   /const speed = normalizeResponseSpeed\(body\.responseSpeed\)/,
   "Chat send model helpers should continue accepting responseSpeed from all composer send bodies",
+);
+assert.match(
+  modelHelpers,
+  /export function persistedTurnControls\([\s\S]*reasoningEffort: normalizeReasoningEffort\(body\.reasoningEffort\),[\s\S]*responseSpeed: normalizeResponseSpeed\(body\.responseSpeed\),[\s\S]*cleanModelId\(retryModel\)/,
+  "Completed user turns should retain normalized controls and only a confirmed or routed retry model",
+);
+assert.equal(
+  (
+    chatRoute.match(
+      /\.\.\.persistedTurnControls\((?:args\.body|body), responseMetadata\.retryModel\)/g,
+    ) ?? []
+  ).length,
+  4,
+  "OpenClaw and native stub plus transcript writers should persist retry controls",
 );
 assert.match(
   chatRoute,
@@ -443,8 +470,42 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /await resolveLocalRuntimeCwd\(body\.projectRoot \?\? resumeCwd \?\? resolvedFamiliarWorkspace\)/,
-  "Local Cave chat must fail closed on invalid project roots instead of downgrading to homedir",
+  /await resolveLocalRuntimeCwd\(authorizedProjectRoot\)/,
+  "Local Cave chat should resolve only the root accepted by the shared launch gate",
+);
+
+assert.match(
+  chatRoute,
+  /authorizeChatProjectLaunch/,
+  "typed chat should use the shared project launch gate",
+);
+assert.match(
+  chatRoute,
+  /const projectRootForLaunch = body\.projectRoot \?\? resumeCwd/,
+  "typed chat should only derive launch context from an explicit or trusted persisted project root",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /projectRootForLaunch\s*=\s*body\.projectRoot \?\? resumeCwd \?\? resolvedFamiliarWorkspace/,
+  "typed chat must not fall back to an unregistered familiar workspace",
+);
+assert.match(
+  chatRoute,
+  /const generationOrigin = existingConversation\?\.origin \?\? body\.origin/,
+  "a request must not relabel an existing user chat as a projectless hidden generation",
+);
+
+const authorizeLaunchIndex = chatRoute.indexOf("await authorizeChatProjectLaunch");
+const offlineLaunchIndex = chatRoute.indexOf("const offlineChatResponse = await maybeQueueOfflineChat");
+const openClawLaunchIndex = chatRoute.indexOf("return openClawChatResponse");
+assert.ok(authorizeLaunchIndex >= 0, "typed route should await project authorization");
+assert.ok(
+  offlineLaunchIndex > authorizeLaunchIndex,
+  "project authorization must run before an offline chat is queued",
+);
+assert.ok(
+  openClawLaunchIndex > authorizeLaunchIndex,
+  "project authorization must run before the OpenClaw bridge can spawn",
 );
 
 assert.match(
@@ -480,13 +541,13 @@ assert.match(
 assert.match(
   chatRoute,
   /import \{ chatProjectAccessId \} from "@\/lib\/chat-project-access";/,
-  "Chat send should resolve project access ids through the shared chat-project-access helper (explicit and resumed roots resolve to a project id; unknown explicit roots fail closed; the familiar's own workspace is exempt — see chat-project-access.test.ts)",
+  "Chat send should resolve exact and worktree roots through the shared chat-project-access helper",
 );
 
 assert.match(
   chatRoute,
-  /const chatProjectId = sshRuntime[\s\S]*chatProjectAccessId\(\{[\s\S]*requestedProjectRoot: body\.projectRoot,[\s\S]*resumeCwd,[\s\S]*resolvedCwd: cwd,[\s\S]*familiarWorkspace: resolvedFamiliarWorkspace,[\s\S]*\}\);[\s\S]*await assertProjectAccess\(\{ familiarId: body\.familiarId \}, chatProjectId, "chat"\);/,
-  "Local project-scoped chat must assert project access — with the familiar's own workspace exempt — before building the harness prompt",
+  /authorizeChatProjectLaunch\([\s\S]*chatProjectAccessId\(\{[\s\S]*requestedProjectRoot: requestedRoot,[\s\S]*resolvedCwd: resolvedRoot,[\s\S]*\}\)[\s\S]*await assertProjectAccess\(\{ familiarId: requestedFamiliarId \}, projectId, surface\)/,
+  "typed chat should resolve registration and assert familiar access inside the shared launch gate",
 );
 
 assert.match(
@@ -497,7 +558,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /body\.startNewConversation[\s\S]*!existingConversation[\s\S]*taskCard\?\.projectId[\s\S]*taskCard\.cwd === body\.projectRoot[\s\S]*taskWorktreeProjectId \?\? chatProjectAccessId/,
+  /body\.startNewConversation[\s\S]*!existingConversation[\s\S]*taskCard\?\.projectId[\s\S]*taskCard\.cwd === body\.projectRoot[\s\S]*projectIdOverride: taskWorktreeProjectId/,
   "A fresh Board worktree handoff should authorize through its persisted task project instead of treating the worktree as an unregistered project",
 );
 
@@ -527,8 +588,20 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /boundarySentinel\?\.observe\(block\.name, block\.input\)/,
-  "Envelope tool_use blocks should feed the boundary sentinel",
+  /parseClaudeMessageEnvelope\(ev, claudeCompatibility\.profile\)[\s\S]*?boundarySentinel\?\.observe\(claudeEvent\.name, claudeEvent\.input\)/,
+  "Profile-selected envelope tool_use blocks should feed the boundary sentinel",
+);
+
+assert.match(
+  chatRoute,
+  /binding\.harness === "claude" && sshRuntime[\s\S]*?tool activity cannot be verified on an SSH host/,
+  "SSH Claude sessions should preserve text-only chat and surface an honest compatibility diagnostic",
+);
+
+assert.match(
+  chatRoute,
+  /const claudeDiagnostic =[\s\S]*?if \(claudeDiagnostic\) \{[\s\S]*?pushProgress\("claude-runtime-compatibility", claudeDiagnostic, "error"\)/,
+  "Claude compatibility diagnostics should be emitted before stdout so an immediately failing CLI still explains the text-only fallback",
 );
 
 assert.match(

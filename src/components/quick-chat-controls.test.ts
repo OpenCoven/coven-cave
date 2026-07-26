@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
 const primitives = readFileSync(new URL("./quick-chat-primitives.tsx", import.meta.url), "utf8");
 const thread = readFileSync(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
+const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
 
 assert.match(primitives, /StandardSelect/, "quick-chat select helper should delegate to StandardSelect");
 assert.doesNotMatch(primitives, /PopoverBody|PopoverItem|anchorRef/, "quick-chat select helper should not maintain its own popover implementation");
@@ -54,19 +55,19 @@ assert.match(
 );
 assert.match(
   source,
-  /<QuickChatSelect[\s\S]*label="Project"[\s\S]*onChange=\{\(next\) => onPickProjectRoot\(/,
+  /<QuickChatSelect[\s\S]*label="Project"[\s\S]*onChange=\{\(next\) => \{[\s\S]*onPickProjectRoot\(next\)/,
   "the shared controls row includes project selection for quick chat",
 );
 // Once a project is picked the thread is locked to it — the menu collapses
 // into a read-only badge that names the selection (dropdown only when unset).
 assert.match(
   source,
-  /selectedProjectRoot \? \(\s*<span[\s\S]*?aria-label=\{`Project: \$\{selectedProjectName\} \(locked for this chat\)`\}[\s\S]*?\) : \(\s*<QuickChatSelect[\s\S]*?label="Project"/,
+  /selectedProject \? \(\s*<span[\s\S]*?aria-label=\{`Project: \$\{selectedProjectName\}, \$\{selectedProjectAccess\} access \(locked for this chat\)`\}[\s\S]*?\) : \(\s*<QuickChatSelect[\s\S]*?label="Project"/,
   "a selected project renders as a locked read-only badge instead of the picker menu",
 );
 assert.match(
   source,
-  /title=\{selectedProjectRoot\}/,
+  /title=\{selectedProject\.root\}/,
   "the locked project badge reveals the full root path on hover",
 );
 assert.match(
@@ -78,6 +79,26 @@ assert.match(
   source,
   /projectsLoading && projects\.length === 0[\s\S]*label: "Loading projects…"/,
   "project select shows a loading placeholder while scoped projects are fetching",
+);
+assert.doesNotMatch(
+  source,
+  /label: "No project"/,
+  "quick chat must not offer a project-free launch",
+);
+assert.match(
+  source,
+  /projectAccessLabel\(project\.access\)/,
+  "quick-chat project choices show the familiar's effective access level",
+);
+assert.match(
+  tray,
+  /launchReady=\{projectLaunchReady\}/,
+  "the tray composer disables message launches until a scoped project is ready",
+);
+assert.match(
+  source,
+  /const canDispatch =\s*canSend &&[\s\S]*launchReady/,
+  "local slash commands stay available while ordinary sends require a launchable project",
 );
 assert.match(
   source,
@@ -255,8 +276,8 @@ assert.match(
 // ── Message queueing: sends during a stream park, then auto-send ─────────────
 assert.match(
   source,
-  /if \(!disabled && canSend\) send\(\);/,
-  "Enter while a reply streams still dispatches — the hook queues it instead of dropping it",
+  /if \(!disabled && canDispatch\) send\(\);/,
+  "Enter only dispatches launch-ready messages and still queues while a reply streams",
 );
 assert.match(
   source,
@@ -304,8 +325,35 @@ assert.match(
   );
   assert.match(
     hook,
-    /useProjects\(\{ familiarId: selectedFamiliarId \}\)/,
-    "quick chat loads project options scoped to the selected familiar",
+    /loading: projectsLoading,[\s\S]*error: projectsError,[\s\S]*loadedSuccessfully: projectsLoadedSuccessfully,[\s\S]*enabled: Boolean\(selectedFamiliarId\),[\s\S]*familiarId: selectedFamiliarId/,
+    "quick chat consumes successful, familiar-scoped project state and never falls back to an unscoped list",
+  );
+  assert.match(
+    hook,
+    /const projectLaunchReady =[\s\S]*projectsLoadedSuccessfully[\s\S]*!projectsLoading[\s\S]*!projectsError[\s\S]*selectedProject\?\.access/,
+    "quick chat only becomes launch-ready for a fresh accessible project",
+  );
+  const sendTextIndex = hook.indexOf("const sendText = useCallback");
+  const targetResolutionIndex = hook.indexOf(
+    "const target = resolveQuickChatTarget(raw, familiars, selectedFamiliarId)",
+    sendTextIndex,
+  );
+  const familiarSwitchIndex = hook.indexOf(
+    "if (target.familiarId !== selectedFamiliarId && !abortRef.current)",
+    sendTextIndex,
+  );
+  const launchGateIndex = hook.indexOf("if (!projectLaunchReady)", sendTextIndex);
+  const queueIndex = hook.indexOf("if (abortRef.current)", sendTextIndex);
+  assert.ok(launchGateIndex > sendTextIndex, "quick-chat send has a client launch guard");
+  assert.ok(
+    targetResolutionIndex < launchGateIndex && familiarSwitchIndex < launchGateIndex,
+    "a leading @mention switches to the target familiar's project scope before launch readiness is checked",
+  );
+  assert.ok(launchGateIndex < queueIndex, "an invalid quick-chat send is rejected before queue or draft mutation");
+  assert.match(
+    hook,
+    /target\.familiarId !== selectedFamiliarId && !abortRef\.current[\s\S]*setSelectedProjectRoot\(null\)[\s\S]*setDraft\(raw\)[\s\S]*Choose a project/,
+    "an @mention familiar switch clears the old project and preserves the draft before any launch",
   );
   assert.match(
     hook,

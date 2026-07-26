@@ -15,6 +15,7 @@ const FACADES: Record<string, string[]> = {
     "../styles/globals/themes.css",
     "../styles/globals/desktop-chrome.css",
     "../styles/globals/shell-responsive.css",
+    "../styles/settings-familiars.css",
     "../styles/globals/calendar-agenda.css",
     "../styles/globals/surface-compact-calendar.css",
     "../styles/globals/surface-reporting.css",
@@ -24,7 +25,7 @@ const FACADES: Record<string, string[]> = {
   ],
   "src/styles/cave-chat.css": ["./cave-chat/bubbles.css", "./cave-chat/activity.css", "./cave-chat/transcript.css", "./cave-chat/auxiliary-surfaces.css"],
   "src/styles/board.css": ["./board/chrome-table.css", "./board/kanban-inspector.css", "./board/github-list.css", "./board/github-detail.css", "./board/mobile-card-stack.css", "./board/gantt-fallbacks.css"],
-  "src/styles/home-composer.css": ["./home-composer/landing-composer.css", "./home-composer/feed-menus.css", "./home-composer/digest.css", "./home-composer/hearth-continuations.css"],
+  "src/styles/home-composer.css": ["./home-composer/landing-composer.css", "./home-composer/feed-menus.css", "./home-composer/hearth-continuations.css"],
   "src/styles/sidebar-minimal.css": ["./sidebar-minimal/shell-chrome.css", "./sidebar-minimal/navigation-recents.css", "./sidebar-minimal/familiars.css", "./sidebar-minimal/activity-rail.css"],
   "src/styles/cave-md.css": ["./cave-md/prose.css", "./cave-md/tables-mermaid.css", "./cave-md/code.css", "./cave-md/interactions.css"],
 };

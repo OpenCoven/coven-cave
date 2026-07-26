@@ -38,9 +38,6 @@ const ROUTE_INVENTORY = {
   "/familiars/[id]/analytics": { kind: "redirect", target: "/dashboard/familiars/", leaf: "/analytics" },
   "/familiars/[id]/profile": { kind: "redirect", target: "/dashboard/familiars/", leaf: "/profile" },
   "/aesthetic": { kind: "dev-only" },
-  "/mockup": { kind: "dev-only" },
-  "/mockup/familiar-chatout-codex": { kind: "dev-only" },
-  "/preview/fonts": { kind: "dev-only" },
 };
 
 // ── Discover every page.tsx under src/app ────────────────────────────────────

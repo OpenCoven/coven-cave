@@ -5,7 +5,6 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
 import { formatClock, formatDate, readDateTimePrefs } from "@/lib/datetime-format";
-import { Button } from "@/components/ui/button";
 
 // Per-familiar accent colour, provided once by CalendarView and read by every
 // leaf chip (avoids threading a colour prop through all four view components).
@@ -336,33 +335,5 @@ export function AgendaDeadlineRow({
       </span>
       <span className="cal-agenda-tag">Task</span>
     </button>
-  );
-}
-
-export function EmptyScheduleState({
-  icon,
-  label,
-  onAddEntry,
-}: {
-  icon: IconName;
-  label: string;
-  onAddEntry?: () => void;
-}) {
-  return (
-    <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-3 px-4 py-12 text-center text-sm text-[var(--text-muted)]">
-      <Icon name={icon} className="text-3xl opacity-30" />
-      <span>{label}</span>
-      {onAddEntry ? (
-        <Button
-          size="sm"
-          leadingIcon="ph:plus"
-          onClick={onAddEntry}
-          className="calendar-empty-action"
-          title="Creates a scheduled reminder (an inbox item) — board tasks get due dates on the Tasks surface"
-        >
-          Add reminder
-        </Button>
-      ) : null}
-    </div>
   );
 }

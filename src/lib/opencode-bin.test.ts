@@ -1,6 +1,13 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { openCodeCommand, openCodeLaunch, openCodeNeedsTmpRuntimeDir, preferOpenCodeLaunchPath } from "./opencode-bin.ts";
+import {
+  openCodeCommand,
+  openCodeLaunch,
+  openCodeNeedsTmpRuntimeDir,
+  OPENCODE_COMMAND_NOT_FOUND_MARKER,
+  OPENCODE_LAUNCH_FAILED_MARKER,
+  preferOpenCodeLaunchPath,
+} from "./opencode-bin.ts";
 
 assert.equal(openCodeCommand(), "opencode", "OpenCode uses the same executable name on all desktop platforms");
 
@@ -14,6 +21,9 @@ assert.equal(windowsLaunch.command, "C:\\Windows\\System32\\WindowsPowerShell\\v
 assert.ok(windowsLaunch.args.includes("-NoProfile"), "Windows launch does not load profile aliases");
 assert.equal(windowsLaunch.input, JSON.stringify(["run", "safe & literal", "percent%PATH%"]), "Windows launch preserves untrusted argv as JSON data");
 assert.match(windowsLaunch.args.at(-1) ?? "", /\[Console\]::In\.ReadToEnd\(\)/, "Windows launch reads argv from stdin instead of a shell command");
+assert.match(windowsLaunch.args.at(-1) ?? "", new RegExp(OPENCODE_COMMAND_NOT_FOUND_MARKER), "Windows reports an inner OpenCode command race without exposing shell details");
+assert.match(windowsLaunch.args.at(-1) ?? "", new RegExp(OPENCODE_LAUNCH_FAILED_MARKER), "Windows reports other inner launch failures without exposing shell details");
+assert.ok(!windowsLaunch.args.join(" ").includes("safe & literal"), "Windows never interpolates untrusted argv into PowerShell code");
 const longPrompt = "x".repeat(40_000);
 const longWindowsLaunch = openCodeLaunch(["run", longPrompt], "win32", { SystemRoot: "C:\\Windows" });
 assert.equal(longWindowsLaunch.input, JSON.stringify(["run", longPrompt]), "Windows preserves a long prompt outside the command line");

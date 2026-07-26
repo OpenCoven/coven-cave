@@ -7,7 +7,6 @@
  * workbench; the rail never mutates sessions itself.
  */
 
-import React from "react";
 import { Icon } from "@/lib/icon";
 import {
   codeSessionActivity,

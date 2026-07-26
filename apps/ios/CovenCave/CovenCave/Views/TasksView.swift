@@ -25,7 +25,7 @@ func caveParseISO(_ iso: String?) -> Date? {
 
 struct TasksView: View {
     @Environment(AppModel.self) private var app
-    @AppStorage("cave.tasks.groupBy") private var groupByRaw = GroupBy.status.rawValue
+    @AppStorage("cave.tasks.groupBy") private var groupByRaw = GroupBy.familiar.rawValue
     @AppStorage("cave.tasks.sortBy") private var sortByRaw = SortBy.priority.rawValue
     @AppStorage("cave.tasks.viewMode") private var viewModeRaw = ViewMode.list.rawValue
     @State private var query = ""
@@ -73,7 +73,7 @@ struct TasksView: View {
         var systemImage: String { self == .list ? "list.bullet" : "rectangle.split.3x1" }
     }
 
-    private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .status }
+    private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .familiar }
     private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .priority }
     private var viewMode: ViewMode { ViewMode(rawValue: viewModeRaw) ?? .list }
     private var anyFilterActive: Bool {
@@ -87,6 +87,12 @@ struct TasksView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $query, prompt: "Search tasks")
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { app.navigationDrawerOpen = true } label: {
+                            Image(systemName: "line.3.horizontal")
+                        }
+                        .accessibilityLabel("Open navigation")
+                    }
                     ToolbarItem(placement: .topBarTrailing) { filterMenu }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
@@ -224,7 +230,7 @@ struct TasksView: View {
         statusFilter = []; priorityFilter = []; familiarFilter = []
     }
 
-    /// Consume a cross-tab "open this task" intent set by `requestOpenTask`.
+    /// Consume a cross-destination "open this task" intent set by `requestOpenTask`.
     private func openRequestedCard() {
         guard let card = app.cardToOpen else { return }
         if selection?.id != card.id { selection = card }
@@ -387,7 +393,7 @@ struct TasksView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
         .themedListBackground()
     }
 

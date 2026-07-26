@@ -2,14 +2,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import cssContract from "../../scripts/css-source-contract.cjs";
 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const daemon = readFileSync(new URL("./settings-daemon.tsx", import.meta.url), "utf8");
 const picker = readFileSync(new URL("./settings-familiar-picker.tsx", import.meta.url), "utf8");
 const controls = readFileSync(new URL("./ui/settings-controls.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = cssContract.readEffectiveCssSync("src/app/globals.css", "utf8");
 const studioSources = [
   "familiar-studio-brain-tab.tsx",
-  "familiar-studio-contract-tab.tsx",
   "familiar-studio-identity-tab.tsx",
   "familiar-lifecycle-section.tsx",
   "familiar-studio-look-tab.tsx",
@@ -46,12 +47,13 @@ function jsxElementBlocks(fileName: string, source: string, tagName: string): st
 }
 
 const reviewedSemanticControl = (button: string): boolean =>
-  /goToSetting\(e\)|selectDevice\(device\)|settings-nav__item|role="switch"|aria-pressed=|aria-label=\{`Pick \$\{label\} color`\}|aria-haspopup="dialog"|role="option"|role="radio"|role="checkbox"|setEnlarged\(true\)|Drag to reorder|familiar-studio-lifecycle__row-main/.test(
+  /goToSetting\(e\)|selectDevice\(device\)|settings-nav__item|role="switch"|aria-pressed=|aria-expanded=|aria-label=\{`Pick \$\{label\} color`\}|aria-haspopup="dialog"|role="option"|role="radio"|role="checkbox"|setEnlarged\(true\)|Drag to reorder|familiar-studio-lifecycle__row-main/.test(
     button,
   );
 
 for (const [name, source] of [
   ["settings shell", shell],
+  ["settings daemon", daemon],
   ["settings familiar picker", picker],
   ["settings segmented control", controls],
   ...studioSources,
@@ -73,7 +75,7 @@ for (const [name, source] of [
   }
 }
 
-const saveConnectionButtons = jsxElementBlocks("settings-shell.tsx", shell, "Button").filter((block) =>
+const saveConnectionButtons = jsxElementBlocks("settings-daemon.tsx", daemon, "Button").filter((block) =>
   block.includes("Save connection"),
 );
 assert.equal(saveConnectionButtons.length, 1, "Save connection renders through exactly one shared Button");

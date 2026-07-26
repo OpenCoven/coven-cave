@@ -102,6 +102,19 @@ handoffs because its logs make the startup sequence and selected port obvious.
 Do not background the command when the goal is to verify the app started; a
 detached wrapper can exit without leaving useful Tauri logs.
 
+The wrapper owns everything it starts. `Ctrl-C`, `SIGTERM`, or any other exit
+tears down the Tauri process tree and the Next dev server underneath it, so an
+interrupted run never strands a process holding the port. It also watches the
+loopback origin: if the dev server stays unreachable for 30 s the wrapper shuts
+the window down rather than leaving it attached to a server that is not coming
+back. Override that window with `COVEN_CAVE_DEV_SERVER_GRACE_SECONDS`, or set it
+to `0` to disable the watchdog.
+
+Shorter outages — a Turbopack rebuild, a manual dev-server restart — are handled
+in-app instead. A dev-only recovery overlay replaces the raw `ChunkLoadError` /
+`ERR_CONNECTION_REFUSED` page, polls the origin, and hard-reloads the window as
+soon as the server answers so no stale chunk ids survive the restart.
+
 ## Diagnosing concurrent sessions
 
 If git operations keep colliding with surprise pulls/merges, multiple Claude sessions are likely on the same checkout. Diagnose:

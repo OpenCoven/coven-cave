@@ -132,6 +132,7 @@ async function connect(
     mouth: localVoice
       ? createLocalTtsMouth({ voiceName: localVoice })
       : undefined,
+    mouthEngine: localVoice ? "sidecar-piper" : undefined,
     ears: preferredEars?.factory,
     earsEngine: preferredEars?.engine,
     callbacks,

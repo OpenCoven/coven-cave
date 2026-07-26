@@ -1,5 +1,8 @@
 import type { CaveConfig, FamiliarBinding } from "@/lib/cave-config";
-import type { ConversationFile } from "@/lib/cave-conversations";
+import type {
+  ConversationFile,
+  ConversationModelIntent,
+} from "@/lib/cave-conversations";
 import {
   cleanModelId,
   resolveChatModelState,
@@ -49,18 +52,34 @@ export function resolveSendModelMetadata(args: {
   return { desiredModel, modelState };
 }
 
-export function persistSendModelIntent(
-  conversation: ConversationFile,
+export function modelIntentForSend(
   body: ModelRequest,
   modelState: ChatModelState,
-) {
-  if (body.modelOverrideScope !== "session" || modelState.source !== "session") return;
-  conversation.modelIntent = {
+): ConversationModelIntent | undefined {
+  if (body.modelOverrideScope !== "session" || modelState.source !== "session") return undefined;
+  return {
     model: modelState.effectiveModel,
     source: "session",
     applicationState: modelState.applicationState,
     reason: modelState.reason ?? "Saved for this chat.",
   };
+}
+
+export function persistSendModelIntent(
+  conversation: ConversationFile,
+  body: ModelRequest,
+  modelState: ChatModelState,
+  expectedPreviousModel: string | null = conversation.modelIntent?.model ?? null,
+): boolean {
+  const intent = modelIntentForSend(body, modelState);
+  if (!intent) return false;
+  const expected = cleanModelId(expectedPreviousModel);
+  const current = cleanModelId(conversation.modelIntent?.model);
+  // The run captured `expected` before it started. A different current model
+  // is a newer mid-stream PATCH and must win over this stale completion.
+  if (current !== expected && current !== intent.model) return false;
+  conversation.modelIntent = intent;
+  return true;
 }
 
 function normalizeReasoningEffort(value: unknown): ReasoningEffort {
@@ -69,6 +88,35 @@ function normalizeReasoningEffort(value: unknown): ReasoningEffort {
 
 function normalizeResponseSpeed(value: unknown): ResponseSpeed {
   return value === "fast" || value === "balanced" || value === "careful" ? value : "fast";
+}
+
+/** Stable user-turn metadata consumed by retry-capable clients after refresh. */
+export function persistedTurnControls(
+  body: ResponseControlRequest,
+  retryModel?: string | null,
+): {
+  reasoningEffort: ReasoningEffort;
+  responseSpeed: ResponseSpeed;
+  modelOverride?: string;
+} {
+  return {
+    reasoningEffort: normalizeReasoningEffort(body.reasoningEffort),
+    responseSpeed: normalizeResponseSpeed(body.responseSpeed),
+    ...(cleanModelId(retryModel) ? { modelOverride: cleanModelId(retryModel)! } : {}),
+  };
+}
+
+/** Prefer runtime confirmation, then explicit user intent, then the model that
+ * was actually routed. All three are absent for authenticated dynamic defaults. */
+export function turnRetryModel(input: {
+  requestedModel?: unknown;
+  confirmedModel?: unknown;
+  routedModel?: unknown;
+}): string | undefined {
+  return cleanModelId(input.confirmedModel)
+    ?? cleanModelId(input.requestedModel)
+    ?? cleanModelId(input.routedModel)
+    ?? undefined;
 }
 
 /** Add the stable, non-user-visible response-control and next-path directives. */

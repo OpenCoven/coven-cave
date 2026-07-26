@@ -11,6 +11,7 @@ import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select
 import { isBindableRuntimeChoice } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import type { RuntimeModelOption } from "@/lib/grok-build";
+import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
 import { IconButton } from "@/components/ui/icon-button";
@@ -71,6 +72,7 @@ type HarnessReport = {
   id: string;
   label: string;
   installed: boolean;
+  availability?: RuntimeAvailabilitySummary;
   models?: RuntimeModelOption[];
   defaultModel?: string | null;
 };
@@ -273,6 +275,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const defaultHarnessId = familiar.defaultHarness ?? familiar.harness ?? "";
   const defaultHarnessLabel = runtimeLabel(defaultHarnessId, harnesses);
   const harnessId = draftHarness || defaultHarnessId;
+  const selectedHarnessAvailability = harnesses.find((item) => item.id === harnessId)?.availability;
 
   // Model parity: source the per-familiar model menu from the same runtime →
   // provider catalog the chat picker uses. allowCustom keeps the free-text
@@ -496,25 +499,45 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           });
           return;
         }
-        const piper = json.runtimes?.piper as PiperRuntime | undefined;
+        const runtimes = json.runtimes as
+          | Partial<Record<LocalTtsVoice["engine"], PiperRuntime>>
+          | undefined;
         // Treat an absent/malformed runtime report as unavailable. A ready
         // model alone cannot synthesize, and offering it during a sidecar
         // version mismatch only leads to a failing preview/call.
-        const piperAvailable = piper?.available === true;
-        const piperUnavailable = !piperAvailable;
+        const runtimeAvailable = (engine: LocalTtsVoice["engine"]) =>
+          runtimes?.[engine]?.available === true;
         const verifiedVoices = json.tts.filter(
           (voice: LocalTtsVoice) =>
             voice?.ready === true &&
             voice?.verified === true &&
-            voice.engine === "piper" &&
-            piperAvailable,
+            (voice.engine === "piper" || voice.engine === "kokoro") &&
+            runtimeAvailable(voice.engine),
         );
+        const piperUnavailable = !runtimeAvailable("piper");
+        // Kokoro is additive: only surface its runtime hint when it hides a
+        // downloaded voice, so Piper-only setups never see noise about a
+        // runtime they don't use.
+        const kokoroHidden =
+          !runtimeAvailable("kokoro") &&
+          json.tts.some(
+            (voice: LocalTtsVoice) =>
+              voice?.ready === true &&
+              voice?.verified === true &&
+              voice.engine === "kokoro",
+          );
+        const runtimeNotes = [
+          ...(piperUnavailable
+            ? [runtimes?.piper?.hint ?? "The local Piper runtime isn't available on this device."]
+            : []),
+          ...(kokoroHidden
+            ? [runtimes?.kokoro?.hint ?? "The local Kokoro runtime isn't available on this device."]
+            : []),
+        ];
         setLocalVoiceCatalog({
           status: "ready",
           voices: verifiedVoices,
-          note: piperUnavailable
-            ? piper?.hint ?? "The local Piper runtime isn't available on this device."
-            : undefined,
+          note: runtimeNotes.length ? runtimeNotes.join(" ") : undefined,
         });
       } catch {
         if (!cancelled) {
@@ -818,13 +841,32 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         // per-familiar runtime choices.
                         options: harnesses
                           .filter((h) => isBindableRuntimeChoice(h.id))
-                          .map((h) => ({
-                            value: h.id,
-                            label: `${h.label}${h.installed ? "" : " (not installed)"}`,
-                          })),
+                          .map((h) => {
+                            const availabilityMessage = h.availability && h.availability.state !== "ready"
+                              ? h.availability.message
+                              : undefined;
+                            return {
+                              value: h.id,
+                              label: `${h.label}${
+                                h.availability && h.availability.state !== "ready"
+                                  ? h.availability.state === "missing"
+                                    ? " (not installed)"
+                                    : " (unavailable)"
+                                  : h.installed ? "" : " (not installed)"
+                              }`,
+                              detail: h.availability?.state !== "ready"
+                                ? h.availability?.message
+                                : availabilityMessage,
+                            };
+                          }),
                       } satisfies StandardSelectGroup<string>,
                     ]}
                   />
+                  {selectedHarnessAvailability?.state !== undefined && selectedHarnessAvailability.state !== "ready" && selectedHarnessAvailability.message ? (
+                    <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                      {selectedHarnessAvailability.message}
+                    </p>
+                  ) : null}
                 </div>
               </label>
 

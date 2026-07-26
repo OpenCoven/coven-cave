@@ -7,7 +7,7 @@
  * Default ON. Off is a clean-tool mode, not a mute-with-loss: milestones
  * still land in the inbox (and count toward the unread badge), completions
  * still announce for AT — only the celebratory presentation stills.
- * Settings → General owns the switch. Mirrors home-news-pref.ts:
+ * Settings → General owns the switch:
  * useSyncExternalStore keeps every subscriber live across same-tab writes
  * and cross-tab storage events.
  */

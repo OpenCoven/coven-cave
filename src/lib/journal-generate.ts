@@ -70,28 +70,40 @@ export async function generateReflection(opts: {
   let text = "";
   let error: string | null = null;
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const frame = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      const ev = parseSseFrame(frame);
-      if (!ev) continue;
-      switch (ev.kind) {
-        case "assistant_chunk":
-          text += ev.text ?? "";
-          opts.onText?.(text);
-          break;
-        case "done":
-          if (ev.isError) error = error ?? "the familiar reported an error";
-          break;
-        case "error":
-          error = ev.message ?? "generation error";
-          break;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const ev = parseSseFrame(frame);
+        if (!ev) continue;
+        switch (ev.kind) {
+          case "assistant_chunk":
+            text += ev.text ?? "";
+            opts.onText?.(text);
+            break;
+          case "assistant_replace":
+            text = ev.text ?? "";
+            opts.onText?.(text);
+            break;
+          case "done":
+            if (ev.isError) error = error ?? "the familiar reported an error";
+            break;
+          case "error":
+            error = ev.message ?? "generation error";
+            break;
+        }
       }
+    }
+  } catch (err) {
+    if (opts.signal?.aborted) {
+      error = "cancelled";
+    } else {
+      error ??= (err as Error)?.message ?? "the connection dropped mid-generation";
     }
   }
 

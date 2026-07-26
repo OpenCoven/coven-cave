@@ -15,7 +15,7 @@
  * "github" workspace mode is now a tab alias landing here).
  */
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import {
@@ -31,6 +31,7 @@ import type { Filter as GitHubFilter } from "@/components/github-view-data";
 import { CodeSessionRail } from "@/components/code-session-rail";
 import { CodeWorkbench } from "@/components/code-workbench";
 import { CodeNewSession } from "@/components/code-new-session";
+import { GithubOrganizationSettings } from "@/components/settings-github";
 import type { GitHubItemTarget } from "@/lib/github-item-url";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { SessionRow } from "@/lib/types";
@@ -181,42 +182,47 @@ export function CodeView({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div
-        role="tablist"
-        aria-label="Code surface"
-        className="flex shrink-0 items-center gap-1 border-b border-[var(--border-hairline)] px-3 py-1.5"
-      >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={topTab === "sessions"}
-          onClick={() => setTopTab("sessions")}
-          className={`focus-ring inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
-            topTab === "sessions"
-              ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          }`}
+      <div className="flex shrink-0 items-center gap-1 border-b border-[var(--border-hairline)] px-3 py-1.5">
+        <div
+          role="tablist"
+          aria-label="Code surface"
+          className="flex min-w-0 items-center gap-1 overflow-x-auto"
         >
-          <Icon name="ph:code" width={14} height={14} />
-          Sessions
-        </button>
-        {CODE_GITHUB_TABS.map((id) => (
           <button
-            key={id}
             type="button"
             role="tab"
-            aria-selected={topTab === id}
-            onClick={() => setTopTab(id)}
-            className={`focus-ring inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
-              topTab === id
+            aria-selected={topTab === "sessions"}
+            onClick={() => setTopTab("sessions")}
+            className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
+              topTab === "sessions"
                 ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             }`}
           >
-            <Icon name={GITHUB_TAB_META[id].icon} width={14} height={14} />
-            {GITHUB_TAB_META[id].label}
+            <Icon name="ph:code" width={14} height={14} />
+            Sessions
           </button>
-        ))}
+          {CODE_GITHUB_TABS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={topTab === id}
+              onClick={() => setTopTab(id)}
+              className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
+                topTab === id
+                  ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Icon name={GITHUB_TAB_META[id].icon} width={14} height={14} />
+              {GITHUB_TAB_META[id].label}
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto shrink-0">
+          <GithubOrganizationSettings />
+        </div>
       </div>
       {githubTab ? (
         <div className="min-h-0 flex-1">

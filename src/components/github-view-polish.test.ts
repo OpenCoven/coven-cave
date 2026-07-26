@@ -6,7 +6,14 @@ const source = [
   readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./github-view-data.ts", import.meta.url), "utf8"),
 ].join("\n");
-const boardCss = readFileSync(new URL("../styles/board.css", import.meta.url), "utf8");
+const boardCss = [
+  "chrome-table.css",
+  "kanban-inspector.css",
+  "github-list.css",
+  "github-detail.css",
+  "mobile-card-stack.css",
+  "gantt-fallbacks.css",
+].map((name) => readFileSync(new URL(`../styles/board/${name}`, import.meta.url), "utf8")).join("\n");
 
 // Inner GitHub <h2> and logo removed — the workspace breadcrumb already names the surface.
 assert.doesNotMatch(
@@ -339,15 +346,10 @@ assert.match(
   /detail: \{ familiarId, projectRoot: safeMergeRoot \?\? undefined, initialPrompt \}/,
   "safe merge opens chat with the initial prompt and worktree root",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /<SafeMergeAction[\s\S]{0,500}?onJumpToSession=\{onJumpToSession\}/,
-  "safe merge action should be wired into each GitHub row",
-);
-assert.match(
-  source,
-  /<div className="gh-glass-actions">[\s\S]{0,900}<SafeMergeAction[\s\S]{0,500}?onJumpToSession=\{onJumpToSession\}/,
-  "safe merge action should be wired into the selected-item panel actions",
+  /function SafeMergeAction\(\{[\s\S]{0,160}?onJumpToSession/,
+  "safe merge should not retain an unused session-jump callback",
 );
 
 // Copy buttons must use the context-safe copyText (via useCopy), not raw

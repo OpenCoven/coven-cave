@@ -8,7 +8,7 @@ import { Icon } from "@iconify/react";
 import type { Familiar } from "@/lib/types";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { getVoiceProvider } from "@/lib/voice/registry";
-import type { LiveSession, VoiceSessionGrant, VoiceEarsEngine } from "@/lib/voice/types";
+import type { LiveSession, VoiceSessionGrant, VoiceEarsEngine, VoiceMouthEngine } from "@/lib/voice/types";
 import { voiceErrorHint } from "@/lib/voice/types";
 import { voiceRecoveryVaultKey } from "@/lib/voice/vault-key-recovery";
 import { reduce, initialState, type CallState } from "./voice-call-overlay-state";
@@ -95,7 +95,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           if (cancelled) { await live.close(); return; }
           liveRef.current = live;
           if (audioElRef.current) audioElRef.current.srcObject = live.inboundAudio;
-          dispatch({ type: "CONNECTED", startedAt: Date.now(), earsEngine: live.earsEngine });
+          dispatch({ type: "CONNECTED", startedAt: Date.now(), earsEngine: live.earsEngine, mouthEngine: live.mouthEngine });
         } catch (err) {
           dispatch({
             type: "PROVIDER_ERROR",
@@ -222,6 +222,11 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
               {earsEngineLabel(state.earsEngine)}
             </span>
           )}
+          {state.state === "live" && state.mouthEngine && (
+            <span className="voice-call-overlay__mouth" title="How this call speaks to you">
+              {mouthEngineLabel(state.mouthEngine)}
+            </span>
+          )}
           {state.state === "error" && (
             <div className="voice-call-overlay__error" role="alert">
               <div id="voice-call-overlay-error">{errorMessage(state.errorCode)}</div>
@@ -304,6 +309,16 @@ function earsEngineLabel(engine: VoiceEarsEngine): string {
     case "native-on-device": return "Hearing on-device";
     case "native-dictation": return "Hearing via Apple dictation";
     case "web-speech": return "Hearing via browser speech";
+  }
+}
+
+// Mouth parity with the ears badge (cave-vony): local Piper is the no-cloud
+// promise kept; the other modes tell the user where synthesis runs.
+function mouthEngineLabel(engine: VoiceMouthEngine): string {
+  switch (engine) {
+    case "sidecar-piper": return "Speaking via local Piper";
+    case "elevenlabs": return "Speaking via ElevenLabs";
+    case "system-synth": return "Speaking via system voice";
   }
 }
 
