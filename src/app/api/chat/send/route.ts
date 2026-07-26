@@ -67,7 +67,12 @@ import {
 } from "@/lib/grok-build";
 import { grokLaunchCommand } from "@/lib/grok-bin";
 import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
-import { evaluateRuntimeAvailability, missingRunnerMessage } from "@/lib/runtime-availability";
+import {
+  evaluateCovenBackedRuntimeAvailability,
+  evaluateRuntimeAvailability,
+  missingRunnerMessage,
+  RUNTIME_AVAILABILITY_ERROR_CODES,
+} from "@/lib/runtime-availability";
 import {
   quarantineOpenCodeSchema,
   redactedOpenCodeEventFingerprint,
@@ -2779,25 +2784,36 @@ export async function POST(req: Request) {
                 // filesystem stats only. When the runner is not ready, emit a
                 // structured error instead of creating a child whose ENOENT
                 // could be misdiagnosed downstream as an auth problem.
-                const availability = evaluateRuntimeAvailability({
-                  runner: copilotStream
-                    ? "copilot"
-                    : grokDirect
-                      ? "grok"
-                    : hermesDirect
-                      ? "hermes"
-                    : openCodeDirect
-                      ? "opencode"
-                      : "coven",
-                  command: (openCodeLaunchCommand ?? launch).command,
-                  env: spawnEnv,
-                  unresolvedWindowsShim:
-                    "unresolvedWindowsShim" in launch && launch.unresolvedWindowsShim === true,
-                  // Only the Windows OpenCode launch is PowerShell-hosted; it
-                  // is the one that carries a stdin argv payload.
-                  powerShellHostedCommand:
-                    openCodeLaunchCommand?.input !== undefined ? openCodeCommand() : undefined,
-                });
+                const availability = binding.harness === "claude"
+                  ? evaluateCovenBackedRuntimeAvailability({
+                      runner: "claude",
+                      covenCommand: launch.command,
+                      // This is deliberately the exact familiar-scoped env
+                      // supplied to the later Coven spawn, not a shell lookup
+                      // or the unscoped covenSpawnEnv().
+                      env: spawnEnv,
+                      unresolvedCovenWindowsShim:
+                        "unresolvedWindowsShim" in launch && launch.unresolvedWindowsShim === true,
+                    })
+                  : evaluateRuntimeAvailability({
+                      runner: copilotStream
+                        ? "copilot"
+                        : grokDirect
+                          ? "grok"
+                        : hermesDirect
+                          ? "hermes"
+                        : openCodeDirect
+                          ? "opencode"
+                          : "coven",
+                      command: (openCodeLaunchCommand ?? launch).command,
+                      env: spawnEnv,
+                      unresolvedWindowsShim:
+                        "unresolvedWindowsShim" in launch && launch.unresolvedWindowsShim === true,
+                      // Only the Windows OpenCode launch is PowerShell-hosted; it
+                      // is the one that carries a stdin argv payload.
+                      powerShellHostedCommand:
+                        openCodeLaunchCommand?.input !== undefined ? openCodeCommand() : undefined,
+                    });
                 if (availability.state !== "ready") {
                   launchFailure = { code: availability.code, message: availability.message };
                   result.is_error = true;
@@ -2936,7 +2952,12 @@ export async function POST(req: Request) {
             // never misreported as "installed but not authenticated".
             result.is_error = true;
             launchFailure ??= {
-              code: err.code === "ENOENT" ? "ENOENT" : "runtime_launch_failed",
+              code:
+                err.code === "ENOENT" && binding.harness === "claude"
+                  ? RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing
+                  : err.code === "ENOENT"
+                    ? "ENOENT"
+                    : "runtime_launch_failed",
               message: launchError,
             };
             pushProgress(
@@ -2949,7 +2970,10 @@ export async function POST(req: Request) {
             if (err.code === "ENOENT") {
               push({
                 kind: "error",
-                code: "ENOENT",
+                code:
+                  binding.harness === "claude"
+                    ? RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing
+                    : "ENOENT",
                 // SSH is a remote transport, not a direct runner; every local
                 // runner shares the pre-spawn gate's remediation copy so the
                 // two failure paths cannot drift.
@@ -2987,6 +3011,30 @@ export async function POST(req: Request) {
             // failed invocation for a successful model application below.
             if ((openCodeDirect || copilotStream) && code !== 0) {
               result = { ...result, is_error: true };
+            }
+            // The outer Coven process can start after the stat-only gate and
+            // then lose Claude before it creates the inner process. That race
+            // reaches this close handler as Coven stderr rather than Node's
+            // child `error` event. Preserve it as a launch failure so it
+            // cannot fall through to the generic authentication/no-output
+            // diagnosis or persist a fake assistant response.
+            if (
+              binding.harness === "claude"
+              && stderrTail.some((line) =>
+                /(?:spawn\s+claude\s+ENOENT|claude:\s*command not found|command not found:\s*claude)/i.test(line),
+              )
+            ) {
+              const message = missingRunnerMessage("claude");
+              result = { ...result, is_error: true };
+              launchFailure ??= {
+                code: RUNTIME_AVAILABILITY_ERROR_CODES.claude_missing,
+                message,
+              };
+              push({
+                kind: "error",
+                code: RUNTIME_AVAILABILITY_ERROR_CODES.claude_missing,
+                message,
+              });
             }
             // Copilot JSONL stderr can contain raw prompt or tool payloads on
             // a successful malformed stream too. Its only user-facing

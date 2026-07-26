@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -59,6 +59,18 @@ function assertNoFabricatedAssistantResponse(body, events) {
     "a harness that never ran must not stream fabricated assistant text",
   );
 }
+
+const routeSource = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+assert.match(
+  routeSource,
+  /binding\.harness === "claude"\s*\? evaluateCovenBackedRuntimeAvailability\(\{[\s\S]*?runner: "claude",[\s\S]*?covenCommand: launch\.command,[\s\S]*?env: spawnEnv,[\s\S]*?unresolvedCovenWindowsShim:/,
+  "Claude send preflight must use the shared Coven-plus-Claude contract with the exact later spawn environment",
+);
+assert.match(
+  routeSource,
+  /binding\.harness === "claude"[\s\S]{0,500}?stderrTail\.some[\s\S]*?RUNTIME_AVAILABILITY_ERROR_CODES\.claude_missing/,
+  "a post-preflight Claude ENOENT reported by Coven must remain a launch failure rather than empty-output/auth copy",
+);
 
 try {
   const { refreshCovenBin } = await import("@/lib/coven-bin");
