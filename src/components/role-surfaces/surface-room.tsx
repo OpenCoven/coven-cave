@@ -11,15 +11,14 @@
  */
 
 import {
-  Children,
   createContext,
-  isValidElement,
   useContext,
   useId,
   useState,
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -32,24 +31,11 @@ type SurfaceRailProps = {
   side: RailSide;
   label: string;
   children: ReactNode;
+  expanded?: boolean;
+  onExpandedChange?: (next: boolean) => void;
 };
 
-type RailDisclosureContextValue = {
-  ids: Record<RailSide, string>;
-  open: Record<RailSide, boolean>;
-};
-
-const RailDisclosureContext = createContext<RailDisclosureContextValue | null>(null);
-
-function getRailLabels(children: ReactNode) {
-  const labels: Partial<Record<RailSide, string>> = {};
-  Children.forEach(children, (child) => {
-    if (isValidElement<SurfaceRailProps>(child) && child.type === SurfaceRail) {
-      labels[child.props.side] = child.props.label;
-    }
-  });
-  return labels;
-}
+const RailDisclosureContext = createContext<HTMLDivElement | null>(null);
 
 export function SurfaceRoom({
   accentHue,
@@ -66,55 +52,20 @@ export function SurfaceRoom({
   drawerTitle?: string;
   onToggleDrawer?: () => void;
 }) {
-  const roomId = useId();
-  const [leftRailOpen, setLeftRailOpen] = useState(false);
-  const [rightRailOpen, setRightRailOpen] = useState(false);
-  const railLabels = getRailLabels(children);
-  const railIds = {
-    left: `${roomId}-left-rail`,
-    right: `${roomId}-right-rail`,
-  };
-  const disclosure = {
-    ids: railIds,
-    open: { left: leftRailOpen, right: rightRailOpen },
-  };
+  const [disclosureTarget, setDisclosureTarget] = useState<HTMLDivElement | null>(null);
 
   return (
-    <RailDisclosureContext.Provider value={disclosure}>
+    <RailDisclosureContext.Provider value={disclosureTarget}>
       <div
         className="role-surface-room"
         style={accentHue != null ? ({ "--room-accent-h": String(accentHue) } as CSSProperties) : undefined}
       >
-        <div className="role-surface-disclosures" role="group" aria-label="Room panels">
-          {railLabels.left ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="role-surface-disclosure"
-              leadingIcon="ph:sidebar-simple"
-              aria-label={`${leftRailOpen ? "Hide" : "Show"} ${railLabels.left}`}
-              aria-expanded={leftRailOpen}
-              aria-controls={railIds.left}
-              onClick={() => setLeftRailOpen((open) => !open)}
-            >
-              {railLabels.left}
-            </Button>
-          ) : null}
-          {railLabels.right ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="role-surface-disclosure role-surface-disclosure--right"
-              trailingIcon="ph:sidebar-simple"
-              aria-label={`${rightRailOpen ? "Hide" : "Show"} ${railLabels.right}`}
-              aria-expanded={rightRailOpen}
-              aria-controls={railIds.right}
-              onClick={() => setRightRailOpen((open) => !open)}
-            >
-              {railLabels.right}
-            </Button>
-          ) : null}
-        </div>
+        <div
+          ref={setDisclosureTarget}
+          className="role-surface-disclosures"
+          role="group"
+          aria-label="Room panels"
+        />
         <div className="role-surface-columns">{children}</div>
         {drawer != null && (
           <section
@@ -138,18 +89,52 @@ export function SurfaceRoom({
   );
 }
 
-export function SurfaceRail({ side, label, children }: SurfaceRailProps) {
-  const disclosure = useContext(RailDisclosureContext);
-  const expanded = disclosure?.open[side] ?? false;
+export function SurfaceRail({
+  side,
+  label,
+  children,
+  expanded,
+  onExpandedChange,
+}: SurfaceRailProps) {
+  const disclosureTarget = useContext(RailDisclosureContext);
+  const railId = `${useId()}-rail`;
+  const [localExpanded, setLocalExpanded] = useState(false);
+  const isExpanded = expanded ?? localExpanded;
+
+  const toggleExpanded = () => {
+    const next = !isExpanded;
+    if (expanded === undefined) setLocalExpanded(next);
+    onExpandedChange?.(next);
+  };
 
   return (
-    <aside
-      id={disclosure?.ids[side]}
-      className={`role-surface-rail role-surface-rail--${side}${expanded ? " role-surface-rail--expanded" : ""}`}
-      aria-label={label}
-    >
-      {children}
-    </aside>
+    <>
+      {disclosureTarget
+        ? createPortal(
+            <Button
+              size="sm"
+              variant="ghost"
+              className={`role-surface-disclosure role-surface-disclosure--${side}`}
+              leadingIcon={side === "left" ? "ph:sidebar-simple" : undefined}
+              trailingIcon={side === "right" ? "ph:sidebar-simple" : undefined}
+              aria-label={`${isExpanded ? "Hide" : "Show"} ${label}`}
+              aria-expanded={isExpanded}
+              aria-controls={railId}
+              onClick={toggleExpanded}
+            >
+              {label}
+            </Button>,
+            disclosureTarget,
+          )
+        : null}
+      <aside
+        id={railId}
+        className={`role-surface-rail role-surface-rail--${side}${isExpanded ? " role-surface-rail--expanded" : ""}`}
+        aria-label={label}
+      >
+        {children}
+      </aside>
+    </>
   );
 }
 

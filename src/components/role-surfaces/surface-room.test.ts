@@ -43,6 +43,8 @@ const surfaceRoom = stripComments(read("src/components/role-surfaces/surface-roo
 const errorState = stripComments(read("src/components/ui/error-state.tsx"));
 const host = stripComments(read("src/components/role-surface-host.tsx"));
 const css = stripComments(read("src/styles/globals/surface-role-workspaces.css"));
+const roomLayout = extractExport(surfaceRoom, "SurfaceRoom");
+const surfaceRail = extractExport(surfaceRoom, "SurfaceRail");
 const loadingState = extractExport(surfaceRoom, "SurfaceLoading");
 const roomErrorState = extractExport(surfaceRoom, "SurfaceError");
 const emptyState = extractExport(surfaceRoom, "SurfaceEmpty");
@@ -63,13 +65,27 @@ assert.match(errorState, /role="alert"/, "shared error state uses role=alert");
 assert.match(emptyState, /<EmptyState[\s\S]*?\bcompact\b/, "SurfaceEmpty renders compact shared EmptyState");
 assert.match(emptyState, /actions=\{action\}/, "SurfaceEmpty forwards its optional action");
 
-assert.equal(surfaceRoom.match(/useState\(false\)/g)?.length, 2, "both room rail disclosures start closed");
-assert.match(surfaceRoom, /aria-expanded=\{leftRailOpen\}/, "left rail control exposes expanded state");
-assert.match(surfaceRoom, /aria-expanded=\{rightRailOpen\}/, "right rail control exposes expanded state");
-assert.match(surfaceRoom, /aria-controls=\{railIds\.left\}/, "left rail control identifies its rail");
-assert.match(surfaceRoom, /aria-controls=\{railIds\.right\}/, "right rail control identifies its rail");
-assert.match(surfaceRoom, /id=\{disclosure\?\.ids\[side\]\}/, "SurfaceRail receives a stable disclosure target id");
-assert.match(surfaceRoom, /role-surface-rail--expanded/, "SurfaceRail exposes its local expanded presentation state");
+assert.doesNotMatch(
+  surfaceRoom,
+  /\bChildren\b|\bisValidElement\b|child\.type|getRailLabels/,
+  "SurfaceRoom never introspects child component identity",
+);
+assert.doesNotMatch(roomLayout, /\buseId\(/, "rail ids belong to each SurfaceRail instance");
+assert.equal(surfaceRail.match(/\buseId\(\)/g)?.length, 1, "each SurfaceRail owns one stable React id");
+assert.match(surfaceRoom, /expanded\?: boolean/, "SurfaceRail accepts controlled disclosure state");
+assert.match(
+  surfaceRoom,
+  /onExpandedChange\?: \(next: boolean\) => void/,
+  "SurfaceRail reports controlled disclosure changes",
+);
+assert.match(surfaceRail, /useState\(false\)/, "SurfaceRail remains uncontrolled by default");
+assert.match(surfaceRail, /<Button\b/, "each rail owns its native keyboard disclosure control");
+assert.match(surfaceRail, /createPortal\(/, "each rail registers its disclosure without parent child inspection");
+assert.match(surfaceRail, /aria-label=\{`\$\{isExpanded \? "Hide" : "Show"\} \$\{label\}`\}/, "control is labeled by rail");
+assert.match(surfaceRail, /aria-expanded=\{isExpanded\}/, "control exposes its disclosure state");
+assert.match(surfaceRail, /aria-controls=\{railId\}/, "control identifies its own unique rail");
+assert.match(surfaceRail, /id=\{railId\}/, "rail owns the target id referenced by its control");
+assert.match(surfaceRail, /role-surface-rail--expanded/, "SurfaceRail exposes its expanded presentation state");
 
 assert.match(host, /<OverflowMenu\b/, "host uses OverflowMenu in JSX");
 assert.doesNotMatch(host, /role-surface-commands-menu/, "host no longer contains role-surface-commands-menu");
@@ -82,13 +98,42 @@ assert.ok(
 );
 assert.match(css, /@container\s+role-surface-room/, "role-surface workspaces declare a room container query");
 assert.doesNotMatch(css, /@media\s*\(max-width:\s*1023px\)/, "room layout no longer responds to viewport width");
-const narrowRoomBlock = extractBlock(css, "@container role-surface-room");
-assert.match(narrowRoomBlock, /\.role-surface-disclosures\s*\{[\s\S]*?display:\s*flex/, "narrow rooms show rail controls");
-assert.match(narrowRoomBlock, /\.role-surface-rail\s*\{[\s\S]*?display:\s*none/, "narrow rooms hide rails by default");
+const columnsBlock = extractBlock(css, ".role-surface-columns");
+assert.match(columnsBlock, /position:\s*relative/, "room columns anchor on-demand rail overlays");
+const disclosureBlock = extractBlock(css, ".role-surface-disclosures");
+assert.match(disclosureBlock, /display:\s*none/, "wide rooms hide disclosure controls");
+const mediumRoomBlock = extractBlock(css, "@container role-surface-room (max-width: 860px)");
+assert.match(mediumRoomBlock, /\.role-surface-disclosures\s*\{[\s\S]*?display:\s*flex/, "medium rooms show disclosures");
 assert.match(
-  narrowRoomBlock,
-  /\.role-surface-rail--expanded\s*\{[\s\S]*?display:\s*flex/,
-  "narrow rooms reveal an expanded rail",
+  mediumRoomBlock,
+  /\.role-surface-disclosure--left\s*\{[\s\S]*?display:\s*none/,
+  "medium rooms keep the left disclosure hidden",
+);
+assert.match(
+  mediumRoomBlock,
+  /\.role-surface-rail--right\s*\{[\s\S]*?display:\s*none/,
+  "medium rooms make only right rails on-demand",
+);
+assert.match(
+  mediumRoomBlock,
+  /\.role-surface-rail--right\.role-surface-rail--expanded\s*\{[\s\S]*?display:\s*flex[\s\S]*?position:\s*absolute[\s\S]*?grid-area:\s*canvas/,
+  "medium rooms overlay an expanded right inspector without collapsing the canvas",
+);
+const compactRoomBlock = extractBlock(css, "@container role-surface-room (max-width: 620px)");
+assert.match(
+  compactRoomBlock,
+  /\.role-surface-disclosure--left\s*\{[\s\S]*?display:/,
+  "compact rooms restore the left disclosure",
+);
+assert.match(
+  compactRoomBlock,
+  /\.role-surface-rail--left\s*,\s*\.role-surface-rail--right\s*\{[\s\S]*?display:\s*none/,
+  "compact rooms make both rails on-demand",
+);
+assert.match(
+  compactRoomBlock,
+  /\.role-surface-rail--expanded\s*\{[\s\S]*?display:\s*flex[\s\S]*?position:\s*absolute[\s\S]*?grid-area:\s*canvas/,
+  "compact rooms overlay either expanded rail without collapsing the canvas",
 );
 const okBlock = extractBlock(css, ".role-surface-status-dot--ok");
 assert.doesNotMatch(okBlock, /oklch\(/, "role-surface-status-dot--ok no longer hardcodes oklch");

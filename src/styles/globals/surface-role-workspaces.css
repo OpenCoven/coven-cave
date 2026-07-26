@@ -192,8 +192,10 @@
 }
 
 .role-surface-columns {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(220px, 300px);
+  grid-template-areas: "left canvas right";
   gap: var(--space-3);
   flex: 1;
   min-height: 0;
@@ -210,7 +212,16 @@
   padding-right: 2px;
 }
 
+.role-surface-rail--left {
+  grid-area: left;
+}
+
+.role-surface-rail--right {
+  grid-area: right;
+}
+
 .role-surface-canvas {
+  grid-area: canvas;
   min-height: 0;
   overflow-y: auto;
   border: 1px solid var(--border);
@@ -669,28 +680,69 @@
   color: var(--text-muted);
 }
 
-/* Narrow room containers keep the canvas primary and reveal either rail on demand. */
+/* Medium rooms retain navigation while moving the inspector on demand. */
 @container role-surface-room (max-width: 860px) {
   .role-surface-disclosures {
     display: flex;
   }
 
-  .role-surface-columns {
-    grid-template-columns: minmax(0, 1fr);
-    overflow-y: auto;
+  .role-surface-disclosure--left {
+    display: none;
   }
 
-  .role-surface-rail {
+  .role-surface-columns {
+    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+    grid-template-areas: "left canvas";
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .role-surface-rail--right {
+    display: none;
+  }
+
+  .role-surface-rail--right.role-surface-rail--expanded {
+    display: flex;
+    position: absolute;
+    grid-area: canvas;
+    inset: 0;
+    z-index: 1;
+    padding: var(--space-3);
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+  }
+}
+
+/* Compact rooms prioritize the canvas and disclose either rail on demand. */
+@container role-surface-room (max-width: 620px) {
+  .role-surface-disclosure--left {
+    display: flex;
+  }
+
+  .role-surface-columns {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "canvas";
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .role-surface-rail--left,
+  .role-surface-rail--right {
     display: none;
     overflow-y: visible;
   }
 
   .role-surface-rail--expanded {
     display: flex;
-  }
-
-  .role-surface-canvas {
-    overflow-y: visible;
+    position: absolute;
+    grid-area: canvas;
+    inset: 0;
+    z-index: 1;
+    padding: var(--space-3);
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
   }
 }
 
