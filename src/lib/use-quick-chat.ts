@@ -79,6 +79,8 @@ export type UseQuickChat = {
   selectedFamiliar: Familiar | null;
   projects: CaveProject[];
   projectsLoading: boolean;
+  projectsError: string | null;
+  projectLaunchReady: boolean;
   selectedProjectRoot: string | null;
   setSelectedProjectRoot: (root: string | null) => void;
   draft: string;
@@ -182,7 +184,41 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const rosterLoadedRef = useRef(false);
 
   const nextId = useCallback((prefix: string) => `${prefix}-${msgSeqRef.current++}`, []);
-  const { projects, loading: projectsLoading } = useProjects({ familiarId: selectedFamiliarId });
+  const {
+    projects: scopedProjects,
+    loading: projectsLoading,
+    error: projectsError,
+    loadedSuccessfully: projectsLoadedSuccessfully,
+  } = useProjects({
+    enabled: Boolean(selectedFamiliarId),
+    familiarId: selectedFamiliarId,
+  });
+  const projects = useMemo(
+    () => scopedProjects.filter((project) => project.access !== undefined),
+    [scopedProjects],
+  );
+  const selectedProject = useMemo(
+    () =>
+      selectedProjectRoot
+        ? projects.find((project) => project.root === selectedProjectRoot) ?? null
+        : null,
+    [projects, selectedProjectRoot],
+  );
+  const projectLaunchReady =
+    projectsLoadedSuccessfully &&
+    !projectsLoading &&
+    !projectsError &&
+    selectedProject?.access !== undefined &&
+    Boolean(selectedProjectRoot);
+  const projectLaunchMessage = projectsLoading
+    ? "Checking project access…"
+    : projectsError
+      ? "Projects are unavailable. Retry before starting chat."
+      : !projectsLoadedSuccessfully
+        ? "Checking project access…"
+        : projects.length === 0
+          ? "No accessible projects are available for this familiar."
+          : "Choose a project this familiar can access before starting chat.";
 
   // Per-thread /model override — ref-mirrored so deliver() reads the latest
   // without re-identity, cleared whenever the thread resets or swaps familiar
@@ -350,6 +386,10 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       attachments: ChatAttachment[] = [],
     ): Promise<"done" | "stopped"> => {
       if (!target.familiarId) return "stopped";
+      if (!projectLaunchReady) {
+        setError(projectLaunchMessage);
+        return "stopped";
+      }
       const assistantId = nextId("a");
       const controller = new AbortController();
       abortRef.current = controller;
@@ -421,7 +461,14 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       setSendState("done");
       return "done";
     },
-    [nextId, responseSpeed, selectedProjectRoot, thinkingEffort],
+    [
+      nextId,
+      projectLaunchMessage,
+      projectLaunchReady,
+      responseSpeed,
+      selectedProjectRoot,
+      thinkingEffort,
+    ],
   );
 
   // Full send pipeline for an explicit text — `send()` feeds it the draft;
@@ -430,10 +477,41 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // without a stale closure.
   const sendText = useCallback(
     async (raw: string, attachments: ChatAttachment[] = []) => {
+      const target = resolveQuickChatTarget(raw, familiars, selectedFamiliarId);
+      // Attachment-only sends are legal — the bridge builds a "review the
+      // attached files" prompt server-side. Only the empty-prompt error is
+      // forgiven; an unknown @mention or an empty roster still surfaces.
+      const blocking =
+        target.error && !(target.familiarId && attachments.length > 0) ? target.error : null;
+      setError(blocking);
+      if (blocking || !target.familiarId) return;
+
+      // A leading @mention can switch familiars, but the selected project was
+      // authorized for the previous one. Change scope and preserve the draft;
+      // the user must choose from the new familiar's freshly filtered list
+      // before any optimistic turn or server request exists.
+      if (target.familiarId !== selectedFamiliarId && !abortRef.current) {
+        userPickedRef.current = true;
+        newThread();
+        selectedIdRef.current = target.familiarId;
+        setSelectedFamiliarId(target.familiarId);
+        selectedProjectRootRef.current = null;
+        setSelectedProjectRoot(null);
+        writeLastFamiliar(target.familiarId);
+        setDraft(raw);
+        setError("Choose a project this familiar can access before starting chat.");
+        return;
+      }
+
+      if (!projectLaunchReady) {
+        setError(projectLaunchMessage);
+        return;
+      }
       // A turn is already streaming: QUEUE the message instead of dropping it
       // (the old behavior) — it auto-sends, in order, when the reply settles
       // naturally. Stop parks the queue, so a cancel never fires a surprise
-      // follow-up; the next manual send resumes draining.
+      // follow-up; the next manual send resumes draining. A queued @mention
+      // switches scope only when it reaches this pipeline again while idle.
       if (abortRef.current) {
         if (!raw.trim() && attachments.length === 0) return;
         const item: QueuedQuickChatMessage = {
@@ -446,14 +524,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         setDraft("");
         return;
       }
-      const target = resolveQuickChatTarget(raw, familiars, selectedFamiliarId);
-      // Attachment-only sends are legal — the bridge builds a "review the
-      // attached files" prompt server-side. Only the empty-prompt error is
-      // forgiven; an unknown @mention or an empty roster still surfaces.
-      const blocking =
-        target.error && !(target.familiarId && attachments.length > 0) ? target.error : null;
-      setError(blocking);
-      if (blocking || !target.familiarId) return;
 
       // A leading @mention (or picker change) that swaps familiar starts a fresh
       // thread — a resumed session belongs to the previous familiar.
@@ -500,7 +570,15 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         }
       }
     },
-    [deliver, familiars, nextId, selectedFamiliarId],
+    [
+      deliver,
+      familiars,
+      newThread,
+      nextId,
+      projectLaunchMessage,
+      projectLaunchReady,
+      selectedFamiliarId,
+    ],
   );
   sendTextRef.current = sendText;
 
@@ -514,6 +592,10 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const regenerate = useCallback(() => {
     const prompt = lastUserPromptRef.current;
     if (!prompt || sendState === "sending" || abortRef.current) return;
+    if (!projectLaunchReady) {
+      setError(projectLaunchMessage);
+      return;
+    }
     const target = resolveQuickChatTarget(prompt, familiars, selectedFamiliarId);
     if (target.error || !target.familiarId) return;
     // Drop the trailing assistant turn(s) after the last user turn, then re-run.
@@ -529,7 +611,14 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     });
     const resume = threadFamiliarRef.current === target.familiarId && sessionIdRef.current != null;
     void deliver(target, resume, lastUserAttachmentsRef.current);
-  }, [deliver, familiars, selectedFamiliarId, sendState]);
+  }, [
+    deliver,
+    familiars,
+    projectLaunchMessage,
+    projectLaunchReady,
+    selectedFamiliarId,
+    sendState,
+  ]);
 
   const cancel = useCallback(() => {
     abortRef.current?.abort();
@@ -544,7 +633,11 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const pickFamiliar = useCallback(
     (id: string | null) => {
       userPickedRef.current = true;
-      if (selectedIdRef.current !== id) newThread();
+      if (selectedIdRef.current !== id) {
+        newThread();
+        selectedProjectRootRef.current = null;
+        setSelectedProjectRoot(null);
+      }
       selectedIdRef.current = id;
       setSelectedFamiliarId(id);
     },
@@ -566,13 +659,15 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     selectedFamiliar,
     projects,
     projectsLoading,
+    projectsError,
+    projectLaunchReady,
     selectedProjectRoot,
     setSelectedProjectRoot: pickProjectRoot,
     draft,
     setDraft,
     messages,
     hasThread: messages.length > 0,
-    error,
+    error: error ?? (projectsError ? "Projects are unavailable. Retry before starting chat." : null),
     sessionId,
     sendState,
     loading,

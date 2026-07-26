@@ -6,18 +6,13 @@ import {
   bindingFor,
   enqueueOfflineTravelItem,
   type CaveConfig,
-  type FamiliarBinding,
   loadConfig,
   loadState,
   recordSessionFamiliar,
   setSessionTitle,
   setSessionTitleAuto,
 } from "@/lib/cave-config";
-import {
-  chatSummaryTitle,
-  chatTitleFromPrompt,
-  defaultChatTitleForSession,
-} from "@/lib/cave-chat-titles";
+import { chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import {
   isAutoOwnedTitle,
   isRenameDueAtTurn,
@@ -79,7 +74,6 @@ import {
   resolveOpenCodeCompatibility,
 } from "@/lib/opencode-compatibility";
 import { handleOpenCodeJsonLine } from "@/lib/opencode-stream";
-import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import {
   HermesSseDecoder,
   hermesApiConfig,
@@ -111,6 +105,12 @@ import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { loadProjects } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
+import {
+  authorizeChatProjectLaunch,
+  ChatProjectLaunchError,
+  isProjectlessGenerationOrigin,
+} from "@/lib/server/chat-project-launch";
+import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
   OpenClawAgentResolutionError,
@@ -123,7 +123,6 @@ import {
 } from "@/lib/openclaw-bridge";
 import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters";
 import {
-  type ConversationFile,
   type ChatTurn,
   createConversationStub,
   loadConversation,
@@ -141,7 +140,6 @@ import {
   modelApplicationForHarness,
   modelApplicationFromRun,
   modelRejectionInError,
-  resolveChatModelState,
   type ChatModelState,
 } from "@/lib/chat-model-state";
 import {
@@ -1105,24 +1103,16 @@ export async function POST(req: Request) {
     (!sshRuntime && !body.projectRoot && existingConversation?.runtime == null
       ? await daemonSessionCwd(body.sessionId)
       : undefined);
-  const projects = sshRuntime ? [] : await loadProjects();
+  const projectRootForLaunch = body.projectRoot ?? resumeCwd;
+  const projects = await loadProjects();
   const resolvedFamiliarWorkspace = !sshRuntime
     ? await resolveFamiliarWorkspace(body.familiarId)
     : undefined;
-  let cwd: string;
-  try {
-    cwd = sshRuntime
-      ? homedir()
-      : await resolveLocalRuntimeCwd(body.projectRoot ?? resumeCwd ?? resolvedFamiliarWorkspace);
-  } catch (error) {
-    if (error instanceof RuntimeScopeError) {
-      return new Response(
-        JSON.stringify({ ok: false, error: error.message, code: error.code }),
-        { status: error.status, headers: { "content-type": "application/json" } },
-      );
-    }
-    throw error;
-  }
+  // A persisted conversation owns its provenance. Never let a request relabel
+  // an existing user chat as a hidden generator to bypass project checks.
+  const generationOrigin = existingConversation?.origin ?? body.origin;
+  const projectlessGeneration =
+    !body.projectRoot && isProjectlessGenerationOrigin(generationOrigin);
   // A Board task may be isolated in a worktree below its registered project.
   // The worktree itself is intentionally not a separate project record, so
   // its first native-chat turn must authorize against the card's server-owned
@@ -1138,45 +1128,82 @@ export async function POST(req: Request) {
     taskCard.cwd === body.projectRoot
       ? taskCard.projectId
       : null;
-  const chatProjectId = sshRuntime
-    ? null
-    : taskWorktreeProjectId ?? chatProjectAccessId({
-        projects,
-        requestedProjectRoot: body.projectRoot,
-        resumeCwd,
-        resolvedCwd: cwd,
-        familiarWorkspace: resolvedFamiliarWorkspace,
-      });
-  if (chatProjectId) {
-    try {
-      await assertProjectAccess({ familiarId: body.familiarId }, chatProjectId, "chat");
-    } catch (error) {
-      if (error instanceof ProjectAccessDeniedError) {
-        return new Response(
-          JSON.stringify({ ok: false, error: error.message }),
-          { status: error.status, headers: { "content-type": "application/json" } },
+  let authorizedProjectRoot: string;
+  try {
+    if (projectlessGeneration) {
+      const generationRoot = sshRuntime ? homedir() : (resumeCwd ?? resolvedFamiliarWorkspace);
+      if (!generationRoot) {
+        throw new ChatProjectLaunchError(
+          "project_root_required",
+          400,
+          "This hidden generation has no safe familiar workspace.",
         );
       }
-      throw error;
+      authorizedProjectRoot = generationRoot;
+    } else {
+      const authorized = await authorizeChatProjectLaunch(
+        {
+          validateProjectRoot: validateCaveProjectRoot,
+          resolveProjectId: (requestedRoot, resolvedRoot) =>
+            chatProjectAccessId({
+              projects,
+              requestedProjectRoot: requestedRoot,
+              resolvedCwd: resolvedRoot,
+            }),
+          isProjectRegistered: (projectId) =>
+            projects.some((project) => project.id === projectId),
+          hasProjectAccess: async (requestedFamiliarId, projectId, surface) => {
+            try {
+              await assertProjectAccess({ familiarId: requestedFamiliarId }, projectId, surface);
+              return true;
+            } catch (error) {
+              if (error instanceof ProjectAccessDeniedError) return false;
+              throw error;
+            }
+          },
+        },
+        {
+          familiarId: body.familiarId,
+          projectRoot: projectRootForLaunch,
+          projectIdOverride: taskWorktreeProjectId,
+          surface: "chat",
+        },
+      );
+      authorizedProjectRoot = authorized.root;
     }
+  } catch (error) {
+    if (error instanceof ChatProjectLaunchError) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: error.message,
+          code: error.code,
+        }),
+        { status: error.status, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw error;
+  }
+  let cwd: string;
+  try {
+    cwd = sshRuntime ? homedir() : await resolveLocalRuntimeCwd(authorizedProjectRoot);
+  } catch (error) {
+    if (error instanceof RuntimeScopeError) {
+      return new Response(
+        JSON.stringify({ ok: false, error: error.message, code: error.code }),
+        { status: error.status, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw error;
   }
   const grantedProjectRoots = sshRuntime
     ? []
     : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
-  // Resolve familiar workspace for identity context. When a project root is
-  // explicitly set, the harness boots there (and should have the familiar's
-  // AGENTS.md injected separately). When there's no project root, boot in the
-  // familiar's own workspace so the selected harness picks up AGENTS.md /
-  // SOUL.md / IDENTITY.md and responds as the familiar instead of as the
-  // generic CLI identity. A resumed conversation keeps its recorded cwd over
-  // the workspace for the same reason. SSH runtimes own their remote cwd, so
-  // never stat the local filesystem for a remote familiar.
-  const familiarCwd = !sshRuntime && !body.projectRoot && !resumeCwd
-    ? resolvedFamiliarWorkspace
-    : undefined;
+  // The selected project is always the runtime root. Familiar identity files
+  // are injected separately and remain an allowed side directory below.
   const runtimeScope: RuntimeScope = sshRuntime
     ? { kind: "ssh", host: sshRuntime.host, root: sshRuntime.cwd }
-    : { kind: "local", root: familiarCwd ?? cwd, allowedProjectRoots: grantedProjectRoots };
+    : { kind: "local", root: cwd, allowedProjectRoots: grantedProjectRoots };
   // Boundary sentinel: watches the harness's streamed tool calls for paths
   // outside the granted roots. Never blocks the stream — violations surface
   // as a progress notice at turn end and steer the NEXT turn via a prompt
@@ -1186,7 +1213,7 @@ export async function POST(req: Request) {
     ? null
     : createBoundarySentinel({
         allowedRoots: [
-          familiarCwd ?? cwd,
+          cwd,
           ...grantedProjectRoots,
           ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
         ],
@@ -1197,7 +1224,7 @@ export async function POST(req: Request) {
     model: desiredModel,
     runtime: sshRuntime
       ? `ssh:${sshRuntime.host}:${sshRuntime.cwd}`
-      : `local:${familiarCwd ?? cwd}`,
+      : `local:${cwd}`,
     desiredModel,
     confirmedModel: undefined,
     modelSource: modelState.source,
@@ -1321,7 +1348,7 @@ export async function POST(req: Request) {
   // the roots the runtime-scope preamble grants. The spawn cwd is already
   // trusted implicitly, so it's excluded. Gated on the `--add-dir` probe and
   // local runtimes only (SSH runtimes own their remote filesystem).
-  const spawnRoot = familiarCwd ?? cwd;
+  const spawnRoot = cwd;
   const grantDirs = !sshRuntime
     ? Array.from(
         new Set(
@@ -2748,7 +2775,7 @@ export async function POST(req: Request) {
               // OpenCode compatibility diagnostics must not expose a local
               // workspace path. Other harnesses retain their existing launch
               // location detail.
-              : openCodeDirect ? undefined : familiarCwd ?? cwd,
+              : openCodeDirect ? undefined : cwd,
           );
           const child = sshRuntime
             ? (() => {
@@ -2832,12 +2859,10 @@ export async function POST(req: Request) {
                 let child: ChildProcessWithoutNullStreams;
                 try {
                   child = spawn(command.command, command.args, {
-                    // Spawn IN the familiar's workspace when no project root was
-                    // supplied, so coven's project-root resolver picks that dir as
-                    // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
-                    // from the familiar's home. When a project root IS supplied,
-                    // honor that instead.
-                    cwd: familiarCwd ?? cwd,
+                    // Spawn in the authorized project root. Familiar identity
+                    // files are injected separately, so native harnesses cannot
+                    // bypass the project-launch access gate through their home.
+                    cwd,
                     stdio: openCodeLaunchCommand?.input === undefined
                       ? ["ignore", "pipe", "pipe"]
                       : ["pipe", "pipe", "pipe"],
@@ -3301,7 +3326,7 @@ export async function POST(req: Request) {
       // title == this turn's prompt head. Best-effort; never fails the turn.
       if (!cancelledByUser && !body.sessionId && !sessionId && !sshRuntime) {
         const swept = await sweepStuckCreatedSessions({
-          cwd: familiarCwd ?? cwd,
+          cwd,
           prompt: harnessPrompt,
           sinceMs: turnSpawnStartMs - 5000,
         });
@@ -3352,7 +3377,7 @@ export async function POST(req: Request) {
         openCodeDirect && openCodeCompatibility?.mode === "plain"
           ? { text: assistantTextForPersistence, attachments: [] }
           : parseAgentAttachments(assistantTextForPersistence, {
-              allowedRoots: sshRuntime ? [] : [familiarCwd ?? cwd, ...grantedProjectRoots],
+              allowedRoots: sshRuntime ? [] : [cwd, ...grantedProjectRoots],
             });
       for (const attachment of agentAttachments) {
         push({ kind: "attachment", attachment });

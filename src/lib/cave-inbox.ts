@@ -102,8 +102,6 @@ type InboxFile = {
   items: InboxItem[];
 };
 
-const EMPTY: InboxFile = { version: 1, items: [] };
-
 async function ensureDir() {
   await mkdir(path.dirname(INBOX_PATH), { recursive: true });
 }

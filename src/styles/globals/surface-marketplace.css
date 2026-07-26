@@ -796,6 +796,22 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.cave-project-picker__option-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.cave-project-picker__option-access {
+  flex: 0 0 auto;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
 .cave-project-picker__option-root {
   overflow: hidden;
   text-overflow: ellipsis;

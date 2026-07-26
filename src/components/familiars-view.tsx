@@ -1,39 +1,20 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { useFocusTrap } from "@/lib/use-focus-trap";
-import { Tabs } from "@/components/ui/tabs";
-// Shared relative-time formatter, imported as `age` so the call sites read the
-// same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
-import { relativeTime as age } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
-import { RelativeTime } from "@/components/ui/relative-time";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { AuthedImage } from "@/components/ui/authed-image";
-import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
 import type { FileMemoryEntry, MemoryFeed } from "@/components/familiars-memory-view";
-import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
-import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
-  ACTIVITY_DAYS,
   buildFamiliarCardStats,
-  type FamiliarCardStats,
   type CovenMemoryEntry,
 } from "@/components/familiars-view-stats";
-import { deriveRenown } from "@/lib/familiar-renown";
-import { compactCount } from "@/lib/profile-card";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events";
-import { useFamiliarStudio } from "@/lib/familiar-studio-context";
-import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
-import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
@@ -54,8 +35,6 @@ type CovenMemoryResponse =
 type FileMemoryResponse =
   | { ok: true; entries: FileMemoryEntry[] }
   | { ok: false; entries?: FileMemoryEntry[]; error?: string };
-
-type ViewMode = "roster" | "detail" | "agent-memory";
 
 type AgentsViewProps = {
   familiars: Familiar[];

@@ -6,7 +6,7 @@ import {
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
 } from "@/lib/project-root-guidance";
-import { filterProjectsForFamiliar } from "@/lib/project-permissions";
+import { listAccessibleProjects } from "@/lib/project-permissions";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
@@ -21,9 +21,13 @@ export async function GET(req: Request) {
   if (!isValidFamiliarId(familiarId)) {
     return NextResponse.json({ ok: false, error: "invalid familiar id" }, { status: 400 });
   }
+  const accessibleProjects = await listAccessibleProjects(projects, familiarId);
+  const launchableProjects = accessibleProjects.flatMap(({ project, access }) =>
+    validateCaveProjectRoot(project.root).ok ? [{ ...project, access }] : [],
+  );
   return NextResponse.json({
     ok: true,
-    projects: await filterProjectsForFamiliar(projects, familiarId),
+    projects: launchableProjects,
   });
 }
 

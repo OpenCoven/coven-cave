@@ -43,7 +43,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { useCopy } from "@/lib/use-copy";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
-import type { Card, CardStatus } from "@/lib/cave-board-types";
+import type { Card } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import type { GitHubItemTarget } from "@/lib/github-item-url";
 import { githubItemMatchesQuery } from "@/lib/github-search";
@@ -67,7 +67,7 @@ import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
   GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER, STATUS_DOT_COLOR,
   linkedCardsForItem, orgOf, useCards, useFamiliars,
-  type ActivityResult, type Filter, type GroupBy, type PatStatus, type SortDir, type SortKey,
+  type ActivityResult, type Filter, type GroupBy, type PatStatus, type SortKey,
 } from "./github-view-data";
 
 type Props = {
@@ -510,12 +510,10 @@ function SafeMergeAction({
   item,
   linkedCards,
   familiars,
-  onJumpToSession,
 }: {
   item: GitHubItem;
   linkedCards: Card[];
   familiars: Familiar[];
-  onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const { announce } = useAnnouncer();
@@ -2261,7 +2259,6 @@ function GitHubItemGlassPanel({
             item={item}
             linkedCards={linkedCards}
             familiars={familiars}
-            onJumpToSession={onJumpToSession}
           />
           <Button
             size="xs"
@@ -3149,7 +3146,6 @@ export function GitHubView({
                             item={item}
                             linkedCards={linked}
                             familiars={familiars}
-                            onJumpToSession={onJumpToSession}
                           />
                           <IconButton
                             icon="ph:arrow-square-out"

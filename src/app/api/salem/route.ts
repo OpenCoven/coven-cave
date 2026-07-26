@@ -192,6 +192,10 @@ async function askLocalFamiliar(args: {
       body: JSON.stringify({
         familiarId: args.familiarId,
         prompt: args.message,
+        // Ask Salem synthesis is a hidden, read-only docs generation rather
+        // than a user Chat thread. Keep it on the bounded projectless lane.
+        origin: "enhance",
+        permissionMode: "read",
         ...(args.model ? { modelOverride: args.model, modelOverrideScope: "next-message" } : {}),
       }),
       signal: controller.signal,

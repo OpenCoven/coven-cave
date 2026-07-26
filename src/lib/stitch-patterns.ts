@@ -2,7 +2,7 @@
  * Stitch patterns — the shapes a sewn entry can aim for
  * (docs/authoring-assist.md §4, cave-kwx4).
  *
- * A pattern is pure prefill data (the AUTOMATION_TEMPLATES stance): section
+ * A pattern is pure prefill data: section
  * headings the distilled body should follow plus tag hints. Selecting one
  * parameterizes the sew prompt and the manual-sew scaffold — the sew output
  * contract itself (`TITLE:/TAGS:/---/body`) is untouched, so `parseSewOutput`

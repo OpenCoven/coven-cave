@@ -20,7 +20,7 @@ const css = [
 const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 assert.match(
   shell,
-  /import \{ Icon, CAVE_ICON_SIZE, type IconName \} from "@\/lib\/icon"/,
+  /import \{ Icon, CAVE_ICON_SIZE \} from "@\/lib\/icon"/,
   "Shell should import the shared icon size constants with the Icon wrapper",
 );
 

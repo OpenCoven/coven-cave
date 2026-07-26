@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 test.use({ hasTouch: true, viewport: { width: 1280, height: 900 } });
 const mk = (id: string, title: string, status: string) => ({ id, title, notes: "", status, priority: "medium", familiarId: null, sessionId: null, cwd: null, projectId: null, links: [], github: [], labels: [], createdAt: "2026-06-13T12:00:00Z", updatedAt: "2026-06-13T12:00:00Z", lifecycle: "queued", lifecycleAt: "2026-06-13T12:00:00Z", retryCount: 0, maxRetries: 3, steps: [] });
 test("touch long-press drag moves a card between columns", async ({ page }) => {

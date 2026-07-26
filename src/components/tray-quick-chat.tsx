@@ -238,6 +238,8 @@ export function QuickChatTabPane({
     selectedFamiliar,
     projects,
     projectsLoading,
+    projectsError,
+    projectLaunchReady,
     selectedProjectRoot,
     setSelectedProjectRoot,
     draft,
@@ -317,6 +319,7 @@ export function QuickChatTabPane({
         onPickFamiliar={pickFamiliar}
         projects={projects}
         projectsLoading={projectsLoading}
+        projectsError={projectsError}
         selectedProjectRoot={selectedProjectRoot}
         onPickProjectRoot={setSelectedProjectRoot}
         thinkingEffort={thinkingEffort}
@@ -342,6 +345,7 @@ export function QuickChatTabPane({
         onCancel={cancel}
         sending={sending}
         disabled={loading}
+        launchReady={projectLaunchReady}
         queued={queued}
         onRemoveQueued={removeQueued}
         onSteerQueued={steerQueued}

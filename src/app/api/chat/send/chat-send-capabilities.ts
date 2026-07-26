@@ -236,13 +236,6 @@ function probeOutput(
   });
 }
 
-function hasRunOption(help: string, flag: string): boolean {
-  // Only option-definition lines count. Mentions in examples, migration notes,
-  // or another command's help text are not evidence that `opencode run` takes
-  // this flag.
-  return new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${flag}\\b(?:\\s|=|,|$)`, "m").test(help);
-}
-
 function optionStanza(help: string, option: string): string {
   return help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b[^\\n]*(?:\\n(?!\\s*(?:-[A-Za-z],?\\s+)?--)[^\\n]*){0,2}`, "im"))?.[0] ?? "";
 }
