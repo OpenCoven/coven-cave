@@ -81,6 +81,11 @@ assert.match(
   "an OpenCode launch race marks the turn failed before empty-output/auth diagnostics can run",
 );
 assert.match(
+  route,
+  /OPENCODE_COMMAND_NOT_FOUND_MARKER[\s\S]*?OPENCODE_LAUNCH_FAILED_MARKER[\s\S]*?launchFailure = \{[\s\S]*?code: commandMissing \? "runtime_missing" : "runtime_launch_failed"[\s\S]*?push\(\{ kind: "error", code: launchFailure\.code, message: launchError \}\)/,
+  "a PowerShell-hosted inner OpenCode race is streamed as a launch failure instead of becoming synthetic no-output text",
+);
+assert.match(
   capabilities,
   /const launch = openCodeLaunch\(\["run", "--help"\]\);[\s\S]*?launch\.command,[\s\S]*?launch\.args,[\s\S]*?openCodeSpawnEnv\(\),/,
   "OpenCode probes its CLI with the same Windows-safe command and WSL-compatible environment as a chat run",

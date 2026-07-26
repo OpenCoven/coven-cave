@@ -62,13 +62,33 @@ import {
   parseGrokStreamEvent,
 } from "@/lib/grok-build";
 import { grokLaunchCommand } from "@/lib/grok-bin";
-import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
+<<<<<<< HEAD
+import {
+  openCodeCommand,
+  openCodeLaunch,
+  openCodeSpawnEnv,
+  OPENCODE_COMMAND_NOT_FOUND_MARKER,
+  OPENCODE_LAUNCH_FAILED_MARKER,
+  writeOpenCodeLaunchInput,
+} from "@/lib/opencode-bin";
 import {
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
+  missingRunnerMessage,
   type DirectRunnerId,
   type RuntimeAvailability,
 } from "@/lib/runtime-availability";
+=======
+import {
+  openCodeCommand,
+  openCodeLaunch,
+  openCodeSpawnEnv,
+  OPENCODE_COMMAND_NOT_FOUND_MARKER,
+  OPENCODE_LAUNCH_FAILED_MARKER,
+  writeOpenCodeLaunchInput,
+} from "@/lib/opencode-bin";
+import { evaluateRuntimeAvailability, missingRunnerMessage } from "@/lib/runtime-availability";
+>>>>>>> bbfd8a88 (fix(opencode): preserve PowerShell inner launch failures)
 import {
   quarantineOpenCodeSchema,
   redactedOpenCodeEventFingerprint,
@@ -3279,8 +3299,33 @@ export async function POST(req: Request) {
             if (chunk) handleStdoutChunk(chunk);
           });
 
+          let openCodeLaunchMarkerTail = "";
           child.stderr.on("data", (data: Buffer) => {
             const text = stripAnsi(data.toString("utf8"));
+            if (openCodeDirect) {
+              const markerText = `${openCodeLaunchMarkerTail}${text}`;
+              openCodeLaunchMarkerTail = markerText.slice(-OPENCODE_COMMAND_NOT_FOUND_MARKER.length);
+              const commandMissing = markerText.includes(OPENCODE_COMMAND_NOT_FOUND_MARKER);
+              const launchFailed = markerText.includes(OPENCODE_LAUNCH_FAILED_MARKER);
+              if (!launchFailure && (commandMissing || launchFailed)) {
+                const launchError = commandMissing
+                  ? missingRunnerMessage("opencode")
+                  : "OpenCode failed to start. Check its installation and try again.";
+                launchFailure = {
+                  code: commandMissing ? "runtime_missing" : "runtime_launch_failed",
+                  message: launchError,
+                };
+                result.is_error = true;
+                pushProgress(
+                  "harness-start",
+                  "opencode failed to start",
+                  "error",
+                  launchError,
+                  Date.now() - attemptStartedAt,
+                );
+                push({ kind: "error", code: launchFailure.code, message: launchError });
+              }
+            }
             captureHermesSessionFromStderr(text);
             if (RESUME_ERR_RE.test(text)) resumeFailed = true;
             if (!adapterConflict) {
@@ -3288,6 +3333,10 @@ export async function POST(req: Request) {
             }
             for (const line of text.split(/\r?\n/)) {
               const trimmed = line.trim();
+              if (
+                trimmed === OPENCODE_COMMAND_NOT_FOUND_MARKER
+                || trimmed === OPENCODE_LAUNCH_FAILED_MARKER
+              ) continue;
               if (!trimmed) continue;
               // Claude stderr can include tool payloads. It must not be copied
               // into the generic empty-response diagnostic, which is rendered
