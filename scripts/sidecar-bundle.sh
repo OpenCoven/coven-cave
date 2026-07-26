@@ -30,6 +30,9 @@ WINDOWS_ARCHIVE_TEMP="$WINDOWS_ARCHIVE_DIR/.server.tar.zst.$$.tmp"
 WINDOWS_ARCHIVE_MANIFEST_TEMP="$WINDOWS_ARCHIVE_DIR/.manifest.json.$$.tmp"
 BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
 PIPER_RUNTIME_DIR="$ROOT/src-tauri/resources/piper"
+# Use Node rather than shell-specific environment variables (such as OS) so
+# Git Bash and CI build the same Windows resource layout.
+BUILD_PLATFORM="$(node -p 'process.platform')"
 PNPM_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/coven-cave-sidecar-pnpm.XXXXXX")"
 cleanup_staging() {
   rm -rf "$PNPM_STAGE"
@@ -321,7 +324,7 @@ if [ ! -f "$STANDALONE/server.js" ]; then
 fi
 
 echo "==> staging Node runtime for bundled sidecar"
-if [ "${OS:-}" = "Windows_NT" ]; then
+if [ "$BUILD_PLATFORM" = "win32" ]; then
   NODE_BIN="$(command -v node.exe || command -v node || true)"
   NODE_NAME="node.exe"
 else
@@ -390,7 +393,7 @@ if ! (cd "$DEST" && node -e "require('sharp')") >&2 2>&1; then
   exit 1
 fi
 
-if [ "${TAURI_PLATFORM:-}" = "windows" ] || [ "${OS:-}" = "Windows_NT" ]; then
+if [ "$BUILD_PLATFORM" = "win32" ]; then
   write_windows_sidecar_archive
 fi
 
