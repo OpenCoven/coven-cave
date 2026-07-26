@@ -1,0 +1,106 @@
+/* Dev-only recovery surface shown when the Next/Turbopack dev server dies under
+ * a running desktop window. It has to stay legible even if the app's own chunks
+ * are the thing that failed, so it leans only on foundation tokens. */
+
+.dev-shell-recovery {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: color-mix(in oklch, var(--background) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.dev-shell-recovery__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 420px;
+  padding: var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised, var(--background));
+  box-shadow: var(--shadow-panel, none);
+  text-align: left;
+}
+
+.dev-shell-recovery__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dev-shell-recovery__body {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.dev-shell-recovery__origin {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.dev-shell-recovery__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.dev-shell-recovery__button {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+
+.dev-shell-recovery__button:hover {
+  background: color-mix(in oklch, var(--text-primary) 8%, transparent);
+}
+
+.dev-shell-recovery__pulse {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+  animation: dev-shell-recovery-pulse 1.4s ease-in-out infinite;
+}
+
+.dev-shell-recovery__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+@keyframes dev-shell-recovery-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dev-shell-recovery {
+    backdrop-filter: none;
+  }
+
+  .dev-shell-recovery__pulse {
+    animation: none;
+    opacity: 0.7;
+  }
+}
