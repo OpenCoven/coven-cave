@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { createReadStream } from "node:fs";
+import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
@@ -22,12 +23,13 @@ const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
 const OPENCODE_PROBE_CLEANUP_GRACE_MS = 1_000;
 const OPENCODE_VERIFIED_CAPABILITY_FALLBACK_TTL_MS = 60_000;
 const MAX_VERIFIED_OPENCODE_CAPABILITIES = 64;
+const MAX_OPENCODE_FILE_IDENTITIES = 128;
 // The current Windows OpenCode executable is roughly 175 MB. Bound hashing
 // enough to cover supported releases while refusing an arbitrary PATH target.
 const MAX_OPENCODE_IDENTITY_FILE_BYTES = 256 * 1024 * 1024;
 
 type OpenCodeRunContractProbe = { helpProbe: ProbeOutput; versionProbe: ProbeOutput };
-type CapabilityIdentityProbe = (env: NodeJS.ProcessEnv) => string | null;
+type CapabilityIdentityProbe = (env: NodeJS.ProcessEnv) => string | null | Promise<string | null>;
 type CapabilityClock = () => number;
 type VerifiedCapability = {
   expiresAt: number;
@@ -38,6 +40,7 @@ type VerifiedCapability = {
 // skip that probe: it only avoids turning a transient launcher failure into a
 // false claim that an otherwise unchanged OpenCode lacks JSON support.
 const verifiedOpenCodeCapabilities = new Map<string, VerifiedCapability>();
+const openCodeFileIdentities = new Map<string, string>();
 
 /** PowerShell/npm shims can be delayed by cold start or Defender scanning. */
 export function openCodeCapabilityProbeTimeoutMs(platform: NodeJS.Platform = process.platform): number {
@@ -398,16 +401,51 @@ async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCod
  * npm PowerShell shim and its package executable both participate: package
  * upgrades can replace the latter while leaving the small `.cmd` shim intact.
  */
-function fileIdentity(file: string, platform: NodeJS.Platform): string | null {
+function rememberOpenCodeFileIdentity(key: string, identity: string): void {
+  openCodeFileIdentities.delete(key);
+  openCodeFileIdentities.set(key, identity);
+  while (openCodeFileIdentities.size > MAX_OPENCODE_FILE_IDENTITIES) {
+    const oldest = openCodeFileIdentities.keys().next().value;
+    if (oldest === undefined) break;
+    openCodeFileIdentities.delete(oldest);
+  }
+}
+
+async function hashFile(file: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(file);
+    stream.on("data", (chunk: string | Buffer) => { hash.update(chunk); });
+    stream.once("error", reject);
+    stream.once("end", () => resolve(hash.digest("hex")));
+  });
+}
+
+async function fileIdentity(file: string, platform: NodeJS.Platform): Promise<string | null> {
   try {
     // Resolve a symlink before reading it so changing its target changes the
     // identity even when the link itself keeps its old metadata.
-    const resolved = realpathSync(file);
-    const entry = statSync(resolved);
+    const resolved = await realpath(file);
+    const entry = await stat(resolved);
     if (!entry.isFile() || entry.size > MAX_OPENCODE_IDENTITY_FILE_BYTES) return null;
     const stablePath = platform === "win32" ? resolved.toLowerCase() : resolved;
-    const digest = createHash("sha256").update(readFileSync(resolved)).digest("hex");
-    return `${stablePath}\0${entry.size}\0${entry.mtimeMs}\0${digest}`;
+    // ctime and inode invalidate a retained digest for ordinary in-place
+    // replacements even when an updater preserves the size and mtime.
+    const metadataKey = `${stablePath}\0${entry.size}\0${entry.mtimeMs}\0${entry.ctimeMs}\0${entry.ino}`;
+    const cached = openCodeFileIdentities.get(metadataKey);
+    if (cached) {
+      rememberOpenCodeFileIdentity(metadataKey, cached);
+      return cached;
+    }
+    const digest = await hashFile(resolved);
+    const after = await stat(resolved);
+    const afterKey = `${stablePath}\0${after.size}\0${after.mtimeMs}\0${after.ctimeMs}\0${after.ino}`;
+    // An update racing the stream makes the hash ambiguous. Do not cache or
+    // reuse it; the caller will safely fall back to plain mode for this turn.
+    if (afterKey !== metadataKey) return null;
+    const identity = `${metadataKey}\0${digest}`;
+    rememberOpenCodeFileIdentity(metadataKey, identity);
+    return identity;
   } catch {
     return null;
   }
@@ -422,10 +460,10 @@ function npmPackageExecutable(directory: string, pathApi: typeof path.win32): st
   return pathApi.join(packageRoot, "opencode-ai", "bin", "opencode.exe");
 }
 
-export function openCodeCapabilityLaunchIdentity(
+export async function openCodeCapabilityLaunchIdentity(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform = process.platform,
-): string | null {
+): Promise<string | null> {
   const rawPath = env.PATH ?? env.Path ?? env.path;
   if (!rawPath) return null;
   const separator = platform === "win32" ? ";" : ":";
@@ -436,7 +474,7 @@ export function openCodeCapabilityLaunchIdentity(
   for (const directory of rawPath.split(separator).filter(Boolean).slice(0, 512)) {
     for (const extension of extensions) {
       const candidate = pathApi.join(directory, `${openCodeCommand()}${extension}`);
-      const launcher = fileIdentity(candidate, platform);
+      const launcher = await fileIdentity(candidate, platform);
       if (!launcher) continue;
       if (platform !== "win32" || extension === ".exe" || extension === ".com") return launcher;
 
@@ -444,7 +482,7 @@ export function openCodeCapabilityLaunchIdentity(
       // executable. Permit fallback only for npm's known layout, and include
       // the resolved package executable in the fingerprint. Unknown wrappers
       // deliberately receive no fallback evidence.
-      const packageTarget = fileIdentity(npmPackageExecutable(directory, pathApi), platform);
+      const packageTarget = await fileIdentity(npmPackageExecutable(directory, pathApi), platform);
       return packageTarget ? `${launcher}\0${packageTarget}` : null;
     }
   }
@@ -463,6 +501,13 @@ function pruneVerifiedOpenCodeCapabilities(now: number): void {
     const oldest = verifiedOpenCodeCapabilities.keys().next().value;
     if (oldest === undefined) break;
     verifiedOpenCodeCapabilities.delete(oldest);
+  }
+}
+
+function discardVerifiedOpenCodeCapabilities(scope: string, launcherIdentity: string): void {
+  const prefix = `${scope}\0${launcherIdentity}\0`;
+  for (const key of verifiedOpenCodeCapabilities.keys()) {
+    if (key.startsWith(prefix)) verifiedOpenCodeCapabilities.delete(key);
   }
 }
 
@@ -581,13 +626,16 @@ export async function openCodeRunCapabilities(
   // string alone is not a safe cache key: package managers and shims can
   // replace a CLI in place while preserving both PATH and `--version`.
   const env = openCodeSpawnEnv(familiarId);
-  const launcherIdentityBeforeProbe = capabilityIdentity(env);
+  // Hashing a large npm executable is streamed asynchronously and overlaps
+  // the help/version children, so it never blocks the request event loop.
+  const launcherIdentityBeforeProbe = Promise.resolve(capabilityIdentity(env));
   const { helpProbe, versionProbe } = await probeRunContract(env);
-  const launcherIdentityAfterProbe = capabilityIdentity(env);
+  const launcherIdentityAfterProbe = await capabilityIdentity(env);
+  const launcherIdentityBefore = await launcherIdentityBeforeProbe;
   // A launcher update during the probe leaves no trustworthy association
   // between its output and a later invocation, so fail closed for caching and
   // fallback even if the reported version is unchanged.
-  const launcherIdentity = launcherIdentityBeforeProbe && launcherIdentityBeforeProbe === launcherIdentityAfterProbe
+  const launcherIdentity = launcherIdentityBefore && launcherIdentityBefore === launcherIdentityAfterProbe
     ? launcherIdentityAfterProbe
     : null;
   const version = versionProbe.complete
@@ -604,7 +652,13 @@ export async function openCodeRunCapabilities(
     // Require both an exact launch-file fingerprint and a completed version
     // response before retaining evidence. A replacement in place, a changed
     // PATH, or a failed version probe therefore falls back to plain mode.
-    if (launcherIdentity && version) {
+    if (launcherIdentity && !version) {
+      // Complete help is authoritative capability evidence. Without a usable
+      // version it cannot be retained, so erase every prior version for this
+      // scope/launcher rather than allowing a later failed probe to revive a
+      // contradicted JSON contract.
+      discardVerifiedOpenCodeCapabilities(scope, launcherIdentity);
+    } else if (launcherIdentity && version) {
       verifiedOpenCodeCapabilities.set(capabilityKey(scope, launcherIdentity, version), {
         expiresAt: observedNow + OPENCODE_VERIFIED_CAPABILITY_FALLBACK_TTL_MS,
         capabilities,

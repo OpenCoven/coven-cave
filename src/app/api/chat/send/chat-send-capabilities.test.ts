@@ -73,6 +73,20 @@ const noJsonHelp = await openCodeRunCapabilities("no-json-fixture", async () => 
 }), fallbackIdentity, () => fallbackClock);
 assert.equal(noJsonHelp.probeStatus, "verified");
 assert.equal(noJsonHelp.json, false, "a complete help response without JSON remains a confirmed plain-mode capability");
+const versionlessIdentity = () => "versionless-launcher";
+await openCodeRunCapabilities("versionless-fixture", async () => ({
+  helpProbe: { complete: true, output: "  --format <format>  Output format: text, json\n" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), versionlessIdentity, () => fallbackClock);
+await openCodeRunCapabilities("versionless-fixture", async () => ({
+  helpProbe: { complete: true, output: "  --format <format>  Output format: text\n" },
+  versionProbe: { complete: false, output: "" },
+}), versionlessIdentity, () => fallbackClock);
+const versionlessFallback = await openCodeRunCapabilities("versionless-fixture", async () => ({
+  helpProbe: { complete: false, output: "" },
+  versionProbe: { complete: true, output: "opencode 1.18.5" },
+}), versionlessIdentity, () => fallbackClock);
+assert.equal(versionlessFallback.probeStatus, "unavailable", "a complete capability response without a version invalidates every older launcher contract");
 const raceIdentities = ["launcher-before", "launcher-after"];
 const racedProbe = await openCodeRunCapabilities("probe-race", async () => ({
   helpProbe: { complete: true, output: "  --format <format>  Output format: text, json\n" },
@@ -96,14 +110,14 @@ if (process.platform === "win32") {
     writeFileSync(path.join(localBin, "opencode.exe"), "direct-executable");
     const packageExecutable = path.join(packageBin, "opencode.exe");
     writeFileSync(packageExecutable, "package-target-one");
-    const cmdIdentity = openCodeCapabilityLaunchIdentity({ PATH: localBin, PATHEXT: ".CMD;.EXE" }, "win32");
-    const exeIdentity = openCodeCapabilityLaunchIdentity({ PATH: localBin, PATHEXT: ".EXE;.CMD" }, "win32");
+    const cmdIdentity = await openCodeCapabilityLaunchIdentity({ PATH: localBin, PATHEXT: ".CMD;.EXE" }, "win32");
+    const exeIdentity = await openCodeCapabilityLaunchIdentity({ PATH: localBin, PATHEXT: ".EXE;.CMD" }, "win32");
     assert.notEqual(cmdIdentity, exeIdentity, "PATHEXT order selects and fingerprints only the actual Windows launcher");
     const timestamp = new Date("2026-01-01T00:00:00.000Z");
     utimesSync(packageExecutable, timestamp, timestamp);
     writeFileSync(packageExecutable, "package-target-two");
     utimesSync(packageExecutable, timestamp, timestamp);
-    const replacementIdentity = openCodeCapabilityLaunchIdentity({ PATH: localBin, PATHEXT: ".CMD;.EXE" }, "win32");
+    const replacementIdentity = await openCodeCapabilityLaunchIdentity({ PATH: localBin, PATHEXT: ".CMD;.EXE" }, "win32");
     assert.notEqual(cmdIdentity, replacementIdentity, "a same-size package replacement with a restored timestamp changes the content fingerprint");
   } finally {
     rmSync(identityRoot, { recursive: true, force: true });
