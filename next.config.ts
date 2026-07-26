@@ -1,4 +1,12 @@
 import type { NextConfig } from "next";
+import bundleAnalyzer from "@next/bundle-analyzer";
+
+// Opt-in Webpack bundle visualizer retained for `next build --webpack`.
+// Turbopack builds use `pnpm analyze:bundle`, which writes Next's interactive
+// analysis to `.next/diagnostics/analyze/`. No-op for normal builds.
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === "1" || process.env.ANALYZE === "true",
+});
 
 const nextConfig: NextConfig = {
   // The Next.js dev tools launcher renders in a portal at bottom-left by
@@ -20,26 +28,56 @@ const nextConfig: NextConfig = {
   // Cave does not use Next's server-side image optimizer in the packaged app;
   // icon generation happens before build via scripts/generate-pwa-icons.mjs.
   images: { unoptimized: true },
-  serverExternalPackages: ["node-pty"],
-  // Next.js file tracing otherwise sucks the entire src-tauri/target/
-  // (multi-GB) into the standalone bundle. Exclude noisy siblings.
+  // node-pty: native PTY bridge. sharp: native libvips raster transcoder used
+  // by the familiar avatar route (#2010) — must stay external so Next doesn't
+  // trace/strip its platform-specific `.node` binaries out of the bundle.
+  serverExternalPackages: ["node-pty", "sharp"],
+  // Next.js file tracing otherwise sucks local build state (including Rust
+  // target trees) into the standalone bundle. These roots are never runtime
+  // inputs; packaged assets are copied explicitly by sidecar-bundle.sh.
   outputFileTracingExcludes: {
-    "*": [
+    "/*": [
+      "./.beads/**/*",
+      "./.claude/**/*",
+      "./.codex/**/*",
+      "./.next/cache/**/*",
+      "./.next/dev/**/*",
       "./src-tauri/**/*",
+      "./target/**/*",
+      "./target-windows/**/*",
       "./release/**/*",
       "./.git/**/*",
       "./scripts/**/*",
+      "./.worktrees/**/*",
+      "./artifacts/**/*",
+      "./test-results/**/*",
+      "./tests/**/*",
+      "./src/**/*.test.*",
+      // Server routes are compiled into `.next/server`; source files are not
+      // runtime inputs. Guard against a dynamic child-process dependency
+      // causing NFT to copy the entire checkout into the desktop sidecar.
+      "./src/**/*",
+      "./apps/**/*.test.*",
+      "./apps/ios/**/build/**/*",
     ],
   },
   // Next's tracer misses runtime-required packages that go through its
   // own require-hook (e.g. @swc/helpers/_/_interop_require_default).
   // Force-include the offenders so server.js can boot.
   outputFileTracingIncludes: {
-    "*": [
+    "/*": [
       "./node_modules/@swc/helpers/**/*",
       "./node_modules/node-pty/**/*",
     ],
   },
+  // React Compiler (cave-n9a8): automatic memoization across the component
+  // tree. This codebase concentrates UI in a few very large stateful
+  // components (chat-view ~7k lines / ~69 useState; workspace ~47) where
+  // hand-memoization can't keep up — the compiler memoizes every component
+  // and hook by default, eliminating whole-surface re-render cascades from
+  // unrelated state updates. Build-time cost is the accepted tradeoff; the
+  // bundle-budget postbuild gate and the e2e suite guard the output.
+  reactCompiler: true,
   experimental: {
     // Tree-shake the icon + syntax-highlight kitchens so the per-route
     // bundle only includes the icons and grammars actually referenced.
@@ -58,4 +96,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);

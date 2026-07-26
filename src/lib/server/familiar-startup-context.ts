@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import type { UserProfile } from "../user-profile-shared.ts";
 
 export type FamiliarStartupContextFile = {
   relativePath: string;
@@ -44,6 +45,32 @@ export async function readFamiliarDailyMemoryStartupContext(
   } catch {
     return null;
   }
+}
+
+/**
+ * Operator profile → startup-context block. Only set fields render; an empty
+ * profile yields null (zero prompt overhead). Injected on NEW sessions only —
+ * resumed sessions already carry it in their history.
+ */
+export function buildOperatorProfileContext(
+  profile: UserProfile | undefined,
+): FamiliarStartupContextFile | null {
+  if (!profile) return null;
+  const lines: string[] = [];
+  if (profile.name) lines.push(`Name: ${profile.name}`);
+  if (profile.pronouns) lines.push(`Pronouns: ${profile.pronouns}`);
+  if (profile.timezone) lines.push(`Timezone: ${profile.timezone}`);
+  if (profile.bio) lines.push(`Bio: ${profile.bio}`);
+  if (profile.links?.length) {
+    lines.push("Links:");
+    for (const link of profile.links) lines.push(`- ${link.label} — ${link.url}`);
+  }
+  if (lines.length === 0) return null;
+  return {
+    relativePath: "operator-profile",
+    absolutePath: "operator-profile",
+    contents: ["Operator profile (the human you are working with):", ...lines].join("\n"),
+  };
 }
 
 export function buildPromptWithFamiliarStartupContext(

@@ -56,6 +56,10 @@ const DEFAULT_MAX_MATCHES = 500;
 const DEFAULT_MAX_PER_FILE = 50;
 const DEFAULT_MAX_PREVIEW = 240;
 
+function isEnvFamilyPath(filePath: string): boolean {
+  return filePath.split(/[\\/]+/).some((part) => part.startsWith(".env"));
+}
+
 type RgText = { text?: string; bytes?: string };
 
 type RgMatchData = {
@@ -117,7 +121,7 @@ export function parseRipgrepJson(stdout: string, options: ParseOptions = {}): Se
     // arrive prefixed with "./" — strip it so the path is clean for display and
     // for rejoining to the project root.
     const path = textOf(data.path).replace(/^\.\//, "");
-    if (!path) continue;
+    if (!path || isEnvFamilyPath(path)) continue;
     const lineNumber = typeof data.line_number === "number" ? data.line_number : 0;
     if (lineNumber <= 0) continue;
     const text = clip(textOf(data.lines).replace(/\r?\n$/, ""));

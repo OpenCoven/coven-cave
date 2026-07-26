@@ -1,0 +1,24 @@
+{
+  "name": "fabric",
+  "version": "0.1.0",
+  "description": "Microsoft Fabric REST/OpenAPI context for AI-assisted Fabric development, served locally.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Microsoft Fabric",
+    "shortDescription": "Microsoft Fabric REST/OpenAPI context for AI-assisted Fabric development, served locally.",
+    "longDescription": "Use Microsoft Fabric MCP for accurate Fabric API context when building against the platform.",
+    "developerName": "OpenCoven",
+    "category": "Cloud & Infrastructure",
+    "capabilities": [
+      "fabric",
+      "microsoft",
+      "data",
+      "analytics",
+      "openapi"
+    ],
+    "defaultPrompt": "Help me use Microsoft Fabric safely."
+  }
+}

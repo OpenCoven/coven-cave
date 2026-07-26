@@ -1,11 +1,14 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
 import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
+import type { DailyReportPayload } from "./daily-report-facts.ts";
+import { caveHome } from "./coven-paths.ts";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 
-const INBOX_PATH = path.join(homedir(), ".coven", "cave-inbox.json");
+const INBOX_PATH = path.join(caveHome(), "inbox.json");
 
-export type ItemKind = "reminder" | "agent" | "response-needed" | "daily-summary";
+export type ItemKind = "reminder" | "agent" | "response-needed" | "daily-summary" | "milestone";
 export type ItemStatus = "pending" | "fired" | "snoozed" | "dismissed" | "done";
 
 // Re-exported so existing consumers that say
@@ -30,8 +33,22 @@ export type InboxMedia = {
     responses: number;
     familiars: number;
     sessions: number;
+    /** Optional day-in-review counts — absent on items generated before Phase B. */
+    prsMerged?: number;
+    cardsCompleted?: number;
   };
   generatedAt: string;
+  /** Structured day-in-review facts, frozen per refresh. Absent on old items. */
+  report?: DailyReportPayload | null;
+  /** Familiar-written narrative layered on the facts (Phase C). */
+  narrative?: {
+    text: string;
+    familiarId: string;
+    /** Display name at generation time — survives familiar renames/deletes. */
+    familiarName?: string;
+    generatedAt: string;
+    factsHash: string;
+  } | null;
 };
 
 export type InboxItem = {
@@ -46,6 +63,12 @@ export type InboxItem = {
   firedAt?: string | null;
   snoozeUntil?: string | null;
   recurrence: Recurrence;
+  /**
+   * The human phrase the schedule was created from ("every tuesday 4pm").
+   * Provenance only — fireAt/recurrence stay the machine truth; editing
+   * surfaces show the phrase so the plan round-trips in the user's words.
+   */
+  whenText?: string | null;
   source: "user" | "agent" | "system";
   familiarId?: string | null;
   sessionId?: string | null;
@@ -57,6 +80,21 @@ export type InboxItem = {
    * without brittle title matching. See `task-archive-nudge.ts`.
    */
   auto?: string | null;
+  /**
+   * When the user acknowledged this notification (bell "Mark all read",
+   * opening the item). Absent/null = unread — so every pre-upgrade fired item
+   * counts as unread, matching the old badge that counted all of them. The
+   * scheduler clears it on (re)fire so a snoozed reminder demands attention
+   * again.
+   */
+  readAt?: string | null;
+  /**
+   * Per-item delivery mute — quiets the toast/native-notification/sound for
+   * this one reminder without touching the kind- or familiar-level mutes in
+   * inbox-prefs.ts. The item still lists and still fires on schedule; only
+   * the attention-grabbing moment is skipped. See workspace.tsx's isMuted.
+   */
+  muted?: boolean | null;
 };
 
 type InboxFile = {
@@ -64,13 +102,11 @@ type InboxFile = {
   items: InboxItem[];
 };
 
-const EMPTY: InboxFile = { version: 1, items: [] };
-
 async function ensureDir() {
   await mkdir(path.dirname(INBOX_PATH), { recursive: true });
 }
 
-export async function loadInbox(): Promise<InboxFile> {
+async function loadInboxUnlocked(): Promise<InboxFile> {
   try {
     const raw = await readFile(INBOX_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<InboxFile>;
@@ -83,9 +119,17 @@ export async function loadInbox(): Promise<InboxFile> {
   }
 }
 
-export async function saveInbox(file: InboxFile): Promise<void> {
+async function saveInboxUnlocked(file: InboxFile): Promise<void> {
   await ensureDir();
-  await writeFile(INBOX_PATH, JSON.stringify(file, null, 2), "utf8");
+  await writeJsonAtomic(INBOX_PATH, file);
+}
+
+export async function loadInbox(): Promise<InboxFile> {
+  return withCaveHomeReconciledStore("cave-inbox.json", loadInboxUnlocked);
+}
+
+export function saveInbox(file: InboxFile): Promise<void> {
+  return withCaveHomeReconciledStore("cave-inbox.json", () => saveInboxUnlocked(file));
 }
 
 // Serialize all read-modify-write sequences against the inbox file. Without
@@ -98,9 +142,15 @@ declare global {
   var __inboxWriteChain: Promise<unknown> | undefined;
 }
 
-export function withInboxLock<T>(fn: () => Promise<T>): Promise<T> {
+export function withInboxLock<T>(
+  fn: (store: { load: typeof loadInboxUnlocked; save: typeof saveInboxUnlocked }) => Promise<T>,
+): Promise<T> {
   const prev = globalThis.__inboxWriteChain ?? Promise.resolve();
-  const next = prev.then(fn, fn);
+  const run = () => withCaveHomeReconciledStore(
+    "cave-inbox.json",
+    () => fn({ load: loadInboxUnlocked, save: saveInboxUnlocked }),
+  );
+  const next = prev.then(run, run);
   globalThis.__inboxWriteChain = next.catch(() => undefined);
   return next;
 }
@@ -111,6 +161,7 @@ export type NewItemInput = {
   body?: string;
   fireAt?: string | null;
   recurrence?: Recurrence;
+  whenText?: string | null;
   source?: "user" | "agent" | "system";
   familiarId?: string | null;
   sessionId?: string | null;
@@ -121,10 +172,13 @@ export type NewItemInput = {
 
 export async function createItem(input: NewItemInput): Promise<InboxItem> {
   return withInboxLock(async () => {
-    const file = await loadInbox();
+    const file = await loadInboxUnlocked();
     const now = new Date().toISOString();
     const status: ItemStatus =
-      (input.kind === "agent" || input.kind === "daily-summary") && !input.fireAt ? "fired" : "pending";
+      (input.kind === "agent" || input.kind === "daily-summary" || input.kind === "milestone") &&
+      !input.fireAt
+        ? "fired"
+        : "pending";
     const item: InboxItem = {
       id: crypto.randomUUID(),
       kind: input.kind,
@@ -137,15 +191,17 @@ export async function createItem(input: NewItemInput): Promise<InboxItem> {
       firedAt: status === "fired" ? now : null,
       snoozeUntil: null,
       recurrence: input.recurrence ?? { type: "none" },
+      whenText: input.whenText ?? null,
       source: input.source ?? "user",
       familiarId: input.familiarId ?? null,
       sessionId: input.sessionId ?? null,
       link: input.link ?? null,
       media: input.media ?? null,
       auto: input.auto ?? null,
+      readAt: null,
     };
     file.items.push(item);
-    await saveInbox(file);
+    await saveInboxUnlocked(file);
     return item;
   });
 }
@@ -155,7 +211,7 @@ export async function updateItem(
   patch: Partial<Omit<InboxItem, "id" | "createdAt">>,
 ): Promise<InboxItem | null> {
   return withInboxLock(async () => {
-    const file = await loadInbox();
+    const file = await loadInboxUnlocked();
     const idx = file.items.findIndex((i) => i.id === id);
     if (idx < 0) return null;
     const current = file.items[idx];
@@ -167,30 +223,20 @@ export async function updateItem(
       updatedAt: new Date().toISOString(),
     };
     file.items[idx] = next;
-    await saveInbox(file);
+    await saveInboxUnlocked(file);
     return next;
   });
 }
 
 export async function deleteItem(id: string): Promise<boolean> {
   return withInboxLock(async () => {
-    const file = await loadInbox();
+    const file = await loadInboxUnlocked();
     const before = file.items.length;
     file.items = file.items.filter((i) => i.id !== id);
     if (file.items.length === before) return false;
-    await saveInbox(file);
+    await saveInboxUnlocked(file);
     return true;
   });
-}
-
-export async function listPending(): Promise<InboxItem[]> {
-  const file = await loadInbox();
-  return file.items.filter((i) => i.status === "pending");
-}
-
-export async function listFired(): Promise<InboxItem[]> {
-  const file = await loadInbox();
-  return file.items.filter((i) => i.status === "fired");
 }
 
 export async function snoozeItem(
@@ -206,6 +252,78 @@ export async function markDone(id: string): Promise<InboxItem | null> {
 
 export async function dismissItem(id: string): Promise<InboxItem | null> {
   return updateItem(id, { status: "dismissed" });
+}
+
+export type BulkAction = "read" | "unread" | "dismiss" | "done" | "delete";
+
+export type BulkResult = {
+  updated: InboxItem[];
+  deletedIds: string[];
+};
+
+/**
+ * Which items `all: true` targets, per action. Read/unread/dismiss operate on
+ * the fired notification stack (what the bell shows); done and delete are
+ * destructive enough that callers must name ids explicitly — the route
+ * enforces that, this map just documents the eligible set.
+ */
+function eligibleForAll(action: BulkAction, item: InboxItem): boolean {
+  if (action === "read") return item.status === "fired" && !item.readAt;
+  if (action === "unread") return item.status === "fired" && !!item.readAt;
+  if (action === "dismiss") return item.status === "fired";
+  return false;
+}
+
+/**
+ * Apply one action to many items in a single locked load→save cycle. The old
+ * bell "Clear all" fanned out N sequential POSTs — N file rewrites and N SSE
+ * broadcasts racing each other; this is one write. Unknown ids are skipped
+ * (an item deleted elsewhere mid-flight is not an error).
+ */
+export async function applyBulkAction(
+  action: BulkAction,
+  ids: string[] | null,
+): Promise<BulkResult> {
+  return withInboxLock(async () => {
+    const file = await loadInboxUnlocked();
+    const nowIso = new Date().toISOString();
+    const idSet = ids ? new Set(ids) : null;
+    const targeted = (item: InboxItem) =>
+      idSet ? idSet.has(item.id) : eligibleForAll(action, item);
+
+    const updated: InboxItem[] = [];
+    const deletedIds: string[] = [];
+
+    if (action === "delete") {
+      file.items = file.items.filter((item) => {
+        if (!targeted(item)) return true;
+        deletedIds.push(item.id);
+        return false;
+      });
+    } else {
+      file.items = file.items.map((item) => {
+        if (!targeted(item)) return item;
+        let next: InboxItem;
+        if (action === "read") {
+          if (item.readAt) return item;
+          next = { ...item, readAt: nowIso, updatedAt: nowIso };
+        } else if (action === "unread") {
+          if (!item.readAt) return item;
+          next = { ...item, readAt: null, updatedAt: nowIso };
+        } else {
+          // dismiss | done — terminal states imply the item was seen.
+          const status: ItemStatus = action === "dismiss" ? "dismissed" : "done";
+          if (item.status === status) return item;
+          next = { ...item, status, readAt: item.readAt ?? nowIso, updatedAt: nowIso };
+        }
+        updated.push(next);
+        return next;
+      });
+    }
+
+    if (updated.length > 0 || deletedIds.length > 0) await saveInboxUnlocked(file);
+    return { updated, deletedIds };
+  });
 }
 
 export { INBOX_PATH };

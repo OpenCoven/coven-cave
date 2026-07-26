@@ -16,16 +16,26 @@ assert.match(
   "WorkspaceMode union keeps \"agents\" for internal familiar detail flows",
 );
 
+// Home-first boot: the app opens on the Home overview; Chat is one step away.
 assert.match(
   workspace,
-  /useState<WorkspaceMode>\("home"\)/,
-  "Default workspace mode should land on Home after removing Familiars from Work nav",
+  /const \[mode, setModeRaw\] = useState<CaveMode>\("home"\)/,
+  "Default workspace mode lands on Home (home-first boot)",
+);
+assert.doesNotMatch(workspace, /lastNonChatMode/, "Workspace should not track an unused chat-return surface");
+
+// The "Coven" surface (docs-pane) was purged — its docs/feedback/social live as
+// default Browser tabs now. Guard that the surface stays gone.
+assert.doesNotMatch(
+  workspace,
+  /CovenPane|docs-pane/,
+  "Workspace should no longer reference the removed Coven (docs-pane) surface",
 );
 
 assert.match(
   workspace,
-  /import \{ FamiliarsView \} from "@\/components\/familiars-view"/,
-  "workspace.tsx imports FamiliarsView",
+  /import \{[\s\S]*FamiliarsView[\s\S]*\} from "@\/components\/lazy-surfaces"/,
+  "workspace.tsx imports FamiliarsView through the lazy surface boundary",
 );
 
 assert.match(
@@ -40,28 +50,99 @@ assert.match(
   "Workspace passes the selected familiar into the Familiars page",
 );
 
+// Chat is the default boot surface and stays eager. Every mode/open-gated
+// workspace host crosses the shared next/dynamic boundary instead.
 assert.match(
   workspace,
-  /railTab === "browser" \|\| railTab === "salem" \|\| \(mode !== "browser" && mode !== "agents"\)/,
-  "Companion rail is hidden on Familiars and Browser unless a floating rail tab is selected",
+  /import \{ ChatSurface \} from "@\/components\/chat-surface"/,
+  "ChatSurface stays eager for the Chat-first boot path",
 );
+assert.match(
+  workspace,
+  /import \{ HomeComposer \} from "@\/components\/home-composer"/,
+  "HomeComposer stays eager for the adjacent critical path",
+);
+for (const component of [
+  "CommandPalette",
+  "FamiliarsView",
+  "GrimoireView",
+  "InboxEscalationsView",
+  "MobileHandoffModal",
+  "NewReminderModal",
+  "OnboardingOverlay",
+  "OpenCovenSubmissionPage",
+  "RailInspector",
+  "SalemChatPanel",
+  "ShortcutsSheet",
+]) {
+  assert.match(
+    workspace,
+    new RegExp(`import \\{[\\s\\S]*${component}[\\s\\S]*\\} from "@/components/lazy-surfaces"`),
+    `${component} is imported through the lazy surface boundary`,
+  );
+}
+for (const gate of [
+  /\{paletteOpen && \(\s*<CommandPalette/,
+  /\{shortcutsOpen && <ShortcutsSheet/,
+  /\{reminderModalOpen && \(\s*<NewReminderModal/,
+  /\{mobileHandoffOpen && \(\s*<MobileHandoffModal/,
+]) {
+  assert.match(workspace, gate, "lazy modal chunks load only after their open intent");
+}
+assert.match(
+  workspace,
+  /\{\(onboardingOpen \|\| onboardingMounted\) && \(\s*<OnboardingOverlay[\s\S]*open=\{onboardingOpen\}/,
+  "onboarding loads on first open but remains mounted so job polling and one-shot refs survive close/reopen",
+);
+assert.match(
+  workspace,
+  /const \[autoFinishOnboarding, setAutoFinishOnboarding\] = useState\(false\);/,
+  "Workspace tracks whether startup-opened onboarding should auto-finish on completion",
+);
+assert.match(
+  workspace,
+  /const manualOnboardingOpenedRef = useRef\(false\);/,
+  "Workspace tracks whether onboarding was opened manually before the startup probe resolves",
+);
+assert.match(
+  workspace,
+  /const openOnboarding = useCallback\(\(\) => \{\s*manualOnboardingOpenedRef\.current = true;\s*setAutoFinishOnboarding\(false\);\s*setOnboardingOpen\(true\);/s,
+  "shared openOnboarding marks manual intent before it clears auto-finish and opens the overlay",
+);
+assert.match(
+  workspace,
+  /const openCreate = \(\) => \{\s*manualOnboardingOpenedRef\.current = true;\s*setAutoFinishOnboarding\(false\);\s*setOnboardingOpen\(true\);/s,
+  "the cave:onboarding-open bridge clears auto-finish before opening the overlay",
+);
+assert.match(
+  workspace,
+  /import \{[\s\S]*shouldApplyStartupOnboardingStatus[\s\S]*\} from "@\/lib\/onboarding-gate"/,
+  "Workspace imports the shared startup-status helper from onboarding-gate",
+);
+assert.match(
+  workspace,
+  /shouldApplyStartupOnboardingStatus\(\{\s*status: json,\s*cancelled,\s*manuallyOpened: manualOnboardingOpenedRef\.current,\s*\}\)/s,
+  "a delayed startup response delegates the manual/cancelled/status gate to the shared helper",
+);
+assert.match(
+  workspace,
+  /onDismiss=\{\(\) => \{\s*setAutoFinishOnboarding\(false\);[\s\S]*closeOnboarding\(\);/s,
+  "overlay dismissal clears auto-finish before closing onboarding",
+);
+assert.match(
+  workspace,
+  /<OnboardingOverlay[\s\S]*autoFinishWhenComplete=\{autoFinishOnboarding\}/,
+  "Workspace forwards the auto-finish flag into OnboardingOverlay",
+);
+
+// The right companion rail was removed in favour of drag-to-split, so the
+// workspace no longer computes rail visibility (showCompanionRail), a rail Chat
+// tab, or a per-familiar rail-open restore effect.
 
 assert.match(
   workspace,
-  /hideChatTab=\{mode === "chat"\}/,
-  "Workspace should hide the companion rail Chat tab while the main surface is already Familiars",
-);
-
-assert.match(
-  workspace,
-  /if \(!activeId\) \{\s*queueMicrotask\(\(\) => shellRef\.current\?\.closeFamiliar\(\)\);\s*return;\s*\}/,
-  "Workspace collapses the companion panel when no familiar is selected so empty rails do not crowd every surface",
-);
-
-assert.match(
-  workspace,
-  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "calendar", "inbox", "browser", "terminal", "code",/,
-  "SURFACE_ORDER ascends with the sidebar top-to-bottom order (⌘1..⌘8)",
+  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "inbox", "browser",\s*\]/,
+  "SURFACE_ORDER ascends with the merged sidebar top-to-bottom order (⌘1..⌘5)",
 );
 
 // ⌘[ / ⌘] cycle to the previous / next surface through SURFACE_ORDER (wraps).
@@ -111,23 +192,98 @@ assert.match(
 
 assert.match(
   workspace,
-  /const \[activeId, setActiveId\] = useState<string \| null>\(null\)/,
-  "Workspace should SSR-render active familiar as null so server/client first render match",
+  /const \[scopeIds, setScopeIds\] = useState<Set<string>>\(\(\) => new Set\(\)\)/,
+  "Workspace should SSR-render the familiar scope as an empty set so server/client first render match",
+);
+assert.match(
+  workspace,
+  /const requestedActiveId = scopeIds\.size === 1 \? \[\.\.\.scopeIds\]\[0\]! : null/,
+  "Workspace derives the requested single-primary familiar id from the scope set",
+);
+assert.match(
+  workspace,
+  /import \{[\s\S]*resolveLoadedActiveFamiliarId,[\s\S]*resolveWorkspaceActiveFamiliarId,[\s\S]*\} from "@\/lib\/active-familiar";[\s\S]*const loadedActiveId = resolveLoadedActiveFamiliarId\(requestedActiveId, visibleFamiliars\);[\s\S]*const activeId = resolveWorkspaceActiveFamiliarId\(\s*requestedActiveId,\s*visibleFamiliars,\s*familiarsLoaded,\s*familiarRosterLoadedSuccessfully,\s*\);/,
+  "workspace keeps the requested familiar through roster hydration and only consumes the loaded fallback once the roster has successfully loaded",
+);
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*if \(\s*!activeFamiliarHydrated\s*\|\|\s*!familiarsLoaded\s*\|\|\s*!familiarRosterLoadedSuccessfully\s*\|\|\s*requestedActiveId === null\s*\|\|\s*requestedActiveId === loadedActiveId\s*\) return;\s*setScopeIds\(loadedActiveId \? new Set\(\[loadedActiveId\]\) : new Set\(\)\);\s*\}, \[activeFamiliarHydrated, familiarsLoaded, familiarRosterLoadedSuccessfully, requestedActiveId, loadedActiveId\]\);/,
+  "Workspace only heals and persists a stale single-familiar selection after the async roster has loaded successfully",
+);
+assert.match(
+  workspace,
+  /const active = visibleFamiliars\.find\(\(f\) => f\.id === activeId\) \?\? null;/,
+  "Workspace detail surfaces read the active familiar from the loaded non-archived roster only",
+);
+assert.match(
+  workspace,
+  /const calendarFamiliarId = activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null;/,
+  "calendar fallback prefers the first loaded non-archived familiar",
+);
+assert.match(
+  workspace,
+  /const \{[\s\S]*open: firstProjectGateOpen,[\s\S]*familiarId: projectGateFamiliarId,[\s\S]*blockChatLaunch: chatProjectBlocked,[\s\S]*\} = resolveFirstProjectGatePolicy\(\{[\s\S]*visibleFamiliars,[\s\S]*familiarRosterLoadedSuccessfully,[\s\S]*\}\);/,
+  "the first-project gate target, visibility, and chat-block state are derived together from the loaded non-archived roster through the shared policy helper",
+);
+assert.match(
+  workspace,
+  /const chatProjectBlockedRef = useRef\(chatProjectBlocked\);[\s\S]*chatProjectBlockedRef\.current = chatProjectBlocked;/,
+  "Workspace mirrors the mode-independent chat-blocked condition into a ref for central new-chat guards",
+);
+assert.match(
+  workspace,
+  /if \(chatProjectBlockedRef\.current\) \{[\s\S]*if \(familiarId\) setActiveId\(familiarId\);[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}/,
+  "startFamiliarChat bounces blocked launches to Home so the first-project gate becomes visible without queuing a chat",
+);
+assert.match(
+  workspace,
+  /const addSplitTarget = useCallback\(\(target: SplitTarget, side: "left" \| "right" = "right"\) => \{[\s\S]*if \(chatProjectBlockedRef\.current && splitTargetRendersMode\(target, "chat"\)\) \{[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}[\s\S]*setSplitSide\(side\);/,
+  "Workspace blocks chat-rendering split targets under the first-project gate and reroutes the primary pane to Home",
+);
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*if \(!chatProjectBlocked\) return;[\s\S]*setSplitTargets\(\(prev\) => \{[\s\S]*prev\.filter\(\(target\) => !splitTargetRendersMode\(target, "chat"\)\)[\s\S]*return next\.length === prev\.length \? prev : next;[\s\S]*\}\);\s*\}, \[chatProjectBlocked\]\);/,
+  "Workspace drops any already-open chat split tiles once the shared gate condition turns on",
 );
 assert.doesNotMatch(
   workspace,
-  /useState<string \| null>\(\(\) => getActiveFamiliar\(\)\)/,
-  "Workspace must not read localStorage in the active familiar useState initializer",
+  /const activeId = scopeIds\.size === 1 \? \[\.\.\.scopeIds\]\[0\]! : null/,
+  "Workspace should not use an unchecked persisted familiar id directly once the loaded roster is known",
+);
+assert.doesNotMatch(
+  workspace,
+  /useState<Set<string>>\(\(\) => new Set\(getFamiliarScope\(\)\)\)/,
+  "Workspace must not read localStorage in the scope useState initializer",
 );
 assert.match(
   workspace,
-  /setActiveId\(getActiveFamiliar\(\)\);[\s\S]*setActiveFamiliarHydrated\(true\);/,
-  "Workspace should restore the persisted active familiar after mount",
+  /setScopeIds\(new Set\(getFamiliarScope\(\)\)\);[\s\S]*setActiveFamiliarHydrated\(true\);/,
+  "Workspace should restore the persisted familiar scope after mount",
 );
 assert.match(
   workspace,
-  /if \(!activeFamiliarHydrated\) return;[\s\S]*setActiveFamiliar\(activeId\)/,
-  "Workspace should not write active familiar storage until after the mount restore runs",
+  /if \(!activeFamiliarHydrated\) return;[\s\S]*setFamiliarScope\(\[\.\.\.scopeIds\]\)/,
+  "Workspace should not write scope storage until after the mount restore runs",
+);
+assert.match(
+  workspace,
+  /usePausablePoll\(\(\) => void refreshDaemonStatus\(\), 5000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  "Workspace pauses the daemon-status poll while a mobile text input is active",
+);
+assert.match(
+  workspace,
+  /usePausablePoll\(\(\) => void loadSessions\(\), 4000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  "Workspace pauses the heavy sessions poll while a mobile text input is active",
+);
+assert.match(
+  workspace,
+  /usePausablePoll\(\(\) => void refreshEscalations\(\), 30_000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  "Workspace pauses the escalation poll while a mobile text input is active",
+);
+assert.match(
+  workspace,
+  /usePausablePoll\(\(\) => void refreshOpenTaskCards\(\), 60_000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  "Workspace pauses the task-card poll while a mobile text input is active",
 );
 
 assert.doesNotMatch(
@@ -138,20 +294,16 @@ assert.doesNotMatch(
 
 assert.match(
   sidebar,
-  /\{ id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1", description:/,
+  /\{ id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description:/,
   "Sidebar Home keeps its shortcut hint",
 );
 
 assert.match(
   sidebar,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘6", description:/,
-  "Sidebar Browser is the first Tools shortcut, on ⌘6",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  "Browser is kept for ⌘5/palette but navHidden from the sidebar rows",
 );
 
-assert.match(
-  sidebar,
-  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description:/,
-  "Sidebar Terminal follows Browser on ⌘7",
-);
+assert.doesNotMatch(sidebar, /id:\s*"terminal"/, "Sidebar does not expose Terminal as a standalone destination");
 
 console.log("workspace-familiars-landing: all assertions passed");

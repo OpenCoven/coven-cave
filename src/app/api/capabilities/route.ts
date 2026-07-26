@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
-import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import { COMPATIBILITY_ADAPTERS, canonicalHarnessId } from "@/lib/harness-adapters";
+import {
+  openClawBridgeCapabilities,
+  type OpenClawBridgeCapabilities,
+} from "@/lib/openclaw-bridge";
 import { scanClaudeUserSkills } from "@/lib/server/skill-scan";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +52,7 @@ export type HarnessCapabilityManifest = {
   skills: HarnessSkill[];
   plugins: HarnessPlugin[];
   warnings: CapabilityWarning[];
+  bridge_capabilities?: OpenClawBridgeCapabilities;
 };
 
 export type CapabilitiesResponse = {
@@ -105,11 +110,87 @@ function isManifest(data: unknown): data is HarnessCapabilityManifest {
 }
 
 async function fetchHarnessManifest(harness: string, refresh: string): Promise<HarnessCapabilityManifest | null> {
+  if (harness === "openclaw") {
+    return openClawCapabilityManifest(new Date().toISOString());
+  }
   const res = await callDaemon<HarnessCapabilityManifest>({
     path: `/api/v1/capabilities/${encodeURIComponent(harness)}${refresh}`,
   });
   if (!res.ok || !isManifest(res.data)) return null;
   return supplementClaudeSkills(res.data);
+}
+
+function openClawCapabilityManifest(scannedAt: string): HarnessCapabilityManifest {
+  return {
+    harness_id: "openclaw",
+    scanned_at: scannedAt,
+    global_instructions: { present: false },
+    skills: [],
+    plugins: [
+      {
+        id: "openclaw-native-bridge",
+        name: "OpenClaw native bridge",
+        source: "cave",
+        harness_id: "openclaw",
+        kind: "bridge",
+        enabled: true,
+        transport: "local-cli",
+        command: "openclaw",
+        args: ["agent", "--json", "--session-id"],
+      },
+    ],
+    warnings: [
+      {
+        kind: "unsupported-local-file-attachments",
+        path: "openclaw://bridge",
+        message: "OpenClaw bridge chat does not deliver local file paths or image payloads.",
+      },
+      {
+        kind: "unsupported-ssh-runtime",
+        path: "openclaw://bridge",
+        message: "OpenClaw over SSH is not supported by Cave's local native bridge.",
+      },
+      {
+        kind: "unsupported-model-override",
+        path: "openclaw://bridge",
+        message: "Cave records OpenClaw model intent but does not pass model overrides to OpenClaw agents.",
+      },
+    ],
+    bridge_capabilities: openClawBridgeCapabilities(),
+  };
+}
+
+/**
+ * The daemon's aggregate /api/v1/capabilities can return a harness_capabilities
+ * list that omits a harness Cave knows about (e.g. the aggregate scanner skipped
+ * it, but its per-harness endpoint still serves a manifest). Trusting the
+ * aggregate verbatim under-reports coverage, so the panel silently drops that
+ * harness. Backfill any COMPATIBILITY_ADAPTERS harness missing from the
+ * aggregate by fetching its per-harness manifest; aggregate-reported manifests
+ * always win on id collisions.
+ */
+async function ensureAdapterCoverage(
+  manifests: HarnessCapabilityManifest[],
+  refresh: string,
+): Promise<HarnessCapabilityManifest[]> {
+  const present = new Set(manifests.map((m) => canonicalHarnessId(m.harness_id)));
+  const missing = COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id).filter((id) => !present.has(id));
+  const backfilled = missing.length
+    ? (await Promise.all(missing.map((id) => fetchHarnessManifest(id, refresh)))).filter(
+        (m): m is HarnessCapabilityManifest => m !== null,
+      )
+    : [];
+  // Dedup by CANONICAL harness id, first occurrence wins. The daemon can report
+  // the same harness twice — or under an alias (e.g. "hermes-agent") that the
+  // missing-calc no longer treats as absent — and a backfilled adapter must
+  // never re-add an id already covered. Aggregate-reported manifests come
+  // first, so they always beat the synthetic backfill, matching the contract.
+  const byId = new Map<string, HarnessCapabilityManifest>();
+  for (const m of [...manifests, ...backfilled]) {
+    const id = canonicalHarnessId(m.harness_id);
+    if (!byId.has(id)) byId.set(id, m);
+  }
+  return [...byId.values()];
 }
 
 export async function GET(req: Request) {
@@ -118,6 +199,10 @@ export async function GET(req: Request) {
   const harness = url.searchParams.get("harness");
 
   if (harness) {
+    if (harness === "openclaw") {
+      const manifest = openClawCapabilityManifest(new Date().toISOString());
+      return NextResponse.json({ ok: true, coven_skills: [], harness_capabilities: [manifest], scanned_at: manifest.scanned_at });
+    }
     const res = await callDaemon<HarnessCapabilityManifest>({
       path: `/api/v1/capabilities/${encodeURIComponent(harness)}${refresh}`,
     });
@@ -148,7 +233,8 @@ export async function GET(req: Request) {
   // per-harness endpoints (which still serve manifests).
   const aggregate = await callDaemon<CapabilitiesResponse>({ path: `/api/v1/capabilities${refresh}` });
   if (aggregate.ok && Array.isArray(aggregate.data?.harness_capabilities)) {
-    const manifests = await Promise.all(aggregate.data.harness_capabilities.map(supplementClaudeSkills));
+    const reported = await Promise.all(aggregate.data.harness_capabilities.map(supplementClaudeSkills));
+    const manifests = await ensureAdapterCoverage(reported, refresh);
     return NextResponse.json({
       ok: true,
       coven_skills: aggregate.data.coven_skills ?? [],

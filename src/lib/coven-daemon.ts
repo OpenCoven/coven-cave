@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
-import { request } from "node:http";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { homedir } from "node:os";
 import path from "node:path";
+import type { CaveConfig } from "./cave-config.ts";
+import { storedHubAccessToken } from "./hub-access-token.ts";
 
 type SocketPathResolverOptions = {
   platform?: NodeJS.Platform;
@@ -13,6 +16,12 @@ type SocketPathResolverOptions = {
 type ReadTextFile = (filePath: string, encoding: BufferEncoding) => string;
 
 const WINDOWS_PIPE_PREFIX = "\\\\.\\pipe\\";
+const DEFAULT_HUB_PROTOCOL = "http://";
+
+export type DaemonTarget =
+  | { mode: "local"; label: "Local daemon"; socketPath: string }
+  | { mode: "hub"; label: "Server hub"; url: string; accessToken?: string }
+  | { mode: "unconfigured-hub"; label: "Server hub"; error: string };
 
 export function normalizeWindowsDaemonSocket(socket: string): string {
   const trimmed = socket.trim();
@@ -78,6 +87,63 @@ export function socketPath(): string {
   return resolveDaemonSocketPath();
 }
 
+export function normalizeHubUrl(rawUrl: string): string {
+  // Trim whitespace, then trailing slashes, without a backtracking-prone
+  // regex: `/\/+$/` is polynomial-ReDoS-prone on user-provided URLs
+  // (reachable via the daemon probe/config routes). Manual scans are linear
+  // and preserve the original trim-then-strip-slashes semantics.
+  const whitespaceTrimmed = rawUrl.trim();
+  let end = whitespaceTrimmed.length;
+  while (end > 0 && whitespaceTrimmed[end - 1] === "/") end -= 1;
+  const trimmed = whitespaceTrimmed.slice(0, end);
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `${DEFAULT_HUB_PROTOCOL}${trimmed}`;
+}
+
+function hubTargetFromUrl(rawUrl: string): Extract<DaemonTarget, { mode: "hub" }> | null {
+  const normalized = normalizeHubUrl(rawUrl);
+  if (!normalized) return null;
+  const url = new URL(normalized);
+  // An embedded token (a freshly pasted invite URL, or an env-provided URL)
+  // wins; otherwise fall back to the out-of-config custody the config
+  // sanitizer maintains (cave-1v95): env override, then the encrypted vault.
+  const embedded = url.searchParams.get("coven_access_token")?.trim();
+  const accessToken = embedded || storedHubAccessToken() || undefined;
+  url.search = "";
+  url.hash = "";
+  return {
+    mode: "hub",
+    label: "Server hub",
+    url: url.toString().replace(/\/+$/, ""),
+    ...(accessToken ? { accessToken } : {}),
+  };
+}
+
+export function daemonTargetForConfig(config: Pick<CaveConfig, "multiHost">): DaemonTarget {
+  if (config.multiHost?.mode !== "hub") {
+    return localDaemonTarget();
+  }
+  const target = hubTargetFromUrl(config.multiHost.hubUrl ?? "");
+  if (!target) {
+    return {
+      mode: "unconfigured-hub",
+      label: "Server hub",
+      error: "server hub URL is not configured",
+    };
+  }
+  return target;
+}
+
+export function localDaemonTarget(): Extract<DaemonTarget, { mode: "local" }> {
+  return { mode: "local", label: "Local daemon", socketPath: socketPath() };
+}
+
+async function loadDaemonTarget(): Promise<DaemonTarget> {
+  const { loadConfig } = await import("./cave-config.ts");
+  return daemonTargetForConfig(await loadConfig());
+}
+
 /**
  * Map a Node socket / HTTP error to a short, user-facing string. Strips
  * absolute paths so we never leak `/Users/<name>/...` into the UI; collapses
@@ -112,38 +178,120 @@ export async function callDaemon<T = unknown>({
   body,
   timeoutMs = 4000,
 }: DaemonRequest): Promise<DaemonResponse<T>> {
-  return new Promise((resolve) => {
-    const payload = body !== undefined ? JSON.stringify(body) : undefined;
+  const target = await loadDaemonTarget();
+  return callDaemonTarget<T>(target, { method, path: reqPath, body, timeoutMs });
+}
 
-    const req = request(
-      {
-        socketPath: socketPath(),
-        method,
-        path: reqPath,
-        timeout: timeoutMs,
-        headers: payload
-          ? {
-              "content-type": "application/json",
-              "content-length": Buffer.byteLength(payload).toString(),
-            }
-          : undefined,
-      },
+export async function callDaemonTarget<T = unknown>(
+  target: DaemonTarget,
+  {
+    method = "GET",
+    path: reqPath,
+    body,
+    timeoutMs = 4000,
+  }: DaemonRequest,
+): Promise<DaemonResponse<T>> {
+  if (target.mode === "unconfigured-hub") {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: target.error,
+    };
+  }
+
+  const first = await callDaemonTargetOnce<T>(target, { method, path: reqPath, body, timeoutMs });
+  // Retry transport-level failures (status 0: timeout/reset/refused) once for
+  // reads — a briefly-busy daemon must not surface a hard error for a GET
+  // (the /api/familiars 503 flake). Mutations never retry: a timed-out POST
+  // may have been applied. HTTP-level errors (a real status) never retry.
+  if (!first.ok && first.status === 0 && method === "GET") {
+    await new Promise((resolve) => setTimeout(resolve, GET_RETRY_DELAY_MS));
+    return callDaemonTargetOnce<T>(target, { method, path: reqPath, body, timeoutMs });
+  }
+  return first;
+}
+
+const GET_RETRY_DELAY_MS = 250;
+
+function callDaemonTargetOnce<T = unknown>(
+  target: Exclude<DaemonTarget, { mode: "unconfigured-hub" }>,
+  {
+    method = "GET",
+    path: reqPath,
+    body,
+    timeoutMs = 4000,
+  }: DaemonRequest,
+): Promise<DaemonResponse<T>> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value: DaemonResponse<T>) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      resolve(value);
+    };
+
+    const payload = body !== undefined ? JSON.stringify(body) : undefined;
+    const headers: Record<string, string> = {};
+    if (payload) {
+      headers["content-type"] = "application/json";
+      headers["content-length"] = Buffer.byteLength(payload).toString();
+    }
+    if (target.mode === "hub" && target.accessToken) {
+      headers.authorization = `Bearer ${target.accessToken}`;
+    }
+    const requestOptions =
+      target.mode === "hub"
+        ? (() => {
+            const url = new URL(reqPath, `${target.url}/`);
+            return {
+              protocol: url.protocol,
+              hostname: url.hostname,
+              port: url.port,
+              path: `${url.pathname}${url.search}`,
+              method,
+              timeout: timeoutMs,
+              headers: Object.keys(headers).length ? headers : undefined,
+            };
+          })()
+        : {
+            socketPath: target.socketPath,
+            method,
+            path: reqPath,
+            timeout: timeoutMs,
+            headers: Object.keys(headers).length ? headers : undefined,
+          };
+    const requestFn =
+      target.mode === "hub" &&
+      "protocol" in requestOptions &&
+      requestOptions.protocol === "https:"
+        ? httpsRequest
+        : httpRequest;
+
+    const req = requestFn(
+      requestOptions,
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c) => chunks.push(c));
+        // A response that errors mid-body (daemon crash, connection reset)
+        // never emits "end" — without this handler the promise would hang.
+        res.on("error", (err) => {
+          settle({ ok: false, status: 0, data: null, error: normalizeDaemonError(err) });
+        });
         res.on("end", () => {
           const raw = Buffer.concat(chunks).toString("utf8");
           const status = res.statusCode ?? 0;
           const ok = status >= 200 && status < 300;
           if (!raw) {
-            resolve({ ok, status, data: null });
+            settle({ ok, status, data: null });
             return;
           }
           try {
             const parsed = JSON.parse(raw) as T;
-            resolve({ ok, status, data: parsed });
+            settle({ ok, status, data: parsed });
           } catch {
-            resolve({
+            settle({
               ok: false,
               status,
               data: null,
@@ -154,11 +302,20 @@ export async function callDaemon<T = unknown>({
       },
     );
 
+    // `timeout` above is an IDLE timeout — a body that trickles a byte inside
+    // every idle window defeats it. This hard deadline bounds the total
+    // request; daemon responses are small JSON, so 2× the idle budget is
+    // generous for any legitimate reply.
+    const deadline = setTimeout(() => {
+      req.destroy(new Error("timeout"));
+    }, timeoutMs * 2);
+    (deadline as { unref?: () => void }).unref?.();
+
     req.on("timeout", () => {
       req.destroy(new Error("timeout"));
     });
     req.on("error", (err) => {
-      resolve({
+      settle({
         ok: false,
         status: 0,
         data: null,

@@ -1,0 +1,24 @@
+{
+  "name": "chrome-devtools",
+  "version": "0.1.0",
+  "description": "Inspect and control Chrome via the DevTools protocol for debugging and performance work.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Chrome DevTools",
+    "shortDescription": "Inspect and control Chrome via the DevTools protocol for debugging and performance work.",
+    "longDescription": "Use Chrome DevTools MCP to inspect live pages, network, and performance during debugging.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "chrome",
+      "devtools",
+      "debugging",
+      "performance",
+      "browser"
+    ],
+    "defaultPrompt": "Help me use Chrome DevTools safely."
+  }
+}

@@ -24,9 +24,51 @@ assert.match(src, /openFamiliarStudio\(\s*familiar\.id\s*,\s*"identity"\s*\)/, "
 assert.match(src, /cave:familiar-select/, "Switch dispatches cave:familiar-select");
 assert.match(src, /cave:agents-new-chat/, "New chat dispatches cave:agents-new-chat");
 
+// The enlarged avatar preview allows editing too — an "Edit profile" footer
+// action inside the lightbox, targeting the same Studio identity tab.
+assert.match(src, /expandFooterActions=\{/, "expandable avatar carries footer actions");
+assert.match(
+  src,
+  /expandFooterActions=\{[\s\S]*?openFamiliarStudio\(familiar\.id, "identity"\)[\s\S]*?Edit profile/,
+  "lightbox footer action opens the Studio identity tab to edit the profile",
+);
+
 // Deep memory peek + view-all link
 assert.match(src, /useFamiliarMemory/, "uses memory hook");
 assert.match(src, /openFamiliarStudio\(\s*familiar\.id\s*,\s*"memory"\s*\)/, "View all → memory tab");
+assert.match(src, /__memory-stale/, "stale memory entries carry a badge");
+
+// Memory peek rows are clickable cards (cave-00w0): each row is a button that
+// deep-links to the doc in the Grimoire (same path the command palette takes)
+// and closes the popover via act().
+assert.match(
+  src,
+  /className="familiar-inline-card__memory-item focus-ring-inset"/,
+  "memory rows render as focusable button cards",
+);
+assert.match(
+  src,
+  /onClick=\{\(\) => act\(\(\) => openGrimoireDoc\("memory", m\.fullPath\)\)\}/,
+  "clicking a memory card opens that doc in the Grimoire and closes the card",
+);
+assert.match(src, /title=\{`Open in Grimoire — \$\{m\.relPath\}`\}/, "cards say where they go");
+assert.match(src, /familiar-inline-card__memory-open/, "cards carry an open-affordance arrow");
+
+// ── Insight layer (cave-ck70) ───────────────────────────────────────────────
+// Trust/health one-liner, activity meta, live workload, contextual actions —
+// derived by familiar-card-insights from the shared analytics model.
+assert.match(src, /useCardInsights/, "uses insights hook");
+assert.match(src, /deriveFamiliarCardInsights/, "derives insights from the analytics model");
+assert.match(src, /loadFamiliarAnalyticsData/, "reuses the analytics loader, not a bespoke fan-out");
+assert.match(src, /__insight/, "renders the trust/health insight line");
+assert.match(src, /data-tone=\{insights\.insight\.tone\}/, "insight line is tone-tinted");
+assert.match(src, /insightsCache\.delete/, "failed insight loads are NOT cached (cave-2ex2)");
+assert.match(src, /runningSessions\.map/, "live workload lists running sessions");
+assert.match(src, /cave:agents-open-session/, "workload rows open their session");
+assert.match(src, /openFamiliarStudio\(\s*familiar\.id\s*,\s*"contract"\s*\)/, "fix-contract action → contract tab");
+assert.match(src, /insights\?\.actions\.map/, "state-driven actions render ahead of the static row");
+assert.match(src, /sessionsLast7d/, "shows 7-day session pulse");
+assert.match(src, /topSignal/, "surfaces the top growth signal");
 
 // a11y + dismiss affordance
 assert.match(src, /aria-label="Close"/, "close button labelled");
@@ -38,5 +80,45 @@ assert.match(src, /\/api\/memory/, "fetches /api/memory");
 
 // loading + empty handling for memory
 assert.match(src, /No memory yet/, "empty memory state");
+
+// ── CSS regression: the expanded card must escape the avatar circle ─────────
+// The card mounts inside `.cave-linear-turn-avatar`, whose `overflow: hidden`
+// (there to crop photo avatars) used to clip the whole card down to the 48px
+// circle — only its close × peeked through. The crop now lives on the inner
+// button, the cell un-clips when it hosts the button, and the card floats as
+// an absolutely positioned popover above the following turns.
+const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
+assert.match(
+  css,
+  /\.cave-linear-turn-avatar:has\(> \.cave-linear-turn-avatar-btn\) \{\s*overflow: visible;/,
+  "avatar cell un-clips when it hosts the interactive button",
+);
+assert.match(
+  css,
+  /\.cave-linear-turn-avatar-btn \{[^}]*border-radius: inherit;[^}]*overflow: hidden;/,
+  "photo crop moved onto the avatar button",
+);
+assert.match(
+  css,
+  /\.familiar-inline-card \{[^}]*position: absolute;[^}]*top: calc\(100% \+ 8px\);[^}]*z-index/s,
+  "card is an absolutely positioned popover below the avatar",
+);
+assert.match(
+  css,
+  /\.cave-linear-turn-avatar\.is-selected \{[^}]*z-index/,
+  "open card stacks above the following turns",
+);
+assert.match(
+  css,
+  /\.familiar-inline-card__memory-item \{[^}]*cursor: pointer;/s,
+  "memory cards look pressable",
+);
+assert.match(
+  css,
+  /\.familiar-inline-card__memory-item:hover \.familiar-inline-card__memory-open,\s*\.familiar-inline-card__memory-item:focus-visible \.familiar-inline-card__memory-open \{ opacity: 1; \}/,
+  "the open arrow reveals on hover AND keyboard focus",
+);
 
 console.log("familiar-inline-card.test.ts: ok");

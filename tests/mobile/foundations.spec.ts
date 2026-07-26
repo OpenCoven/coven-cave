@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
 // Starter mobile spec. Loads the home route on the pixel-5 and
 // iphone-13 viewport projects and asserts the phase 1 foundations:
@@ -14,6 +14,20 @@ import { expect, test } from "@playwright/test";
 // Surface-specific specs (chat composer, board card-stack, calendar
 // agenda, hover-tap) belong in their own files; this one is the
 // "did the foundation land at all" canary.
+
+type PreferencesResponse = {
+  ok: boolean;
+  preferences: { appearance: { screenScale: number } };
+};
+
+async function writePersistedScreenScale(request: APIRequestContext, scale: number) {
+  const response = await request.patch("/api/preferences", {
+    data: { appearance: { screenScale: scale } },
+  });
+  const body = await response.json() as PreferencesResponse;
+  expect(response.ok(), `preference PATCH failed: ${JSON.stringify(body)}`).toBe(true);
+  expect(body.preferences.appearance.screenScale).toBe(scale);
+}
 
 test.describe("mobile foundations", () => {
   test.beforeEach(async ({ page }) => {
@@ -46,6 +60,40 @@ test.describe("mobile foundations", () => {
     expect(overflow, "no horizontal overflow at 360px viewport").toBeLessThanOrEqual(0);
   });
 
+  test("chat and tasks surfaces fit 360px without horizontal scroll", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 720 });
+    await page.goto("/");
+    await page.waitForSelector(".shell-frame");
+
+    // Re-dispatch navigate-mode inside the poll: on a cold mobile load the
+    // Workspace listener can attach AFTER .shell-frame appears, so a single
+    // early dispatch is silently dropped and the check would measure Home.
+    const targets: Array<[string, string]> = [
+      ["chat", ".chat-surface"],
+      ["board", ".board-shell"],
+    ];
+    for (const [surface, selector] of targets) {
+      await page.waitForFunction(
+        ({ mode, sel }) => {
+          window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
+          return document.querySelector(sel) !== null;
+        },
+        { mode: surface, sel: selector },
+        // Generous: the dev webServer compiles the chat/board chunks on first
+        // hit, which can take >15s under CI's parallel project load.
+        { timeout: 25000 },
+      );
+      await page.waitForTimeout(200);
+      const overflow = await page.evaluate(() => {
+        return (
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth
+        );
+      });
+      expect(overflow, `no horizontal overflow on ${surface} at 360px viewport`).toBeLessThanOrEqual(0);
+    }
+  });
+
   test("home route does not create window-level vertical scroll", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/");
@@ -68,17 +116,39 @@ test.describe("mobile foundations", () => {
   });
 
   test("desktop shell is headerless and non-scrollable across primary surfaces", async ({ page }) => {
+    // Guard against render crashes on any surface. The chrome/layout assertions
+    // below all PASS when a surface infinite-loops or throws, because React
+    // tears the app down to its error boundary — and a centered "couldn't load"
+    // view has a hidden top bar, no overflow, and fits the viewport. So without
+    // this, a surface can be fully broken and the test stays green (exactly how
+    // the #2162 CodeSidebar `useSyncExternalStore` infinite loop reached main).
+    // Catch both uncaught exceptions and the fatal React render-error class
+    // (which an error boundary swallows into a console.error rather than a
+    // pageerror). Benign console noise (failed daemon-less fetches) is ignored.
+    const pageErrors: string[] = [];
+    const fatalConsole: string[] = [];
+    const FATAL_RENDER = /maximum update depth|too many re-?renders|minified react error|getsnapshot should be cached|rendered (more|fewer) hooks|hooks can only be called/i;
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+    page.on("console", (msg) => {
+      if (msg.type() === "error" && FATAL_RENDER.test(msg.text())) fatalConsole.push(msg.text());
+    });
+
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/");
     await page.waitForSelector(".shell-frame");
 
-    const surfaces = ["Home", "Familiars", "Board", "Calendar", "Browser", "Terminal", "Code"];
-    const sidebar = page.locator(".sidebar-nav-scroll");
+    // Drive by mode id via the navigate-mode event rather than clicking nav
+    // rows: most of these surfaces are now opt-in add-ons (hidden from the nav by
+    // default), but they still render when navigated — so this stays a true
+    // cross-surface chrome check without depending on which rows are visible.
+    const surfaces = ["home", "chat", "board", "calendar", "browser", "terminal"];
 
     for (const surface of surfaces) {
-      if (surface !== "Home") {
-        await sidebar.getByRole("button", { name: new RegExp(`^${surface}\\b`) }).click();
-      }
+      await page.evaluate(
+        (mode) => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } })),
+        surface,
+      );
+      await page.waitForTimeout(200);
 
       await expect(page.locator(".top-bar"), `desktop top bar should stay hidden on ${surface}`).toBeHidden();
 
@@ -97,124 +167,67 @@ test.describe("mobile foundations", () => {
       expect(metrics.bodyOverflow, `${surface} should not create body vertical scroll`).toBeLessThanOrEqual(1);
       expect(metrics.frameBottom, `${surface} app frame should fit the viewport`).toBeLessThanOrEqual(metrics.viewportHeight + 1);
     }
+
+    // No surface may crash the app. (These would be invisible to the layout
+    // assertions above — see the note at the top of this test.)
+    expect(pageErrors, `uncaught page errors while sweeping surfaces:\n${pageErrors.join("\n")}`).toEqual([]);
+    expect(fatalConsole, `fatal React render errors while sweeping surfaces:\n${fatalConsole.join("\n")}`).toEqual([]);
   });
 
-  test("library document rail scrolls inside the right panel", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 720 });
+  test("persisted screen magnification scales the app without window scroll", async ({ page, request }) => {
+    // Preferences are app-owned now, so seed the same canonical endpoint used
+    // by Settings. Legacy localStorage is only a first-run migration input and
+    // must not override an initialized store on reload. Playwright schedules
+    // the three copies of this test as a dependency chain so this reset cannot
+    // race another project or leak scale=125 into the normal parallel suite.
+    await writePersistedScreenScale(request, 100);
+    try {
+      await writePersistedScreenScale(request, 125);
 
-    const docs = Array.from({ length: 42 }, (_, index) => ({
-      id: `doc-${index}`,
-      title: `Knowledge graph source ${index + 1}`,
-      familiar: "sage",
-      collection: "all",
-      modifiedAt: new Date(Date.now() - index * 60_000).toISOString(),
-      tags: index % 4 === 0 ? ["coven-cave", "knowledge-graph"] : [],
-      excerpt: "A deliberately long library entry used to prove the right-side document rail owns its scrolling.",
-    }));
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.goto("/");
+      await page.waitForSelector(".shell-frame");
+      // The boot script stamps the default too, so presence alone is not a
+      // readiness signal. Wait until the persisted value is actually applied.
+      await page.waitForFunction(
+        () => document.documentElement.getAttribute("data-screen-scale") === "125",
+        { timeout: 5000 },
+      );
 
-    await page.route("**/api/library?**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          ok: true,
-          docs,
-          collections: [
-            {
-              id: "all",
-              label: "All",
-              path: "/tmp/coven-cave-test-library",
-              familiar: "sage",
-            },
-          ],
-        }),
+      // Prove the same canonical value is restored on a normal reload.
+      await page.reload();
+      await page.waitForSelector(".shell-frame");
+      await page.waitForFunction(
+        () => document.documentElement.getAttribute("data-screen-scale") === "125",
+        { timeout: 5000 },
+      );
+
+      const metrics = await page.evaluate(() => {
+        const frame = document.querySelector(".shell-frame");
+        const frameRect = frame?.getBoundingClientRect();
+        return {
+          scale: document.documentElement.getAttribute("data-screen-scale"),
+          // Magnification is rem-based root font scaling (not an app-wide zoom,
+          // which broke getBoundingClientRect math): :root sets --cave-screen-scale
+          // and html font-size = calc(16px * var). 125% → 20px root font.
+          scaleVar: getComputedStyle(document.documentElement).getPropertyValue("--cave-screen-scale").trim(),
+          rootFontSize: getComputedStyle(document.documentElement).fontSize,
+          documentOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+          bodyOverflow: document.body.scrollHeight - document.body.clientHeight,
+          frameBottom: frameRect?.bottom ?? 0,
+          viewportHeight: window.innerHeight,
+        };
       });
-    });
 
-    // The Library surface is an addon, gated out of the sidebar by default —
-    // enable it (passthrough-patch the config) so the nav entry renders.
-    await page.route("**/api/config**", async (route) => {
-      const res = await route.fetch();
-      const json = await res.json().catch(() => ({}));
-      const config = { ...(json.config ?? {}), addons: { ...(json.config?.addons ?? {}), library: true } };
-      await route.fulfill({ json: { ...json, ok: true, config } });
-    });
-
-    await page.goto("/");
-    await page.waitForSelector(".shell-frame");
-
-    const sidebar = page.locator(".sidebar-nav-scroll");
-    await sidebar.getByRole("button", { name: /^Library\b/ }).click();
-    await page.waitForSelector(".library-shell");
-    await page.locator(".library-rail-item").filter({ hasText: /^All/ }).first().click();
-    await expect(page.getByPlaceholder("Search documents…")).toBeVisible();
-    await expect(page.locator(".library-doclist-item")).toHaveCount(docs.length);
-
-    const metrics = await page.evaluate(() => {
-      const panel = document.querySelector(".library-list-panel, .library-browse-canvas");
-      const doclist = document.querySelector(".library-doclist");
-      const items = document.querySelector(".library-doclist-items");
-      const panelRect = panel?.getBoundingClientRect();
-      const doclistRect = doclist?.getBoundingClientRect();
-      const itemsRect = items?.getBoundingClientRect();
-      const itemsStyle = items ? window.getComputedStyle(items) : null;
-
-      return {
-        documentOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
-        bodyOverflow: document.body.scrollHeight - document.body.clientHeight,
-        panelHeight: panelRect?.height ?? 0,
-        doclistHeight: doclistRect?.height ?? 0,
-        itemsHeight: itemsRect?.height ?? 0,
-        itemsScrollHeight: items?.scrollHeight ?? 0,
-        itemsOverflowY: itemsStyle?.overflowY ?? "",
-      };
-    });
-
-    expect(metrics.documentOverflow, "Library must not push scrolling onto the document").toBeLessThanOrEqual(1);
-    expect(metrics.bodyOverflow, "Library must not push scrolling onto body").toBeLessThanOrEqual(1);
-    expect(metrics.doclistHeight, "Document list should stay bounded by the right panel").toBeLessThanOrEqual(metrics.panelHeight + 1);
-    expect(metrics.itemsOverflowY, "Document rows should be the inner scroll container").toBe("auto");
-    expect(metrics.itemsScrollHeight, "Document rows should have more content than visible space").toBeGreaterThan(metrics.itemsHeight + 1);
-  });
-
-  test("persisted screen magnification scales the app without window scroll", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await page.goto("/");
-    await page.evaluate(() => {
-      window.localStorage.setItem("cave:screen-scale", "125");
-    });
-    await page.reload();
-    await page.waitForSelector(".shell-frame");
-    // Wait for the ScreenMagnificationController effect to fire and stamp the
-    // data-screen-scale attribute on <html> before reading metrics.
-    await page.waitForFunction(
-      () => document.documentElement.hasAttribute("data-screen-scale"),
-      { timeout: 5000 },
-    );
-
-    const metrics = await page.evaluate(() => {
-      const frame = document.querySelector(".shell-frame");
-      const frameRect = frame?.getBoundingClientRect();
-      return {
-        scale: document.documentElement.getAttribute("data-screen-scale"),
-        // Magnification is rem-based root font scaling (not an app-wide zoom,
-        // which broke getBoundingClientRect math): :root sets --cave-screen-scale
-        // and html font-size = calc(16px * var). 125% → 20px root font.
-        scaleVar: getComputedStyle(document.documentElement).getPropertyValue("--cave-screen-scale").trim(),
-        rootFontSize: getComputedStyle(document.documentElement).fontSize,
-        documentOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
-        bodyOverflow: document.body.scrollHeight - document.body.clientHeight,
-        frameBottom: frameRect?.bottom ?? 0,
-        viewportHeight: window.innerHeight,
-      };
-    });
-
-    expect(metrics.scale).toBe("125");
-    expect(metrics.scaleVar).toBe("1.25");
-    expect(metrics.rootFontSize).toBe("20px");
-    expect(metrics.documentOverflow, "document should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
-    expect(metrics.bodyOverflow, "body should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
-    expect(metrics.frameBottom, "magnified app frame should still fit the viewport").toBeLessThanOrEqual(metrics.viewportHeight + 1);
+      expect(metrics.scale).toBe("125");
+      expect(metrics.scaleVar).toBe("1.25");
+      expect(metrics.rootFontSize).toBe("20px");
+      expect(metrics.documentOverflow, "document should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
+      expect(metrics.bodyOverflow, "body should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
+      expect(metrics.frameBottom, "magnified app frame should still fit the viewport").toBeLessThanOrEqual(metrics.viewportHeight + 1);
+    } finally {
+      await writePersistedScreenScale(request, 100);
+    }
   });
 
   test("mobile drawer toggles render on phone viewport", async ({ page }) => {
@@ -225,5 +238,81 @@ test.describe("mobile foundations", () => {
     // is always wired by workspace.tsx.
     const toggles = page.locator(".top-bar__mobile-toggle");
     await expect(toggles.first()).toBeVisible();
+  });
+
+  // EVERY workspace surface must mount without a render crash. The
+  // "desktop shell is headerless…" test above guards the 7 primary surfaces,
+  // but a render loop / thrown effect / hook violation on any of the other
+  // surfaces (familiars, group chat, automations, github, roles, marketplace,
+  // flow, evals, retro, capabilities, journal, …) would never be seen — nothing
+  // navigates to them, and CI's build doesn't render. This sweeps ALL of
+  // WorkspaceMode and fails on any crash, daemon-less. It does NOT assert
+  // layout (some surfaces legitimately scroll); it only asserts "didn't crash".
+  test("no workspace surface crashes on navigation", async ({ page }) => {
+    // Sweeping ~17 surfaces plus the /settings redirect all trigger first-hit
+    // route compilation under next dev; on a cold cache that comfortably exceeds
+    // the default per-test budget. Triple it so a slow compile reads as slow,
+    // not broken.
+    test.slow();
+    // The in-shell WorkspaceMode set (src/lib/workspace-mode.ts). Keep in sync
+    // when a new surface is added — a new mode with a render crash should turn
+    // this red. Two modes are intentionally excluded: "journal" now opens the
+    // Grimoire surface on its Journal tab (swept separately after the loop);
+    // "grimoire" mounts a heavy Milkdown editor whose cold compile under next
+    // dev makes this fast canary flaky — it has its own coverage (see cave
+    // follow-up), and the journal step below exercises the same mount.
+    const IN_SHELL_SURFACES = [
+      "home", "agents", "chat", "groupchat", "board", "calendar", "inbox",
+      "browser", "terminal", "github", "roles", "marketplace",
+      "flow", "evals", "submissions", "retro", "capabilities",
+    ];
+
+    const FATAL_RENDER = /maximum update depth|too many re-?renders|minified react error|getsnapshot should be cached|rendered (more|fewer) hooks|hooks can only be called/i;
+    const errors: string[] = [];
+    let current = "(initial)";
+    page.on("pageerror", (err) => errors.push(`[${current}] pageerror: ${err.message}`));
+    page.on("console", (msg) => {
+      if (msg.type() === "error" && FATAL_RENDER.test(msg.text())) errors.push(`[${current}] ${msg.text()}`);
+    });
+
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    await page.waitForSelector(".shell-frame");
+
+    for (const surface of IN_SHELL_SURFACES) {
+      current = surface;
+      await page.evaluate(
+        (mode) => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } })),
+        surface,
+      );
+      await page.waitForTimeout(250);
+      // The shell frame must survive every navigation (a render crash unmounts
+      // the app to the top-level error boundary, removing it).
+      await expect(page.locator(".shell-frame"), `${surface} must keep the app shell mounted (no crash)`).toBeVisible();
+    }
+
+    // Assert no in-shell surface render-crashed while sweeping.
+    expect(errors, `render crashes while sweeping surfaces:\n${errors.join("\n")}`).toEqual([]);
+
+    // "journal" is now an in-shell surface: it opens the Grimoire surface on its
+    // Journal tab (setGrimoireView("journal") → mode "grimoire"), no longer a
+    // cross-document redirect to Settings. Assert the shell survives and the
+    // Grimoire surface mounts (a render crash there unmounts to the error
+    // boundary, so .grimoire-view never appears).
+    current = "journal";
+    await page.evaluate(() =>
+      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "journal" } })),
+    );
+    await page.waitForTimeout(250);
+    await expect(
+      page.locator(".shell-frame"),
+      "journal must keep the app shell mounted (no crash)",
+    ).toBeVisible();
+    // The Grimoire surface (with its Journal tab) mounts in-shell; its first-hit
+    // compile under next dev can run well past 15s — wait generously.
+    await expect(
+      page.locator(".grimoire-view"),
+      "journal opens the Grimoire surface without crashing",
+    ).toBeVisible({ timeout: 45_000 });
   });
 });

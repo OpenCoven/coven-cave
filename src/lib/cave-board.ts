@@ -1,10 +1,12 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
+import { caveHome } from "./coven-paths.ts";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 import {
   DEFAULT_MAX_RETRIES,
   type Card,
+  type CardAsanaLink,
   type CardGitHubLink,
   type CardLifecycle,
   type CardPriority,
@@ -16,7 +18,20 @@ import {
   normalizeTaskGitHubLinks,
   taskGitHubLinkFromUrl,
 } from "@/lib/task-github";
+import {
+  mergeLinksWithAsana,
+  mergeTaskAsanaLinks as mergeAsanaLinks,
+  normalizeTaskAsanaLinks,
+  taskAsanaLinkFromUrl,
+} from "@/lib/task-asana";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
+import {
+  normalizeChatAttachments,
+  stripPreviewOnlyAttachmentFields,
+  type ChatAttachment,
+} from "@/lib/chat-attachments";
+import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -25,13 +40,14 @@ export {
   PRIORITIES,
   STATUSES,
   type Card,
+  type CardAsanaLink,
   type CardGitHubLink,
   type CardLifecycle,
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board-types";
 
-const BOARD_PATH = path.join(homedir(), ".coven", "cave-board.json");
+const BOARD_PATH = path.join(caveHome(), "board.json");
 
 /**
  * Old cards predate the lifecycle machine. Map their column `status` to the
@@ -89,19 +105,48 @@ function gitHubLinksFromLinks(values: string[] | undefined): CardGitHubLink[] {
     .filter((item): item is CardGitHubLink => item !== null);
 }
 
+function normalizeAsanaLinks(values: CardAsanaLink[] | undefined): CardAsanaLink[] {
+  return normalizeTaskAsanaLinks(values);
+}
+
+// Derive structured Asana connections from bare app.asana.com URLs stashed in a
+// card's `links` (or written by an agent) — the same backfill github does, so a
+// pasted Asana task URL becomes a first-class connection.
+function asanaLinksFromLinks(values: string[] | undefined): CardAsanaLink[] {
+  return toStringList(values)
+    .map((url) => taskAsanaLinkFromUrl(url))
+    .filter((item): item is CardAsanaLink => item !== null);
+}
+
 function normalizeCwd(value: string | null | undefined): string | null {
   const cwd = value?.trim();
   return cwd ? cwd : null;
 }
 
+const MAX_MODEL_OVERRIDE_CHARS = 512;
+
+/** Task models are user-configured runtime ids, so retain custom ids while
+ * bounding malformed or hand-edited board data. */
+function normalizeModelOverride(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const model = value.trim();
+  return model && model.length <= MAX_MODEL_OVERRIDE_CHARS ? model : null;
+}
+
+function normalizeModelOverrideHarness(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const harness = value.trim();
+  return harness && harness.length <= 128 ? canonicalHarnessId(harness) : null;
+}
+
 type LegacyCard = Omit<
   Card,
-  "cwd" | "projectId" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
+  "cwd" | "projectId" | "modelOverride" | "modelOverrideHarness" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
 > &
   Partial<
     Pick<
       Card,
-      "cwd" | "projectId" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
+      "cwd" | "projectId" | "modelOverride" | "modelOverrideHarness" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
     >
   >;
 
@@ -117,14 +162,20 @@ function normalizeBoardDate(value: string | null | undefined): string | null {
 function backfillCard(c: Card | LegacyCard): Card {
   const lifecycle = c.lifecycle ?? inferLifecycle(c.status);
   const github = mergeGitHubLinks(normalizeGitHubLinks(c.github), ...gitHubLinksFromLinks(c.links));
-  const links = mergeLinksWithGitHub(normalizeLinks(c.links), github);
+  const asana = mergeAsanaLinks(normalizeAsanaLinks(c.asana), ...asanaLinksFromLinks(c.links));
+  // Both link derivations feed back into `links` so a card's URL list stays the
+  // union of everything attached, regardless of which source added it.
+  const links = mergeLinksWithAsana(mergeLinksWithGitHub(normalizeLinks(c.links), github), asana);
   return {
     ...c,
     status: statusForLifecycle(lifecycle, c.status),
     cwd: normalizeCwd(c.cwd),
     projectId: c.projectId ?? null,
+    modelOverride: normalizeModelOverride(c.modelOverride),
+    modelOverrideHarness: normalizeModelOverrideHarness(c.modelOverrideHarness),
     links,
     github,
+    asana,
     labels: normalizeList(c.labels),
     startDate: normalizeBoardDate(c.startDate),
     endDate: normalizeBoardDate(c.endDate),
@@ -198,19 +249,14 @@ function withBoardLock<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-let boardTmpCounter = 0;
-
 export async function saveBoard(board: BoardFile): Promise<void> {
   await ensureDir();
-  // Atomic write: plain writeFile truncates-then-writes, so a concurrent reader
-  // can observe a half-written file. loadBoard() then fails to parse it and
-  // falls back to an empty board, making cards momentarily "vanish" — e.g. a
-  // task-chat POST 404ing ("not found") on a card that actually exists. Write to
-  // a temp file and rename() instead: rename is atomic on POSIX, so a reader
-  // always sees a complete old-or-new file, never a torn one.
-  const tmp = `${BOARD_PATH}.${process.pid}.${boardTmpCounter++}.tmp`;
-  await writeFile(tmp, JSON.stringify(board, null, 2), "utf8");
-  await rename(tmp, BOARD_PATH);
+  // Atomic write (temp file + rename): a plain writeFile truncates-then-writes,
+  // so a concurrent reader can observe a half-written file, loadBoard() fails to
+  // parse it and falls back to an empty board — cards momentarily "vanish" (e.g.
+  // a task-chat POST 404ing on a card that exists). The write lock above
+  // serializes mutations; writeJsonAtomic makes each write torn-read-safe.
+  await writeJsonAtomic(BOARD_PATH, board);
 }
 
 export type NewCardInput = {
@@ -219,18 +265,32 @@ export type NewCardInput = {
   status?: CardStatus;
   priority?: CardPriority;
   familiarId?: string | null;
+  modelOverride?: string | null;
+  modelOverrideHarness?: string | null;
   sessionId?: string | null;
   cwd?: string | null;
   projectId?: string | null;
   links?: string[];
   github?: CardGitHubLink[];
+  asana?: CardAsanaLink[];
   labels?: string[];
   startDate?: string | null;
   endDate?: string | null;
   template?: string | null;
   /** Optional checklist steps to seed the card with (e.g. a Salem path). */
   steps?: { text: string }[];
+  /** Files staged in the composer, carried onto the card at creation time. */
+  attachments?: ChatAttachment[];
 };
+
+/** Store attachments lean: normalize (bounds text + validates image payloads),
+ * then strip the base64 `dataUrl`/`mimeType` so images ride as metadata only and
+ * the board JSON stays small. Returns undefined when nothing usable remains. */
+function boardAttachments(input: ChatAttachment[] | undefined): ChatAttachment[] | undefined {
+  if (!input || input.length === 0) return undefined;
+  const lean = stripPreviewOnlyAttachmentFields(normalizeChatAttachments(input));
+  return lean.length ? lean : undefined;
+}
 
 export async function createCard(input: NewCardInput): Promise<Card> {
   return withBoardLock(async () => {
@@ -238,6 +298,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
   const now = new Date().toISOString();
   const status: CardStatus = input.status ?? "backlog";
   const github = mergeGitHubLinks(normalizeGitHubLinks(input.github), ...gitHubLinksFromLinks(input.links));
+  const asana = mergeAsanaLinks(normalizeAsanaLinks(input.asana), ...asanaLinksFromLinks(input.links));
   const card: Card = {
     id: crypto.randomUUID(),
     title: input.title.trim(),
@@ -245,11 +306,14 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     status,
     priority: input.priority ?? "medium",
     familiarId: input.familiarId ?? null,
+    modelOverride: normalizeModelOverride(input.modelOverride),
+    modelOverrideHarness: normalizeModelOverrideHarness(input.modelOverrideHarness),
     sessionId: input.sessionId ?? null,
     cwd: normalizeCwd(input.cwd),
     projectId: input.projectId ?? null,
-    links: mergeLinksWithGitHub(normalizeLinks(input.links), github),
+    links: mergeLinksWithAsana(mergeLinksWithGitHub(normalizeLinks(input.links), github), asana),
     github,
+    asana,
     labels: normalizeList(input.labels),
     startDate: normalizeBoardDate(input.startDate),
     endDate: normalizeBoardDate(input.endDate),
@@ -265,6 +329,8 @@ export async function createCard(input: NewCardInput): Promise<Card> {
       .filter(Boolean)
       .map((text) => ({ id: crypto.randomUUID(), text, done: false, addedAt: now })),
   };
+  const attachments = boardAttachments(input.attachments);
+  if (attachments) card.attachments = attachments;
   board.cards.push(card);
   await saveBoard(board);
   return card;
@@ -273,13 +339,32 @@ export async function createCard(input: NewCardInput): Promise<Card> {
 
 export async function updateCard(
   id: string,
-  patch: Partial<Omit<Card, "id" | "createdAt">>,
+  patchWithOps: CardPatch,
 ): Promise<Card | null> {
   return withBoardLock(async () => {
   const board = await loadBoard();
   const idx = board.cards.findIndex((c) => c.id === id);
   if (idx < 0) return null;
   const current = board.cards[idx];
+  // Intent ops resolve against the CURRENT card here, inside the write lock —
+  // a toggle/add/remove on one element can never clobber a concurrent edit to
+  // another (the full-array clobber the board audit flagged). The resolved
+  // arrays then flow through the exact same normalization as plain patches.
+  const { ops, ...plain } = patchWithOps;
+  const patch: Partial<Omit<Card, "id" | "createdAt">> = hasCardOps(ops)
+    ? { ...plain, ...applyCardOps(current, ops, new Date().toISOString()) }
+    : plain;
+  // Resolve the structured connection lists once, then fold both back into
+  // `links` so the URL list stays the union of everything attached (github +
+  // asana + explicit links) — same invariant createCard/backfill maintain.
+  const nextGithub = mergeGitHubLinks(
+    normalizeGitHubLinks("github" in patch ? patch.github : current.github),
+    ...gitHubLinksFromLinks("links" in patch ? patch.links : current.links),
+  );
+  const nextAsana = mergeAsanaLinks(
+    normalizeAsanaLinks("asana" in patch ? patch.asana : current.asana),
+    ...asanaLinksFromLinks("links" in patch ? patch.links : current.links),
+  );
   const next: Card = {
     ...current,
     ...patch,
@@ -289,23 +374,41 @@ export async function updateCard(
     labels: patch.labels
       ? normalizeList(patch.labels)
       : current.labels,
-    github: mergeGitHubLinks(
-      normalizeGitHubLinks("github" in patch ? patch.github : current.github),
-      ...gitHubLinksFromLinks("links" in patch ? patch.links : current.links),
-    ),
-    links: mergeLinksWithGitHub(
-      "links" in patch ? normalizeLinks(patch.links) : current.links,
-      mergeGitHubLinks(
-        normalizeGitHubLinks("github" in patch ? patch.github : current.github),
-        ...gitHubLinksFromLinks("links" in patch ? patch.links : current.links),
-      ),
+    github: nextGithub,
+    asana: nextAsana,
+    links: mergeLinksWithAsana(
+      mergeLinksWithGitHub("links" in patch ? normalizeLinks(patch.links) : current.links, nextGithub),
+      nextAsana,
     ),
     cwd: "cwd" in patch ? normalizeCwd(patch.cwd) : current.cwd,
     projectId: "projectId" in patch ? patch.projectId ?? null : current.projectId ?? null,
+    // A task model belongs to a familiar runtime. Keep its source harness with
+    // the override so launch can reject an id left behind when the familiar's
+    // harness changes without reassigning the card.
+    modelOverride: "modelOverride" in patch
+      ? normalizeModelOverride(patch.modelOverride)
+      : "familiarId" in patch && patch.familiarId !== current.familiarId
+        ? null
+        : current.modelOverride ?? null,
+    modelOverrideHarness: "modelOverride" in patch
+      ? normalizeModelOverride(patch.modelOverride)
+        ? normalizeModelOverrideHarness(patch.modelOverrideHarness)
+        : null
+      : "familiarId" in patch && patch.familiarId !== current.familiarId
+        ? null
+        : "modelOverrideHarness" in patch
+          ? normalizeModelOverrideHarness(patch.modelOverrideHarness)
+          : current.modelOverrideHarness ?? null,
     sessionId: "sessionId" in patch ? patch.sessionId ?? null : current.sessionId,
     startDate: "startDate" in patch ? normalizeBoardDate(patch.startDate) : current.startDate ?? null,
     endDate: "endDate" in patch ? normalizeBoardDate(patch.endDate) : current.endDate ?? null,
     steps: patch.steps ?? current.steps,
+    // Attachments patched from the inspector go through the same lean pipeline as
+    // createCard — normalize + strip base64 image payloads — so an edit can never
+    // fatten cave-board.json. An empty array clears them (field dropped).
+    attachments: "attachments" in patch
+      ? boardAttachments(patch.attachments ?? undefined)
+      : current.attachments,
   };
   if (next.lifecycle === "running" && !next.runningSince) {
     next.runningSince = next.updatedAt;
@@ -423,6 +526,20 @@ export async function deleteCard(id: string): Promise<boolean> {
   if (board.cards.length === before) return false;
   await saveBoard(board);
   return true;
+  });
+}
+
+export async function unlinkSessionFromCards(sessionId: string): Promise<number> {
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    let unlinked = 0;
+    board.cards = board.cards.map((card) => {
+      if (card.sessionId !== sessionId) return card;
+      unlinked += 1;
+      return { ...card, sessionId: null, updatedAt: new Date().toISOString() };
+    });
+    if (unlinked > 0) await saveBoard(board);
+    return unlinked;
   });
 }
 

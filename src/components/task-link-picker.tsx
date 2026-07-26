@@ -1,25 +1,39 @@
 "use client";
 
+import "@/styles/cave-composer.css";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Card } from "@/lib/cave-board-types";
+import { createTaskFromChat, type ChatHandoffContext } from "@/lib/chat-task-handoff";
+import { publishBoardChanged } from "@/lib/board-cache-events";
 
 /**
  * Popover for linking an existing board task to the current chat. Lists the
  * board's cards (minus those already linked to this session) and, on pick,
  * PATCHes the card's `sessionId` to this chat — the chat→task assign side that
  * mirrors the board's "Start chat from task" flow.
+ *
+ * When the chat surface supplies a `handoff` context (recent turns + the
+ * chat's familiar/project), the picker also offers "New task from this chat":
+ * a one-click chat→board handoff that creates an inbox card pre-linked to this
+ * session, carrying a transcript excerpt and source audit trail in its notes
+ * (see chat-task-handoff.ts). The search query doubles as the new card's title.
  */
 export function TaskLinkPicker({
   sessionId,
   linkedIds,
   onAssigned,
   onClose,
+  handoff,
+  embedded = false,
 }: {
   sessionId: string;
   linkedIds: Set<string>;
   onAssigned: (card: Card) => void;
   onClose: () => void;
+  handoff?: ChatHandoffContext | null;
+  embedded?: boolean;
 }) {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +83,26 @@ export function TaskLinkPicker({
       .slice(0, 50);
   }, [cards, linkedIds, query]);
 
+  const createFromChat = async () => {
+    if (!handoff) return;
+    setBusyId("__new__");
+    setError(null);
+    try {
+      const result = await createTaskFromChat({
+        sessionId,
+        context: handoff,
+        title: query.trim() || undefined,
+      });
+      if (!result.ok || !result.card) throw new Error(result.error ?? "Failed to create task");
+      onAssigned(result.card);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create task");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const assign = async (card: Card) => {
     setBusyId(card.id);
     setError(null);
@@ -80,6 +114,7 @@ export function TaskLinkPicker({
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error ?? "Failed to link task");
+      publishBoardChanged();
       onAssigned(json.card as Card);
       onClose();
     } catch (err) {
@@ -94,7 +129,9 @@ export function TaskLinkPicker({
       ref={ref}
       role="dialog"
       aria-label="Link a task to this chat"
-      className="absolute left-0 top-full z-30 mt-1 w-[20rem] max-w-[80vw] overflow-hidden rounded-lg border border-[var(--border-strong)] bg-[var(--bg-raised)] shadow-lg"
+      tabIndex={-1}
+      data-embedded={embedded || undefined}
+      className={`task-link-picker ${embedded ? "task-link-picker--embedded" : "task-link-picker--floating"}`}
     >
       <div className="flex items-center gap-1.5 border-b border-[var(--border-hairline)] px-2.5 py-2">
         <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" />
@@ -104,17 +141,38 @@ export function TaskLinkPicker({
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Link a task…"
           aria-label="Search tasks to link"
-          className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+          className="min-w-0 flex-1 bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
         />
       </div>
       {error ? (
-        <div className="px-2.5 py-1.5 text-[11px] text-[var(--color-danger,#ef4444)]">{error}</div>
+        <div className="px-2.5 py-1.5 text-[length:var(--text-xs)] text-[var(--color-danger)]">{error}</div>
       ) : null}
       <div className="max-h-[16rem] overflow-y-auto py-1">
+        {handoff ? (
+          <button
+            type="button"
+            disabled={busyId !== null}
+            onClick={() => void createFromChat()}
+            aria-label={
+              query.trim()
+                ? `Create a new task "${query.trim()}" from this chat`
+                : "Create a new task from this chat"
+            }
+            className="flex w-full items-center gap-2 border-b border-[var(--border-hairline)] px-2.5 py-1.5 text-left text-[length:var(--text-sm)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
+          >
+            <Icon name="ph:plus" width={12} className="shrink-0 text-[var(--accent-presence)]" />
+            <span className="min-w-0 flex-1 truncate">
+              {query.trim() ? `New task: “${query.trim()}”` : "New task from this chat"}
+            </span>
+            <span className="shrink-0 text-[var(--text-muted)]">
+              {busyId === "__new__" ? "creating…" : "inbox"}
+            </span>
+          </button>
+        ) : null}
         {cards === null ? (
-          <div className="px-2.5 py-2 text-[11px] text-[var(--text-muted)]">Loading tasks…</div>
+          <div className="px-2.5 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">Loading tasks…</div>
         ) : results.length === 0 ? (
-          <div className="px-2.5 py-2 text-[11px] text-[var(--text-muted)]">
+          <div className="px-2.5 py-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">
             {query ? "No matches." : "No other tasks to link."}
           </div>
         ) : (
@@ -124,7 +182,7 @@ export function TaskLinkPicker({
               type="button"
               disabled={busyId !== null}
               onClick={() => void assign(card)}
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[length:var(--text-sm)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
             >
               <Icon name="ph:kanban" width={12} className="shrink-0 text-[var(--accent-presence)]" />
               <span className="min-w-0 flex-1 truncate">{card.title}</span>

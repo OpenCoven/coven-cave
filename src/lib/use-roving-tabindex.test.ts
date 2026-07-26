@@ -63,4 +63,32 @@ assert.match(
   "clamps activeIndex when the item list shrinks",
 );
 
+// Ignores keystrokes originating in an editable field, so arrow/Home/End move
+// the text caret (e.g. an inline rename input) instead of roving focus.
+assert.match(
+  source,
+  /isContentEditable\s*\|\|\s*\/\^\(INPUT\|TEXTAREA\|SELECT\)\$\/\.test\(\s*t\.tagName\s*\)/,
+  "does not rove while typing in an input/textarea/select/contentEditable",
+);
+
+// Modified arrows (Alt/Cmd/Ctrl) are not roving — they pass through so the
+// focused item can own them (e.g. Alt+↑/↓ to nudge a calendar event's time).
+assert.match(
+  source,
+  /if \(e\.altKey \|\| e\.metaKey \|\| e\.ctrlKey\) return;/,
+  "roving ignores modified arrow keys",
+);
+
+// 2-D grid roving (cave-zqsj): with `columns` set, ↑/↓ move by a whole row,
+// and a row-step off the top/bottom edge stays put instead of clamping (which
+// would slide the focus into a different column).
+assert.match(source, /columns\?\: number/, "hook exposes a columns option for grid roving");
+assert.match(source, /move\(columns \?\? 1\)/, "ArrowDown moves a whole row in grid mode");
+assert.match(source, /move\(-\(columns \?\? 1\)\)/, "ArrowUp moves a whole row in grid mode");
+assert.match(
+  source,
+  /columns && Math\.abs\(delta\) > 1 && \(next < 0 \|\| next >= items\.length\)/,
+  "a grid row-step off the edge is a no-op, not a clamp",
+);
+
 console.log("use-roving-tabindex.test.ts OK");

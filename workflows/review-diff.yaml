@@ -2,7 +2,7 @@ id: review-diff
 version: 0.1.0
 name: Review Diff
 summary: Inspect a diff or PR for correctness, security, regressions, and missing verification.
-familiar: cody
+familiar: code
 pattern: adversarial-verification
 tags:
   - code
@@ -26,28 +26,28 @@ steps:
   - id: load-context
     kind: agent
     name: Load context
-    uses: cody
+    uses: code
     summary: Read the diff, requirements, related tests, and touched ownership boundaries.
     requires:
       - input
   - id: inspect-behavior
     kind: agent
     name: Inspect behavior
-    uses: cody
+    uses: code
     summary: Look for correctness, data, security, lifecycle, and compatibility regressions.
     requires:
       - load-context
   - id: inspect-verification
     kind: agent
     name: Inspect verification
-    uses: cody
+    uses: code
     summary: Check whether tests and proof match the change's risk and blast radius.
     requires:
       - load-context
   - id: adversarial-pass
     kind: agent
     name: Adversarial pass
-    uses: cody
+    uses: code
     summary: Try to disprove the apparent safety of the change and reduce false positives.
     requires:
       - inspect-behavior

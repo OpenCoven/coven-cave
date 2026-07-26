@@ -70,6 +70,7 @@ export async function POST(req: Request) {
     body: {
       projectRoot,
       harness,
+      model: binding.model,
       prompt,
       cols,
       rows,

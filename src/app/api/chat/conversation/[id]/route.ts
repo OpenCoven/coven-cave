@@ -1,18 +1,29 @@
-import { NextResponse } from "next/server";
+// The explicit .js extension (matching src/app/api/voice/**/route.ts) lets
+// route.test.ts import this module directly under plain Node ESM resolution,
+// which — unlike Next's bundler — needs the real subpath: `next` ships no
+// "exports" map, so the extensionless "next/server" specifier 404s outside
+// Next's own resolver.
+import { NextResponse } from "next/server.js";
 import { cleanModelId } from "@/lib/chat-model-state";
 import {
   isSafeConversationSessionId,
   deleteConversation,
   loadConversation,
   saveConversation,
+  withConversationLock,
   type ChatTurn,
   type ConversationFile,
 } from "@/lib/cave-conversations";
 import { linkedContextForSession } from "@/lib/chat-linked-context";
+import { unlinkSessionFromCards } from "@/lib/cave-board";
 import { loadConversationFromJsonl } from "@/lib/openclaw-conversation";
 import { loadState, recordSessionFamiliar, sacrificeSessionLocal } from "@/lib/cave-config";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { normalizeTurnUsage, parseCostUsd } from "@/lib/usage-format";
+import {
+  checkTurnBounds,
+  sanitizeClientTurns,
+} from "@/lib/server/conversation-write-guards";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,6 +37,7 @@ type ConversationWriteBody = {
   updatedAt?: string;
   turn?: unknown;
   turns?: unknown[];
+  activeLeafId?: unknown;
 };
 
 type ConversationPatchBody = {
@@ -35,6 +47,7 @@ type ConversationPatchBody = {
     applicationState?: unknown;
     reason?: unknown;
   } | null;
+  activeLeafId?: unknown;
 };
 
 function jsonError(error: string, status: number) {
@@ -59,6 +72,39 @@ function normalizeTurn(input: unknown): ChatTurn | null {
   const now = new Date().toISOString();
   const usage = normalizeTurnUsage(value.usage);
   const costUsd = parseCostUsd(value.costUsd);
+  const reasoningEffort =
+    value.reasoningEffort === "low"
+    || value.reasoningEffort === "medium"
+    || value.reasoningEffort === "high"
+      ? value.reasoningEffort
+      : undefined;
+  const responseSpeed =
+    value.responseSpeed === "fast"
+    || value.responseSpeed === "balanced"
+    || value.responseSpeed === "careful"
+      ? value.responseSpeed
+      : undefined;
+  const modelOverride = cleanModelId(value.modelOverride);
+  const progress = Array.isArray(value.progress)
+    ? value.progress.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const item = entry as NonNullable<ChatTurn["progress"]>[number];
+      if (
+        typeof item.id !== "string"
+        || typeof item.label !== "string"
+        || typeof item.createdAt !== "string"
+        || (item.status !== "running" && item.status !== "done" && item.status !== "error")
+      ) return [];
+      return [{
+        id: item.id,
+        label: item.label,
+        ...(typeof item.detail === "string" ? { detail: item.detail } : {}),
+        status: item.status,
+        createdAt: item.createdAt,
+        ...(typeof item.durationMs === "number" && Number.isFinite(item.durationMs) ? { durationMs: item.durationMs } : {}),
+      }];
+    })
+    : undefined;
   return {
     id: typeof value.id === "string" && value.id.trim() ? value.id : crypto.randomUUID(),
     role: value.role,
@@ -66,6 +112,13 @@ function normalizeTurn(input: unknown): ChatTurn | null {
     ...(Array.isArray(value.attachments) ? { attachments: value.attachments } : {}),
     ...(typeof value.reasoning === "string" ? { reasoning: value.reasoning } : {}),
     ...(Array.isArray(value.tools) ? { tools: value.tools } : {}),
+    ...(progress?.length ? { progress } : {}),
+    ...(typeof value.parentId === "string" || value.parentId === null
+      ? { parentId: value.parentId }
+      : {}),
+    ...(typeof value.harnessSessionId === "string"
+      ? { harnessSessionId: value.harnessSessionId }
+      : {}),
     createdAt:
       typeof value.createdAt === "string" && value.createdAt.trim()
         ? value.createdAt
@@ -75,6 +128,9 @@ function normalizeTurn(input: unknown): ChatTurn | null {
     ...(typeof value.cancelled === "boolean" ? { cancelled: value.cancelled } : {}),
     ...(usage ? { usage } : {}),
     ...(costUsd !== undefined ? { costUsd } : {}),
+    ...(value.role === "user" && reasoningEffort ? { reasoningEffort } : {}),
+    ...(value.role === "user" && responseSpeed ? { responseSpeed } : {}),
+    ...(value.role === "user" && modelOverride ? { modelOverride } : {}),
   };
 }
 
@@ -115,6 +171,9 @@ function buildConversation(args: {
   return {
     sessionId: args.id,
     ...(args.existing?.harnessSessionId ? { harnessSessionId: args.existing.harnessSessionId } : {}),
+    ...(args.existing?.grokSandboxProfile
+      ? { grokSandboxProfile: args.existing.grokSandboxProfile }
+      : {}),
     familiarId,
     harness,
     ...(args.existing?.model ? { model: args.existing.model } : {}),
@@ -130,6 +189,11 @@ function buildConversation(args: {
         ? args.body.updatedAt
         : args.existing?.updatedAt ?? now,
     turns: args.turns,
+    ...(typeof args.body.activeLeafId === "string" && args.body.activeLeafId
+      ? { activeLeafId: args.body.activeLeafId }
+      : args.existing?.activeLeafId
+        ? { activeLeafId: args.existing.activeLeafId }
+        : {}),
   };
 }
 
@@ -183,12 +247,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!turns || turns.length === 0) {
     return jsonError("turn or turns required", 400);
   }
+  // Client writers cannot forge harness telemetry onto assistant/system turns.
+  const safeTurns = sanitizeClientTurns(turns);
   const existing = await loadConversation(id);
+  const merged = [...(existing?.turns ?? []), ...safeTurns];
+  const bounds = checkTurnBounds(merged);
+  if (bounds) return jsonError(bounds.error, bounds.status);
   const conversation = buildConversation({
     id,
     body,
     existing,
-    turns: [...(existing?.turns ?? []), ...turns],
+    turns: merged,
   });
   if (!conversation) {
     return jsonError("familiarId and harness are required for new history", 400);
@@ -210,8 +279,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
   const turns = normalizeTurns(body);
   if (!turns) return jsonError("turns required", 400);
+  // Client writers cannot forge harness telemetry onto assistant/system turns.
+  const safeTurns = sanitizeClientTurns(turns);
+  const bounds = checkTurnBounds(safeTurns);
+  if (bounds) return jsonError(bounds.error, bounds.status);
   const existing = await loadConversation(id);
-  const conversation = buildConversation({ id, body, existing, turns });
+  const conversation = buildConversation({ id, body, existing, turns: safeTurns });
   if (!conversation) {
     return jsonError("familiarId and harness are required", 400);
   }
@@ -236,47 +309,82 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return jsonError("invalid json body", 400);
   }
 
-  const existing = await loadConversation(id);
-  if (!existing) return jsonError("not found", 404);
+  return withConversationLock(id, async () => {
+    const existing = await loadConversation(id);
+    if (!existing) return jsonError("not found", 404);
 
-  if (body.modelIntent === null) {
-    delete existing.modelIntent;
-    await saveConversation(existing);
-    return NextResponse.json({ ok: true, conversation: existing });
-  }
-
-  if (body.modelIntent !== undefined) {
-    if (!body.modelIntent || typeof body.modelIntent !== "object" || Array.isArray(body.modelIntent)) {
-      return jsonError("invalid model intent", 400);
+    if (typeof body.activeLeafId === "string" && body.activeLeafId) {
+      // Reject a leaf that isn't an actual turn — persisting a bogus id would make
+      // resolveActivePath silently fall back to showing every turn unfiltered.
+      if (!existing.turns.some((turn) => turn.id === body.activeLeafId)) {
+        return jsonError("unknown activeLeafId", 400);
+      }
+      existing.activeLeafId = body.activeLeafId;
+      await saveConversation(existing);
+      return NextResponse.json({ ok: true, conversation: existing });
     }
-    const model = cleanModelId(body.modelIntent.model);
-    if (!model) return jsonError("invalid model", 400);
-    if (body.modelIntent.source !== "session") {
-      return jsonError("model intent source must be session", 400);
-    }
-    const reason =
-      typeof body.modelIntent.reason === "string" && body.modelIntent.reason.trim()
-        ? body.modelIntent.reason.trim()
-        : "Saved for this chat.";
-    existing.modelIntent = {
-      model,
-      source: "session",
-      applicationState: "saved",
-      reason,
-    };
-    await saveConversation(existing);
-    return NextResponse.json({ ok: true, conversation: existing });
-  }
 
-  return jsonError("nothing to patch", 400);
+    if (body.modelIntent === null) {
+      delete existing.modelIntent;
+      await saveConversation(existing);
+      return NextResponse.json({ ok: true, conversation: existing });
+    }
+
+    if (body.modelIntent !== undefined) {
+      if (!body.modelIntent || typeof body.modelIntent !== "object" || Array.isArray(body.modelIntent)) {
+        return jsonError("invalid model intent", 400);
+      }
+      const model = cleanModelId(body.modelIntent.model);
+      if (!model) return jsonError("invalid model", 400);
+      if (body.modelIntent.source !== "session") {
+        return jsonError("model intent source must be session", 400);
+      }
+      const reason =
+        typeof body.modelIntent.reason === "string" && body.modelIntent.reason.trim()
+          ? body.modelIntent.reason.trim()
+          : "Saved for this chat.";
+      existing.modelIntent = {
+        model,
+        source: "session",
+        applicationState: "saved",
+        reason,
+      };
+      await saveConversation(existing);
+      return NextResponse.json({ ok: true, conversation: existing });
+    }
+
+    return jsonError("nothing to patch", 400);
+  });
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
   }
+
+  // Voice new-chat discard (?ifEmpty=1): the caller only wants to clean up a
+  // conversation that never got a turn — never sacrifice here. Sacrificing
+  // would permanently hide the session from every list if an in-flight first
+  // exchange (chat/send survives transport aborts) recreates the file right
+  // after this delete lands; skipping it means a recreated file simply
+  // resurfaces in the rail (correct — the data is real), and a truly-empty
+  // delete leaves nothing to hide since local session rows derive from the
+  // conversation files themselves.
+  if (new URL(req.url).searchParams.get("ifEmpty") === "1") {
+    const existing = await loadConversation(id);
+    if (!existing || existing.turns.length > 0) {
+      return NextResponse.json({ ok: true, deleted: false });
+    }
+    const deleted = await deleteConversation(id);
+    return NextResponse.json({ ok: true, deleted });
+  }
+
+  // Default: an explicit user-initiated delete. Sacrifice keeps a
+  // recreated-later file (e.g. a stale client retrying) from resurrecting a
+  // session the user deliberately removed — other callers depend on this.
   const deleted = await deleteConversation(id);
   const sacrificedAt = await sacrificeSessionLocal(id);
-  return NextResponse.json({ ok: true, deleted, sacrificedAt });
+  const unlinkedCards = await unlinkSessionFromCards(id);
+  return NextResponse.json({ ok: true, deleted, sacrificedAt, unlinkedCards });
 }

@@ -1,0 +1,229 @@
+{
+  "schemaVersion": "opencoven.knowledge-pack.v1",
+  "id": "worldbuilding",
+  "displayName": "Worldbuilding",
+  "description": "A living encyclopedia of your story world \u2014 characters, settings, themes, factions, and lore, linked into one graph an agent grows and guards as you write.",
+  "version": "0.1.0",
+  "defaultRoot": "world",
+  "folders": [
+    {
+      "id": "characters",
+      "name": "Characters",
+      "description": "People, creatures, viewpoint voices, and recurring named entities in the story world.",
+      "storyQuestion": "Who?",
+      "entityType": "character",
+      "fields": [
+        {
+          "key": "type",
+          "label": "Type",
+          "options": [
+            "PC",
+            "NPC"
+          ]
+        },
+        {
+          "key": "status",
+          "label": "Status",
+          "options": [
+            "alive",
+            "dead",
+            "unknown"
+          ]
+        },
+        {
+          "key": "faction",
+          "label": "Faction"
+        },
+        {
+          "key": "firstAppearance",
+          "label": "First appearance"
+        }
+      ],
+      "templates": [
+        "character"
+      ]
+    },
+    {
+      "id": "settings",
+      "name": "Settings",
+      "description": "Places, routes, regions, rooms, realms, and atmospheric locations where scenes unfold.",
+      "storyQuestion": "Where?",
+      "entityType": "setting",
+      "fields": [
+        {
+          "key": "region",
+          "label": "Region"
+        },
+        {
+          "key": "controllingFaction",
+          "label": "Controlling faction"
+        },
+        {
+          "key": "dangerLevel",
+          "label": "Danger level"
+        }
+      ],
+      "templates": [
+        "setting"
+      ]
+    },
+    {
+      "id": "themes",
+      "name": "Themes",
+      "description": "Recurring tensions, motifs, questions, and symbolic pressures that give the world meaning.",
+      "storyQuestion": "Why?",
+      "entityType": "theme",
+      "fields": [
+        {
+          "key": "tension",
+          "label": "Tension"
+        }
+      ],
+      "templates": [
+        "theme"
+      ]
+    },
+    {
+      "id": "factions",
+      "name": "Factions",
+      "description": "Political, social, criminal, magical, and religious groups with agendas and alliances.",
+      "storyQuestion": "Who's aligned with whom?",
+      "entityType": "faction",
+      "fields": [
+        {
+          "key": "type",
+          "label": "Type",
+          "options": [
+            "political",
+            "social",
+            "criminal",
+            "magical",
+            "religious"
+          ]
+        },
+        {
+          "key": "alignment",
+          "label": "Alignment"
+        },
+        {
+          "key": "leader",
+          "label": "Leader"
+        },
+        {
+          "key": "headquarters",
+          "label": "Headquarters"
+        }
+      ],
+      "templates": [
+        "faction",
+        "political-faction",
+        "religion"
+      ]
+    },
+    {
+      "id": "lore",
+      "name": "Lore",
+      "description": "History, mythology, cosmology, magic systems, and hard truths about how the world works.",
+      "storyQuestion": "What's true about the world?",
+      "entityType": "lore",
+      "fields": [
+        {
+          "key": "kind",
+          "label": "Kind",
+          "options": [
+            "history",
+            "mythology",
+            "cosmology",
+            "magic-system"
+          ]
+        },
+        {
+          "key": "era",
+          "label": "Era"
+        }
+      ],
+      "templates": [
+        "lore",
+        "magic-system",
+        "historical-event"
+      ]
+    }
+  ],
+  "templates": [
+    {
+      "id": "character",
+      "folder": "characters",
+      "name": "Character",
+      "description": "A canon page for a person, creature, or recurring voice.",
+      "path": "templates/character.md"
+    },
+    {
+      "id": "setting",
+      "folder": "settings",
+      "name": "Setting",
+      "description": "A canon page for a place, route, region, or atmosphere-heavy location.",
+      "path": "templates/setting.md"
+    },
+    {
+      "id": "theme",
+      "folder": "themes",
+      "name": "Theme",
+      "description": "A page for a recurring tension, motif, or story question.",
+      "path": "templates/theme.md"
+    },
+    {
+      "id": "faction",
+      "folder": "factions",
+      "name": "Faction",
+      "description": "A generic faction page for groups with agendas and relationships.",
+      "path": "templates/faction.md"
+    },
+    {
+      "id": "political-faction",
+      "folder": "factions",
+      "name": "Political faction",
+      "description": "A faction page for parties, councils, states, houses, and political blocs.",
+      "path": "templates/political-faction.md"
+    },
+    {
+      "id": "religion",
+      "folder": "factions",
+      "name": "Religion",
+      "description": "A faction page for faiths, cults, temples, orders, and schisms.",
+      "path": "templates/religion.md"
+    },
+    {
+      "id": "lore",
+      "folder": "lore",
+      "name": "Lore",
+      "description": "A generic lore page for world truths, myths, and contested knowledge.",
+      "path": "templates/lore.md"
+    },
+    {
+      "id": "magic-system",
+      "folder": "lore",
+      "name": "Magic system",
+      "description": "A lore page for supernatural rules, costs, limits, and practitioners.",
+      "path": "templates/magic-system.md"
+    },
+    {
+      "id": "historical-event",
+      "folder": "lore",
+      "name": "Historical event",
+      "description": "A lore page for dated events, causes, consequences, and contested accounts.",
+      "path": "templates/historical-event.md"
+    }
+  ],
+  "skills": [
+    "worldbuilding"
+  ],
+  "prompts": [
+    "update-world-encyclopedia",
+    "thread-world-graph",
+    "pre-reveal-continuity-audit",
+    "world-dead-link-audit"
+  ],
+  "workflows": [
+    "worldbuilding-audit"
+  ]
+}

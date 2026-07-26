@@ -1,0 +1,24 @@
+{
+  "name": "nuget",
+  "version": "0.1.0",
+  "description": "Real-time NuGet package info, vulnerability remediation, and upgrade planning for .NET.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "NuGet",
+    "shortDescription": "Real-time NuGet package info, vulnerability remediation, and upgrade planning for .NET.",
+    "longDescription": "Use NuGet MCP for current package versions and vulnerability-aware dependency choices.",
+    "developerName": "OpenCoven",
+    "category": "Developer Tools",
+    "capabilities": [
+      "nuget",
+      "dotnet",
+      "packages",
+      "dependencies",
+      "security"
+    ],
+    "defaultPrompt": "Help me use NuGet safely."
+  }
+}

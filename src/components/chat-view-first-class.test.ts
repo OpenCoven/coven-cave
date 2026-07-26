@@ -3,36 +3,52 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
+// attachmentIcon (and fileToAttachment/isTextLike) moved to the shared lib so
+// the home composer can reuse the exact same capture + glyph logic.
+const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
+// The auto-grow routine moved to the shared hook (use-autogrow-textarea) so the
+// chat and home composers can't drift; the growth-behavior pins live against
+// the hook source, with call-site pins keeping both composers on it.
+const autogrowHook = readFileSync(new URL("../lib/use-autogrow-textarea.ts", import.meta.url), "utf8");
+const homeComposerSource = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
 
 assert.match(
-  source,
-  /function resizeComposer\(\)[\s\S]*?Math\.min\(el\.scrollHeight,\s*maxHeight\)/,
-  "Chat composer should auto-grow up to a bounded height",
+  autogrowHook,
+  /Math\.min\(el\.scrollHeight,\s*maxHeight\)/,
+  "Composer textareas should auto-grow up to a bounded height",
 );
 
 assert.match(
   source,
-  /const COMPOSER_MAX_HEIGHT = 220;/,
-  "Chat composer should keep its scroll threshold aligned with the 6-8 row desktop height",
+  /const COMPOSER_MAX_HEIGHT = 332;/,
+  "Chat composer should keep its scroll threshold aligned with the 13-row desktop height",
 );
 
 assert.match(
-  source,
-  /const computedMaxHeight = Number\.parseFloat\(window\.getComputedStyle\(el\)\.maxHeight\);[\s\S]*const maxHeight = Number\.isFinite\(computedMaxHeight\) \? computedMaxHeight : COMPOSER_MAX_HEIGHT;/,
-  "Chat composer should honor the responsive CSS max-height while resizing",
+  autogrowHook,
+  /const computedMaxHeight = Number\.parseFloat\(window\.getComputedStyle\(el\)\.maxHeight\);[\s\S]*const maxHeight = Number\.isFinite\(computedMaxHeight\) \? computedMaxHeight : fallbackMaxHeight;/,
+  "Composer auto-grow should honor the responsive CSS max-height while resizing",
 );
 
 assert.match(
-  source,
+  autogrowHook,
   /const isOverflowing = el\.scrollHeight > maxHeight;[\s\S]*el\.style\.overflowY = isOverflowing \? "auto" : "hidden";/,
-  "Chat composer should only enable internal scrolling after it reaches the height cap",
+  "Composer auto-grow should only enable internal scrolling after it reaches the height cap",
 );
 
 assert.match(
   source,
-  /useEffect\(\(\) => \{[\s\S]*resizeComposer\(\)[\s\S]*\}, \[input\]\)/,
-  "Chat composer should resize whenever input text changes",
+  /useAutogrowTextarea\(inputRef, input, \{ fallbackMaxHeight: COMPOSER_MAX_HEIGHT \}\)/,
+  "Chat composer should resize through the shared auto-grow hook whenever input changes",
+);
+
+assert.match(
+  homeComposerSource,
+  /useAutogrowTextarea\(textareaRef, text, \{\s*fallbackMaxHeight: HOME_COMPOSER_MAX_HEIGHT,?\s*\}\)/,
+  "Home composer should share the same auto-grow hook (parity with chat)",
 );
 
 assert.match(
@@ -55,8 +71,30 @@ assert.match(
 
 assert.match(
   source,
-  /aria-label="Add files"/,
-  "Add button should have an explicit accessible label",
+  /const CHAT_ATTACHMENT_ACCEPT = \[[\s\S]*"image\/\*"[\s\S]*"video\/\*"[\s\S]*"application\/pdf"[\s\S]*"\.md"[\s\S]*"\.json"[\s\S]*\]\.join\(","\)/,
+  "Chat attachments should explicitly accept images, videos, documents, and common text/code files",
+);
+
+assert.match(
+  source,
+  /accept=\{CHAT_ATTACHMENT_ACCEPT\}/,
+  "The hidden file input behind the direct attachment button should use the shared attachment accept list",
+);
+
+assert.match(
+  source,
+  /attach=\{\{\s*\n\s*onSelect: \(\) => fileInputRef\.current\?\.click\(\)/,
+  "The attachment action should ride the grouped Chat options menu (Add files or photos)",
+);
+
+const addMenuSource = readFileSync(
+  new URL("./composer-add-menu.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  addMenuSource,
+  /ariaLabel="Attach images, videos, or files"/,
+  "The shared add-menu attach row should keep an explicit accessible label",
 );
 
 assert.match(
@@ -78,39 +116,68 @@ assert.match(
 );
 
 assert.match(
-  source,
-  /className="cave-composer-action-row"[\s\S]*aria-label="Add files"[\s\S]*aria-label="Send message"/,
-  "Composer should keep Add and Send in the primary row above the dropdown divider",
+  attachmentsLib,
+  /function attachmentIcon[\s\S]*startsWith\("image\/"\)[\s\S]*"ph:camera"[\s\S]*startsWith\("video\/"\)[\s\S]*"ph:video"[\s\S]*"ph:paperclip"/,
+  "Attachment chips should distinguish images and videos from generic files",
 );
 
 assert.match(
   source,
-  /className="cave-composer-divider" aria-hidden \/>[\s\S]*className="cave-composer-settings-row" aria-label="Chat response controls"/,
-  "Composer should render a divider line above the model/thinking/speed dropdown row",
+  /className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerActionsMenu[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Send message"/,
+  "Composer should keep voice, grouped options (attach inside), and send actions in the footer row",
+);
+assert.match(
+  addMenuSource,
+  /ariaLabel="Attach images, videos, or files"[\s\S]{0,400}?icon="ph:paperclip"|icon="ph:paperclip"[\s\S]{0,400}?ariaLabel="Attach images, videos, or files"/,
+  "the menu's Attach row keeps the paperclip affordance",
 );
 
 assert.match(
   source,
-  /<ChatModelControl state=\{modelState\} onSelectModel=\{handleSelectModel\} busy=\{busy\} \/>[\s\S]*label="Thinking"[\s\S]*label="Speed"/,
-  "Composer dropdown row should expose model, thinking, and speed controls",
+  /className="cave-composer-utility-row"[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue/,
+  "Composer places the grouped Chat options menu in the utility row",
 );
 
 assert.match(
   source,
-  /className="cave-composer-select__value" aria-hidden[\s\S]*\{selected\}/,
-  "Composer select pills should render a separate visual value so the native select can own the whole hit target",
+  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*"Model"[\s\S]*label:\s*"Thinking"[\s\S]*label:\s*"Speed"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
+  "The grouped Response section exposes Access, Model, Thinking, and Speed controls in order",
 );
+assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
+// "Both" reconciliation (2026-07-21): the context pill returned with the
+// footer band — but only there, never back in the control row.
+assert.equal(
+  source.match(/<ComposerContextChips/g)?.length,
+  1,
+  "the context chips mount exactly once — in the footer band",
+);
+assert.match(
+  source,
+  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips/,
+  "the context chips live in the footer band, not the control row",
+);
+assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
+
+// Model selection moved out of the composer UI into the /model slash command.
+assert.doesNotMatch(source, /ChatModelControl/, "the model picker is gone from the chat composer");
+assert.match(source, /command === "\/model"/, "the chat composer handles the /model command");
+
+// Options render as inline radio pills — no nested StandardSelect popover in the panel.
+const optionsSource = readFileSync(new URL("./composer-options-menu.tsx", import.meta.url), "utf8");
+assert.match(optionsSource, /role="radio"/, "Options choices are radio pills");
+assert.match(optionsSource, /composer-options__choice/, "Options choices use the choice-pill class");
+assert.doesNotMatch(source, /StandardSelect/, "the composer no longer wraps controls in StandardSelect pills");
 
 assert.match(
   source,
-  /reasoningEffort: thinkingEffort,[\s\S]*responseSpeed,/,
+  /reasoningEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed,/,
   "Send payload should include thinking and speed control values",
 );
 
 assert.match(
   styles,
-  /\.cave-composer-input\s*\{[\s\S]*min-height:\s*96px[\s\S]*max-height:\s*220px[\s\S]*overflow-x:\s*hidden[\s\S]*overflow-y:\s*hidden/,
-  "Composer textarea should start taller without showing scroll overflow",
+  /\.cave-composer-input\s*\{[\s\S]*min-height:\s*44px[\s\S]*max-height:\s*332px[\s\S]*overflow-x:\s*hidden[\s\S]*overflow-y:\s*hidden/,
+  "Composer textarea should start compact (single line) and grow to a 13-line cap without showing scroll overflow",
 );
 
 assert.match(
@@ -121,14 +188,8 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-composer-settings-row\s*\{[\s\S]*flex-wrap:\s*wrap[\s\S]*overflow-x:\s*visible/,
-  "Composer settings row should wrap controls instead of clipping or hiding available row width",
-);
-
-assert.match(
-  styles,
-  /\.cave-composer-select select\s*\{[\s\S]*position:\s*absolute[\s\S]*inset:\s*0[\s\S]*width:\s*100%[\s\S]*height:\s*100%[\s\S]*opacity:\s*0/,
-  "Composer select should cover the full pill so clicking anywhere opens the dropdown",
+  /\.composer-options__choices\s*\{[\s\S]*flex-wrap:\s*wrap/,
+  "Options menu choices wrap instead of clipping when a control has many options",
 );
 
 console.log("chat-view-first-class.test.ts: ok");

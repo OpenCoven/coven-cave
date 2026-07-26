@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 import path from "node:path";
 
 /**
@@ -25,12 +26,12 @@ type RunsFile = { version: 1; runs: WorkflowRunRecord[] };
 function runsPath(): string {
   const override = process.env.COVEN_WORKFLOW_RUNS_PATH?.trim();
   if (override) return override;
-  return path.join(homedir(), ".coven", "workflow-runs.json");
+  return path.join(/* turbopackIgnore: true */ homedir(), ".coven", "workflow-runs.json");
 }
 
 async function loadRunsFile(): Promise<RunsFile> {
   try {
-    const text = await readFile(runsPath(), "utf8");
+    const text = await readFile(/* turbopackIgnore: true */ runsPath(), "utf8");
     const parsed = JSON.parse(text) as RunsFile;
     if (parsed && Array.isArray(parsed.runs)) return { version: 1, runs: parsed.runs };
   } catch {
@@ -55,8 +56,8 @@ export async function recordRun(input: Omit<WorkflowRunRecord, "id">): Promise<W
     const file = await loadRunsFile();
     file.runs.unshift(record);
     if (file.runs.length > RUNS_HISTORY_CAP) file.runs.length = RUNS_HISTORY_CAP;
-    await mkdir(path.dirname(runsPath()), { recursive: true });
-    await writeFile(runsPath(), JSON.stringify(file, null, 2), "utf8");
+    await mkdir(/* turbopackIgnore: true */ path.dirname(runsPath()), { recursive: true });
+    await writeJsonAtomic(/* turbopackIgnore: true */ runsPath(), file);
   });
   return record;
 }
@@ -79,8 +80,8 @@ export async function clearRuns(workflowId?: string): Promise<number> {
     file.runs = workflowId ? file.runs.filter((run) => run.workflowId !== workflowId) : [];
     const removed = before - file.runs.length;
     if (removed > 0) {
-      await mkdir(path.dirname(runsPath()), { recursive: true });
-      await writeFile(runsPath(), JSON.stringify(file, null, 2), "utf8");
+      await mkdir(/* turbopackIgnore: true */ path.dirname(runsPath()), { recursive: true });
+      await writeJsonAtomic(/* turbopackIgnore: true */ runsPath(), file);
     }
     return removed;
   });

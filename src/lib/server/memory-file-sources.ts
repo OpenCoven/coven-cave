@@ -58,6 +58,20 @@ async function isRealPathWithinAllowedRoot(targetPath: string, allowedRoot: stri
   return isWithinRoot(realTarget, realRoot);
 }
 
+/** Resolve an existing file and reject lexical traversal and symlink escapes. */
+export async function resolveAllowedFileReadPath(fullPath: string, allowedRoot: string): Promise<string | null> {
+  const resolved = path.resolve(/* turbopackIgnore: true */ fullPath);
+  const root = path.resolve(/* turbopackIgnore: true */ allowedRoot);
+  if (!isWithinRoot(resolved, root)) return null;
+
+  const [realTarget, realRoot] = await Promise.all([
+    realpathIfPresent(resolved),
+    realpathIfPresent(root),
+  ]);
+  if (realTarget === null || realRoot === null || !isWithinRoot(realTarget, realRoot)) return null;
+  return realTarget;
+}
+
 function familiarAllowedRootPath(fullPath: string, classification: MemoryFileClassification): string | null {
   if (!classification.familiarId) return null;
   const familiarRoot = classification.rootPath;
@@ -202,19 +216,28 @@ export async function resolveAllowedMemoryFileReadPath(fullPath: string, home = 
   const classification = classifyMemoryFilePath(fullPath, home);
   if (!classification) return null;
 
+  // Re-derive the canonical target from the classification's root plus the
+  // relative remainder, and re-check containment on the exact value every fs
+  // call below receives. `classifyMemoryFilePath` already proved containment,
+  // but proving it again on the used value keeps the guard adjacent to the
+  // sinks (and legible to static analysis).
+  const resolvedRoot = path.resolve(/* turbopackIgnore: true */ classification.rootPath);
+  const resolved = path.resolve(/* turbopackIgnore: true */ fullPath);
+  if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + path.sep)) return null;
+
   let fileStat;
   try {
-    fileStat = await lstat(/* turbopackIgnore: true */ fullPath);
+    fileStat = await lstat(/* turbopackIgnore: true */ resolved);
   } catch {
     return null;
   }
   if (!fileStat.isFile()) return null;
 
   const allowedRoot = classification.familiarId
-    ? familiarAllowedRootPath(fullPath, classification)
+    ? familiarAllowedRootPath(resolved, classification)
     : classification.rootPath;
   if (!allowedRoot) return null;
 
-  if (!(await isRealPathWithinAllowedRoot(fullPath, allowedRoot))) return null;
-  return await realpath(/* turbopackIgnore: true */ fullPath);
+  if (!(await isRealPathWithinAllowedRoot(resolved, allowedRoot))) return null;
+  return await realpath(/* turbopackIgnore: true */ resolved);
 }

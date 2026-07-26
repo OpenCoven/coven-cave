@@ -9,6 +9,8 @@ import {
 } from "../lib/chat-session-prefs.ts";
 
 const source = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
+const primitives = readFileSync(new URL("./chat-list-primitives.tsx", import.meta.url), "utf8");
+const model = readFileSync(new URL("../lib/chat-list-model.ts", import.meta.url), "utf8");
 
 assert.doesNotMatch(
   source,
@@ -30,8 +32,8 @@ assert.match(
 
 assert.match(
   source,
-  /onSessionsChanged\?\.\(\)/,
-  "ChatList should ask the shell to refresh sessions after deleting a chat",
+  /onSessionsDeleted\(\[sessionId\]\)/,
+  "ChatList should report a confirmed single delete to the Workspace boundary",
 );
 
 assert.match(
@@ -82,16 +84,19 @@ assert.deepEqual(
 assert.equal(sorted[1], groups[1], "groups without pins keep their reference");
 assert.equal(sortPinnedFirst(groups, []), groups, "no pins → groups returned untouched");
 
-// ChatList wiring: persisted pin state drives a pinned-first ordering.
+// ChatList wiring: the shared cross-surface pin store drives a pinned-first
+// ordering. ChatList must NOT keep a private useState copy of the pin list —
+// that's the stale-clobber bug (pin in the thread rail, then pin here, and the
+// stale copy overwrote the first pin on write).
 assert.match(
   source,
-  /setPinnedIds\(readPinnedSessions\(\)\)/,
-  "ChatList should hydrate pinned ids from the localStorage store after mount",
+  /const pinnedIds = usePinnedSessions\(\)/,
+  "ChatList should read pinned ids from the shared subscribable store",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /window\.localStorage\.setItem\(PINNED_SESSIONS_KEY, JSON\.stringify\(pinnedIds\)\)/,
-  "ChatList should persist pin toggles back to the localStorage store",
+  /setPinnedIds/,
+  "ChatList must not hold a private pin-list state that can clobber other surfaces",
 );
 assert.match(
   source,
@@ -100,7 +105,7 @@ assert.match(
 );
 assert.match(
   source,
-  /togglePinnedSession\(prev, sessionId\)/,
+  /toggleStoredPinnedSession\(sessionId\)/,
   "ChatList pin action should toggle through the shared store helper",
 );
 assert.match(
@@ -116,10 +121,10 @@ assert.match(source, /from "@dnd-kit\/core"/, "ChatList should use @dnd-kit for 
 assert.match(source, /const displayIds = useMemo\([\s\S]*displayGroups\.flatMap\(\(group\) => group\.sessions\.map\(\(session\) => session\.id\)\)/, "ChatList should derive one flat list of visible sortable ids");
 assert.match(source, /<DndContext[\s\S]*onDragEnd=\{\(event\) => handleDragEnd\(event, displayIds\)\}/, "The visible chat list should wire drag end with all displayed ids");
 assert.match(source, /<SortableContext items=\{displayIds\} strategy=\{verticalListSortingStrategy\}/, "All visible chat rows should share one SortableContext");
-assert.match(source, /useSortable\(\{ id \}\)/, "ChatList rows should be individually sortable by session id");
+assert.match(primitives, /useSortable\(\{ id \}\)/, "ChatList rows should be individually sortable by session id");
 assert.match(source, /setSessionOrder\(readSessionOrder\(\)\)/, "ChatList should hydrate the persisted manual order after mount");
-assert.match(source, /if \(effectiveSelection === "all"\) \{[\s\S]*scopedGroups\.flatMap\(\(group\) => group\.sessions\)/, "All chats should flatten groups so cross-project drag order can stick");
-assert.match(source, /partitionPinnedFirst\(sortByRecency\(rows\), pinnedIds\)/, "Pinned rows still float, over a recency-sorted rest, in the flat All chats view until manual drag order exists");
+assert.match(source, /if \(effectiveSelection === "all" && groupBy !== "project"\) \{[\s\S]*scopedGroups\.flatMap\(\(group\) => group\.sessions\)/, "All chats should flatten groups (unless grouping by project) so cross-project drag order can stick");
+assert.match(source, /partitionPinnedFirst\(sortChatRowsByRecency\(rows\), pinnedIds\)/, "Pinned rows still float, over a recency-sorted rest, in the flat All chats view until manual drag order exists");
 assert.match(source, /applyManualOrder\(group\.sessions, sessionOrder\)/, "ChatList should apply the manual order inside visible project groups");
 assert.match(source, /mergeVisibleOrder\(prev\.length > 0 \? prev : fallbackOrderIds, nextVisible\)/, "ChatList should merge dragged visible rows back into the full saved order");
 assert.match(source, /const pruned = merged\.filter\(\(id\) => liveSessionIds\.has\(id\)\)/, "ChatList should prune stale session ids before persisting drag order");
@@ -133,6 +138,26 @@ assert.match(
   source,
   /fetch\(`\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}`, \{\s*method: "PATCH",[\s\S]*?JSON\.stringify\(\{ archived \}\)/,
   "Archive action should persist through the sessions PATCH endpoint",
+);
+assert.match(
+  source,
+  /const setSessionKeep = async \(sessionId: string, keep: boolean\) =>[\s\S]*\{ keep \}/,
+  "Keep toggle should route the keep field through the sessions PATCH helper",
+);
+assert.match(
+  source,
+  /const extendSessionAutoArchive = async \(sessionId: string, days: number\) =>[\s\S]*\{ extendDays: days \}/,
+  "Auto-archive extension should route extendDays through the sessions PATCH helper",
+);
+assert.match(
+  source,
+  /OverflowMenu[\s\S]*Archive controls for chat/,
+  "Chat rows should expose an archive-controls overflow menu for keep/extend actions",
+);
+assert.match(
+  source,
+  /Extend auto-archive \+7 days[\s\S]*Extend auto-archive \+30 days/,
+  "Archive-controls menu should offer quick +7d and +30d extension actions",
 );
 assert.match(
   source,
@@ -218,11 +243,11 @@ assert.match(
 );
 assert.match(
   source,
-  /contentLoading && contentMatches\.length === 0 \?[\s\S]{0,200}?animate-pulse/,
-  "Content search shows the shimmer idiom while the first fetch is in flight",
+  /contentLoading && contentMatches\.length === 0 \?[\s\S]{0,300}?ui-skeleton/,
+  "Content search shows the shared shimmer skeleton while the first fetch is in flight",
 );
 assert.match(
-  source,
+  primitives,
   /<mark className=/,
   "The matched substring inside the snippet is highlighted with <mark>",
 );
@@ -248,20 +273,20 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /text-\[10px\] font-medium uppercase tracking-\[0\.08em\] text-\[var\(--text-muted\)\]/,
+  /text-\[length:var\(--text-2xs\)\] font-medium uppercase tracking-\[0\.08em\] text-\[var\(--text-muted\)\]/,
   "Stat labels keep the uppercase/tracking hierarchy at the lifted 10px size",
 );
 
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 assert.match(
   globals,
-  /--text-muted: color-mix\(in oklch, var\(--foreground\) 55%, transparent\);/,
-  "Dark-mode --text-muted mixes at 55% (≥4.5:1 over the panel ladder, CHAT-D13-02)",
+  /--text-muted: color-mix\(in oklch, var\(--foreground\) 72%, transparent\);/,
+  "Dark-mode --text-muted mixes at 72% — 55% passed AA only on Coven; 72% clears 4.5:1 on every premade palette (theme-contrast-audit.test.ts)",
 );
 assert.match(
   globals,
-  /--text-muted: color-mix\(in oklch, var\(--foreground\) 62%, transparent\);/,
-  "Light-mode --text-muted overrides to 62% (dark ink needs a higher mix for the same contrast)",
+  /--text-muted: color-mix\(in oklch, var\(--foreground\) 76%, transparent\);/,
+  "Light-mode --text-muted overrides to 76% (dark ink needs a higher mix for the same contrast)",
 );
 assert.doesNotMatch(
   globals,
@@ -289,14 +314,24 @@ assert.match(
 // Both pills must share one base rule so adjacent pills read as siblings.
 assert.match(
   globals,
-  /\.ui-origin-chip,\s*\.ui-initiator-chip\s*\{[\s\S]*?border-radius:\s*999px;[\s\S]*?\}/,
+  /\.ui-origin-chip,\s*\.ui-initiator-chip\s*\{[\s\S]*?border-radius:\s*var\(--radius-pill\);[\s\S]*?\}/,
   "Origin and initiator pills must share a single base chrome rule",
 );
 // The three row action buttons (pin/archive/delete) must be uniform squares.
 {
   const squares = source.match(/touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md/g) ?? [];
-  assert.equal(squares.length, 3, "pin/archive/delete must be uniform h-6 w-6 square icon buttons");
+  assert.equal(squares.length, 4, "pin/archive/debug/delete must be uniform h-6 w-6 square icon buttons");
 }
+assert.match(
+  source,
+  /aria-label=\{`Debug chat \$\{rowName\}`\}[\s\S]*?<Icon name="ph:bug-bold"/,
+  "Chat rows should expose a bug-icon Debug action next to delete",
+);
+assert.match(
+  source,
+  /requestDebugOpen\(\)/,
+  "Chat row Debug action should use the latched debug-open request (survives ChatView mounting after the dispatch)",
+);
 assert.doesNotMatch(
   source,
   /touch-always-visible shrink-0 rounded border border-\[var\(--border-hairline\)\] px-1\.5 py-0\.5/,
@@ -306,11 +341,35 @@ assert.doesNotMatch(
 // The flat "All" view sorts by recency (most-recent-first), restoring the
 // global order the per-project flatMap drops — while still honoring an explicit
 // manual drag order and floating pinned sessions first.
-assert.match(source, /function sortByRecency\(rows: SessionRow\[\]\)/, "a recency sorter exists");
+assert.match(model, /function sortChatRowsByRecency\(rows: readonly SessionRow\[\]\)/, "a recency sorter exists");
 assert.match(
   source,
-  /sessionOrder\.length === 0\s*\?\s*partitionPinnedFirst\(sortByRecency\(rows\), pinnedIds\)\s*:\s*applyManualOrder\(rows, sessionOrder\)/,
+  /sessionOrder\.length === 0\s*\?\s*partitionPinnedFirst\(sortChatRowsByRecency\(rows\), pinnedIds\)\s*:\s*applyManualOrder\(rows, sessionOrder\)/,
   "the All view sorts by recency by default, defers to manual order when the user has dragged, and keeps pinned-first",
 );
+
+// ── Bulk-select: pick several chats and delete/archive them at once ─────────
+assert.match(source, /const \[selectMode, setSelectMode\] = useState\(false\)/, "a select mode toggles bulk-select");
+assert.match(source, /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/, "selected chat ids live in a Set");
+assert.match(source, /setSelectMode\(\(v\) => !v\); setSelectedIds\(new Set\(\)\)/, "the header Select toggle clears any selection");
+assert.match(source, /useEffect\(\(\) => \{ setSelectMode\(false\); setSelectedIds\(new Set\(\)\); \}, \[familiar\?\.id\]\)/, "selection resets when the active familiar changes");
+assert.match(source, /role=\{selectMode \? "checkbox" : "button"\}/, "rows are checkboxes in select mode");
+// Row click = open (Sessions): clicking a row opens the session directly on
+// every device; select mode still toggles selection. The old inline detail
+// disclosure (single-click expand + double-click open) is gone.
+assert.match(source, /onClick=\{\(\) => \{ if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\); \}\}/, "a row click selects in select mode, otherwise opens the session directly");
+assert.doesNotMatch(source, /expandedRowId|onDoubleClick/, "no disclosure state or double-click path remains on rows");
+assert.match(source, /const bulkDelete = \(\) =>/, "bulk delete handler exists (deferred/undoable)");
+assert.match(source, /const bulkArchive = async \(archived: boolean\)/, "bulk archive/unarchive handler exists");
+assert.match(source, /Promise\.all\([\s\S]{0,80}fetch\(`\/api\/chat\/conversation\//, "bulk delete runs the per-chat deletes in parallel");
+assert.match(source, /successfulSessionIds\(removed\.map\(\(session\) => session\.id\), results\)/, "bulk delete selects only confirmed ids");
+assert.match(source, /if \(deletedIds\.length > 0\) onSessionsDeleted\(deletedIds\)/, "bulk delete reports confirmed ids once");
+// Bulk delete is deferred + undoable via the shared undo toast.
+assert.match(source, /useUndoDelete<SessionRow\[\]>\(\)/, "bulk delete routes through useUndoDelete");
+assert.match(source, /scheduleBulkDelete\(\s*removed,/, "bulk delete schedules the batch through the undo window");
+assert.match(source, /const hidden = new Set\(\(deletePending\?\.item \?\? \[\]\)\.map\(\(s\) => s\.id\)\)/, "pending-deleted rows are hidden from the list until commit");
+assert.match(source, /<UndoToast[\s\S]{0,160}onUndo=\{undoBulkDelete\}[\s\S]{0,40}onDismiss=\{commitBulkDelete\}/, "an undo toast offers to restore the batch");
+assert.match(source, /const allVisibleSelected = visibleIds\.length > 0 && visibleIds\.every\(\(id\) => selectedIds\.has\(id\)\)/, "select-all is visible-aware (excludes collapsed rows)");
+assert.match(source, /\{allVisibleSelected \? "Clear" : "Select all"\}/, "toolbar offers select-all / clear");
 
 console.log("chat-list-delete.test.ts: ok");

@@ -4,13 +4,16 @@ import { readFile } from "node:fs/promises";
 import { formatRuntime } from "../lib/chat-response-metadata.ts";
 
 const chatRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
+const chatModels = await readFile(new URL("../app/api/chat/send/chat-send-models.ts", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const chatTurnState = await readFile(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
 const conversations = await readFile(new URL("../lib/cave-conversations.ts", import.meta.url), "utf8");
 const sessionMerge = await readFile(new URL("../lib/session-list-merge.ts", import.meta.url), "utf8");
 const types = await readFile(new URL("../lib/types.ts", import.meta.url), "utf8");
+const streamEvents = await readFile(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
 
 assert.match(
-  chatRoute,
+  streamEvents,
   /type StreamEvent =[\s\S]*kind: "done";[\s\S]*responseMetadata\?: ChatResponseMetadata/,
   "Chat send done events should carry explicit response metadata",
 );
@@ -61,12 +64,12 @@ assert.match(
   "Response metadata should carry desired model separately from confirmed model",
 );
 assert.match(
-  chatRoute,
+  chatModels,
   /const desiredModel = modelState\.effectiveModel === "unknown" \? args\.binding\.model : modelState\.effectiveModel;/,
   "Desired model should come from resolved model state so source and model cannot diverge",
 );
 assert.match(
-  chatRoute,
+  chatModels,
   /const sessionModel =[\s\S]*args\.body\.modelOverrideScope === "session"[\s\S]*\? requestedModel[\s\S]*: args\.existingConversation\?\.modelIntent\?\.model \?\? null;/,
   "Session-scoped send overrides should flow through the same model-state source as desiredModel",
 );
@@ -82,13 +85,13 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  chatView,
+  streamEvents,
   /type StreamEvent =[\s\S]*kind: "done";[\s\S]*responseMetadata\?: ChatResponseMetadata/,
   "ChatView should accept response metadata from done events",
 );
 
 assert.match(
-  chatView,
+  chatTurnState,
   /responseMetadata\?: ChatResponseMetadata/,
   "Chat turns should carry response metadata for per-response display",
 );
@@ -100,8 +103,8 @@ assert.match(
 );
 
 assert.match(
-  chatView,
-  /durationMs: t\.durationMs,[\s\S]*responseMetadata: t\.responseMetadata,/,
+  chatTurnState,
+  /durationMs: turn\.durationMs,[\s\S]*responseMetadata: turn\.responseMetadata,/,
   "History loading should restore persisted response metadata",
 );
 
@@ -161,12 +164,12 @@ assert.match(
 // directory: scheme stripped, home collapsed to ~, long paths left-truncated
 // so the repo folder survives. The full path stays in the tooltip title.
 {
-  const local = formatRuntime("local:/Users/buns/Documents/GitHub/OpenCoven/coven-cave");
+  const local = formatRuntime("local:/Users/dev/Documents/GitHub/OpenCoven/coven-cave");
   assert.equal(local?.label, "~/…/coven-cave", "local cwd shows home-relative, repo-name-preserving");
   assert.equal(local?.title, "~/Documents/GitHub/OpenCoven/coven-cave", "tooltip keeps the full cwd");
 
   assert.equal(formatRuntime("local:/home/val/proj")?.label, "~/proj", "linux home collapses too");
-  assert.equal(formatRuntime("local:/Users/buns")?.label, "~", "bare home is ~");
+  assert.equal(formatRuntime("local:/Users/dev")?.label, "~", "bare home is ~");
   assert.equal(formatRuntime("local:/opt/work/repo")?.label, "/opt/…/repo", "non-home absolute path keeps its root slash");
 
   const ssh = formatRuntime("ssh:beacon:/home/val/srv");

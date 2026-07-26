@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { APP_VERSION } from "@/lib/app-version";
-import { isUpdateAvailable, type UpdateStatus } from "@/lib/app-update";
+import {
+  isUpdateAvailable,
+  resolveDownloadUrls,
+  type ReleaseAsset,
+  type UpdateStatus,
+} from "@/lib/app-update";
 
 export const dynamic = "force-dynamic";
 
@@ -35,13 +40,18 @@ export async function GET() {
       // Fail soft — never surface an update on an error; don't cache the failure long.
       return NextResponse.json({ ...base, error: `github ${res.status}` });
     }
-    const data = (await res.json()) as { tag_name?: string; html_url?: string };
+    const data = (await res.json()) as {
+      tag_name?: string;
+      html_url?: string;
+      assets?: ReleaseAsset[];
+    };
     const latest = data.tag_name ? data.tag_name.replace(/^v/, "") : null;
     const body: UpdateStatus = {
       ...base,
       latest,
       available: latest ? isUpdateAvailable(latest, APP_VERSION) : false,
       url: data.html_url || RELEASE_PAGE,
+      downloads: resolveDownloadUrls(data.assets ?? []),
     };
     cache = { at: now, body };
     return NextResponse.json(body);

@@ -11,6 +11,6 @@ export function covenCliMissingError() {
   return {
     ok: false,
     code: "ENOENT",
-    error: "coven CLI not found on PATH. Open Setup to install it, then try again.",
+    error: "Coven CLI not found on PATH. Open Setup to install it, then try again.",
   };
 }

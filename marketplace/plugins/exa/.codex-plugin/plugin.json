@@ -1,0 +1,24 @@
+{
+  "name": "exa",
+  "version": "0.1.0",
+  "description": "Neural and keyword web search with content retrieval for grounded research.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Exa Search",
+    "shortDescription": "Neural and keyword web search with content retrieval for grounded research.",
+    "longDescription": "Use Exa to find and read sources for grounded, cited research.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "exa",
+      "search",
+      "web",
+      "research",
+      "retrieval"
+    ],
+    "defaultPrompt": "Help me use Exa Search safely."
+  }
+}

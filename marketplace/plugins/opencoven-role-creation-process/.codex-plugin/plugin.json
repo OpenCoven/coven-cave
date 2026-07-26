@@ -1,0 +1,25 @@
+{
+  "name": "opencoven-role-creation-process",
+  "version": "0.1.0",
+  "description": "Create, validate, and activate ROLE.md specs for familiars with low-lift agentic guidance, bundling identity, skills, tools, workflows, and permission declarations.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OpenCoven Role Creation Process",
+    "shortDescription": "Create, validate, and activate ROLE.md specs for familiars with low-lift agentic guidance, bundling identity, skills, tools, workflows, and permission declarations.",
+    "longDescription": "Read the familiar's SOUL.md and existing roles, decide whether a Role is warranted, draft it from the template with matching workflows, then validate and activate deliberately.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "roles",
+      "familiars",
+      "opencoven",
+      "role-authoring",
+      "workflows",
+      "validation"
+    ],
+    "defaultPrompt": "Help me use OpenCoven Role Creation Process safely."
+  }
+}

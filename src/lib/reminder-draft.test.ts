@@ -54,4 +54,24 @@ const nextLocalISO = (hour) => {
   assert.equal(draft.title, "review the queue");
 }
 
+// Extended grammar (cave-rdfc): "at"-joined phrases and phrase-carried
+// recurrences split cleanly into when + title.
+{
+  const draft = draftReminderFromText("tomorrow at 9am review PRs", now);
+
+  assert.equal(draft.ok, true);
+  assert.equal(draft.title, "review PRs");
+  assert.equal(draft.whenText, "tomorrow at 9am");
+}
+
+{
+  const draft = draftReminderFromText("every tuesday 4pm triage the inbox", now);
+
+  assert.equal(draft.ok, true);
+  assert.equal(draft.title, "triage the inbox");
+  assert.equal(draft.whenText, "every tuesday 4pm");
+  assert.equal(draft.recurrence.type, "weekly");
+  assert.deepEqual(draft.recurrence.days, [2]);
+}
+
 console.log("reminder-draft.test.ts: reminder draft parsing passed");

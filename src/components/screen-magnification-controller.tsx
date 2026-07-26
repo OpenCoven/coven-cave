@@ -18,11 +18,11 @@ function isEditableTarget(target: EventTarget | null) {
 
 export function ScreenMagnificationController() {
   useEffect(() => {
-    applyScreenScale(readScreenScale());
+    applyScreenScale(readScreenScale(), { persist: false });
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== SCREEN_SCALE_KEY) return;
-      applyScreenScale(readScreenScale());
+      applyScreenScale(readScreenScale(), { persist: false });
     };
 
     const onKeyDown = (event: KeyboardEvent) => {

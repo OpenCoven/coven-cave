@@ -3,14 +3,14 @@ import Foundation
 /// Native slash-command catalog for the iOS app.
 ///
 /// Mirrors the web/TUI vocabulary (`src/lib/slash-commands.ts` →
-/// `coven/crates/coven-cli/src/tui/chat/app.rs`) so a muscle-memory `/clear`,
-/// `/board`, `/save …` does the same thing on the phone as on the desktop.
+/// `coven/crates/coven-cli/src/tui/chat/app.rs`) so a muscle-memory `/clear`
+/// or `/board` does the same thing on the phone as on the desktop.
 /// Aliases are first-class: `/h`, `/cls`, `/q` resolve to their canonical command.
 ///
 /// Each command also carries an `action` (what it does on mobile) and an
-/// `availability`. Commands whose surface only exists on the desktop
-/// (terminal, projects, journal…) are still recognised and answered with an
-/// honest redirect rather than being silently sent to the familiar as text.
+/// `availability`. Commands whose surface only exists on the desktop are still
+/// recognised and answered with an honest redirect rather than being silently
+/// sent to the familiar as text, but they are not shown in mobile command lists.
 struct SlashCommand: Identifiable, Hashable {
     enum Section: String, CaseIterable {
         case chat, familiar, daemon, view, launch
@@ -37,12 +37,12 @@ struct SlashCommand: Identifiable, Hashable {
         case newChat               // start a fresh chat with the same familiar(s)
         case familiarPicker        // switch familiar (arg = name) or open the picker
         case openSessions          // jump to the Chats list
-        case openBoard             // switch to the Tasks tab
+        case openBoard             // switch to the Tasks destination
+        case openTerminal          // switch to the Terminal destination
         case sendAsPrompt          // /run /codex /claude — send the args as a message
-        case sketch                // /canvas — send a sketch-building prompt
-        case saveLink              // /save <url> … — route a URL into the library
         case daemonStatus          // /daemon — fetch + show status inline
         case doctor                // /doctor — run `coven doctor` inline
+        case switchModel           // /model — pick or set the chat model
         case desktopOnly(String)   // recognised, but lives on the desktop
     }
 
@@ -84,6 +84,30 @@ enum SlashCatalog {
         SlashCommand(name: "/shortcuts", aliases: ["/keys"], hint: "commands",
                      description: "Show the command reference.",
                      section: .chat, availability: .native, action: .help),
+        SlashCommand(name: "/model", aliases: ["/m"], hint: "switch model",
+                     description: "Pick or set the model for this chat. Pass an id/name or open the picker.",
+                     argPlaceholder: "model", section: .chat,
+                     availability: .native, action: .switchModel),
+        SlashCommand(name: "/skill", hint: "run a skill",
+                     description: "Invoke a skill — pass a name or pick from the menu as you type.",
+                     argPlaceholder: "name", section: .chat,
+                     availability: .desktopOnly, action: .desktopOnly("Skills")),
+        SlashCommand(name: "/skills", hint: "browse skills",
+                     description: "Show every available skill to pick from.",
+                     section: .chat,
+                     availability: .desktopOnly, action: .desktopOnly("Skills")),
+        SlashCommand(name: "/prompt", aliases: ["/snippets"], hint: "insert a prompt",
+                     description: "Drop a starter prompt into the composer for editing.",
+                     argPlaceholder: "name", section: .chat,
+                     availability: .desktopOnly, action: .desktopOnly("Prompts")),
+        SlashCommand(name: "/prompts", hint: "browse prompts",
+                     description: "Show every prompt template to pick from.",
+                     section: .chat,
+                     availability: .desktopOnly, action: .desktopOnly("Prompts")),
+        SlashCommand(name: "/image", aliases: ["/img", "/imagine"], hint: "generate an image",
+                     description: "Generate an image inline in chat (provider set in Familiar Studio → Brain).",
+                     argPlaceholder: "describe an image…", section: .chat,
+                     availability: .desktopOnly, action: .desktopOnly("Image generation")),
 
         // MARK: Familiar
         SlashCommand(name: "/familiar", aliases: ["/agent"], hint: "switch",
@@ -109,31 +133,19 @@ enum SlashCatalog {
         SlashCommand(name: "/board", hint: "Tasks",
                      description: "Open the Tasks board.",
                      section: .view, availability: .native, action: .openBoard),
-        SlashCommand(name: "/canvas", hint: "sketch a UI",
-                     description: "Ask the familiar to sketch a UI.",
-                     argPlaceholder: "describe a UI…", section: .view,
-                     availability: .native, action: .sketch),
-        SlashCommand(name: "/save", aliases: ["/bookmark", "/read"],
-                     hint: "/save <url> [bookmarks|reading|github] [#tag]",
-                     description: "Route a URL into the library (auto-classified).",
-                     argPlaceholder: "url …", section: .view,
-                     availability: .native, action: .saveLink),
         SlashCommand(name: "/journal", hint: "Journal",
                      description: "Your daily journal — open it on the desktop.",
                      section: .view, availability: .desktopOnly, action: .desktopOnly("Journal")),
-        SlashCommand(name: "/inbox", hint: "Schedules",
-                     description: "Schedules live on the desktop.",
-                     section: .view, availability: .desktopOnly, action: .desktopOnly("Schedules")),
+        SlashCommand(name: "/automations", hint: "Automations",
+                     description: "Automations live on the desktop.",
+                     section: .view, availability: .desktopOnly, action: .desktopOnly("Automations")),
         SlashCommand(name: "/remind", hint: "new reminder",
                      description: "Create a reminder — on the desktop for now.",
                      argPlaceholder: "when + text", section: .view,
                      availability: .desktopOnly, action: .desktopOnly("Reminders")),
         SlashCommand(name: "/terminal", aliases: ["/comux"], hint: "Terminal",
-                     description: "The integrated terminal lives on the desktop.",
-                     section: .view, availability: .desktopOnly, action: .desktopOnly("Terminal")),
-        SlashCommand(name: "/projects", hint: "Projects",
-                     description: "The project browser lives on the desktop.",
-                     section: .view, availability: .desktopOnly, action: .desktopOnly("Projects")),
+                     description: "Open the Terminal.",
+                     section: .view, availability: .native, action: .openTerminal),
         SlashCommand(name: "/attach", hint: "open session",
                      description: "Open a daemon session by id — desktop for now.",
                      argPlaceholder: "session-id", section: .view,
@@ -141,6 +153,13 @@ enum SlashCatalog {
         SlashCommand(name: "/tui", hint: "open in Coven Code",
                      description: "Open the session in the desktop Coven Code TUI.",
                      section: .view, availability: .desktopOnly, action: .desktopOnly("Coven Code")),
+        SlashCommand(name: "/toggle-agent", hint: "toggle panel",
+                     description: "Toggle the Familiar Chat side panel on desktop.",
+                     section: .view, availability: .desktopOnly,
+                     action: .desktopOnly("Familiar side panel")),
+        SlashCommand(name: "/evals", aliases: ["/eval-loops"], hint: "Eval Loops",
+                     description: "Familiar eval loops live on the desktop.",
+                     section: .view, availability: .desktopOnly, action: .desktopOnly("Eval Loops")),
 
         // MARK: Launch
         SlashCommand(name: "/run", hint: "run task",
@@ -157,6 +176,10 @@ enum SlashCatalog {
                      availability: .native, action: .sendAsPrompt),
     ]
 
+    /// Commands that have a real native iOS target. Desktop-only commands stay
+    /// parseable in `all`, but the mobile autocomplete/help surfaces use this.
+    static let available: [SlashCommand] = all.filter { $0.availability == .native }
+
     /// alias/name → command, for O(1) canonical resolution.
     private static let byToken: [String: SlashCommand] = {
         var map: [String: SlashCommand] = [:]
@@ -172,13 +195,13 @@ enum SlashCatalog {
         return byToken[token.lowercased()]
     }
 
-    /// Typeahead: every command whose name or an alias starts with `prefix`.
+    /// Typeahead: every native command whose name or an alias starts with `prefix`.
     /// `prefix` is the partial first word, e.g. `/sa`. Empty after `/` → all.
     static func matches(_ prefix: String) -> [SlashCommand] {
         guard prefix.hasPrefix("/") else { return [] }
         let q = prefix.lowercased()
-        if q == "/" { return all }
-        return all.filter { command in
+        if q == "/" { return available }
+        return available.filter { command in
             command.tokens.contains { $0.lowercased().hasPrefix(q) }
         }
     }
@@ -215,55 +238,4 @@ enum SlashInput {
         guard raw.hasPrefix("/") else { return false }
         return !raw.contains(" ") && !raw.contains("\n")
     }
-}
-
-/// Parsed `/save` arguments — Swift port of `src/lib/slash-save-parser.ts`.
-struct SlashSaveArgs {
-    var url: String?
-    var listHint: String?
-    var tags: [String]
-}
-
-/// `/save <url> [bookmarks|reading|github] [#tag…]`. Returns a nil url when the
-/// first token isn't a valid http(s) URL.
-func parseSaveArgs(_ args: String) -> SlashSaveArgs {
-    let tokens = args
-        .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
-        .map(String.init)
-    guard let first = tokens.first,
-          let url = URL(string: first),
-          let scheme = url.scheme?.lowercased(),
-          scheme == "http" || scheme == "https" else {
-        return SlashSaveArgs(url: nil, listHint: nil, tags: [])
-    }
-    let validHints: Set<String> = ["bookmarks", "reading", "github"]
-    var listHint: String?
-    var tags: [String] = []
-    for token in tokens.dropFirst() {
-        if token.hasPrefix("#") {
-            let tag = String(token.dropFirst())
-            if !tag.isEmpty { tags.append(tag) }
-        } else if validHints.contains(token) {
-            listHint = token
-        }
-    }
-    return SlashSaveArgs(url: first, listHint: listHint, tags: tags)
-}
-
-/// Build the sketch prompt sent for `/canvas` — a trimmed Swift port of the web
-/// `buildSketchPrompt` (src/lib/canvas-artifacts.ts) so a familiar returns one
-/// self-contained, renderable code block.
-func buildSketchPrompt(_ userPrompt: String) -> String {
-    let ask = userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        ? "a simple example UI"
-        : userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    return [
-        "You are generating a UI for a live preview.",
-        "Output EXACTLY ONE fenced code block and nothing else — no prose before or after.",
-        "Use a ```html block: a COMPLETE self-contained document starting with `<!doctype html>`,",
-        "with all CSS in <style> and all JS in <script>. No external files, no network access.",
-        "Make it polished and responsive.",
-        "",
-        "Build this: \(ask)",
-    ].joined(separator: "\n")
 }

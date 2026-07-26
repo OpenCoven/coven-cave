@@ -2,34 +2,116 @@ import SwiftUI
 
 struct TaskDetailView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.chrome) private var chrome
     let card: BoardCard
 
     @State private var showFamiliarPicker = false
+    @State private var notesHeight: CGFloat = 0
+    @State private var notesReader: ResponseReaderItem?
+    @State private var confirmingDelete = false
+    @State private var editingNotes = false
+    @State private var renamingTitle = false
+    @State private var titleDraft = ""
+    @State private var newStep = ""
+    @State private var liveActivity = LiveActivityManager.shared
 
-    private var familiar: Familiar? { card.familiarId.flatMap(app.familiar) }
+    /// The current card from the store, so status/priority/step edits made here
+    /// reflect immediately; falls back to the passed-in snapshot.
+    private var live: BoardCard { app.tasks.first { $0.id == card.id } ?? card }
+    private var familiar: Familiar? { live.familiarId.flatMap(app.familiar) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
-                if let familiar { assigneeRow(familiar) }
+                propertyGrid
                 chatCard
-                if card.hasSteps { stepsCard }
-                if let notes = card.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    notesCard(notes)
-                }
-                if !card.labelList.isEmpty { labelsRow }
+                stepsCard
+                notesSection
+                scheduleCard
+                if !live.labelList.isEmpty { labelsRow }
                 metaCard
+                bottomActions
             }
             .padding(20)
+            .readableWidth(680)
         }
+        .background(chrome.bgBase.ignoresSafeArea())
         .navigationTitle("Task")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { actionsMenu } }
         .sheet(isPresented: $showFamiliarPicker) {
             FamiliarPickerSheet { fam in
                 showFamiliarPicker = false
                 app.openChat(for: card, familiarId: fam.id)
             }
+        }
+        .sheet(item: $notesReader) { item in
+            ResponseReaderView(item: item)
+        }
+        .sheet(isPresented: $editingNotes) {
+            NotesEditorView(initialText: live.notes ?? "") { text in
+                Task { await app.setTaskNotes(live, text) }
+            }
+        }
+        .confirmationDialog("Delete this task?", isPresented: $confirmingDelete,
+                            titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                Task { await app.deleteTask(card); dismiss() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text(live.title) }
+        .alert("Rename task", isPresented: $renamingTitle) {
+            TextField("Title", text: $titleDraft)
+            Button("Save") {
+                let t = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { Task { await app.setTaskTitle(live, t) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var actionsMenu: some View {
+        Menu {
+            Menu {
+                ForEach(CardStatus.allCases, id: \.self) { status in
+                    Button { Task { await app.setTaskStatus(live, status) } } label: {
+                        Label(status.label, systemImage: live.status == status ? "checkmark" : status.systemImage)
+                    }
+                }
+            } label: { Label("Status", systemImage: "circle.dashed") }
+
+            Menu {
+                ForEach(CardPriority.allCases, id: \.self) { priority in
+                    Button { Task { await app.setTaskPriority(live, priority) } } label: {
+                        Label(priority.label, systemImage: live.priority == priority ? "checkmark" : "flag")
+                    }
+                }
+            } label: { Label("Priority", systemImage: "flag") }
+
+            Button { editingNotes = true } label: {
+                Label(hasNotes ? "Edit notes" : "Add notes", systemImage: "square.and.pencil")
+            }
+
+            // Live Activity: track a running task on the Lock Screen / Dynamic
+            // Island. It ends automatically once the task leaves the running state.
+            if liveActivity.currentTaskId == live.id {
+                Button { Task { await liveActivity.stop() } } label: {
+                    Label("Stop Lock Screen tracking", systemImage: "stop.circle")
+                }
+            } else if live.status == .running && liveActivity.isSupported {
+                Button { Task { await liveActivity.start(for: live) } } label: {
+                    Label("Track on Lock Screen", systemImage: "bolt.badge.clock")
+                }
+            }
+
+            Divider()
+            Button(role: .destructive) { confirmingDelete = true } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
         }
     }
 
@@ -62,6 +144,7 @@ struct TaskDetailView: View {
                     else { showFamiliarPicker = true }
                 } label: {
                     Label("Start a chat", systemImage: "plus.bubble.fill")
+                        .foregroundStyle(chrome.accentForeground)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -69,7 +152,7 @@ struct TaskDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glass(.raised, cornerRadius: 14)
     }
 
     private func chatSubtitle(_ thread: ChatThread) -> String {
@@ -81,20 +164,81 @@ struct TaskDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(card.title)
-                .font(.title2.bold())
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(live.title)
+                    .font(.title2.bold())
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onTapGesture(count: 2) {
+                        titleDraft = live.title
+                        renamingTitle = true
+                    }
+                Button {
+                    titleDraft = live.title
+                    renamingTitle = true
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(7)
+                        .glassFill(.control, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Rename task")
+            }
             HStack(spacing: 8) {
-                StatusPill(status: card.status)
+                StatusPill(status: live.status)
                 priorityBadge
-                if card.needsHuman == true { NeedsYouBadge() }
+                if live.needsHuman == true { NeedsYouBadge() }
             }
         }
     }
 
+    private var propertyGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            cycleChip("Status", value: live.status.label, color: Theme.color(for: live.status)) {
+                guard let index = CardStatus.allCases.firstIndex(of: live.status) else { return }
+                let next = CardStatus.allCases[(index + 1) % CardStatus.allCases.count]
+                Task { await app.setTaskStatus(live, next) }
+            }
+            cycleChip("Priority", value: live.priority.label, color: Theme.color(for: live.priority)) {
+                guard let index = CardPriority.allCases.firstIndex(of: live.priority) else { return }
+                let next = CardPriority.allCases[(index + 1) % CardPriority.allCases.count]
+                Task { await app.setTaskPriority(live, next) }
+            }
+            // TODO(no backend): task project mutation is not exposed by CaveClient.
+            displayChip("Project", value: live.projectId.flatMap(app.project)?.name ?? "None")
+            // TODO(no backend): task assignee mutation is not exposed by CaveClient.
+            displayChip("Assignee", value: familiar?.displayName ?? "Unassigned")
+        }
+    }
+
+    private func cycleChip(_ label: String, value: String, color: Color,
+                           action: @escaping () -> Void) -> some View {
+        Button { Haptics.tap(); action() } label: {
+            propertyChip(label, value: value, color: color)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Double tap to cycle")
+    }
+
+    private func displayChip(_ label: String, value: String) -> some View {
+        propertyChip(label, value: value, color: .secondary)
+    }
+
+    private func propertyChip(_ label: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.callout.weight(.semibold)).foregroundStyle(color).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .glass(.control, cornerRadius: 12)
+    }
+
     private var priorityBadge: some View {
-        let color = Theme.color(for: card.priority)
-        return Label(card.priority.label, systemImage: "flag.fill")
+        let color = Theme.color(for: live.priority)
+        return Label(live.priority.label, systemImage: "flag.fill")
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(color.opacity(0.16), in: Capsule())
@@ -113,66 +257,223 @@ struct TaskDetailView: View {
             Spacer()
         }
         .padding(14)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glass(.raised, cornerRadius: 14)
     }
 
     private var stepsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let steps = live.steps ?? []
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Steps").font(.headline)
+            Text("Activity").font(.headline)
                 Spacer()
-                Text("\(card.doneStepCount)/\(card.stepCount)")
-                    .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                if live.hasSteps {
+                    Text("\(live.doneStepCount)/\(live.stepCount)")
+                        .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                }
             }
-            ProgressView(value: card.stepFraction)
-                .tint(Theme.color(for: card.status))
+            if live.hasSteps {
+                ProgressView(value: live.stepFraction)
+                    .tint(Theme.color(for: live.status))
+            }
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(card.steps ?? []) { step in
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(step.done ? Color.green : Color.secondary)
-                        Text(step.text)
-                            .strikethrough(step.done, color: .secondary)
-                            .foregroundStyle(step.done ? .secondary : .primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
+                ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                    Button { Haptics.tap(); Task { await app.toggleStep(live, stepId: step.id) } } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(step.done ? Color.green : Color.secondary)
+                            Text(step.text)
+                                .strikethrough(step.done, color: .secondary)
+                                .foregroundStyle(step.done ? .secondary : .primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    // Reorder + delete live in a long-press menu so the row itself
+                    // stays a clean tap-to-toggle target (drag-reorder isn't
+                    // available for a VStack inside the detail ScrollView).
+                    .contextMenu {
+                        Button { Task { await app.moveStep(live, stepId: step.id, by: -1) } } label: {
+                            Label("Move up", systemImage: "arrow.up")
+                        }.disabled(index == 0)
+                        Button { Task { await app.moveStep(live, stepId: step.id, by: 1) } } label: {
+                            Label("Move down", systemImage: "arrow.down")
+                        }.disabled(index == steps.count - 1)
+                        Divider()
+                        Button(role: .destructive) { Task { await app.deleteStep(live, stepId: step.id) } } label: {
+                            Label("Delete step", systemImage: "trash")
+                        }
                     }
                 }
             }
+            addStepRow
         }
         .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glass(.raised, cornerRadius: 14)
+    }
+
+    private var addStepRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "plus.circle.fill")
+                .foregroundStyle(.secondary)
+            TextField("Add step", text: $newStep)
+                .submitLabel(.done)
+                .onSubmit(commitNewStep)
+            if !newStep.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button("Add", action: commitNewStep)
+                    .font(.callout.weight(.semibold))
+            }
+        }
+    }
+
+    private func commitNewStep() {
+        let text = newStep.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        newStep = ""
+        Haptics.tap()
+        Task { await app.addStep(live, text: text) }
+    }
+
+    private var hasNotes: Bool {
+        !(live.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    @ViewBuilder private var notesSection: some View {
+        if let notes = live.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            notesCard(notes)
+        } else {
+            Button { editingNotes = true } label: {
+                Label("Add notes", systemImage: "square.and.pencil")
+                    .font(.callout)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
     }
 
     private func notesCard(_ notes: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Notes").font(.headline)
-            Text(notes)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Text("Notes").font(.headline)
+                Spacer()
+                Button { editingNotes = true } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(7)
+                        .glassFill(.control, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit notes")
+                Button {
+                    notesReader = ResponseReaderItem(title: "Notes", markdown: notes)
+                    Haptics.tap()
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(7)
+                        .glassFill(.control, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open notes in reader")
+            }
+            MarkdownWebView(markdown: notes, height: $notesHeight)
+                .frame(height: max(notesHeight, 1))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glass(.raised, cornerRadius: 14)
+        .onTapGesture(count: 2) { editingNotes = true }
+    }
+
+    private var bottomActions: some View {
+        VStack(spacing: 10) {
+            Button {
+                if live.familiarId != nil { app.openChat(for: live) }
+                else { showFamiliarPicker = true }
+            } label: {
+                Label("Open in chat", systemImage: "bubble.left.and.bubble.right.fill")
+                    .foregroundStyle(chrome.accentForeground)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                Task { await app.setTaskStatus(live, .done) }
+            } label: {
+                Label("Mark done", systemImage: "checkmark.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(live.status == .done)
+        }
     }
 
     private var labelsRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Labels").font(.headline)
             FlowRow(spacing: 8) {
-                ForEach(card.labelList, id: \.self) { LabelChip(text: $0) }
+                ForEach(live.labelList, id: \.self) { LabelChip(text: $0) }
+            }
+        }
+    }
+
+    // MARK: - Schedule (editable start / due dates)
+
+    /// Date-only ("yyyy-MM-dd") parser/formatter — board cards store schedule
+    /// dates this way (matching the web `<input type="date">`), so the datetime
+    /// `caveParseISO` can't read them.
+    private static let dateOnly: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private func parseDateOnly(_ s: String?) -> Date? { s.flatMap { Self.dateOnly.date(from: $0) } }
+    private func formatDateOnly(_ d: Date) -> String { Self.dateOnly.string(from: d) }
+
+    private var scheduleCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Schedule").font(.headline)
+            dateRow("Start", value: live.startDate) { await app.setTaskDates(live, start: $0, end: live.endDate) }
+            Divider()
+            dateRow("Due", value: live.endDate) { await app.setTaskDates(live, start: live.startDate, end: $0) }
+        }
+        .padding(16)
+        .glass(.raised, cornerRadius: 14)
+    }
+
+    private func dateRow(_ label: String, value: String?,
+                        set: @escaping (String?) async -> Void) -> some View {
+        HStack {
+            Text(label).foregroundStyle(.secondary)
+            Spacer()
+            if let date = parseDateOnly(value) {
+                DatePicker("", selection: Binding(
+                    get: { date },
+                    set: { newValue in Task { await set(formatDateOnly(newValue)) } }
+                ), displayedComponents: .date)
+                .labelsHidden()
+                Button { Task { await set(nil) } } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear \(label) date")
+            } else {
+                Button("Add") { Task { await set(formatDateOnly(Date())) } }
+                    .font(.callout)
             }
         }
     }
 
     private var metaCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            metaRow("Created", caveParseISO(card.createdAt))
-            metaRow("Updated", caveParseISO(card.updatedAt))
-            if card.startDate != nil { metaRow("Start", caveParseISO(card.startDate)) }
-            if card.endDate != nil { metaRow("Due", caveParseISO(card.endDate)) }
+            metaRow("Created", caveParseISO(live.createdAt))
+            metaRow("Updated", caveParseISO(live.updatedAt))
         }
         .font(.footnote)
     }
@@ -184,6 +485,49 @@ struct TaskDetailView: View {
             Text(date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "—")
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+/// Full-screen plain-text editor for a task's notes (Markdown is rendered in the
+/// detail view; here it's edited as raw text). Save is disabled until the text
+/// actually changes from what was passed in.
+struct NotesEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.chrome) private var chrome
+    let initialText: String
+    let onSave: (String) -> Void
+
+    @State private var text: String
+    @FocusState private var focused: Bool
+
+    init(initialText: String, onSave: @escaping (String) -> Void) {
+        self.initialText = initialText
+        self.onSave = onSave
+        _text = State(initialValue: initialText)
+    }
+
+    var body: some View {
+        NavigationStack {
+            TextEditor(text: $text)
+                .font(.body)
+                .scrollContentBackground(.hidden)
+                .background(chrome.bgBase)
+                .padding(16)
+                .focused($focused)
+                .navigationTitle("Notes")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") { onSave(text); dismiss() }
+                            .disabled(text == initialText)
+                    }
+                }
+                .onAppear { focused = true }
+        }
+        .themedSheetBackground()
     }
 }
 

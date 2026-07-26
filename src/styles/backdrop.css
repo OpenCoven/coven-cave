@@ -1,0 +1,275 @@
+/* ── Backdrop vibe ───────────────────────────────────────────────────────────
+   A user-chosen image behind the Chat and Home surfaces. The fixed layer
+   sits under the workspace content; `--cave-backdrop-opacity` (0–1, from the
+   Settings intensity slider) controls how much shows through, and a
+   bg-base-derived scrim keeps text areas readable in every theme. The
+   derived accent rides `--accent-presence` (set inline by cave-backdrop.ts),
+   so the glass tokens and tint recipes above this layer pick up the image's
+   vibe for free. */
+
+html[data-backdrop] .cave-backdrop-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--cave-backdrop-image);
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity var(--duration-slow, 260ms) ease;
+}
+
+/* Visible only while a backdrop-bearing surface (home/chat) is frontmost —
+   crossfades on mode switches instead of popping. */
+html[data-backdrop] .cave-backdrop-layer[data-on="true"] {
+  opacity: var(--cave-backdrop-opacity, 0.35);
+}
+
+/* Readability floor: bg-base gradient scrim, heavier toward the bottom where
+   composers and transcripts live. Sits inside the layer so the intensity
+   slider scales image and scrim together. */
+html[data-backdrop] .cave-backdrop-layer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--bg-base) 18%, transparent),
+    color-mix(in oklch, var(--bg-base) 42%, transparent)
+  );
+}
+
+/* ── Blaze style (cave-99s9) ─────────────────────────────────────────────────
+   The animated option: the vendored Canvas UI Blaze renders inside the same
+   fixed layer the image uses, so enablement, the intensity opacity, the
+   scrim above, and the glass contracts below all apply unchanged. The canvas
+   is decorative and inert (aria-hidden; the layer already ignores pointers). */
+.cave-backdrop-blaze {
+  position: absolute;
+  inset: 0;
+}
+
+.cave-backdrop-blaze__fill {
+  width: 100%;
+  height: 100%;
+}
+
+/* No frozen fire frame: reduced motion drops the animated style entirely
+   (the component also skips mounting — this rule is the CSS belt to that
+   suspender). The static image style is unaffected. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-backdrop] .cave-backdrop-layer[data-backdrop-style="blaze"] {
+    display: none;
+  }
+}
+
+/* Crossfade the surface/thread washes in step with the scrim's opacity fade.
+   Toggling a backdrop (entering chat, switching familiar/mode) flips
+   html[data-backdrop-on], which swaps these backgrounds and blurs; without a
+   transition they pop solid↔translucent one frame ahead of the 260ms scrim
+   fade — the visible "blink". Declared on the base selectors so it eases in
+   BOTH directions; only background/backdrop-filter animate (padding/radius
+   snap to avoid reflow jank). */
+.shell-root,
+.shell-detail,
+.chat-surface,
+.cave-chat-linear,
+.cave-chat-linear .cave-chat-thread,
+.cave-chat-linear-header,
+.cave-group-chat-shell,
+.cave-chat-empty-shell,
+.home-hearth-card,
+.familiar-tab {
+  transition:
+    background var(--duration-slow, 260ms) ease,
+    backdrop-filter var(--duration-slow, 260ms) ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell-root,
+  .shell-detail,
+  .chat-surface,
+  .cave-chat-linear,
+  .cave-chat-linear .cave-chat-thread,
+  .cave-chat-linear-header,
+  .cave-group-chat-shell,
+  .cave-chat-empty-shell,
+  .home-hearth-card,
+  .familiar-tab {
+    transition: none;
+  }
+}
+
+/* The big opaque paints over the layer go translucent while a backdrop
+   surface (home/chat) is frontmost — the layer component flips
+   html[data-backdrop-on]. Side panes (nav, list) keep their own solid
+   backgrounds, so the image shows through the content area only. The shared
+   glass tokens (PR 2790) give floating chrome above the image a real blur. */
+html[data-backdrop-on] .shell-root,
+html[data-backdrop-on] .shell-detail {
+  background: transparent;
+}
+
+html[data-backdrop-on] .chat-surface,
+html[data-backdrop-on] .cave-chat-linear {
+  background: color-mix(in oklch, var(--bg-base) 16%, transparent);
+}
+
+/* ── Readable transcript over the image (cave-5oeu) ──────────────────────────
+   The session transcript deliberately flattens bubbles to bare text on the
+   pane (.cave-chat-linear strips bubble fills/borders), so with a backdrop
+   frontmost the words sit almost directly on the photo — the 16% wash above
+   is a vibe knob, not a readability floor. Give the reading column real
+   glass: a scrimmed, blurred panel behind the thread keeps prose legible at
+   any intensity while the pane margins keep the vivid image. Group chat gets
+   the same treatment on its shell (its rail text sits on the photo too). */
+html[data-backdrop-on] .cave-chat-linear .cave-chat-thread,
+html[data-backdrop-on] .cave-group-chat-shell {
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+html[data-backdrop-on] .cave-chat-linear .cave-chat-thread {
+  /* --radius-xl (not a hard-coded px) so the glass column follows the
+     Appearance → Corner radius setting like the rest of the chat chrome. */
+  border-radius: var(--radius-xl);
+  padding-inline: clamp(14px, 2vw, 22px);
+}
+
+/* The header bar's 74%-raised wash shimmers over a busy photo — blur what's
+   behind it so the title and session actions stay steady. */
+html[data-backdrop-on] .cave-chat-linear-header {
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+/* One-step contrast lift for the quiet text while the image is on — meta
+   rows, recency, peeks. --text-muted is tuned against solid bg-base; over a
+   photo it drops below comfortable, so it reads at secondary strength. */
+html[data-backdrop-on] .cave-chat-linear,
+html[data-backdrop-on] .cave-group-chat-shell {
+  --text-muted: var(--text-secondary);
+}
+
+/* ── Hero + empty-state legibility (cave-8pk2) ───────────────────────────────
+   The Home headline/eyebrow and the chat landing cluster sit straight on the
+   photo with only the layer's global gradient behind them — busy imagery
+   (faces, props) fights the copy. Ground the centered content clusters
+   without dulling the scene at its edges. */
+
+/* Home: one uniform, theme-derived readability surface on the existing
+   hearth card (cave-hct3). The old full-area radial ground behind the whole
+   column read as a blurry oval over busy imagery; the card is the thing that
+   needs the contrast, so deepen ITS fill instead and leave the scene visible
+   around it. (The 3a dashboard that briefly replaced the hearth moved to the
+   new-chat starting view, where the chat thread's glass column grounds it.) */
+html[data-backdrop-on] .home-hearth-card {
+  background: color-mix(in oklch, var(--bg-base) 72%, transparent);
+  /* --radius-xl (not a hard-coded px / square corner) so the hearth glass
+     follows the Appearance → Corner radius setting like the chat glass. */
+  border-radius: var(--radius-xl);
+}
+
+/* Chat landing (no thread yet): the greeting/identity/suggestions cluster
+   gets the same glass ground the live transcript already earns. */
+html[data-backdrop-on] .cave-chat-empty-shell {
+  background: color-mix(in oklch, var(--bg-base) 55%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border-radius: var(--radius-xl);
+  padding: clamp(16px, 3vh, 28px) clamp(14px, 2.5vw, 24px);
+}
+
+/* Familiar tab over the image: the identity hero and the dense capability
+   rows have no bubbles at all, so their small type sits straight on the
+   photo. Give the tab the transcript's glass-column idiom with a much deeper
+   blur — 50px flattens faces/props into a soft wash that 10–13px metadata
+   stays legible against at any intensity. */
+html[data-backdrop-on] .familiar-tab {
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+  backdrop-filter: blur(50px) saturate(var(--glass-saturate));
+  border-radius: var(--radius-xl);
+  --text-muted: var(--text-secondary);
+}
+
+/* Chat Settings tab: same dense small-type-on-photo problem as the familiar
+   tab (kickers, row descriptions, hints sit straight on the image), so it
+   earns the same deep-blur glass ground. */
+html[data-backdrop-on] .chat-settings-view {
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+  backdrop-filter: blur(50px) saturate(var(--glass-saturate));
+  border-radius: var(--radius-xl);
+  --text-muted: var(--text-secondary);
+}
+
+/* And the same quiet-text contrast lift Home-side. */
+html[data-backdrop-on] .home-composer-root {
+  --text-muted: var(--text-secondary);
+}
+
+/* No backdrop-filter → a see-through fill over a photo is unreadable; go
+   near-opaque instead (same rationale as the app-wide glass fallback). */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html[data-backdrop-on] .cave-chat-linear .cave-chat-thread,
+  html[data-backdrop-on] .cave-group-chat-shell {
+    background: color-mix(in oklch, var(--bg-base) 92%, transparent);
+  }
+
+  html[data-backdrop-on] .chat-settings-view,
+  html[data-backdrop-on] .cave-chat-empty-shell,
+  html[data-backdrop-on] .familiar-tab {
+    background: color-mix(in oklch, var(--bg-base) 92%, transparent);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-backdrop] .cave-backdrop-layer {
+    display: none;
+  }
+
+  /* The image layer above is hidden here, so the glass column would blur a
+     solid pane — drop it and let the transcript sit on the base surface. */
+  html[data-backdrop-on] .cave-chat-linear .cave-chat-thread,
+  html[data-backdrop-on] .cave-group-chat-shell {
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  html[data-backdrop-on] .cave-chat-linear .cave-chat-thread {
+    padding-inline: 0;
+  }
+
+  /* Same reasoning for the new grounds: no image → no deepened fill; restore
+     the hearth card's normal translucent panel fill. */
+  html[data-backdrop-on] .home-hearth-card {
+    background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
+  }
+
+  html[data-backdrop-on] .cave-chat-empty-shell {
+    background: transparent;
+    backdrop-filter: none;
+    padding: 0;
+  }
+
+  /* No image layer → the familiar tab sits on the base surface again. */
+  html[data-backdrop-on] .familiar-tab {
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  /* Same for the chat settings tab. */
+  html[data-backdrop-on] .chat-settings-view {
+    background: transparent;
+    backdrop-filter: none;
+  }
+}
+
+/* ── Side panes stay solid (the contract above, enforced) ────────────────────
+   A solid background is not enough: the backdrop is a fixed z-0 layer, and
+   panels that sit below it in paint order get the image composited over
+   their solid paint anyway (bit the chats rail after the icon-rail revamp).
+   Lift the nav + list panes one stacking step and ground them on the panel
+   color, so the image shows through the content area only. */
+html[data-backdrop-on] .shell-nav-panel,
+html[data-backdrop-on] .shell-list-panel {
+  position: relative;
+  z-index: 1;
+  background: var(--bg-panel);
+}

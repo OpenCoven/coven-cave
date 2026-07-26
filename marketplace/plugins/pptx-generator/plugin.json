@@ -1,0 +1,44 @@
+{
+  "name": "pptx-generator",
+  "version": "0.1.0",
+  "description": "Generate and edit on-brand presentation slides and LinkedIn carousels as PPTX/PDF with python-pptx and a reusable layout cookbook.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "pptx",
+    "presentations",
+    "slides",
+    "carousel",
+    "linkedin",
+    "python-pptx",
+    "branding"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/pptx-generator",
+  "x-coven": {
+    "displayName": "PPTX Generator",
+    "category": "Media & Creative",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/coleam00/second-brain-skills",
+      "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/pptx-generator",
+      "https://python-pptx.readthedocs.io"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

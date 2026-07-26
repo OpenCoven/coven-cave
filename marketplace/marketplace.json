@@ -19,49 +19,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "code-reviewer",
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist",
-            "retrospector"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "gmail",
@@ -76,45 +34,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "preview-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "google-calendar",
@@ -129,45 +49,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "preview-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "linear",
@@ -182,47 +64,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "canva",
@@ -237,34 +79,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "social-voice",
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "vercel",
@@ -279,33 +94,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "asana",
@@ -320,33 +109,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "xurl",
@@ -361,15 +124,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "local-tool",
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "social-voice",
-            "devrel-liaison"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "filesystem",
@@ -384,34 +139,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "git",
@@ -426,22 +154,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "code-reviewer",
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "fetch",
@@ -456,28 +169,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "memory",
@@ -492,27 +184,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist",
-            "retrospector"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "sequential-thinking",
@@ -527,28 +199,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "time",
@@ -563,27 +214,2451 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
+      "roleAffinity": []
+    },
+    {
+      "name": "serena",
+      "displayName": "Serena",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/serena"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "context7",
+      "displayName": "Context7",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/context7"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "markitdown",
+      "displayName": "Markitdown",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/markitdown"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "playwright",
+      "displayName": "Playwright",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/playwright"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "chrome-devtools",
+      "displayName": "Chrome DevTools",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/chrome-devtools"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "firecrawl",
+      "displayName": "Firecrawl",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/firecrawl"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tavily",
+      "displayName": "Tavily",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tavily"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "brightdata",
+      "displayName": "Bright Data",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/brightdata"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "apify",
+      "displayName": "Apify",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/apify"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "searxng",
+      "displayName": "SearXNG Search",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/searxng"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "local-tool",
+      "roleAffinity": []
+    },
+    {
+      "name": "dbhub",
+      "displayName": "DBHub",
+      "category": "Databases",
+      "source": {
+        "source": "local",
+        "path": "./plugins/dbhub"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "supabase",
+      "displayName": "Supabase",
+      "category": "Databases",
+      "source": {
+        "source": "local",
+        "path": "./plugins/supabase"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "mongodb",
+      "displayName": "MongoDB",
+      "category": "Databases",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mongodb"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "azure",
+      "displayName": "Azure MCP Server",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/azure"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "azure-devops",
+      "displayName": "Azure DevOps",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/azure-devops"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "terraform",
+      "displayName": "Terraform",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/terraform"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "notion",
+      "displayName": "Notion",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/notion"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "atlassian",
+      "displayName": "Atlassian Rovo",
+      "category": "Project Management",
+      "source": {
+        "source": "local",
+        "path": "./plugins/atlassian"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "figma",
+      "displayName": "Figma",
+      "category": "Design",
+      "source": {
+        "source": "local",
+        "path": "./plugins/figma"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "stripe",
+      "displayName": "Stripe",
+      "category": "Commerce",
+      "source": {
+        "source": "local",
+        "path": "./plugins/stripe"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "microsoft-learn",
+      "displayName": "Microsoft Learn",
+      "category": "Knowledge & Docs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/microsoft-learn"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "activepieces",
+      "displayName": "Activepieces",
+      "category": "Automation",
+      "source": {
+        "source": "local",
+        "path": "./plugins/activepieces"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "desktop-commander",
+      "displayName": "Desktop Commander",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/desktop-commander"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "local-tool",
+      "roleAffinity": []
+    },
+    {
+      "name": "netdata",
+      "displayName": "Netdata",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/netdata"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "fabric",
+      "displayName": "Microsoft Fabric",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/fabric"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "unity",
+      "displayName": "Unity",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/unity"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "nuget",
+      "displayName": "NuGet",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/nuget"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "nuxt-dev",
+      "displayName": "Nuxt Dev",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/nuxt-dev"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "stackql",
+      "displayName": "StackQL",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/stackql"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "next-devtools",
+      "displayName": "Next.js DevTools",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/next-devtools"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "coven-familiars",
+      "displayName": "Coven Familiars",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-familiars"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "1password",
+      "displayName": "1Password Secret Management",
+      "category": "Security",
+      "source": {
+        "source": "local",
+        "path": "./plugins/1password"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "codeflow-maintainer",
+      "displayName": "CodeFlow Maintainer Skill",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codeflow-maintainer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "coven-parallel-work",
+      "displayName": "Coven Parallel Work Protocol",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-parallel-work"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "disk-space-optimizer",
+      "displayName": "Disk Space Optimization",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/disk-space-optimizer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "linear-issue-management",
+      "displayName": "Linear Issue Management",
+      "category": "Project Management",
+      "source": {
+        "source": "local",
+        "path": "./plugins/linear-issue-management"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "memory-timeline-manager",
+      "displayName": "Memory Timeline Manager",
+      "category": "Knowledge & Docs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/memory-timeline-manager"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "openclaw-dev",
+      "displayName": "OpenClaw Dev Agent",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/openclaw-dev"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "pr-agent",
+      "displayName": "PR Agent \u2014 Maintainer Workflow Orchestrator",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/pr-agent"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "research-ingestion",
+      "displayName": "Research Ingestion",
+      "category": "Knowledge & Docs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/research-ingestion"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "archivists-index",
+      "displayName": "Archivist's Index",
+      "category": "Research Crafts",
+      "source": {
+        "source": "local",
+        "path": "./plugins/archivists-index"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [],
+      "kind": "craft",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "memory",
+            "markitdown",
+            "research-ingestion"
+          ],
+          "optional": [
+            "fetch",
+            "ocr",
+            "sequential-thinking"
           ]
         },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
+        "bundled": {
+          "skills": [
+            {
+              "id": "research-manager",
+              "sourcePath": "craft-sources/archivists-index/research-manager/SKILL.md",
+              "upstreamPath": "22-agent-native-research-artifact/research-manager/SKILL.md",
+              "contentHash": "sha256:f78da7627ac09a4be398ea4363fc7b8753b2dcb22bc961c5059395e33ef3ef2c",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "compiler",
+              "sourcePath": "craft-sources/archivists-index/compiler/SKILL.md",
+              "upstreamPath": "22-agent-native-research-artifact/compiler/SKILL.md",
+              "contentHash": "sha256:747c2f17125ce136e8f75baf8803eb3b21ccc01246498a7f0bc4c01ec6d01d9a",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "faiss",
+              "sourcePath": "craft-sources/archivists-index/faiss/SKILL.md",
+              "upstreamPath": "15-rag/faiss/SKILL.md",
+              "contentHash": "sha256:79a494b9212c73810d53527800c69f80acd6aa1907fca8c614c69583cac76e89",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "sentence-transformers",
+              "sourcePath": "craft-sources/archivists-index/sentence-transformers/SKILL.md",
+              "upstreamPath": "15-rag/sentence-transformers/SKILL.md",
+              "contentHash": "sha256:fca19457be4e78f0e3689284d4fbde649ddf9af0d3bba52d2ac1fb470a4c1bd8",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "archivists-index-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "archivists-index-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
           ]
         },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Researcher",
+          "Archivist"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
         }
-      ]
+      }
+    },
+    {
+      "name": "alchemists-crucible",
+      "displayName": "Alchemist's Crucible",
+      "category": "Research Crafts",
+      "source": {
+        "source": "local",
+        "path": "./plugins/alchemists-crucible"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [],
+      "kind": "craft",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "ml-engineer"
+          ],
+          "optional": [
+            "coven-evals",
+            "memory",
+            "sequential-thinking"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "ray-data",
+              "sourcePath": "craft-sources/alchemists-crucible/ray-data/SKILL.md",
+              "upstreamPath": "05-data-processing/ray-data/SKILL.md",
+              "contentHash": "sha256:bcc73b3341dca18c59cad092cb6dedb7ac0bf0bde80467a039921ac0c02256c3",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "mlflow",
+              "sourcePath": "craft-sources/alchemists-crucible/mlflow/SKILL.md",
+              "upstreamPath": "13-mlops/mlflow/SKILL.md",
+              "contentHash": "sha256:36d2581f7d8beb8b27f66bbef5c94df7e9604b917c3aa15e4183a48a2b1f3f96",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "weights-and-biases",
+              "sourcePath": "craft-sources/alchemists-crucible/weights-and-biases/SKILL.md",
+              "upstreamPath": "13-mlops/weights-and-biases/SKILL.md",
+              "contentHash": "sha256:3cd5daa7cad70d97c96b2d6fdf8d0fc1ed8a97b1750c4e013e2405389baed3b6",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "ml-training-recipes",
+              "sourcePath": "craft-sources/alchemists-crucible/ml-training-recipes/SKILL.md",
+              "upstreamPath": "10-optimization/ml-training-recipes/SKILL.md",
+              "contentHash": "sha256:1cb661b0d3bac57ffed65075707a9079ac23123a5a597700e85c05e03e166a57",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "alchemists-crucible-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "alchemists-crucible-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Researcher",
+          "ML Engineer"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
+      "name": "oracles-measure",
+      "displayName": "Oracle's Measure",
+      "category": "Research Crafts",
+      "source": {
+        "source": "local",
+        "path": "./plugins/oracles-measure"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [],
+      "kind": "craft",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "coven-evals"
+          ],
+          "optional": [
+            "huggingface",
+            "memory",
+            "sequential-thinking"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "rigor-reviewer",
+              "sourcePath": "craft-sources/oracles-measure/rigor-reviewer/SKILL.md",
+              "upstreamPath": "22-agent-native-research-artifact/rigor-reviewer/SKILL.md",
+              "contentHash": "sha256:5a8169a5d069caf36a30e0106e523503ffba685215c3cd0067a72aa64a7e2dbb",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "lm-evaluation-harness",
+              "sourcePath": "craft-sources/oracles-measure/lm-evaluation-harness/SKILL.md",
+              "upstreamPath": "11-evaluation/lm-evaluation-harness/SKILL.md",
+              "contentHash": "sha256:891b77bc09118393f9bd1235404ee3f0cf412f56e57dc4b454e2fbd8fd507bc3",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "bigcode-evaluation-harness",
+              "sourcePath": "craft-sources/oracles-measure/bigcode-evaluation-harness/SKILL.md",
+              "upstreamPath": "11-evaluation/bigcode-evaluation-harness/SKILL.md",
+              "contentHash": "sha256:7c46e8eb3ca8d4f51769162d16d87a7dff5ec0c4609131fd3c62fcb463522874",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "oracles-measure-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "oracles-measure-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Researcher",
+          "Evaluator"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
+      "name": "scribes-quill",
+      "displayName": "Scribe's Quill",
+      "category": "Research Crafts",
+      "source": {
+        "source": "local",
+        "path": "./plugins/scribes-quill"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [],
+      "kind": "craft",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "research-ingestion"
+          ],
+          "optional": [
+            "pptx-generator",
+            "markitdown",
+            "memory"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "ml-paper-writing",
+              "sourcePath": "craft-sources/scribes-quill/ml-paper-writing/SKILL.md",
+              "upstreamPath": "20-ml-paper-writing/ml-paper-writing/SKILL.md",
+              "contentHash": "sha256:96733e6d758642d792ed15b7c08eb90548d4775099368cd72a8312127f2fe911",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "systems-paper-writing",
+              "sourcePath": "craft-sources/scribes-quill/systems-paper-writing/SKILL.md",
+              "upstreamPath": "20-ml-paper-writing/systems-paper-writing/SKILL.md",
+              "contentHash": "sha256:ee31b50b25192efcfcbe3252d7e15d88ec27bbd94817640b0357090f94c0e297",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "academic-plotting",
+              "sourcePath": "craft-sources/scribes-quill/academic-plotting/SKILL.md",
+              "upstreamPath": "20-ml-paper-writing/academic-plotting/SKILL.md",
+              "contentHash": "sha256:6613653d8109dcae36596b37d7414d5ae394a18f81543365222286d04485fd83",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "presenting-conference-talks",
+              "sourcePath": "craft-sources/scribes-quill/presenting-conference-talks/SKILL.md",
+              "upstreamPath": "20-ml-paper-writing/presenting-conference-talks/SKILL.md",
+              "contentHash": "sha256:5fb6b8f9e5b7690dcb0d783ff1e07c6d3f6b950b8f1238e0672e1f3c53bad57f",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "scribes-quill-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "scribes-quill-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Researcher",
+          "Writer"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
+      "name": "grand-research-ritual",
+      "displayName": "Grand Research Ritual",
+      "category": "Research Crafts",
+      "source": {
+        "source": "local",
+        "path": "./plugins/grand-research-ritual"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [],
+      "kind": "craft",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "sequential-thinking",
+            "coven-evals"
+          ],
+          "optional": [
+            "memory",
+            "ml-engineer",
+            "research-ingestion"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "0-autoresearch-skill",
+              "sourcePath": "craft-sources/grand-research-ritual/0-autoresearch-skill/SKILL.md",
+              "upstreamPath": "0-autoresearch-skill/SKILL.md",
+              "contentHash": "sha256:400178f8156280d9b7297d1e1b96701f6473ad2f44f82af7476dc1d56b839739",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, reviewable checkpoints, and bounded execution."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "grand-research-ritual-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "grand-research-ritual-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Researcher",
+          "Research Lead"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+            "Rewrote continuous autonomy defaults to require explicit time, compute, storage, network, and spend bounds.",
+            "Removed implicit commit/push, recurring scheduling, external messaging, and autonomous scope/pivot/publication behavior; state remains resumable only in an approved project directory."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
+      "name": "artificers-codex",
+      "displayName": "Artificer's Codex",
+      "category": "Research Crafts",
+      "source": {
+        "source": "local",
+        "path": "./plugins/artificers-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [],
+      "kind": "craft",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "ml-engineer",
+            "huggingface"
+          ],
+          "optional": [
+            "coven-evals",
+            "memory",
+            "sequential-thinking"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "litgpt",
+              "sourcePath": "craft-sources/artificers-codex/litgpt/SKILL.md",
+              "upstreamPath": "01-model-architecture/litgpt/SKILL.md",
+              "contentHash": "sha256:523f0b786c915af20a7980857e174b838e4440afe851bd16917ef69f8042adb2",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "peft",
+              "sourcePath": "craft-sources/artificers-codex/peft/SKILL.md",
+              "upstreamPath": "03-fine-tuning/peft/SKILL.md",
+              "contentHash": "sha256:acdb318f94624517c8cdb3c925c7a2e8b34c65e8ca02b301777c51eea9f0f73c",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "accelerate",
+              "sourcePath": "craft-sources/artificers-codex/accelerate/SKILL.md",
+              "upstreamPath": "08-distributed-training/accelerate/SKILL.md",
+              "contentHash": "sha256:e94cea7a174f395df02d935065fe05db8ecb637c52e443b6380c703963758d7a",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "bitsandbytes",
+              "sourcePath": "craft-sources/artificers-codex/bitsandbytes/SKILL.md",
+              "upstreamPath": "10-optimization/bitsandbytes/SKILL.md",
+              "contentHash": "sha256:0a68e96c760b0ba561437328211a8405b4db422e9bad92415219abf91f87f849",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "gguf",
+              "sourcePath": "craft-sources/artificers-codex/gguf/SKILL.md",
+              "upstreamPath": "10-optimization/gguf/SKILL.md",
+              "contentHash": "sha256:11016e03b2b53c9a981f1ef7df96b078daf9bc929126ccf36377b86bb7025224",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "vllm",
+              "sourcePath": "craft-sources/artificers-codex/vllm/SKILL.md",
+              "upstreamPath": "12-inference-serving/vllm/SKILL.md",
+              "contentHash": "sha256:57eaf97e982fe758b6fd0ef2281b6961940e4a1c8258f303b0ce02d55d0636c6",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "llama-cpp",
+              "sourcePath": "craft-sources/artificers-codex/llama-cpp/SKILL.md",
+              "upstreamPath": "12-inference-serving/llama-cpp/SKILL.md",
+              "contentHash": "sha256:d74caa45483f5b3c6bd6267e39b444627989ff90fdb84b6c2e7c3da4ddf143ef",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "artificers-codex-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "artificers-codex-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "ML Engineer",
+          "Researcher"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
+      "name": "seekers-lens",
+      "displayName": "Seeker's Lens",
+      "category": "Research Crafts",
+      "source": {
+        "source": "local",
+        "path": "./plugins/seekers-lens"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [],
+      "kind": "craft",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "fetch",
+            "filesystem",
+            "memory",
+            "sequential-thinking"
+          ],
+          "optional": [
+            "exa",
+            "tavily",
+            "firecrawl",
+            "searxng",
+            "research-ingestion"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "brainstorming-research-ideas",
+              "sourcePath": "craft-sources/seekers-lens/brainstorming-research-ideas/SKILL.md",
+              "upstreamPath": "21-research-ideation/brainstorming-research-ideas/SKILL.md",
+              "contentHash": "sha256:8422a1a6dc0a88d05f02b9fbe0f8c2ae06a77024856d18125efa13d19d855d46",
+              "modifications": [
+                "Normalized frontmatter to Codex-supported name, description, and license fields while retaining the instructional body.",
+                "Replaced the unavailable scientific-skills literature-review reference with a capability-neutral handoff.",
+                "Added a Coven boundary that keeps ideation advisory until execution is separately authorized."
+              ]
+            },
+            {
+              "id": "creative-thinking-for-research",
+              "sourcePath": "craft-sources/seekers-lens/creative-thinking-for-research/SKILL.md",
+              "upstreamPath": "21-research-ideation/creative-thinking-for-research/SKILL.md",
+              "contentHash": "sha256:ec111f9236d7f9d72c895cebbf0f534ac93f4249172607559ad4bf92aefc5310",
+              "modifications": [
+                "Normalized frontmatter to Codex-supported name, description, and license fields while retaining the instructional body.",
+                "Replaced the unavailable scientific-skills literature-review reference with a capability-neutral handoff.",
+                "Added a Coven boundary that labels speculation and requires separate authorization before execution."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "open-a-research-space",
+              "name": "Open a research space",
+              "description": "Generate, challenge, and rank bounded research directions.",
+              "body": "Open the research space around {{topic}}. Use both Seeker's Lens ideation skills to generate distinct directions, label assumptions and unknowns, then rank the strongest three by novelty, impact, evidence gap, and feasibility. Stop with a proposed checkpoint; do not begin experiments."
+            },
+            {
+              "id": "stress-test-a-research-idea",
+              "name": "Stress-test a research idea",
+              "description": "Probe a candidate direction before committing resources.",
+              "body": "Stress-test {{research idea}}. Reformulate it at three abstraction levels, identify the strongest contradiction or boundary case, compare a simpler baseline, and state the evidence that would change the recommendation. End with a bounded pilot and a human go/no-go checkpoint."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "diverge-converge-refine",
+              "name": "Diverge, converge, refine",
+              "description": "Move from a broad topic to a reviewable pilot without starting execution.",
+              "steps": [
+                "Define the research space, stakeholders, constraints, and explicit resource bounds.",
+                "Generate diverse candidate directions with multiple ideation lenses.",
+                "Challenge candidates with contradiction, boundary, simplicity, and feasibility checks.",
+                "Rank the strongest directions and expose assumptions, evidence gaps, and likely objections.",
+                "Draft one bounded pilot and stop at a human go/no-go checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "filesystem.read",
+          "network.http",
+          "memory.local",
+          "reasoning.sequential"
+        ],
+        "recommendedRoles": [
+          "researcher",
+          "strategist",
+          "analyst"
+        ],
+        "provenance": {
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
+      "name": "skill-scanner",
+      "displayName": "Skill Scanner",
+      "category": "Security",
+      "source": {
+        "source": "local",
+        "path": "./plugins/skill-scanner"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tinyfish-browser",
+      "displayName": "TinyFish Browser",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tinyfish-browser"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "ask-curl",
+      "displayName": "Ask cURL",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ask-curl"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "codex-session-manager",
+      "displayName": "Codex Session Manager",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-session-manager"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "epub-to-pdf",
+      "displayName": "EPUB to PDF",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/epub-to-pdf"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "lit-ui-designer",
+      "displayName": "Lit UI Designer",
+      "category": "Design",
+      "source": {
+        "source": "local",
+        "path": "./plugins/lit-ui-designer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "ml-engineer",
+      "displayName": "ML Engineer",
+      "category": "AI & ML",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ml-engineer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "openclaw-trust",
+      "displayName": "OpenClaw Trust",
+      "category": "Security",
+      "source": {
+        "source": "local",
+        "path": "./plugins/openclaw-trust"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "project-manager",
+      "displayName": "Project Manager",
+      "category": "Project Management",
+      "source": {
+        "source": "local",
+        "path": "./plugins/project-manager"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "ritual-dapp-frontend",
+      "displayName": "Ritual dApp Frontend",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ritual-dapp-frontend"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tauri-apple-release",
+      "displayName": "Tauri Apple Release",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tauri-apple-release"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tinyfish-fetch",
+      "displayName": "TinyFish Fetch",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tinyfish-fetch"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "board",
+      "displayName": "BOARD \u2014 Shared Task Board",
+      "category": "Project Management",
+      "source": {
+        "source": "local",
+        "path": "./plugins/board"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "daily-dev-agentic",
+      "displayName": "daily.dev Agentic Learning",
+      "category": "Knowledge & Docs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/daily-dev-agentic"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "heygen-skills",
+      "displayName": "HeyGen Skills",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/heygen-skills"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "lobster",
+      "displayName": "Lobster \u2014 Workflow Shell",
+      "category": "Automation",
+      "source": {
+        "source": "local",
+        "path": "./plugins/lobster"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "nodriver",
+      "displayName": "nodriver",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/nodriver"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "opencoven-design",
+      "displayName": "OpenCoven Design Skill",
+      "category": "Design",
+      "source": {
+        "source": "local",
+        "path": "./plugins/opencoven-design"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "prompt-engineer",
+      "displayName": "Prompt Engineer",
+      "category": "AI & ML",
+      "source": {
+        "source": "local",
+        "path": "./plugins/prompt-engineer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "threejs-animation",
+      "displayName": "Three.js Animation",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/threejs-animation"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tinyfish-search",
+      "displayName": "TinyFish Search",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tinyfish-search"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "cleanup-unused-files",
+      "displayName": "Cleanup Unused Files",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/cleanup-unused-files"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "discrawl",
+      "displayName": "Discrawl",
+      "category": "Social",
+      "source": {
+        "source": "local",
+        "path": "./plugins/discrawl"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "higgsfield-generate",
+      "displayName": "Higgsfield Generate",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/higgsfield-generate"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "maintainer-bar",
+      "displayName": "MaintainerBar \u2014 Maintainer Menu Bar Skill",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/maintainer-bar"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "ocr",
+      "displayName": "OCR",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ocr"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "opencoven-role-creation-process",
+      "displayName": "OpenCoven Role Creation Process",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/opencoven-role-creation-process"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "prompt-vault",
+      "displayName": "Prompt Vault",
+      "category": "AI & ML",
+      "source": {
+        "source": "local",
+        "path": "./plugins/prompt-vault"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "security-agent",
+      "displayName": "Security Agent",
+      "category": "Security",
+      "source": {
+        "source": "local",
+        "path": "./plugins/security-agent"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tinyfish-agent-run",
+      "displayName": "TinyFish Agent Run",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tinyfish-agent-run"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tinyfish-web-agent",
+      "displayName": "TinyFish Web Agent",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tinyfish-web-agent"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "coven-flows",
+      "displayName": "Coven Flows",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-flows"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "coven-memory",
+      "displayName": "Coven Memory & Knowledge",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-memory"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "coven-evals",
+      "displayName": "Coven Evals",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-evals"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "coven-canvas",
+      "displayName": "Coven Canvas",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-canvas"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "coven-automations",
+      "displayName": "Coven Automations",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-automations"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "slack",
+      "displayName": "Slack",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/slack"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "postgres",
+      "displayName": "PostgreSQL",
+      "category": "Databases",
+      "source": {
+        "source": "local",
+        "path": "./plugins/postgres"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "sentry",
+      "displayName": "Sentry",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/sentry"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "cloudflare-docs",
+      "displayName": "Cloudflare Docs",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/cloudflare-docs"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "huggingface",
+      "displayName": "Hugging Face",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/huggingface"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "exa",
+      "displayName": "Exa Search",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/exa"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": []
+    },
+    {
+      "name": "e2b",
+      "displayName": "E2B Code Sandbox",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/e2b"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "browserbase",
+      "displayName": "Browserbase",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/browserbase"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "elevenlabs",
+      "displayName": "ElevenLabs",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/elevenlabs"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "sqlite",
+      "displayName": "SQLite",
+      "category": "Databases",
+      "source": {
+        "source": "local",
+        "path": "./plugins/sqlite"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "shadcn-ui-and-radix",
+      "displayName": "shadcn/ui + Radix + Tailwind",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/shadcn-ui-and-radix"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tailwind-design-tokens",
+      "displayName": "Tailwind Design Tokens & Theming",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tailwind-design-tokens"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "framer-motion-patterns",
+      "displayName": "Motion (Framer Motion) Patterns",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/framer-motion-patterns"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "wcag-a11y-audit",
+      "displayName": "WCAG 2.2 AA Accessibility Audit",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/wcag-a11y-audit"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "form-ux-patterns",
+      "displayName": "Form UX Patterns",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/form-ux-patterns"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "dataviz-dashboard-ux",
+      "displayName": "Data-Viz & Dashboard UX",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/dataviz-dashboard-ux"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "command-palette-keyboard-ux",
+      "displayName": "Command Palette & Keyboard UX (\u2318K)",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/command-palette-keyboard-ux"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "empty-loading-error-states",
+      "displayName": "Empty, Loading & Error States",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/empty-loading-error-states"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "mobile-touch-ux",
+      "displayName": "Mobile Touch UX & Responsive Patterns",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mobile-touch-ux"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "design-system-landscape",
+      "displayName": "Design-System Landscape",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/design-system-landscape"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "pretext",
+      "displayName": "Pretext \u2014 Text Measurement & Layout",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/pretext"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "brand-voice-generator",
+      "displayName": "Brand & Voice Generator",
+      "category": "Design",
+      "source": {
+        "source": "local",
+        "path": "./plugins/brand-voice-generator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "mcp-client",
+      "displayName": "Universal MCP Client",
+      "category": "Core MCP",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mcp-client"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "pptx-generator",
+      "displayName": "PPTX Generator",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/pptx-generator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "remotion",
+      "displayName": "Remotion Video",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/remotion"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "skill-creator",
+      "displayName": "Skill Creator",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/skill-creator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "sop-creator",
+      "displayName": "SOP & Runbook Creator",
+      "category": "Knowledge & Docs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/sop-creator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "worldbuilding",
+      "displayName": "Worldbuilding",
+      "category": "Knowledge Packs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/worldbuilding"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [],
+      "kind": "knowledge-pack"
+    },
+    {
+      "name": "prompt-pack-essentials",
+      "displayName": "Prompt Pack: Essentials",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/prompt-pack-essentials"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "prompt-pack-shipping",
+      "displayName": "Prompt Pack: Shipping",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/prompt-pack-shipping"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "charms-loom",
+      "displayName": "Charm's Loom",
+      "category": "Communication Crafts",
+      "source": {
+        "source": "local",
+        "path": "./plugins/charms-loom"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [],
+      "kind": "craft",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "git"
+          ],
+          "optional": [
+            "vercel",
+            "memory"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "slidev-deck-pipeline",
+              "sourcePath": "craft-sources/charms-loom/slidev-deck-pipeline/SKILL.md",
+              "upstreamPath": "skills/slidev-deck-pipeline/SKILL.md",
+              "contentHash": "sha256:b9f3b5fc0166dfd1f5a155ebe9c7a93ca7c7a757941a46116a7febf9c56a5136",
+              "modifications": [
+                "Authored by Charm from the live open-coven-weekly Slidev pipeline.",
+                "Audited for local capability boundaries, deterministic scripts, and reviewable deploy workflow."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Communicator",
+          "Presenter"
+        ],
+        "provenance": {
+          "upstream": "OpenCoven open-coven-weekly Slidev system",
+          "commit": "38b5c200ca6d0c736d2c2efbb888047032f0fc09",
+          "license": "MIT",
+          "modifications": [
+            "Extracted the deterministic deck author/verify/deploy loop into a portable Craft bundle."
+          ],
+          "source": "https://github.com/OpenCoven/open-coven-weekly",
+          "licensePath": "craft-sources/charms-loom/LICENSE"
+        }
+      }
     }
   ]
 }

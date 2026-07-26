@@ -1,0 +1,24 @@
+{
+  "name": "tinyfish-browser",
+  "version": "0.1.0",
+  "description": "Spin up a remote Chromium session via the TinyFish Browser API and get a CDP URL for driving it with Playwright/Puppeteer; sessions auto-expire after about an hour idle.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "TinyFish Browser",
+    "shortDescription": "Spin up a remote Chromium session via the TinyFish Browser API and get a CDP URL for driving it with Playwright/Puppeteer; sessions auto-expire after about an hour idle.",
+    "longDescription": "Verify TINYFISH_API_KEY, create a session over the API, and drive the returned cdp_url with a DevTools-Protocol client.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "browser",
+      "chromium",
+      "cdp",
+      "playwright",
+      "remote"
+    ],
+    "defaultPrompt": "Help me use TinyFish Browser safely."
+  }
+}

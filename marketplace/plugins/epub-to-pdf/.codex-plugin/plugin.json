@@ -1,0 +1,24 @@
+{
+  "name": "epub-to-pdf",
+  "version": "0.1.0",
+  "description": "Convert EPUB and PDF bidirectionally with calibre's ebook-convert: EPUB to PDF preserves layout for analysis, PDF to EPUB compresses and reflows for ereaders.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "EPUB to PDF",
+    "shortDescription": "Convert EPUB and PDF bidirectionally with calibre's ebook-convert: EPUB to PDF preserves layout for analysis, PDF to EPUB compresses and reflows for ereaders.",
+    "longDescription": "Run ebook-convert to translate between EPUB and PDF, then validate output size and structure before saving to research/sources/.",
+    "developerName": "OpenCoven",
+    "category": "Productivity",
+    "capabilities": [
+      "epub",
+      "pdf",
+      "calibre",
+      "conversion",
+      "ebook"
+    ],
+    "defaultPrompt": "Help me use EPUB to PDF safely."
+  }
+}

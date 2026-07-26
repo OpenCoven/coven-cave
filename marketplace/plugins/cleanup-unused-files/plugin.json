@@ -1,0 +1,40 @@
+{
+  "name": "cleanup-unused-files",
+  "version": "0.1.0",
+  "description": "Aggressively reclaim disk space by removing caches, build artifacts, temp folders, and reproducible local tool state from repos and developer machines.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "cleanup",
+    "disk-space",
+    "cache",
+    "build-artifacts",
+    "reset",
+    "developer"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/cleanup-unused-files",
+  "x-coven": {
+    "displayName": "Cleanup Unused Files",
+    "category": "Developer Tools",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/cleanup-unused-files"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

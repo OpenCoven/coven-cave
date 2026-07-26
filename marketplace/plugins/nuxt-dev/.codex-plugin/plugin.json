@@ -1,0 +1,24 @@
+{
+  "name": "nuxt-dev",
+  "version": "0.1.0",
+  "description": "Lets models understand your running Vite/Nuxt app via an MCP endpoint on the dev server.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Nuxt Dev",
+    "shortDescription": "Lets models understand your running Vite/Nuxt app via an MCP endpoint on the dev server.",
+    "longDescription": "Use Nuxt Dev MCP to ground frontend work in your actual running app structure.",
+    "developerName": "OpenCoven",
+    "category": "Developer Tools",
+    "capabilities": [
+      "nuxt",
+      "vite",
+      "frontend",
+      "dev-server",
+      "vue"
+    ],
+    "defaultPrompt": "Help me use Nuxt Dev safely."
+  }
+}

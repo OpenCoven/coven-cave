@@ -13,6 +13,13 @@ type Options = {
   orientation?: Orientation;
   /** Wrap from last → first / first → last. Default false. */
   loop?: boolean;
+  /**
+   * Items per visual row. When set, ↑/↓ move by a whole row while ←/→ still
+   * move by one — the WAI-ARIA grid pattern (e.g. a month calendar's 7-column
+   * day grid). A row-step off the top/bottom edge stays put rather than
+   * clamping, so the focus never slides into a different column.
+   */
+  columns?: number;
 };
 
 /**
@@ -29,6 +36,7 @@ export function useRovingTabIndex({
   itemSelector,
   orientation = "both",
   loop = false,
+  columns,
 }: Options) {
   const [activeIndex, setActiveIndex] = useState(0);
   const activeRef = useRef(0);
@@ -80,6 +88,10 @@ export function useRovingTabIndex({
       let next = activeRef.current + delta;
       if (loop) {
         next = (next + items.length) % items.length;
+      } else if (columns && Math.abs(delta) > 1 && (next < 0 || next >= items.length)) {
+        // Grid row-step off the top/bottom edge: stay put (clamping would
+        // slide the focus into a different column).
+        return;
       } else {
         next = Math.max(0, Math.min(items.length - 1, next));
       }
@@ -96,16 +108,24 @@ export function useRovingTabIndex({
     }
 
     function onKey(e: KeyboardEvent) {
+      // Never rove while the user is typing in a field inside the container
+      // (e.g. an inline rename/filter input) — arrow keys must move the caret
+      // and Home/End must jump within the text, not the item set.
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      // Let modified arrows through — they're never roving (e.g. Alt+↑/↓ to
+      // nudge a calendar event's time), so the focused item can handle them.
+      if (e.altKey || e.metaKey || e.ctrlKey) return;
       switch (e.key) {
         case "ArrowDown":
           if (!vert) return;
           e.preventDefault();
-          move(1);
+          move(columns ?? 1);
           break;
         case "ArrowUp":
           if (!vert) return;
           e.preventDefault();
-          move(-1);
+          move(-(columns ?? 1));
           break;
         case "ArrowRight":
           if (!horiz) return;
@@ -130,7 +150,7 @@ export function useRovingTabIndex({
 
     container.addEventListener("keydown", onKey);
     return () => container.removeEventListener("keydown", onKey);
-  }, [containerRef, getItems, loop, orientation]);
+  }, [containerRef, getItems, loop, orientation, columns]);
 
   return { activeIndex, setActiveIndex };
 }

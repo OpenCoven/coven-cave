@@ -1,11 +1,8 @@
 import Foundation
 
-/// Describes how to reach the desktop host over Tailscale.
-///
-/// There is **no token**. Trust is established by being on the same Tailscale
-/// tailnet as the host: the desktop serves the mobile API only over its Tailscale
-/// interface (via `tailscale serve`), so any request that reaches it is already
-/// tailnet-authenticated. The app only needs the host's address.
+/// Describes the Tailscale host and optional mobile access credential. The
+/// desktop may publish the full API through `tailscale serve`, so tailnet
+/// reachability is paired with a Cave access token for authorization.
 struct CaveConnection: Codable, Equatable {
     /// A MagicDNS name (e.g. `my-mac.tailnet-name.ts.net`) or a raw Tailscale IP
     /// (e.g. `100.101.102.103`). May include a scheme and/or port; we normalise.
@@ -17,13 +14,25 @@ struct CaveConnection: Codable, Equatable {
         let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        // Already a full URL? Use it.
+        // Already a full URL? MagicDNS hosts always use HTTPS. A pasted
+        // `http://*.ts.net` URL would otherwise be rejected by ATS (and derive
+        // an insecure `ws://` terminal URL), despite Tailscale Serve issuing a
+        // certificate for the host.
         if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
+            if var components = URLComponents(string: trimmed),
+               components.scheme?.lowercased() == "http",
+               components.host?.lowercased().hasSuffix(".ts.net") == true {
+                components.scheme = "https"
+                return components.url
+            }
             return URL(string: trimmed)
         }
 
-        // MagicDNS .ts.net → HTTPS, default port (Tailscale Serve terminates TLS).
-        if trimmed.lowercased().hasSuffix(".ts.net") || trimmed.lowercased().contains(".ts.net/") {
+        // MagicDNS .ts.net → HTTPS, with or without an explicit port
+        // (`tailscale serve` often terminates TLS on :8443, so a relocated
+        // "host.ts.net:8443" must still derive https, not http).
+        let hostPart = trimmed.split(separator: ":").first.map(String.init) ?? trimmed
+        if hostPart.lowercased().hasSuffix(".ts.net") || trimmed.lowercased().contains(".ts.net/") {
             return URL(string: "https://\(trimmed)")
         }
 
@@ -35,7 +44,7 @@ struct CaveConnection: Codable, Equatable {
     }
 
     /// WebSocket base derived from `baseURL` (https→wss, http→ws). Used by the
-    /// Developer tab's terminal to reach `/api/pty-ws`.
+    /// Developer terminal surface to reach `/api/pty-ws`.
     var wsBaseURL: URL? {
         guard let base = baseURL,
               var comps = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
@@ -48,7 +57,8 @@ struct CaveConnection: Codable, Equatable {
     /// terminates TLS on `:8443`, so a `.ts.net` host typed without a port
     /// (which resolves to plain `:443`) never connects; we probe `:8443` and
     /// relocate to it. A fully-qualified `http(s)://…` URL is trusted verbatim
-    /// (the user was explicit), so it gets no alternates.
+    /// (the user was explicit), so it gets no alternates. Explicit HTTP
+    /// MagicDNS URLs are normalized to HTTPS before the single candidate is returned.
     var candidateBaseURLs: [URL] {
         let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
@@ -61,7 +71,7 @@ struct CaveConnection: Codable, Equatable {
 
         let lower = trimmed.lowercased()
         if lower.hasPrefix("http://") || lower.hasPrefix("https://") {
-            if let url = URL(string: trimmed) { out.append(url) }
+            if let url = baseURL { out.append(url) }
             return out
         }
 
@@ -72,13 +82,18 @@ struct CaveConnection: Codable, Equatable {
             add("https://\(hostname):8443")   // Tailscale Serve's usual TLS port
             add("https://\(hostname)")        // bare 443
         } else {
-            for port in ["3000", "4500", "4555", "8443"] { add("http://\(hostname):\(port)") }
+            // The desktop falls back through 3000-3010 when ports are taken
+            // (scripts/dev-app.sh / server.ts PORT), so probe the whole range —
+            // discovery is concurrent, so the extra candidates cost no wall time.
+            for port in 3000...3010 { add("http://\(hostname):\(port)") }
+            for port in ["4500", "4555", "8443"] { add("http://\(hostname):\(port)") }
             add("https://\(hostname):8443")
         }
         return out
     }
 
     static let storageKey = "cave.connection.host"
+    static let tokenKey = "cave.access-token"
 
     static func load() -> CaveConnection? {
         guard let host = UserDefaults.standard.string(forKey: storageKey),
@@ -92,6 +107,22 @@ struct CaveConnection: Codable, Equatable {
 
     static func clear() {
         UserDefaults.standard.removeObject(forKey: storageKey)
+        KeychainStore.remove(tokenKey)
+    }
+
+    /// The mobile access credential, when this desktop's API is token-gated
+    /// (COVEN_CAVE_ACCESS_TOKEN on the server). Kept in the Keychain — the
+    /// host string above is not a secret, this is.
+    static var accessToken: String? {
+        KeychainStore.string(forKey: tokenKey)
+    }
+
+    static func saveAccessToken(_ token: String?) {
+        if let token, !token.isEmpty {
+            KeychainStore.set(token, forKey: tokenKey)
+        } else {
+            KeychainStore.remove(tokenKey)
+        }
     }
 }
 
@@ -100,6 +131,11 @@ enum CaveError: LocalizedError {
     case badResponse(Int)
     case decoding(String)
     case transport(String)
+
+    static func isAuthFailure(_ error: Error) -> Bool {
+        guard case CaveError.badResponse(let code) = error else { return false }
+        return code == 401 || code == 403
+    }
 
     var errorDescription: String? {
         switch self {

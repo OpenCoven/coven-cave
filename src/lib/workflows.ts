@@ -29,6 +29,19 @@ export type WorkflowStepSummary = {
   on_error?: string;
 };
 
+/**
+ * An outbound HTTP/API call a workflow may make. Attached at the workflow level
+ * alongside skills and MCP servers; the presence of any call contributes a
+ * `web.fetch` permission, surfaced as inherited (see workflow-permissions).
+ */
+export type WorkflowHttpCall = {
+  id: string;
+  name?: string;
+  method?: string; // GET | POST | PUT | PATCH | DELETE | …
+  url: string;
+  note?: string;
+};
+
 export type WorkflowSummary = {
   id: string;
   version: string;
@@ -44,6 +57,13 @@ export type WorkflowSummary = {
     cost_ceiling_usd?: number;
   };
   permissions?: string[];
+  /** Local skills attached to the workflow. Their declared permissions are
+   *  surfaced as inherited. */
+  skills?: string[];
+  /** MCP servers the workflow is allowed to call. */
+  mcp?: string[];
+  /** Outbound HTTP/API calls the workflow makes. */
+  http?: WorkflowHttpCall[];
   path?: string;
   validation_state?: "valid" | "warning" | "invalid" | "unknown";
   visibility?: {
@@ -146,6 +166,11 @@ export type WorkflowRunRecord = {
   steps: WorkflowRunStepRecord[];
   summary?: string;
   source: "cave" | "daemon";
+  /**
+   * The agent session carrying out this run (session executor). Lets the run
+   * panel pull the live transcript to derive per-step progress + debug detail.
+   */
+  sessionId?: string;
 };
 
 export type SaveWorkflowResponse = {
@@ -261,7 +286,9 @@ export async function clearWorkflowRuns(
   workflowId?: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<{ ok: boolean; cleared?: number; error?: string }> {
-  const query = workflowId ? `?workflowId=${encodeURIComponent(workflowId)}` : "";
+  // Scoped clear passes the id; a full wipe must explicitly opt in with
+  // `?all=1` so the server can reject accidental bare DELETEs (issue #3470).
+  const query = workflowId ? `?workflowId=${encodeURIComponent(workflowId)}` : "?all=1";
   const res = await fetchImpl(`/api/workflows/runs${query}`, { method: "DELETE", cache: "no-store" });
   return res.json() as Promise<{ ok: boolean; cleared?: number; error?: string }>;
 }

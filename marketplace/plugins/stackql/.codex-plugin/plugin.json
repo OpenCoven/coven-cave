@@ -1,0 +1,24 @@
+{
+  "name": "stackql",
+  "version": "0.1.0",
+  "description": "Query, provision, and operate cloud, SaaS, and API resources using SQL, over MCP.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "StackQL",
+    "shortDescription": "Query, provision, and operate cloud, SaaS, and API resources using SQL, over MCP.",
+    "longDescription": "Use StackQL for SQL-native cloud inspection, preferring read-only queries before provisioning.",
+    "developerName": "OpenCoven",
+    "category": "Cloud & Infrastructure",
+    "capabilities": [
+      "stackql",
+      "sql",
+      "cloud",
+      "provisioning",
+      "infrastructure"
+    ],
+    "defaultPrompt": "Help me use StackQL safely."
+  }
+}

@@ -8,30 +8,48 @@ import {
   Panel,
   Separator,
   useDefaultLayout,
+  type GroupImperativeHandle,
   type PanelImperativeHandle,
 } from "react-resizable-panels";
-import { Icon, CAVE_ICON_SIZE, type IconName } from "@/lib/icon";
+import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
+import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
+import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
+import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { useIsMobile } from "@/lib/use-viewport";
+import { isMacDesktopShell } from "@/lib/tauri-platform";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
+import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
+import { ShellPeelReveal } from "@/components/shell-peel-reveal";
 import {
   getPanelShortcutBindings,
   labelPanelShortcut,
   matchesPanelShortcut,
   type PanelShortcutBindings,
 } from "@/lib/panel-shortcuts";
+import {
+  isShellNavCollapsedLayout,
+  resolveShellDestinationLayout,
+  resolveShellLayoutPersistence,
+  resolveShellNavOpenPreference,
+  type ShellPanelLayout,
+} from "./shell-layout";
 
-// Shell — multi-pane app chrome. Horizontal Group of nav/list/detail/agent,
+// Shell — multi-pane app chrome. Horizontal Group of nav/list/detail,
 // optionally wrapped in a vertical Group when a bottom slot (terminal) is set.
 //
 // Keyboard:
 //   ⌘B   toggle nav
 //   ⌘\   toggle list
-//   ⌘⇧B  toggle agent
 //   ⌃`   toggle bottom terminal
 
-const SHELL_GROUP_ID = "cave.shell.widths.v1";
+// v3: the nav now starts minimized to its icon rail by default (see the
+// default-minimize layout effect below) — bumping the key retires v2 saved
+// widths so the new default applies once, then the user's own resize persists.
+// v2: panels went percent → pixel (see shell-left-panels-fit.test.ts); v1
+// layouts hold percent widths chosen under the old monitor-scaled defaults.
+const SHELL_GROUP_ID = "cave.shell.widths.v3";
 const BOTTOM_GROUP_ID = "cave.shell.bottom.v1";
 
 const shellStorage = {
@@ -40,18 +58,28 @@ const shellStorage = {
     try {
       const raw = window.localStorage.getItem(key);
       if (raw) {
-        // Guard: clear corrupted layouts where detail panel (id="detail") is ≤5%.
+        // Guard against corrupt/stale saved layouts that would leave dead space
+        // in the detail area. react-resizable-panels v4 persists each group as a
+        // flat `{ "<panelId>": <percent>, … }` map (e.g. {"nav":26.5,"detail":73.5}).
+        // Drop the layout — falling back to the default — when a panel is
+        // collapsed to ~0 or the panels don't sum to ~100% (a leftover layout
+        // from an old panel set under-fills the group and never re-expands).
         try {
-          const parsed = JSON.parse(raw) as Record<string, { layout?: number[] }>;
-          for (const entry of Object.values(parsed)) {
-            if (!Array.isArray(entry?.layout)) continue;
-            // detail is last non-bottom panel; if any panel is suspiciously ≤2%, nuke the layout.
-            if (entry.layout.some((v, i) => i > 0 && v <= 2)) {
-              window.localStorage.removeItem(key);
-              return null;
+          const parsed = JSON.parse(raw) as unknown;
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            const values = Object.values(parsed as Record<string, unknown>).filter(
+              (v): v is number => typeof v === "number" && Number.isFinite(v),
+            );
+            if (values.length >= 2) {
+              const sum = values.reduce((a, b) => a + b, 0);
+              const anyCollapsed = values.some((v) => v > 0 && v <= 2);
+              if (anyCollapsed || sum < 98 || sum > 102) {
+                window.localStorage.removeItem(key);
+                return null;
+              }
             }
           }
-        } catch { /* not JSON layout, pass through */ }
+        } catch { /* not a layout object, pass through */ }
       }
       return raw;
     } catch {
@@ -74,37 +102,78 @@ function togglePanel(panel: PanelImperativeHandle | null) {
   else panel.collapse();
 }
 
-// Width of the right-panel "peek" strip — the thin sliver the companion rail
-// collapses to (instead of vanishing) when `rightPanelPeek` is on, e.g. to keep
-// a rotated YouTube video visible while the panel is closed. Sizes below this
-// (the strip, or 0 when not peeking) read as "panel closed".
-const RAIL_PEEK_PX = 56;
-const RAIL_OPEN_THRESHOLD_PX = RAIL_PEEK_PX + 16;
+function applyPanelOpenState(panel: PanelImperativeHandle | null, open: boolean) {
+  if (!panel || panel.isCollapsed() === !open) return;
+  if (open) panel.expand();
+  else panel.collapse();
+}
+
+// The minimized-by-default nav is applied exactly ONCE per group per browser,
+// tracked by this flag (the panel library persists layouts under its own
+// `react-resizable-panels:*` keys, so we can't reuse those; a self-owned flag is
+// simpler and lets tests opt out by pre-seeding it). After the first minimize the
+// library's expanded-layout persistence and the separate open preference take
+// over, because we no longer re-minimize. Returns true on the server / when
+// storage is unreadable, i.e. "already applied" → don't minimize.
+const SHELL_MIN_APPLIED_PREFIX = "cave:shell:min-applied:";
+function shellMinimizeApplied(id: string): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(`${SHELL_MIN_APPLIED_PREFIX}${id}`) === "1";
+  } catch {
+    return true;
+  }
+}
+function markShellMinimizeApplied(id: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(`${SHELL_MIN_APPLIED_PREFIX}${id}`, "1");
+  } catch {
+    /* ignore — strict privacy mode or quota */
+  }
+}
+
+// Cross-surface, cross-launch sidebar memory: the nav's open/collapsed state
+// is ONE user preference, persisted globally. The panel library already
+// persists per-GROUP layouts, but route-specific groups never see each other —
+// so a sidebar collapsed on one surface came back open when the next launch (or
+// a surface switch) landed on another. Boot and group switches re-apply the
+// preference; only user-driven resizes write it (the code-rail auto
+// collapse/restore coupling and programmatic group-swap layout churn don't).
+const NAV_OPEN_PREF_KEY = "cave:shell:nav-open";
+function readNavOpenPref(): boolean | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(NAV_OPEN_PREF_KEY);
+    return raw === "1" ? true : raw === "0" ? false : null;
+  } catch {
+    return null;
+  }
+}
+function writeNavOpenPref(open: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(NAV_OPEN_PREF_KEY, open ? "1" : "0");
+  } catch {
+    /* ignore — strict privacy mode or quota */
+  }
+}
+function seedNavOpenPref(defaultOpen: boolean): boolean {
+  const resolved = resolveShellNavOpenPreference(readNavOpenPref(), defaultOpen);
+  if (resolved.shouldPersist) writeNavOpenPref(resolved.open);
+  return resolved.open;
+}
+
 // The left nav collapses to an icons-only rail (instead of vanishing) so the
 // destination icons stay reachable. Sizes at/below the rail read as "collapsed".
 const NAV_RAIL_PX = 56;
+// The nav Panel's open width (its defaultSize) — the ⌘B / hover-peek expand
+// target, and the basis for the minimized-by-default layout injection (the rail
+// is NAV_RAIL_PX/NAV_OPEN_PX of the open width).
+const NAV_OPEN_PX = 240;
 const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
 
-export type ShellNavSection = {
-  label?: string;
-  items: ShellNavItem[];
-  customContent?: ReactNode;
-};
-
-export type ShellNavItem = {
-  id: string;
-  label: string;
-  icon: IconName;
-  kbd?: string;
-  active?: boolean;
-  onClick?: () => void;
-  presence?: "active" | "idle";
-};
-
 export type ShellHandle = {
-  openFamiliar: () => void;
-  closeFamiliar: () => void;
-  toggleFamiliar: () => void;
   openNav: () => void;
   closeNav: () => void;
   toggleNav: () => void;
@@ -118,10 +187,12 @@ export type ShellHandle = {
   dismissListMobile: () => void;
 };
 
+export type ShellNavPolicy = "remembered" | "visit-collapsed" | "chat-contextual";
+export type ShellListPolicy = "collapsible" | "persistent";
+
 type ShellMobileChromeState = {
   navDrawerOpen: boolean;
   listDrawerOpen: boolean;
-  familiarDrawerOpen: boolean;
 };
 
 type ShellTopBar = ReactNode | ((state: ShellMobileChromeState) => ReactNode);
@@ -130,39 +201,58 @@ function ShellInner({
   nav,
   list,
   detail,
-  agent,
   bottom,
   topBar,
   mobileTabs,
+  splitTiles = [],
+  splitSide = "right",
+  onCloseSplit,
+  onCloseSplitTile,
+  onPromoteSplitTile,
+  onDropSplitPage,
   onNavOpenChange,
-  onFamiliarOpenChange,
-  rightPanelPeek = false,
+  navPolicy = "remembered",
+  listPolicy = "collapsible",
   panelShortcutOverrides,
+  historyNavigation,
 }: {
   nav: ReactNode;
   list?: ReactNode;
   detail: ReactNode;
-  agent?: ReactNode;
   bottom?: ReactNode;
   topBar?: ShellTopBar;
+  /** Secondary pages rendered beside the detail surface, capped by Workspace. */
+  splitTiles?: DetailSplitTile[];
+  splitSide?: "left" | "right";
+  onCloseSplit?: () => void;
+  onCloseSplitTile?: (id: string) => void;
+  onPromoteSplitTile?: (id: string) => void;
+  onDropSplitPage?: (mode: string, side: "left" | "right") => void;
   /** Mobile/tablet-only bottom tab bar. Rendered after `.shell-body`
    *  inside `.shell-frame`, but only when the viewport matches the
    *  mobile breakpoint (≤1023px). */
   mobileTabs?: ReactNode;
   onNavOpenChange?: (open: boolean) => void;
-  onFamiliarOpenChange?: (open: boolean) => void;
-  /** When true, "closing" the right (companion) panel leaves a thin peek strip
-   *  instead of collapsing to nothing, and keeps the panel's content mounted so
-   *  e.g. a playing video survives the collapse. Drives the YouTube-in-a-strip
-   *  behaviour: the companion rail renders its minimized (rotated video) view at
-   *  the peek width. */
-  rightPanelPeek?: boolean;
+  navPolicy?: ShellNavPolicy;
+  listPolicy?: ShellListPolicy;
   panelShortcutOverrides?: Partial<PanelShortcutBindings>;
+  historyNavigation?: {
+    canGoBack: boolean;
+    canGoForward: boolean;
+    goBack: () => void;
+    goForward: () => void;
+  };
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
-  const familiarRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
+  // Code-rail ↔ nav coupling bookkeeping (desktop only). When the code rail
+  // opens we collapse the nav and remember that WE did it
+  // (railAutoCollapsedNavRef); on rail close we restore it — unless the user
+  // re-expanded the nav in the meantime (userOverrodeNavRef), in which case
+  // their intent wins and we leave the nav alone.
+  const railAutoCollapsedNavRef = useRef(false);
+  const userOverrodeNavRef = useRef(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -178,14 +268,44 @@ function ShellInner({
 
   // When the viewport crosses back to desktop, drop any open drawer state so
   // we don't end up with a stale [data-mobile-drawer] attribute applying to
-  // a layout that's no longer in mobile mode.
+  // a layout that's no longer in mobile mode. On mobile, if a list slot
+  // disappears under an open list drawer, clear only that stale drawer so the
+  // backdrop/body lock releases without unnecessarily closing an open nav drawer.
   useEffect(() => {
-    if (!isMobile) setMobileDrawer(null);
-  }, [isMobile]);
+    if (!isMobile) {
+      setMobileDrawer(null);
+      return;
+    }
+    if (!list) setMobileDrawer((curr) => (curr === "list" ? null : curr));
+  }, [isMobile, list]);
+
+  // Seamless macOS title bar: only the macOS desktop Tauri shell overlays the
+  // native title bar (lib.rs sets TitleBarStyle::Overlay). The root
+  // `data-tauri-titlebar` marker that reserves room for the traffic lights is
+  // owned globally by <TauriTitlebarMarker> in the root layout — the lights
+  // float over EVERY route of the window (Settings, Dashboard, reports…),
+  // not just this shell. Browser, Windows, Linux, and Tauri-mobile never set
+  // it.
+  //
+  // The drag itself is handled by Tauri's injected drag.js via the
+  // `data-tauri-drag-region="deep"` attributes on the titlebar below: a press
+  // on empty chrome anywhere in the subtree invokes
+  // `plugin:window|start_dragging`, while clickable elements (buttons, inputs,
+  // links, focusable widgets) block the drag so controls keep working.
+  // Double-click gets platform-correct zoom/maximize the same way
+  // (`internal_toggle_maximize`; on macOS it fires on mouseup and cancels if
+  // the cursor moved). Both commands are IPC calls gated by the capability
+  // ACL — the webview loads from an external `http://127.0.0.1` URL (a REMOTE
+  // execution context to the ACL), so they only work because
+  // capabilities/loopback-window-drag.json grants them to the loopback
+  // origin. Without that grant every drag path dies silently, and the CSS
+  // `-webkit-app-region: drag` hint is equally INERT on external URLs (WebKit
+  // only bridges it into a real NSWindow drag on the native `tauri://`
+  // scheme) — which is why the titlebar historically never dragged. The CSS
+  // stays as a progressive-enhancement fallback for any bundled-scheme build.
   const mobileChromeState: ShellMobileChromeState = {
     navDrawerOpen: isMobile && mobileDrawer === "nav",
     listDrawerOpen: isMobile && mobileDrawer === "list",
-    familiarDrawerOpen: isMobile && mobileDrawer === "agent",
   };
   const renderedTopBar = typeof topBar === "function" ? topBar(mobileChromeState) : topBar;
   const panelShortcuts = useMemo(
@@ -199,23 +319,6 @@ function ShellInner({
       setMobileDrawer((curr) => (curr === slot ? null : slot));
     };
     return {
-      openFamiliar: () => {
-        if (isMobile) { setMobileDrawer("agent"); return; }
-        familiarRef.current?.expand();
-        setFamiliarOpen(true);
-      },
-      closeFamiliar: () => {
-        if (isMobile) { setMobileDrawer((c) => (c === "agent" ? null : c)); return; }
-        familiarRef.current?.collapse();
-        setFamiliarOpen(false);
-      },
-      toggleFamiliar: () => {
-        if (isMobile) { toggleDrawer("agent"); return; }
-        const panel = familiarRef.current;
-        if (!panel) return;
-        if (panel.isCollapsed()) { panel.expand(); setFamiliarOpen(true); }
-        else { panel.collapse(); setFamiliarOpen(false); }
-      },
       openNav: () => {
         if (isMobile) { setMobileDrawer("nav"); return; }
         navRef.current?.expand();
@@ -242,6 +345,7 @@ function ShellInner({
       },
       closeList: () => {
         if (isMobile) { setMobileDrawer((c) => (c === "list" ? null : c)); return; }
+        if (listPolicy === "persistent") return;
         listRef.current?.collapse();
       },
       dismissListMobile: () => {
@@ -249,21 +353,25 @@ function ShellInner({
       },
       toggleList: () => {
         if (isMobile) { toggleDrawer("list"); return; }
+        if (listPolicy === "persistent") return;
         togglePanel(listRef.current);
       },
     };
-  }, [isMobile]);
+  }, [isMobile, listPolicy]);
 
   const twoPane = !list;
-  const hasFamiliar = !!agent;
   const hasBottom = !!bottom;
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
   panelIds.push("detail");
-  if (hasFamiliar) panelIds.push("agent");
-  const groupId =
-    (twoPane ? `${SHELL_GROUP_ID}.two-pane` : SHELL_GROUP_ID) +
-    (hasFamiliar ? ".agent" : "");
+  const chatContextual = navPolicy === "chat-contextual";
+  const groupId = chatContextual
+    ? `${SHELL_GROUP_ID}.chat-contextual`
+    : twoPane
+      ? `${SHELL_GROUP_ID}.two-pane`
+      : listPolicy === "persistent"
+        ? `${SHELL_GROUP_ID}.persistent-list`
+        : SHELL_GROUP_ID;
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: groupId,
@@ -271,30 +379,84 @@ function ShellInner({
     storage: shellStorage,
   });
 
-  // Initialise familiarOpen from persisted layout so the agent content renders
-  // immediately when layout is restored to an expanded state, rather than
-  // waiting for the first onResize callback.
-  const familiarPanelIdx = panelIds.indexOf("agent");
-  const [familiarOpen, setFamiliarOpen] = useState(() => {
-    if (familiarPanelIdx < 0 || !defaultLayout) return false;
-    const pct = defaultLayout[familiarPanelIdx];
-    return typeof pct === "number" && pct > 0;
-  });
+  const groupRef = useRef<GroupImperativeHandle | null>(null);
+  const groupElementRef = useRef<HTMLDivElement | null>(null);
 
-  const navPanelIdx = panelIds.indexOf("nav");
   const [navOpen, setNavOpen] = useState(() => {
-    if (!defaultLayout) return true;
-    const pct = defaultLayout[navPanelIdx];
-    return typeof pct !== "number" || pct > 0;
+    // Mobile keeps its drawer. On desktop, start closed so the rail content paints
+    // from the first frame on a fresh minimize; onResize settles it to the real
+    // width once the library (or the minimize effect) has applied the layout.
+    if (isMobile) return true;
+    return shellMinimizeApplied(groupId);
   });
 
   // Hover-to-peek: when the desktop nav is collapsed to its icon rail, hovering
   // floats it open as an overlay (navPeeking) without changing the collapse
   // state. Reset whenever the rail goes away (expanded or mobile).
   const [navPeeking, setNavPeeking] = useState(false);
+  const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;
+  const navPeekVisible = navPeekEnabled && navPeeking;
   useEffect(() => {
-    if (navOpen || isMobile) setNavPeeking(false);
-  }, [navOpen, isMobile]);
+    if (!navPeekEnabled) setNavPeeking(false);
+  }, [navPeekEnabled]);
+
+  // Dia-style traffic lights: on the macOS desktop shell the native
+  // close/minimize/zoom buttons float over the side panel's top edge. With
+  // the panel fully closed (not even hover-peeked) they'd hover over page
+  // content, so they follow the panel — hidden with it, back the moment it
+  // opens or peeks. The root attribute lets globals.css release the 78px
+  // title-bar inset; the native call is an app command
+  // (set_traffic_lights_visible in lib.rs), so it needs no ACL entry. Mobile
+  // layouts keep their drawer chrome and never hide the lights.
+  //
+  // Fit contract (title-bar overlap bug): the inset is released ONLY after
+  // the native hide is confirmed. Showing is marked optimistically (worst
+  // case: a roomy bar), but marking "hidden" before the buttons actually
+  // vanish — pre-update shell without the command, an AppKit hiccup — slid
+  // the nav toggle + history chevrons underneath still-visible lights.
+  const trafficLightsVisible = navOpen || navPeekVisible || isMobile;
+  useEffect(() => {
+    const root = document.documentElement;
+    // Only the macOS desktop Tauri shell overlays the title bar; everywhere
+    // else there are no lights to manage. Detected directly (not via the
+    // root marker) so this effect can't race <TauriTitlebarMarker />'s mount.
+    if (!isMacDesktopShell()) return;
+    let cancelled = false;
+    const applyNative = (visible: boolean) =>
+      import("@tauri-apps/api/core").then(({ invoke }) =>
+        invoke("set_traffic_lights_visible", { visible }),
+      );
+    if (trafficLightsVisible) {
+      root.dataset.trafficLights = "visible";
+      void applyNative(true).catch(() => {});
+    } else {
+      void applyNative(false)
+        .then(() => {
+          if (!cancelled) root.dataset.trafficLights = "hidden";
+        })
+        .catch(() => {
+          // Pre-update shell without the command — the buttons stay put, so
+          // the bar must keep the 78px inset reserved for them.
+          if (!cancelled) root.dataset.trafficLights = "visible";
+        });
+    }
+    // macOS re-shows the standard buttons on its own after some window
+    // transitions (fullscreen round-trips, space changes). Re-assert the
+    // intended state whenever the window regains focus so the bar and the
+    // buttons can't drift apart mid-session.
+    const onFocus = () => {
+      if (trafficLightsVisible) return;
+      void applyNative(false).catch(() => {});
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      // If the shell ever unmounts mid-hide, leave the window usable.
+      delete root.dataset.trafficLights;
+      void applyNative(true).catch(() => {});
+    };
+  }, [trafficLightsVisible]);
 
   // Track the detail panel's REAL left/right viewport gaps (side panels +
   // separators + edge rails — everything between the detail box and the
@@ -335,7 +497,7 @@ function ShellInner({
       ro.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [mounted, hasBottom, hasFamiliar, twoPane, isMobile]);
+  }, [mounted, hasBottom, twoPane, isMobile]);
 
   // The first painted frames can still shift: react-resizable-panels applies
   // its persisted layout (and Workspace collapses an empty companion rail)
@@ -351,39 +513,175 @@ function ShellInner({
     return () => window.clearTimeout(t);
   }, [mounted]);
 
+  // Minimize remembered and visit-collapsed navigation by default. Once the group
+  // has settled (the library has applied its initial open layout), replace the
+  // WHOLE layout with one where the nav is at its rail width and the freed width
+  // goes to the detail pane, via the group-level setLayout. Once per fresh
+  // groupId; a group the user has resized (a saved layout) is respected. Chat's
+  // contextual sidebar opens at its dedicated list-like width instead.
+  const minimizedGroupsRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!settled || isMobile || chatContextual) return;
+    if (minimizedGroupsRef.current.has(groupId) || shellMinimizeApplied(groupId)) return;
+    const group = groupRef.current;
+    if (!group) return;
+    const cur = group.getLayout();
+    const nav = cur.nav;
+    if (typeof nav !== "number" || typeof cur.detail !== "number") return;
+    const railPct = nav * (NAV_RAIL_PX / NAV_OPEN_PX);
+    if (railPct >= nav) return; // already at/under the rail
+    minimizedGroupsRef.current.add(groupId);
+    seedNavOpenPref(false);
+    markShellMinimizeApplied(groupId);
+    group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
+  }, [settled, isMobile, groupId, chatContextual]);
+
+  // The library retains an in-memory layout by panel-id set when Group's id
+  // changes. Restore the destination group's complete saved/default layout
+  // before applying its open/collapsed policy so widths cannot cross groups.
+  const navPrefArmedGroupRef = useRef<string | null>(null);
+  const layoutPersistenceGroupRef = useRef<string | null>(null);
+  const expandedLayoutRef = useRef<{ groupId: string; layout: ShellPanelLayout } | null>(null);
+  const collapsedLayoutRef = useRef<{ groupId: string; layout: ShellPanelLayout } | null>(null);
+  const restoredGroupRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!mounted || isMobile) {
+      if (isMobile) {
+        layoutPersistenceGroupRef.current = null;
+        expandedLayoutRef.current = null;
+        collapsedLayoutRef.current = null;
+        restoredGroupRef.current = null;
+      }
+      return;
+    }
+    if (restoredGroupRef.current === groupId) return;
+    navPrefArmedGroupRef.current = null;
+
+    const group = groupRef.current;
+    const groupElement = groupElementRef.current;
+    if (!group || !groupElement) return;
+
+    // react-resizable-panels measures the sum of panel widths, excluding its
+    // separators, when converting pixel defaults to percentages.
+    const groupSize = Array.from(groupElement.children).reduce(
+      (size, child) =>
+        size +
+        (child instanceof HTMLElement && child.hasAttribute("data-panel")
+          ? child.offsetWidth
+          : 0),
+      0,
+    );
+    if (
+      !chatContextual &&
+      isShellNavCollapsedLayout({
+        layout: defaultLayout,
+        panelIds,
+        groupSize,
+        collapsedNavPixels: NAV_RAIL_PX,
+      })
+    ) {
+      seedNavOpenPref(false);
+    }
+    const rememberedNavOpen =
+      navPolicy === "remembered" ? seedNavOpenPref(false) : null;
+    const destinationLayout = resolveShellDestinationLayout({
+      panelIds,
+      savedLayout: defaultLayout,
+      groupSize,
+      defaultPanelPixels: { nav: chatContextual ? 260 : NAV_OPEN_PX, ...(!twoPane && { list: 260 }) },
+      collapsedNavPixels: chatContextual ? 0 : NAV_RAIL_PX,
+      isMobile,
+    });
+    if (!destinationLayout) return;
+
+    // Group keeps an in-memory layout keyed only by panel ids, even after its
+    // id changes. Arm persistence immediately before replacing that stale
+    // source layout so transition churn cannot overwrite the destination.
+    expandedLayoutRef.current = { groupId, layout: destinationLayout };
+    collapsedLayoutRef.current = null;
+    layoutPersistenceGroupRef.current = groupId;
+    restoredGroupRef.current = groupId;
+    group.setLayout(destinationLayout);
+    if (rememberedNavOpen !== null) {
+      railAutoCollapsedNavRef.current = false;
+      userOverrodeNavRef.current = false;
+      applyPanelOpenState(navRef.current, rememberedNavOpen);
+      setNavOpen(rememberedNavOpen);
+      minimizedGroupsRef.current.add(groupId);
+      markShellMinimizeApplied(groupId);
+    }
+  }, [mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane, navPolicy]);
+
+  const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
+  const visitCollapsedGroupRef = useRef<string | null>(null);
+  const chatContextualGroupRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    if (navPolicy === "chat-contextual") {
+      visitCollapsedGroupRef.current = null;
+      navPrefArmedGroupRef.current = null;
+      if (
+        previousNavPolicyRef.current !== navPolicy ||
+        chatContextualGroupRef.current !== groupId
+      ) {
+        chatContextualGroupRef.current = groupId;
+        setNavOpen(true);
+      }
+      previousNavPolicyRef.current = navPolicy;
+      return;
+    }
+    chatContextualGroupRef.current = null;
+    if (navPolicy !== "visit-collapsed") {
+      visitCollapsedGroupRef.current = null;
+      previousNavPolicyRef.current = navPolicy;
+      return;
+    }
+    if (isMobile) {
+      previousNavPolicyRef.current = navPolicy;
+      return;
+    }
+    if (
+      previousNavPolicyRef.current !== navPolicy ||
+      visitCollapsedGroupRef.current !== groupId
+    ) {
+      navPrefArmedGroupRef.current = null;
+      visitCollapsedGroupRef.current = groupId;
+      navRef.current?.collapse();
+      setNavOpen(false);
+    }
+    previousNavPolicyRef.current = navPolicy;
+  }, [mounted, groupId, isMobile, navPolicy]);
+
+  // Apply the remembered sidebar state on boot and after the destination layout
+  // is restored. Non-remembered policies neither consult nor overwrite the
+  // global preference. Writes stay disarmed throughout group-swap layout churn.
+  useEffect(() => {
+    if (navPolicy !== "remembered") {
+      navPrefArmedGroupRef.current = null;
+      return;
+    }
+    if (!settled || isMobile) return;
+    const pref = seedNavOpenPref(false);
+    const panel = navRef.current;
+    if (panel && !railAutoCollapsedNavRef.current) {
+      if (pref && panel.isCollapsed()) {
+        panel.expand();
+        setNavOpen(true);
+      } else if (!pref && !panel.isCollapsed()) {
+        panel.collapse();
+        setNavOpen(false);
+      }
+    }
+    navPrefArmedGroupRef.current = groupId;
+  }, [settled, isMobile, groupId, navPolicy]);
+
   useEffect(() => {
     onNavOpenChange?.(navOpen);
   }, [navOpen, onNavOpenChange]);
 
   useEffect(() => {
-    onFamiliarOpenChange?.(familiarOpen);
-    // Mirror the companion panel's open state to the document root + a window
-    // event so an inline toggle (e.g. the Code surface's, outside this subtree)
-    // can reflect it without prop-drilling.
-    const root = document.documentElement;
-    if (familiarOpen) root.setAttribute("data-familiar-open", "");
-    else root.removeAttribute("data-familiar-open");
-    window.dispatchEvent(new CustomEvent("cave:familiar-open", { detail: { open: familiarOpen } }));
-  }, [familiarOpen, onFamiliarOpenChange]);
-
-  useEffect(() => {
     const toggleDrawerSlot = (slot: NonNullable<MobileDrawerSlot>) => {
       setMobileDrawer((curr) => (curr === slot ? null : slot));
-    };
-    const toggleFamiliarPanel = () => {
-      if (isMobile) {
-        toggleDrawerSlot("agent");
-        return;
-      }
-      const panel = familiarRef.current;
-      if (!panel) return;
-      if (panel.isCollapsed()) {
-        panel.expand();
-        setFamiliarOpen(true);
-      } else {
-        panel.collapse();
-        setFamiliarOpen(false);
-      }
     };
     const handler = (e: KeyboardEvent) => {
       if (matchesPanelShortcut(e, panelShortcuts.toggleLeftPanel)) {
@@ -397,10 +695,7 @@ function ShellInner({
       if (meta && key === "\\" && !twoPane) {
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("list");
-        else togglePanel(listRef.current);
-      } else if (matchesPanelShortcut(e, panelShortcuts.toggleRightPanel) && hasFamiliar) {
-        e.preventDefault();
-        toggleFamiliarPanel();
+        else if (listPolicy === "collapsible") togglePanel(listRef.current);
       }
     };
     const bottomToggle = (e: KeyboardEvent) => {
@@ -412,26 +707,87 @@ function ShellInner({
         togglePanel(bottomRef.current);
       }
     };
-    // Let an inline toggle (e.g. the Code surface toolbar) flip the companion
-    // panel without reaching into the Shell's panel ref.
-    const onToggleRight = () => {
-      if (hasFamiliar) toggleFamiliarPanel();
+    // Symmetric hook for sidebar content that needs to reopen the left panel
+    // without owning its panel ref.
+    const onToggleLeft = () => {
+      if (isMobile) toggleDrawerSlot("nav");
+      else togglePanel(navRef.current);
     };
     window.addEventListener("keydown", handler);
     window.addEventListener("keydown", bottomToggle);
-    window.addEventListener("cave:toggle-right-panel", onToggleRight);
+    window.addEventListener("cave:toggle-left-panel", onToggleLeft);
     return () => {
       window.removeEventListener("keydown", handler);
       window.removeEventListener("keydown", bottomToggle);
-      window.removeEventListener("cave:toggle-right-panel", onToggleRight);
+      window.removeEventListener("cave:toggle-left-panel", onToggleLeft);
     };
-  }, [twoPane, hasFamiliar, hasBottom, isMobile, panelShortcuts]);
+  }, [twoPane, hasBottom, isMobile, listPolicy, panelShortcuts]);
+
+  // Couple the left nav to the code rail (desktop only — mobile nav is a
+  // drawer, so this must never touch it). When the rail opens we collapse the
+  // nav to preserve detail space; when it closes we restore the nav UNLESS the
+  // user re-expanded it while the rail was open.
+  useEffect(() => {
+    const onRailVisibility = (e: Event) => {
+      const open = (e as CustomEvent<{ open?: boolean }>).detail?.open ?? false;
+      if (isMobile) return;
+      if (open) {
+        // Rail became visible: collapse the nav only if it's currently open,
+        // and remember we did it so we can restore later. The flag is raised
+        // BEFORE collapse() so the resulting onResize is recognized as
+        // programmatic and doesn't overwrite the persisted nav preference.
+        if (navOpen) {
+          railAutoCollapsedNavRef.current = true;
+          userOverrodeNavRef.current = false;
+          navRef.current?.collapse();
+        }
+        return;
+      }
+      // Rail hidden: restore the nav if we auto-collapsed it and the user
+      // didn't override in the meantime. Clear the auto-collapsed flag BEFORE
+      // expanding so the resulting navOpen→true transition isn't misread as a
+      // user override (which would wrongly suppress future restores).
+      const shouldRestore =
+        railAutoCollapsedNavRef.current && !userOverrodeNavRef.current && !isMobile;
+      railAutoCollapsedNavRef.current = false;
+      userOverrodeNavRef.current = false;
+      if (shouldRestore) navRef.current?.expand();
+    };
+    window.addEventListener("cave:code-rail-visibility", onRailVisibility);
+    return () => window.removeEventListener("cave:code-rail-visibility", onRailVisibility);
+  }, [isMobile, navOpen]);
+
+  // User-override detection: if the nav becomes open WHILE the rail had
+  // auto-collapsed it, that's the user deliberately re-expanding (via the
+  // reopen button, ⌘-shortcut, or a drag). Record it so the later rail-close
+  // restore is suppressed and we don't fight the user. Programmatic collapse
+  // sets navOpen→false (not true) so it never trips this; the programmatic
+  // restore-expand clears railAutoCollapsedNavRef first (above) so it doesn't
+  // either.
+  useEffect(() => {
+    if (navOpen && railAutoCollapsedNavRef.current) {
+      userOverrodeNavRef.current = true;
+    }
+  }, [navOpen]);
+
+  // Clear coupling bookkeeping when the viewport crosses into mobile: the nav
+  // becomes a drawer and the rail-close handler early-returns on mobile, so a
+  // mid-interaction desktop→mobile flip would otherwise strand
+  // railAutoCollapsedNavRef=true and cause a spurious nav expand on a later
+  // desktop session.
+  useEffect(() => {
+    if (isMobile) {
+      railAutoCollapsedNavRef.current = false;
+      userOverrodeNavRef.current = false;
+    }
+  }, [isMobile]);
 
   if (!mounted) {
     return (
       <div className="shell-frame flex h-full w-full flex-col">
-        <div className="shell-top">
-          <div className="shell-top__bar">{renderedTopBar}</div>
+        <div className="shell-top" data-tauri-drag-region="deep">
+          <div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" />
+          <div className="shell-top__bar" data-tauri-drag-region="deep">{renderedTopBar}</div>
         </div>
         <div className="shell-body flex flex-1 min-h-0">
           <div className="shell-root flex-1 min-h-0" />
@@ -444,32 +800,69 @@ function ShellInner({
     <Group
       className="shell-root flex-1 min-h-0"
       orientation="horizontal"
-      defaultLayout={defaultLayout}
-      onLayoutChanged={onLayoutChanged}
+      groupRef={groupRef}
+      elementRef={groupElementRef}
+      defaultLayout={isMobile ? undefined : defaultLayout}
+      onLayoutChanged={(layout, detail) => {
+        if (layoutPersistenceGroupRef.current !== groupId) return;
+        const navCollapsed = navRef.current?.isCollapsed() ?? true;
+        const persistedLayout = resolveShellLayoutPersistence({
+          isMobile,
+          navCollapsed,
+          layout,
+          savedExpandedLayout:
+            expandedLayoutRef.current?.groupId === groupId
+              ? expandedLayoutRef.current.layout
+              : undefined,
+          previousCollapsedLayout:
+            collapsedLayoutRef.current?.groupId === groupId
+              ? collapsedLayoutRef.current.layout
+              : undefined,
+        });
+        if (!persistedLayout) return;
+        collapsedLayoutRef.current = navCollapsed ? { groupId, layout } : null;
+        expandedLayoutRef.current = { groupId, layout: persistedLayout };
+        onLayoutChanged(persistedLayout, detail);
+      }}
       data-mobile-drawer={isMobile && mobileDrawer ? mobileDrawer : undefined}
     >
       <Panel
         id="nav"
         className={`shell-nav-panel${navOpen ? " shell-nav-panel--open" : ""}`}
-        defaultSize="24%"
-        minSize="14%"
-        maxSize="28%"
+        // Chat uses list-like sizing for contextual workspace/session content.
+        // Normal navigation keeps NAV_OPEN_PX as the ⌘B / hover-peek target.
+        defaultSize={chatContextual ? "260px" : "240px"}
+        minSize={chatContextual ? "220px" : "200px"}
+        maxSize="420px"
         collapsible
-        // Desktop collapses to an icons-only rail; mobile uses the slide-in
-        // drawer (position is CSS-overridden there), so it still collapses to 0.
-        collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
+        // Contextual Chat and mobile drawers close fully; normal desktop
+        // navigation collapses to its icons-only rail.
+        collapsedSize={isMobile || chatContextual ? 0 : NAV_RAIL_PX}
         panelRef={navRef}
         onResize={(size) => {
-          setNavOpen((size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX);
+          const open = (size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX;
+          setNavOpen(open);
+          // Persist user-driven changes only: the group must be armed (boot /
+          // group-swap layout churn is programmatic) and the code rail must
+          // not be mid-auto-collapse (its restore path clears the flag before
+          // expanding, so the restore correctly re-records "open").
+          if (
+            !isMobile &&
+            navPolicy === "remembered" &&
+            navPrefArmedGroupRef.current === groupId &&
+            !railAutoCollapsedNavRef.current
+          ) {
+            writeNavOpenPref(open);
+          }
         }}
       >
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
-          className={`shell-nav${!isMobile && !navOpen ? (navPeeking ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
+          className={`shell-nav${!isMobile && !chatContextual && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
           aria-label="Sidebar"
-          onMouseEnter={!isMobile && !navOpen ? () => setNavPeeking(true) : undefined}
-          onMouseLeave={!isMobile && !navOpen ? () => setNavPeeking(false) : undefined}
+          onMouseEnter={navPeekEnabled ? () => setNavPeeking(true) : undefined}
+          onMouseLeave={navPeekEnabled ? () => setNavPeeking(false) : undefined}
         >
           {nav}
         </aside>
@@ -480,10 +873,10 @@ function ShellInner({
           <Panel
             id="list"
             className="shell-list-panel"
-            defaultSize="18%"
-            minSize="15%"
-            maxSize="33%"
-            collapsible
+            defaultSize="260px"
+            minSize="220px"
+            maxSize="420px"
+            collapsible={isMobile || listPolicy === "collapsible"}
             collapsedSize={0}
             panelRef={listRef}
           >
@@ -493,52 +886,35 @@ function ShellInner({
         </>
       )}
       <Panel id="detail" className="shell-detail-panel">
-        <main className="shell-detail" ref={detailElRef}>
-          <UpdateBannerTrigger />
-          <ShellBannerStrip />
-          {detail}
+        <main className="shell-detail" id="shell-main-content" tabIndex={-1} ref={detailElRef}>
+          {/* Peel-reveal (cave-3vgd): decorative page-curl toward the collapsed
+              rail on HTML-in-canvas browsers; a bare Fragment everywhere else
+              (no wrapper elements, so the `.shell-detail > .cave-mode-fade`
+              chains keep matching). The interactive reveal stays the hover-peek. */}
+          <ShellPeelReveal active={navPeekEnabled} under={nav}>
+            <UpdateBannerTrigger />
+            <OpenCovenToolsBannerTrigger />
+            <CaveHomeMigrationBannerTrigger />
+            <ShellBannerStrip />
+            <DetailSplitHost
+              primary={detail}
+              secondaryTiles={splitTiles}
+              secondarySide={splitSide}
+              onClose={() => onCloseSplit?.()}
+              onCloseTile={(id) => onCloseSplitTile?.(id)}
+              onPromoteTile={(id) => onPromoteSplitTile?.(id)}
+              onDropPage={(mode, side) => onDropSplitPage?.(mode, side)}
+              enableDrop={!isMobile}
+            />
+          </ShellPeelReveal>
         </main>
       </Panel>
-      {hasFamiliar && (
-        <>
-          <Separator className="shell-separator" />
-          <Panel
-            id="agent"
-            className="shell-familiar-panel"
-            defaultSize={"24%"}
-            minSize="14%"
-            maxSize="50%"
-            collapsible
-            // When peeking, collapse to a thin strip instead of nothing so the
-            // companion rail can keep e.g. a playing video visible (rotated).
-            collapsedSize={rightPanelPeek ? `${RAIL_PEEK_PX}px` : 0}
-            panelRef={familiarRef}
-            onResize={(size) => {
-              // The panel is "open" only when it's wider than the peek strip —
-              // at the strip (or fully collapsed) the rail shows its minimized
-              // view, not the full content.
-              setFamiliarOpen((size.inPixels ?? 0) > RAIL_OPEN_THRESHOLD_PX);
-            }}
-          >
-            {/* Keep the rail mounted while peeking so the video survives the
-                collapse; otherwise unmount it when closed (the default). */}
-            <aside
-              className="shell-familiar"
-              aria-label="Companion"
-              data-rail-peek={rightPanelPeek && !familiarOpen ? "" : undefined}
-            >
-              {familiarOpen || rightPanelPeek ? agent : null}
-            </aside>
-          </Panel>
-        </>
-      )}
     </Group>
   );
 
-  const homeCenteringActive = navOpen && familiarOpen;
-  const homeCenterShift = homeCenteringActive
-    ? Math.round((detailGaps.right - detailGaps.left) / 2)
-    : 0;
+  // The right companion panel was removed, so the detail fills to the viewport
+  // edge — there is no longer an asymmetric right panel to re-center Home around.
+  const homeCenterShift = 0;
 
   const shellFrameStyle: CSSProperties & {
     "--shell-left-gap-px": string;
@@ -553,61 +929,67 @@ function ShellInner({
     "--shell-right-gap-px": `${detailGaps.right}px`,
     "--shell-home-center-shift-px": `${homeCenterShift}px`,
   };
-  // Panel toggles, hoisted into the top menu bar. The nav toggle anchors the
-  // bar's left edge and the side-panel + expand toggles its right edge, so a
-  // single persistent control owns each panel regardless of its open state
-  // (replacing the old corner edge-rail floats). Desktop-only — below 1024px the
-  // mobile `.top-bar` carries its own drawer toggles.
-  const rightPanelShortcutLabel = labelPanelShortcut(panelShortcuts.toggleRightPanel);
+  // Nav toggle, hoisted into the top menu bar. It anchors the bar's left edge so
+  // a single persistent control owns the nav panel regardless of its open state.
+  // Desktop-only — below 1024px the mobile `.top-bar` carries its own toggle.
   const toggleNavPanel = () => {
     const panel = navRef.current;
     if (!panel) return;
     if (panel.isCollapsed()) { panel.expand(); setNavOpen(true); }
     else { panel.collapse(); setNavOpen(false); }
   };
-  const toggleRightPanel = () => {
-    const panel = familiarRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) { panel.expand(); setFamiliarOpen(true); }
-    else { panel.collapse(); setFamiliarOpen(false); }
-  };
   const navToggle = !isMobile ? (
     <button
       type="button"
       className={`shell-top-toggle shell-top-toggle--nav focus-ring${navOpen ? " shell-top-toggle--active" : ""}`}
-      aria-label={navOpen ? "Collapse navigation to icons" : "Expand navigation"}
+      aria-label={chatContextual
+        ? navOpen
+          ? "Collapse Chat sidebar"
+          : "Expand Chat sidebar"
+        : navOpen
+          ? "Collapse navigation to icons"
+          : "Expand navigation"}
       aria-expanded={navOpen}
-      title={navOpen ? `Collapse navigation (${leftPanelShortcutLabel})` : `Expand navigation (${leftPanelShortcutLabel})`}
+      title={chatContextual
+        ? navOpen
+          ? `Collapse Chat sidebar (${leftPanelShortcutLabel})`
+          : `Expand Chat sidebar (${leftPanelShortcutLabel})`
+        : navOpen
+          ? `Collapse navigation (${leftPanelShortcutLabel})`
+          : `Expand navigation (${leftPanelShortcutLabel})`}
       onClick={toggleNavPanel}
     >
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
     </button>
   ) : null;
-  const rightToggles = !isMobile && hasFamiliar ? (
-    <>
-      {/* Expand-to-cover toggle. CSS keeps it hidden until a chat right panel is
-          actually open (:root[data-right-panel-open]) and re-hides it while
-          expanded. It reaches the chat surface's expand state via a window event. */}
-      <button
-        type="button"
-        className="shell-top-toggle shell-top-toggle--expand focus-ring"
-        aria-label="Expand side panel"
-        title="Expand side panel"
-        onClick={() => window.dispatchEvent(new CustomEvent("cave:right-panel-expand"))}
-      >
-        <Icon name="ph:arrows-out-simple" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
-      </button>
-      <button
-        type="button"
-        className={`shell-top-toggle shell-top-toggle--right focus-ring${familiarOpen ? " shell-top-toggle--active" : ""}`}
-        aria-label={familiarOpen ? "Hide side panel" : "Show side panel"}
-        aria-expanded={familiarOpen}
-        title={familiarOpen ? `Hide side panel (${rightPanelShortcutLabel})` : `Show side panel (${rightPanelShortcutLabel})`}
-        onClick={toggleRightPanel}
-      >
-        <Icon name={familiarOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
-      </button>
-    </>
+  // Workspace owns its destination stack, while the other shell surfaces use
+  // browser history. Keep the app-scoped boundary controls intact there and
+  // reuse the shared browser controls everywhere else.
+  const historyNav = !isMobile ? (
+    historyNavigation ? (
+      <div className="shell-top-history" role="group" aria-label="History">
+        <button
+          type="button"
+          className="shell-top-toggle focus-ring"
+          aria-label="Go back"
+          title={historyNavigation.canGoBack ? "Back" : "No previous destination"}
+          disabled={!historyNavigation?.canGoBack}
+          onClick={historyNavigation.goBack}
+        >
+          <Icon name="ph:caret-left" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
+        </button>
+        <button
+          type="button"
+          className="shell-top-toggle focus-ring"
+          aria-label="Go forward"
+          title={historyNavigation.canGoForward ? "Forward" : "No next destination"}
+          disabled={!historyNavigation?.canGoForward}
+          onClick={historyNavigation.goForward}
+        >
+          <Icon name="ph:caret-right" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
+        </button>
+      </div>
+    ) : <DesktopHistoryNav />
   ) : null;
 
   return (
@@ -616,10 +998,19 @@ function ShellInner({
       style={shellFrameStyle}
       data-settled={settled ? "" : undefined}
     >
-      <div className="shell-top">
+      {/* Keyboard/SR users can jump straight past the chrome to the active
+          surface. Visually hidden until focused (see .skip-link in globals). */}
+      <a className="skip-link" href="#shell-main-content">Skip to main content</a>
+      {/* `deep` (not the bare attribute) matters: drag.js's bare value only
+          drags on DIRECT presses on the attributed element, so empty chrome
+          inside .menu-bar / .top-bar wrappers would short-circuit the walk and
+          never drag. `deep` makes the whole subtree a drag region while
+          clickable descendants still opt out. */}
+      <div className="shell-top" data-tauri-drag-region="deep">
+        <div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" />
         {navToggle}
-        <div className="shell-top__bar">{renderedTopBar}</div>
-        {rightToggles}
+        {historyNav}
+        <div className="shell-top__bar" data-tauri-drag-region="deep">{renderedTopBar}</div>
       </div>
       <div className="shell-body flex flex-1 min-h-0">
         {hasBottom ? (
@@ -660,77 +1051,11 @@ function ShellInner({
 
 export const Shell = forwardRef<ShellHandle, Parameters<typeof ShellInner>[0]>(ShellInner);
 
-export function ShellNav({
-  header,
-  sections,
-}: {
-  header?: ReactNode;
-  sections: ShellNavSection[];
-}) {
-  return (
-    <>
-      {header}
-      {sections.map((section, idx) => (
-        <div key={section.label ?? `section-${idx}`}>
-          {section.label && (
-            <div className="shell-nav-eyebrow">{section.label}</div>
-          )}
-          {section.customContent ?? section.items.map((item) => (
-            <ShellNavButton key={item.id} item={item} />
-          ))}
-        </div>
-      ))}
-    </>
-  );
-}
-
-export function ShellNavButton({ item }: { item: ShellNavItem }) {
-  return (
-    <button
-      type="button"
-      className={`shell-nav-item${item.active ? " shell-nav-item--active" : ""}`}
-      onClick={item.onClick}
-    >
-      <span className="shell-nav-item-icon">
-        <Icon name={item.icon} width={CAVE_ICON_SIZE.shellNav} height={CAVE_ICON_SIZE.shellNav} />
-      </span>
-      <span>{item.label}</span>
-      {item.presence && (
-        <span
-          aria-hidden
-          className={`shell-presence-dot ml-auto${item.presence === "idle" ? " shell-presence-dot--idle" : ""}`}
-        />
-      )}
-      {item.kbd && !item.presence && (
-        <span className="shell-nav-kbd">{item.kbd}</span>
-      )}
-    </button>
-  );
-}
-
-export function ShellNavHeader({
-  initial,
-  label,
-}: {
-  initial: string;
-  label: string;
-}) {
-  return (
-    <button type="button" className="shell-nav-header">
-      <span className="shell-nav-avatar">{initial}</span>
-      <span>{label}</span>
-      <Icon
-        name="ph:caret-down"
-        width={CAVE_ICON_SIZE.shellInline}
-        height={CAVE_ICON_SIZE.shellInline}
-        className="ml-auto opacity-60"
-      />
-    </button>
-  );
-}
-
 function ShellBannerStrip() {
   const { banners, dismissBanner } = useShellBanners();
+  useEffect(() => {
+    window.dispatchEvent(new Event("cave:native-webview-layout"));
+  }, [banners]);
   if (banners.length === 0) return null;
   return (
     <div className="shell-banner-strip">

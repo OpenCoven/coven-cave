@@ -52,13 +52,13 @@ describe("recent-colors", () => {
     assert.deepEqual(getRecentColors(), []);
   });
 
-  it("returns the stored list (not the attempted add) when setItem throws", () => {
+  it("returns the canonical stored list when setItem throws", () => {
     addRecentColor("#abcdef");
     // Make the next write fail.
     (globalThis as any).localStorage.setItem = () => {
       throw new Error("QuotaExceeded");
     };
     const result = addRecentColor("#123456");
-    assert.deepEqual(result, ["#abcdef"], "should reflect stored state, not the failed add");
+    assert.deepEqual(result, ["#123456", "#abcdef"], "should reflect canonical persisted state");
   });
 });

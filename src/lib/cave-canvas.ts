@@ -1,19 +1,24 @@
-// Persistence for Triage Canvas node positions.
-//
-// Positions live in their own file (`~/.coven/cave-canvas.json`) keyed by card
-// id, deliberately separate from `cave-board.json`. The canvas is a *view* of
-// the board's cards — keeping layout out of the Card schema means the board
-// owner (and the many other sessions that mutate it) never has to know the
-// canvas exists, and a canvas write can never clobber card data.
+// Persistence for the Canvas store (`~/.coven/cave/canvas.json`): saved sketch
+// artifacts plus their (legacy standalone-canvas) node positions. Kept separate
+// from the board file so a canvas write can never clobber card data. Artifacts
+// are user content with no undo — the load path must never let a bad read turn
+// into an empty save that destroys them (see loadCanvas).
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
+import { caveHome } from "./coven-paths.ts";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { corruptAsidePath } from "./server/corrupt-aside.ts";
 
 import type { CanvasPosition, CanvasPositions } from "@/lib/canvas-layout";
-import { sanitizeArtifacts, type CanvasArtifact } from "@/lib/canvas-artifacts";
+import {
+  sanitizeAnnotation,
+  sanitizeArtifacts,
+  type CanvasAnnotation,
+  type CanvasArtifact,
+} from "@/lib/canvas-artifacts";
 
-const CANVAS_PATH = path.join(homedir(), ".coven", "cave-canvas.json");
+const CANVAS_PATH = path.join(caveHome(), "canvas.json");
 
 export type CanvasFile = {
   version: number;
@@ -58,15 +63,39 @@ async function ensureDir() {
 }
 
 export async function loadCanvas(): Promise<CanvasFile> {
+  let raw: string;
+  try {
+    raw = await readFile(CANVAS_PATH, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      // No store yet — a fresh start, nothing to protect.
+      return { ...EMPTY };
+    }
+    // The file exists but can't be read (permissions, IO). Treating that as
+    // empty would let the next save overwrite sketches we merely failed to
+    // read — surface the error instead; mutations abort, nothing is lost.
+    throw err;
+  }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await readFile(CANVAS_PATH, "utf8"));
+    parsed = JSON.parse(raw);
   } catch {
-    // Missing file or torn/invalid JSON — start from an empty layout. Nothing
-    // is lost: positions are cosmetic and rebuild from the cards' statuses.
-    return { ...EMPTY };
+    parsed = null;
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    // The file holds bytes that aren't a canvas store (torn write, foreign
+    // content). This store now carries user sketches with no undo — reading
+    // it as empty made the NEXT save silently destroy all of them. Move the
+    // bad file aside (bytes preserved for recovery, collision-safe name —
+    // see corruptAsidePath) and start fresh.
+    const aside = corruptAsidePath(CANVAS_PATH);
+    try {
+      await rename(CANVAS_PATH, aside);
+      console.error(`cave-canvas: unreadable store moved aside to ${aside}`);
+    } catch {
+      // Rename raced another writer (who may have just replaced the file
+      // with a good one) or failed outright — leave the path alone either way.
+    }
     return { ...EMPTY };
   }
   const file = parsed as Partial<CanvasFile>;
@@ -87,15 +116,9 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-let tmpCounter = 0;
-
 export async function saveCanvas(file: CanvasFile): Promise<void> {
   await ensureDir();
-  // Atomic write via temp-file + rename so a concurrent reader never observes a
-  // half-written file (rename is atomic on POSIX).
-  const tmp = `${CANVAS_PATH}.${process.pid}.${tmpCounter++}.tmp`;
-  await writeFile(tmp, JSON.stringify(file, null, 2), "utf8");
-  await rename(tmp, CANVAS_PATH);
+  await writeJsonAtomic(CANVAS_PATH, file);
 }
 
 /**
@@ -126,22 +149,333 @@ export async function mergeCanvasPositions(
 }
 
 /**
- * Insert or replace an artifact by id, returning the updated file. The caller's
- * record is normalized through sanitizeArtifacts so a bad body can't corrupt
- * the store. `updatedAt` is the caller's responsibility (it has the clock).
+ * Insert or replace an artifact, returning the updated file plus the id the
+ * record settled under. Callers replace by id; when the id is new but the
+ * content is byte-identical to an existing sketch (same kind + code), the
+ * existing record is updated in place instead — "Save to Canvas" mints a
+ * fresh id per click, so id-only dedupe let unchanged re-saves pile up as
+ * twin tiles. Keeping the incumbent's id also keeps its createdAt and saved
+ * position. The caller's record is normalized through sanitizeArtifacts so a
+ * bad body can't corrupt the store. Unguarded writes retain the caller's
+ * `updatedAt`; guarded same-id revisions receive a monotonic server timestamp.
  */
-export async function upsertCanvasArtifact(artifact: CanvasArtifact): Promise<CanvasFile> {
+export type CanvasArtifactUpsertResult =
+  | { status: "invalid" }
+  | { status: "saved"; file: CanvasFile; savedId: string | null; artifact: CanvasArtifact | null }
+  | { status: "not_found"; file: CanvasFile; savedId: null }
+  | { status: "conflict"; file: CanvasFile; savedId: null; currentUpdatedAt: string };
+
+export type CanvasAnnotationResolutionToken = {
+  id: string;
+  updatedAt: string;
+};
+
+export function nextCanvasArtifactUpdatedAt(
+  incumbentUpdatedAt: string,
+  nowMs = Date.now(),
+): string | null {
+  const incumbentMs = Date.parse(incumbentUpdatedAt);
+  const nextMs = Number.isFinite(incumbentMs) ? Math.max(nowMs, incumbentMs + 1) : nowMs;
+  const next = new Date(nextMs);
+  return Number.isFinite(next.getTime()) ? next.toISOString() : null;
+}
+
+function parseResolvedAnnotations(value: unknown): CanvasAnnotationResolutionToken[] | null {
+  if (!Array.isArray(value) || value.length > 100) return null;
+  const tokens: CanvasAnnotationResolutionToken[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const raw = entry as Record<string, unknown>;
+    if (
+      Object.keys(raw).length !== 2
+      || !Object.prototype.hasOwnProperty.call(raw, "id")
+      || !Object.prototype.hasOwnProperty.call(raw, "updatedAt")
+      || typeof raw.id !== "string"
+      || raw.id !== raw.id.trim()
+      || !raw.id
+      || raw.id.length > 200
+      || typeof raw.updatedAt !== "string"
+    ) return null;
+    const parsed = Date.parse(raw.updatedAt);
+    if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== raw.updatedAt) return null;
+    tokens.push({ id: raw.id, updatedAt: raw.updatedAt });
+  }
+  return tokens;
+}
+
+export async function upsertCanvasArtifact(
+  artifact: CanvasArtifact,
+  options: {
+    expectedUpdatedAt?: string;
+    expectedAbsent?: boolean;
+    resolvedAnnotations?: unknown;
+  } = {},
+): Promise<CanvasArtifactUpsertResult> {
+  if (options.expectedUpdatedAt !== undefined && options.expectedAbsent) {
+    return { status: "invalid" };
+  }
+  const guardedRevision = options.expectedUpdatedAt !== undefined || options.expectedAbsent === true;
+  if (!guardedRevision && options.resolvedAnnotations !== undefined) {
+    return { status: "invalid" };
+  }
+  const resolvedAnnotations = guardedRevision
+    ? options.resolvedAnnotations === undefined
+      ? []
+      : parseResolvedAnnotations(options.resolvedAnnotations)
+    : [];
+  if (!resolvedAnnotations) return { status: "invalid" };
+  const annotationsProvided = Object.prototype.hasOwnProperty.call(artifact, "annotations");
+  const rawAnnotations = (artifact as { annotations?: unknown }).annotations;
   const [clean] = sanitizeArtifacts([artifact]);
   if (!clean) {
     // Nothing usable in the payload — return the current file unchanged.
-    return withLock(loadCanvas);
+    return withLock(async () => ({
+      status: "saved",
+      file: await loadCanvas(),
+      savedId: null,
+      artifact: null,
+    }));
   }
   return withLock(async () => {
     const current = await loadCanvas();
+    const incumbent = current.artifacts.find((a) => a.id === clean.id);
+    const incumbentMatchesRevision = incumbent
+      && incumbent.id === clean.id
+      && incumbent.title === clean.title
+      && incumbent.prompt === clean.prompt
+      && incumbent.code === clean.code
+      && incumbent.kind === clean.kind
+      && incumbent.createdAt === clean.createdAt;
+    if (options.expectedAbsent && incumbent) {
+      if (incumbentMatchesRevision) {
+        return {
+          status: "saved",
+          file: current,
+          savedId: incumbent.id,
+          artifact: incumbent,
+        };
+      }
+      return {
+        status: "conflict",
+        file: current,
+        savedId: null,
+        currentUpdatedAt: incumbent.updatedAt,
+      };
+    }
+    if (options.expectedUpdatedAt !== undefined) {
+      if (!incumbent) return { status: "not_found", file: current, savedId: null };
+      if (incumbent.updatedAt !== options.expectedUpdatedAt) {
+        if (incumbentMatchesRevision) {
+          return {
+            status: "saved",
+            file: current,
+            savedId: incumbent.id,
+            artifact: incumbent,
+          };
+        }
+        return {
+          status: "conflict",
+          file: current,
+          savedId: null,
+          currentUpdatedAt: incumbent.updatedAt,
+        };
+      }
+    }
     const without = current.artifacts.filter((a) => a.id !== clean.id);
-    const next: CanvasFile = { ...current, artifacts: [...without, clean] };
+    // An explicit update to an existing id is authoritative, even when its new
+    // content happens to match another artifact. Content dedupe is only for
+    // saves that arrive under a newly minted id.
+    const twin = incumbent
+      ? undefined
+      : without.find((a) => a.kind === clean.kind && a.code === clean.code);
+    let settled = twin
+      ? {
+          ...twin,
+          title: clean.title,
+          prompt: clean.prompt,
+          updatedAt: clean.updatedAt,
+        }
+      : incumbent && !annotationsProvided && incumbent.annotations
+        ? { ...clean, annotations: incumbent.annotations }
+        : clean;
+    if (guardedRevision && incumbent) {
+      const nextUpdatedAt = nextCanvasArtifactUpdatedAt(incumbent.updatedAt);
+      if (!nextUpdatedAt) {
+        return {
+          status: "conflict",
+          file: current,
+          savedId: null,
+          currentUpdatedAt: incumbent.updatedAt,
+        };
+      }
+      const remainingAnnotations = (incumbent.annotations ?? []).filter(
+        (annotation) => !resolvedAnnotations.some(
+          (token) => token.id === annotation.id && token.updatedAt === annotation.updatedAt,
+        ),
+      );
+      settled = {
+        ...clean,
+        updatedAt: nextUpdatedAt,
+      };
+      if (remainingAnnotations.length > 0) settled.annotations = remainingAnnotations;
+      else delete settled.annotations;
+    }
+    const existing = incumbent ?? twin;
+    const preserveAnnotations = !annotationsProvided
+      || !Array.isArray(rawAnnotations)
+      || (rawAnnotations.length > 0 && !clean.annotations);
+    if (!guardedRevision && existing?.annotations && preserveAnnotations) {
+      settled.annotations = existing.annotations;
+    } else if (!guardedRevision && twin && annotationsProvided) {
+      if (clean.annotations) settled.annotations = clean.annotations;
+      else delete settled.annotations;
+    }
+    const rest = twin ? without.filter((a) => a.id !== twin.id) : without;
+    const next: CanvasFile = { ...current, artifacts: [...rest, settled] };
     await saveCanvas(next);
-    return next;
+    return { status: "saved", file: next, savedId: settled.id, artifact: settled };
+  });
+}
+
+export type CanvasAnnotationMutation =
+  | {
+      id: string;
+      annotation: CanvasAnnotation;
+      expectedAnnotationUpdatedAt?: string;
+      expectedAnnotationAbsent?: true;
+    }
+  | { id: string; removeAnnotationId: string }
+  | { id: string; clearAnnotations: true };
+
+export type CanvasAnnotationMutationResult =
+  | { status: "invalid" }
+  | { status: "not_found"; file: CanvasFile }
+  | { status: "conflict"; file: CanvasFile; currentUpdatedAt: string | null }
+  | { status: "updated"; file: CanvasFile; artifact: CanvasArtifact };
+
+function parseCanvasAnnotationMutation(value: unknown): CanvasAnnotationMutation | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const id = typeof raw.id === "string" ? raw.id.trim() : "";
+  if (!id || id.length > 200) return null;
+
+  const hasAnnotation = Object.prototype.hasOwnProperty.call(raw, "annotation");
+  const hasRemove = Object.prototype.hasOwnProperty.call(raw, "removeAnnotationId");
+  const hasClear = Object.prototype.hasOwnProperty.call(raw, "clearAnnotations");
+  if (Number(hasAnnotation) + Number(hasRemove) + Number(hasClear) !== 1) return null;
+
+  if (hasAnnotation) {
+    if (Object.keys(raw).some((key) => ![
+      "id",
+      "annotation",
+      "expectedAnnotationUpdatedAt",
+      "expectedAnnotationAbsent",
+    ].includes(key))) return null;
+    const annotation = sanitizeAnnotation(raw.annotation);
+    if (!annotation) return null;
+    const expectedAnnotationUpdatedAt = raw.expectedAnnotationUpdatedAt;
+    const expectedAnnotationAbsent = raw.expectedAnnotationAbsent;
+    if (
+      expectedAnnotationUpdatedAt !== undefined
+      && (
+        typeof expectedAnnotationUpdatedAt !== "string"
+        || !Number.isFinite(Date.parse(expectedAnnotationUpdatedAt))
+        || new Date(Date.parse(expectedAnnotationUpdatedAt)).toISOString() !== expectedAnnotationUpdatedAt
+      )
+    ) return null;
+    if (expectedAnnotationAbsent !== undefined && expectedAnnotationAbsent !== true) return null;
+    if (expectedAnnotationUpdatedAt !== undefined && expectedAnnotationAbsent === true) return null;
+    return {
+      id,
+      annotation,
+      ...(expectedAnnotationUpdatedAt !== undefined ? { expectedAnnotationUpdatedAt } : {}),
+      ...(expectedAnnotationAbsent === true ? { expectedAnnotationAbsent: true as const } : {}),
+    };
+  }
+  if (hasRemove) {
+    if (Object.keys(raw).some((key) => key !== "id" && key !== "removeAnnotationId")) return null;
+    const removeAnnotationId = typeof raw.removeAnnotationId === "string"
+      ? raw.removeAnnotationId.trim()
+      : "";
+    if (!removeAnnotationId || removeAnnotationId.length > 200) return null;
+    return { id, removeAnnotationId };
+  }
+  if (
+    raw.clearAnnotations !== true
+    || Object.keys(raw).some((key) => key !== "id" && key !== "clearAnnotations")
+  ) {
+    return null;
+  }
+  return { id, clearAnnotations: true };
+}
+
+/**
+ * Apply one bounded annotation operation to the current stored artifact.
+ * Loading and merging happen inside the Canvas write lock, so this path can
+ * never replay a stale client copy of artifact code or metadata.
+ */
+export async function mutateCanvasArtifactAnnotation(
+  value: unknown,
+): Promise<CanvasAnnotationMutationResult> {
+  const mutation = parseCanvasAnnotationMutation(value);
+  if (!mutation) return { status: "invalid" };
+
+  return withLock(async () => {
+    const current = await loadCanvas();
+    const index = current.artifacts.findIndex((artifact) => artifact.id === mutation.id);
+    if (index === -1) return { status: "not_found", file: current };
+
+    const incumbent = current.artifacts[index];
+    let annotations = incumbent.annotations ?? [];
+    if ("annotation" in mutation) {
+      const matchingIndex = annotations.findIndex(
+        (annotation) => (
+          annotation.id === mutation.annotation.id
+          || annotation.target.selector === mutation.annotation.target.selector
+        ),
+      );
+      if (mutation.expectedAnnotationAbsent && matchingIndex >= 0) {
+        return {
+          status: "conflict",
+          file: current,
+          currentUpdatedAt: annotations[matchingIndex].updatedAt,
+        };
+      }
+      if (
+        mutation.expectedAnnotationUpdatedAt !== undefined
+        && (
+          matchingIndex < 0
+          || annotations[matchingIndex].updatedAt !== mutation.expectedAnnotationUpdatedAt
+        )
+      ) {
+        return {
+          status: "conflict",
+          file: current,
+          currentUpdatedAt: matchingIndex >= 0 ? annotations[matchingIndex].updatedAt : null,
+        };
+      }
+      if (matchingIndex >= 0) {
+        annotations = annotations.slice();
+        annotations[matchingIndex] = mutation.annotation;
+      } else if (annotations.length < 100) {
+        annotations = [...annotations, mutation.annotation];
+      }
+    } else if ("removeAnnotationId" in mutation) {
+      annotations = annotations.filter((annotation) => annotation.id !== mutation.removeAnnotationId);
+    } else {
+      annotations = [];
+    }
+
+    const artifact: CanvasArtifact = {
+      ...incumbent,
+      ...(annotations.length > 0 ? { annotations } : {}),
+    };
+    if (annotations.length === 0) delete artifact.annotations;
+    const artifacts = current.artifacts.slice();
+    artifacts[index] = artifact;
+    const file: CanvasFile = { ...current, artifacts };
+    await saveCanvas(file);
+    return { status: "updated", file, artifact };
   });
 }
 

@@ -8,12 +8,50 @@ struct MessageBubble: View {
     var isLast: Bool = false
     var onDelete: () -> Void
     var onSuggestion: (String) -> Void = { _ in }
+    var onOpenReader: ((String) -> Void)? = nil
+    var onForward: ((DisplayMessage) -> Void)? = nil
     /// Regenerate this reply (assistant messages only); nil hides the action.
     var onRetry: (() -> Void)? = nil
+    /// Quote this message into the composer — swipe the bubble right, or use the
+    /// long-press menu. nil hides the action.
+    var onReply: ((DisplayMessage) -> Void)? = nil
+    /// The human operator's display name, shown above their own bubbles in
+    /// group threads (mirrors the familiar name row). Defaults to "You" so a
+    /// missing profile reads exactly as before.
+    var operatorName: String = "You"
+    /// The operator's server avatar image URL for that same row; nil falls back
+    /// to name initials.
+    var operatorAvatarURL: URL? = nil
+
+    /// Horizontal offset while swiping right to reply.
+    @State private var replyDrag: CGFloat = 0
+
+    // The bubble's WebView is transparent over a system-coloured bubble, so its
+    // prose must follow the app's light/dark appearance (the WebView doesn't
+    // pick up `prefers-color-scheme` on its own).
+    @Environment(\.colorScheme) private var colorScheme
+    // The desktop theme palette: its accent drives inline-code / link colours in
+    // the markdown so they match the selected theme instead of a fixed lavender.
+    @Environment(\.chrome) private var chrome
 
     @State private var mdHeight: CGFloat = 0
+    /// Brief "copied" confirmation on the action row (design: copy → check).
+    @State private var justCopied = false
+    /// Set when the markdown WebView can't render (missing/stale bundle, JS
+    /// error) — flips this bubble back to plain `Text` so the reply is never
+    /// shown as a blank sliver.
+    @State private var markdownFailed = false
 
     private var isUser: Bool { message.role == .user }
+
+    /// Compact send time under the bubble — time only for today, with an
+    /// abbreviated date for older messages.
+    private var timestampText: String {
+        if Calendar.current.isDateInToday(message.createdAt) {
+            return message.createdAt.formatted(date: .omitted, time: .shortened)
+        }
+        return message.createdAt.formatted(date: .abbreviated, time: .shortened)
+    }
 
     /// Long-press actions shared by the bubble and the system note: copy the
     /// text, optionally retry (regenerate), and delete.
@@ -24,6 +62,32 @@ struct MessageBubble: View {
                 Haptics.tap()
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
+            }
+        }
+        if canOpenReader {
+            Button {
+                onOpenReader?(parsed.visible)
+                Haptics.tap()
+            } label: {
+                Label("Open in Reader", systemImage: "text.page")
+            }
+        }
+        if canReply {
+            Button {
+                fireReply()
+                Haptics.tap()
+            } label: {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+            }
+        }
+        if canForward {
+            Button {
+                var forwarded = message
+                forwarded.text = parsed.visible
+                onForward?(forwarded)
+                Haptics.tap()
+            } label: {
+                Label("Forward to Familiar", systemImage: "arrowshape.turn.up.right")
             }
         }
         if let onRetry {
@@ -41,18 +105,71 @@ struct MessageBubble: View {
         isUser ? (message.text, []) : NextPaths.extract(message.text)
     }
 
-    /// Render the desktop-parity markdown WebView only for a settled, non-error
-    /// assistant reply. Streaming / user / error messages stay native Text.
+    /// Render the desktop-parity markdown WebView. Assistant replies always do —
+    /// now including while streaming (the WebView renders live, throttled). A
+    /// *user* message only renders markdown when it actually contains some, so
+    /// plain chatter stays fast native Text. Error messages stay native Text.
     private var rendersMarkdown: Bool {
-        !isUser && !message.streaming && !message.isError && !parsed.visible.isEmpty
+        guard !message.isError, !parsed.visible.isEmpty, !markdownFailed else { return false }
+        if isUser { return MarkdownDetect.hasMarkdown(message.text) }
+        return true
+    }
+
+    private var canOpenReader: Bool {
+        !isUser && !message.streaming && !message.isError && !parsed.visible.isEmpty && onOpenReader != nil
+    }
+
+    private var canForward: Bool {
+        !message.streaming && !parsed.visible.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && onForward != nil
+    }
+
+    private var canReply: Bool {
+        onReply != nil && !message.streaming
+            && !parsed.visible.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Swipe a bubble to the right to quote it into the composer. Runs alongside
+    /// the scroll view's pan (simultaneousGesture) and only tracks clearly
+    /// horizontal drags, so vertical scrolling is unaffected.
+    private var replySwipe: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onChanged { value in
+                guard canReply, value.translation.width > 0,
+                      abs(value.translation.width) > abs(value.translation.height) else { return }
+                replyDrag = min(value.translation.width, 64)
+            }
+            .onEnded { _ in
+                if replyDrag > 48 { Haptics.tap(); fireReply() }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { replyDrag = 0 }
+            }
+    }
+
+    private func fireReply() {
+        var quoted = message
+        quoted.text = parsed.visible
+        onReply?(quoted)
     }
 
     var body: some View {
-        if message.role == .system {
-            systemNote
-        } else {
-            chatBubble
+        Group {
+            if message.role == .system {
+                systemNote
+            } else {
+                chatBubble
+            }
         }
+        .offset(x: replyDrag)
+        .overlay(alignment: .leading) {
+            if replyDrag > 6 {
+                Image(systemName: "arrowshape.turn.up.left.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .opacity(Double(min(replyDrag / 50, 1)))
+                    .padding(.leading, 14)
+                    .accessibilityHidden(true)
+            }
+        }
+        .simultaneousGesture(replySwipe)
     }
 
     /// Inline slash-command output — a subtle monospaced card so it reads as
@@ -70,8 +187,7 @@ struct MessageBubble: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(Color(.secondarySystemBackground).opacity(0.6),
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glassFill(.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Color(.separator).opacity(0.5), lineWidth: 1)
@@ -95,9 +211,25 @@ struct MessageBubble: View {
                         .foregroundStyle(Theme.color(for: familiar))
                         .padding(.leading, 4)
                 }
+                // The operator gets the same name row above their own bubbles in
+                // a group thread, so a multi-person transcript attributes every
+                // turn — not just the familiars'.
+                if isUser, isGroup {
+                    Text(operatorName)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Theme.color(for: nil))
+                        .padding(.trailing, 4)
+                }
                 if !message.attachmentDataUrls.isEmpty {
                     attachmentImages
                         .contextMenu { messageActions }
+                }
+                // What the familiar is doing (tool calls / progress) — live
+                // while streaming, a collapsed summary once finished.
+                if !isUser, !message.activitySteps.isEmpty {
+                    AgentActivityView(steps: message.activitySteps,
+                                      streaming: message.streaming)
+                        .padding(.leading, 2)
                 }
                 // Hide the (empty) text bubble for image-only messages.
                 if !parsed.visible.isEmpty || message.attachmentDataUrls.isEmpty {
@@ -105,45 +237,158 @@ struct MessageBubble: View {
                         .contextMenu { messageActions }
                 }
 
+                // Rich preview card for the first link in a finished message.
+                if !message.streaming, let link = firstLink(in: parsed.visible) {
+                    LinkPreviewCard(url: link)
+                }
+
+                // A failed reply gets a visible Retry button, not just the
+                // long-press menu — a flaky network shouldn't leave a dead-end
+                // red bubble. (Retry re-streams just this bubble's familiar.)
+                if !isUser, message.isError, let onRetry {
+                    Button(action: onRetry) {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.red)
+                    .padding(.leading, 2)
+                    .accessibilityLabel("Retry sending this message")
+                }
+
+                // Composed offline: a quiet clock chip, not an error — the
+                // message sends itself on the next reconnect.
+                if isUser, message.isQueued {
+                    Label("Queued — sends when reconnected", systemImage: "clock")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.trailing, 6)
+                        .accessibilityLabel("Queued. Sends when the desktop is reachable again.")
+                }
+
+                if !message.streaming {
+                    Text(timestampText)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .padding(isUser ? .trailing : .leading, 6)
+                }
+
+                // Design's persistent action row under the latest settled
+                // reply — copy (flips to a check) and regenerate — so the two
+                // most common actions don't hide behind a long-press.
+                if !isUser, isLast, !message.streaming, !message.isError, !parsed.visible.isEmpty {
+                    actionRow
+                }
+
                 if !isUser, isLast, !message.streaming, !parsed.suggestions.isEmpty {
                     SuggestionPills(suggestions: parsed.suggestions, onTap: onSuggestion)
                 }
+            }
+
+            // Operator avatar sits at the trailing edge, mirroring the familiar
+            // avatar on the leading edge for assistant bubbles.
+            if isUser, isGroup {
+                AvatarView(familiar: nil, url: operatorAvatarURL, size: 28, fallbackName: operatorName)
             }
 
             if !isUser { Spacer(minLength: 48) }
         }
     }
 
+    /// Quiet icon row under the last settled assistant reply.
+    private var actionRow: some View {
+        HStack(spacing: 18) {
+            Button {
+                UIPasteboard.general.string = parsed.visible
+                Haptics.tap()
+                withAnimation(.snappy(duration: 0.18)) { justCopied = true }
+                Task {
+                    try? await Task.sleep(for: .seconds(1.4))
+                    withAnimation(.snappy(duration: 0.18)) { justCopied = false }
+                }
+            } label: {
+                Image(systemName: justCopied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(justCopied ? AnyShapeStyle(Color.green) : AnyShapeStyle(.secondary))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(justCopied ? "Copied" : "Copy reply")
+
+            if let onRetry {
+                Button {
+                    Haptics.tap()
+                    onRetry()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Regenerate reply")
+            }
+        }
+        .padding(.leading, 2)
+        .padding(.top, 2)
+    }
+
     @ViewBuilder private var attachmentImages: some View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
-            ForEach(message.attachmentDataUrls, id: \.self) { url in
-                if let image = UIImage.fromDataUrl(url) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 240, maxHeight: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
-                }
+            ForEach(message.attachmentDataUrls, id: \.self) { dataURL in
+                MessageAttachmentImage(dataURL: dataURL)
             }
         }
     }
 
     @ViewBuilder private var bubble: some View {
         if message.text.isEmpty && message.streaming {
-            TypingIndicator()
-                .padding(.horizontal, 14).padding(.vertical, 11)
-                .background(bubbleBackground, in: bubbleShape)
+            VStack(alignment: .leading, spacing: 8) {
+                TypingIndicator()
+                    .padding(.horizontal, 14).padding(.vertical, 11)
+                    .background(bubbleBackground, in: bubbleShape)
+                // While the newest reply gathers itself, surface one rotating
+                // grimoire tip (design's thinking-hint card).
+                if isLast {
+                    GrimoireHintCard()
+                }
+            }
         } else if rendersMarkdown {
-            MarkdownWebView(markdown: parsed.visible, height: $mdHeight)
+            MarkdownWebView(markdown: parsed.visible, height: $mdHeight,
+                            streaming: message.streaming && !isUser,
+                            theme: colorScheme == .light ? .light : .dark,
+                            accentHex: chrome.accentHex,
+                            onFailure: { markdownFailed = true })
                 .frame(height: max(mdHeight, 1))
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(bubbleBackground, in: bubbleShape)
+                .overlay(alignment: .topTrailing) {
+                    if canOpenReader {
+                        Button {
+                            onOpenReader?(parsed.visible)
+                            Haptics.tap()
+                        } label: {
+                            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(7)
+                                .glassFill(.control, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(6)
+                        .accessibilityLabel("Open response in reader")
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if message.streaming && !isUser { StreamingDot().padding(6) }
+                }
         } else {
             Text(parsed.visible.isEmpty ? " " : parsed.visible)
                 .textSelection(.enabled)
-                .foregroundStyle(isUser ? Color.white : Color.primary)
+                .foregroundStyle(isUser ? chrome.accentForeground : Color.primary)
                 .padding(.horizontal, 14).padding(.vertical, 9)
                 .background(bubbleBackground, in: bubbleShape)
                 .overlay(alignment: .bottomTrailing) {
@@ -154,40 +399,180 @@ struct MessageBubble: View {
         }
     }
 
-    private var bubbleShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: isUser ? 22 : 26, style: .continuous)
+    private var bubbleShape: UnevenRoundedRectangle {
+        if isUser {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 18, bottomLeadingRadius: 18,
+                bottomTrailingRadius: 6, topTrailingRadius: 18,
+                style: .continuous
+            )
+        } else {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 18, bottomLeadingRadius: 6,
+                bottomTrailingRadius: 18, topTrailingRadius: 18,
+                style: .continuous
+            )
+        }
     }
 
-    private var bubbleBackground: Color {
-        if message.isError { return Color.red.opacity(0.85) }
-        if isUser { return Color.accentColor }
-        return Color(.secondarySystemBackground)
+    /// Bubble fills: errors stay red; the user's bubble is a soft vertical
+    /// accent gradient (readable text comes from `chrome.accentForeground`);
+    /// the assistant's bubble sits on the theme's raised surface so it tracks
+    /// the desktop palette — the fallback palette resolves to the same
+    /// `secondarySystemBackground` as before.
+    private var bubbleBackground: AnyShapeStyle {
+        if message.isError { return AnyShapeStyle(Color.red.opacity(0.85)) }
+        if isUser { return AnyShapeStyle(chrome.accentGradient) }
+        return AnyShapeStyle(chrome.bgRaised)
     }
 }
 
-struct TypingIndicator: View {
-    @State private var phase = 0.0
+@MainActor
+private struct MessageAttachmentImage: View {
+    let dataURL: String
+
+    @Environment(\.displayScale) private var displayScale
+    @State private var zoomTask: Task<Void, Never>?
+
     var body: some View {
+        CachedImageView(
+            source: .dataURL(dataURL),
+            targetSize: CGSize(width: 240, height: 240)
+        ) { thumbnail in
+            Image(uiImage: thumbnail)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: 240, maxHeight: 240)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
+                .onTapGesture { presentZoom(fallback: thumbnail) }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Tap to enlarge")
+        } placeholder: {
+            EmptyView()
+        }
+        .onDisappear {
+            zoomTask?.cancel()
+            zoomTask = nil
+        }
+    }
+
+    private func presentZoom(fallback thumbnail: UIImage) {
+        zoomTask?.cancel()
+        let source = CaveImageSource.dataURL(dataURL)
+        let screenSize = UIScreen.main.bounds.size
+        let longestScreenPixels = max(screenSize.width, screenSize.height) * displayScale
+        let targetPixelSize = CGSize(width: longestScreenPixels, height: longestScreenPixels)
+
+        zoomTask = Task {
+            let image = await CaveImageCache.shared.image(
+                for: source,
+                targetPixelSize: targetPixelSize
+            ) ?? thumbnail
+            guard !Task.isCancelled else {
+                return
+            }
+            ContentZoom.image(image)
+        }
+    }
+}
+
+/// Three staggered dots while a familiar is thinking — a real wave driven by
+/// `PhaseAnimator` (each phase lifts one dot), not a repeat-forever hack.
+/// Reduce Motion swaps the wave for calm static dots.
+struct TypingIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if reduceMotion {
+            dots { _ in (opacity: 0.55, scale: 1) }
+        } else {
+            PhaseAnimator([0, 1, 2]) { phase in
+                dots { i in (opacity: phase == i ? 1 : 0.3, scale: phase == i ? 1.2 : 1) }
+            } animation: { _ in .easeInOut(duration: 0.28) }
+        }
+    }
+
+    private func dots(_ style: @escaping (Int) -> (opacity: Double, scale: Double)) -> some View {
         HStack(spacing: 4) {
             ForEach(0..<3) { i in
                 Circle().frame(width: 6, height: 6)
                     .foregroundStyle(.secondary)
-                    .opacity(phase == Double(i) ? 1 : 0.3)
+                    .opacity(style(i).opacity)
+                    .scaleEffect(style(i).scale)
             }
         }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.5).repeatForever()) { phase = 2 }
+        .accessibilityLabel("Thinking")
+    }
+}
+
+/// The pulsing "still streaming" dot in a reply's corner. `PhaseAnimator`
+/// breathes it between dim and bright; Reduce Motion holds it steady.
+/// One quiet, rotating usage tip shown beside the typing indicator while a
+/// reply gathers itself (design's "grimoire hint" card). Every hint names a
+/// real affordance of this app. Italic serif per the design; rotation pauses
+/// under Reduce Motion (a single static hint instead).
+struct GrimoireHintCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var index = Int.random(in: 0..<GrimoireHintCard.hints.count)
+    @State private var visible = true
+
+    static let hints: [String] = [
+        "Type / for commands — /model swaps the mind mid-chat.",
+        "@-mention a familiar to pull them into the circle.",
+        "Swipe right on any reply to quote it back.",
+        "Long-press a bubble for copy, forward, and retry.",
+        "/image conjures pictures; /skill runs a ritual.",
+        "Pin a chat from the list to keep it on top.",
+        "The ☰ menu holds projects, tasks, and the terminal.",
+        "/clear tidies the transcript; /new starts fresh.",
+    ]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "book.closed")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 2)
+            Text(Self.hints[index])
+                .font(.system(size: 13.5, design: .serif))
+                .italic()
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .glassFill(.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .opacity(visible ? 1 : 0)
+        .task {
+            guard !reduceMotion else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                withAnimation(.easeOut(duration: 0.3)) { visible = false }
+                try? await Task.sleep(for: .seconds(0.32))
+                index = (index + 1) % Self.hints.count
+                withAnimation(.easeIn(duration: 0.3)) { visible = true }
+            }
+        }
+        .accessibilityLabel("Tip: \(Self.hints[index])")
     }
 }
 
 struct StreamingDot: View {
-    @State private var on = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        Circle().frame(width: 6, height: 6)
-            .foregroundStyle(.secondary)
-            .opacity(on ? 1 : 0.2)
-            .onAppear { withAnimation(.easeInOut(duration: 0.6).repeatForever()) { on = true } }
+        if reduceMotion {
+            dot.opacity(0.6)
+        } else {
+            PhaseAnimator([0.2, 1.0]) { phase in
+                dot.opacity(phase)
+            } animation: { _ in .easeInOut(duration: 0.6) }
+        }
+    }
+
+    private var dot: some View {
+        Circle().frame(width: 6, height: 6).foregroundStyle(.secondary)
     }
 }
 
@@ -207,7 +592,8 @@ struct SuggestionPills: View {
                 Button { onTap(suggestion) } label: {
                     HStack(spacing: 5) {
                         if index == 0 {
-                            Image(systemName: "sparkle").font(.system(size: 10, weight: .semibold))
+                            Image(systemName: "sparkle").font(.caption2.weight(.semibold))
+                                .accessibilityHidden(true)
                         }
                         Text(suggestion)
                             .font(.caption.weight(.medium))
@@ -228,10 +614,36 @@ struct SuggestionPills: View {
                         )
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(GlassPressStyle(scale: 0.98))
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 6)
+    }
+}
+
+// Skip re-rendering a bubble when its render-affecting inputs are unchanged.
+// ChatView's composer keeps `draft` in the same view body as the message list,
+// so every keystroke invalidates ChatView.body and would otherwise re-diff
+// every bubble (each hosts a WKWebView) — the cause of slow typing on long
+// threads. Closures are excluded (they capture fresh state each render but
+// don't change what's drawn); optional-action closures are compared by presence
+// since that toggles which buttons appear. Environment values and the complete
+// familiar model are included because they directly control colours, markdown
+// styling, and the familiar attribution row.
+extension MessageBubble: Equatable {
+    static func == (lhs: MessageBubble, rhs: MessageBubble) -> Bool {
+        lhs.message == rhs.message
+            && lhs.isGroup == rhs.isGroup
+            && lhs.familiar == rhs.familiar
+            && lhs.isLast == rhs.isLast
+            && lhs.operatorName == rhs.operatorName
+            && lhs.operatorAvatarURL == rhs.operatorAvatarURL
+            && lhs.colorScheme == rhs.colorScheme
+            && lhs.chrome == rhs.chrome
+            && (lhs.onRetry == nil) == (rhs.onRetry == nil)
+            && (lhs.onReply == nil) == (rhs.onReply == nil)
+            && (lhs.onOpenReader == nil) == (rhs.onOpenReader == nil)
+            && (lhs.onForward == nil) == (rhs.onForward == nil)
     }
 }

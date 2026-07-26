@@ -1,0 +1,24 @@
+{
+  "name": "coven-memory",
+  "version": "0.1.0",
+  "description": "Persist and recall cross-session memory and curated knowledge-vault references for your familiars.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Coven Memory & Knowledge",
+    "shortDescription": "Persist and recall cross-session memory and curated knowledge-vault references for your familiars.",
+    "longDescription": "Capture durable facts to memory and reference the knowledge vault without leaking secrets.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "coven",
+      "memory",
+      "knowledge",
+      "recall",
+      "vault"
+    ],
+    "defaultPrompt": "Help me use Coven Memory & Knowledge safely."
+  }
+}

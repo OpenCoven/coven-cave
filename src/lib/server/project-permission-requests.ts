@@ -5,9 +5,12 @@ import type { CaveProject } from "@/lib/cave-projects-types";
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
+  loadMobileWriteAccess,
   type ProjectPermissionSurface,
 } from "@/lib/project-permissions";
 import { MOBILE_ACCESS_HEADER } from "@/proxy-helpers";
+import { isLocalOrigin } from "@/lib/server/local-origin";
+import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 
 function isWithinRoot(candidate: string, root: string): boolean {
   const relativePath = path.relative(root, candidate);
@@ -30,32 +33,120 @@ function projectRootForPath(value: string, projects: CaveProject[]): CaveProject
   return matches[0]?.project ?? null;
 }
 
+/**
+ * Read-only surfaces the human operator may use WITHOUT a familiar context —
+ * but only from a loopback origin (their own desktop), never the phone /
+ * tailnet. Familiars still require a grant; write surfaces always require a
+ * familiarId.
+ */
+const LOCAL_HUMAN_READ_SURFACES: ReadonlySet<ProjectPermissionSurface> = new Set([
+  "file-browse",
+  "file-read",
+  "project-api",
+]);
+
+/**
+ * True when this is the human operator reading (not a familiar, not a write).
+ * Two shapes:
+ *   - their own desktop on a loopback origin, for the read surfaces above;
+ *   - the same human on their own phone — the native app sends the mobile header,
+ *     and read fallbacks are remapped to surface "mobile"; non-read surfaces keep
+ *     their fallback (e.g., file-write). The app only ever GETs to read. The
+ *     request already
+ *     cleared the server's front gate (token / same-origin / tailnet-trust) to
+ *     reach this route, so a mobile GET is the trusted human; writes (POST) still
+ *     fall through to the familiar requirement.
+ */
+function isHumanRead(req: Request | undefined, surface: ProjectPermissionSurface): boolean {
+  if (!req) return false;
+  if (isLocalOrigin(req) && LOCAL_HUMAN_READ_SURFACES.has(surface)) return true;
+  if (surface === "mobile" && (req.method ?? "GET").toUpperCase() === "GET") return true;
+  return false;
+}
+
+/**
+ * True when this is the human operator WRITING from their own paired phone —
+ * a verified-mobile request on the file-write surface — and the desktop has
+ * opted in (`allowMobileFileWrites`, mutable only from loopback via
+ * /api/mobile-permissions). Deliberately narrow:
+ *   - only the `file-write` surface (shell stays familiar-gated);
+ *   - only requests the proxy marked as the paired phone;
+ *   - callers apply it only on the no-familiarId path of REGISTERED projects —
+ *     familiar-scoped writes keep full grant enforcement, and unregistered
+ *     paths (familiar workspaces, cwd) stay read-only from the phone.
+ */
+async function isHumanMobileWrite(
+  req: Request | undefined,
+  surface: ProjectPermissionSurface,
+): Promise<boolean> {
+  if (!req) return false;
+  if (surface !== "file-write") return false;
+  if (req.headers.get(MOBILE_ACCESS_HEADER) !== "1") return false;
+  const { allowMobileFileWrites } = await loadMobileWriteAccess();
+  return allowMobileFileWrites;
+}
+
 export async function assertProjectApiAccess(args: {
   familiarId: string | null | undefined;
   path: string | null | undefined;
   surface: ProjectPermissionSurface;
+  request?: Request;
 }): Promise<void> {
   const { surface } = args;
   const familiarId = args.familiarId?.trim();
-  if (!familiarId) {
-    throw new ProjectAccessDeniedError("missing familiarId for project access");
-  }
   const requestedPath = args.path?.trim();
   if (!requestedPath) {
     throw new ProjectAccessDeniedError("missing project path for permission check");
   }
-  const project = projectRootForPath(requestedPath, await loadProjects());
+  const projects = await loadProjects();
+  const project = projectRootForPath(requestedPath, projects);
   if (!project) {
+    // Not a *registered* project — but the path may still be a legitimate read
+    // target the traversal guard already permits: a familiar's own workspace
+    // (~/.coven/workspaces/familiars/<id>), an openclaw research dir, or the cwd.
+    // Let the human browse those (the Code tab surfaces familiar workspaces and
+    // attaches the owning familiar's id as context, so we must NOT require its
+    // absence here). isHumanRead is the real gate — only read surfaces
+    // (file-browse/file-read/project-api on loopback, or a mobile GET) qualify;
+    // writes use file-write, which isn't a human-read surface, so they still
+    // fall through to the familiar requirement below.
+    if (isHumanRead(args.request, surface) && resolveAllowedProjectPath(requestedPath)) {
+      return;
+    }
     throw new ProjectAccessDeniedError("project is not registered for permission checks");
+  }
+  if (!familiarId) {
+    // The human (their own desktop, or their phone) may read a registered
+    // project's files without a familiar. Familiars stay gated; writes still
+    // need one — except the paired phone's own saves when the desktop has
+    // opted in to mobile file writes.
+    if (isHumanRead(args.request, surface)) {
+      return;
+    }
+    if (await isHumanMobileWrite(args.request, surface)) {
+      return;
+    }
+    throw new ProjectAccessDeniedError("missing familiarId for project access");
   }
   await assertProjectAccess({ familiarId }, project.id, surface);
 }
+
+const MOBILE_READ_FALLBACK_SURFACES: ReadonlySet<ProjectPermissionSurface> = new Set([
+  "file-browse",
+  "file-read",
+  "project-api",
+]);
 
 export function projectPermissionSurfaceForRequest(
   req: Request,
   fallback: ProjectPermissionSurface,
 ): ProjectPermissionSurface {
-  if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") return "mobile";
+  if (
+    req.headers.get(MOBILE_ACCESS_HEADER) === "1" &&
+    MOBILE_READ_FALLBACK_SURFACES.has(fallback)
+  ) {
+    return "mobile";
+  }
   return fallback;
 }
 

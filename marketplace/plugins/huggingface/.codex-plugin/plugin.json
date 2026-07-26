@@ -1,0 +1,24 @@
+{
+  "name": "huggingface",
+  "version": "0.1.0",
+  "description": "Search models, datasets, papers, and Spaces on the Hugging Face Hub.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Hugging Face",
+    "shortDescription": "Search models, datasets, papers, and Spaces on the Hugging Face Hub.",
+    "longDescription": "Search the Hub for models, datasets, and papers; cite repo IDs and arXiv references.",
+    "developerName": "OpenCoven",
+    "category": "Agents & Harnesses",
+    "capabilities": [
+      "huggingface",
+      "models",
+      "datasets",
+      "papers",
+      "ml"
+    ],
+    "defaultPrompt": "Help me use Hugging Face safely."
+  }
+}

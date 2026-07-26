@@ -11,7 +11,7 @@ process.env.HOME = TMP;
 const SESSION_ID = "sess-tr";
 
 function seedConv() {
-  const dir = join(TMP, ".coven", "cave-conversations");
+  const dir = join(TMP, ".coven", "cave", "conversations");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${SESSION_ID}.json`), JSON.stringify({
     sessionId: SESSION_ID, familiarId: "m", harness: "claude",
@@ -21,7 +21,7 @@ function seedConv() {
 }
 
 function readConv() {
-  return JSON.parse(readFileSync(join(TMP, ".coven", "cave-conversations", `${SESSION_ID}.json`), "utf8"));
+  return JSON.parse(readFileSync(join(TMP, ".coven", "cave", "conversations", `${SESSION_ID}.json`), "utf8"));
 }
 
 const { POST } = await import("./route.ts");

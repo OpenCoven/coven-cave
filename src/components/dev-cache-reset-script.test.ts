@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 const src = readFileSync(new URL("./dev-cache-reset-script.tsx", import.meta.url), "utf8");
 const layout = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8");
 
+assert.doesNotMatch(src, /import Script from "next\/script"/, "dev cache reset must render a plain server script, not next/script");
+assert.match(src, /<script\b/, "dev cache reset renders an inline server document script");
 assert.match(src, /process\.env\.NODE_ENV !== "development"/, "script should render only in development");
 assert.match(src, /navigator\.serviceWorker\.getRegistrations\(\)/, "script should inspect existing service workers before hydration");
 assert.match(src, /registration\.unregister\(\)/, "script should unregister stale service workers");

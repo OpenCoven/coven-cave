@@ -6,11 +6,21 @@ const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(route, /export async function GET/);
 assert.match(route, /export async function PATCH/);
+assert.match(
+  route,
+  /state\.harness === "opencode"[\s\S]*?!rejectNonLocalRequest\(req\)[\s\S]*?await listOpenCodeModels\(familiarId\)/,
+  "OpenCode's authenticated inventory is local-only while iOS keeps the aggregate model-state endpoint",
+);
 assert.match(route, /bindingFor\(config, familiarId\)/);
 assert.match(route, /resolveChatModelState/);
 assert.match(route, /loadConversation\(sessionId\)/);
 assert.match(route, /saveConfig/);
 assert.match(route, /saveConversation/);
+assert.equal(
+  route.match(/sessionId && !isSafeConversationSessionId\(sessionId\)/g)?.length,
+  2,
+  "GET and PATCH must reject unsafe optional session ids before loading or locking",
+);
 assert.match(
   route,
   /conversation\.familiarId !== familiarId[\s\S]*jsonError\("not found", 404\)/,

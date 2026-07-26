@@ -13,11 +13,11 @@ const SESSION = {
   title: "Task: Review Version Control in Cave",
   status: "running",
   origin: "board",
-  project_root: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  project_root: "/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
   harness: "claude",
   familiarId: "nova",
   model: "openclaw-local",
-  runtime: "local:/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  runtime: "local:/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
   exit_code: null,
   archived_at: null,
   created_at: ISO,
@@ -32,7 +32,7 @@ const CARD = {
   priority: "medium",
   familiarId: "nova",
   sessionId: "s-task",
-  cwd: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  cwd: "/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
   links: [],
   github: [],
   labels: [],
@@ -61,11 +61,17 @@ const CONTEXT = {
 
 async function setup(page: Page) {
   await page.addInitScript(() => {
-    window.localStorage.setItem("cave:demo-mode", "1");
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    // Nav is minimized-by-default; keep it expanded here so the chat layout keeps
+    // its full width (see cave:shell:min-applied — the sidebar-minimize flag).
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
   });
+  await page.route("**/api/familiars**", (route) =>
+    route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
+  );
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions: [SESSION] } }),
   );
@@ -84,7 +90,7 @@ async function setup(page: Page) {
     }
     return route.continue();
   });
-  await page.goto("/?demo=1");
+  await page.goto("/?mode=chat");
   await page.waitForTimeout(500);
   await page.keyboard.press("Meta+2");
   await page.waitForSelector(".chat-surface", { timeout: 30_000 });
@@ -93,13 +99,13 @@ async function setup(page: Page) {
 test("task chip navigates to the board card inspector, not the chat list", async ({ page }) => {
   await setup(page);
 
-  // Open the task chat from the rail.
-  const rail = page.locator(".chat-thread-rail");
-  await rail.getByText("Review Version Control in Cave", { exact: false }).first().click();
+  // Open the task chat from the chat-mode sidebar (session navigator).
+  const sidebar = page.locator(".chat-sidebar");
+  await sidebar.getByText("Review Version Control in Cave", { exact: false }).first().click();
 
   // The linked-task chip appears in the chat header. Its accessible name is
   // the chip's own text content ("Task … backlog medium"), which the status/
-  // priority suffix distinguishes from the rail's session button.
+  // priority suffix distinguishes from the sidebar's session button.
   const chip = page.getByRole("button", { name: /Review Version Control in Cave backlog medium/ });
   await expect(chip).toBeVisible({ timeout: 30_000 });
 

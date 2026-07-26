@@ -1,0 +1,25 @@
+{
+  "name": "tinyfish-agent-run",
+  "version": "0.1.0",
+  "description": "Run a TinyFish automation agent against a URL and stream live STARTED/PROGRESS/COMPLETE events as one-line JSON so a caller can surface each step as it happens.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "TinyFish Agent Run",
+    "shortDescription": "Run a TinyFish automation agent against a URL and stream live STARTED/PROGRESS/COMPLETE events as one-line JSON so a caller can surface each step as it happens.",
+    "longDescription": "Verify TINYFISH_API_KEY is set, run scripts/agent-run.sh <url> <goal>, and parse the streamed JSON events for live progress and the final result payload.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "tinyfish",
+      "automation",
+      "browser",
+      "streaming",
+      "sse",
+      "agent"
+    ],
+    "defaultPrompt": "Help me use TinyFish Agent Run safely."
+  }
+}

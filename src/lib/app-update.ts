@@ -1,6 +1,16 @@
 // Pure version-comparison helpers + shared types for the desktop update check.
 // Server-safe (no window / browser APIs) so the API route and client can both import it.
 
+/**
+ * The platform/arch targets we ship installers for. Keyed the same way as the
+ * Tauri updater manifest (`<os>-<arch>`) so the client can resolve its own
+ * target from the OS plugin and pick a direct installer download.
+ */
+export type DownloadTarget = "darwin-aarch64" | "darwin-x86_64" | "windows-x86_64" | "linux-x86_64";
+
+/** Direct installer download URLs per platform, resolved from a release's assets. */
+export type DownloadUrls = Partial<Record<DownloadTarget, string>>;
+
 export type UpdateStatus = {
   /** The running app's version (from package.json via APP_VERSION). */
   current: string;
@@ -8,13 +18,93 @@ export type UpdateStatus = {
   latest: string | null;
   /** True when `latest` is strictly newer than `current`. */
   available: boolean;
-  /** Where to send the user to download (GitHub release page). */
+  /** Where to send the user to download (GitHub release page) — last-resort fallback. */
   url: string;
+  /**
+   * Direct installer download URLs per platform (DMG / MSI / AppImage). The
+   * client picks its own target so "Download" downloads an installer instead of
+   * just opening the release page. Empty when assets couldn't be resolved.
+   */
+  downloads?: DownloadUrls;
   /** ISO timestamp of when the check ran. */
   checkedAt: string;
   /** Present when the latest version could not be determined (network/rate-limit). */
   error?: string;
 };
+
+/**
+ * A release-route response is only a usable check when it carries release
+ * metadata and does not report an upstream lookup error. The route deliberately
+ * returns HTTP 200 for GitHub/rate-limit failures so the settings surface can
+ * render a compact recovery state; callers must therefore inspect the body,
+ * not only `Response.ok`.
+ */
+export type FallbackReleaseCheck =
+  | { kind: "available"; status: UpdateStatus }
+  | { kind: "current"; status: UpdateStatus }
+  | { kind: "unavailable"; message: string };
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+export function classifyFallbackReleaseCheck(
+  responseOk: boolean,
+  payload: unknown,
+  httpStatus?: number,
+): FallbackReleaseCheck {
+  if (!responseOk) {
+    return { kind: "unavailable", message: `release check failed${httpStatus ? ` (HTTP ${httpStatus})` : ""}` };
+  }
+
+  const body = record(payload);
+  if (!body) return { kind: "unavailable", message: "release check returned an invalid response" };
+  if (typeof body.error === "string" && body.error.trim()) {
+    return { kind: "unavailable", message: body.error.trim() };
+  }
+
+  const latest = typeof body.latest === "string" && body.latest.trim() ? body.latest : null;
+  if (typeof body.available !== "boolean") {
+    return { kind: "unavailable", message: "release check did not include an availability result" };
+  }
+  const available = body.available;
+  const current = typeof body.current === "string" ? body.current : "";
+  const url = typeof body.url === "string" ? body.url : "";
+  const checkedAt = typeof body.checkedAt === "string" ? body.checkedAt : new Date().toISOString();
+  if (!latest || !current || !url) {
+    return { kind: "unavailable", message: "release check did not include a latest version" };
+  }
+
+  const status: UpdateStatus = {
+    current,
+    latest,
+    available,
+    url,
+    checkedAt,
+    ...(record(body.downloads) ? { downloads: body.downloads as DownloadUrls } : {}),
+  };
+  return available ? { kind: "available", status } : { kind: "current", status };
+}
+
+/** Combine the non-native release evidence without ever inferring currency from a failure. */
+export type CombinedFallbackReleaseCheck =
+  | { kind: "available"; status: UpdateStatus; nativeUpdaterFailed: boolean }
+  | { kind: "current"; status: UpdateStatus }
+  | { kind: "unavailable"; message: string };
+
+export function resolveFallbackAfterNative(
+  nativeUpdaterError: string | null,
+  fallback: FallbackReleaseCheck,
+): CombinedFallbackReleaseCheck {
+  if (fallback.kind === "available") {
+    return { kind: "available", status: fallback.status, nativeUpdaterFailed: Boolean(nativeUpdaterError) };
+  }
+  if (fallback.kind === "current") return fallback;
+  const nativeDetail = nativeUpdaterError ? `Native updater: ${nativeUpdaterError}. ` : "";
+  return { kind: "unavailable", message: `${nativeDetail}Release check: ${fallback.message}` };
+}
 
 /** Parse "1.2.3" or "v1.2.3" (ignoring any pre-release/build suffix) into [major, minor, patch]. */
 export function parseSemver(version: string): [number, number, number] | null {
@@ -37,4 +127,70 @@ export function compareSemver(a: string, b: string): number {
 /** True when `latest` is a strictly newer release than `current`. */
 export function isUpdateAvailable(latest: string, current: string): boolean {
   return compareSemver(latest, current) > 0;
+}
+
+/** A GitHub release asset (subset of the fields we care about). */
+export type ReleaseAsset = { name?: string; browser_download_url?: string };
+
+/**
+ * Map a release's assets to direct, user-installable downloads per platform.
+ * Prefers the end-user installer for each target (DMG on macOS, MSI on Windows,
+ * AppImage on Linux) over the updater artifacts (`.app.tar.gz`) and skips the
+ * detached `.sig` signatures. Returns only the targets we found an asset for.
+ */
+export function resolveDownloadUrls(assets: ReleaseAsset[]): DownloadUrls {
+  const out: DownloadUrls = {};
+  const pick = (test: (name: string) => boolean): string | undefined => {
+    for (const a of assets) {
+      const name = a.name;
+      if (!name || !a.browser_download_url) continue;
+      if (name.endsWith(".sig")) continue;
+      if (test(name)) return a.browser_download_url;
+    }
+    return undefined;
+  };
+
+  const macArm = pick((n) => /aarch64\.dmg$/i.test(n));
+  const macX64 = pick((n) => /x86_64\.dmg$/i.test(n));
+  const win = pick((n) => /\.msi$/i.test(n)) ?? pick((n) => /-setup\.exe$/i.test(n));
+  const linux = pick((n) => /\.AppImage$/i.test(n));
+
+  if (macArm) out["darwin-aarch64"] = macArm;
+  if (macX64) out["darwin-x86_64"] = macX64;
+  if (win) out["windows-x86_64"] = win;
+  if (linux) out["linux-x86_64"] = linux;
+  return out;
+}
+
+/**
+ * Resolve the running platform to a download target key. `os`/`arch` come from
+ * the Tauri OS plugin (`platform()` → "macos"|"windows"|"linux"…, `arch()` →
+ * "aarch64"|"x86_64"…). Returns null when we don't ship for that combination.
+ */
+export function downloadTargetFor(os: string, arch: string): DownloadTarget | null {
+  if (os === "macos") return arch === "aarch64" ? "darwin-aarch64" : "darwin-x86_64";
+  if (os === "windows") return "windows-x86_64";
+  if (os === "linux") return "linux-x86_64";
+  return null;
+}
+
+/**
+ * Pick the best direct download for the running platform, falling back through
+ * the other macOS arch (universal-ish) and finally to the release page so the
+ * Download button always points at *something* downloadable.
+ */
+export function pickDownloadUrl(
+  status: Pick<UpdateStatus, "downloads" | "url">,
+  os: string,
+  arch: string,
+): string {
+  const downloads = status.downloads ?? {};
+  const target = downloadTargetFor(os, arch);
+  if (target && downloads[target]) return downloads[target]!;
+  // macOS arch mismatch (e.g. Rosetta arch report): offer the other mac build.
+  if (os === "macos") {
+    const other = downloads["darwin-aarch64"] ?? downloads["darwin-x86_64"];
+    if (other) return other;
+  }
+  return status.url;
 }

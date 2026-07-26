@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import type { CaveProject } from "@/lib/cave-projects";
+import { useProjects } from "@/lib/use-projects";
+import { useProjectFamiliars } from "@/lib/use-project-familiars";
+import { isProjectPickerReady } from "@/lib/project-scope";
 import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
 import { PropertyPill } from "@/components/ui/property-pill";
+import { StandardSelect } from "@/components/ui/select";
 import {
   STATUSES,
   PRIORITIES,
@@ -34,7 +38,6 @@ type Props = {
   onClose: () => void;
   familiars: Familiar[];
   sessions: SessionRow[];
-  projects: CaveProject[];
   defaultStatus?: CardStatus;
   defaultFamiliarId?: string | null;
   defaultTitle?: string;
@@ -49,7 +52,6 @@ export function NewCardModal({
   onClose,
   familiars,
   sessions,
-  projects,
   defaultStatus = "inbox",
   defaultFamiliarId = null,
   defaultTitle,
@@ -65,16 +67,38 @@ export function NewCardModal({
   const [familiarId, setFamiliarId] = useState<string | null>(defaultFamiliarId);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [cwd, setCwd] = useState("");
   const [links, setLinks] = useState("");
   const [labels, setLabels] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const wasOpenRef = useRef(open);
+  const opening = open && !wasOpenRef.current;
   const coarse = useIsCoarsePointer();
 
-  useEffect(() => {
+  // When the modal opens with a familiar already selected (such as from a
+  // familiar swimlane), only offer projects that familiar can launch work in.
+  // Project-first selection remains supported when no familiar is set.
+  const {
+    projects,
+    loading: projectsLoading,
+    loadedSuccessfully: projectsLoaded,
+  } = useProjects({ familiarId, enabled: open });
+  const {
+    familiars: eligibleFamiliars,
+    loading: eligibleFamiliarsLoading,
+    loadedSuccessfully: eligibleFamiliarsLoaded,
+  } = useProjectFamiliars({ projectId, enabled: open });
+
+  // This is deliberately a layout effect: on close/reopen the component stays
+  // mounted, so its prior familiar state exists for one render. Apply the new
+  // defaults before the browser can paint that stale familiar's projects.
+  useLayoutEffect(() => {
+    wasOpenRef.current = open;
+  }, [open]);
+
+  useLayoutEffect(() => {
     if (!open) return;
     setTitle(defaultTitle ?? "");
     setNotes(defaultNotes ?? "");
@@ -83,7 +107,6 @@ export function NewCardModal({
     setFamiliarId(defaultFamiliarId);
     setSessionId(null);
     setProjectId(null);
-    setCwd("");
     setLinks(defaultLinks ? defaultLinks.join("\n") : "");
     setLabels(defaultLabels ? defaultLabels.join(", ") : "");
     setStartDate("");
@@ -91,12 +114,68 @@ export function NewCardModal({
     setError(null);
   }, [open, defaultStatus, defaultFamiliarId, defaultTitle, defaultLinks, defaultNotes, defaultLabels]);
 
+  useEffect(() => {
+    if (!projectId || !familiarId || !eligibleFamiliarsLoaded) return;
+    if (!eligibleFamiliars.some((familiar) => familiar.id === familiarId)) {
+      setFamiliarId(null);
+      setSessionId(null);
+    }
+  }, [eligibleFamiliars, eligibleFamiliarsLoaded, familiarId, projectId]);
+
   const eligibleSessions = familiarId
     ? sessions.filter((s) => s.familiarId === familiarId)
     : sessions;
 
+  // The selected project drives the card's working directory — there is no
+  // free-form cwd field, so drafts never carry machine-specific paths.
+  const selectedProject = projects.find((p) => p.id === projectId) ?? null;
+  // A familiar-scoped project result must belong to the familiar currently
+  // selected in this modal. While a familiar changes, fail closed rather than
+  // briefly offering the prior familiar's retained project list.
+  const projectPickerReady = isProjectPickerReady({
+    opening,
+    loadedSuccessfully: projectsLoaded,
+    loading: projectsLoading,
+  });
+  const projectOptions = !projectPickerReady
+    ? [{
+        value: "",
+        label: opening || projectsLoading
+          ? familiarId ? "Loading accessible projects…" : "Loading projects…"
+          : familiarId ? "Could not load accessible projects" : "Could not load projects",
+        disabled: true,
+      }]
+    : [
+        { value: "", label: "No project" },
+        ...projects.map((project) => ({ value: project.id, label: project.name })),
+      ];
+  // A familiar change can leave a previously selected projectId in local form
+  // state while the newly scoped list settles. Never create a card with that
+  // unverified id and a null/stale cwd.
+  const projectSelectionValid = !projectId || (projectPickerReady && selectedProject !== null);
+  const familiarPickerReady = !projectId || (eligibleFamiliarsLoaded && !eligibleFamiliarsLoading);
+  const familiarOptions = !projectId
+    ? [
+        { value: "", label: "Unassigned" },
+        ...familiars.map((familiar) => ({
+          value: familiar.id,
+          label: `${familiar.display_name} · ${familiar.harness ?? "?"}`,
+        })),
+      ]
+    : eligibleFamiliarsLoading
+      ? [{ value: "", label: "Loading authorized familiars…", disabled: true }]
+      : !eligibleFamiliarsLoaded
+        ? [{ value: "", label: "Could not load authorized familiars", disabled: true }]
+        : [
+            { value: "", label: "Unassigned" },
+            ...eligibleFamiliars.map((familiar) => ({
+              value: familiar.id,
+              label: `${familiar.display_name} · ${familiar.harness ?? "?"}`,
+            })),
+          ];
+
   const create = async () => {
-    if (!title.trim() || busy) return;
+    if (!title.trim() || busy || !projectSelectionValid) return;
     setBusy(true);
     setError(null);
     try {
@@ -108,7 +187,7 @@ export function NewCardModal({
         familiarId,
         sessionId,
         projectId,
-        cwd: cwd.trim() || null,
+        cwd: selectedProject?.root ?? null,
         links: parseDelimited(links),
         labels: parseDelimited(labels),
         startDate: startDate || null,
@@ -127,8 +206,7 @@ export function NewCardModal({
     familiars.find((f) => f.id === familiarId)?.display_name ?? "Default familiar";
   const sessionLabel =
     sessions.find((s) => s.id === sessionId)?.title ?? null;
-  const projectLabel =
-    projects.find((p) => p.id === projectId)?.name ?? null;
+  const projectLabel = selectedProject?.name ?? null;
 
   return (
     <Modal
@@ -165,19 +243,19 @@ export function NewCardModal({
       }
       footerActions={
         <>
-          <button
+          <Button
+            variant="secondary"
             onClick={onClose}
-            className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
             onClick={create}
-            disabled={!title.trim() || busy}
-            className="rounded-md border border-border-strong bg-muted px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-card disabled:opacity-50"
+            disabled={!title.trim() || busy || !projectSelectionValid}
           >
             {busy ? "Creating…" : "Create"}
-          </button>
+          </Button>
         </>
       }
     >
@@ -187,7 +265,7 @@ export function NewCardModal({
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Task title"
           autoFocus={!coarse}
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+          className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
         />
       </Field>
 
@@ -197,7 +275,7 @@ export function NewCardModal({
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Notes, acceptance criteria, links"
           rows={6}
-          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+          className="w-full resize-y rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
         />
       </Field>
 
@@ -217,22 +295,42 @@ export function NewCardModal({
           />
         </Field>
 
+        <Field label="Project">
+          <Select
+            value={projectPickerReady ? projectId ?? "" : ""}
+            onChange={(v) => {
+              // With a familiar already selected, this list is server-scoped
+              // to its session-launch access, so the familiar remains valid.
+              // The linked session can still belong to another project.
+              setProjectId(v || null);
+              setSessionId(null);
+            }}
+            options={projectOptions}
+            disabled={!projectPickerReady}
+          />
+        </Field>
+
         <Field label="Familiar">
           <Select
-            value={familiarId ?? ""}
+            value={familiarPickerReady ? familiarId ?? "" : ""}
             onChange={(v) => {
               setFamiliarId(v || null);
               setSessionId(null);
             }}
-            options={[
-              { value: "", label: "Default familiar" },
-              ...familiars.map((f) => ({
-                value: f.id,
-                label: `${f.display_name} · ${f.harness ?? "?"}`,
-              })),
-            ]}
+            options={familiarOptions}
+            disabled={!familiarPickerReady}
           />
         </Field>
+      </div>
+
+      {/* Optional metadata lives behind a disclosure so the default modal
+          stays a short title/notes/pickers form. Open it when a caller
+          prefilled links or labels so they aren't hidden. */}
+      <details className="mb-4" open={Boolean(defaultLinks?.length || defaultLabels?.length)}>
+        <summary className="focus-ring mb-2 cursor-pointer select-none text-[length:var(--text-2xs)] uppercase tracking-widest text-muted-foreground hover:text-foreground">
+          More options
+        </summary>
+
         <Field label="Session (optional)">
           <Select
             value={sessionId ?? ""}
@@ -247,65 +345,47 @@ export function NewCardModal({
           />
         </Field>
 
-        <Field label="Project">
-          <Select
-            value={projectId ?? ""}
-            onChange={(v) => setProjectId(v || null)}
-            options={[
-              { value: "", label: "No project" },
-              ...projects.map((p) => ({ value: p.id, label: p.name })),
-            ]}
+        <div className="mb-4 grid grid-cols-2 gap-4">
+          <Field label="Start date">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+            />
+          </Field>
+          <Field label="End date">
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+            />
+          </Field>
+        </div>
+
+        <Field label="Links">
+          <textarea
+            value={links}
+            onChange={(e) => setLinks(e.target.value)}
+            placeholder="One link per line, e.g. https://github.com/owner/repo/pull/123"
+            rows={3}
+            className="w-full resize-y rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
           />
         </Field>
 
-        <Field label="Start date">
+        <Field label="Labels">
           <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+            value={labels}
+            onChange={(e) => setLabels(e.target.value)}
+            placeholder="ui, docs"
+            className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
           />
         </Field>
-        <Field label="End date">
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
-          />
-        </Field>
-      </div>
-
-      <Field label="CWD">
-        <input
-          value={cwd}
-          onChange={(e) => setCwd(e.target.value)}
-          placeholder="/Users/buns/Documents/GitHub/OpenCoven/coven-cave"
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
-        />
-      </Field>
-
-      <Field label="Links">
-        <textarea
-          value={links}
-          onChange={(e) => setLinks(e.target.value)}
-          placeholder="https://github.com/OpenCoven/coven-cave/pull/153"
-          rows={3}
-          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
-        />
-      </Field>
-
-      <Field label="Labels">
-        <input
-          value={labels}
-          onChange={(e) => setLabels(e.target.value)}
-          placeholder="ui, docs"
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
-        />
-      </Field>
+      </details>
 
       {error ? (
-        <div className="mb-3 rounded border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
+        <div className="mb-3 rounded-[var(--radius-control)] border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
           {error}
         </div>
       ) : null}
@@ -316,7 +396,7 @@ export function NewCardModal({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="mb-4 block">
-      <div className="mb-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className="mb-1.5 text-[length:var(--text-2xs)] uppercase tracking-widest text-muted-foreground">{label}</div>
       {children}
     </label>
   );
@@ -326,28 +406,22 @@ function Select({
   value,
   onChange,
   options,
+  disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; disabled?: boolean }[];
+  disabled?: boolean;
 }) {
   return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-md border border-border bg-background px-3 py-2 pr-8 text-sm text-foreground outline-none focus:border-border-strong"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-card">
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-        ▾
-      </span>
-    </div>
+    <StandardSelect
+      label="Choose value"
+      value={value}
+      onChange={onChange}
+      options={options}
+      disabled={disabled}
+      className="w-full border-border bg-background px-3 py-2 text-sm text-foreground focus:border-border-strong"
+    />
   );
 }
 

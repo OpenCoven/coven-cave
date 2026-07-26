@@ -1,0 +1,24 @@
+{
+  "name": "slack",
+  "version": "0.1.0",
+  "description": "Read channels, search history, and post approved messages to Slack workspaces.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Slack",
+    "shortDescription": "Read channels, search history, and post approved messages to Slack workspaces.",
+    "longDescription": "Use Slack read-first; never post, react, or DM without explicit approval.",
+    "developerName": "OpenCoven",
+    "category": "Productivity",
+    "capabilities": [
+      "slack",
+      "chat",
+      "messaging",
+      "notifications",
+      "team"
+    ],
+    "defaultPrompt": "Help me use Slack safely."
+  }
+}

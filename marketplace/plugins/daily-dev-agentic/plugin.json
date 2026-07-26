@@ -1,0 +1,41 @@
+{
+  "name": "daily-dev-agentic",
+  "version": "0.1.0",
+  "description": "Autonomous continuous learning via daily.dev feeds \u2014 set up a personalized feed, run daily learning loops, note insights, and proactively share findings with the owner.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "learning",
+    "daily-dev",
+    "knowledge",
+    "feeds",
+    "cron",
+    "insights"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "network"
+  ],
+  "marketplaceId": "opencoven/daily-dev-agentic",
+  "x-coven": {
+    "displayName": "daily.dev Agentic Learning",
+    "category": "Knowledge & Docs",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/daily-dev-agentic"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

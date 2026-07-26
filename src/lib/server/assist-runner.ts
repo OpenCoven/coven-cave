@@ -1,0 +1,206 @@
+/**
+ * Assist runner — the shared headless `codex exec` lane for one-shot,
+ * bounded, read-only generation (docs/authoring-assist.md §7, cave-c40b).
+ *
+ * Extracted from the stitch sew so every authoring assist (sew, skill draft,
+ * skill dry-run, …) reuses one spawn dance instead of growing private copies.
+ * Follows the automation-runner stance: the invocation is built by a pure,
+ * unit-tested function; the spawn itself is verified manually (CI has no
+ * codex binary). The prompt goes to stdin; the agent's final message is read
+ * from `--output-last-message` (a temp file), keeping progress noise on
+ * stdout/stderr out of the caller's parse.
+ *
+ * The sandbox is pinned **read-only inside this module — deliberately not a
+ * parameter** — so no future caller can quietly widen privileges: assist
+ * prompts embed user-pasted and remote-fetched (attacker-influenceable)
+ * content, and a distillation needs no tools. Anything that must write goes
+ * through the existing deterministic routes or a watched chat, never here.
+ */
+
+import { spawn } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { harnessSpawnEnv } from "../harness-spawn-env.ts";
+
+export type AssistInvocation = {
+  command: string;
+  args: string[];
+  stdinPrompt: string;
+};
+
+export const ASSIST_TIMEOUT_MS = 180_000;
+
+/** Pure: how to invoke `codex exec` for a bounded assist. Unit-tested. */
+export function buildAssistInvocation(prompt: string, lastMessagePath: string): AssistInvocation {
+  const command = process.env.COVEN_CODEX_BIN?.trim() || "codex";
+  return {
+    command,
+    // --skip-git-repo-check: assists deliberately run in a neutral temp dir
+    // (never the repo), which newer codex refuses as "not inside a trusted
+    // directory" without the flag. Safe here because the sandbox is pinned
+    // read-only — the trust check guards writable runs, and this can't write.
+    args: [
+      "exec",
+      "--sandbox",
+      "read-only",
+      "--skip-git-repo-check",
+      "--output-last-message",
+      lastMessagePath,
+      "-",
+    ],
+    stdinPrompt: prompt,
+  };
+}
+
+export type AssistRunResult =
+  | { ok: true; lastMessage: string }
+  | { ok: false; error: string };
+
+/**
+ * Pure: collapse a bounded stderr capture into a one-line reason suitable
+ * for appending to an error message — last 3 non-empty lines, joined, capped
+ * at the final 300 chars. Unit-tested.
+ */
+export function stderrReason(stderrTail: string): string {
+  return stderrTail.trim().split(/\r?\n/).filter(Boolean).slice(-3).join(" · ").slice(-300);
+}
+
+// Signals that codex exited without output because it isn't signed in. Kept
+// deliberately precise: loose substrings like `auth`, `token`, or `sign ?in`
+// would misread "unexpected token" / "author" / "design in…" stderr as a
+// sign-in problem and send the user to `codex login` for an unrelated
+// failure. A missed match is benign — the generic path below still surfaces
+// the stderr tail verbatim.
+const AUTH_STDERR_RE =
+  /not (?:logged|signed) in|codex login|please (?:log|sign) ?in|unauthorized|authentication (?:required|failed|error)|(?:invalid|missing|expired) (?:credentials?|api key)|credentials? (?:invalid|missing|expired)|token (?:expired|revoked)|\b401\b/i;
+
+/**
+ * Pure: error message for the "exited 0 but wrote no last message" case.
+ * codex does this when it is not signed in, leaving the real reason on
+ * stderr — so surface the stderr tail, plus an explicit sign-in hint (with a
+ * runnable login command) when that tail looks like an auth failure.
+ * Unit-tested.
+ */
+export function describeEmptyAssistOutput(command: string, stderrTail: string): string {
+  const tail = stderrReason(stderrTail);
+  if (AUTH_STDERR_RE.test(stderrTail)) {
+    const loginCommand = /\s/.test(command)
+      ? // Escape backslashes before quotes so a Windows path (C:\…\coven.cmd)
+        // can't break out of the double-quoted suggestion (js/incomplete-sanitization).
+        `"${command.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}" login`
+      : `${command} login`;
+    return `${command} isn't signed in, so this assist produced no output. Run \`${loginCommand}\` in a terminal, then try again${
+      tail ? ` (${tail})` : ""
+    }.`;
+  }
+  return `assist produced no output${tail ? ` — ${tail}` : ""}`;
+}
+
+/**
+ * Run one bounded assist end-to-end: spawn `codex exec`, wait (bounded), and
+ * return the final message for the caller to parse against its own output
+ * contract. Never throws. Spawn behavior is exercised manually — CI covers
+ * the pure pieces only (`buildAssistInvocation`, `stderrReason`,
+ * `describeEmptyAssistOutput`).
+ */
+export async function runBoundedAssist(opts: {
+  prompt: string;
+  timeoutMs?: number;
+  /** Human phrasing for the "codex isn't installed" failure — name the
+   *  caller's escape hatch instead of leaking `spawn codex ENOENT` jargon. */
+  missingRuntimeHint?: string;
+}): Promise<AssistRunResult> {
+  const timeoutMs = opts.timeoutMs ?? ASSIST_TIMEOUT_MS;
+  const dir = await mkdtemp(
+    /* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ tmpdir(), "assist-run-"),
+  );
+  const lastMessagePath = path.join(/* turbopackIgnore: true */ dir, "last-message.txt");
+  try {
+    const inv = buildAssistInvocation(opts.prompt, lastMessagePath);
+    let stderrTail = "";
+    const spawned = await new Promise<{ code: number | null; error?: string }>((resolve) => {
+      let settled = false;
+      const settle = (value: { code: number | null; error?: string }) => {
+        if (!settled) {
+          settled = true;
+          resolve(value);
+        }
+      };
+      // Neutral cwd: the assist's temp dir, not the server checkout — even a
+      // read-only sandbox shouldn't be pointed at the repo as its workspace.
+      // No familiar context: shared vault keys only (assists embed
+      // attacker-influenceable content; scoped secrets never reach them).
+      // `inv.command` is a runtime override (`COVEN_CODEX_BIN`) or a PATH
+      // lookup, never a bundled executable. Calling through Reflect prevents
+      // Next's child_process tracer from treating that dynamic command as a
+      // repository-relative build input while preserving spawn semantics.
+      const child = Reflect.apply(spawn, undefined, [
+        inv.command,
+        inv.args,
+        {
+          cwd: dir,
+          stdio: ["pipe", "ignore", "pipe"],
+          env: harnessSpawnEnv(),
+        },
+      ]);
+      // Keep a bounded stderr tail so a non-zero exit carries its reason
+      // (e.g. codex trust/auth refusals) instead of an opaque exit code.
+      child.stderr?.on("data", (chunk: Buffer) => {
+        stderrTail = (stderrTail + chunk.toString("utf8")).slice(-2000);
+      });
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        settle({ code: null, error: "assist timed out" });
+      }, timeoutMs);
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        const missing = (err as NodeJS.ErrnoException).code === "ENOENT";
+        settle({
+          code: null,
+          error: missing
+            ? `The ${inv.command} CLI isn't installed, so this assist can't run. Install it (npm i -g @openai/codex)${
+                opts.missingRuntimeHint ? ` or ${opts.missingRuntimeHint}` : ""
+              }.`
+            : err.message,
+        });
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        settle({ code });
+      });
+      // `stdio[0]` is explicitly "pipe" above. Keep the null guard because
+      // Reflect.apply necessarily widens Node's spawn overload at type-check
+      // time even though the runtime contract guarantees a writable stream.
+      if (!child.stdin) {
+        settle({ code: null, error: "assist stdin unavailable" });
+        return;
+      }
+      child.stdin.write(inv.stdinPrompt);
+      child.stdin.end();
+    });
+    if (spawned.error) return { ok: false, error: spawned.error };
+    if (spawned.code !== 0) {
+      const reason = stderrReason(stderrTail);
+      return {
+        ok: false,
+        error: `codex exec exited with ${spawned.code}${reason ? ` — ${reason}` : ""}`,
+      };
+    }
+    let lastMessage: string;
+    try {
+      lastMessage = await readFile(/* turbopackIgnore: true */ lastMessagePath, "utf8");
+    } catch {
+      // codex can exit 0 yet write no last-message file when it is not signed
+      // in. The real reason lands on stderr, so surface that (and an explicit
+      // sign-in hint for the auth case) instead of an opaque "produced no
+      // output".
+      return { ok: false, error: describeEmptyAssistOutput(inv.command, stderrTail) };
+    }
+    return { ok: true, lastMessage };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "assist failed" };
+  } finally {
+    await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
+  }
+}

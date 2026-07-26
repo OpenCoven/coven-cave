@@ -10,13 +10,21 @@ import { ReadingAlignController } from "@/components/reading-align-controller";
 import { ReadingWidthController } from "@/components/reading-width-controller";
 import { ReadingWeightController } from "@/components/reading-weight-controller";
 import { ReadingHyphensController } from "@/components/reading-hyphens-controller";
-import { ReadingDropcapController } from "@/components/reading-dropcap-controller";
 import { CornerRadiusController } from "@/components/corner-radius-controller";
+import { RemoteThemeController } from "@/components/remote-theme-controller";
+import { TauriTitlebarMarker } from "@/components/tauri-titlebar-marker";
 import { ThemeScript } from "@/components/theme-script";
 import { ShellBannersProvider } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { PwaRegister } from "@/components/pwa-register";
 import { DevCacheResetScript } from "@/components/dev-cache-reset-script";
+import { DevShellRecovery } from "@/components/dev-shell-recovery";
+import { WebVitalsReporter } from "@/components/perf/web-vitals-reporter";
+import { PerfOverlay } from "@/components/perf/perf-overlay";
+import { PreferencesBootstrapController } from "@/components/preferences-bootstrap-controller";
+import { DaemonReleaseAlignmentTrigger } from "@/components/update-available";
+import { createDefaultPreferences } from "@/lib/preferences-schema";
 
 export const metadata: Metadata = {
   title: "CovenCave",
@@ -49,11 +57,18 @@ export const viewport: Viewport = {
   ],
 };
 
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // First shell delivery must never enter the reconciled preference store. The
+  // uninitialized snapshot is paint-only: ThemeScript may combine it with this
+  // origin's compatibility cache, while PreferencesBootstrapController fetches
+  // the canonical snapshot after the shell has mounted.
+  const preferences = createDefaultPreferences(false);
   return (
     <html
       lang="en"
@@ -64,13 +79,17 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <ThemeScript />
+        <ThemeScript preferences={preferences} authoritative={false} />
       </head>
       <body className="h-full flex flex-col">
         <DevCacheResetScript />
+        <DevShellRecovery />
         <SidecarAuthBridge />
         <ShellBannersProvider>
+          <DaemonReleaseAlignmentTrigger />
           <LiveRegionProvider>
+            <ConfirmProvider>
+            <PreferencesBootstrapController />
             <SidecarAuthMonitor />
             <ScreenMagnificationController />
             <ReadingLeadingController />
@@ -79,10 +98,14 @@ export default function RootLayout({
             <ReadingWidthController />
             <ReadingWeightController />
             <ReadingHyphensController />
-            <ReadingDropcapController />
             <CornerRadiusController />
+            <RemoteThemeController />
+            <TauriTitlebarMarker />
             <PwaRegister />
+            <WebVitalsReporter />
+            <PerfOverlay />
             {children}
+            </ConfirmProvider>
           </LiveRegionProvider>
         </ShellBannersProvider>
       </body>

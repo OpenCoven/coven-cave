@@ -1,0 +1,24 @@
+{
+  "name": "azure-devops",
+  "version": "0.1.0",
+  "description": "Work with Azure DevOps repos, work items, builds, releases, test plans, and code search.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Azure DevOps",
+    "shortDescription": "Work with Azure DevOps repos, work items, builds, releases, test plans, and code search.",
+    "longDescription": "Use Azure DevOps MCP for planning and review context without silently changing work state.",
+    "developerName": "OpenCoven",
+    "category": "Cloud & Infrastructure",
+    "capabilities": [
+      "azure-devops",
+      "work-items",
+      "pipelines",
+      "repos",
+      "boards"
+    ],
+    "defaultPrompt": "Help me use Azure DevOps safely."
+  }
+}

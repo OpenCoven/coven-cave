@@ -14,7 +14,23 @@ globalThis.window = {
 };
 
 const mod = await import("./cave-familiar-overrides.ts");
-const flushAsync = () => new Promise((resolve) => setTimeout(resolve, 0));
+async function waitForPatchBody(
+  calls: Array<{ input: string; init: { method?: string; body?: string } }>,
+  predicate: (body: unknown) => boolean,
+) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const match = calls.find((call) => {
+      try {
+        return predicate(JSON.parse(call.init.body ?? "{}"));
+      } catch {
+        return false;
+      }
+    });
+    if (match) return match;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return null;
+}
 
 // setFamiliarOverride writes a partial patch
 {
@@ -72,10 +88,15 @@ const flushAsync = () => new Promise((resolve) => setTimeout(resolve, 0));
   };
 
   mod.setFamiliarOverride("milo", { display_name: "Milo Prime", color: "#123456" });
-  await flushAsync();
-  assert.equal(calls.at(-1)?.input, "/api/config");
-  assert.equal(calls.at(-1)?.init.method, "PATCH");
-  assert.deepEqual(JSON.parse(calls.at(-1)?.init.body ?? "{}"), {
+  const setCall = await waitForPatchBody(
+    calls,
+    (body) =>
+      body?.familiars?.milo?.display_name === "Milo Prime" &&
+      body?.familiars?.milo?.color === "#123456",
+  );
+  assert.equal(setCall?.input, "/api/config");
+  assert.equal(setCall?.init.method, "PATCH");
+  assert.deepEqual(JSON.parse(setCall?.init.body ?? "{}"), {
     familiars: {
       milo: {
         display_name: "Milo Prime",
@@ -85,8 +106,11 @@ const flushAsync = () => new Promise((resolve) => setTimeout(resolve, 0));
   });
 
   mod.clearFamiliarOverrideField("milo", "display_name");
-  await flushAsync();
-  assert.deepEqual(JSON.parse(calls.at(-1)?.init.body ?? "{}"), {
+  const clearCall = await waitForPatchBody(
+    calls,
+    (body) => body?.familiars?.milo?.display_name === null,
+  );
+  assert.deepEqual(JSON.parse(clearCall?.init.body ?? "{}"), {
     familiars: {
       milo: {
         display_name: null,

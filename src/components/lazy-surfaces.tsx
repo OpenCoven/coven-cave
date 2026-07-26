@@ -1,0 +1,293 @@
+"use client";
+
+// Code-splitting boundary for heavy, mode-gated workspace surfaces.
+//
+// These surfaces are only ever *rendered* when their nav mode is active, but a
+// static `import` still ships their code (and their heavy transitive deps) in
+// the always-loaded main bundle. Routing them through `next/dynamic` moves each
+// into its own chunk that the browser fetches on first open instead of at app
+// boot. Notably this pulls `@uiw/react-codemirror` out of the shared bundle.
+//
+// `ssr: false` is safe: the whole app is client-rendered (`workspace.tsx` is a
+// client component) and these surfaces are interactive-only.
+
+import dynamic from "next/dynamic";
+import { SkeletonRows } from "@/components/ui/skeleton";
+import { markStart, markEnd } from "@/lib/perf/marks";
+
+function SurfaceFallback() {
+  // Fills the surface area while the chunk loads so the layout doesn't jump.
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3 p-6" aria-hidden>
+      <SkeletonRows count={6} />
+    </div>
+  );
+}
+
+function GlyphPickerFallback() {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-base)]/70 backdrop-blur-sm">
+      <div
+        className="flex h-[560px] w-[640px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-base)] p-4 shadow-2xl"
+        aria-busy="true"
+        aria-label="Loading glyph picker"
+      >
+        <SkeletonRows count={8} />
+      </div>
+    </div>
+  );
+}
+
+// Wrap a lazy loader so the chunk's fetch+parse time is recorded as a
+// `surface-load:<name>` perf measure (visible in the ?perf=1 overlay). This is
+// the runtime cost of code-splitting these surfaces — worth watching so a
+// lazy chunk doesn't grow into a noticeable open-delay.
+function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
+  return () => {
+    markStart(`surface-load:${name}`);
+    return loader().then((component) => {
+      markEnd(`surface-load:${name}`);
+      return component;
+    });
+  };
+}
+
+// (cave-c3yt) The retired ComuxView and FlowView surfaces are fully deleted —
+// the standalone Code surface is gone (the chat code rail is the file/terminal
+// host; it owns PTY teardown on session switch in chat-surface.tsx) and the
+// Flow experience lives on feature/automations-flow (its /api/flows engine +
+// webhooks remain live under src/lib/flow + src/lib/server).
+
+// Keep the raw imports separate from the `next/dynamic` wrappers. The current
+// App Router implementation of `next/dynamic` does not expose `.preload()`, so
+// warm-up must call the loaders directly to fetch a sidebar's chunks without
+// mounting the surface (and therefore without running any of its effects).
+const loadGitHubView = () => import("@/components/github-view").then((m) => m.GitHubView);
+const loadCalendarView = () => import("@/components/calendar-view").then((m) => m.CalendarView);
+const loadBoardView = () => import("@/components/board-view").then((m) => m.BoardView);
+const loadMarketplaceView = () =>
+  import("@/components/marketplace-view").then((m) => m.MarketplaceViewSurface);
+const loadAutomationsView = () =>
+  import("@/components/automations-view").then((m) => m.AutomationsView);
+const loadFamiliarWorkQueueView = () =>
+  import("@/components/familiar-work-queue-view").then((m) => m.FamiliarWorkQueueView);
+const loadFamiliarsView = () =>
+  import("@/components/familiars-view").then((m) => m.FamiliarsView);
+const loadGrimoireView = () => import("@/components/grimoire-view").then((m) => m.GrimoireView);
+const loadInboxEscalationsView = () =>
+  import("@/components/inbox-escalations-view").then((m) => m.InboxEscalationsView);
+
+/** Canonical sidebar surfaces whose chunks can be warmed before navigation. */
+export type WarmableSidebarSurface =
+  | "github"
+  | "marketplace"
+  | "board"
+  | "schedules"
+  | "grimoire"
+  | "agents";
+
+// The standalone GitHubView surface is back (cave-cc5r): the Code workbench
+// moved into the Coding familiar's Role Surface room, and every familiar
+// keeps GitHub as its own canonical surface again. loadGitHubView also feeds
+// preloadSidebarSurface — warming the chunk before the row is clicked.
+export const GitHubView = dynamic(
+  timed("github", loadGitHubView),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+// The Code workbench chunk (CodeMirror et al.) now rides the Code room's
+// dynamic import (role-surfaces/register.tsx → code-room.tsx), keeping it out
+// of the boot bundle without a wrapper here.
+
+export const CalendarView = dynamic(
+  timed("calendar", loadCalendarView),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const BoardView = dynamic(
+  timed("board", loadBoardView),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const MarketplaceView = dynamic(
+  timed("marketplace", loadMarketplaceView),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const AutomationsView = dynamic(
+  timed("automations", loadAutomationsView),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const FamiliarWorkQueueView = dynamic(
+  timed("familiar-work-queue", loadFamiliarWorkQueueView),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const FamiliarGlyphPicker = dynamic(
+  timed("familiar-glyph-picker", () =>
+    import("@/components/familiar-glyph-picker").then((m) => m.FamiliarGlyphPicker),
+  ),
+  { ssr: false, loading: GlyphPickerFallback },
+);
+
+// BrowserPane's imperative handle crosses this boundary as the regular
+// `handleRef` prop — next/dynamic does not forward element refs (cave-masj).
+export const BrowserPane = dynamic(
+  timed("browser", () => import("@/components/browser-pane").then((m) => m.BrowserPane)),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+// The workspace boots into Chat. Everything below is either selected through
+// another mode or opened explicitly, so none of it belongs in the initial `/`
+// graph. Mode surfaces keep a full-area skeleton while their local chunk is
+// fetched from the packaged Next server.
+export const FamiliarsView = dynamic(
+  timed("familiars", loadFamiliarsView),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const GrimoireView = dynamic(
+  timed("grimoire", loadGrimoireView),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const InboxEscalationsView = dynamic(
+  timed("schedules", loadInboxEscalationsView),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+/**
+ * Fetch a canonical sidebar surface's chunks without mounting it. These use
+ * the same import specifiers as their `next/dynamic` wrappers, so the module
+ * cache is shared with the eventual render.
+ */
+export function preloadSidebarSurface(surface: WarmableSidebarSurface): Promise<void> {
+  switch (surface) {
+    case "github":
+      return loadGitHubView().then(() => undefined);
+    case "marketplace":
+      return loadMarketplaceView().then(() => undefined);
+    case "board":
+      return Promise.all([loadBoardView(), loadFamiliarWorkQueueView()]).then(() => undefined);
+    case "schedules":
+      return Promise.all([loadInboxEscalationsView(), loadCalendarView(), loadAutomationsView()]).then(
+        () => undefined,
+      );
+    case "grimoire":
+      return loadGrimoireView().then(() => undefined);
+    case "agents":
+      return loadFamiliarsView().then(() => undefined);
+  }
+}
+
+export const OpenCovenSubmissionPage = dynamic(
+  timed("submissions", () =>
+    import("@/components/opencoven-submission-page").then((m) => m.OpenCovenSubmissionPage),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const RailInspector = dynamic(
+  timed("memory-inspector", () =>
+    import("@/components/inspector-pane").then((m) => m.RailInspector),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const SalemChatPanel = dynamic(
+  timed("salem", () =>
+    import("@/components/salem/salem-widget").then((m) => m.SalemChatPanel),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const AskSalemView = dynamic(
+  timed("ask-salem", () =>
+    import("@/components/salem/ask-salem-view").then((m) => m.AskSalemView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+// Modal hosts are conditionally rendered by workspace.tsx, so `loading: null`
+// never paints an empty overlay at boot and the chunk is requested only after
+// the corresponding open intent.
+export const CommandPalette = dynamic(
+  timed("command-palette", () =>
+    import("@/components/command-palette").then((m) => m.CommandPalette),
+  ),
+  { ssr: false, loading: () => null },
+);
+
+export const OnboardingOverlay = dynamic(
+  timed("onboarding", () =>
+    import("@/components/onboarding-overlay").then((m) => m.OnboardingOverlay),
+  ),
+  { ssr: false, loading: () => null },
+);
+
+export const NewReminderModal = dynamic(
+  timed("new-reminder", () =>
+    import("@/components/new-reminder-modal").then((m) => m.NewReminderModal),
+  ),
+  { ssr: false, loading: () => null },
+);
+
+export const ShortcutsSheet = dynamic(
+  timed("shortcuts", () =>
+    import("@/components/shortcuts-sheet").then((m) => m.ShortcutsSheet),
+  ),
+  { ssr: false, loading: () => null },
+);
+
+export const MobileHandoffModal = dynamic(
+  timed("mobile-handoff", () =>
+    import("@/components/mobile-handoff-modal").then((m) => m.MobileHandoffModal),
+  ),
+  { ssr: false, loading: () => null },
+);
+
+// Chat itself stays eager because it is the default workspace. Its secondary
+// tabs and code rail do not: the Sessions conversation remains interactive
+// without downloading every alternate Chat destination at startup.
+export const ProjectsView = dynamic(
+  timed("chat-projects", () =>
+    import("@/components/projects-view").then((m) => m.ProjectsView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const ChatCanvasView = dynamic(
+  timed("chat-canvas", () =>
+    import("@/components/chat-canvas-view").then((m) => m.ChatCanvasView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const ChatFamiliarView = dynamic(
+  timed("chat-familiar", () =>
+    import("@/components/chat-familiar-view").then((m) => m.ChatFamiliarView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const ChatSettingsView = dynamic(
+  timed("chat-settings", () =>
+    import("@/components/chat-settings-view").then((m) => m.ChatSettingsView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const GroupChatView = dynamic(
+  timed("group-chat", () =>
+    import("@/components/group-chat-view").then((m) => m.GroupChatView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const WorkspaceRail = dynamic(
+  timed("workspace-rail", () =>
+    import("@/components/workspace-rail").then((m) => m.WorkspaceRail),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);

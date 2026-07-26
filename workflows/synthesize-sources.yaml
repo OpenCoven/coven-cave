@@ -2,7 +2,7 @@ id: synthesize-sources
 version: 0.1.0
 name: Synthesize Sources
 summary: Combine multiple completed sources into a durable cited synthesis instead of a loose link pile.
-familiar: sage
+familiar: research
 pattern: fan-out-and-synthesize
 tags:
   - library
@@ -26,28 +26,28 @@ steps:
   - id: select-cluster
     kind: agent
     name: Select source cluster
-    uses: sage
+    uses: research
     summary: Identify the topic cluster and confirm enough sources are ready for synthesis.
     requires:
       - input
   - id: extract-source-notes
     kind: agent
     name: Extract source notes
-    uses: sage
+    uses: research
     summary: Pull key claims, evidence, caveats, and bibliographic details from each source.
     requires:
       - select-cluster
   - id: compare-claims
     kind: agent
     name: Compare claims
-    uses: sage
+    uses: research
     summary: Group agreement, disagreement, uncertainty, and source-quality differences.
     requires:
       - extract-source-notes
   - id: write-synthesis
     kind: agent
     name: Write synthesis
-    uses: sage
+    uses: research
     summary: Produce a cited synthesis with practical implications and open questions.
     requires:
       - compare-claims

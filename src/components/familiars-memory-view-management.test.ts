@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+const source = [
+  await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./familiars-memory-files.tsx", import.meta.url), "utf8"),
+].join("\n");
 
 assert.match(source, /useUndoDelete/, "uses the shared undo-delete hook");
-assert.match(source, /LibraryUndoToast/, "renders the undo toast");
+assert.match(source, /<UndoToast/, "renders the shared undo toast");
+assert.doesNotMatch(source, /LibraryUndoToast|styles\/library\.css/, "memory view should not depend on feature-branch Library code");
 assert.match(source, /\[groupMode, setGroupMode\]/, "tracks group mode");
 assert.match(source, /\[staleOnly, setStaleOnly\]/, "tracks stale-only filter");
 assert.match(source, /"oldest"|"staleFirst"/, "sort mode extended");

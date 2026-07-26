@@ -3,9 +3,9 @@
 import { useEffect } from "react";
 
 /**
- * Sparkle the top-bar sidepanel trigger on an actual click. Clicking the nav or
- * side-panel toggle (`.shell-top-toggle--nav` / `.shell-top-toggle--right`)
- * fires its own toggle and adds a one-shot purple `.magic-cast` sparkle.
+ * Sparkle the top-bar nav trigger on an actual click. Clicking the nav toggle
+ * (`.shell-top-toggle--nav`) fires its own toggle and adds a one-shot purple
+ * `.magic-cast` sparkle.
  */
 
 const CAST_MS = 650;
@@ -16,7 +16,7 @@ export function MagicTriggers() {
 
     const onClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
-      const el = target?.closest(".shell-top-toggle--nav, .shell-top-toggle--right");
+      const el = target?.closest(".shell-top-toggle--nav");
       if (!(el instanceof HTMLElement)) return;
       if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
       el.classList.add("magic-cast");

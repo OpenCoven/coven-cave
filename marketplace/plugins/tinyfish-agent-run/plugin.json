@@ -1,0 +1,41 @@
+{
+  "name": "tinyfish-agent-run",
+  "version": "0.1.0",
+  "description": "Run a TinyFish automation agent against a URL and stream live STARTED/PROGRESS/COMPLETE events as one-line JSON so a caller can surface each step as it happens.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "tinyfish",
+    "automation",
+    "browser",
+    "streaming",
+    "sse",
+    "agent"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/tinyfish-agent-run",
+  "x-coven": {
+    "displayName": "TinyFish Agent Run",
+    "category": "Browser & Web",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/tinyfish-agent-run"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

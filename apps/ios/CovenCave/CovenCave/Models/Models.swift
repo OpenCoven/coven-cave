@@ -15,12 +15,16 @@ struct Familiar: Identifiable, Codable, Hashable {
     var model: String?
     var icon: String?
     var avatarUrl: String?
+    var activeSessions: Int?
+    var memoryFreshness: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case displayName = "display_name"
         case role, description, pronouns, color, status, harness, model, icon
         case avatarUrl
+        case activeSessions = "active_sessions"
+        case memoryFreshness = "memory_freshness"
     }
 }
 
@@ -28,6 +32,23 @@ struct FamiliarsResponse: Codable {
     let ok: Bool
     let error: String?
     let familiars: [Familiar]
+}
+
+// MARK: - Theme
+
+/// The desktop's published appearance (`GET /api/theme`). `tokens` are resolved
+/// hex strings keyed by CSS custom-property name (e.g. `--bg-base`), so the app
+/// can use them directly without knowing the desktop's CSS preset definitions.
+struct ThemeSnapshot: Codable {
+    var themeId: String
+    var mode: String
+    var tokens: [String: String]
+    var updatedAt: String
+}
+
+struct ThemeResponse: Codable {
+    let ok: Bool
+    let theme: ThemeSnapshot
 }
 
 // MARK: - Sessions
@@ -43,6 +64,11 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var createdAt: String?
     var updatedAt: String?
     var archivedAt: String?
+    /// Provenance from /api/sessions/list — generator surfaces (journal,
+    /// canvas, cron, …) tag their runs so chat lists can hide them.
+    var origin: String?
+    /// Daemon-only runs the server flags as generated (not user chats).
+    var generated: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, title, harness, model, status
@@ -50,6 +76,18 @@ struct SessionRow: Identifiable, Codable, Hashable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case archivedAt = "archived_at"
+        case origin, generated
+    }
+
+    /// Mirrors the web's isGeneratedChatSession (chat-projects.ts): generated
+    /// runs stay out of thread lists. Legacy journal runs predate the origin
+    /// tag, so their exact machine-prompt titles match too — at the truncated
+    /// lengths the store actually keeps.
+    var isGeneratedRun: Bool {
+        if generated == true { return true }
+        if let origin, ["cron", "heartbeat", "canvas", "journal"].contains(origin) { return true }
+        return title.hasPrefix("Write a short narrative of my day (")
+            || title.hasPrefix("Write a short, first-person reflective journal entry")
     }
 }
 
@@ -85,12 +123,18 @@ struct ChatTurn: Identifiable, Codable, Hashable {
     var createdAt: String?
     var isError: Bool?
     var usage: TurnUsage?
+    /// Response controls persisted on user turns so refresh and retry retain
+    /// the exact turn semantics. Older conversations decode these as nil.
+    var reasoningEffort: ChatThinkingEffort?
+    var responseSpeed: ChatResponseSpeed?
+    var modelOverride: String?
 
     enum CodingKeys: String, CodingKey {
         case id, role, text, reasoning, tools
         case createdAt
         case isError
         case usage
+        case reasoningEffort, responseSpeed, modelOverride
     }
 }
 

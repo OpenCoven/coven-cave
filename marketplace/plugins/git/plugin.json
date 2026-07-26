@@ -28,28 +28,13 @@
     "sourceRefs": [
       "https://github.com/modelcontextprotocol/servers"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "cody",
-        "roles": [
-          "code-reviewer",
-          "implementer",
-          "debugger"
-        ]
-      },
-      {
-        "familiar": "echo",
-        "roles": [
-          "archivist"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {
@@ -69,7 +54,9 @@
       "title": "Git Repository",
       "description": "Repository path the Git MCP server may inspect.",
       "required": true,
-      "sensitive": false
+      "default": ".",
+      "sensitive": false,
+      "env": "COVEN_MCP_GIT_REPOSITORY"
     }
   }
 }

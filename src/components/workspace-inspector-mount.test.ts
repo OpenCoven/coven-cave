@@ -7,17 +7,25 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 assert.match(
   workspace,
   /import \{ ChatSurface(?:, [^}]+)? \} from "@\/components\/chat-surface";/,
-  "Workspace should import ChatSurface so agent sessions and the inspector are integrated",
+  "Workspace should import ChatSurface so agent sessions are integrated",
 );
 
 assert.match(
   workspace,
-  /<ChatSurface[\s\S]*inboxItems=\{inboxItemsWithEphemeral\}[\s\S]*onOpenInbox=\{\(\) => setMode\("inbox"\)\}[\s\S]*onCreateReminder=\{openReminderForFamiliar\}[\s\S]*onOpenInboxItem=\{openInspectorInboxItem\}[\s\S]*onInboxItemChanged=\{refreshInbox\}/,
-  "Chat mode should mount ChatSurface with fully wired familiar Inbox controls",
+  /mode === "chat"[\s\S]*<ChatSurface/,
+  "Workspace should mount ChatSurface for the internal chat mode",
 );
 
-assert.match(
+// The chat inspector sidepanel is retired: the workspace no longer owns a
+// rightPanel channel, and ChatSurface no longer takes the familiar-inbox
+// wiring the panel's Automations tab consumed.
+assert.doesNotMatch(
   workspace,
-  /const \[inspectorOpen,\s*setInspectorOpen\] = useState\(false\);/,
-  "Agents mode should start with the inspector collapsed so the brain toggle is visible",
+  /RightPanelKind|setRightPanel|inspectorOpen|setInspectorOpen/,
+  "Workspace must not keep any right-panel channel — the inspector sidepanel is retired",
+);
+assert.doesNotMatch(
+  workspace,
+  /<ChatSurface[\s\S]{0,2000}?(?:inboxItems=|onOpenInbox=|onCreateReminder=|onOpenInboxItem=|onInboxItemChanged=)/,
+  "ChatSurface must not be wired with the retired inspector-inbox props",
 );

@@ -9,9 +9,32 @@ const topBar = await readFile(new URL("./top-bar.tsx", import.meta.url), "utf8")
 const notificationBell = await readFile(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 const bottomTerminal = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
 const browserPane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
-const comuxView = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
-const automationsView = await readFile(new URL("./automations-view.tsx", import.meta.url), "utf8");
-const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const automationsView = [
+  await readFile(new URL("./automations-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./automations/inbox-feed-list.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./automations/schedule-list.tsx", import.meta.url), "utf8"),
+].join("\n");
+const globals = (
+  await Promise.all(
+    [
+      "../app/globals.css",
+      "../styles/sidebar-minimal.css",
+      "../styles/status-bar.css",
+      "../styles/globals/foundations.css",
+      "../styles/globals/shell-navigation.css",
+      "../styles/globals/primitives.css",
+      "../styles/globals/themes.css",
+      "../styles/globals/desktop-chrome.css",
+      "../styles/globals/shell-responsive.css",
+      "../styles/globals/calendar-agenda.css",
+      "../styles/globals/surface-compact-calendar.css",
+      "../styles/globals/surface-reporting.css",
+      "../styles/globals/surface-chat-overlays.css",
+      "../styles/globals/surface-marketplace.css",
+      "../styles/globals/surface-role-workspaces.css",
+    ].map((path) => readFile(new URL(path, import.meta.url), "utf8")),
+  )
+).join("\n");
 
 assert.match(
   bottomTerminal,
@@ -33,14 +56,8 @@ assert.match(
 
 assert.match(
   mobileTabs,
-  /{ id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-bold" }/,
-  "Mobile bottom tabs should keep the Schedules label short while preserving the full accessible name",
-);
-
-assert.doesNotMatch(
-  mobileTabs,
-  /{ id: "calls", label: "Calls", ariaLabel: "Delegations", iconName: "ph:graph" }/,
-  "Mobile bottom tabs should not include the removed Delegations surface",
+  /FOLDER_MODES\.filter\(\(fm\) => !fm\.quiet && !fm\.navHidden\)/,
+  "Mobile bottom tabs should derive from the desktop sidebar's primary cluster, inheriting canonical names (Rituals included) by construction",
 );
 
 assert.match(
@@ -57,7 +74,7 @@ assert.match(
 
 assert.match(
   topBar,
-  /navDrawerOpen\?: boolean;[\s\S]*listDrawerOpen\?: boolean;[\s\S]*familiarDrawerOpen\?: boolean;/,
+  /navDrawerOpen\?: boolean;[\s\S]*listDrawerOpen\?: boolean;/,
   "TopBar should receive mobile drawer state so controls can announce open/closed state",
 );
 
@@ -67,19 +84,58 @@ assert.match(
   "Mobile nav toggle should announce whether the navigation drawer is open",
 );
 
-// Selecting a destination dismisses the mobile OVERLAY drawer, but must use
-// the mobile-only `dismissNavMobile`/`dismissListMobile` — NOT `closeNav`/
-// `closeList`, which also collapse the persistent DESKTOP side panel. On
-// desktop the left panel must stay open when an option is selected.
+// Selecting a destination dismisses the active mobile OVERLAY drawer, but must
+// use the mobile-only `dismissNavMobile`/`dismissListMobile` helpers — NOT
+// `closeNav`/`closeList`, which alter desktop panels. Chat uses only the nav
+// drawer, where WorkspaceSidebar replaces the normal navigation.
 assert.match(
   workspace,
-  /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as WorkspaceMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as CaveMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
   "Mobile sidebar destination taps should dismiss the nav drawer (mobile-only) without collapsing the desktop nav",
 );
+const normalSidebarBlock = workspace.match(/const sidebar =[\s\S]*?const chatSidebar =/)?.[0] ?? "";
+assert.ok(normalSidebarBlock, "Workspace should keep the normal SidebarMinimal wiring together");
 assert.match(
-  workspace,
+  normalSidebarBlock,
+  /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  "Normal mobile session taps should dismiss the nav drawer that becomes Chat's contextual sidebar",
+);
+assert.doesNotMatch(
+  normalSidebarBlock,
   /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
-  "Mobile list drawer session taps should dismiss the list drawer (mobile-only) without collapsing the desktop list",
+  "Normal mobile session taps should not target the absent Chat list drawer",
+);
+const chatSidebarBlock = workspace.match(/const chatSidebar =[\s\S]*?const contextualNav =/)?.[0] ?? "";
+assert.ok(chatSidebarBlock, "Workspace should keep the contextual Chat nav wiring together");
+assert.doesNotMatch(
+  chatSidebarBlock,
+  /dismissListMobile/,
+  "Chat contextual-nav actions should never target the unused list drawer",
+);
+assert.match(
+  chatSidebarBlock,
+  /onOpenSession=\{\(session\) => \{[\s\S]*openFamiliarSession\(session\.id, session\.familiarId\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  "Chat session opens should dismiss the mobile contextual nav without changing desktop layout",
+);
+assert.match(
+  chatSidebarBlock,
+  /onNewChat=\{\(projectRoot\) => \{[\s\S]*startFamiliarChat\(activeId, projectRoot\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  "Chat new-chat actions should dismiss the mobile contextual nav without changing desktop layout",
+);
+assert.match(
+  chatSidebarBlock,
+  /onNavigate=\{\(nextMode\) => \{[\s\S]*setMode\(nextMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  "Chat Home, Scheduled, and Plugins actions should dismiss the mobile contextual nav without changing desktop layout",
+);
+assert.match(
+  chatSidebarBlock,
+  /onOpenUrl=\{\(url\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*openUrlInApp\(url\);[\s\S]*\}\}/,
+  "Chat PR links should dismiss only the mobile contextual nav before opening",
+);
+assert.match(
+  chatSidebarBlock,
+  /onOpenSettings=\{\(\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*nextRouter\.push\("\/settings"\);[\s\S]*\}\}/,
+  "Chat settings should dismiss only the mobile contextual nav before routing",
 );
 
 // The mobile-only dismissers must be gated on isMobile and must NOT call the
@@ -101,17 +157,27 @@ assert.match(
   /aria-pressed=\{Boolean\(listDrawerOpen\)\}/,
   "Mobile list toggle should expose pressed state while the list drawer is open",
 );
-
 assert.match(
-  topBar,
-  /aria-pressed=\{Boolean\(familiarDrawerOpen\)\}/,
-  "Mobile familiar toggle should expose pressed state while the familiar drawer is open",
+  workspace,
+  /onToggleNav=\{\(\) => shellRef\.current\?\.toggleNav\(\)\}[\s\S]*onToggleList=\{undefined\}/,
+  "Mobile Chat should expose the contextual nav toggle and no list toggle",
+);
+assert.match(
+  workspace,
+  /navDrawerOpen=\{navDrawerOpen\}\s*listDrawerOpen=\{false\}/,
+  "Mobile Chat should expose nav drawer state while reporting the absent list drawer as closed",
 );
 
 assert.match(
   globals,
   /@media \(max-width: 1023px\) \{[\s\S]*\.top-bar\s*\{[\s\S]*height:\s*calc\(52px \+ var\(--sai-top\)\)/,
   "Mobile top bar should provide enough vertical room for 44px controls",
+);
+
+assert.match(
+  globals,
+  /\.top-bar\s*\{(?=[^}]*display:\s*none;)[^}]*width:\s*100%;/,
+  "Adaptive top bar should fill its flex host so search can expand and actions stay pinned to the trailing edge",
 );
 
 assert.match(
@@ -150,6 +216,18 @@ assert.match(
 );
 
 assert.match(
+  globals,
+  /@media \(max-width: 1023px\) \{[\s\S]*\.top-bar__actions \.top-bar__tasks > \.ui-icon-btn\s*\{[^}]*width:\s*var\(--touch-target\);[^}]*height:\s*var\(--touch-target\);/,
+  "Mobile top-bar task overflow should meet the same 44px touch target as adjacent actions",
+);
+
+assert.match(
+  globals,
+  /@media \(max-width: 455px\) \{[\s\S]*\.top-bar__actions \[data-quick-chat-trigger\],[\s\S]*\.top-bar__actions \.top-bar__tasks\s*\{[^}]*display:\s*none;/,
+  "Compact phones should demote Quick Chat and task shortcuts so primary header controls preserve a usable search field",
+);
+
+assert.match(
   shell,
   /shell-banner__cta[\s\S]*shell-banner__dismiss/,
   "Shell banners should expose stable CTA and dismiss hooks",
@@ -180,7 +258,7 @@ assert.match(
 
 assert.match(
   globals,
-  /\.shell-nav-panel,[\s\S]{0,120}\.shell-list-panel,[\s\S]{0,120}\.shell-familiar-panel\s*\{[\s\S]{0,260}height:\s*100dvh/,
+  /\.shell-nav-panel,[\s\S]{0,120}\.shell-list-panel\s*\{[\s\S]{0,260}height:\s*100dvh/,
   "Mobile drawers should use dynamic viewport height so iOS browser chrome does not create hidden overflow",
 );
 
@@ -204,31 +282,35 @@ assert.match(
   "Mobile bottom tab focus ring should use the shared inset offset token",
 );
 
+// The right companion rail was removed in favour of drag-to-split, so the
+// workspace no longer computes companion-pane visibility (showCompanionRail).
 assert.match(
   workspace,
-  /railTab === "browser" \|\| railTab === "salem" \|\| \(mode !== "browser" && mode !== "agents"\)/,
-  "Browser and Agents modes suppress the default companion pane unless a floating Browser or Salem tab is selected",
+  /const openUrlInAppBrowser = useCallback\(\(url: string\) => \{/,
+  "Workspace should provide an in-app browser opener for chat/feed/board links",
 );
 assert.match(
   workspace,
-  /const openUrlInCompanionBrowser = useCallback\(\(url: string\) => \{/,
-  "Workspace should provide a dedicated side-panel browser opener for chat links",
+  /setBrowserNavigationQueue\(\(queue\) => enqueueBrowserNavigation\(queue, request\)\)/,
+  "Link opens should survive lazy Browser mounting in the durable navigation queue",
 );
 assert.match(
   workspace,
-  /setRailTab\("browser"\)[\s\S]*requestAnimationFrame\(\(\) => shellRef\.current\?\.openFamiliar\(\)\)[\s\S]*requestAnimationFrame\(\(\) => companionBrowserPaneRef\.current\?\.navigateTo\(url\)\)/,
-  "Chat link opens should select Browser, open the right sidepanel, then navigate the companion browser pane",
+  /navigationRequest=\{browserNavigationQueue\[0\] \?\? null\}[\s\S]{0,120}onNavigationConsumed=\{acknowledgeBrowserNavigation\}/,
+  "BrowserPane should acknowledge queued links only after accepting the navigation",
 );
 assert.match(
   workspace,
-  /onOpenUrl=\{openUrlInCompanionBrowser\}/,
-  "Workspace should thread the side-panel browser opener into ChatSurface",
+  /setMode\("browser"\)/,
+  "Link opens should switch the main detail surface to Browser mode",
 );
 assert.match(
   workspace,
-  /openCompanionTab\(railTab === "browser" \? "browser" : "salem"\)/,
-  "Right sidepanel toggle should collapse the active Browser panel instead of switching to Salem",
+  /onOpenUrl=\{openUrlInAppBrowser\}/,
+  "Workspace should thread the in-app browser opener into ChatSurface",
 );
+// The right companion (Browser/Salem) panel was removed in favour of
+// drag-to-split, so there is no companion toggle to assert here anymore.
 
 assert.match(
   automationsView,
@@ -248,20 +330,10 @@ assert.match(
   "Schedules mobile CTA and list rows should meet the shared touch target",
 );
 
-assert.match(
+assert.doesNotMatch(
   workspace,
   /mode === "terminal"[\s\S]*\? "relative"[\s\S]*: "pointer-events-none invisible absolute inset-0 opacity-0"/,
-  "Inactive persistent terminal detail should be invisible, not just transparent, on mobile surfaces",
+  "The old persistent standalone terminal detail should not render on mobile surfaces",
 );
 
-assert.match(
-  comuxView,
-  /comux-terminal-toolbar-button[\s\S]*Split right[\s\S]*comux-terminal-toolbar-button[\s\S]*Split down[\s\S]*comux-terminal-add-button/,
-  "Terminal toolbar actions should expose stable mobile hit-area hooks",
-);
-
-assert.match(
-  globals,
-  /@media \(max-width: 767px\) \{[\s\S]*\.comux-terminal-toolbar-button,[\s\S]*\.comux-terminal-empty-add\s*\{[\s\S]*min-height:\s*var\(--touch-target\)[\s\S]*\.comux-terminal-add-button,[\s\S]*\.comux-terminal-tab-close,[\s\S]*\.comux-terminal-pane-action\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
-  "Terminal mobile toolbar and close controls should meet the shared touch target",
-);
+// (ComuxView terminal-toolbar touch pins left with the component, cave-c3yt.)

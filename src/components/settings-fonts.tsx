@@ -1,16 +1,18 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ButtonHTMLAttributes, type ReactNode, useEffect, useState } from "react";
 import { SettingsGroup } from "@/components/ui/settings-group";
+import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import {
-  DEFAULT_FONT_ID,
-  FONT_OPTIONS,
+  DEFAULT_FONT_PAIR_ID,
+  FONT_PAIRS,
+  fontPairById,
   fontOptionById,
   fontStack,
   type FontSlot,
-  type FontOption,
 } from "@/lib/font-catalog";
-import { applyFont, readFontPref, writeFontPref } from "@/lib/font-storage";
+import { applyFontPair, readFontPairPref, writeFontPairPref } from "@/lib/font-storage";
 import {
   DEFAULT_SCREEN_SCALE,
   SCREEN_SCALE_EVENT,
@@ -62,13 +64,6 @@ import {
   type ReadingHyphens,
 } from "@/lib/reading-hyphens";
 import {
-  DEFAULT_READING_DROPCAP,
-  READING_DROPCAP_OPTIONS,
-  applyReadingDropcap,
-  readReadingDropcap,
-  type ReadingDropcap,
-} from "@/lib/reading-dropcap";
-import {
   CLOCK_LABEL,
   CLOCK_OPTIONS,
   DATE_LABEL,
@@ -80,11 +75,6 @@ import {
   setDensityFormat,
   useDateTimePrefs,
 } from "@/lib/datetime-format";
-
-const DROPCAP_LABEL: Record<ReadingDropcap, string> = {
-  off: "Off",
-  on: "On",
-};
 
 const WIDTH_LABEL: Record<ReadingWidth, string> = {
   full: "Full",
@@ -120,24 +110,59 @@ const ALIGN_LABEL: Record<ReadingAlign, string> = {
   justify: "Justify",
 };
 
-const SANS_OPTIONS = FONT_OPTIONS.filter((o) => o.slot === "sans");
-const MONO_OPTIONS = FONT_OPTIONS.filter((o) => o.slot === "mono");
-
 const PREVIEW: Record<FontSlot, string> = {
+  serif: "The coven remembers what the machine forgets.",
   sans: "The quick brown fox jumps over 0123",
   mono: "const x = 42; // 0123",
 };
 
+// Every row control in Settings shares one standard height (h-7 = 28px):
+// segmented groups reach it via 22px xs buttons + 2px wrapper padding + 1px
+// border, and select triggers pin it explicitly via `selectTrigger`.
+
 // Shared segmented-control styling, hoisted so each option group stays terse.
 const segWrap =
-  "flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5";
+  "flex h-7 w-fit shrink-0 items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5";
+
+// Shared select-trigger styling — same chrome and height as the segmented
+// groups so a row with a dropdown lines up with a row of segment buttons. The
+// border uses the strong token so the selection control reads clearly.
+const selectTrigger =
+  "h-7 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2.5 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
 
 function segBtn(active: boolean, extra = ""): string {
-  return `focus-ring ${extra} rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+  // The selected option gets a visible border on top of the accent fill (the
+  // .ui-btn base already carries a 1px transparent border, so no layout shift).
+  return `focus-ring ${extra} rounded-[var(--radius-control)] px-2.5 py-1.5 text-[length:var(--text-xs)] font-medium transition-colors ${
     active
-      ? "bg-[var(--accent-presence)] text-white"
+      ? "border-[color-mix(in_oklch,var(--accent-presence)_65%,var(--accent-presence-foreground))] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
       : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
   }`;
+}
+
+function SegmentButton({
+  active,
+  extra,
+  children,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  active: boolean;
+  extra?: string;
+  children: ReactNode;
+}) {
+  // The `settings-segment` class exists for the pressed-state CSS in
+  // globals.css: .ui-btn--ghost is UNLAYERED (background: transparent + its
+  // own :hover) and unlayered rules beat Tailwind's layered utilities
+  // unconditionally — so the Tailwind accent classes below never painted and
+  // the selected option was indistinguishable (Corner radius, on the shared
+  // Segmented's plain button element, never had this fight). Same cure as
+  // .mode-toggle__option[aria-pressed="true"]: scoped unlayered CSS wins back
+  // the pressed state.
+  return (
+    <Button variant="ghost" size="xs" className={`settings-segment ${segBtn(active, extra)}`} {...props}>
+      {children}
+    </Button>
+  );
 }
 
 // Compact label-left / control-right row used to group the reading-text controls,
@@ -154,46 +179,37 @@ function ReadingRow({
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-2.5">
       <div className="min-w-0">
-        <div className="text-[12px] font-medium text-[var(--text-secondary)]">{label}</div>
-        {hint ? <div className="text-[11px] text-[var(--text-muted)]">{hint}</div> : null}
+        <div className="text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">{label}</div>
+        {hint ? <div className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{hint}</div> : null}
       </div>
       {children}
     </div>
   );
 }
 
-function FontField({
+// A single type specimen: a small caption (role · font name) over a live
+// sample rendered in the selected font. Two of these stack inside one inset
+// panel so the preview reads as a cohesive specimen sheet with no dead gutter.
+function FontSpecimen({
   slot,
   label,
-  options,
-  value,
-  onChange,
+  fontId,
 }: {
   slot: FontSlot;
-  label: string;
-  options: FontOption[];
-  value: string;
-  onChange: (id: string) => void;
+  label: ReactNode;
+  fontId: string;
 }) {
-  const opt = fontOptionById(value) ?? fontOptionById(DEFAULT_FONT_ID[slot]);
+  const opt = fontOptionById(fontId);
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-[12px] font-medium text-[var(--text-secondary)]">{label}</label>
-      <select
-        className="gh-select"
-        style={{ maxWidth: "260px" }}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={`${label} font`}
-      >
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+    <div className="px-3.5 py-2.5">
+      <div className="flex items-baseline gap-2">
+        <span className="text-[length:var(--text-2xs)] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          {label}
+        </span>
+        <span className="truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">· {opt?.label}</span>
+      </div>
       <p
-        className="text-[15px] text-[var(--text-primary)] truncate"
+        className="mt-1 truncate text-[length:var(--text-lg)] leading-snug text-[var(--text-primary)]"
         style={{ fontFamily: opt ? fontStack(opt) : undefined }}
       >
         {PREVIEW[slot]}
@@ -203,8 +219,7 @@ function FontField({
 }
 
 export function FontSettings() {
-  const [sansId, setSansId] = useState<string>(DEFAULT_FONT_ID.sans);
-  const [monoId, setMonoId] = useState<string>(DEFAULT_FONT_ID.mono);
+  const [pairId, setPairId] = useState<string>(DEFAULT_FONT_PAIR_ID);
   const [scale, setScale] = useState<ScreenScale>(DEFAULT_SCREEN_SCALE);
   const [leading, setLeading] = useState<ReadingLeading>(DEFAULT_READING_LEADING);
   const [tracking, setTracking] = useState<ReadingTracking>(DEFAULT_READING_TRACKING);
@@ -212,18 +227,14 @@ export function FontSettings() {
   const [width, setWidth] = useState<ReadingWidth>(DEFAULT_READING_WIDTH);
   const [weight, setWeight] = useState<ReadingWeight>(DEFAULT_READING_WEIGHT);
   const [hyphens, setHyphens] = useState<ReadingHyphens>(DEFAULT_READING_HYPHENS);
-  const [dropcap, setDropcap] = useState<ReadingDropcap>(DEFAULT_READING_DROPCAP);
   // Chat timestamp format prefs come straight from the reactive store (no local
   // mirror needed) — the segmented controls write through to it on click.
   const dtPrefs = useDateTimePrefs();
 
   useEffect(() => {
-    const sans = readFontPref("sans");
-    const mono = readFontPref("mono");
-    setSansId(sans);
-    setMonoId(mono);
-    applyFont("sans", sans);
-    applyFont("mono", mono);
+    const pair = readFontPairPref();
+    setPairId(pair.id);
+    applyFontPair(pair.id);
     // The mounted Screen/Reading controllers already applied these on load;
     // we only mirror them into local UI state.
     setScale(readScreenScale());
@@ -233,7 +244,6 @@ export function FontSettings() {
     setWidth(readReadingWidth());
     setWeight(readReadingWeight());
     setHyphens(readReadingHyphens());
-    setDropcap(readReadingDropcap());
   }, []);
 
   // Keep the segmented control in sync with the ⌘+/⌘−/⌘0 keyboard shortcuts,
@@ -247,11 +257,11 @@ export function FontSettings() {
     return () => window.removeEventListener(SCREEN_SCALE_EVENT, onScaleChange);
   }, []);
 
-  const select = (slot: FontSlot, id: string) => {
-    if (slot === "sans") setSansId(id);
-    else setMonoId(id);
-    writeFontPref(slot, id);
-    applyFont(slot, id);
+  const selectPair = (id: string) => {
+    const pair = fontPairById(id) ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
+    setPairId(pair.id);
+    writeFontPairPref(pair.id);
+    applyFontPair(pair.id);
   };
 
   const setTextSize = (next: ScreenScale) => {
@@ -289,14 +299,8 @@ export function FontSettings() {
     applyReadingHyphens(next);
   };
 
-  const setDropCap = (next: ReadingDropcap) => {
-    setDropcap(next);
-    applyReadingDropcap(next);
-  };
-
   const reset = () => {
-    select("sans", DEFAULT_FONT_ID.sans);
-    select("mono", DEFAULT_FONT_ID.mono);
+    selectPair(DEFAULT_FONT_PAIR_ID);
     setTextSize(DEFAULT_SCREEN_SCALE);
     setLineSpacing(DEFAULT_READING_LEADING);
     setLetterSpacing(DEFAULT_READING_TRACKING);
@@ -304,20 +308,18 @@ export function FontSettings() {
     setReadingWidth(DEFAULT_READING_WIDTH);
     setFontWeight(DEFAULT_READING_WEIGHT);
     setHyphenation(DEFAULT_READING_HYPHENS);
-    setDropCap(DEFAULT_READING_DROPCAP);
   };
 
   const isDefault =
-    sansId === DEFAULT_FONT_ID.sans &&
-    monoId === DEFAULT_FONT_ID.mono &&
+    pairId === DEFAULT_FONT_PAIR_ID &&
     scale === DEFAULT_SCREEN_SCALE &&
     leading === DEFAULT_READING_LEADING &&
     tracking === DEFAULT_READING_TRACKING &&
     align === DEFAULT_READING_ALIGN &&
     width === DEFAULT_READING_WIDTH &&
     weight === DEFAULT_READING_WEIGHT &&
-    hyphens === DEFAULT_READING_HYPHENS &&
-    dropcap === DEFAULT_READING_DROPCAP;
+    hyphens === DEFAULT_READING_HYPHENS;
+  const selectedPair = fontPairById(pairId) ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
 
   return (
     <section className="flex flex-col gap-5">
@@ -325,144 +327,135 @@ export function FontSettings() {
         label="Typography"
         description="Choose the interface and code fonts and how text is sized. Changes apply immediately."
       >
-        {/* Fonts — paired side by side, each with a live preview. */}
-        <div className="grid grid-cols-1 gap-4 px-4 py-3 sm:grid-cols-2">
-          <FontField slot="sans" label="Interface" options={SANS_OPTIONS} value={sansId} onChange={(id) => select("sans", id)} />
-          <FontField slot="mono" label="Code &amp; terminal" options={MONO_OPTIONS} value={monoId} onChange={(id) => select("mono", id)} />
+        {/* Pair selector — label-left / control-right, consistent with every
+            other row in Typography (no wasted full-width row). */}
+        <ReadingRow label="Typography pair" hint="Approved interface + code pairing.">
+          <StandardSelect
+            label="Typography pair"
+            className={[selectTrigger, "[width:min(100%,_300px)]! [max-width:100%]!"].filter(Boolean).join(" ")}
+            value={pairId}
+            onChange={selectPair}
+            options={FONT_PAIRS.map((pair) => ({ value: pair.id, label: pair.label }))}
+          />
+        </ReadingRow>
+
+        {/* Live specimen — one inset panel, both samples, no center gutter. */}
+        <div className="px-4 py-3">
+          <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] divide-y divide-[var(--border-hairline)]">
+            <FontSpecimen slot="serif" label="Display" fontId={selectedPair.serifId} />
+            <FontSpecimen slot="sans" label="Interface" fontId={selectedPair.sansId} />
+            <FontSpecimen slot="mono" label={<>Code &amp; terminal</>} fontId={selectedPair.monoId} />
+          </div>
         </div>
 
         {/* Text size — the one control that scales the whole UI, not just prose. */}
-        <div className="flex flex-col gap-1.5 px-4 py-3">
-          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Text size</label>
-          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Scale all text and UI.</p>
+        <ReadingRow label="Text size" hint="Scales all text and UI.">
           <div className={segWrap}>
             {SCREEN_SCALE_OPTIONS.map((option) => (
-              <button
+              <SegmentButton
                 key={option}
-                type="button"
                 onClick={() => setTextSize(option)}
                 aria-pressed={scale === option}
                 aria-label={`Text size ${option}%`}
-                className={segBtn(scale === option, "min-w-12")}
+                active={scale === option}
+                extra="min-w-12"
               >
                 {option}%
-              </button>
+              </SegmentButton>
             ))}
           </div>
-        </div>
+        </ReadingRow>
       </SettingsGroup>
 
       {/* Reading text — one shared caption, then compact label/control rows. */}
-      <SettingsGroup label="Reading text" description="Applies to chat, library, and memory.">
+      <SettingsGroup label="Reading text" description="Applies to chat and memory.">
           <ReadingRow label="Line spacing">
             <div className={segWrap}>
               {READING_LEADING_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setLineSpacing(option)}
                   aria-pressed={leading === option}
                   aria-label={`Line spacing ${LEADING_LABEL[option]}`}
-                  className={segBtn(leading === option)}
+                  active={leading === option}
                 >
                   {LEADING_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Letter spacing">
             <div className={segWrap}>
               {READING_TRACKING_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setLetterSpacing(option)}
                   aria-pressed={tracking === option}
                   aria-label={`Letter spacing ${TRACKING_LABEL[option]}`}
-                  className={segBtn(tracking === option)}
+                  active={tracking === option}
                 >
                   {TRACKING_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Text alignment">
             <div className={segWrap}>
               {READING_ALIGN_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setTextAlign(option)}
                   aria-pressed={align === option}
                   aria-label={`Text alignment ${ALIGN_LABEL[option]}`}
-                  className={segBtn(align === option)}
+                  active={align === option}
                 >
                   {ALIGN_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Max reading width">
             <div className={segWrap}>
               {READING_WIDTH_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setReadingWidth(option)}
                   aria-pressed={width === option}
                   aria-label={`Max reading width ${WIDTH_LABEL[option]}`}
-                  className={segBtn(width === option)}
+                  active={width === option}
                 >
                   {WIDTH_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Font weight">
             <div className={segWrap}>
               {READING_WEIGHT_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setFontWeight(option)}
                   aria-pressed={weight === option}
                   aria-label={`Font weight ${WEIGHT_LABEL[option]}`}
-                  className={segBtn(weight === option)}
+                  active={weight === option}
                 >
                   {WEIGHT_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Hyphenation" hint="Pairs well with Justify.">
             <div className={segWrap}>
               {READING_HYPHENS_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setHyphenation(option)}
                   aria-pressed={hyphens === option}
                   aria-label={`Hyphenation ${HYPHENS_LABEL[option]}`}
-                  className={segBtn(hyphens === option)}
+                  active={hyphens === option}
                 >
                   {HYPHENS_LABEL[option]}
-                </button>
-              ))}
-            </div>
-          </ReadingRow>
-          <ReadingRow label="Drop cap" hint="Library documents only.">
-            <div className={segWrap}>
-              {READING_DROPCAP_OPTIONS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setDropCap(option)}
-                  aria-pressed={dropcap === option}
-                  aria-label={`Drop cap ${DROPCAP_LABEL[option]}`}
-                  className={segBtn(dropcap === option)}
-                >
-                  {DROPCAP_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
@@ -478,62 +471,60 @@ export function FontSettings() {
           <ReadingRow label="Clock" hint="Across the app">
             <div className={segWrap}>
               {CLOCK_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setClockFormat(option)}
                   aria-pressed={dtPrefs.clock === option}
                   aria-label={`Clock ${CLOCK_LABEL[option]}`}
-                  className={segBtn(dtPrefs.clock === option)}
+                  active={dtPrefs.clock === option}
                 >
                   {CLOCK_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Date" hint="Across the app">
             <div className={segWrap}>
               {DATE_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setDateFormat(option)}
                   aria-pressed={dtPrefs.date === option}
                   aria-label={`Date ${DATE_LABEL[option]}`}
-                  className={segBtn(dtPrefs.date === option)}
+                  active={dtPrefs.date === option}
                 >
                   {DATE_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Relative time" hint="Across the app">
             <div className={segWrap}>
               {DENSITY_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setDensityFormat(option)}
                   aria-pressed={dtPrefs.density === option}
                   aria-label={`Relative time ${DENSITY_LABEL[option]}`}
-                  className={segBtn(dtPrefs.density === option)}
+                  active={dtPrefs.density === option}
                 >
                   {DENSITY_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
       </SettingsGroup>
 
       <div>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={reset}
           disabled={isDefault}
-          className="rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Reset to default
-        </button>
+        </Button>
       </div>
     </section>
   );

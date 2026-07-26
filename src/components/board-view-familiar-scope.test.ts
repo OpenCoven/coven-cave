@@ -14,22 +14,25 @@ assert.match(
 
 assert.match(
   source,
-  /\[cards, familiarsById, searchQuery, activeFamiliarId\]/,
-  "BoardView filtered memo dependency array must include activeFamiliarId so re-filter triggers on familiar switch",
+  /\[cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending, excludedStatus, excludedProject, projectLabelOf\]/,
+  "BoardView filtered memo deps include activeFamiliarId + scopeFamiliarIds (and deletePending for the undo-window hide, plus the redesign's excludedStatus/excludedProject/projectLabelOf filter deps) so re-filter triggers on familiar switch / multiselect change / filter toggle",
 );
 
-// Stats must reflect the visible (filtered) set, not the full unfiltered
-// cards array — otherwise "Total: 2" would render next to "Running: 15".
+// Multiselect: when a scope set is supplied, the board filters to the union via
+// the shared familiarInScope predicate (empty set = All).
 assert.match(
   source,
-  /running:\s*filtered\.filter/,
-  "BoardView running count must derive from filtered, not cards",
+  /scopeFamiliarIds\s*\?\s*familiarInScope\(scopeFamiliarIds, c\.familiarId\)/,
+  "BoardView filters by the multiselect scope set when provided",
 );
 
-assert.match(
+// The header stats object these pins guarded was dead code (computed every
+// render, rendered nowhere — its board-header-stats CSS was orphaned too) and
+// was removed in the 2026-07-02 board audit. Keep it gone.
+assert.doesNotMatch(
   source,
-  /blocked:\s*filtered\.filter/,
-  "BoardView blocked count must derive from filtered, not cards",
+  /const stats = useMemo/,
+  "the unused BoardView stats memo must not return",
 );
 
 assert.match(

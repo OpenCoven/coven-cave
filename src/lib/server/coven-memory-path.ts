@@ -6,7 +6,7 @@ import { isMemoryFilePathAllowed } from "./memory-file-sources.ts";
  * Resolve a daemon coven-memory entry to an absolute, allow-listed file path.
  *
  * The daemon reports memory entries with a relative `path` of the form
- * `<familiarId>/<...>.md` (e.g. `sage/2026-05-24.md`). On disk these live under
+ * `<familiarId>/<...>.md` (e.g. `researcher/2026-05-24.md`). On disk these live under
  * `~/.coven/workspaces/familiars/<familiarId>/memory/<...>`. This maps the relative
  * path to that absolute location and returns it ONLY when it passes the shared
  * memory allow-list (which resolves the path and verifies containment) — so a

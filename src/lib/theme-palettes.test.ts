@@ -3,16 +3,19 @@ import assert from "node:assert/strict";
 import { THEME_IDS, THEME_META, getSwatches } from "./theme-palettes.ts";
 import { LEGACY_THEME_RENAME, COVEN_THEME_KEY, COVEN_MODE_KEY } from "./theme-storage.ts";
 
-// 16 themes, coven is the default (first).
-assert.equal(THEME_IDS.length, 16);
+// 21 themes, coven is the default (first).
+assert.equal(THEME_IDS.length, 21);
 assert.equal(THEME_IDS[0], "coven");
 assert.deepEqual(
   [...THEME_IDS].sort(),
   [
     "bane",
+    "beacon",
     "bloom",
     "claude",
     "claymorphism",
+    "codex",
+    "contrast",
     "coven",
     "dusk",
     "ember",
@@ -23,6 +26,8 @@ assert.deepEqual(
     "mist",
     "pastel-dreams",
     "slate",
+    "snow",
+    "solstice",
     "tide",
     "trucker",
   ],
@@ -47,12 +52,13 @@ for (const id of THEME_IDS) {
   assert.equal(light.accent, THEME_META[id].accentLight);
 }
 
-// Legacy rename map covers all 4 old ids.
+// Legacy rename map covers the 4 old ids plus openai → codex.
 assert.deepEqual(LEGACY_THEME_RENAME, {
   "mood-c": "coven",
   "sky": "tide",
   "orchid": "dusk",
   "midnight": "slate",
+  "openai": "codex",
 });
 
 // Inverse coverage: no stray THEME_META keys outside THEME_IDS.
@@ -67,16 +73,53 @@ assert.equal(THEME_META.ghosty.accentDark, "#a6a6a6");
 assert.equal(THEME_META.ghosty.accentLight, "#808080");
 assert.equal(THEME_META.claymorphism.name, "Claymorphism");
 assert.equal(THEME_META.claude.name, "Claude");
+assert.equal(THEME_META.codex.name, "Codex");
+assert.equal(THEME_META.codex.accentDark, "#ececec");
+assert.equal(THEME_META.codex.accentLight, "#0d0d0d");
 assert.equal(THEME_META["pastel-dreams"].name, "Pastel Dreams");
 assert.equal(THEME_META["pastel-dreams"].accentDark, "#c0aafd");
-assert.equal(THEME_META["pastel-dreams"].accentLight, "#a78bfa");
+assert.equal(THEME_META["pastel-dreams"].accentLight, "#9377e6");
 assert.equal(THEME_META.meatseeks.name, "Meatseeks");
 assert.equal(THEME_META.trucker.name, "Trucker");
-assert.equal(THEME_META.trucker.accentDark, "#005735");
+assert.equal(THEME_META.trucker.accentDark, "#21704a");
 assert.equal(THEME_META.trucker.accentLight, "#005735");
+assert.equal(THEME_META.snow.name, "Snow");
+assert.equal(THEME_META.snow.accentDark, "#4aade5");
+assert.equal(THEME_META.snow.accentLight, "#1b6ca8");
+assert.equal(THEME_META.contrast.name, "High Contrast");
+assert.equal(THEME_META.contrast.accentDark, "#ffd60a");
+assert.equal(THEME_META.contrast.accentLight, "#0f62fe");
+assert.equal(THEME_META.beacon.name, "Beacon");
+assert.equal(THEME_META.solstice.name, "Solstice");
+assert.equal(THEME_META.coven.bgDark, "oklch(0.225 0.004 291)");
 
 // Storage keys are stable strings.
 assert.equal(COVEN_THEME_KEY, "coven-theme");
 assert.equal(COVEN_MODE_KEY, "coven-mode");
+
+// Swatch trio completeness + derivation (moved from theme-color-editor.test.ts
+// when the redundant "Customize colors" editor was removed).
+for (const id of THEME_IDS) {
+  const meta = THEME_META[id];
+  assert.ok(meta.bgDark.length > 0, `${id} bgDark empty`);
+  assert.ok(meta.bgLight.length > 0, `${id} bgLight empty`);
+  for (const mode of ["dark", "light"]) {
+    const s = getSwatches(id, mode);
+    assert.ok(s.bg.length > 0, `${id} ${mode} bg empty`);
+    assert.ok(s.accent.length > 0, `${id} ${mode} accent empty`);
+    assert.ok(s.border.length > 0, `${id} ${mode} border empty`);
+  }
+}
+
+// Preset seed stability: slate stays monochrome; border derives from accent.
+assert.ok(getSwatches("slate", "dark").bg.includes("0.000"), "slate dark bg should be monochrome");
+for (const id of ["coven", "tide", "ember"]) {
+  const s = getSwatches(id, "dark");
+  const accentHex = s.accent.replace(/^#/, "").slice(0, 6).toLowerCase();
+  assert.ok(
+    s.border.toLowerCase().includes(accentHex),
+    `${id} border="${s.border}" should contain accent hex "${accentHex}"`,
+  );
+}
 
 console.log("theme-palettes.test.ts OK");

@@ -1,3 +1,5 @@
+import type { IconName } from "@/lib/icon";
+
 export const MAX_ATTACHMENT_TEXT_CHARS = 64_000;
 /** Hard cap on a decoded image payload, enforced on capture (client) and on
  * normalize (server) — the server never trusts the client-side check. */
@@ -6,6 +8,12 @@ export const IMAGE_ATTACHMENTS_UNSUPPORTED_NOTE =
   "(image attachments are not supported by this harness)";
 const IMAGE_NOT_DELIVERED_NOTE =
   "(image attachment was not delivered — payload missing or over the size limit)";
+const IMAGE_METADATA_ONLY_NOTE =
+  "(image attached as metadata only — task cards don't store image content)";
+const VIDEO_METADATA_ONLY_NOTE =
+  "(video attached as metadata only — frames and audio are not decoded yet)";
+const FILE_METADATA_ONLY_NOTE =
+  "(file attached as metadata only — text content was not available)";
 
 export type ChatAttachment = {
   name: string;
@@ -18,6 +26,29 @@ export type ChatAttachment = {
   /** Base64 data URL for images, set when the file is attached locally */
   dataUrl?: string;
 };
+
+/** Fenced marker a familiar emits to attach a file it produced, e.g.
+ *   ```coven:attachment
+ *   { "path": "/abs/path/file.png", "name": "file.png" }
+ *   ``` */
+const AGENT_ATTACHMENT_BLOCK_RE = /```coven:attachment[^\n]*\n([\s\S]*?)\n```/g;
+
+/**
+ * Strip `coven:attachment` marker blocks from agent text, returning the cleaned
+ * text and the raw JSON marker bodies. Pure (no `node:fs`) so it is safe in the
+ * client bundle: the client uses only `.text` (to hide raw markers from the
+ * live-streamed turn), while the server (`lib/server/agent-attachments`) parses
+ * `.markers` to read the referenced files.
+ */
+export function extractAgentAttachmentMarkers(text: string): { text: string; markers: string[] } {
+  if (!text || !text.includes("```coven:attachment")) return { text, markers: [] };
+  const markers: string[] = [];
+  const cleaned = text.replace(AGENT_ATTACHMENT_BLOCK_RE, (_match, body: string) => {
+    markers.push(body);
+    return "";
+  });
+  return { text: cleaned.replace(/\n{3,}/g, "\n\n").trim(), markers };
+}
 
 function cleanName(name: unknown): string {
   const raw = typeof name === "string" ? name : "attachment";
@@ -64,6 +95,10 @@ export function cleanImageDataUrl(
 
 function isImageAttachment(attachment: ChatAttachment): boolean {
   return Boolean((attachment.mimeType ?? attachment.type)?.startsWith("image/"));
+}
+
+function isVideoAttachment(attachment: ChatAttachment): boolean {
+  return Boolean((attachment.mimeType ?? attachment.type)?.startsWith("video/"));
 }
 
 export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
@@ -130,6 +165,10 @@ export type AttachmentPromptOptions = {
   /** When false, image entries render an explicit unsupported notice (e.g. a
    * bridge harness with no access to this machine's filesystem). */
   imagesSupported?: boolean;
+  /** When true, undelivered images render a by-design metadata-only note
+   * instead of the "not delivered" failure wording — board cards strip image
+   * payloads at storage, so their absence at dispatch is expected. */
+  imagesMetadataOnly?: boolean;
 };
 
 export function buildPromptWithAttachments(
@@ -157,14 +196,82 @@ export function buildPromptWithAttachments(
         body = IMAGE_ATTACHMENTS_UNSUPPORTED_NOTE;
       } else if (savedPath) {
         body = `Image saved to ${savedPath} — open it with the Read tool to view.`;
+      } else if (options.imagesMetadataOnly) {
+        body = IMAGE_METADATA_ONLY_NOTE;
       } else {
         body = IMAGE_NOT_DELIVERED_NOTE;
       }
+    } else if (isVideoAttachment(attachment)) {
+      body = VIDEO_METADATA_ONLY_NOTE;
     } else {
-      body = "(content unavailable)";
+      body = FILE_METADATA_ONLY_NOTE;
     }
     return `${index + 1}. ${attachment.name} (${metadataFor(attachment)})\n${body}`;
   });
 
   return `${header}\n\nAttached files:\n${parts.join("\n\n")}`;
+}
+
+// ── Composer-side file → attachment capture ──────────────────────────────────
+// Shared by the chat composer (ChatView) and the home composer so both convert
+// picked files identically. Browser-only (FileReader/Blob/crypto) but safe to
+// import server-side — nothing runs at module load.
+
+/** A composer-staged attachment: a ChatAttachment plus a local id for the UI. */
+export type ComposerAttachment = ChatAttachment & { id: string };
+
+/** True when a drag carries files (vs. a text selection), so a composer only
+ *  arms its drop affordance for actual file drops. */
+export function hasDraggedFiles(types: DataTransfer["types"]): boolean {
+  return Array.from(types).includes("Files");
+}
+
+/** Files we inline as text (captured into `.text`) vs. keep as metadata/image. */
+export function isTextLike(file: File): boolean {
+  if (file.type.startsWith("text/")) return true;
+  if (/\/(json|xml|yaml|toml|javascript|typescript|x-sh|csv)$/i.test(file.type)) return true;
+  return /\.(txt|md|markdown|json|yaml|yml|toml|csv|ts|tsx|js|jsx|css|scss|html|xml|rs|go|py|rb|swift|java|kt|sh|zsh|fish|sql|log)$/i.test(file.name);
+}
+
+/** Phosphor glyph for an attachment chip, by mime/type. */
+export function attachmentIcon(attachment: Pick<ChatAttachment, "mimeType" | "type">): IconName {
+  const mimeType = attachment.mimeType ?? attachment.type ?? "";
+  if (mimeType.startsWith("image/")) return "ph:camera";
+  if (mimeType.startsWith("video/")) return "ph:video";
+  if (mimeType.startsWith("text/") || /json|xml|yaml|toml|csv|javascript|typescript/.test(mimeType)) {
+    return "ph:file-text";
+  }
+  return "ph:paperclip";
+}
+
+/** Convert a picked File into a ComposerAttachment: inline text bodies, embed
+ *  small images as data URLs, keep everything else as metadata (truncated). */
+export async function fileToAttachment(file: File): Promise<ComposerAttachment> {
+  const attachment: ComposerAttachment = {
+    id: crypto.randomUUID(),
+    name: file.name,
+    type: file.type || undefined,
+    mimeType: file.type || undefined,
+    size: file.size,
+  };
+  if (isTextLike(file)) {
+    const text = await file.slice(0, MAX_ATTACHMENT_TEXT_CHARS).text();
+    attachment.text = text;
+    if (file.size > new Blob([text]).size) attachment.truncated = true;
+  } else if (file.type.startsWith("image/")) {
+    if (file.size > MAX_ATTACHMENT_IMAGE_BYTES) {
+      attachment.truncated = true;
+      return attachment;
+    }
+    await new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") attachment.dataUrl = reader.result;
+        resolve();
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
+  }
+  return attachment;
 }

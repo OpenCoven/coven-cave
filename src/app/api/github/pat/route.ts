@@ -5,25 +5,36 @@
  *         NEVER returns the PAT value itself.
  *
  * POST — body: { pat: string }
- *         Validates the PAT against GitHub, then writes it to .env.local
- *         under GITHUB_PAT. The PAT is only ever stored on this local
- *         machine in .env.local (gitignored). It is never logged, never
- *         returned to the client, never sent anywhere except api.github.com.
+ *         Validates the PAT against GitHub, then stores it in the local
+ *         encrypted Cave vault. It is never logged, never returned to the
+ *         client, never sent anywhere except api.github.com.
  *
- * DELETE — removes GITHUB_PAT from .env.local
+ * DELETE — removes GITHUB_PAT from .env.local and the local encrypted vault.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
-import { resolveSecret } from "@/lib/vault";
-import { envLocalPath, upsertEnvContent } from "@/lib/env-file";
+import { deleteLocalEncryptedSecret, getLocalEncryptedSecret, hasLocalEncryptedSecret, setLocalEncryptedSecret } from "@/lib/local-encrypted-vault";
+import { resolveGitHubToken } from "@/lib/github-token";
+import { loadVaultMap, resolveSecret, saveVaultMap } from "@/lib/vault";
+import { envLocalPath, readEnvLocalValue, upsertEnvContent } from "@/lib/env-file";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const PAT_KEY = "GITHUB_PAT";
 const LOGIN_KEY = "GITHUB_USERNAME";
+const GITHUB_USERNAME_PATTERN = /^[A-Za-z0-9-]{1,39}$/;
+
+function isValidGitHubUsername(username: string): boolean {
+  return (
+    GITHUB_USERNAME_PATTERN.test(username) &&
+    !username.startsWith("-") &&
+    !username.endsWith("-") &&
+    !username.includes("--")
+  );
+}
 
 /** Apply key updates to .env.local in place. `null` deletes a key. Comments,
  *  blank lines, key ordering, and unrelated values are preserved (the old
@@ -37,14 +48,7 @@ function applyEnvUpdates(updates: Record<string, string | null>): void {
   writeFileSync(envPath, upsertEnvContent(existing, updates), "utf8");
 }
 
-/** True when .env.local already declares <key> (constant keys only). */
-function envFileHasKey(key: string): boolean {
-  const envPath = envLocalPath();
-  if (!existsSync(envPath)) return false;
-  return new RegExp(`^\\s*${key}\\s*=`, "m").test(readFileSync(envPath, "utf8"));
-}
-
-async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null }> {
+async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null; network?: boolean }> {
   try {
     const res = await fetch("https://api.github.com/user", {
       headers: {
@@ -58,21 +62,61 @@ async function validatePat(pat: string): Promise<{ valid: boolean; login: string
     const data = await res.json().catch(() => null);
     return { valid: true, login: data?.login ?? null };
   } catch {
-    return { valid: false, login: null };
+    // GitHub unreachable — NOT evidence the token is bad. Telling an offline
+    // user their good token "is invalid" sent them token-regenerating for a
+    // network problem (cave-cjgg).
+    return { valid: false, login: null, network: true };
+  }
+}
+
+/** Best-effort existence check for a username-only setup. Only an explicit
+ *  404 rejects — rate limits / network failures must not brick setup, but a
+ *  typo'd username used to save silently and render a permanently empty
+ *  public view (cave-cjgg). */
+async function usernameExists(username: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      cache: "no-store",
+    });
+    return res.status !== 404;
+  } catch {
+    return true;
   }
 }
 
 // GET — just reports presence, never exposes the value
 export async function GET() {
-  // Resolve from vault first (1Password), then fall back to .env.local
+  // Resolve from env, encrypted local vault, 1Password, or legacy .env.local.
+  const localEnvPat = readEnvLocalValue(PAT_KEY);
+  const hasEncryptedPat = hasLocalEncryptedSecret(PAT_KEY);
   const patFromVault = resolveSecret("GITHUB_PAT");
   const loginFromVault = resolveSecret("GITHUB_USERNAME");
 
-  const hasPat = !!(patFromVault ?? process.env.GITHUB_PAT?.trim());
+  // The activity and action routes also accept credentials supplied by the
+  // launcher (for example GH_TOKEN from a CLI/harness environment). Reflect
+  // that here so an already-authenticated installation is not prompted to add
+  // a duplicate Cave PAT.
+  const hasPat = !!resolveGitHubToken();
+  // Only storage Cave can actually delete is removable from this UI. A
+  // launcher GITHUB_PAT or a vault reference can resolve through
+  // resolveSecret(), but deleting it here would only disable it until restart.
+  const canRemoveStoredPat = hasEncryptedPat || !!localEnvPat;
   const login  = loginFromVault ?? process.env.GITHUB_USERNAME?.trim() ?? null;
-  const source: "vault" | "env" | "none" = patFromVault ? "vault" : hasPat ? "env" : "none";
+  const source: "encrypted" | "vault" | "env" | "none" = hasEncryptedPat
+    ? "encrypted"
+    : localEnvPat
+      ? "env"
+      : patFromVault
+      ? "vault"
+      : hasPat
+        ? "env"
+        : "none";
 
-  return NextResponse.json({ hasPat, login, source });
+  return NextResponse.json({ hasPat, login, source, canRemoveStoredPat });
 }
 
 // POST — validate + save
@@ -86,24 +130,45 @@ export async function POST(req: NextRequest) {
   if (!pat && !username) {
     return NextResponse.json({ ok: false, error: "pat or username is required" }, { status: 400 });
   }
+  if (username && !isValidGitHubUsername(username)) {
+    return NextResponse.json({ ok: false, error: "username must be a valid GitHub username" }, { status: 400 });
+  }
 
   let login: string | null = username || null;
 
   if (pat) {
     const result = await validatePat(pat);
     if (!result.valid) {
+      if (result.network) {
+        return NextResponse.json(
+          { ok: false, error: "Couldn't reach GitHub to verify the token — check your connection and try again." },
+          { status: 503 },
+        );
+      }
       return NextResponse.json({ ok: false, error: "PAT is invalid or lacks required scopes (needs read:user, repo)" }, { status: 422 });
     }
     login = result.login ?? login;
+  } else if (username) {
+    if (!(await usernameExists(username))) {
+      return NextResponse.json({ ok: false, error: `GitHub user "${username}" not found — check the spelling.` }, { status: 422 });
+    }
   }
 
-  // Write to .env.local — never log the PAT value. Skip persisting the PAT as
-  // plaintext when it already matches the resolved secret (e.g. it comes from
-  // the 1Password vault), so we don't leave a dead shadow copy on disk.
-  const resolvedPat = resolveSecret(PAT_KEY);
-  const patIsVaultBacked = !!pat && pat === resolvedPat && !envFileHasKey(PAT_KEY);
   const updates: Record<string, string | null> = {};
-  if (pat && !patIsVaultBacked) updates[PAT_KEY] = pat;
+
+  if (pat) {
+    setLocalEncryptedSecret(PAT_KEY, pat);
+    const map = loadVaultMap(true);
+    map[PAT_KEY] = {
+      storage: "encrypted",
+      description: "GitHub Personal Access Token",
+      required: false,
+      // Re-saving the PAT must not reset per-familiar grants back to shared.
+      scope: map[PAT_KEY]?.scope,
+    };
+    saveVaultMap(map);
+    updates[PAT_KEY] = null;
+  }
   if (login) updates[LOGIN_KEY] = login;
   if (Object.keys(updates).length) applyEnvUpdates(updates);
 
@@ -111,12 +176,31 @@ export async function POST(req: NextRequest) {
   if (pat) process.env[PAT_KEY] = pat;
   if (login) process.env[LOGIN_KEY] = login;
 
-  return NextResponse.json({ ok: true, login, patStoredIn: patIsVaultBacked ? "vault" : pat ? "env" : undefined });
+  return NextResponse.json({ ok: true, login, patStoredIn: pat ? "encrypted" : undefined });
 }
 
 // DELETE — remove PAT
 export async function DELETE() {
+  // Preserve a launcher-provided GITHUB_PAT when it wins over an older local
+  // value. resolveSecret caches local values in process.env, so clear only a
+  // cached local token rather than blindly removing every inherited value.
+  const localEnvPat = readEnvLocalValue(PAT_KEY);
+  let encryptedPat: string | null = null;
+  try {
+    encryptedPat = getLocalEncryptedSecret(PAT_KEY);
+  } catch {
+    // Deletion still removes the malformed local entry below.
+  }
   applyEnvUpdates({ [PAT_KEY]: null });
-  delete process.env[PAT_KEY];
+  deleteLocalEncryptedSecret(PAT_KEY);
+  const map = loadVaultMap(true);
+  if (map[PAT_KEY]?.storage === "encrypted") {
+    delete map[PAT_KEY];
+    saveVaultMap(map);
+  }
+  const processPat = process.env[PAT_KEY]?.trim();
+  if (processPat && (processPat === localEnvPat || processPat === encryptedPat)) {
+    delete process.env[PAT_KEY];
+  }
   return NextResponse.json({ ok: true });
 }

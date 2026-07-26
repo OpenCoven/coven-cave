@@ -9,17 +9,12 @@ import {
   type Recurrence,
 } from "@/lib/cave-inbox";
 import { broadcastCreated, startScheduler } from "@/lib/inbox-scheduler";
+import { isLocalOrigin } from "@/lib/server/local-origin";
 
 export const dynamic = "force-dynamic";
 
 // Guarantee the scheduler is alive even if instrumentation.ts was bypassed.
 startScheduler();
-
-function isLocalOrigin(req: Request): boolean {
-  const host = req.headers.get("host") ?? "";
-  const bare = host.split(":")[0];
-  return bare === "127.0.0.1" || bare === "localhost" || bare === "[::1]";
-}
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -41,6 +36,7 @@ export async function POST(req: Request) {
     body?: string;
     fireAt?: string | null;
     recurrence?: Recurrence;
+    whenText?: string | null;
     source?: "user" | "agent" | "system";
     familiarId?: string | null;
     sessionId?: string | null;
@@ -68,6 +64,7 @@ export async function POST(req: Request) {
     body: body.body,
     fireAt: body.fireAt,
     recurrence: body.recurrence,
+    whenText: typeof body.whenText === "string" ? body.whenText : null,
     source: body.source ?? (kind === "agent" ? "agent" : "user"),
     familiarId: body.familiarId,
     sessionId: body.sessionId,

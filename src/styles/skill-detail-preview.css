@@ -1,0 +1,98 @@
+/* Skill detail preview pane in the /skill /skills picker (see
+   skill-detail-preview.tsx). Sits to the right of the option list. */
+
+.skill-preview {
+  flex: 0 0 244px;
+  width: 244px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) 10px;
+  border-left: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  overflow-y: auto;
+  max-height: 16rem;
+}
+.skill-preview--empty {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.skill-preview__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.skill-preview__icon { color: var(--accent-presence); flex: 0 0 auto; }
+.skill-preview__name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.skill-preview__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.skill-preview__chip {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--accent-presence) 80%, var(--text-secondary));
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 24%, transparent);
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
+}
+.skill-preview__desc {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.skill-preview__desc--muted { font-style: italic; color: var(--text-muted); }
+.skill-preview__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.skill-preview__tag {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+.skill-preview__path {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-preview__hint {
+  margin-top: auto;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.skill-preview__hint kbd {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  padding: 0 var(--space-1);
+}
+
+/* On narrow widths the side preview would crowd the list — hide it and let the
+   per-row description carry the detail. */
+@media (max-width: 560px) {
+  .skill-preview { display: none; }
+}

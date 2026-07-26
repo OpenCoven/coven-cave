@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "opencoven.craft.v1",
+  "components": {
+    "required": [
+      "filesystem",
+      "coven-evals"
+    ],
+    "optional": [
+      "huggingface",
+      "memory",
+      "sequential-thinking"
+    ]
+  },
+  "bundled": {
+    "skills": [
+      {
+        "id": "rigor-reviewer",
+        "sourcePath": "craft-sources/oracles-measure/rigor-reviewer/SKILL.md",
+        "upstreamPath": "22-agent-native-research-artifact/rigor-reviewer/SKILL.md",
+        "contentHash": "sha256:5a8169a5d069caf36a30e0106e523503ffba685215c3cd0067a72aa64a7e2dbb",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      },
+      {
+        "id": "lm-evaluation-harness",
+        "sourcePath": "craft-sources/oracles-measure/lm-evaluation-harness/SKILL.md",
+        "upstreamPath": "11-evaluation/lm-evaluation-harness/SKILL.md",
+        "contentHash": "sha256:891b77bc09118393f9bd1235404ee3f0cf412f56e57dc4b454e2fbd8fd507bc3",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      },
+      {
+        "id": "bigcode-evaluation-harness",
+        "sourcePath": "craft-sources/oracles-measure/bigcode-evaluation-harness/SKILL.md",
+        "upstreamPath": "11-evaluation/bigcode-evaluation-harness/SKILL.md",
+        "contentHash": "sha256:7c46e8eb3ca8d4f51769162d16d87a7dff5ec0c4609131fd3c62fcb463522874",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      }
+    ],
+    "prompts": [
+      {
+        "id": "oracles-measure-review-install-plan",
+        "name": "Review the install plan",
+        "description": "Summarize the Craft footprint and confirm bounded use.",
+        "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+      }
+    ],
+    "workflows": [
+      {
+        "id": "oracles-measure-bounded-research-cycle",
+        "name": "Bounded research cycle",
+        "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+        "steps": [
+          "Declare scope, authority, provenance, and resource limits.",
+          "Select the smallest reproducible action and record its inputs.",
+          "Run only within the declared bounds and preserve resumable state.",
+          "Evaluate outputs against a predeclared criterion.",
+          "Summarize evidence, limitations, and the next human checkpoint."
+        ]
+      }
+    ]
+  },
+  "requiredCapabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "recommendedRoles": [
+    "Researcher",
+    "Evaluator"
+  ],
+  "provenance": {
+    "upstream": "Orchestra Research AI Research Skills",
+    "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+    "license": "MIT",
+    "modifications": [
+      "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+    ],
+    "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+    "licensePath": "craft-sources/orchestra-research/LICENSE"
+  }
+}

@@ -1,11 +1,11 @@
 ---
 name: xurl
-description: Use xurl only for approved X/Twitter workflows and keep drafting separate from posting.
+description: Use X/Twitter safely: draft posts, look up public context, prepare approved-post workflows, and keep social publishing actions explicit.
 ---
 
 # xurl
 
-Use xurl only for approved X/Twitter workflows and keep drafting separate from posting.
+Use X/Twitter safely: draft posts, look up public context, prepare approved-post workflows, and keep social publishing actions explicit.
 
 ## Use When
 - Draft posts

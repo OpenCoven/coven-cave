@@ -7,12 +7,17 @@ import SwiftUI
 /// server adopts the session and replays scrollback on reconnect).
 struct TerminalView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("cave.terminal.shorthands") private var storedShorthands = "git status|pnpm test:mobile"
 
-    @State private var terminal = PtyTerminal()
-    @State private var cwd: String?      // nil = Home
+    @Bindable var terminal: PtyTerminal
+    @Binding var cwd: String?      // nil = Home
     @State private var cols = 80
     @State private var rows = 24
+    @State private var showingNewShorthand = false
+    @State private var showingProjectPicker = false
+    @State private var newShorthand = ""
 
     /// Per-cwd thread id → one durable shell per working directory.
     private var threadId: String { "ios-terminal::" + (cwd ?? "home") }
@@ -25,35 +30,115 @@ struct TerminalView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                XtermWebView(
-                    terminal: terminal,
-                    onInput: { terminal.sendInput($0) },
-                    onResize: { c, r in
-                        cols = c
-                        rows = r
-                        terminal.sendResize(cols: c, rows: r)
-                    }
-                )
-                .ignoresSafeArea(.container, edges: .bottom)
-                Divider()
-                keyRow
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                CircularIconButton(systemImage: "line.3.horizontal",
+                                   label: "Open navigation") {
+                    app.navigationDrawerOpen = true
+                }
+                Text("Terminal")
+                    .font(.largeTitle.weight(.bold))
+                cwdMenu
+                Spacer()
+                CircularIconButton(systemImage: "plus", label: "New terminal") {
+                    // PtyTerminal supports one durable session per project root;
+                    // selecting a root creates/adopts that real server session.
+                    showingProjectPicker = true
+                }
             }
-            .navigationTitle("Terminal")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) { cwdMenu }
-                ToolbarItem(placement: .topBarTrailing) { statusButton }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(chrome.bgBase)
+            // The xterm webview renders even when the PTY socket is down, so a
+            // failed connection otherwise looks like a frozen shell. Surface it —
+            // and give an exited shell (typed `exit`, crashed job) a restart
+            // affordance instead of leaving a dead pane behind.
+            if terminal.exited {
+                statusBanner(
+                    icon: "flag.checkered", tint: .secondary,
+                    message: exitMessage, button: "Restart"
+                ) { connect() }
+            } else if !terminal.connected, let err = terminal.error {
+                statusBanner(
+                    icon: "exclamationmark.triangle.fill", tint: .orange,
+                    message: err, button: "Reconnect"
+                ) { connect() }
             }
-            .task { if !app.projectsLoaded { await app.loadProjects() } }
-            .onAppear {
-                if !terminal.connected && !terminal.exited { connect() }
-            }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active, !terminal.connected, !terminal.exited { connect() }
+            XtermWebView(
+                terminal: terminal,
+                onInput: { terminal.sendInput($0) },
+                onResize: { c, r in
+                    cols = c
+                    rows = r
+                    terminal.sendResize(cols: c, rows: r)
+                }
+            )
+            .ignoresSafeArea(.container, edges: .bottom)
+            Divider()
+            keyRow
+        }
+        .task { if !app.projectsLoaded { await app.loadProjects() } }
+        .onAppear {
+            if terminal.connected {
+                // The renderer was remounted after drawer navigation. Reattach
+                // the one retained transport so server scrollback repaints it.
+                terminal.reattach()
+            } else if !terminal.exited {
+                connect()
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            if !terminal.connected && !terminal.exited {
+                connect()
+            } else {
+                // iOS kills sockets during suspension without flipping
+                // `connected`; probe the link so a stale session reconnects
+                // instead of eating the first keystrokes.
+                terminal.verifyLiveness()
+            }
+        }
+        .confirmationDialog("New terminal", isPresented: $showingProjectPicker) {
+            Button("Home") { switchCwd(nil) }
+            ForEach(app.projects) { project in
+                Button(project.name) { switchCwd(project.root) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Choose a project for the terminal session.")
+        }
+        .alert("New shorthand", isPresented: $showingNewShorthand) {
+            TextField("Command", text: $newShorthand)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Add") { addShorthand() }
+            Button("Cancel", role: .cancel) { newShorthand = "" }
+        } message: {
+            Text("This command is stored on this phone.")
+        }
+    }
+
+    // MARK: - Status banner (connection lost / shell exited)
+
+    private var exitMessage: String {
+        if let code = terminal.exitCode, code != 0 {
+            return "Shell exited (code \(code))."
+        }
+        return "Shell session ended."
+    }
+
+    private func statusBanner(icon: String, tint: Color, message: String,
+                              button: String, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).foregroundStyle(tint)
+            Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Spacer()
+            Button(button, action: action)
+                .font(.caption.weight(.semibold)).buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(.ultraThinMaterial)
     }
 
     // MARK: - Key row (special keys the soft keyboard lacks → straight to the PTY)
@@ -61,35 +146,55 @@ struct TerminalView: View {
     private var keyRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                keyButton("esc") { terminal.sendInput("\u{1B}") }
-                keyButton("tab") { terminal.sendInput("\t") }
-                keyButton("⌃C") { terminal.sendInput("\u{03}") }
-                keyButton("⌃D") { terminal.sendInput("\u{04}") }
-                keyButton("⌃Z") { terminal.sendInput("\u{1A}") }
-                keyButton("↑") { terminal.sendInput("\u{1B}[A") }
-                keyButton("↓") { terminal.sendInput("\u{1B}[B") }
-                keyButton("←") { terminal.sendInput("\u{1B}[D") }
-                keyButton("→") { terminal.sendInput("\u{1B}[C") }
-                keyButton("clear") { terminal.sendInput("clear\n") }
+                cwdMenu
+                keyButton("esc", "Escape") { terminal.sendInput("\u{1B}") }
+                ForEach(["git status", "pwd"], id: \.self) { command in
+                    keyButton(command, command) { terminal.sendInput(command + "\n") }
+                }
+                ForEach(shorthands, id: \.self) { command in
+                    keyButton(command, "Run \(command)") { terminal.sendInput(command + "\n") }
+                }
+                Button {
+                    showingNewShorthand = true
+                } label: {
+                    Label("Shorthand", systemImage: "plus")
+                        .font(.system(.footnote, design: .monospaced))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .overlay(Capsule().stroke(style: StrokeStyle(lineWidth: 1, dash: [4])))
+                }
+                .buttonStyle(.plain)
+                keyButton("tab", "Tab") { terminal.sendInput("\t") }
+                keyButton("⌃C", "Control C") { terminal.sendInput("\u{03}") }
+                keyButton("⌃D", "Control D") { terminal.sendInput("\u{04}") }
+                keyButton("⌃Z", "Control Z") { terminal.sendInput("\u{1A}") }
+                keyButton("↑", "Up arrow") { terminal.sendInput("\u{1B}[A") }
+                keyButton("↓", "Down arrow") { terminal.sendInput("\u{1B}[B") }
+                keyButton("←", "Left arrow") { terminal.sendInput("\u{1B}[D") }
+                keyButton("→", "Right arrow") { terminal.sendInput("\u{1B}[C") }
+                keyButton("clear", "Clear screen") { terminal.sendInput("clear\n") }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
         }
-        .background(.bar)
+        .glassBar()
     }
 
-    private func keyButton(_ label: String, action: @escaping () -> Void) -> some View {
+    /// `label` is the compact glyph shown on the key; `accessibility` spells it
+    /// out for VoiceOver (e.g. "↑" → "Up arrow", "⌃C" → "Control C").
+    private func keyButton(_ label: String, _ accessibility: String,
+                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
                 .font(.system(.footnote, design: .monospaced))
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                .glassFill(.control, in: RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
         .disabled(!terminal.connected)
+        .accessibilityLabel(accessibility)
     }
 
-    // MARK: - Toolbar
+    // MARK: - Working directory
 
     private var cwdMenu: some View {
         Menu {
@@ -106,18 +211,12 @@ struct TerminalView: View {
             }
         } label: {
             Label(cwdLabel, systemImage: "folder")
-                .font(.subheadline)
+                .font(.system(.footnote, design: .monospaced))
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .glassFill(.control, in: RoundedRectangle(cornerRadius: 7))
         }
-    }
-
-    @ViewBuilder private var statusButton: some View {
-        if terminal.exited || terminal.error != nil {
-            Button { connect() } label: { Label("Reconnect", systemImage: "arrow.clockwise") }
-        } else {
-            Circle()
-                .fill(terminal.connected ? Color.green : Color.orange)
-                .frame(width: 9, height: 9)
-        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Working directory")
     }
 
     // MARK: - Lifecycle
@@ -132,5 +231,22 @@ struct TerminalView: View {
         guard root != cwd else { return }
         cwd = root
         connect()   // threadId is derived from cwd → fresh/persistent per directory
+    }
+
+    private var shorthands: [String] {
+        if let data = storedShorthands.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([String].self, from: data) {
+            return decoded
+        }
+        return storedShorthands.split(separator: "|").map(String.init).filter { !$0.isEmpty }
+    }
+
+    private func addShorthand() {
+        let value = newShorthand.trimmingCharacters(in: .whitespacesAndNewlines)
+        defer { newShorthand = "" }
+        guard !value.isEmpty, !shorthands.contains(value) else { return }
+        guard let data = try? JSONEncoder().encode(shorthands + [value]),
+              let encoded = String(data: data, encoding: .utf8) else { return }
+        storedShorthands = encoded
     }
 }

@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-speech",
+  "description": "allows only the trusted main loopback webview to run native speech recognition for local voice calls",
+  "webviews": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*",
+      "http://[\\:\\:1]:*/*"
+    ]
+  },
+  "permissions": [
+    "allow-speech-stt-available",
+    "allow-speech-stt-start",
+    "allow-speech-stt-finish",
+    "allow-speech-stt-stop"
+  ]
+}

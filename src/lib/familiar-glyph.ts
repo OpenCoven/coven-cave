@@ -14,6 +14,38 @@ import type { Familiar } from "@/lib/types";
 
 export type FamiliarGlyph = { kind: "icon"; name: string };
 
+/**
+ * Glyphs that must render without fetching the full picker catalogue.
+ *
+ * Keep this list to defaults, role inference, and the summoning-circle choices.
+ * `scripts/generate-icon-subset.mjs` extracts it into the tiny
+ * `ph-familiar-core.json` collection used at workspace startup. User-selected
+ * uncommon glyphs are resolved from the lazy full catalogue instead.
+ */
+export const FAMILIAR_CORE_GLYPH_NAMES = [
+  "ph:sparkle-fill",
+  "ph:code-fill",
+  "ph:chat-circle-fill",
+  "ph:music-notes-fill",
+  "ph:books-fill",
+  "ph:palette-fill",
+  "ph:chart-bar-fill",
+  "ph:gear-fill",
+  "ph:pencil-fill",
+  "ph:pen-nib-fill",
+  "ph:cat-fill",
+  "ph:robot-fill",
+  "ph:ghost-fill",
+  "ph:brain-fill",
+  "ph:flask-fill",
+  "ph:rocket-fill",
+  "ph:magic-wand-fill",
+  "ph:compass-fill",
+  "ph:detective-fill",
+  "ph:planet-fill",
+  "ph:butterfly-fill",
+] as const;
+
 /** Fallback rendered when no daemon icon and no override are present. */
 export const DEFAULT_FAMILIAR_GLYPH: FamiliarGlyph = {
   kind: "icon",
@@ -49,9 +81,15 @@ export function serializeGlyph(glyph: FamiliarGlyph): string {
  *
  * The first matching keyword wins, so order keys most-specific → most-generic
  * if you extend this.
+ *
+ * Every name here MUST exist in the bundled glyph catalog
+ * (`ph-glyph-catalog.json`, one variant per base — prefer `-fill`); a name
+ * outside it renders an empty glyph. `familiar-glyph.test.ts` guards this.
  */
-const ROLE_GLYPH_MAP: Array<[string, string]> = [
-  ["code", "ph:code-bold"],
+export const ROLE_GLYPH_MAP: Array<[string, string]> = [
+  // `-fill`, not `-bold`: the trimmed catalog only ships the `-fill` variant, so
+  // `ph:code-bold` was rendering blank for every "code" familiar.
+  ["code", "ph:code-fill"],
   ["chat", "ph:chat-circle-fill"],
   ["music", "ph:music-notes-fill"],
   ["research", "ph:books-fill"],

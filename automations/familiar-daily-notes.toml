@@ -19,7 +19,7 @@ Storage & format (must match exactly so the Cave UI parses it):
 - A `# Daily Notes — <YYYY-MM-DD>` title line at the top is fine.
 
 Steps:
-1. Enumerate familiars from `~/.coven/familiars.toml` (plus the default ids), and resolve each workspace.
+1. Enumerate familiars only from `~/.coven/familiars.toml`, and resolve each workspace.
 2. Refresh the factual digest first by running, from a Coven Cave checkout:
    `node --experimental-strip-types scripts/generate-daily-notes.mjs --section notes`
    `--section notes` rewrites each familiar's `## Notes` activity digest (sessions + memory touched) but PRESERVES any reflection already there — so re-running never wipes a prior reflection.

@@ -19,9 +19,17 @@ assert.ok(!/MAX_LINES/.test(source), "inline reader must NOT use a line cap");
 
 // Content comes from the resolved contentPath; entries without one fall back to the
 // excerpt (e.g. agent memories the server couldn't resolve to an allow-listed file).
-assert.match(source, /useMemoryFile\(fetchPath\)/, "reader fetches the resolved contentPath");
+assert.match(source, /useMemoryFile\(fetchPath, \{ refreshToken \}\)/, "reader fetches the resolved contentPath");
 assert.match(source, /row\?\.contentPath \?\? null/, "fetchPath is the row's contentPath");
 assert.match(source, /hasFile \? text \?\? "" : row\.excerpt/, "no contentPath → excerpt fallback");
+
+// Edit mode: files (contentPath rows) get an Edit affordance that swaps in the
+// MemoryMdEditor; leaving the row or finishing the session returns to read
+// mode and re-fetches so the reader shows what was saved.
+assert.match(source, /<MemoryMdEditor/, "edit mode uses the shared MemoryMdEditor");
+assert.match(source, /editing && row\.contentPath/, "editor only mounts for rows with a contentPath");
+assert.match(source, /setEditing\(false\);?\s*\n?\s*\}, \[fetchPath\]\)/, "switching rows ends the edit session");
+assert.match(source, /setRefreshToken\(\(n\) => n \+ 1\)/, "leaving edit re-fetches the read view");
 
 // Copy-path + empty state + open-file + expand.
 assert.match(source, /copyText\(/, "copy-path button must copy the path");

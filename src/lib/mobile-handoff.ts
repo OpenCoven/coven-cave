@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { signMobileAccessToken } from "./mobile-access-token.ts";
+import { scrubSidecarInternalEnv } from "./coven-bin.ts";
+import { appTokenTtlMs } from "./mobile-token-refresh.ts";
 
 export const MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1000;
 
@@ -63,6 +65,9 @@ function executableExists(candidate: string) {
 }
 
 function loginShellPath(): string | null {
+  // Windows has no POSIX login shell to source — skip the `-ilc` probe (which
+  // would try /bin/zsh and always fail) and fall back to the system PATH.
+  if (process.platform === "win32") return null;
   const env = process.env as Record<string, string | undefined>;
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   try {
@@ -131,11 +136,12 @@ export function tailscaleSpawnEnv(): NodeJS.ProcessEnv {
     cachedTailscalePath = joined || process.env.PATH || "";
   }
 
-  return { ...process.env, PATH: cachedTailscalePath };
+  return scrubSidecarInternalEnv({ ...process.env, PATH: cachedTailscalePath });
 }
 
 type TailscaleSelfStatus = {
-  Self?: { DNSName?: string };
+  TailscaleIPs?: string[];
+  Self?: { DNSName?: string; TailscaleIPs?: string[] };
 };
 
 // The device's MagicDNS name from `tailscale status --self --json`, with the
@@ -156,6 +162,121 @@ export function magicDnsHost(selfStatus: unknown): string | null {
 export function magicDnsServeUrl(selfStatus: unknown): string | null {
   const host = magicDnsHost(selfStatus);
   return host ? `https://${host}/` : null;
+}
+
+function selfTailscaleIps(selfStatus: unknown): string[] {
+  const status = selfStatus as TailscaleSelfStatus | null;
+  const ips = status?.Self?.TailscaleIPs ?? status?.TailscaleIPs;
+  if (!Array.isArray(ips)) return [];
+  return ips.filter((candidate): candidate is string => typeof candidate === "string");
+}
+
+export function tailscaleIpHost(selfStatus: unknown): string | null {
+  const ip = selfTailscaleIps(selfStatus).find((candidate) => /^100\.\d+\.\d+\.\d+$/.test(candidate));
+  return ip ?? null;
+}
+
+function backendPort(backendUrl: string) {
+  try {
+    return new URL(backendUrl).port || "3000";
+  } catch {
+    return "3000";
+  }
+}
+
+export function nativeHttpServeUrl(selfStatus: unknown, backendUrl: string): string | null {
+  const host = tailscaleIpHost(selfStatus);
+  if (!host) return null;
+  return `http://${host}:${backendPort(backendUrl)}/`;
+}
+
+export type TailnetDiscoveryProof =
+  | {
+      ok: true;
+      host: string;
+      serveUrl: string;
+      source: "serve-status" | "magicdns-self-status";
+    }
+  | {
+      ok: false;
+      reason: string;
+    };
+
+export function tailnetDiscoveryProof({
+  selfStatus,
+  serveStatus,
+  backendUrl,
+}: {
+  selfStatus: unknown;
+  serveStatus: unknown;
+  backendUrl: string;
+}): TailnetDiscoveryProof {
+  const fromServe = findServeUrl(serveStatus, backendUrl);
+  const host = magicDnsHost(selfStatus);
+  if (fromServe) {
+    return {
+      ok: true,
+      host: host ?? new URL(fromServe).host,
+      serveUrl: fromServe,
+      source: "serve-status",
+    };
+  }
+
+  const fromMagicDns = magicDnsServeUrl(selfStatus);
+  if (fromMagicDns && host) {
+    return {
+      ok: true,
+      host,
+      serveUrl: fromMagicDns,
+      source: "magicdns-self-status",
+    };
+  }
+
+  return {
+    ok: false,
+    reason: "tailscale serve URL not found and status --self had no MagicDNS DNSName",
+  };
+}
+
+export type NativeAppDiscoveryProof =
+  | {
+      ok: true;
+      host: string;
+      serveUrl: string;
+      source: "serve-status" | "magicdns-self-status" | "tailscale-ip-http";
+    }
+  | {
+      ok: false;
+      reason: string;
+    };
+
+export function nativeAppDiscoveryProof({
+  selfStatus,
+  serveStatus,
+  backendUrl,
+}: {
+  selfStatus: unknown;
+  serveStatus: unknown;
+  backendUrl: string;
+}): NativeAppDiscoveryProof {
+  const tailnet = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl });
+  if (tailnet.ok) return tailnet;
+
+  const serveUrl = nativeHttpServeUrl(selfStatus, backendUrl);
+  const host = tailscaleIpHost(selfStatus);
+  if (serveUrl && host) {
+    return {
+      ok: true,
+      host: `${host}:${backendPort(backendUrl)}`,
+      serveUrl,
+      source: "tailscale-ip-http",
+    };
+  }
+
+  return {
+    ok: false,
+    reason: "tailscale serve URL not found and status --self had no MagicDNS DNSName or Tailscale IPv4",
+  };
 }
 
 export function findServeUrl(status: unknown, backendUrl: string) {
@@ -192,11 +313,41 @@ export function buildInviteUrl({
   return url.toString();
 }
 
+/** Golden path 5 (cave-i74f): "Continue on phone" hands off the MOMENT, not
+ *  just the app. Appending `#chat-<id>` to the invite URL rides the existing
+ *  web deep-link (the chat router already resolves the fragment on boot), so
+ *  the scanned QR opens the same conversation — no new API surface. Session
+ *  ids are validated against the shapes the daemon mints; anything else
+ *  returns the URL untouched (a malformed id must never break pairing). */
+export function withChatFragment(url: string, chatId: string | null | undefined): string {
+  if (!chatId) return url;
+  const id = chatId.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id)) return url;
+  const base = url.split("#")[0];
+  return `${base}#chat-${id}`;
+}
+
+/** Deep link the native app registers (`covencave://connect`) — tapping it on
+ *  the device configures host + credential in one step, no typing. */
+export function buildAppInviteUrl({
+  host,
+  mobileAccessToken,
+}: {
+  host: string;
+  mobileAccessToken: string;
+}) {
+  const url = new URL("covencave://connect");
+  url.searchParams.set("host", host);
+  url.searchParams.set("token", mobileAccessToken);
+  return url.toString();
+}
+
 export async function createMobileInvite({
   baseUrl,
   accessSecret,
   sidecarToken,
   ttlMs = MOBILE_INVITE_TTL_MS,
+  appTtlMs,
   now = Date.now(),
   nonce,
 }: {
@@ -204,6 +355,9 @@ export async function createMobileInvite({
   accessSecret: string;
   sidecarToken?: string | null;
   ttlMs?: number;
+  /** Lifetime of the native-app deep-link token (defaults to the rolling
+   *  30-day app TTL — see mobile-token-refresh.ts). */
+  appTtlMs?: number;
   now?: number;
   nonce?: string;
 }) {
@@ -213,9 +367,188 @@ export async function createMobileInvite({
     expiresAt,
     nonce,
   });
+  // The app link carries its own longer-lived token: a QR on screen is easy
+  // to re-scan every 8h, but a paired device should renew silently instead.
+  const appTokenExpiresAt = now + (appTtlMs ?? appTokenTtlMs());
+  const appAccessToken = await signMobileAccessToken({
+    secret: accessSecret,
+    expiresAt: appTokenExpiresAt,
+    nonce: nonce ? `${nonce}-app` : undefined,
+  });
   return {
     expiresAt,
     expiresAtIso: new Date(expiresAt).toISOString(),
     url: buildInviteUrl({ baseUrl, mobileAccessToken, sidecarToken }),
+    appInviteUrl: buildAppInviteUrl({
+      host: new URL(baseUrl).host,
+      mobileAccessToken: appAccessToken,
+    }),
+    appTokenExpiresAt,
   };
+}
+
+// ─── Guided pairing checklist (cave-jr4r.1) ─────────────────────────────────────
+// The app-start flow runs a fixed probe ladder; these types let the route
+// report the WHOLE ladder instead of one opaque first-failure string, so the
+// Phone card can render "Tailscale installed → running → signed in → route
+// live → phone seen" as a real checklist.
+
+export type PairingStepId = "access" | "backend" | "tailscale" | "route" | "phone";
+
+export type PairingStep = {
+  id: PairingStepId;
+  label: string;
+  /** ok = proven; fail = this rung broke (detail says what to do); skipped =
+   *  never attempted because an earlier rung failed; pending = healthy but
+   *  waiting on the outside world (a phone that hasn't scanned yet). */
+  state: "ok" | "fail" | "skipped" | "pending";
+  detail?: string;
+};
+
+export type TailscaleSelfClassification =
+  | { kind: "running" }
+  | { kind: "needs-login"; detail: string }
+  | { kind: "not-running"; detail: string }
+  | { kind: "not-installed"; detail: string };
+
+/**
+ * Read the story out of a `tailscale status --self --json` probe. The exit
+ * code alone only proves the CLI exists — BackendState is what separates
+ * "open the app and sign in" from "start Tailscale" for the checklist.
+ */
+export function classifyTailscaleSelf(probe: {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+}): TailscaleSelfClassification {
+  if (!probe.ok) {
+    if (/not found/i.test(probe.stderr)) {
+      return {
+        kind: "not-installed",
+        detail: "Install Tailscale (tailscale.com/download), sign in, then retry.",
+      };
+    }
+    return {
+      kind: "not-running",
+      detail: probe.stderr.trim() || "Open Tailscale and connect, then retry.",
+    };
+  }
+  let backendState = "";
+  try {
+    const parsed = JSON.parse(probe.stdout) as { BackendState?: unknown };
+    if (typeof parsed.BackendState === "string") backendState = parsed.BackendState;
+  } catch {
+    // Fall through — an unparseable status reads as not-running below.
+  }
+  if (backendState === "Running") return { kind: "running" };
+  if (backendState === "NeedsLogin" || backendState === "NeedsMachineAuth") {
+    return {
+      kind: "needs-login",
+      detail: "Open Tailscale and sign in — pairing resumes here automatically.",
+    };
+  }
+  return {
+    kind: "not-running",
+    detail: "Open Tailscale and connect, then retry.",
+  };
+}
+
+const PAIRING_STEP_LABELS: Record<PairingStepId, string> = {
+  access: "Pairing service ready",
+  backend: "Cave server reachable",
+  tailscale: "Tailscale connected",
+  route: "Tailnet route live",
+  phone: "Phone seen",
+};
+
+/**
+ * Build the checklist from however far the ladder got. Pass detail-bearing
+ * outcomes for the rungs that ran; everything after the first failure reads
+ * "skipped". The phone rung is never a failure — it's "pending" until a
+ * paired device has actually been seen.
+ */
+export function buildPairingSteps(outcome: {
+  access: { ok: boolean; detail?: string };
+  backend?: { ok: boolean; detail?: string };
+  tailscale?: TailscaleSelfClassification;
+  route?: { ok: boolean; detail?: string };
+  phoneSeenAt?: number | null;
+}): PairingStep[] {
+  const steps: PairingStep[] = [];
+  let failed = false;
+  const push = (id: PairingStepId, rung?: { ok: boolean; detail?: string }) => {
+    if (failed || rung === undefined) {
+      steps.push({ id, label: PAIRING_STEP_LABELS[id], state: "skipped" });
+      return;
+    }
+    if (rung.ok) {
+      steps.push({ id, label: PAIRING_STEP_LABELS[id], state: "ok" });
+      return;
+    }
+    failed = true;
+    steps.push({ id, label: PAIRING_STEP_LABELS[id], state: "fail", detail: rung.detail });
+  };
+
+  push("access", outcome.access);
+  push("backend", outcome.backend);
+  push(
+    "tailscale",
+    outcome.tailscale === undefined
+      ? undefined
+      : outcome.tailscale.kind === "running"
+        ? { ok: true }
+        : { ok: false, detail: outcome.tailscale.detail },
+  );
+  push("route", outcome.route);
+  if (failed) {
+    steps.push({ id: "phone", label: PAIRING_STEP_LABELS.phone, state: "skipped" });
+  } else {
+    steps.push(
+      outcome.phoneSeenAt
+        ? { id: "phone", label: PAIRING_STEP_LABELS.phone, state: "ok" }
+        : {
+            id: "phone",
+            label: PAIRING_STEP_LABELS.phone,
+            state: "pending",
+            detail: "Waiting for the first scan.",
+          },
+    );
+  }
+  return steps;
+}
+
+// ─── Install-the-app QR (cave-jr4r.3, #3802) ─────────────────────────────────
+//
+// The Phone card shows an install-the-app QR before the pairing QR matters —
+// a phone without the app can't act on the pairing code. No public TestFlight
+// link exists yet (O4, cave-f1wo, owns producing one), so the source is
+// config-gated rather than invented: fill in OFFICIAL_IOS_INSTALL_URL once the
+// lane publishes a link, or set COVEN_CAVE_IOS_INSTALL_URL to test a manual
+// build. Anything that isn't a real Apple install link resolves to null and
+// the card simply doesn't render.
+
+/** One-line fill-in once O4 publishes the TestFlight public link
+ *  (e.g. "https://testflight.apple.com/join/XXXXXXXX"). */
+export const OFFICIAL_IOS_INSTALL_URL: string | null = null;
+
+export const IOS_INSTALL_URL_ENV = "COVEN_CAVE_IOS_INSTALL_URL";
+
+/** Only real Apple install destinations qualify — a typo'd or placeholder
+ *  value must yield "not configured", never a QR pointing somewhere weird. */
+const IOS_INSTALL_HOSTS = new Set(["testflight.apple.com", "apps.apple.com"]);
+
+export function resolveIosInstallUrl(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const candidate = env[IOS_INSTALL_URL_ENV]?.trim() || OFFICIAL_IOS_INSTALL_URL;
+  if (!candidate) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") return null;
+  if (!IOS_INSTALL_HOSTS.has(parsed.hostname)) return null;
+  return parsed.toString();
 }

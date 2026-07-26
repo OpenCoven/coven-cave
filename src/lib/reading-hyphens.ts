@@ -2,8 +2,8 @@
  * Reading hyphenation (automatic word-breaking with hyphens for long-form
  * prose). Pairs with Justify alignment to avoid large inter-word gaps.
  *
- * Scoped to the shared `.cave-md` markdown surface (chat messages, the library
- * doc reader, the memory view) via the `--cave-reading-hyphens` CSS var. The
+ * Scoped to the shared `.cave-md` markdown surface (chat messages, memory
+ * view) via the `--cave-reading-hyphens` CSS var. The
  * default ("off") removes the override so prose uses `manual` (no auto
  * hyphenation). Requires `lang` on <html> (set to "en"); the app's WebKit
  * webview also needs `-webkit-hyphens`, set alongside `hyphens` in CSS.
@@ -31,6 +31,8 @@ export function normalizeReadingHyphens(value: unknown): ReadingHyphens {
 }
 
 export function readReadingHyphens(): ReadingHyphens {
+  const central = normalizeReadingHyphens(readAppPreferences().appearance.reading.hyphens);
+  if (central !== DEFAULT_READING_HYPHENS || readAppPreferences().initialized) return central;
   if (typeof window === "undefined") return DEFAULT_READING_HYPHENS;
   try {
     return normalizeReadingHyphens(window.localStorage.getItem(READING_HYPHENS_KEY));
@@ -43,9 +45,12 @@ export function readReadingHyphens(): ReadingHyphens {
  * Apply the level: set `--cave-reading-hyphens` on <html> (or remove it for the
  * default so `.cave-md`'s `manual` fallback applies) and persist the choice.
  */
-export function applyReadingHyphens(level: ReadingHyphens) {
+export function applyReadingHyphens(level: ReadingHyphens, options: { persist?: boolean } = {}) {
   if (typeof document === "undefined") return;
   const normalized = normalizeReadingHyphens(level);
+  if (options.persist !== false) {
+    updateAppPreferences({ appearance: { reading: { hyphens: normalized } } });
+  }
   const root = document.documentElement;
   if (normalized === DEFAULT_READING_HYPHENS) {
     root.style.removeProperty("--cave-reading-hyphens");
@@ -59,3 +64,4 @@ export function applyReadingHyphens(level: ReadingHyphens) {
     /* ignore unavailable storage */
   }
 }
+import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";

@@ -1,0 +1,172 @@
+%% CovenCave workspace surfaces and nested navigation
+%% Sources: workspace.tsx, src/lib/workspace-mode.ts (canonical modes +
+%% MODE_ALIASES), and every surface component referenced by renderSurface
+%% Regenerated from main@bcf9f8bdbcb1 (2026-07-18) — final IA for issue #3283.
+%%{init: {
+  "theme": "base",
+  "flowchart": { "curve": "basis", "nodeSpacing": 28, "rankSpacing": 62, "padding": 12 },
+  "themeVariables": {
+    "fontFamily": "Inter, ui-sans-serif, system-ui, sans-serif",
+    "fontSize": "15px",
+    "primaryColor": "#241b31",
+    "primaryTextColor": "#f7f2ff",
+    "primaryBorderColor": "#b995e8",
+    "lineColor": "#8d78aa",
+    "clusterBkg": "#120f19",
+    "clusterBorder": "#5f4a78",
+    "edgeLabelBackground": "#120f19"
+  }
+}}%%
+flowchart TB
+  SHELL([Workspace shell]):::entry --> PRIMARY{Primary surface}:::decision
+
+  subgraph CORE["Conversation and work"]
+    direction LR
+    PRIMARY --> HOME["Home"]:::surface
+    HOME --> HOMECOMP["Composer<br/>Chat or Task destination"]:::view
+    HOME --> HOMEFEED["Daily summary · Needs you<br/>News · Recent sessions"]:::view
+    HOME --> HOMEACT["Open session · Open Rituals<br/>Open task board"]:::action
+
+    PRIMARY --> CHAT["Chat"]:::surface
+    CHAT --> CSESS["Sessions"]:::tab
+    CSESS --> THREADLIST["Project-grouped thread list"]:::view
+    CSESS --> THREAD["Conversation thread"]:::view
+    THREAD --> CODERAIL["Code rail"]:::panel
+    CODERAIL --> CHANGES["Changes"]:::tab
+    CODERAIL --> FILES["Files"]:::tab
+    CODERAIL --> TERMINAL["Terminal<br/>fullscreen rail only"]:::tab
+    CHAT --> CPROJECTS["Projects"]:::tab
+    CPROJECTS --> PLIST["Project list<br/>All / Active · A–Z / Recent"]:::view
+    CPROJECTS --> PDETAIL["Project detail"]:::view
+    PDETAIL --> PSESS["Sessions"]:::group
+    PDETAIL --> PGIT["Git"]:::group
+    PDETAIL --> PTASKS["Tasks"]:::group
+    PDETAIL --> PGRANTS["Grants"]:::group
+    CHAT --> CCANVAS["Canvas<br/>saved chat sketches"]:::tab
+    CHAT --> CFAMILIAR["Familiar<br/>identity · skills · tools"]:::tab
+    CHAT --> CSETTINGS["Settings<br/>chat archive policy"]:::tab
+    CHAT --> CGROUP["Group tab<br/>alias groupchat → chat"]:::tab
+
+    PRIMARY --> TASKS["Tasks"]:::surface
+    TASKS --> BTASKS["Tasks tab"]:::tab
+    TASKS --> BQUEUE["Queue tab<br/>alias familiar-work-queue → board"]:::tab
+    BTASKS --> BVIEWS{View}:::decision
+    BVIEWS --> KANBAN["Kanban"]:::view
+    BVIEWS --> TABLE["Table"]:::view
+    BVIEWS --> GANTT["Timeline / Gantt"]:::view
+    KANBAN --> BGRP["Group: Status · Familiar · Project"]:::group
+    TABLE --> BGRP
+    GANTT --> GGRP["Group: Project · Task · Familiar"]:::group
+    BTASKS --> BDETAIL["Task inspector / editor"]:::panel
+    BTASKS --> BNEW["New task dialog"]:::overlay
+  end
+
+  subgraph KNOWLEDGE["People and knowledge"]
+    direction LR
+    PRIMARY --> FAMILIARS["Familiars · mode: agents"]:::surface
+    FAMILIARS --> ROSTER["Roster"]:::view
+    ROSTER --> FDETAIL["Familiar detail"]:::view
+    FDETAIL --> FMEM["Memory"]:::tab
+    FDETAIL --> FNOTES["Daily Notes"]:::tab
+    FDETAIL --> FFILES["Files"]:::tab
+    FDETAIL --> FSESS["Sessions"]:::tab
+    FDETAIL --> FFEED["Feed"]:::tab
+    FDETAIL --> FTRACE["Session trace overlay"]:::overlay
+    FDETAIL --> FSTUDIO["Edit / Remove → Settings<br/>Familiar Studio"]:::route
+
+    PRIMARY --> MEMORIES["Memories"]:::surface
+    MEMORIES --> MDOCS["Docs"]:::tab
+    MEMORIES --> MJOURNAL["Journal"]:::tab
+    MEMORIES --> MGRAPH["Graph"]:::tab
+    MDOCS --> MNAV["Navigator"]:::panel
+    MNAV --> MSTITCH["Stitches"]:::group
+    MNAV --> MMEMORY["Memory files<br/>grouped by source root"]:::group
+    MNAV --> MJNAV["Journal days"]:::group
+    MDOCS --> OPENTABS["Open documents · max 8"]:::panel
+    OPENTABS --> EDITORS["Knowledge · Memory · Journal editors"]:::view
+    OPENTABS --> NEWSTITCH["New stitch"]:::overlay
+    OPENTABS --> BLANKENTRY["Blank entry"]:::overlay
+  end
+
+  subgraph OPERATIONS["Schedules, integrations, and tools"]
+    direction LR
+    PRIMARY --> RITUALS["Rituals"]:::surface
+    RITUALS --> RINBOX["Inbox"]:::tab
+    RITUALS --> RCALENDAR["Calendar"]:::tab
+    RITUALS --> RCRONS["Crons"]:::tab
+    RINBOX --> IGROUP["Group: Status · Familiar · Kind"]:::group
+    RINBOX --> IACTIONS["Select · bulk action<br/>Subscriptions"]:::action
+    RCALENDAR --> CVIEWS{Calendar view}:::decision
+    CVIEWS --> AGENDA["Agenda"]:::view
+    CVIEWS --> DAY["Day"]:::view
+    CVIEWS --> WEEK["Week"]:::view
+    CVIEWS --> MONTH["Month"]:::view
+    RCALENDAR --> DATEPICK["Jump-to-date mini month"]:::overlay
+    RCALENDAR --> EVENT["Event detail · Add / Edit reminder"]:::overlay
+    RCRONS --> CRONLIST["Active · Paused"]:::group
+    RCRONS --> CRONDETAIL["Cron detail / run history"]:::panel
+    RCRONS --> CRONCREATE["Create from blank or template"]:::overlay
+
+    PRIMARY --> MARKET["Marketplace"]:::surface
+    MARKET --> MBROWSE["Browse"]:::tab
+    MARKET --> MCRAFTS["Crafts"]:::tab
+    MARKET --> MSKILLS["Skills"]:::tab
+    MARKET --> MBUILD["Build"]:::tab
+    MBROWSE --> KINDS["All · APIs · MCP servers · Skills<br/>Prompts · Knowledge packs · Crafts"]:::group
+    MBROWSE --> CATEGORIES["Collections · Categories<br/>Recommended / Name / Installed"]:::group
+    MBROWSE --> PLUGINDETAIL["Plugin detail / Configure"]:::panel
+    MCRAFTS --> CRAFTGROUPS["Drafts · Published"]:::group
+    MCRAFTS --> CRAFTDRAWER["Create / edit Craft drawer"]:::overlay
+    MSKILLS --> SKILLDETAIL["Skill detail drawer"]:::overlay
+    MBUILD --> SKILLBUILDER["SKILL.md builder"]:::view
+
+    PRIMARY --> GITHUB["GitHub"]:::surface
+    GITHUB --> GHFILTER["All · PRs · Reviews · Issues"]:::tab
+    GITHUB --> GHORG["Organization / repository filters"]:::group
+    GITHUB --> GHITEM["Issue / PR detail"]:::panel
+    GHITEM --> GHCOMMENTS["Comments · Reviews"]:::group
+    GHITEM --> GHCHECKS["Checks · Linked work"]:::group
+    GITHUB --> GHAUTH["PAT setup / management"]:::overlay
+    GITHUB --> GHSUBS["Event subscriptions"]:::overlay
+
+    PRIMARY --> BROWSER["Browser"]:::surface
+    BROWSER --> BCONTROLS["Back · Forward · Reload · URL"]:::group
+    BROWSER --> WEBVIEW["Native webview / web fallback"]:::view
+  end
+
+  subgraph ROLESURFACES["Conditional Role rooms"]
+    direction LR
+    PRIMARY -. "active familiar role" .-> RROOMS["Rooms cluster"]:::conditional
+    RROOMS --> RESEARCH["Research Desk"]:::room
+    RROOMS --> COMMS["Comms Operations<br/>delivery queue drawer"]:::room
+    RROOMS --> WATCH["Watchtower<br/>Open · Snoozed · Closed · All"]:::room
+    RROOMS --> WRITING["Writing Desk<br/>published works drawer"]:::room
+    RROOMS --> CHART["Chart Room<br/>voyage log drawer"]:::room
+    RROOMS --> REVIEW["Review Deck<br/>checkpoints drawer"]:::room
+    RROOMS --> ARCHIVE["The Archive<br/>indexing activity drawer"]:::room
+    PRIMARY -. "hidden workspace mode" .-> SUBMISSIONS["OpenCoven Submissions"]:::hidden
+  end
+
+  subgraph SPLIT["Desktop split-pane navigation"]
+    direction LR
+    PRIMARY -. "drag splittable page" .-> SPLITPANE["Secondary tile"]:::conditional
+    SPLITPANE --> SPLITPAGE["Another workspace page"]:::panel
+    SPLITPANE --> SALEM["Salem chat"]:::panel
+    SPLITPANE --> MEMORYINSPECT["Memory inspector"]:::panel
+    SPLITPANE --> SPLITBROWSER["Browser companion"]:::panel
+    SPLITPANE --> PROMOTE["Promote · Close · Resize · Swap side"]:::action
+  end
+
+  classDef entry fill:#a46bea,stroke:#e5d0ff,color:#160d22,stroke-width:3px;
+  classDef decision fill:#3a2d1b,stroke:#e3ba6a,color:#fff4d6,stroke-width:2px;
+  classDef surface fill:#241b31,stroke:#bd96eb,color:#f8f3ff,stroke-width:3px;
+  classDef tab fill:#17332d,stroke:#69d6a6,color:#effff9,stroke-width:2px;
+  classDef view fill:#202a37,stroke:#7596bd,color:#eff6ff;
+  classDef group fill:#292330,stroke:#786789,color:#f0e9f8;
+  classDef panel fill:#31233c,stroke:#c490ec,color:#f8edff;
+  classDef overlay fill:#3c272f,stroke:#e190ad,color:#fff0f5,stroke-dasharray:5 3;
+  classDef action fill:#3b2e1c,stroke:#dfb25d,color:#fff6df;
+  classDef route fill:#19312d,stroke:#66c7aa,color:#effff9,stroke-dasharray:5 3;
+  classDef conditional fill:#30253b,stroke:#db8fff,color:#f9edff,stroke-dasharray:5 4;
+  classDef room fill:#2e2340,stroke:#d49cff,color:#fbf3ff,stroke-width:2px;
+  classDef hidden fill:#30232b,stroke:#c77c9d,color:#ffeaf2,stroke-dasharray:5 4;

@@ -39,7 +39,7 @@ assert.match(
 
 assert.match(
   menuBar,
-  /onEnrichTasks \? \([\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks \|\| !activeFamiliarId\}[\s\S]*aria-label=\{enrichingTasks[\s\S]*<span>\{enrichingTasks \? enrichLabel : "Enhance"\}<\/span>[\s\S]*onClick=\{onViewTasks\}/,
+  /onEnrichTasks \? \([\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks \|\| !activeFamiliarId\}[\s\S]*aria-label=\{enrichingTasks[\s\S]*\{enrichingTasks \? enrichLabel : "Enhance"\}[\s\S]*onClick=\{onViewTasks\}/,
   "Desktop menu bar should place Enhance next to Tasks and disable it without a selected familiar",
 );
 
@@ -57,8 +57,8 @@ assert.match(
 
 assert.match(
   topBar,
-  /onEnrichTasks \? \([\s\S]*className="top-bar__icon-btn top-bar__tasks-enrich"[\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks \|\| !activeFamiliar\}[\s\S]*onViewTasks \?/,
-  "Mobile top bar should render Enrich immediately before the Tasks button",
+  /onEnrichTasks \? \(\s*<PopoverItem\s*icon="ph:sparkle"\s*disabled=\{enrichingTasks \|\| !activeFamiliar\}\s*onSelect=\{onEnrichTasks\}/,
+  "Mobile top bar should surface Enrich as the first overflow-menu action, disabled while running or unscoped",
 );
 
 assert.match(

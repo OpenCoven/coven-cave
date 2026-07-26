@@ -20,9 +20,9 @@ function resolveCapabilityFilePath(target: string): string {
   const lowerTarget = target.toLowerCase();
   if (lowerTarget.endsWith(".md") || lowerTarget.endsWith(".toml")) return target;
   if (target.includes(`${path.sep}.codex${path.sep}automations${path.sep}`) || target.includes("/.codex/automations/")) {
-    return path.join(target, "automation.toml");
+    return path.join(/* turbopackIgnore: true */ target, "automation.toml");
   }
-  return path.join(target, "SKILL.md");
+  return path.join(/* turbopackIgnore: true */ target, "SKILL.md");
 }
 
 export async function GET(req: Request) {
@@ -37,7 +37,7 @@ export async function GET(req: Request) {
   }
   let text: string;
   try {
-    const file = await open(candidate, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const file = await open(/* turbopackIgnore: true */ candidate, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const targetStat = await file.stat();
       if (targetStat.size > MAX_SKILL_FILE_PREVIEW_BYTES) {

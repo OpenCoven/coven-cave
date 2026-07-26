@@ -1,17 +1,18 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "CovenCave",
-  "version": "0.0.110",
+  "version": "0.2.0",
   "identifier": "ai.opencoven.cave",
   "build": {
     "frontendDist": "../src-tauri/frontend-stub",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "bash scripts/dev-server-with-whisper.sh",
     "beforeBuildCommand": "bash scripts/sidecar-bundle.sh"
   },
   "app": {
     "windows": [],
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "security": {
       "csp": null
     }
@@ -42,7 +43,9 @@
     "longDescription": "CovenCave is the OpenCoven desktop control room for managing familiars, local agent sessions, workflows, memory, tools, and release-ready automation from one native Tauri app.",
     "resources": [
       "resources/server/**/*",
-      "resources/node/**/*"
+      "resources/node/**/*",
+      "resources/whisper/**/*",
+      "resources/piper/**/*"
     ],
     "icon": [
       "icons/32x32.png",
@@ -51,11 +54,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "iOS": {
-      "developmentTeam": "9LR8Z8UQ9X"
-    },
-    "android": {
-      "debugApplicationIdSuffix": ".debug"
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
     }
   }
 }

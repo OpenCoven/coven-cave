@@ -14,6 +14,10 @@ const workspace = readFileSync(
   new URL("./workspace.tsx", import.meta.url),
   "utf8",
 );
+const boardView = readFileSync(
+  new URL("./board-view.tsx", import.meta.url),
+  "utf8",
+);
 
 // Input is labelled.
 assert.match(
@@ -52,10 +56,36 @@ assert.match(
   "CommandPalette reports query edits back to the top-bar search",
 );
 
+assert.match(source, /SETTINGS_INDEX/, "the palette reuses the canonical Settings search index");
+assert.match(source, /kind:\s*"open-setting"/, "Settings results dispatch an exact navigation intent");
+assert.match(source, /aria-label="Filter search results"/, "result categories expose an accessible filter toolbar");
+assert.match(source, /paletteResultSummary/, "query and category changes produce a result summary");
+assert.match(source, /aria-live="polite"/, "result summaries are announced without interrupting the user");
+assert.match(source, /recentSearches\.map/, "empty-query browse mode exposes recent searches");
+assert.match(source, /Clear recent searches/, "recent search history is explicitly clearable");
+assert.match(source, /aria-label="Clear search query"/, "the palette offers a visible clear-query action");
+
+// (cave-lzk2) Archived chats never resurface in the browse-mode "Recent chats"
+// jump list; only an explicit typed query can find them.
+assert.match(
+  source,
+  /if \(!q && s\.archived_at\) return false;/,
+  "empty-query Recent chats excludes archived sessions",
+);
+
 assert.match(
   source,
   /kind:\s*"salem-answer"/,
   "Command palette includes a Salem AI answer row",
+);
+
+// (cave-42r5) Ask-Salem trails the local matches: Enter on a typed query opens
+// the best local hit; the AI row is the fallback (rows[0] only when nothing
+// matches locally).
+assert.match(
+  source,
+  /return \[\.\.\.localRows, \.\.\.salemRows\];/,
+  "local matches come before the Ask-Salem fallback row",
 );
 
 assert.match(
@@ -66,7 +96,7 @@ assert.match(
 
 assert.match(
   source,
-  /buildSalemSearchContext\(rows,\s*query\.trim\(\)\)/,
+  /buildSalemSearchContext\(\s*rows\.filter\(isSalemContextRow\),\s*query\.trim\(\),\s*\)/,
   "Salem answer payload should be grounded in the current local search rows",
 );
 
@@ -132,10 +162,10 @@ assert.match(
   /name:\s*`Go to \$\{fm\.label\}`/,
   "each navigable surface renders a 'Go to <label>' row",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /fm\.id === "github"[\s\S]{0,80}?addons\?\.github === true/,
-  "surface rows respect the same add-on gating as the sidebar (GitHub)",
+  /addons\?\.github|addons\?\.browser|addons\?\.flow|addons\?\.journal|addons\?: AddonsConfig/,
+  "surface rows are no longer hidden behind add-on config",
 );
 assert.match(
   source,
@@ -157,8 +187,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const \{ projects \} = useProjects\(\)/,
-  "palette reads the project list to offer project navigation",
+  /const \{ projects \} = useProjects\(\{ familiarId: activeFamiliarId, enabled: open \}\)/,
+  "palette scopes project navigation to the active familiar's granted projects and only fetches while open",
 );
 assert.match(
   source,
@@ -170,11 +200,41 @@ assert.match(
   /intent:\s*\{ kind: "open-project", root: p\.root \}/,
   "an open-project row carries the project root",
 );
-// Consumer: workspace opens the Projects tab then focuses the chosen project.
+// Consumer: workspace latches the Projects tab (fresh-mount race, cave-c2zf),
+// opens it, then focuses the chosen project.
 assert.match(
   workspace,
-  /intent\.kind === "open-project"[\s\S]{0,320}?CHAT_OPEN_PROJECTS_EVENT[\s\S]{0,200}?CHAT_FOCUS_PROJECT_EVENT, \{ detail: \{ root \} \}/,
-  "workspace opens the Projects tab then focuses the chosen project",
+  /intent\.kind === "open-project"[\s\S]{0,200}?markProjectsTabPending\(\)[\s\S]{0,320}?CHAT_OPEN_PROJECTS_EVENT[\s\S]{0,200}?CHAT_FOCUS_PROJECT_EVENT, \{ detail: \{ root \} \}/,
+  "workspace latches then opens the Projects tab and focuses the chosen project",
+);
+
+// Tasks view-switch: the palette offers "Tasks: Kanban/Table/Gantt" rows that
+// jump to the Tasks board and set its view; the board honors the live switch.
+assert.match(source, /kind: "set-board-view"; view: "kanban" \| "table" \| "gantt"/, "a set-board-view intent exists");
+assert.match(source, /label: "Tasks: Gantt timeline"/, "a Gantt board-view row is offered");
+assert.match(source, /intent: \{ kind: "set-board-view", view: v\.view \}/, "board-view rows carry the set-board-view intent");
+assert.match(source, /\.\.\.boardViewRows/, "board-view rows are included in the result list");
+assert.match(
+  workspace,
+  /intent\.kind === "set-board-view"[\s\S]{0,500}cave:board:set-view/,
+  "workspace handles set-board-view by dispatching the live switch event",
+);
+assert.match(boardView, /addEventListener\("cave:board:set-view"/, "board-view listens for the set-view event");
+assert.match(boardView, /=== "gantt"\) setViewMode\(v\)/, "the set-view handler applies the requested view");
+// Recent tasks: empty-query task rows lead with the most-recently-updated.
+assert.match(
+  source,
+  /q \? 0 : new Date\(b\.updatedAt \?\? 0\)\.getTime\(\) - new Date\(a\.updatedAt \?\? 0\)\.getTime\(\)/,
+  "task rows sort by recency when the query is empty",
 );
 
 console.log("command-palette.test.ts OK");
+
+// ── Salem answer stays inside the palette (issue #2988) ──────────────────────
+// Long answers previously grew the region unboundedly and overflowed the
+// viewport; it now caps and scrolls like the listbox below it.
+assert.match(
+  source,
+  /max-h-\[45vh\] overflow-y-auto border-b/,
+  "the Salem answer region caps its height and scrolls internally",
+);

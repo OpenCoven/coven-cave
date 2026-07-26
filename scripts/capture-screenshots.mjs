@@ -1,6 +1,6 @@
 // Drive a headed Chromium against http://localhost:3000 and capture
 // each of the README-referenced screenshots. Requires the dev server
-// to already be running with NEXT_PUBLIC_DEMO=true so sidebar + sample
+// to already be running against a daemon (or mocked APIs) so sidebar + sample
 // activity are populated.
 //
 // Run: node scripts/capture-screenshots.mjs
@@ -26,10 +26,8 @@ const CAPTURES = [
   { file: "home.png",     label: "HomeComposer cold-start",      click: "Home" },
   { file: "shell.png",    label: "Three-pane shell + chat",      click: "Chat" },
   { file: "chat.png",     label: "Chat view",                    click: "Chat" },
-  { file: "board.png",    label: "Board view",                   click: "Board" },
-  { file: "library.png",  label: "Library",                      click: "Library" },
+  { file: "board.png",    label: "Tasks view",                   click: "Tasks" },
   { file: "calendar.png", label: "Calendar (week view)",         click: "Calendar" },
-  { file: "terminal.png", label: "Terminal surface",             click: "Terminal" },
   { file: "floor.png",    label: "Coven Floor (Home ambient)",   click: "Home" },
 ];
 

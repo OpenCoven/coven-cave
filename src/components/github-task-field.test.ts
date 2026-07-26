@@ -11,9 +11,9 @@ const boardTypes = await source("lib/cave-board-types.ts");
 const boardStore = await source("lib/cave-board.ts");
 const boardCreateApi = await source("app/api/board/route.ts");
 const boardPatchApi = await source("app/api/board/[id]/route.ts");
-const libraryGitHubList = await source("components/library-github-list.tsx");
 const boardInspector = await source("components/board-inspector.tsx");
 const githubTasks = await source("lib/github-tasks.ts");
+const taskGithub = await source("lib/task-github.ts");
 
 assert.match(
   boardTypes,
@@ -46,21 +46,6 @@ assert.match(
   "Patch task API should accept structured GitHub connections",
 );
 assert.match(
-  libraryGitHubList,
-  /libraryItemToTaskGitHubLink\(item\)/,
-  "GitHub Add-in attach flow should convert saved items into the task GitHub field",
-);
-assert.match(
-  libraryGitHubList,
-  /github: mergeTaskGitHubLinks\(existing\.github[\s\S]*?libraryItemToTaskGitHubLink\(item\)/,
-  "GitHub Add-in existing-task attach should merge task GitHub connections",
-);
-assert.doesNotMatch(
-  libraryGitHubList,
-  /links: \[item\.url\]/,
-  "GitHub Add-in attach should not replace existing task links with a single URL",
-);
-assert.match(
   boardInspector,
   /taskGitHubLinkFromAssignedItem\(item\)/,
   "Task inspector GitHub attach should store assigned GitHub items in the task GitHub field",
@@ -79,6 +64,11 @@ assert.match(
   githubTasks,
   /const github = githubLink\s*\?\s*mergeTaskGitHubLinks\(\s*existingGitHub,[\s\S]*?taskGitHubLinkFromGitHubItem\(item\)/,
   "GitHub activity actions that attach to tasks should merge structured GitHub connections",
+);
+assert.doesNotMatch(
+  taskGithub,
+  /libraryItemToTaskGitHubLink|LibraryGitHubItem|@\/lib\/library-types/,
+  "shared task GitHub helpers should not depend on the feature-branch Library",
 );
 
 console.log("github task field guard passed");

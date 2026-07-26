@@ -1,0 +1,24 @@
+{
+  "name": "openclaw-dev",
+  "version": "0.1.0",
+  "description": "Docs-aware development assistant for the OpenClaw ecosystem: PR workflows, issue triage, docs sync, release prep, and architecture review grounded in live OpenClaw documentation.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OpenClaw Dev Agent",
+    "shortDescription": "Docs-aware development assistant for the OpenClaw ecosystem: PR workflows, issue triage, docs sync, release prep, and architecture review grounded in live OpenClaw documentation.",
+    "longDescription": "Ground work in cached OpenClaw docs and drive the review-prepare-merge PR workflow with a security lens on every review.",
+    "developerName": "OpenCoven",
+    "category": "Agents & Harnesses",
+    "capabilities": [
+      "openclaw",
+      "dev",
+      "pr",
+      "docs",
+      "architecture"
+    ],
+    "defaultPrompt": "Help me use OpenClaw Dev Agent safely."
+  }
+}

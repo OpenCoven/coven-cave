@@ -1,0 +1,139 @@
+/* ────────────────────────────────────────────────
+   SurfaceRail — shared collapsible/resizable list rail
+   (Sessions / Projects / Group / Familiar tabs share this grammar:
+   uppercase title + header actions + collapse toggle, optional search,
+   scrollable rows, drag/keyboard-resizable right edge.)
+   ──────────────────────────────────────────────── */
+
+.surface-rail {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border-hairline);
+  transition: width var(--duration-base) var(--ease-standard);
+}
+
+/* Open width comes from the inline style (persisted / dragged). */
+.surface-rail[data-open="false"] {
+  width: 56px;
+}
+
+/* Drag must track the pointer 1:1 — the settle transition would rubber-band. */
+.surface-rail[data-dragging="true"] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface-rail {
+    transition: none;
+  }
+}
+
+.surface-rail__header {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-self: stretch;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.surface-rail__header-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Collapsed: actions stack under the toggle, centered — column-reverse keeps
+   the toggle on top, mirroring its trailing position in the open row. */
+.surface-rail[data-open="false"] .surface-rail__header-row {
+  flex-direction: column-reverse;
+  align-items: center;
+}
+
+.surface-rail__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding-left: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Header controls (caller actions + the collapse toggle): quiet hairline
+   squares that grow when the rail collapses so they stay easy targets. */
+.surface-rail__header-row :where(button, a) {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.surface-rail__header-row :where(button, a):hover {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--text-primary) 7%, transparent);
+}
+
+.surface-rail[data-open="false"] .surface-rail__header-row :where(button, a) {
+  width: 32px;
+  height: 32px;
+}
+
+.surface-rail__search {
+  flex: none;
+}
+
+.surface-rail__content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  min-height: 0;
+  padding: var(--space-2);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.surface-rail[data-open="false"] .surface-rail__content {
+  align-items: center;
+}
+
+/* Resize handle: a 6px grab strip straddling the border (right: -3px), with
+   an accent wash on hover/drag/focus. Also a keyboard splitter (role=
+   separator, Left/Right arrows) — focus-ring supplies the visible ring. */
+.surface-rail__resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  z-index: 5;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.surface-rail__resize:hover,
+.surface-rail__resize:active,
+.surface-rail__resize:focus-visible,
+.surface-rail[data-dragging="true"] .surface-rail__resize {
+  background: color-mix(in oklch, var(--accent-presence) 25%, transparent);
+}

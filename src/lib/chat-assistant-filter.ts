@@ -2,6 +2,14 @@ const HOOK_LINE_RE = /^hook:\s+/;
 const BANNER_LINE_RE = /^(?:--------|workdir:|model:|provider:|approval:|sandbox:|reasoning:|session id:|tokens used|\d[\d,]*\s*$)/;
 const CODEX_START_LINE = "codex";
 const CLAUDE_ASSISTANT_RE = /^claude(?:\s+code)?$/i;
+// Hermes may emit this compatibility diagnostic on stdout immediately before
+// (or on the same line as) its reply. The selected model is still applied, so
+// do not expose the runtime's internal provider normalization to the user.
+const OPENAI_CODEX_MODEL_NORMALIZATION_PREFIX_RE =
+  /^\s*(?:⚠(?:\uFE0F)?\s*)?Normalized model ['"][^'"\r\n]+['"] to ['"][^'"\r\n]+['"] for openai-codex\.\s*/i;
+const OPENAI_CODEX_MODEL_NORMALIZATION_START_RE =
+  /^\s*(?:⚠(?:\uFE0F)?\s*)?Normalized model ['"][^'"\r\n]+['"] to ['"][^'"\r\n]+['"] for\s*$/i;
+const OPENAI_CODEX_MODEL_NORMALIZATION_CONTINUATION_RE = /^\s*openai-codex\.\s*$/i;
 
 // Exec-echo blocks emitted by Codex into stdout — NOT structured JSON events.
 // Format:
@@ -103,6 +111,24 @@ export class AssistantFilter {
   private inExecEcho: "none" | "header" | "cmdline" | "output" = "none";
   private execEchoDepth = 0;
 
+  // Every suppression in this filter keys on codex/claude output shapes: the
+  // "pre" phase gates on their marker lines (CODEX_START_LINE /
+  // CLAUDE_ASSISTANT_RE), BANNER_LINE_RE matches their startup banners and
+  // token-count lines (a bare number!), and the exec-echo machine matches
+  // codex's tool-echo blocks. External manifest adapters (copilot, opencode,
+  // hermes, …) pipe their CLI's raw stdout with none of those shapes — the
+  // phase gate suppressed entire replies, and the banner heuristic ate
+  // legitimate numeric answers. Those callers get verbatim passthrough.
+  private passthrough = false;
+  // Hermes can hard-wrap its model-normalization diagnostic immediately before
+  // `openai-codex.`. Hold the first line until that exact continuation arrives
+  // so unrelated assistant text is never discarded.
+  private pendingOpenAiCodexNormalization: string | null = null;
+
+  constructor(opts?: { passthrough?: boolean }) {
+    this.passthrough = opts?.passthrough === true;
+  }
+
   push(chunk: string): string {
     this.buf += chunk;
     let out = "";
@@ -119,6 +145,10 @@ export class AssistantFilter {
     let remainder = "";
     if (this.buf) remainder = this.processLine(this.buf);
     this.buf = "";
+    if (this.pendingOpenAiCodexNormalization) {
+      remainder += this.pendingOpenAiCodexNormalization + "\n";
+      this.pendingOpenAiCodexNormalization = null;
+    }
     if (this.pendingSkillFrontmatterDelimiter) {
       this.pendingSkillFrontmatterDelimiter = false;
       return remainder + "---\n";
@@ -128,6 +158,20 @@ export class AssistantFilter {
 
   private processLine(rawLine: string): string {
     const line = rawLine.replace(/\r/g, "");
+    if (this.passthrough) {
+      if (this.pendingOpenAiCodexNormalization) {
+        const pending = this.pendingOpenAiCodexNormalization;
+        this.pendingOpenAiCodexNormalization = null;
+        if (OPENAI_CODEX_MODEL_NORMALIZATION_CONTINUATION_RE.test(line)) return "";
+        return pending + "\n" + line + "\n";
+      }
+      const visibleLine = line.replace(OPENAI_CODEX_MODEL_NORMALIZATION_PREFIX_RE, "");
+      if (OPENAI_CODEX_MODEL_NORMALIZATION_START_RE.test(line)) {
+        this.pendingOpenAiCodexNormalization = line;
+        return "";
+      }
+      return visibleLine ? visibleLine + "\n" : "";
+    }
     const trimmed = line.trim();
 
     if (trimmed === CODEX_START_LINE || CLAUDE_ASSISTANT_RE.test(trimmed)) {
@@ -147,6 +191,27 @@ export class AssistantFilter {
       return "";
     }
     if (this.phase !== "assistant") return "";
+
+    // Startup prompt echoes are always hidden before any other assistant-output
+    // heuristics run. In particular, an attacker-controlled startup block may
+    // contain lines that look like exec-echo state transitions; those must not
+    // be allowed to enter the exec parser and later bail out as visible prose.
+    if (this.suppressedStartupTag) {
+      const tag = startupBlockTag(trimmed);
+      if (tag?.closing && tag.tag === this.suppressedStartupTag) {
+        this.suppressedStartupTag = null;
+      }
+      return "";
+    }
+
+    const startupTag = startupBlockTag(trimmed);
+    if (startupTag && !startupTag.closing) {
+      this.suppressedStartupTag = startupTag.tag;
+      return "";
+    }
+    if (startupTag?.closing || isStartupNoiseLine(trimmed)) {
+      return "";
+    }
 
     // ── Exec-echo block detection ─────────────────────────────────────────
     // State machine: none → header → cmdline → output
@@ -238,23 +303,6 @@ export class AssistantFilter {
 
     if (isLeakedSkillDocBodyLine(trimmed)) {
       this.suppressLeakedSkillBody = true;
-      return "";
-    }
-
-    if (this.suppressedStartupTag) {
-      const tag = startupBlockTag(trimmed);
-      if (tag?.closing && tag.tag === this.suppressedStartupTag) {
-        this.suppressedStartupTag = null;
-      }
-      return "";
-    }
-
-    const tag = startupBlockTag(trimmed);
-    if (tag && !tag.closing) {
-      this.suppressedStartupTag = tag.tag;
-      return "";
-    }
-    if (tag?.closing || isStartupNoiseLine(trimmed)) {
       return "";
     }
 

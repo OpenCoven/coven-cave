@@ -1,17 +1,23 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import {
   RRULE_DAY_ORDER,
+  RRULE_DAY_LABEL,
   buildCodexRrule,
   composeAutomationPrompt,
   type ScheduleMode,
 } from "@/lib/codex-automation-form";
 import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
 import { SkillSelect } from "@/components/automation-skill-select";
+import { CwdPickerField } from "@/components/cwd-picker-field";
+import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
+import { parseListInput } from "@/lib/automations/list-input";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { CronPromptBar } from "@/components/cron-prompt-bar";
+import type { CronPromptUpdate } from "@/lib/cron-prompt";
 
 export type AutomationCreateInput = {
   name: string;
@@ -32,24 +38,12 @@ type Props = {
   onCreate: (input: AutomationCreateInput) => void;
 };
 
-const RRULE_DAY_LABEL: Record<string, string> = {
-  SU: "Sun",
-  MO: "Mon",
-  TU: "Tue",
-  WE: "Wed",
-  TH: "Thu",
-  FR: "Fri",
-  SA: "Sat",
-};
-
 const fieldBaseClass =
-  "w-full rounded-md border bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
-const inputClass = `${fieldBaseClass} h-8 px-2 text-[12px]`;
-const selectClass = `${fieldBaseClass} h-8 px-2 text-[12px]`;
-const textareaClass = `${fieldBaseClass} resize-y px-2 py-2 text-[12px] leading-relaxed`;
-const monoTextareaClass = `${textareaClass} font-mono text-[11px]`;
-
-const fieldStyle = { borderColor: "var(--border-hairline)" } as const;
+  "w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
+const inputClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
+const selectClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
+const textareaClass = `${fieldBaseClass} resize-y px-2 py-2 text-[length:var(--text-sm)] leading-relaxed`;
+const monoTextareaClass = `${textareaClass} font-mono text-[length:var(--text-xs)]`;
 
 export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -76,6 +70,29 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
     );
   };
 
+  // Prompt-driven generate (CronPromptBar): one sentence fills the form —
+  // schedule, name, goals, deliverables — and the user reviews before Create.
+  const applyPromptUpdate = (update: CronPromptUpdate) => {
+    if (update.schedule) {
+      if (update.schedule.mode) setScheduleMode(update.schedule.mode);
+      if (update.schedule.time) setTime(update.schedule.time);
+      if (update.schedule.days) setDays(update.schedule.days);
+    }
+    if (update.name) setName(update.name);
+    if (update.goals) {
+      setGoals((prev) =>
+        update.goalsOp === "append" && prev.trim() ? `${prev.trimEnd()}\n${update.goals}` : update.goals!,
+      );
+    }
+    if (update.deliverables) {
+      setDeliverables((prev) =>
+        update.deliverablesOp === "append" && prev.trim()
+          ? `${prev.trimEnd()}\n${update.deliverables}`
+          : update.deliverables!,
+      );
+    }
+  };
+
   const rrule = buildCodexRrule(scheduleMode, time, days, rawRrule);
   const validSchedule =
     scheduleMode === "raw"
@@ -93,8 +110,8 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
       name: name.trim(),
       rrule,
       prompt,
-      cwds: cwds.split("\n").map((s) => s.trim()).filter(Boolean),
-      tags: tagsText.split(",").map((s) => s.trim()).filter(Boolean),
+      cwds: parseListInput(cwds),
+      tags: parseListInput(tagsText),
       familiars: [...selected],
       model: model.trim(),
       reasoning_effort: reasoningEffort,
@@ -108,233 +125,261 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="workflow-dialog"
+        className="workflow-dialog automation-create-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="New automation"
         onClick={(event) => event.stopPropagation()}
       >
-        {/* Header */}
-        <div className="workflow-panel-heading">
+        <div className="workflow-panel-heading automation-create-dialog__hero">
           <div>
             <p className="workflow-eyebrow">New automation</p>
             <h2>Schedule a Codex run</h2>
           </div>
-          <button type="button" className="workflow-icon-button" onClick={onClose} aria-label="Close">
-            <Icon name="ph:x" width={14} />
-          </button>
+          <Button
+            variant="ghost"
+            className="workflow-icon-button p-0"
+            onClick={onClose}
+            aria-label="Close"
+            leadingIcon="ph:x"
+          />
         </div>
 
-        {/* Name */}
-        <label className="workflow-field">
-          <span>Name</span>
-          <input
-            type="text"
-            value={name}
-            autoFocus
-            placeholder="Nightly code review"
-            onChange={(event) => setName(event.target.value)}
+        <div className="automation-create-dialog__body">
+          <CronPromptBar
+            onApply={applyPromptUpdate}
+            placeholder='Describe it — "name it Nightly triage, every weekday at 9am, check open PRs"'
           />
-        </label>
 
-        {/* Schedule */}
-        <div className="workflow-field">
-          <span>Schedule</span>
-          <div className="mb-2 inline-flex rounded-md border p-0.5"
-            style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}>
-            {(["weekly", "daily", "raw"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setScheduleMode(mode)}
-                className="rounded px-2 py-1 text-[11px] capitalize transition-colors"
-                style={{
-                  background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
-                  color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
-                }}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
+          <section className="automation-create-dialog__section" aria-label="Essentials">
+            <div className="automation-create-dialog__section-header">
+              <h3>Essentials</h3>
+            </div>
+            <div className="automation-create-dialog__primary-grid">
+              <label className="workflow-field automation-create-dialog__field">
+                <span>Name</span>
+                <input
+                  type="text"
+                  value={name}
+                  autoFocus
+                  placeholder="Nightly code review"
+                  onChange={(event) => setName(event.target.value)}
+                  className={inputClass}
+                />
+              </label>
 
-          {scheduleMode === "raw" ? (
-            <textarea
-              value={rawRrule}
-              onChange={(event) => setRawRrule(event.target.value)}
-              rows={3}
-              placeholder="RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0"
-              className={monoTextareaClass}
-              style={fieldStyle}
-            />
-          ) : (
-            <div className="space-y-3">
-              {scheduleMode === "weekly" && (
-                <div className="flex flex-wrap gap-1.5">
-                  {RRULE_DAY_ORDER.map((day) => {
-                    const active = days.includes(day);
-                    return (
-                      <button
-                        key={day}
-                        type="button"
-                        onClick={() => toggleDay(day)}
-                        className="rounded-md border px-2 py-1 text-[11px] transition-colors"
+              <div className="workflow-field automation-create-dialog__field automation-create-dialog__schedule">
+                <span>Schedule</span>
+                <div className="automation-create-dialog__schedule-card">
+                  <div
+                    className="automation-create-dialog__segment-control [border-color:var(--border-hairline)]! [background:var(--bg-base)]!"
+                  >
+                    {(["weekly", "daily", "raw"] as const).map((mode) => (
+                      <Button
+                        key={mode}
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => setScheduleMode(mode)}
+                        className="rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)] capitalize transition-colors"
                         style={{
-                          background: active ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
-                          borderColor: active ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
-                          color: active ? "var(--text-primary)" : "var(--text-muted)",
+                          background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
+                          color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
                         }}
                       >
-                        {RRULE_DAY_LABEL[day]}
-                      </button>
-                    );
-                  })}
+                        {mode}
+                      </Button>
+                    ))}
+                  </div>
+
+                  {scheduleMode === "raw" ? (
+                    <textarea
+                      value={rawRrule}
+                      onChange={(event) => setRawRrule(event.target.value)}
+                      rows={3}
+                      placeholder="RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0"
+                      className={monoTextareaClass}
+                    />
+                  ) : (
+                    <div className="automation-create-dialog__schedule-body">
+                      {scheduleMode === "weekly" && (
+                        <div className="automation-create-dialog__day-row">
+                          {RRULE_DAY_ORDER.map((day) => {
+                            const active = days.includes(day);
+                            return (
+                              <Button
+                                key={day}
+                                variant="ghost"
+                                size="xs"
+                                onClick={() => toggleDay(day)}
+                                className="rounded-[var(--radius-control)] border px-2 py-1 text-[length:var(--text-xs)] transition-colors"
+                                style={{
+                                  background: active ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
+                                  borderColor: active ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
+                                  color: active ? "var(--text-primary)" : "var(--text-muted)",
+                                }}
+                              >
+                                {RRULE_DAY_LABEL[day]}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <input
+                        type="time"
+                        value={time}
+                        onChange={(event) => setTime(event.target.value)}
+                        className={inputClass}
+                      />
+                    </div>
+                  )}
+
+                  <p
+                    className="automation-create-dialog__rrule"
+                    style={{ color: validSchedule ? "var(--text-muted)" : "oklch(0.7 0.16 35)" }}
+                  >
+                    {rrule || "RRULE required"}
+                  </p>
                 </div>
-              )}
-              <input
-                type="time"
-                value={time}
-                onChange={(event) => setTime(event.target.value)}
-                className={inputClass}
-                style={fieldStyle}
-              />
+              </div>
             </div>
-          )}
+          </section>
 
-          <p className="mt-1 break-all font-mono text-[10px]"
-            style={{ color: validSchedule ? "var(--text-muted)" : "oklch(0.7 0.16 35)" }}>
-            {rrule || "RRULE required"}
-          </p>
+          <section className="automation-create-dialog__section" aria-label="Prompt">
+            <div className="automation-create-dialog__section-header">
+              <h3>Prompt</h3>
+            </div>
+            <div className="automation-create-dialog__prompt-grid">
+              <label className="workflow-field automation-create-dialog__field">
+                <span>Goals</span>
+                <textarea
+                  value={goals}
+                  onChange={(event) => setGoals(event.target.value)}
+                  rows={4}
+                  placeholder="What should this automation accomplish?"
+                  className={`workflow-run-input-field ${textareaClass}`}
+                />
+              </label>
+
+              <label className="workflow-field automation-create-dialog__field">
+                <span>Deliverables</span>
+                <textarea
+                  value={deliverables}
+                  onChange={(event) => setDeliverables(event.target.value)}
+                  rows={4}
+                  placeholder="Expected outputs (optional)"
+                  className={`workflow-run-input-field ${textareaClass}`}
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="automation-create-dialog__section" aria-label="Runtime">
+            <div className="automation-create-dialog__section-header">
+              <h3>Runtime</h3>
+            </div>
+            <div className="automation-create-dialog__runtime-grid">
+              <div className="workflow-field automation-create-dialog__field automation-create-dialog__field--wide">
+                <span>Familiars</span>
+                <FamiliarMultiSelect
+                  familiars={resolvedFamiliars}
+                  selected={selected}
+                  onChange={setSelected}
+                />
+              </div>
+
+              <label className="workflow-field automation-create-dialog__field automation-create-dialog__field--wide">
+                <span>Model</span>
+                <input
+                  type="text"
+                  value={model}
+                  onChange={(event) => setModel(event.target.value)}
+                  placeholder="e.g. claude-sonnet-4-5 (leave blank for default)"
+                  className={inputClass}
+                />
+              </label>
+
+              <label className="workflow-field automation-create-dialog__field">
+                <span>Reasoning</span>
+                <StandardSelect
+                  label="Reasoning"
+                  value={reasoningEffort}
+                  onChange={setReasoningEffort}
+                  options={[
+                    { value: "low", label: "low" },
+                    { value: "medium", label: "medium" },
+                    { value: "high", label: "high" },
+                  ]}
+                  className={selectClass}
+                />
+              </label>
+
+              <label className="workflow-field automation-create-dialog__field">
+                <span>Environment</span>
+                <StandardSelect
+                  label="Environment"
+                  value={executionEnvironment}
+                  onChange={setExecutionEnvironment}
+                  options={[
+                    { value: "worktree", label: "worktree" },
+                    { value: "repo", label: "repo" },
+                  ]}
+                  className={selectClass}
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="automation-create-dialog__section" aria-label="Scope">
+            <div className="automation-create-dialog__section-header">
+              <h3>Scope</h3>
+            </div>
+            <div className="automation-create-dialog__scope-grid">
+              <label className="workflow-field automation-create-dialog__field automation-create-dialog__field--wide">
+                <span>Working directories</span>
+                <CwdPickerField
+                  value={cwds}
+                  onChange={setCwds}
+                  familiarId={[...selected][0] ?? ""}
+                  textareaClass={monoTextareaClass}
+                />
+              </label>
+
+              <label className="workflow-field automation-create-dialog__field">
+                <span>Tags</span>
+                <input
+                  type="text"
+                  value={tagsText}
+                  onChange={(event) => setTagsText(event.target.value)}
+                  placeholder="coven, nightly (comma-separated)"
+                  className={inputClass}
+                />
+              </label>
+
+              <label className="workflow-field automation-create-dialog__field">
+                <span>Skill</span>
+                <SkillSelect
+                  value={skillPath}
+                  onChange={setSkillPath}
+                  className={selectClass}
+                />
+              </label>
+            </div>
+          </section>
         </div>
 
-        {/* Goals */}
-        <label className="workflow-field">
-          <span>Goals</span>
-          <textarea
-            value={goals}
-            onChange={(event) => setGoals(event.target.value)}
-            rows={4}
-            placeholder="What should this automation accomplish?"
-            className={`workflow-run-input-field ${textareaClass}`}
-            style={fieldStyle}
-          />
-        </label>
-
-        {/* Deliverables */}
-        <label className="workflow-field">
-          <span>Deliverables</span>
-          <textarea
-            value={deliverables}
-            onChange={(event) => setDeliverables(event.target.value)}
-            rows={3}
-            placeholder="Expected outputs (optional)"
-            className={`workflow-run-input-field ${textareaClass}`}
-            style={fieldStyle}
-          />
-        </label>
-
-        {/* Familiars */}
-        <div className="workflow-field">
-          <span>Familiars</span>
-          <FamiliarMultiSelect
-            familiars={resolvedFamiliars}
-            selected={selected}
-            onChange={setSelected}
-          />
-        </div>
-
-        {/* Model */}
-        <label className="workflow-field">
-          <span>Model</span>
-          <input
-            type="text"
-            value={model}
-            onChange={(event) => setModel(event.target.value)}
-            placeholder="e.g. claude-sonnet-4-5 (leave blank for default)"
-            className={inputClass}
-            style={fieldStyle}
-          />
-        </label>
-
-        {/* Reasoning effort */}
-        <label className="workflow-field">
-          <span>Reasoning</span>
-          <select
-            value={reasoningEffort}
-            onChange={(event) => setReasoningEffort(event.target.value)}
-            className={selectClass}
-            style={fieldStyle}
-          >
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-          </select>
-        </label>
-
-        {/* Execution environment */}
-        <label className="workflow-field">
-          <span>Environment</span>
-          <select
-            value={executionEnvironment}
-            onChange={(event) => setExecutionEnvironment(event.target.value)}
-            className={selectClass}
-            style={fieldStyle}
-          >
-            <option value="worktree">worktree</option>
-            <option value="repo">repo</option>
-          </select>
-        </label>
-
-        {/* Working directories */}
-        <label className="workflow-field">
-          <span>Working directories</span>
-          <textarea
-            value={cwds}
-            onChange={(event) => setCwds(event.target.value)}
-            rows={3}
-            placeholder="/path/to/repo (one per line)"
-            className={monoTextareaClass}
-            style={fieldStyle}
-          />
-        </label>
-
-        {/* Tags */}
-        <label className="workflow-field">
-          <span>Tags</span>
-          <input
-            type="text"
-            value={tagsText}
-            onChange={(event) => setTagsText(event.target.value)}
-            placeholder="coven, nightly (comma-separated)"
-            className={inputClass}
-            style={fieldStyle}
-          />
-        </label>
-
-        {/* Skill */}
-        <label className="workflow-field">
-          <span>Skill</span>
-          <SkillSelect
-            value={skillPath}
-            onChange={setSkillPath}
-            className={selectClass}
-          />
-        </label>
-
-        {/* Footer */}
-        <div className="workflow-dialog-actions">
-          <button type="button" onClick={onClose}>
+        <div className="workflow-dialog-actions automation-create-dialog__footer">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="primary"
             className="workflow-primary-button"
             disabled={!canCreate}
             onClick={handleCreate}
+            leadingIcon="ph:plus-bold"
           >
-            <Icon name="ph:plus-bold" width={13} />
             Create
-          </button>
+          </Button>
         </div>
       </div>
     </div>

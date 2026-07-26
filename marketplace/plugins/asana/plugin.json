@@ -26,39 +26,13 @@
     "sourceRefs": [
       "https://developers.asana.com/docs/using-asanas-mcp-server"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "astra",
-        "roles": [
-          "strategic-navigator",
-          "coordination-layer"
-        ]
-      },
-      {
-        "familiar": "echo",
-        "roles": [
-          "archivist"
-        ]
-      },
-      {
-        "familiar": "charm",
-        "roles": [
-          "devrel-liaison"
-        ]
-      },
-      {
-        "familiar": "kitty",
-        "roles": [
-          "general-helper"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

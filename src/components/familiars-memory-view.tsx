@@ -1,19 +1,21 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import "@/styles/cave-md.css";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { invalidateIfDefined } from "@/lib/surface-warm-cache";
+import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
+import { RelativeTime } from "@/components/ui/relative-time";
 import type { Familiar } from "@/lib/types";
 import type { CovenMemoryEntry } from "@/components/familiars-view-stats";
-import { MarkdownBlock } from "@/components/message-bubble";
 import { useUndoDelete } from "@/lib/use-undo-delete";
-import { useMemoryFile } from "@/lib/use-memory-file";
-import { LibraryUndoToast } from "./library-undo-toast";
+import { UndoToast } from "@/components/ui/undo-toast";
 import {
-  classifyProtection,
   detectStale,
   normalizeCovenEntry,
   normalizeFileEntry,
@@ -26,25 +28,34 @@ import { MemoryRowItem } from "@/components/familiars-memory-row";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import { MemoryReaderPane } from "@/components/familiars-memory-reader";
-import "@/styles/library.css";
+import {
+  ExpandMemoryButton,
+  MemoryFilesList,
+  MemoryReaderModal,
+  SourceFilterChip,
+} from "@/components/familiars-memory-files";
+import { fileBase, formatBytes, memoryMatches, type FileMemoryEntry } from "@/components/familiars-memory-utils";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 
-export type FileMemoryEntry = {
-  root: string;
-  rootLabel: string;
-  relPath: string;
-  fullPath: string;
-  size: number;
-  modified: string;
-  sourceId: string;
-  sourceKind: "coven-origin" | "external-harness" | "runtime";
-  sourceKindLabel: string;
-  rootPath: string;
-  origin?: "coven";
-  harnessId?: string;
-  runtimeId?: string;
-  sourceContext?: string;
-  familiarId?: string;
+export type { FileMemoryEntry } from "@/components/familiars-memory-utils";
+
+/**
+ * Memory data supplied by a parent that already fetches /api/coven-memory +
+ * /api/memory (FamiliarsView polls them for its roster stats). Passing this
+ * makes the view a mirror of the parent's single 30s poll instead of running
+ * a duplicate fetch+poll of the same two endpoints. Standalone mounts
+ * (companion rail, studio tab) omit it and keep self-fetching.
+ */
+export type MemoryFeed = {
+  covenEntries: CovenMemoryEntry[];
+  fileEntries: FileMemoryEntry[];
+  error: string | null;
+  loaded: boolean;
+  lastLoadedAt: string | null;
+  reload: () => Promise<void>;
 };
 
 type Props = {
@@ -53,10 +64,12 @@ type Props = {
   onOpenMemoryFile?: (path: string) => void;
   /** Cap the number of entries rendered per section. */
   limit?: number;
-  /** Suppress the familiar <select>; render the active familiar as a chip. */
+  /** Suppress the familiar picker; render the active familiar as a chip. */
   lockToFamiliar?: boolean;
   /** Compact header for narrow surfaces like the companion rail. */
   compact?: boolean;
+  /** Parent-owned memory data; suppresses this view's own fetch + poll. */
+  feed?: MemoryFeed;
 };
 
 type CovenMemoryResponse =
@@ -67,72 +80,25 @@ type FileMemoryResponse =
   | { ok: true; entries: FileMemoryEntry[] }
   | { ok: false; entries?: FileMemoryEntry[]; error?: string };
 
-function compactPath(path: string): string {
-  const collapsed = path.replace(/^\/Users\/[^/]+/, "~");
-  const THRESHOLD = 52;
-  if (collapsed.length <= THRESHOLD) return collapsed;
-  const segments = collapsed.split("/").filter(Boolean);
-  if (segments.length <= 4) return collapsed;
-  const first = collapsed.startsWith("~") ? "~" : `/${segments[0]}`;
-  const last = segments.slice(-3);
-  return `${first}/…/${last.join("/")}`;
-}
-
-function fileBase(p: string): string {
-  const segments = p.split("/").filter(Boolean);
-  return segments[segments.length - 1] ?? p;
-}
-
-/** Directory portion of a full path, collapsed to ~ and ellipsized. "" when at root. */
-function fileDir(fullPath: string): string {
-  const base = fileBase(fullPath);
-  const parent = fullPath.slice(0, Math.max(0, fullPath.length - base.length)).replace(/\/$/, "");
-  return parent ? compactPath(parent) : "";
-}
-
-function formatBytes(n: number | undefined): string {
-  if (!n || n < 0 || !Number.isFinite(n)) return "";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string): boolean {
-  if (!query) return true;
-  if ("familiar_id" in entry) {
-    return [
-      entry.title,
-      entry.excerpt ?? "",
-      entry.familiar_id,
-      entry.path,
-      entry.source_context ?? "",
-    ].some((value) => value.toLowerCase().includes(query));
-  }
-  return [
-    entry.rootLabel,
-    entry.sourceKindLabel,
-    entry.harnessId ?? "",
-    entry.runtimeId ?? "",
-    entry.origin ?? "",
-    entry.familiarId ?? "",
-    entry.relPath,
-    entry.fullPath,
-    entry.sourceContext ?? "",
-  ].some((value) => value.toLowerCase().includes(query));
-}
-
-export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, limit, lockToFamiliar, compact }: Props) {
+export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, limit, lockToFamiliar, compact, feed }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
-  const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
+  const [storedFamiliarFilter, setFamiliarFilter] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.familiarId);
+  const familiarFilter = storedFamiliarFilter || activeFamiliar?.id || familiars[0]?.id || "";
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [sourceFilter, setSourceFilter] = useState<"all" | FileMemoryEntry["sourceKind"]>("all");
-  const [sortMode, setSortMode] = useState<"recent" | "oldest" | "name" | "size" | "staleFirst">("recent");
-  const [groupMode, setGroupMode] = useState<GroupBy>("none");
-  const [staleOnly, setStaleOnly] = useState(false);
+  const [sourceFilter, setSourceFilter] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.source);
+  const [sortMode, setSortMode] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.sort);
+  const [groupMode, setGroupMode] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.group);
+  const [staleOnly, setStaleOnly] = useSurfacePreference(surfacePreferenceSpecs.familiarMemory.staleOnly);
   const [expandRow, setExpandRow] = useState<MemoryRow | null>(null);
   const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<{ key: string }>();
+  // The real DELETE is deferred 4s for undo, but the 30s poll / on-focus refresh
+  // re-fetches during that window and would resurrect the optimistically-removed
+  // row. Track the one pending path (useUndoDelete is single-pending) and filter
+  // it out of anything load() applies until the delete commits or is undone.
+  const pendingDeletePathRef = useRef<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const effectiveLimit = limit ?? Infinity;
   // Incremental render cap for the full view (rail/compact use `limit` instead).
@@ -160,6 +126,12 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   }, []);
 
   const load = useCallback(async () => {
+    // Parent-fed mode: the parent owns the fetch; its fresh data flows back
+    // in through the mirror effect below.
+    if (feed) {
+      await feed.reload();
+      return;
+    }
     try {
       const [covenRes, fileRes] = await Promise.all([
         fetch("/api/coven-memory", { cache: "no-store" }),
@@ -168,8 +140,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
       const covenJson = (await covenRes.json()) as CovenMemoryResponse;
       const fileJson = (await fileRes.json()) as FileMemoryResponse;
 
-      if (covenJson.ok) setCovenEntries(covenJson.entries ?? []);
-      if (fileJson.ok) setFileEntries(fileJson.entries ?? []);
+      const pendingDelete = pendingDeletePathRef.current;
+      if (covenJson.ok) setCovenEntries((covenJson.entries ?? []).filter((e) => e.path !== pendingDelete));
+      if (fileJson.ok) setFileEntries((fileJson.entries ?? []).filter((e) => e.fullPath !== pendingDelete));
 
       const errors = [
         covenJson.ok ? null : covenJson.error ?? "Coven memory unavailable",
@@ -182,38 +155,60 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
       setLoaded(true);
       setLastLoadedAt(new Date().toISOString());
     }
-  }, []);
+  }, [feed]);
+
+  // Mirror parent-fed data into the local state the rest of the view (and the
+  // optimistic-delete overlay) already works against. The pending-delete filter
+  // keeps a parent poll landing inside the 4s undo window from resurrecting the
+  // optimistically-removed row — same guard the self-fetching path applies.
+  useEffect(() => {
+    if (!feed) return;
+    const pendingDelete = pendingDeletePathRef.current;
+    setCovenEntries(feed.covenEntries.filter((e) => e.path !== pendingDelete));
+    setFileEntries(feed.fileEntries.filter((e) => e.fullPath !== pendingDelete));
+    setError(feed.error);
+    if (feed.loaded) setLoaded(true);
+    setLastLoadedAt(feed.lastLoadedAt);
+  }, [feed]);
 
   const handleDelete = useCallback(
     (path: string, key: string, source: "coven" | "file") => {
-      // optimistic removal from the rendered lists
+      // optimistic removal from the rendered lists + suppress a poll re-adding it
+      pendingDeletePathRef.current = path;
       if (source === "coven") setCovenEntries((prev) => prev.filter((e) => e.path !== path));
       else setFileEntries((prev) => prev.filter((e) => e.fullPath !== path));
       scheduleDelete({ key }, path.split("/").pop() ?? "entry", async () => {
-        await fetch("/api/memory/delete", {
+        const response = await fetch("/api/memory/delete", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ path }),
         });
+        if (response.ok) invalidateIfDefined("agents:coven-memory", "memory:list");
+        // Delete committed server-side; stop filtering (unless a newer delete
+        // has already claimed the slot).
+        if (pendingDeletePathRef.current === path) pendingDeletePathRef.current = null;
+        // Parent-fed mode: refresh the parent's cache so its mirror (and the
+        // roster stats it derives) reflect the deletion promptly.
+        if (feed) void feed.reload();
       });
     },
-    [scheduleDelete],
+    [scheduleDelete, feed],
   );
 
   const handleUndoDelete = useCallback(() => {
+    // Undo cancels the DELETE, so stop suppressing the path before re-pulling.
+    pendingDeletePathRef.current = null;
     undoDelete();
     void load(); // re-pull so the optimistically-removed row reappears
   }, [undoDelete, load]);
 
   useEffect(() => {
-    void load();
-    const t = setInterval(load, 30_000);
-    return () => clearInterval(t);
-  }, [load]);
-
-  useEffect(() => {
-    if (activeFamiliar?.id) setFamiliarFilter(activeFamiliar.id);
-  }, [activeFamiliar?.id]);
+    if (!feed) void load();
+  }, [load, feed]);
+  // Pauses in a hidden tab; refreshes on return. Disabled entirely in
+  // parent-fed mode — the parent's single poll covers both components
+  // (cave-5dnw: this used to double-fetch /api/coven-memory + /api/memory).
+  usePausablePoll(() => void load(), 30_000, { enabled: !feed });
 
   const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
   const effectiveFamiliarFilter = lockToFamiliar && activeFamiliar?.id ? activeFamiliar.id : familiarFilter;
@@ -229,7 +224,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   );
 
   const familiarScopedFiles = useMemo(
-    () => fileEntries.filter((entry) => entry.familiarId == null || entry.familiarId === effectiveFamiliarFilter),
+    // Only the selected familiar's own files — shared/global pools and other
+    // familiars' files are excluded from this per-familiar view.
+    () => fileEntries.filter((entry) => entry.familiarId === effectiveFamiliarFilter),
     [fileEntries, effectiveFamiliarFilter],
   );
 
@@ -319,24 +316,26 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   }), [familiarScopedFiles]);
 
   useEffect(() => {
+    if (lockToFamiliar) return;
     const familiarIds = new Set(familiars.map((familiar) => familiar.id));
-    if (activeFamiliar?.id && familiarIds.has(activeFamiliar.id)) {
-      if (activeFamiliar.id !== familiarFilter) setFamiliarFilter(activeFamiliar.id);
-      return;
-    }
-
+    // A valid restored selection is the user's return preference. The active
+    // workspace familiar is only a fallback for an empty or stale preference;
+    // otherwise every remount would immediately overwrite the remembered
+    // Memory filter with whichever familiar happens to be active in Chat.
     const memoryFamiliarIds = new Set(covenEntries.map((entry) => entry.familiar_id));
     if (
-      familiarFilter &&
-      familiarIds.has(familiarFilter) &&
-      (memoryFamiliarIds.size === 0 || memoryFamiliarIds.has(familiarFilter))
+      storedFamiliarFilter &&
+      familiarIds.has(storedFamiliarFilter) &&
+      (memoryFamiliarIds.size === 0 || memoryFamiliarIds.has(storedFamiliarFilter))
     ) {
       return;
     }
 
-    const next = familiars.find((familiar) => memoryFamiliarIds.has(familiar.id))?.id ?? familiars[0]?.id ?? "";
-    if (next && next !== familiarFilter) setFamiliarFilter(next);
-  }, [activeFamiliar?.id, covenEntries, familiarFilter, familiars]);
+    const next = activeFamiliar?.id && familiarIds.has(activeFamiliar.id)
+      ? activeFamiliar.id
+      : familiars.find((familiar) => memoryFamiliarIds.has(familiar.id))?.id ?? familiars[0]?.id ?? "";
+    if (next && next !== storedFamiliarFilter) setFamiliarFilter(next);
+  }, [activeFamiliar?.id, covenEntries, familiars, lockToFamiliar, setFamiliarFilter, storedFamiliarFilter]);
 
   const selectedFamiliar =
     familiarById.get(effectiveFamiliarFilter) ??
@@ -365,19 +364,19 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               <div>
                 <div className="flex items-center gap-2">
                   <Icon name="ph:brain-bold" width={15} className="text-[var(--accent-presence)]" />
-                  <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Familiar Memory</h2>
+                  <h2 className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">Familiar Memory</h2>
                 </div>
-                <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
                   Focused recall for one familiar at a time, with local memory files kept in the list surface.
                 </p>
               </div>
               <div className="flex items-center gap-2.5">
                 {lastLoadedAt ? (
-                  <span className="text-[10px] text-[var(--text-muted)]" title={`Last refreshed ${formatTimestamp(lastLoadedAt, readDateTimePrefs())}`}>
+                  <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={`Last refreshed ${formatTimestamp(lastLoadedAt, readDateTimePrefs())}`}>
                     Updated {age(lastLoadedAt)}
                   </span>
                 ) : null}
-                <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
+                <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
                   <Icon name="ph:arrows-clockwise" width={12} />
                   Refresh
                 </button>
@@ -386,19 +385,19 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 
             <div
               data-testid="memory-stats-inline"
-              className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] text-[var(--text-secondary)]"
+              className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
             >
               <span className="inline-flex items-baseline gap-1 px-1"><span className="text-[var(--text-muted)]">Familiar memories</span> <span className="font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
               <span aria-hidden className="text-[var(--border-strong)]">·</span>
-              <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Sources</span>
-              <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} />
-              <SourceFilterChip label="External runtimes" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} />
-              <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} />
+              <span className="mr-0.5 text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">Sources</span>
+              <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} help="Files written by this Cave's own familiars and conversations" />
+              <SourceFilterChip label="External runtimes" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} help="Memory kept by other agent tools on this machine (e.g. Claude Code, Codex)" />
+              <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} help="Working files a runtime writes for itself while it runs" />
               {sourceFilter !== "all" ? (
                 <button
                   type="button"
                   onClick={() => setSourceFilter("all")}
-                  className="focus-ring ml-0.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  className="focus-ring ml-0.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                 >
                   <Icon name="ph:x-bold" width={9} />
                   Clear filter
@@ -418,7 +417,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => { if (event.key === "Escape" && query) { event.preventDefault(); setQuery(""); } }}
               placeholder={lockToFamiliar && selectedFamiliar?.display_name ? `Search ${selectedFamiliar.display_name}'s memory...` : "Search memory..."}
-              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-8 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] [&::-webkit-search-cancel-button]:appearance-none"
+              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-8 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] [&::-webkit-search-cancel-button]:appearance-none"
             />
             {query ? (
               <button
@@ -432,44 +431,56 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
             ) : null}
           </div>
           {lockToFamiliar ? null : (
-            <select
+            <StandardSelect
+              label="Filter memory by familiar"
               value={familiarFilter}
-              onChange={(event) => setFamiliarFilter(event.target.value)}
-              aria-label="Filter memory by familiar"
-              className="focus-ring h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)] focus:border-[var(--accent-presence)]"
-            >
-              {familiarOptions.map((familiar) => (
-                <option key={familiar.id} value={familiar.id}>{familiar.display_name}</option>
-              ))}
-            </select>
+              onChange={setFamiliarFilter}
+              className="h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[length:var(--text-sm)] text-[var(--text-secondary)] focus:border-[var(--accent-presence)]"
+              options={familiarOptions.map((familiar) => ({
+                value: familiar.id,
+                label: familiar.display_name,
+              }))}
+            />
           )}
         </div>
         {compact ? null : (
           <div className="memory-controls mt-3">
             <label className="memory-control">
               Group
-              <select value={groupMode} onChange={(e) => setGroupMode(e.target.value as GroupBy)}>
-                <option value="none">None</option>
-                <option value="type">Type</option>
-                <option value="source">Source</option>
-                <option value="date">Date</option>
-              </select>
+              <StandardSelect<GroupBy>
+                label="Group memory"
+                value={groupMode}
+                onChange={setGroupMode}
+                className="memory-control-select"
+                options={[
+                  { value: "none", label: "None" },
+                  { value: "type", label: "Type" },
+                  { value: "source", label: "Source" },
+                  { value: "date", label: "Date" },
+                ]}
+              />
             </label>
             <label className="memory-control">
               Sort
-              <select value={sortMode} onChange={(e) => setSortMode(e.target.value as typeof sortMode)}>
-                <option value="recent">Recent</option>
-                <option value="oldest">Oldest</option>
-                <option value="name">Name</option>
-                <option value="size">Size</option>
-                <option value="staleFirst">Stale first</option>
-              </select>
+              <StandardSelect<typeof sortMode>
+                label="Sort memory"
+                value={sortMode}
+                onChange={setSortMode}
+                className="memory-control-select"
+                options={[
+                  { value: "recent", label: "Recent" },
+                  { value: "oldest", label: "Oldest" },
+                  { value: "name", label: "Name" },
+                  { value: "size", label: "Size" },
+                  { value: "staleFirst", label: "Stale first" },
+                ]}
+              />
             </label>
             <button
               type="button"
               aria-pressed={staleOnly}
               onClick={() => setStaleOnly((s) => !s)}
-              className={`focus-ring inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] transition-colors ${
+              className={`focus-ring inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[length:var(--text-xs)] transition-colors ${
                 staleOnly ? "border-[var(--color-warning)] bg-[var(--color-warning)]/12 text-[var(--text-primary)]" : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
               }`}
             >
@@ -480,7 +491,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
         {error ? (
           <div
             role="alert"
-            className="mt-2 flex items-center gap-2 rounded-md border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/10 px-2.5 py-1.5 text-[11px] text-[var(--text-secondary)]"
+            className="mt-2 flex items-center gap-2 rounded-md border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/10 px-2.5 py-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
           >
             <Icon name="ph:warning-circle" width={13} className="shrink-0 text-[var(--color-warning)]" aria-hidden />
             <span className="min-w-0 flex-1">{error}</span>
@@ -498,7 +509,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               compact
               icon="ph:brain"
               headline={`No memories yet for ${selectedFamiliar?.display_name ?? "this familiar"}`}
-              subtitle="Familiar memories are saved during chats. Memory files appear when the familiar's harness writes to disk."
+              subtitle="Familiar memories are saved during chats. Memory files appear when the familiar's runtime writes to disk."
             />
           </div>
         ) : (
@@ -507,19 +518,19 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
             {/* LIST PANE */}
             <section className={`min-h-0 flex-col ${selectedRowId ? "hidden @min-[1024px]/memview:flex" : "flex"}`}>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memories</h3>
+                <h3 className="text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memories</h3>
                 <div className="flex items-center gap-2">
                   {staleOnly && bulkDeletable.length > 0 ? (
                     <button
                       type="button"
                       onClick={() => bulkDeletable.forEach((e) => handleDelete(e.path, e.key, e.source))}
-                      className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--color-warning)] hover:bg-[var(--bg-raised)]"
+                      className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--color-warning)] hover:bg-[var(--bg-raised)]"
                     >
                       <Icon name="ph:trash" width={11} />
                       Delete {bulkDeletable.length} cleanable
                     </button>
                   ) : null}
-                  <span className="text-[10px] text-[var(--text-muted)]">
+                  <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                     {unifiedRows.length > fileLimit ? `${fileLimit} of ${unifiedRows.length}` : `${unifiedRows.length} shown`}
                   </span>
                 </div>
@@ -529,7 +540,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   !loaded ? (
                     <SkeletonRows count={6} className="p-3" />
                   ) : error ? (
-                    <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
+                    <div className="px-3 py-8 text-center text-[length:var(--text-sm)] text-[var(--text-muted)]">
                       Couldn't load memories. See the error above and try again.
                     </div>
                   ) : (
@@ -537,26 +548,13 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   )
                 ) : groupMode === "none" ? (
                   <ul className="divide-y divide-[var(--border-hairline)]">
-                    {pagedRows.map((row, i) => {
-                      const prev = pagedRows[i - 1];
-                      const startsShared = row.ownership === "shared" && (!prev || prev.ownership === "owned");
-                      return (
-                        <Fragment key={row.rowId}>
-                          {startsShared ? (
-                            <li className="memory-shared-divider sticky top-0 z-[1] border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/95 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] backdrop-blur">
-                              Coven-wide memory · shared across all familiars
-                            </li>
-                          ) : null}
-                          {renderRow(row)}
-                        </Fragment>
-                      );
-                    })}
+                    {pagedRows.map(renderRow)}
                   </ul>
                 ) : (
                   <div>
                     {groupMemoryRows(pagedRows, groupMode).map((group) => (
                       <div key={group.key}>
-                        <h4 className="sticky top-0 z-[1] flex items-center gap-1.5 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/95 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)] backdrop-blur">
+                        <h4 className="sticky top-0 z-[1] flex items-center gap-1.5 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/95 px-3 py-1.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)] backdrop-blur">
                           {group.label}
                           <span className="font-normal text-[var(--text-muted)]">({group.rows.length})</span>
                         </h4>
@@ -571,7 +569,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   <button
                     type="button"
                     onClick={() => setFileLimit((n) => n + FILE_PAGE)}
-                    className="focus-ring flex w-full items-center justify-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                    className="focus-ring flex w-full items-center justify-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                   >
                     <Icon name="ph:caret-down" width={11} />
                     Show more · {fileLimit} of {unifiedRows.length}
@@ -597,14 +595,14 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
         {compact ? (
         <section className="min-h-0">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Familiar memory</h3>
-            <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
+            <h3 className="text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Familiar memory</h3>
+            <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
           </div>
           {visibleCoven.length === 0 ? (
             !loaded ? (
               <SkeletonRows count={4} className="p-2" />
             ) : error ? (
-              <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
+              <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] px-4 py-6 text-center text-[length:var(--text-sm)] text-[var(--text-muted)]">
                 Couldn’t load familiar memories. See the error above and try again.
               </div>
             ) : (
@@ -621,24 +619,24 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+                        <div className="flex items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
                             {familiar?.display_name ?? entry.familiar_id}
                           </span>
-                          <span>{age(entry.updated_at)}</span>
+                          <RelativeTime iso={entry.updated_at} />
                         </div>
-                        <h4 className="mt-2 line-clamp-2 text-[13px] font-medium text-[var(--text-primary)]">{entry.title}</h4>
+                        <h4 className="mt-2 line-clamp-2 text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">{entry.title}</h4>
                       </div>
                       <Icon name="ph:brain" width={14} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                     </div>
                     {entry.excerpt ? (
-                      <p className="mt-2 line-clamp-4 text-[11px] leading-5 text-[var(--text-secondary)]">{entry.excerpt}</p>
+                      <p className="mt-2 line-clamp-4 text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">{entry.excerpt}</p>
                     ) : null}
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onOpenMemoryFile?.(entry.path); }}
-                        className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                        className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
                       >
                         <Icon name="ph:file-text" width={12} />
                         Open memory
@@ -655,9 +653,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 
         <section className="min-h-0">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memory files</h3>
+            <h3 className="text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memory files</h3>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-[var(--text-muted)]">{visibleFiles.length} visible</span>
+              <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">{visibleFiles.length} visible</span>
             </div>
           </div>
           <MemoryFilesList
@@ -677,8 +675,10 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
         )}
       </div>
       {undoPending ? (
-        <LibraryUndoToast
-          label={undoPending.label}
+        <UndoToast
+          message={<>Deleted <strong>{undoPending.label}</strong></>}
+          icon="ph:trash"
+          undoAriaLabel={`Undo delete ${undoPending.label}`}
           onUndo={handleUndoDelete}
           onDismiss={commitDelete}
         />
@@ -691,294 +691,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Rail variant — most-recent memory writes, no graph.
-// The full view uses the same list/reader surface; the rail tab is a quick
-// "what changed" feed.
-// ────────────────────────────────────────────────────────────────────────────
-
-export function RailMemoryList({
-  familiar,
-  familiars = [],
-  onOpenFullView,
-}: {
-  familiar: Familiar | null;
-  familiars?: Familiar[];
-  onOpenFullView?: () => void;
-}) {
-  if (!familiar) {
-    return (
-      <div className="rail-empty">
-        <p>Pick a familiar.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="rail-memory">
-      <div className="rail-memory__scroll">
-        <FamiliarsMemoryView
-          familiars={familiars}
-          activeFamiliar={familiar}
-          limit={20}
-          compact
-          lockToFamiliar
-        />
-      </div>
-      {onOpenFullView ? (
-        <button
-          type="button"
-          className="focus-ring rail-memory__open-full"
-          onClick={onOpenFullView}
-        >
-          Open full memory →
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
 // Standalone file-list — reusable by the Familiars detail panel without the
-// coven-memory half or the familiar <select>.
+// coven-memory half or the familiar picker.
 // ────────────────────────────────────────────────────────────────────────────
-
-type MemoryFilesListProps = {
-  entries: FileMemoryEntry[];
-  onOpen?: (path: string) => void;
-  loaded: boolean;
-  error: string | null;
-  limit?: number;
-  className?: string;
-  listClassName?: string;
-  activeFamiliarId?: string | null;
-  onSelect?: (rowId: string) => void;
-  selectedRowId?: string | null;
-  /** When set and entries exceed `limit`, render a footer button that reveals more. */
-  onShowMore?: () => void;
-  /** Soft-delete a file row by its full path. Structural entries hide the button. */
-  onDelete?: (path: string) => void;
-};
-
-// ────────────────────────────────────────────────────────────────────────────
-// MemoryReaderModal — fullscreen reader rendering a memory file's markdown
-// via @create-markdown/preview (through MarkdownBlock).
-// ────────────────────────────────────────────────────────────────────────────
-
-type MemoryReaderModalProps = {
-  path: string;
-  title?: string;
-  onClose: () => void;
-};
-
-export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalProps) {
-  const { text, error } = useMemoryFile(path);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const heading = title ?? path.split("/").pop() ?? "Memory";
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Memory reader: ${heading}`}
-    >
-      <div
-        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
-          <Icon name="ph:book-open" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-          <span className="flex-1 truncate text-[12px] text-[var(--text-secondary)]" title={path}>
-            {heading}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-            aria-label="Close memory reader"
-          >
-            <Icon name="ph:x-bold" width={11} aria-hidden />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
-          <div className="mx-auto w-full max-w-[820px]">
-            {error ? (
-              <p className="text-[12px] text-[var(--color-warning)]">{error}</p>
-            ) : text === null ? (
-              <p className="text-[12px] text-[var(--text-muted)]">Loading memory…</p>
-            ) : (
-              <MarkdownBlock text={text} className="cave-md--expanded" />
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ExpandMemoryButton({
-  path,
-  title,
-  variant = "default",
-}: {
-  path: string;
-  title?: string;
-  variant?: "default" | "compact";
-}) {
-  const [open, setOpen] = useState(false);
-  const compact = variant === "compact";
-  return (
-    <>
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-        aria-label="Expand memory to reader view"
-        title="Expand to reader view"
-        className={
-          compact
-            ? "focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            : "focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-        }
-      >
-        <Icon name="ph:arrows-out-simple" width={compact ? 12 : 11} />
-        {compact ? null : "Expand"}
-      </button>
-      {open ? <MemoryReaderModal path={path} title={title} onClose={() => setOpen(false)} /> : null}
-    </>
-  );
-}
-
-
-function SourceFilterChip({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`focus-ring inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors ${
-        active
-          ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
-          : "border-transparent text-[var(--text-secondary)] hover:border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]/50"
-      }`}
-    >
-      <span className="text-[var(--text-muted)]">{label}</span>
-      <span className="font-semibold text-[var(--text-primary)]">{count}</span>
-    </button>
-  );
-}
-
-export function MemoryFilesList({
-  entries,
-  onOpen,
-  loaded,
-  error,
-  limit,
-  className,
-  listClassName,
-  activeFamiliarId,
-  onSelect,
-  selectedRowId,
-  onShowMore,
-  onDelete,
-}: MemoryFilesListProps) {
-  const sliced = entries.slice(0, limit ?? entries.length);
-  const hidden = entries.length - sliced.length;
-  return (
-    <div
-      className={[
-        "rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25",
-        className ?? "",
-      ].join(" ")}
-    >
-      {sliced.length === 0 ? (
-        !loaded ? (
-          <SkeletonRows count={5} className="p-3" />
-        ) : error ? (
-          <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
-            Couldn't load memory files. See the error above and try again.
-          </div>
-        ) : (
-          <EmptyState compact icon="ph:file-text" headline="No memory files match this view." />
-        )
-      ) : (
-        <ul className={listClassName ?? "max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto"}>
-          {sliced.map((entry) => {
-            const base = fileBase(entry.relPath);
-            const dir = fileDir(entry.fullPath);
-            const size = formatBytes(entry.size);
-            return (
-            <li
-              key={entry.fullPath}
-              className={`flex min-w-0 items-stretch gap-1 px-1 ${selectedRowId === `file:${entry.fullPath}` ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]"}`}
-            >
-              <button
-                type="button"
-                onClick={() => (onSelect ? onSelect(`file:${entry.fullPath}`) : onOpen?.(entry.fullPath))}
-                className="focus-ring-inset flex min-w-0 flex-1 items-start gap-2 px-2 py-2 text-left"
-              >
-                <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12px] font-medium text-[var(--text-primary)]" title={entry.relPath}>{base}</span>
-                  <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--text-muted)]">
-                    {entry.sourceKindLabel}
-                    {dir ? <> · {dir}</> : null}
-                    {size ? <> · {size}</> : null}
-                  </span>
-                  {(entry.harnessId || entry.runtimeId || entry.origin || (entry.familiarId && entry.familiarId !== activeFamiliarId)) ? (
-                    <span className="mt-1 flex flex-wrap gap-1 text-[10px] text-[var(--text-muted)]">
-                      {entry.origin ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">origin:{entry.origin}</span> : null}
-                      {entry.harnessId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">runtime:{entry.harnessId}</span> : null}
-                      {entry.runtimeId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">runtime:{entry.runtimeId}</span> : null}
-                      {entry.familiarId && entry.familiarId !== activeFamiliarId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">familiar:{entry.familiarId}</span> : null}
-                    </span>
-                  ) : null}
-                </span>
-                <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{age(entry.modified)}</span>
-              </button>
-              <div className="flex items-center gap-1 pr-2">
-                <ExpandMemoryButton path={entry.fullPath} title={entry.relPath} variant="compact" />
-                {onDelete && classifyProtection(entry.fullPath) !== "structural" ? (
-                  <button
-                    type="button"
-                    className="memory-card-delete focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--color-warning)]"
-                    aria-label={`Delete ${entry.relPath}`}
-                    onClick={(e) => { e.stopPropagation(); onDelete(entry.fullPath); }}
-                  >
-                    <Icon name="ph:trash" width={12} aria-hidden />
-                  </button>
-                ) : null}
-              </div>
-            </li>
-            );
-          })}
-        </ul>
-      )}
-      {onShowMore && hidden > 0 ? (
-        <button
-          type="button"
-          onClick={onShowMore}
-          className="focus-ring flex w-full items-center justify-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-        >
-          <Icon name="ph:caret-down" width={11} />
-          Show {Math.min(hidden, 80)} more · {sliced.length} of {entries.length}
-        </button>
-      ) : null}
-    </div>
-  );
-}
+export { MemoryFilesList, MemoryReaderModal } from "@/components/familiars-memory-files";

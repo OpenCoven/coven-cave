@@ -22,6 +22,48 @@ assert.match(
 
 assert.match(
   source,
+  /ensureAdapterCoverage\(reported, refresh\)/,
+  "Daemon aggregate manifests are backfilled so every supported harness stays covered",
+);
+
+assert.match(
+  source,
+  /openClawCapabilityManifest\(new Date\(\)\.toISOString\(\)\)/,
+  "OpenClaw should expose a synthetic bridge capability manifest when the daemon has no harness manifest",
+);
+
+assert.match(
+  source,
+  /if \(harness === "openclaw"\)[\s\S]*harness_capabilities: \[manifest\]/,
+  "The per-harness capabilities route should return OpenClaw bridge capabilities directly",
+);
+
+assert.match(
+  source,
+  /bridge_capabilities: openClawBridgeCapabilities\(\)/,
+  "The synthetic OpenClaw manifest should include structured bridge capability flags",
+);
+
+assert.match(
+  source,
+  /const missing = COMPATIBILITY_ADAPTERS\.map\(\(adapter\) => adapter\.id\)\.filter\(\(id\) => !present\.has\(id\)\)/,
+  "Coverage backfill only fetches harnesses the daemon aggregate omitted",
+);
+
+assert.match(
+  source,
+  /const id = canonicalHarnessId\(m\.harness_id\);\s*if \(!byId\.has\(id\)\) byId\.set\(id, m\);/,
+  "Manifests must be deduped by canonical harness id so a duplicate/aliased harness (e.g. Hermes) renders only once",
+);
+
+assert.match(
+  source,
+  /const present = new Set\(manifests\.map\(\(m\) => canonicalHarnessId\(m\.harness_id\)\)\)/,
+  "Presence is computed on the canonical id so an aliased aggregate manifest isn't double-counted by the backfill",
+);
+
+assert.match(
+  source,
   /supplementClaudeSkills/,
   "Claude manifests are supplemented with the local ~/.claude/skills scan",
 );

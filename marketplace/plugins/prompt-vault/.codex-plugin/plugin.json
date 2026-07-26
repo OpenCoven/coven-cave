@@ -1,0 +1,25 @@
+{
+  "name": "prompt-vault",
+  "version": "0.1.0",
+  "description": "Save, search, tag, and manage reusable AI prompts via the pv CLI \u2014 a local SQLite-backed library with version history, tag filtering, and JSON export/import.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Prompt Vault",
+    "shortDescription": "Save, search, tag, and manage reusable AI prompts via the pv CLI \u2014 a local SQLite-backed library with version history, tag filtering, and JSON export/import.",
+    "longDescription": "Use the pv CLI to add prompts with comma-separated tags, search by substring, list or filter by tag, and export the library to JSON for backup.",
+    "developerName": "OpenCoven",
+    "category": "AI & ML",
+    "capabilities": [
+      "prompts",
+      "vault",
+      "sqlite",
+      "cli",
+      "tags",
+      "library"
+    ],
+    "defaultPrompt": "Help me use Prompt Vault safely."
+  }
+}

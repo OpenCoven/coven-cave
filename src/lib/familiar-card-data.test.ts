@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { pickFamiliarMemory, formatRelTime, statusMeta } from "./familiar-card-data.ts";
+import { pickFamiliarMemory, memoryTitleAndExcerpt, formatRelTime, statusMeta } from "./familiar-card-data.ts";
 
 // pickFamiliarMemory: filters by familiarId, sorts newest-first, limits, maps fields
 const entries = [
@@ -15,6 +15,11 @@ assert.equal(picked[0].title, "b.md", "newest first, basename title");
 assert.equal(picked[0].excerpt, "bravo");
 assert.equal(picked[1].title, "d.md", "second newest");
 assert.ok(picked.every((p) => p.fullPath.startsWith("/x/")), "keeps fullPath");
+assert.deepEqual(
+  picked.map((p) => p.relPath),
+  ["memory/b.md", "memory/d.md"],
+  "keeps relPath for the card's open-in-Grimoire tooltip (cave-00w0)",
+);
 
 // missing excerpt → empty string, never undefined
 const noExcerpt = pickFamiliarMemory([{ familiarId: "cody", relPath: "m/e.md", modified: "2026-06-12T00:00:00.000Z", fullPath: "/x/e.md" }], "cody", 3);
@@ -22,6 +27,41 @@ assert.equal(noExcerpt[0].excerpt, "", "missing excerpt becomes empty string");
 
 // entries without familiarId are excluded
 assert.equal(pickFamiliarMemory([{ relPath: "m/f.md", modified: "2026-06-12T00:00:00.000Z", fullPath: "/x/f.md" }], "cody", 3).length, 0);
+
+// memoryTitleAndExcerpt: heading runs become the human title, not raw markdown noise
+{
+  const r = memoryTitleAndExcerpt(
+    "memory/2026-07-11.md",
+    "# 2026-07-11\n\n## Coven memory layer sign-off\n\n- Sage handoff details",
+  );
+  assert.equal(r.title, "Coven memory layer sign-off", "deepest heading of the leading run is the title");
+  assert.equal(r.excerpt, "Sage handoff details", "heading + list marker stripped from excerpt");
+}
+{
+  const r = memoryTitleAndExcerpt("memory/notes.md", "plain text without headings\nmore");
+  assert.equal(r.title, "notes.md", "no headings → basename");
+  assert.equal(r.excerpt, "plain text without headings more", "lines joined for single-line display");
+}
+{
+  const r = memoryTitleAndExcerpt("memory/empty.md", undefined);
+  assert.equal(r.title, "empty.md");
+  assert.equal(r.excerpt, "");
+}
+{
+  const r = memoryTitleAndExcerpt("memory/multi.md", "# Title only");
+  assert.equal(r.title, "Title only");
+  assert.equal(r.excerpt, "", "nothing after the heading");
+}
+
+// stale flag: entries older than the growth threshold (21d) are badged
+{
+  const NOW = Date.parse("2026-07-12T00:00:00.000Z");
+  const fresh = { familiarId: "cody", relPath: "m/fresh.md", excerpt: "x", modified: "2026-07-10T00:00:00.000Z", fullPath: "/x/fresh.md" };
+  const old = { familiarId: "cody", relPath: "m/old.md", excerpt: "y", modified: "2026-06-01T00:00:00.000Z", fullPath: "/x/old.md" };
+  const rows = pickFamiliarMemory([fresh, old], "cody", 3, NOW);
+  assert.equal(rows[0].stale, false, "2d-old entry not stale");
+  assert.equal(rows[1].stale, true, "41d-old entry stale");
+}
 
 // formatRelTime
 assert.equal(formatRelTime(null), "never");

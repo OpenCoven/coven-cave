@@ -37,14 +37,23 @@ test("normalize falls back to default for junk/unknown", () => {
   assert.equal(normalizeCornerRadius(undefined), DEFAULT_CORNER_RADIUS);
 });
 
-test("apply(non-default) overrides all three radius tokens and persists", () => {
+test("apply(non-default) overrides all four radius tokens and persists", () => {
   const { store, props } = setupDom();
   applyCornerRadius("round");
   assert.equal(props.get("--radius"), CORNER_RADIUS_VALUES.round.base);
   assert.equal(props.get("--radius-control"), CORNER_RADIUS_VALUES.round.control);
   assert.equal(props.get("--radius-card"), CORNER_RADIUS_VALUES.round.card);
+  assert.equal(props.get("--radius-pill"), CORNER_RADIUS_VALUES.round.pill);
   assert.equal(store.get(CORNER_RADIUS_KEY), "round");
   assert.equal(readCornerRadius(), "round");
+});
+
+test("sharp squares the signature pill; round keeps the full capsule", () => {
+  const { props } = setupDom();
+  applyCornerRadius("sharp");
+  assert.equal(props.get("--radius-pill"), CORNER_RADIUS_VALUES.sharp.pill);
+  assert.notEqual(CORNER_RADIUS_VALUES.sharp.pill, "999px");
+  assert.equal(CORNER_RADIUS_VALUES.round.pill, "999px");
 });
 
 test("apply(default) removes the overrides so :root token values apply", () => {
@@ -54,6 +63,7 @@ test("apply(default) removes the overrides so :root token values apply", () => {
   assert.equal(props.has("--radius"), false);
   assert.equal(props.has("--radius-control"), false);
   assert.equal(props.has("--radius-card"), false);
+  assert.equal(props.has("--radius-pill"), false);
   assert.equal(store.get(CORNER_RADIUS_KEY), "default");
 });
 

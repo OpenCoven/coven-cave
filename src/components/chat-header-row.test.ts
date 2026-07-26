@@ -1,15 +1,20 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { toolArgSummary } from "../lib/tool-arg-summary.ts";
+import { toolArgDetail, toolArgSummary } from "../lib/tool-arg-summary.ts";
 import { toolInputAsDiff } from "../lib/tool-input-diff.ts";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const sessionHeader = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-md/code", "cave-composer", "chat-list", "calendar", "cave-chat", "cave-chat/activity", "cave-chat/transcript"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 const bubbleSource = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+const codeFenceSource = readFileSync(new URL("../lib/message-code-fences.ts", import.meta.url), "utf8");
 
-// After the streamline refactor the header is MetaLine (title + status meta)
-// plus an optional LinkedContextRow — no ChatContextStrip, no headline row.
+// After the streamline refactor the header is MetaLine (title + status meta);
+// linked-work actions are extracted, but ChatView does not mount them directly
+// in the footer band yet.
 assert.doesNotMatch(
   source,
   /<ChatContextStrip\b/,
@@ -42,16 +47,24 @@ assert.doesNotMatch(
   "the back-to-chats control is gone from the chat header",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /<LinkedContextRow\b/,
-  "ChatView renders LinkedContextRow for task/GitHub chips",
+  /import \{[\s\S]*ComposerLinkedWorkActions[\s\S]*\} from "@\/components\/composer-linked-work-actions"/,
+  "ChatView no longer imports the linked-work footer component",
 );
 
+assert.doesNotMatch(
+  source,
+  /<ComposerLinkedWorkActions\b/,
+  "ChatView does not mount linked-work actions directly",
+);
+
+// The 2026-07-21 "both" reconciliation: the footer band came back (context
+// pill + linked-work chip strip) alongside the grouped composer menu.
 assert.match(
   source,
-  /function LinkedContextRow[\s\S]*?if \(!task && github\.length === 0 && !canLink\) return null/,
-  "LinkedContextRow renders when there's linked context OR a chat session that can link a task",
+  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips[\s\S]*?\{linkedContextRow\}/,
+  "the footer band carries the context chips and the linked-context strip",
 );
 
 assert.match(
@@ -104,19 +117,11 @@ assert.doesNotMatch(
   "Standalone lifecycle status bar CSS is removed (folded into meta line)",
 );
 
-// In-chat delete: header trash action with the same two-step confirm as the
-// Chats-page rows — first click only ARMS, the explicit Delete commits, and
-// success refreshes the session list and navigates back.
-assert.match(
-  source,
-  /danger onSelect=\{\(\) => onConfirmDeleteChange\(true\)\}>\s*Delete chat/,
-  "Overflow-menu Delete only arms the confirmation — it must not delete",
-);
-assert.match(
-  source,
-  /confirmDelete \?[\s\S]*?Cancel[\s\S]*?Confirm delete/,
-  "Armed state offers explicit Cancel and Delete actions",
-);
+// In-chat delete is a DIRECT header action (cave-zolo): a trash icon button in
+// the session-actions cluster whose confirm popover (Delete this chat
+// permanently? / Cancel / Delete chat) guards the irreversible commit. The
+// explicit Delete commits via deleteChat, and success reports the confirmed id
+// to Workspace and navigates back.
 assert.match(
   source,
   /const deleteChat = async[\s\S]*?fetch\(`\/api\/chat\/conversation\/\$\{encodeURIComponent\(sessionId\)\}`, \{ method: "DELETE" \}\)/,
@@ -124,8 +129,58 @@ assert.match(
 );
 assert.match(
   source,
-  /onSessionsChanged\?\.\(\);\s*\n\s*onBack\?\.\(\);/,
-  "Successful delete refreshes sessions and navigates back to the list",
+  /onSessionsDeleted\(\[sessionId\]\);\s*\n\s*onBack\?\.\(\);/,
+  "Successful delete reaches the shared boundary and navigates back to the list",
+);
+
+// The delete is a two-step guard: the trash button arms a confirm popover
+// anchored to itself; only the popover's danger item commits.
+assert.match(
+  sessionHeader,
+  /function DeleteChatButton[\s\S]*?aria-expanded=\{confirming\}[\s\S]*?Delete this chat permanently\?[\s\S]*?disabled=\{deleting\} onSelect=\{\(\) => onDelete\(\)\}/,
+  "DeleteChatButton guards delete behind an anchored confirm popover",
+);
+assert.match(
+  source,
+  /<DeleteChatButton deleting=\{deleting\} onDelete=\{\(\) => void deleteChat\(\)\} \/>/,
+  "the header cluster renders the direct delete button",
+);
+// The kebab no longer carries delete at all — the menu model owns its items
+// and none of them are the destructive verb. (Scoped to the menu function so
+// DeleteChatButton's own strings don't satisfy the check.)
+const overflowMenuSection = sessionHeader.slice(
+  sessionHeader.indexOf("function SessionOverflowMenu"),
+  sessionHeader.indexOf("function DeleteChatButton"),
+);
+assert.ok(
+  !overflowMenuSection.includes("Delete chat") && !overflowMenuSection.includes("ph:trash"),
+  "SessionOverflowMenu contains no delete item (direct button owns it)",
+);
+// The standalone header debug buttons stay gone — quick actions are Voice/
+// Archive/Find/Delete plus the kebab.
+assert.doesNotMatch(
+  source,
+  /function HeaderDebugButton|function HeaderDeleteButton|function HeaderThinkingToggle|function HeaderReflectButton/,
+  "the retired standalone header icon buttons stay removed",
+);
+assert.doesNotMatch(
+  source,
+  /onConfirmDeleteChange/,
+  "the old overflow two-step delete wiring stays removed",
+);
+
+// Project selection is one compact row in the kebab that opens the shared
+// searchable ProjectPickerPopover — not an inline list of every project. The
+// row's label comes from the pure menu model.
+assert.match(
+  sessionHeader,
+  /function SessionOverflowMenu[\s\S]*?sessionMenuSections\(\{[\s\S]*?projectName: activeProject\?\.name \?\? null[\s\S]*?<ProjectPickerPopover/,
+  "the kebab derives its Project row from the menu model and opens the shared picker popover",
+);
+assert.doesNotMatch(
+  source,
+  /projects\.map\(\(entry\) => \(\s*<PopoverItem/,
+  "the kebab no longer inlines the full project list",
 );
 
 // ── Collapsed tool rows show a one-line arg summary (CHAT-D4-02) ─────────────
@@ -166,6 +221,13 @@ assert.ok(oversize.length <= 48, "summary is capped at 48 chars");
 assert.ok(oversize.endsWith("…"), "oversize summary ends with an ellipsis");
 assert.ok(!oversize.includes("\n"), "summary is never multi-line");
 
+const longSearchQuery = "multi-agent LLM workflow architectures orchestrator worker patterns 2025";
+assert.equal(
+  toolArgDetail("Web Search", JSON.stringify({ query: longSearchQuery })),
+  longSearchQuery,
+  "detail keeps the full web-search query for readable live activity context",
+);
+
 // Absent input yields an empty string.
 assert.equal(toolArgSummary("Read", undefined), "", "absent input gives empty summary");
 assert.equal(toolArgSummary("Read", "   "), "", "whitespace-only input gives empty summary");
@@ -188,6 +250,22 @@ assert.match(
   source,
   /detail: argSummary \? `\$\{incoming\.name\}\(\$\{argSummary\}\)` : incoming\.name/,
   "Tool progress detail carries Name(arg) instead of the bare tool name",
+);
+
+assert.match(
+  source,
+  /const runningToolDetail = live && runningTool \? toolArgDetail\(runningTool\.name, runningTool\.input\) : ""/,
+  "RunActivityStrip computes a full running-tool detail, separate from the capped summary",
+);
+assert.match(
+  source,
+  /cave-run-activity-context[\s\S]*?\{runningTool\.name\}\([\s\S]*?\{runningToolDetail\}[\s\S]*?\)/,
+  "RunActivityStrip renders full running-tool context where it can wrap instead of truncating",
+);
+assert.match(
+  styles,
+  /\.cave-run-activity-context[\s\S]*?white-space:\s*pre-wrap[\s\S]*?overflow-wrap:\s*anywhere/,
+  "RunActivityStrip context wraps long search/tool input instead of clipping it",
 );
 
 // ── Edit/Write tool inputs render as structured diffs (CHAT-D8-02) ──────────
@@ -271,11 +349,12 @@ const bigLines = bigDiff.split("\n");
 assert.ok(bigLines.length <= 401, "diff output is capped near 400 lines");
 assert.match(bigLines[bigLines.length - 1], /more lines truncated/, "capped diff ends with a truncation marker");
 
-// ToolBlock routes the Input section through toolInputAsDiff with diff chrome.
+// ToolBlock routes the Input section through toolInputAsDiff with diff chrome,
+// otherwise through ToolInputView (readable fields + raw-JSON toggle).
 assert.match(
   source,
-  /function ToolBlock[\s\S]*?const inputDiff = toolInputAsDiff\(tool\.name, tool\.input\)[\s\S]*?\{inputDiff \? <SyntaxBlock text=\{inputDiff\} lang="diff" \/> : <SyntaxBlock text=\{tool\.input\} \/>\}/,
-  "ToolBlock Input renders the structured diff when available, raw payload otherwise",
+  /function ToolBlock[\s\S]*?const inputDiff = toolInputAsDiff\(tool\.name, tool\.input\)[\s\S]*?inputDiff \? \([\s\S]*?<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*?<ToolInputView input=\{tool\.input\} \/>/,
+  "ToolBlock Input renders the structured diff when available, readable fields otherwise",
 );
 
 // ── Diff gutter excludes file headers; @@ rows are muted meta (CHAT-D8-03) ──
@@ -290,6 +369,76 @@ assert.match(
   styles,
   /\.cave-diff-meta\s*\{/,
   "cave-diff-meta CSS rule is defined for hunk-header chrome",
+);
+
+// ── Language-aware diffs: content highlighted in the file's grammar ─────────
+// A diff whose +++/--- header names a highlightable file renders its content
+// through that language's grammar (not the flat whole-line `diff` grammar);
+// the +/- markers are re-attached as a dim .cave-diff-marker span so the DOM
+// text — what the Copy button reads — stays byte-identical to the raw diff.
+assert.match(
+  bubbleSource,
+  /const diffLang = isDiff \? diffContentLang\(code\) : "text"/,
+  "renderCodeBlock resolves the diff's content grammar from its file headers",
+);
+assert.match(
+  codeFenceSource,
+  /function classifyDiffLines\(/,
+  "diff lines are classified (add/del/ctx/meta/hunk) for language-aware rendering",
+);
+assert.match(
+  bubbleSource,
+  /<span class="cave-diff-marker">\$\{dl\.marker\}<\/span>/,
+  "stripped +/- markers are re-attached as a cave-diff-marker span",
+);
+assert.match(
+  styles,
+  /\.cave-diff-marker\s*\{/,
+  "cave-diff-marker CSS rule is defined",
+);
+// Shiki failure fallback renders the ORIGINAL diff text — the language-aware
+// line map must be dropped there or markers would be attached twice.
+assert.match(
+  bubbleSource,
+  /highlighted = `<pre><code>\$\{escHtml\(code\)\}<\/code><\/pre>`;\s*\n\s*diffLines = null/,
+  "highlight-failure fallback clears diffLines so markers are not doubled",
+);
+
+// ── Archive (cave-nuzg → cave-zolo): delete's reversible sibling, now a DIRECT
+// header button. Archive chat PATCHes the session; the chat leaves every rail
+// (rails are archive-free by default — chat-siderail-hide-archived.test.ts) but
+// the transcript survives, and the same button flips to Unarchive on archived
+// chats so restore is one click from the header too.
+assert.match(
+  sessionHeader,
+  /function ArchiveChatButton[\s\S]{0,400}archiveAction\(\{ archived, archiving \}\)/,
+  "the direct archive button derives its icon/label/verb from the menu model",
+);
+assert.match(
+  sessionHeader,
+  /function ArchiveChatButton[\s\S]{0,700}onClick=\{\(\) => onSetArchived\(!archived\)\}/,
+  "clicking the button toggles the session's archived state",
+);
+assert.match(
+  source,
+  /<ArchiveChatButton\s+archived=\{Boolean\(session\.archived_at\)\}\s+archiving=\{archiving\}\s+onSetArchived=\{\(next\) => void setChatArchived\(next\)\}/,
+  "the header cluster renders the direct archive button off the session's archived_at",
+);
+// Archive needs no confirm step — it is reversible, unlike Delete above.
+assert.match(
+  source,
+  /fetch\(`\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}`, \{\s*method: "PATCH",[\s\S]{0,120}body: JSON\.stringify\(\{ archived \}\)/,
+  "archiving PATCHes the sessions API with the archived flag",
+);
+assert.match(
+  source,
+  /onSessionsChanged\?\.\(\);\s*\/\/ Leaving mirrors delete only for archive; unarchive keeps you in place\.\s*if \(archived\) onBack\?\.\(\);/,
+  "archiving refreshes the rails and leaves the chat; unarchiving stays put",
+);
+assert.match(
+  source,
+  /archived=\{Boolean\(session\.archived_at\)\}/,
+  "the archive button receives the live archived state of the open session",
 );
 
 console.log("chat-header-row.test.ts: ok");

@@ -31,4 +31,13 @@ test("updateRun patches by id; latestRun + hasRunningRun", async () => {
   assert.equal(updated?.status, "succeeded");
   assert.ok(!(await hasRunningRun("z")));
   assert.equal((await latestRun("z"))?.status, "succeeded");
+
+  // Deleting an automation purges its history — a re-created automation that
+  // reuses the same slug must not inherit the old runs.
+  const { purgeRuns, listRuns } = await import("./automation-runs.ts");
+  await recordRun({ automationId: "gone", automationName: "Gone", startedAt: "2026-01-03T00:00:00Z", status: "succeeded" });
+  assert.equal((await listRuns("gone")).length, 1);
+  await purgeRuns("gone");
+  assert.equal((await listRuns("gone")).length, 0, "purged automation has no runs");
+  assert.ok(await latestRun("z"), "other automations' runs survive the purge");
 });

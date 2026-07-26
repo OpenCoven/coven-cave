@@ -26,53 +26,13 @@
     "sourceRefs": [
       "https://linear.app/docs/mcp"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer",
-          "debugger",
-          "code-reviewer"
-        ]
-      },
-      {
-        "familiar": "astra",
-        "roles": [
-          "strategic-navigator",
-          "coordination-layer"
-        ]
-      },
-      {
-        "familiar": "charm",
-        "roles": [
-          "devrel-liaison"
-        ]
-      },
-      {
-        "familiar": "sage",
-        "roles": [
-          "researcher"
-        ]
-      },
-      {
-        "familiar": "echo",
-        "roles": [
-          "archivist"
-        ]
-      },
-      {
-        "familiar": "kitty",
-        "roles": [
-          "general-helper"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 // Local feedback store — isolated to a temp COVEN_HOME so it never touches the
-// real ~/.coven/cave-salem-pathfinder.json.
+// real ~/.coven/cave/salem-pathfinder.json.
 const tmpHome = await mkdtemp(path.join(tmpdir(), "salem-fb-"));
 process.env.HOME = tmpHome;
 process.env.COVEN_HOME = path.join(tmpHome, ".coven");

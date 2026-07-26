@@ -61,6 +61,21 @@ function summarizeRecord(name: string, record: Record<string, unknown>): string 
   return ellipsize(JSON.stringify(record));
 }
 
+function fullRecordDetail(name: string, record: Record<string, unknown>): string {
+  const keys: readonly string[] = COMMAND_FIRST_TOOLS.test(name)
+    ? ["command", ...PREFERRED_KEYS.filter((k) => k !== "command")]
+    : PREFERRED_KEYS;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.replace(/\s+/g, " ").trim();
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+  }
+  for (const value of Object.values(record)) {
+    if (typeof value === "string" && value.trim()) return value.replace(/\s+/g, " ").trim();
+  }
+  return JSON.stringify(record);
+}
+
 /**
  * Derive a one-line argument summary from a tool's input payload.
  * Always single-line, at most ~48 chars, empty string when input is absent.
@@ -92,4 +107,24 @@ export function toolArgSummary(name: string, input?: string | null): string {
 
   // Plain string payload (e.g. a Bash command line) — use it directly.
   return ellipsize(raw);
+}
+
+/**
+ * Derive the full readable argument detail for live activity surfaces.
+ * Unlike toolArgSummary(), this does not cap length; callers should wrap or
+ * scroll it in the UI.
+ */
+export function toolArgDetail(name: string, input?: string | null): string {
+  const raw = (input ?? "").trim();
+  if (!raw) return "";
+
+  const parsed = tryParseJson(raw);
+  if (parsed !== undefined && parsed !== null) {
+    if (typeof parsed === "string") return parsed.replace(/\s+/g, " ").trim();
+    if (Array.isArray(parsed)) return parsed.map((v) => String(v)).join(" ").replace(/\s+/g, " ").trim();
+    if (typeof parsed === "object") return fullRecordDetail(name, parsed as Record<string, unknown>);
+    return String(parsed);
+  }
+
+  return raw.replace(/\s+/g, " ").trim();
 }

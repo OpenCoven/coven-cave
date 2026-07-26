@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
-import { loadConversation, saveConversation } from "@/lib/cave-conversations";
+import {
+  isSafeConversationSessionId,
+  loadConversation,
+  saveConversation,
+  withConversationLock,
+} from "@/lib/cave-conversations";
 import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { catalogForRuntime } from "@/lib/runtime-models";
+import { rejectNonLocalRequest } from "@/lib/server/api-security";
+import { listOpenCodeModels } from "@/lib/server/opencode-models";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -51,7 +60,7 @@ async function currentState(
   const conversation = sessionId ? await loadConversation(sessionId) : null;
   return resolveChatModelState({
     familiarId,
-    harness: binding.harness,
+    harness: canonicalHarnessId(binding.harness),
     runtime: conversation?.runtime ?? runtimeForBinding(binding),
     globalDefaultModel: config.defaults.model,
     familiarModel: config.familiars[familiarId]?.model ?? null,
@@ -66,9 +75,30 @@ export async function GET(req: Request) {
   const familiarId = cleanText(url.searchParams.get("familiarId"));
   const sessionId = cleanText(url.searchParams.get("sessionId"));
   if (!familiarId) return jsonError("familiarId is required", 400);
+  if (sessionId && !isSafeConversationSessionId(sessionId)) {
+    return jsonError("invalid session id", 400);
+  }
 
   const state = await currentState(familiarId, sessionId);
-  return NextResponse.json({ ok: true, state });
+  // Also hand back the pickable model menu for this chat's runtime so non-web
+  // clients (the iOS app) don't have to mirror the catalog. Web ignores it and
+  // reads the catalog directly. `allowCustom` means a free-typed id is valid.
+  const catalog = catalogForRuntime(state.harness);
+  // OpenCode's inventory is derived from local authenticated providers. Keep
+  // that CLI call local-only without denying this aggregate state endpoint to
+  // iOS, which still needs the selected model and may free-type a model id.
+  const canReadOpenCodeInventory = state.harness === "opencode"
+    ? !rejectNonLocalRequest(req)
+    : false;
+  const options = canReadOpenCodeInventory
+    ? await listOpenCodeModels(familiarId)
+    : catalog?.models ?? [];
+  return NextResponse.json({
+    ok: true,
+    state,
+    options,
+    allowCustom: catalog?.allowCustom ?? true,
+  });
 }
 
 export async function PATCH(req: Request) {
@@ -88,6 +118,9 @@ export async function PATCH(req: Request) {
   const scope = body.scope;
 
   if (!familiarId) return jsonError("familiarId is required", 400);
+  if (sessionId && !isSafeConversationSessionId(sessionId)) {
+    return jsonError("invalid session id", 400);
+  }
   if (!model) return jsonError("invalid model", 400);
   if (scope === "next-message") {
     return jsonError("next-message scope is composer-local", 400);
@@ -111,16 +144,19 @@ export async function PATCH(req: Request) {
   }
 
   if (!sessionId) return jsonError("sessionId is required for session scope", 400);
-  const conversation = await loadConversation(sessionId);
-  if (!conversation) return jsonError("not found", 404);
-  if (conversation.familiarId !== familiarId) return jsonError("not found", 404);
-  conversation.modelIntent = {
-    model,
-    source: "session",
-    applicationState: "saved",
-    reason: "Saved for this chat.",
-  };
-  await saveConversation(conversation);
+  const updated = await withConversationLock(sessionId, async () => {
+    const conversation = await loadConversation(sessionId);
+    if (!conversation || conversation.familiarId !== familiarId) return false;
+    conversation.modelIntent = {
+      model,
+      source: "session",
+      applicationState: "saved",
+      reason: "Saved for this chat.",
+    };
+    await saveConversation(conversation);
+    return true;
+  });
+  if (!updated) return jsonError("not found", 404);
   const state = await currentState(familiarId, sessionId);
   return NextResponse.json({ ok: true, state });
 }

@@ -1,0 +1,40 @@
+{
+  "name": "epub-to-pdf",
+  "version": "0.1.0",
+  "description": "Convert EPUB and PDF bidirectionally with calibre's ebook-convert: EPUB to PDF preserves layout for analysis, PDF to EPUB compresses and reflows for ereaders.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "epub",
+    "pdf",
+    "calibre",
+    "conversion",
+    "ebook"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/epub-to-pdf",
+  "x-coven": {
+    "displayName": "EPUB to PDF",
+    "category": "Productivity",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/epub-to-pdf"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

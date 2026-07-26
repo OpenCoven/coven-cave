@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "opencoven.craft.v1",
+  "components": {
+    "required": [
+      "filesystem",
+      "ml-engineer"
+    ],
+    "optional": [
+      "coven-evals",
+      "memory",
+      "sequential-thinking"
+    ]
+  },
+  "bundled": {
+    "skills": [
+      {
+        "id": "ray-data",
+        "sourcePath": "craft-sources/alchemists-crucible/ray-data/SKILL.md",
+        "upstreamPath": "05-data-processing/ray-data/SKILL.md",
+        "contentHash": "sha256:bcc73b3341dca18c59cad092cb6dedb7ac0bf0bde80467a039921ac0c02256c3",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      },
+      {
+        "id": "mlflow",
+        "sourcePath": "craft-sources/alchemists-crucible/mlflow/SKILL.md",
+        "upstreamPath": "13-mlops/mlflow/SKILL.md",
+        "contentHash": "sha256:36d2581f7d8beb8b27f66bbef5c94df7e9604b917c3aa15e4183a48a2b1f3f96",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      },
+      {
+        "id": "weights-and-biases",
+        "sourcePath": "craft-sources/alchemists-crucible/weights-and-biases/SKILL.md",
+        "upstreamPath": "13-mlops/weights-and-biases/SKILL.md",
+        "contentHash": "sha256:3cd5daa7cad70d97c96b2d6fdf8d0fc1ed8a97b1750c4e013e2405389baed3b6",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      },
+      {
+        "id": "ml-training-recipes",
+        "sourcePath": "craft-sources/alchemists-crucible/ml-training-recipes/SKILL.md",
+        "upstreamPath": "10-optimization/ml-training-recipes/SKILL.md",
+        "contentHash": "sha256:1cb661b0d3bac57ffed65075707a9079ac23123a5a597700e85c05e03e166a57",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      }
+    ],
+    "prompts": [
+      {
+        "id": "alchemists-crucible-review-install-plan",
+        "name": "Review the install plan",
+        "description": "Summarize the Craft footprint and confirm bounded use.",
+        "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+      }
+    ],
+    "workflows": [
+      {
+        "id": "alchemists-crucible-bounded-research-cycle",
+        "name": "Bounded research cycle",
+        "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+        "steps": [
+          "Declare scope, authority, provenance, and resource limits.",
+          "Select the smallest reproducible action and record its inputs.",
+          "Run only within the declared bounds and preserve resumable state.",
+          "Evaluate outputs against a predeclared criterion.",
+          "Summarize evidence, limitations, and the next human checkpoint."
+        ]
+      }
+    ]
+  },
+  "requiredCapabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "recommendedRoles": [
+    "Researcher",
+    "ML Engineer"
+  ],
+  "provenance": {
+    "upstream": "Orchestra Research AI Research Skills",
+    "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+    "license": "MIT",
+    "modifications": [
+      "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+    ],
+    "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+    "licensePath": "craft-sources/orchestra-research/LICENSE"
+  }
+}

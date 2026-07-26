@@ -1,0 +1,40 @@
+/* design-sync authored: font stacks for the Claude Design bundle.
+   In the app these CSS variables are injected at runtime by next/font
+   (src/app/fonts.ts); previews and designs have no next/font, so the
+   canonical faces load from Google Fonts and every --font-* variable the
+   stylesheet references is defined here with a safe fallback stack.
+   Canonical trio (docs/coven-design-language.md): EB Garamond (display),
+   Inter (body/UI), JetBrains Mono (code/labels). */
+@import url("https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap");
+
+:root {
+  /* canonical trio — actually loaded above */
+  --font-eb-garamond: "EB Garamond", Georgia, serif;
+  --font-inter: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-jetbrains-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* catalog faces — user-selectable in the app; previews fall back to
+     system stacks unless the family is installed locally */
+  --font-geist-sans: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-geist-mono: "Geist Mono", ui-monospace, Menlo, monospace;
+  --font-fredoka: "Fredoka", -apple-system, sans-serif;
+  --font-instrument-serif: "Instrument Serif", Georgia, serif;
+  --font-fraunces: "Fraunces", Georgia, serif;
+  --font-roboto: "Roboto", -apple-system, sans-serif;
+  --font-open-sans: "Open Sans", -apple-system, sans-serif;
+  --font-lato: "Lato", -apple-system, sans-serif;
+  --font-source-sans-3: "Source Sans 3", -apple-system, sans-serif;
+  --font-noto-sans: "Noto Sans", -apple-system, sans-serif;
+  --font-ibm-plex-sans: "IBM Plex Sans", -apple-system, sans-serif;
+  --font-work-sans: "Work Sans", -apple-system, sans-serif;
+  --font-dm-sans: "DM Sans", -apple-system, sans-serif;
+  --font-manrope: "Manrope", -apple-system, sans-serif;
+  --font-figtree: "Figtree", -apple-system, sans-serif;
+  --font-public-sans: "Public Sans", -apple-system, sans-serif;
+  --font-fira-code: "Fira Code", ui-monospace, Menlo, monospace;
+  --font-source-code-pro: "Source Code Pro", ui-monospace, Menlo, monospace;
+  --font-ibm-plex-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --font-roboto-mono: "Roboto Mono", ui-monospace, Menlo, monospace;
+  --font-space-mono: "Space Mono", ui-monospace, Menlo, monospace;
+  --font-inconsolata: "Inconsolata", ui-monospace, Menlo, monospace;
+}

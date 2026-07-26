@@ -42,7 +42,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const text = await readFile(roleMdPath, "utf8");
+    const text = await readFile(/* turbopackIgnore: true */ roleMdPath, "utf8");
     const current = parseRoleListField(text, "workflows");
     const next = attach
       ? current.includes(workflowId)
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
       : current.filter((id) => id !== workflowId);
     const updated = setRoleListField(text, "workflows", next);
     if (updated !== text) {
-      await writeFile(roleMdPath, updated, "utf8");
+      await writeFile(/* turbopackIgnore: true */ roleMdPath, updated, "utf8");
     }
     return NextResponse.json({ ok: true, workflows: next });
   } catch (err) {

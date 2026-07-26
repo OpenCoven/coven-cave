@@ -1,0 +1,36 @@
+{
+  "name": "charms-loom",
+  "version": "0.1.0",
+  "description": "Deterministic Slidev deck pipeline: author, verify, export, and deploy OpenCoven Show'n Spells and branded decks.",
+  "author": {
+    "name": "OpenCoven",
+    "url": "https://github.com/OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "MIT",
+  "keywords": [
+    "slidev",
+    "slides",
+    "presentation",
+    "deck",
+    "craft"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Charm's Loom",
+    "shortDescription": "Deterministic Slidev deck pipeline: author, verify, export, and deploy OpenCoven Show'n Spells and branded decks.",
+    "longDescription": "Deterministic Slidev deck pipeline: author, verify, export, and deploy OpenCoven Show'n Spells and branded decks.",
+    "developerName": "OpenCoven",
+    "category": "Communication Crafts",
+    "capabilities": [
+      "read_files",
+      "write_files",
+      "shell"
+    ],
+    "websiteURL": "https://opencoven.ai",
+    "defaultPrompt": [
+      "Use Charm's Loom to author, verify, export, or deploy an OpenCoven Slidev deck."
+    ]
+  }
+}

@@ -7,6 +7,7 @@
 import { parse } from "@create-markdown/core";
 import { renderAsync } from "@create-markdown/preview";
 import { mermaidPlugin } from "@create-markdown/preview-mermaid";
+import { renderTableReplacements } from "../../../src/lib/markdown-table-cells.ts";
 import hljs from "highlight.js/lib/core";
 
 import langSwift from "highlight.js/lib/languages/swift";
@@ -69,58 +70,159 @@ function highlightCode(code, rawLang) {
   let lang = (rawLang ?? "").trim().toLowerCase().split(/\s+/)[0];
   lang = ALIASES[lang] ?? lang;
   let inner = escapeHtml(code);
+  let resolved = "";
   if (lang && hljs.getLanguage(lang)) {
+    resolved = lang;
     try { inner = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value; } catch {}
   }
-  // Wrap in a positioned container with a copy button; the button reads the
-  // <code> textContent (raw, de-highlighted) and hands it to native on tap.
-  return `<div class="code-block"><button class="code-copy" type="button" aria-label="Copy code">Copy</button><pre class="hljs"><code class="hljs">${inner}</code></pre></div>`;
+  // A header bar (language label + Expand + Copy) sits above the code, like the
+  // desktop chat. Expand lifts the highlighted <pre> to a full-screen viewer;
+  // Copy reads the <code> textContent (raw, de-highlighted) and hands it to
+  // native. Both are explicit buttons so reading/scrolling code never triggers
+  // them by accident.
+  const label = resolved ? `<span class="code-lang">${escapeHtml(resolved)}</span>` : `<span class="code-lang"></span>`;
+  return `<div class="code-block">`
+    + `<div class="code-toolbar">${label}<span class="code-actions">`
+    + `<button class="code-btn code-expand" type="button" aria-label="Expand code">⤢ Expand</button>`
+    + `<button class="code-btn code-copy" type="button" aria-label="Copy code">Copy</button>`
+    + `</span></div>`
+    + `<pre class="hljs"><code class="hljs">${inner}</code></pre></div>`;
 }
 
-async function renderMarkdown(md) {
+// While a reply is still streaming we DON'T run Mermaid: the fence is usually
+// incomplete (so it errors) and re-rendering a diagram on every token is heavy
+// and flickers. Show a lightweight placeholder instead; the real diagram renders
+// once on settle (streaming === false).
+function mermaidPlaceholder(code) {
+  const preview = escapeHtml(code).trim().slice(0, 400);
+  return `<div class="cm-mermaid" style="opacity:.8">`
+    + `<div style="font:600 10.5px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:.05em;text-transform:uppercase;color:var(--txt-muted);text-align:left;margin-bottom:6px">◇ Diagram · rendering on completion</div>`
+    + `<pre style="margin:0;background:transparent;border:0;padding:0;white-space:pre-wrap;text-align:left;font-size:12px;color:var(--txt-muted)">${preview}</pre></div>`;
+}
+
+async function renderMarkdown(md, { streaming = false } = {}) {
   const blocks = parse(md || "");
   const codeBlocks = blocks.filter((b) => b.type === "codeBlock");
-  const hasMermaid = codeBlocks.some(isMermaid);
+  const hasMermaid = !streaming && codeBlocks.some(isMermaid);
   if (hasMermaid) await initMermaid();
 
   const replacements = new Array(codeBlocks.length);
   codeBlocks.forEach((block, i) => {
-    if (hasMermaid && isMermaid(block)) {
-      replacements[i] = mermaid.renderBlock?.(block, () => "") ?? "";
+    if (isMermaid(block)) {
+      replacements[i] = streaming
+        ? mermaidPlaceholder(codeText(block))
+        : (mermaid.renderBlock?.(block, () => "") ?? "");
       return;
     }
     replacements[i] = highlightCode(codeText(block), block.props?.language ?? block.props?.info ?? "");
   });
 
+  // Re-render table cells through the inline path so **bold**/`code`/[links]
+  // inside a cell render as formatting, not literal markdown (preview emits
+  // cells as escaped plain text). Supplied positionally via `table`.
+  const tableReplacements = await renderTableReplacements(blocks, renderAsync);
+
   let idx = 0;
+  let tableIdx = 0;
   let html = await renderAsync(blocks, {
     linkTarget: "_blank",
     sanitize: true,
-    customRenderers: { codeBlock: () => replacements[idx++] ?? "" },
+    customRenderers: {
+      codeBlock: () => replacements[idx++] ?? "",
+      table: () => tableReplacements[tableIdx++] ?? "",
+    },
   });
   if (hasMermaid && mermaid.postProcess) html = await mermaid.postProcess(html);
   return html;
 }
 
-function reportHeight() {
+// Reader theming: override the prose-level CSS variables (declared on :root in
+// markdown.css) so the same bundle can render dark / light / sepia. Code blocks
+// keep their dark card (we deliberately DON'T touch --code-bg / hljs colours) —
+// a dark code card on a light page is intentional and dodges contrast problems.
+// Inline-code bg/fg are color-mixed off var(--accent) (declared in markdown.css)
+// so they track whatever --accent ends up being — the per-theme accent here, or
+// the desktop's published accent layered on top by applyAccent(). Light/sepia
+// pages mix the pill text toward black (the dark default lifts toward white) so
+// it stays legible on a light bubble.
+const THEME_VARS = {
+  dark: null,
+  light: { "--txt": "#1c1c22", "--txt-muted": "#5b5b66", "--accent": "#5a51d6", "--hairline": "rgba(0,0,0,0.14)", "--code-inline-bg": "color-mix(in srgb, var(--accent) 13%, transparent)", "--code-inline-fg": "color-mix(in srgb, var(--accent), #000000 14%)", "--th-bg": "rgba(0,0,0,0.04)", bg: "#ffffff" },
+  sepia: { "--txt": "#43382a", "--txt-muted": "#7a6a55", "--accent": "#9a5a2a", "--hairline": "rgba(0,0,0,0.16)", "--code-inline-bg": "color-mix(in srgb, var(--accent) 15%, transparent)", "--code-inline-fg": "color-mix(in srgb, var(--accent), #000000 22%)", "--th-bg": "rgba(0,0,0,0.05)", bg: "#f4ecd8" },
+};
+const THEME_KEYS = ["--txt", "--txt-muted", "--accent", "--hairline", "--code-inline-bg", "--code-inline-fg", "--th-bg"];
+function applyTheme(name) {
+  const de = document.documentElement;
+  const t = THEME_VARS[name] || null;
+  THEME_KEYS.forEach((k) => de.style.removeProperty(k));
+  if (t) for (const k of THEME_KEYS) if (t[k]) de.style.setProperty(k, t[k]);
+  document.body.style.background = t && t.bg ? t.bg : "";
+}
+
+// Override --accent with the desktop theme's published accent (a `#rrggbb[aa]`)
+// so inline code, links, and list markers match the selected theme rather than
+// the bundle's built-in lavender. Inline-code bg/fg are color-mixed off --accent
+// (markdown.css / THEME_VARS), so they follow this automatically. Runs AFTER
+// applyTheme (which clears --accent), so a falsy/invalid accent cleanly falls
+// back to the per-theme accent.
+function applyAccent(accent) {
+  if (typeof accent !== "string") return;
+  const v = accent.trim();
+  if (!/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(v)) return;
+  document.documentElement.style.setProperty("--accent", v[0] === "#" ? v : "#" + v);
+}
+
+// fontScale zooms the whole document uniformly (px + em both scale); reader mode
+// adds page padding so the full-screen scroll view isn't edge-to-edge.
+function applyStyle(opts = {}) {
+  const { fontScale = 1, theme = "dark", reader = false, accent = null } = opts || {};
+  applyTheme(theme);
+  applyAccent(accent);
+  document.body.style.zoom = fontScale && fontScale !== 1 ? String(fontScale) : "";
+  document.body.style.padding = reader ? "18px 18px 80px" : "";
+}
+
+// Heading elements from the last render, in document order, so the reader's TOC
+// can scroll to one by index without round-tripping coordinates.
+let lastHeadingEls = [];
+function reportLayout() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const h = Math.ceil(document.body.getBoundingClientRect().height);
       window.webkit?.messageHandlers?.cave?.postMessage({ type: "height", height: h });
+      const root = document.getElementById("root");
+      lastHeadingEls = root ? [...root.querySelectorAll("h1,h2,h3,h4,h5,h6")] : [];
+      const headings = lastHeadingEls
+        .map((el, i) => ({ index: i, level: Number(el.tagName[1]), text: (el.textContent || "").trim() }))
+        .filter((x) => x.text);
+      window.webkit?.messageHandlers?.cave?.postMessage({ type: "headings", headings });
     });
   });
 }
 
-window.caveRender = async (md) => {
+window.caveRender = async (md, opts = {}) => {
   const root = document.getElementById("root");
   if (!root) return;
+  applyStyle(opts);
   try {
-    root.innerHTML = await renderMarkdown(md);
+    root.innerHTML = await renderMarkdown(md, { streaming: !!opts.streaming });
   } catch (err) {
     root.textContent = String(md || "");
     window.webkit?.messageHandlers?.cave?.postMessage({ type: "error", message: String(err) });
   }
-  reportHeight();
+  reportLayout();
+};
+
+// Re-style without re-rendering markdown — used when the reader's font size or
+// theme changes, so the scroll position survives (innerHTML is untouched).
+window.caveStyle = (opts = {}) => {
+  applyStyle(opts);
+  reportLayout();
+};
+
+// Reader TOC: scroll the (internally-scrolling) reader WebView to a heading.
+window.caveScrollToHeading = (i) => {
+  lastHeadingEls[i]?.scrollIntoView({ behavior: "smooth", block: "start" });
 };
 
 document.addEventListener("click", (e) => {
@@ -135,12 +237,53 @@ document.addEventListener("click", (e) => {
 document.addEventListener("click", (e) => {
   const btn = e.target?.closest?.(".code-copy");
   if (!btn) return;
-  const text = btn.parentElement?.querySelector("code")?.textContent ?? "";
+  const text = btn.closest(".code-block")?.querySelector("code")?.textContent ?? "";
   window.webkit?.messageHandlers?.cave?.postMessage({ type: "copy", text });
   btn.textContent = "Copied";
   btn.classList.add("is-copied");
   clearTimeout(btn._t);
   btn._t = setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("is-copied"); }, 1400);
+});
+
+// Expand a code block: lift the highlighted <pre> into a full-screen, scrollable
+// code viewer (native owns the surface) and pass the raw text so the viewer's
+// own Copy button works without round-tripping through the WebView again.
+document.addEventListener("click", (e) => {
+  const btn = e.target?.closest?.(".code-expand");
+  if (!btn) return;
+  const block = btn.closest(".code-block");
+  const pre = block?.querySelector("pre");
+  const text = block?.querySelector("code")?.textContent ?? "";
+  window.webkit?.messageHandlers?.cave?.postMessage({
+    type: "enlarge",
+    kind: "code",
+    html: pre?.outerHTML ?? "",
+    text,
+  });
+});
+
+// Tap a table, Mermaid diagram, or inline image to enlarge it full-screen —
+// native owns the zoom surface. Links / copy buttons keep their own behavior,
+// so skip taps that land on them.
+const MERMAID_SEL = ".cm-mermaid, .mermaid, [class*='mermaid']";
+document.addEventListener("click", (e) => {
+  if (e.target?.closest?.("a[href], button, .code-copy")) return;
+  const hit = e.target?.closest?.(`table, img, svg, ${MERMAID_SEL}`);
+  if (!hit) return;
+  // A Mermaid SVG: lift its styled wrapper so the enlarged view keeps the card.
+  const target =
+    hit.tagName?.toLowerCase() === "svg" ? (hit.closest(MERMAID_SEL) || hit) : hit;
+  const tag = target.tagName?.toLowerCase();
+  const kind = tag === "table" ? "table" : tag === "img" ? "image" : "diagram";
+  // For an <img>, also pass its src so native can decode it into a UIImage and
+  // present the smooth native zoom (pinch/pan/double-tap) instead of a WebView.
+  const src = kind === "image" ? (target.getAttribute("src") || "") : "";
+  window.webkit?.messageHandlers?.cave?.postMessage({
+    type: "enlarge",
+    kind,
+    html: target.outerHTML,
+    src,
+  });
 });
 
 window.webkit?.messageHandlers?.cave?.postMessage({ type: "ready" });

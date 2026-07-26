@@ -1,11 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
+import { arrayContentEqual } from "@/lib/array-content-equal";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useAnnouncer } from "@/components/ui/live-region";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
-import type { Recurrence } from "@/lib/inbox-recurrence";
-import { groupInboxFeed, inboxKindLabel } from "@/lib/inbox-feed";
+import {
+  buildInboxGroups,
+  groupInboxFeed,
+  INBOX_GROUP_BY_OPTIONS,
+  type InboxGroupBy,
+} from "@/lib/inbox-feed";
+import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import type {
   AutomationStatus,
   CodexAutomation,
@@ -13,18 +21,38 @@ import type {
 } from "@/lib/codex-automations-types";
 import type { AutomationRunRecord } from "@/lib/automation-runs";
 import { Icon } from "@/lib/icon";
-import { formatTimestamp, formatClock, readDateTimePrefs } from "@/lib/datetime-format";
+import { useDateTimePrefs } from "@/lib/datetime-format";
+import { relativeTimeSigned } from "@/lib/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { UndoToast } from "@/components/ui/undo-toast";
+import { useUndoDelete } from "@/lib/use-undo-delete";
+import { SearchInput } from "@/components/ui/search-input";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-import { ProjectTree } from "@/components/project-tree";
-import type { CaveProject } from "@/lib/cave-projects-types";
+import { SelectionToolbar } from "@/components/ui/selection-toolbar";
+import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
+import { useMultiSelect } from "@/lib/use-multi-select";
 import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
-import { SkillSelect } from "@/components/automation-skill-select";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
+import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } from "@/lib/rituals-overview";
 import { AutomationCreateDialog, type AutomationCreateInput } from "@/components/automation-create-dialog";
+import { CodexDetailPanel } from "@/components/automations/cron-detail-panel";
+import { DetailPanel } from "@/components/automations/reminder-detail-panel";
+import { AutomationsPanel, ScheduleActionsContext } from "@/components/automations/schedule-list";
+import { InboxFeedList } from "@/components/automations/inbox-feed-list";
+import {
+  RitualAgendaThread,
+  RitualItemRow,
+  RitualNeedsRow,
+  ritualWeekLabel,
+  type RitualOverviewPane,
+  useRitualNow,
+} from "@/components/automations/ritual-overview";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -35,1260 +63,175 @@ import { AutomationCreateDialog, type AutomationCreateInput } from "@/components
 
 type Props = {
   familiars: Familiar[];
-  onOpenSession?: (sessionId: string, familiarId: string | null) => void;
   onNewReminder?: () => void;
   onEdit?: (item: InboxItem) => void;
   onOpenLink?: (link: LinkRef) => void;
+  /** When provided, adds a "Calendar" tab that renders this node full-height.
+   *  Lets the Calendar surface live inside Automations as one schedule page
+   *  without coupling this view to CalendarView's prop shape. */
+  calendarSlot?: ReactNode;
+  /** Tab to open on mount (deep-link target — e.g. the Calendar nav button). */
+  initialTab?: AutomationTab;
 };
 
-function linkLabel(link: LinkRef): string {
-  if (link.kind === "url") return link.ref;
-  if (link.kind === "card") return "Card";
-  if (link.kind === "session") return "Session";
-  return "Memory";
-}
+// The active Rituals surface: Inbox (the full feed, mostly reminders) plus
+// Calendar and Crons. The broader Automations/Flow experience lives on
+// feature/automations-flow.
+type AutomationTab = "overview" | "calendar" | "crons";
 
-type ScheduleTab = "reminders" | "automations" | "inbox";
+const RITUAL_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "calendar", label: "Calendar" },
+  { id: "crons", label: "Crons" },
+] satisfies ReadonlyArray<TabItem<AutomationTab>>;
 
-import {
-  RRULE_DAY_ORDER,
-  parseCodexRrule,
-  buildCodexRrule,
-  splitAutomationPrompt,
-  composeAutomationPrompt,
-} from "@/lib/codex-automation-form";
-
-const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const DAY_INITIALS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-const RRULE_DAY_LABEL: Record<string, string> = {
-  SU: "Sun",
-  MO: "Mon",
-  TU: "Tue",
-  WE: "Wed",
-  TH: "Thu",
-  FR: "Fri",
-  SA: "Sat",
-};
-
-// Format a schedule's hour:minute honoring the user's 12h/24h clock pref
-// (so "Daily at 14:00" reads as "Daily at 2:00 PM" when 12-hour is selected).
-function scheduleTime(hour: number, minute: number): string {
-  return formatClock(new Date(2000, 0, 1, hour, minute, 0).toISOString());
-}
-
-function humanSchedule(rec: Recurrence | undefined): string {
-  if (!rec || rec.type === "none") return "One-shot";
-  if (rec.type === "interval") {
-    const m = Math.round(rec.everyMs / 60000);
-    if (m < 60) return `Every ${m}m`;
-    const h = Math.round(m / 60);
-    if (h < 24) return `Every ${h}h`;
-    return `Every ${Math.round(h / 24)}d`;
-  }
-  if (rec.type === "daily")
-    return `Daily at ${scheduleTime(rec.hour, rec.minute)}`;
-  if (rec.type === "weekly") {
-    const days = rec.days.map((d) => WEEKDAY[d] ?? "?").join("/");
-    return `${days}s at ${scheduleTime(rec.hour, rec.minute)}`;
-  }
-  if (rec.type === "cron") return `Cron: ${rec.expr}`;
-  return "Scheduled";
-}
-
-function isScheduleInboxItem(item: InboxItem): boolean {
-  return item.kind === "reminder" || item.kind === "daily-summary";
-}
-
-// A one-shot reminder still pending after its fire time never fired (e.g. the
-// daemon was offline) — worth surfacing instead of a quiet "3h ago".
-function isReminderOverdue(item: InboxItem): boolean {
-  return (
-    item.kind !== "daily-summary" &&
-    (item.recurrence?.type ?? "none") === "none" &&
-    item.status === "pending" &&
-    !!item.fireAt &&
-    new Date(item.fireAt).getTime() < Date.now()
-  );
+// Fire a cross-surface navigation from the GitHub subscriptions manager.
+function navigateToMode(mode: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
 }
 
 function relTime(iso: string | undefined | null): string {
   if (!iso) return "—";
-  const delta = new Date(iso).getTime() - Date.now();
-  const abs = Math.abs(delta);
-  const m = Math.round(abs / 60000);
-  if (m < 1) return delta > 0 ? "soon" : "just now";
-  if (m < 60) return delta > 0 ? `in ${m}m` : `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return delta > 0 ? `in ${h}h` : `${h}h ago`;
-  const d = Math.round(h / 24);
-  if (d <= 6) return delta > 0 ? `in ${d}d` : `${d}d ago`;
-  // Beyond a week the relative form ("in 42d") is hard to parse — show the
-  // actual date + time, honoring the user's clock and date preferences.
-  return formatTimestamp(iso, readDateTimePrefs());
+  return relativeTimeSigned(iso);
 }
-
-function listInput(values: string[]): string {
-  return values.join("\n");
-}
-
-function commaInput(values: string[]): string {
-  return values.join(", ");
-}
-
-function parseListInput(value: string): string[] {
-  return value
-    .split(/\n|,/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
-function FieldLabel({ children }: { children: ReactNode }) {
-  return (
-    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest"
-      style={{ color: "var(--text-muted)" }}>
-      {children}
-    </label>
-  );
-}
-
-const automationFieldBaseClass =
-  "w-full rounded-md border bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
-const automationInputClass = `${automationFieldBaseClass} h-8 px-2 text-[12px]`;
-const automationSelectClass = `${automationFieldBaseClass} h-8 px-2 text-[12px]`;
-const automationTextareaClass = `${automationFieldBaseClass} resize-y px-2 py-2 text-[12px] leading-relaxed`;
-const automationMonoTextareaClass = `${automationTextareaClass} font-mono text-[11px]`;
-
-const fieldStyle = {
-  borderColor: "var(--border-hairline)",
-} as const;
-
-// ── Status icon ──────────────────────────────────────────────────────────────
-function StatusIcon({ item }: { item: InboxItem }) {
-  const paused = item.status === "dismissed" && item.recurrence?.type !== "none";
-  const active = item.status === "pending" || item.status === "fired";
-  const hasRun = !!item.firedAt;
-
-  if (paused) {
-    // Pause icon — two vertical bars inside circle
-    return (
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
-        style={{ borderColor: "rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.35)" }}>
-        <Icon name="ph:minus" width={8} />
-      </span>
-    );
-  }
-  if (active && hasRun) {
-    // Filled purple circle — has fired before
-    return (
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
-        style={{ background: "var(--accent-presence)" }} />
-    );
-  }
-  // Hollow circle — active, never fired yet
-  return (
-    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
-      style={{ borderColor: "rgba(255,255,255,0.28)" }} />
-  );
-}
-
-// ── Detail panel (slides in on row click) ────────────────────────────────────
-function DetailPanel({
-  item,
-  familiarLabel,
-  busyId,
-  onClose,
-  runNow,
-  togglePaused,
-  stopRecurrence,
-  removeItem,
-  onEdit,
-  onOpenLink,
-}: {
-  item: InboxItem;
-  familiarLabel: (fid?: string | null) => string | null;
-  busyId: string | null;
-  onClose: () => void;
-  runNow: (id: string) => void;
-  togglePaused: (item: InboxItem) => void;
-  stopRecurrence: (id: string) => void;
-  removeItem: (id: string) => void;
-  onEdit?: (item: InboxItem) => void;
-  onOpenLink?: (link: LinkRef) => void;
-}) {
-  const paused = item.status === "dismissed" && item.recurrence?.type !== "none";
-  const isRecurring = item.recurrence && item.recurrence.type !== "none";
-  const isDailySummary = item.kind === "daily-summary";
-  const busy = busyId === item.id;
-
-  return (
-    <div className="flex h-full flex-col"
-      style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-5 py-3"
-        style={{ borderColor: "var(--border-hairline)" }}>
-        <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
-          {isDailySummary ? "Daily summary details" : "Reminder details"}
-        </h2>
-        <button type="button" onClick={onClose}
-          className="focus-ring rounded p-1 transition-colors hover:bg-white/5"
-          style={{ color: "var(--text-muted)" }}>
-          <Icon name="ph:x" width={14} />
-        </button>
-      </div>
-
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
-        <div>
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-            style={{ color: "var(--text-muted)" }}>Name</p>
-          <p className="text-[14px] font-medium" style={{ color: "var(--text-primary)" }}>
-            {item.title}
-          </p>
-        </div>
-
-        {item.body && (
-          <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "var(--text-muted)" }}>Description</p>
-            <p className="text-[12px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-              {item.body}
-            </p>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-4">
-          {!isDailySummary && (
-            <div>
-              <FieldLabel>Schedule</FieldLabel>
-              <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
-                {humanSchedule(item.recurrence)}
-              </p>
-            </div>
-          )}
-          <div>
-            <FieldLabel>Status</FieldLabel>
-            <p className="text-[12px] capitalize" style={{ color: paused ? "var(--text-muted)" : "var(--text-primary)" }}>
-              {paused ? "Paused" : item.status}
-            </p>
-          </div>
-          {!isDailySummary && (
-            <div>
-              <FieldLabel>Next run</FieldLabel>
-              <p
-                className="text-[12px]"
-                style={{ color: "var(--text-primary)" }}
-                title={item.fireAt ? formatTimestamp(item.fireAt, readDateTimePrefs()) : undefined}
-              >
-                {relTime(item.fireAt)}
-              </p>
-            </div>
-          )}
-          <div>
-            <FieldLabel>{isDailySummary ? "Sent" : "Last run"}</FieldLabel>
-            <p
-              className="text-[12px]"
-              style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}
-              title={item.firedAt ? formatTimestamp(item.firedAt, readDateTimePrefs()) : undefined}
-            >
-              {item.firedAt ? relTime(item.firedAt) : "Never"}
-            </p>
-          </div>
-        </div>
-
-        {familiarLabel(item.familiarId) && (
-          <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "var(--text-muted)" }}>Familiar</p>
-            <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px]"
-              style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" }}>
-              {familiarLabel(item.familiarId)}
-            </span>
-          </div>
-        )}
-
-        {item.link && (
-          <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "var(--text-muted)" }}>Link</p>
-            <button
-              type="button"
-              onClick={() => item.link && onOpenLink?.(item.link)}
-              className="focus-ring inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] transition-colors hover:bg-white/5"
-              style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" }}
-            >
-              <Icon name="ph:link" width={12} className="shrink-0" />
-              <span className="truncate">{linkLabel(item.link)}</span>
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="border-t px-5 py-4 space-y-2"
-        style={{ borderColor: "var(--border-hairline)" }}>
-        {onEdit && !isDailySummary && (
-          <button type="button" disabled={busy} onClick={() => onEdit(item)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
-            style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
-            <Icon name="ph:pencil-simple" width={13} />
-            Edit
-          </button>
-        )}
-        {!isDailySummary && (
-          <>
-            <button type="button" disabled={busy || paused} onClick={() => runNow(item.id)}
-              className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
-              style={{ background: "var(--accent-presence)" }}>
-              Run now
-            </button>
-            <button type="button" disabled={busy} onClick={() => togglePaused(item)}
-              className="w-full rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
-              style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
-              {paused ? "Resume" : "Pause"}
-            </button>
-          </>
-        )}
-        {isRecurring && !isDailySummary && (
-          <button type="button" disabled={busy} onClick={() => stopRecurrence(item.id)}
-            className="w-full rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
-            style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
-            Stop repeating
-          </button>
-        )}
-        <button type="button" disabled={busy} onClick={() => removeItem(item.id)}
-          className="w-full rounded-lg py-2 text-[12px] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40"
-          style={{ color: "oklch(0.65 0.18 20)" }}>
-          Delete
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ReminderTaskRow({
-  item,
-  selected,
-  familiarLabel,
-  onSelect,
-}: {
-  item: InboxItem;
-  selected: boolean;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-}) {
-  const workspace = familiarLabel(item.familiarId);
-  const isOverdue = isReminderOverdue(item);
-  const schedule = item.kind === "daily-summary"
-    ? "Daily summary"
-    : item.recurrence?.type !== "none"
-    ? humanSchedule(item.recurrence)
-    : isOverdue
-    ? "Overdue"
-    : item.fireAt
-    ? relTime(item.fireAt)
-    : "Paused";
-
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={() => onSelect(item)}
-        className="focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
-        style={{
-          background: selected ? "rgba(255,255,255,0.05)" : "transparent",
-        }}
-        onMouseEnter={(e) => {
-          if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)";
-        }}
-        onMouseLeave={(e) => {
-          if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-        }}
-      >
-        <StatusIcon item={item} />
-        <span className="flex-1 min-w-0 flex items-baseline gap-2">
-          <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
-            {item.title}
-          </span>
-          {workspace && (
-            <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {workspace}
-            </span>
-          )}
-        </span>
-        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: isOverdue ? "var(--color-warning)" : "var(--text-muted)" }}>
-          {schedule}
-        </span>
-      </button>
-    </li>
-  );
-}
-
-function ReminderTaskSection({
-  title,
-  items,
-  selectedId,
-  familiarLabel,
-  onSelect,
-}: {
-  title: string;
-  items: InboxItem[];
-  selectedId: string | null;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-}) {
-  if (items.length === 0) return null;
-  const overdueCount = items.filter(isReminderOverdue).length;
-  return (
-    <div className="mb-6">
-      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
-        style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
-        <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
-          {title}
-        </span>
-        {overdueCount > 0 && (
-          <span
-            className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-            style={{ background: "color-mix(in oklch, var(--color-warning) 18%, transparent)", color: "var(--color-warning)" }}
-          >
-            {overdueCount} overdue
-          </span>
-        )}
-      </div>
-      <ul>
-        {items.map((item) => (
-          <ReminderTaskRow
-            key={item.id}
-            item={item}
-            selected={selectedId === item.id}
-            familiarLabel={familiarLabel}
-            onSelect={onSelect}
-          />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ReminderTaskList({
-  current,
-  paused,
-  oneShots,
-  history,
-  selectedId,
-  familiarLabel,
-  onSelect,
-}: {
-  current: InboxItem[];
-  paused: InboxItem[];
-  oneShots: InboxItem[];
-  history: InboxItem[];
-  selectedId: string | null;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-}) {
-  return (
-    <>
-      <ReminderTaskSection title="Repeating" items={current} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
-      <ReminderTaskSection title="Paused" items={paused} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
-      <ReminderTaskSection title="One-time" items={oneShots} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
-      {history.length > 0 && (
-        <ReminderTaskSection title="History" items={history} selectedId={selectedId}
-          familiarLabel={familiarLabel} onSelect={onSelect} />
-      )}
-    </>
-  );
-}
-
-// ── Codex automation detail panel ────────────────────────────────────────────
-function CodexDetailPanel({
-  auto,
-  busy,
-  onClose,
-  onToggle,
-  onSave,
-  onDelete,
-  onRun,
-  runs,
-}: {
-  auto: CodexAutomation;
-  busy: boolean;
-  onClose: () => void;
-  onToggle: (auto: CodexAutomation) => void;
-  onSave: (auto: CodexAutomation, patch: CodexAutomationPatch) => void;
-  onDelete: (auto: CodexAutomation) => void;
-  onRun: (auto: CodexAutomation) => void;
-  runs: AutomationRunRecord[];
-}) {
-  const isActive = auto.status === "ACTIVE";
-  const parsedSchedule = useMemo(() => parseCodexRrule(auto.rrule), [auto.rrule]);
-  const promptParts = splitAutomationPrompt(auto.prompt);
-  const [name, setName] = useState(auto.name);
-  const [goals, setGoals] = useState(promptParts.goals);
-  const [deliverables, setDeliverables] = useState(promptParts.deliverables);
-  const [model, setModel] = useState(auto.model ?? "");
-  const [reasoningEffort, setReasoningEffort] = useState(auto.reasoningEffort ?? "medium");
-  const [executionEnvironment, setExecutionEnvironment] = useState(auto.executionEnvironment ?? "worktree");
-  const [tagsText, setTagsText] = useState(commaInput(auto.tags));
-  const [cwdsText, setCwdsText] = useState(listInput(auto.cwds));
-  const [skillPath, setSkillPath] = useState(auto.skillPath ?? "");
-  // Folder-picker ("browse") state for the Working directories field.
-  const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
-  const [cwdProjects, setCwdProjects] = useState<CaveProject[]>([]);
-  const [scheduleMode, setScheduleMode] = useState<"daily" | "weekly" | "raw">(parsedSchedule.mode);
-  const [scheduleTime, setScheduleTime] = useState(parsedSchedule.time);
-  const [scheduleDays, setScheduleDays] = useState(parsedSchedule.days);
-  const [rawRrule, setRawRrule] = useState(parsedSchedule.raw);
-
-  useEffect(() => {
-    const nextSchedule = parseCodexRrule(auto.rrule);
-    const nextPromptParts = splitAutomationPrompt(auto.prompt);
-    setName(auto.name);
-    setGoals(nextPromptParts.goals);
-    setDeliverables(nextPromptParts.deliverables);
-    setModel(auto.model ?? "");
-    setReasoningEffort(auto.reasoningEffort ?? "medium");
-    setExecutionEnvironment(auto.executionEnvironment ?? "worktree");
-    setTagsText(commaInput(auto.tags));
-    setCwdsText(listInput(auto.cwds));
-    setSkillPath(auto.skillPath ?? "");
-    setScheduleMode(nextSchedule.mode);
-    setScheduleTime(nextSchedule.time);
-    setScheduleDays(nextSchedule.days);
-    setRawRrule(nextSchedule.raw);
-  }, [auto]);
-
-  const nextRrule = buildCodexRrule(scheduleMode, scheduleTime, scheduleDays, rawRrule);
-  const tags = parseListInput(tagsText);
-  const cwds = parseListInput(cwdsText);
-  const cwdSet = useMemo(() => new Set(cwds), [cwdsText]); // eslint-disable-line react-hooks/exhaustive-deps
-  const addCwd = useCallback((dir: string) => {
-    const clean = dir.trim();
-    if (!clean) return;
-    setCwdsText((prev) => {
-      const list = parseListInput(prev);
-      if (list.includes(clean)) return prev;
-      return listInput([...list, clean]);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!cwdPickerOpen || cwdProjects.length > 0) return;
-    let alive = true;
-    void fetch("/api/projects")
-      .then((res) => res.json())
-      .then((data: { ok?: boolean; projects?: CaveProject[] }) => {
-        if (alive && data.ok && Array.isArray(data.projects)) setCwdProjects(data.projects);
-      })
-      .catch(() => undefined);
-    return () => { alive = false; };
-  }, [cwdPickerOpen, cwdProjects.length]);
-  const promptDirty = goals !== promptParts.goals || deliverables !== promptParts.deliverables;
-  const nextPrompt = promptDirty
-    ? composeAutomationPrompt(goals, deliverables, promptParts.hasStructuredSections || deliverables.trim().length > 0)
-    : auto.prompt;
-  const invalidSchedule =
-    !nextRrule.startsWith("RRULE:") || (scheduleMode === "weekly" && scheduleDays.length === 0);
-  const dirty =
-    name !== auto.name ||
-    promptDirty ||
-    model !== (auto.model ?? "") ||
-    reasoningEffort !== (auto.reasoningEffort ?? "medium") ||
-    executionEnvironment !== (auto.executionEnvironment ?? "worktree") ||
-    tagsText !== commaInput(auto.tags) ||
-    cwdsText !== listInput(auto.cwds) ||
-    skillPath.trim() !== (auto.skillPath ?? "") ||
-    nextRrule !== (auto.rrule ?? "");
-  const canSave = !busy && dirty && name.trim().length > 0 && !invalidSchedule;
-
-  // When Save is disabled because the form is invalid (not merely unchanged),
-  // explain why instead of leaving the user with a dead button.
-  const saveBlockedReason =
-    name.trim().length === 0
-      ? "Give the automation a name."
-      : scheduleMode === "weekly" && scheduleDays.length === 0
-        ? "Pick at least one day for a weekly schedule."
-        : !nextRrule.startsWith("RRULE:")
-          ? "Enter a valid schedule."
-          : null;
-
-  const toggleDay = (day: string) => {
-    setScheduleDays((prev) =>
-      prev.includes(day) ? prev.filter((item) => item !== day) : [...prev, day],
-    );
-  };
-
-  const save = () => {
-    if (!canSave) return;
-    onSave(auto, {
-      name: name.trim(),
-      prompt: nextPrompt,
-      rrule: nextRrule,
-      model: model.trim(),
-      reasoning_effort: reasoningEffort,
-      execution_environment: executionEnvironment,
-      tags,
-      cwds,
-      // Send "" (not undefined) so selecting "— none —" actually clears the skill.
-      skill_path: skillPath.trim(),
-    });
-  };
-
-  return (
-    <div className="flex h-full flex-col"
-      style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-5 py-3"
-        style={{ borderColor: "var(--border-hairline)" }}>
-        <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
-          Automation details
-        </h2>
-        <button type="button" onClick={onClose}
-          className="focus-ring rounded p-1 transition-colors hover:bg-white/5"
-          style={{ color: "var(--text-muted)" }}>
-          <Icon name="ph:x" width={14} />
-        </button>
-      </div>
-
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
-        <div>
-          <FieldLabel>Name</FieldLabel>
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className={automationInputClass}
-            style={fieldStyle}
-          />
-        </div>
-
-        <div>
-          <FieldLabel>Goals</FieldLabel>
-          <textarea
-            value={goals}
-            onChange={(event) => setGoals(event.target.value)}
-            rows={6}
-            className={automationTextareaClass}
-            style={fieldStyle}
-          />
-        </div>
-
-        <div>
-          <FieldLabel>Deliverables</FieldLabel>
-          <textarea
-            value={deliverables}
-            onChange={(event) => setDeliverables(event.target.value)}
-            rows={5}
-            className={automationTextareaClass}
-            style={fieldStyle}
-          />
-        </div>
-
-        <div>
-          <FieldLabel>Schedule</FieldLabel>
-          <div className="mb-2 inline-flex rounded-md border p-0.5"
-            style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}>
-            {(["weekly", "daily", "raw"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setScheduleMode(mode)}
-                className="rounded px-2 py-1 text-[11px] capitalize transition-colors"
-                style={{
-                  background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
-                  color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
-                }}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
-
-          {scheduleMode === "raw" ? (
-            <textarea
-              value={rawRrule}
-              onChange={(event) => setRawRrule(event.target.value)}
-              rows={3}
-              className={automationMonoTextareaClass}
-              style={fieldStyle}
-            />
-          ) : (
-            <div className="space-y-3">
-              {scheduleMode === "weekly" && (
-                <div className="flex flex-wrap gap-1.5">
-                  {RRULE_DAY_ORDER.map((day) => {
-                    const selected = scheduleDays.includes(day);
-                    return (
-                      <button
-                        key={day}
-                        type="button"
-                        onClick={() => toggleDay(day)}
-                        className="rounded-md border px-2 py-1 text-[11px] transition-colors"
-                        style={{
-                          background: selected ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
-                          borderColor: selected ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
-                          color: selected ? "var(--text-primary)" : "var(--text-muted)",
-                        }}
-                      >
-                        {RRULE_DAY_LABEL[day]}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              <input
-                type="time"
-                value={scheduleTime}
-                onChange={(event) => setScheduleTime(event.target.value)}
-                className={automationInputClass}
-                style={fieldStyle}
-              />
-            </div>
-          )}
-          <p className="mt-2 break-all font-mono text-[10px]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
-            {nextRrule || "RRULE required"}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4">
-          <div>
-            <FieldLabel>Status</FieldLabel>
-            <p className="text-[12px]" style={{ color: isActive ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}>
-              {isActive ? "Active" : "Paused"}
-            </p>
-          </div>
-          <div>
-            <FieldLabel>Model</FieldLabel>
-            <input
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              className={automationInputClass}
-              style={fieldStyle}
-            />
-          </div>
-          <div>
-            <FieldLabel>Reasoning</FieldLabel>
-            <select
-              value={reasoningEffort}
-              onChange={(event) => setReasoningEffort(event.target.value)}
-              className={automationSelectClass}
-              style={fieldStyle}
-            >
-              {!["low", "medium", "high"].includes(reasoningEffort) && (
-                <option value={reasoningEffort}>{reasoningEffort}</option>
-              )}
-              <option value="low">low</option>
-              <option value="medium">medium</option>
-              <option value="high">high</option>
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Environment</FieldLabel>
-            <select
-              value={executionEnvironment}
-              onChange={(event) => setExecutionEnvironment(event.target.value)}
-              className={automationSelectClass}
-              style={fieldStyle}
-            >
-              {!["worktree", "repo"].includes(executionEnvironment) && (
-                <option value={executionEnvironment}>{executionEnvironment}</option>
-              )}
-              <option value="worktree">worktree</option>
-              <option value="repo">repo</option>
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Working directories</FieldLabel>
-            <div className="flex items-start gap-2">
-              <textarea
-                value={cwdsText}
-                onChange={(event) => setCwdsText(event.target.value)}
-                rows={3}
-                className={`${automationMonoTextareaClass} min-w-0 flex-1`}
-                style={fieldStyle}
-              />
-              <button
-                type="button"
-                onClick={() => setCwdPickerOpen(true)}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-              >
-                <Icon name="ph:folder-open" width={12} /> Browse…
-              </button>
-            </div>
-          </div>
-
-          {cwdPickerOpen && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Pick working directories"
-              onClick={() => setCwdPickerOpen(false)}
-            >
-              <div
-                className="flex max-h-[80vh] w-[460px] max-w-full flex-col overflow-hidden rounded-lg border border-[var(--border-hairline)] shadow-xl"
-                style={{ background: "var(--bg-panel)" }}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
-                  <span className="text-[13px] font-semibold text-[var(--text-primary)]">Working directories</span>
-                  <button
-                    type="button"
-                    onClick={() => setCwdPickerOpen(false)}
-                    aria-label="Close"
-                    className="focus-ring grid h-6 w-6 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                  >
-                    <Icon name="ph:x" width={14} />
-                  </button>
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto p-2">
-                  {cwdProjects.length === 0 ? (
-                    <p className="px-2 py-4 text-[12px] text-[var(--text-muted)]">
-                      No projects found. Add a project in the Code workspace first, or type a path into the field.
-                    </p>
-                  ) : (
-                    cwdProjects.map((proj) => (
-                      <div key={proj.root} className="mb-2">
-                        <div className="flex items-center justify-between gap-2 px-1 py-1">
-                          <span className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                            {proj.name}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => addCwd(proj.root)}
-                            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
-                              cwdSet.has(proj.root)
-                                ? "text-[var(--accent-presence)]"
-                                : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                            }`}
-                          >
-                            {cwdSet.has(proj.root) ? "Added" : "Use root"}
-                          </button>
-                        </div>
-                        <ProjectTree
-                          root={proj.root}
-                          familiarId={auto.familiars[0] ?? ""}
-                          onDirSelect={addCwd}
-                          selectedDirs={cwdSet}
-                        />
-                      </div>
-                    ))
-                  )}
-                </div>
-                <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-3 py-2">
-                  <span className="text-[11px] text-[var(--text-muted)]">
-                    {cwds.length} {cwds.length === 1 ? "directory" : "directories"} selected
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setCwdPickerOpen(false)}
-                    className="rounded-md px-3 py-1 text-[12px] font-medium text-white"
-                    style={{ background: "var(--accent-presence)" }}
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <FieldLabel>Tags</FieldLabel>
-            <input
-              value={tagsText}
-              onChange={(event) => setTagsText(event.target.value)}
-              className={automationInputClass}
-              style={fieldStyle}
-            />
-          </div>
-          <div>
-            <FieldLabel>Skill</FieldLabel>
-            <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={automationSelectClass} />
-          </div>
-        </div>
-
-        {runs.length > 0 && (
-          <div>
-            <FieldLabel>Recent runs</FieldLabel>
-            <ul className="mt-1 space-y-1">
-              {runs.slice(0, 10).map((r) => (
-                <li key={r.id} className="flex items-center gap-2 text-[12px]">
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background:
-                    r.status === "succeeded" ? "var(--accent-presence)" : r.status === "failed" ? "var(--color-danger)" : "var(--text-muted)" }} />
-                  <span style={{ color: "var(--text-secondary)" }}>{relTime(r.startedAt)}</span>
-                  {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="border-t px-5 py-4 space-y-2"
-        style={{ borderColor: "var(--border-hairline)" }}>
-        <button type="button" disabled={busy} onClick={() => onRun(auto)}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium hover:bg-white/5 disabled:opacity-50">
-          <Icon name="ph:play" width={13} /> Run now
-        </button>
-        {saveBlockedReason ? (
-          <p className="text-[11px]" style={{ color: "oklch(0.7 0.16 35)" }} role="alert">
-            {saveBlockedReason}
-          </p>
-        ) : null}
-        <button
-          type="button"
-          disabled={!canSave}
-          onClick={save}
-          className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
-          style={{ background: "var(--accent-presence)" }}
-        >
-          {busy ? "Saving..." : "Save changes"}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onToggle(auto)}
-          className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
-          style={{ background: isActive ? "oklch(0.45 0.12 20)" : "var(--accent-presence)" }}
-        >
-          {busy ? (isActive ? "Pausing…" : "Activating…") : (isActive ? "Pause" : "Activate")}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onDelete(auto)}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] disabled:opacity-50"
-        >
-          <Icon name="ph:trash" width={13} /> Delete
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function AutomationScheduleRow({
-  auto,
-  selected,
-  familiarsById,
-  lastRun,
-  onSelect,
-}: {
-  auto: CodexAutomation;
-  selected: boolean;
-  familiarsById: Map<string, ResolvedFamiliar>;
-  lastRun?: AutomationRunRecord;
-  onSelect: (auto: CodexAutomation) => void;
-}) {
-  const isActive = auto.status === "ACTIVE";
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={() => onSelect(auto)}
-        className="focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
-        style={{ background: selected ? "rgba(255,255,255,0.05)" : "transparent" }}
-        onMouseEnter={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)"; }}
-        onMouseLeave={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-      >
-        {/* Status dot */}
-        {isActive ? (
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
-            style={{ background: "var(--accent-presence)" }} />
-        ) : (
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
-            style={{ borderColor: "rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.35)" }}>
-            <Icon name="ph:minus" width={8} />
-          </span>
-        )}
-        <span className="flex-1 min-w-0 flex items-baseline gap-2">
-          <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
-            {auto.name}
-          </span>
-          {auto.tags.includes("coven") && (
-            <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>coven</span>
-          )}
-        </span>
-        {auto.familiars.length > 0 && (
-          <span className="flex shrink-0 -space-x-1.5">
-            {auto.familiars.slice(0, 3).map((fid) => {
-              const f = familiarsById.get(fid);
-              return f ? (
-                <FamiliarAvatar key={fid} familiar={f} size="sm" title={f.display_name} className="rounded-full ring-1 ring-[var(--bg-base)]" />
-              ) : null;
-            })}
-            {auto.familiars.length > 3 && (
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--bg-raised)] text-[9px] text-[var(--text-muted)] ring-1 ring-[var(--bg-base)]">
-                +{auto.familiars.length - 3}
-              </span>
-            )}
-          </span>
-        )}
-        {lastRun && (
-          <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
-            Run {relTime(lastRun.startedAt)}
-          </span>
-        )}
-        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-          {auto.scheduleHuman}
-        </span>
-      </button>
-    </li>
-  );
-}
-
-function AutomationScheduleSection({
-  title,
-  items,
-  selectedId,
-  familiarsById,
-  lastRunById,
-  onSelect,
-}: {
-  title: string;
-  items: CodexAutomation[];
-  selectedId: string | null;
-  familiarsById: Map<string, ResolvedFamiliar>;
-  lastRunById: Map<string, AutomationRunRecord>;
-  onSelect: (auto: CodexAutomation) => void;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <div className="mb-6">
-      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
-        style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
-        <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
-          {title}
-        </span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded"
-          style={{ background: "var(--bg-raised)", color: "var(--text-muted)" }}>
-          Codex
-        </span>
-      </div>
-      <ul>
-        {items.map((auto) => (
-          <AutomationScheduleRow
-            key={auto.id}
-            auto={auto}
-            selected={selectedId === auto.id}
-            familiarsById={familiarsById}
-            lastRun={lastRunById.get(auto.id)}
-            onSelect={onSelect}
-          />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function AutomationsPanel({
-  active,
-  paused,
-  selectedId,
-  familiarsById,
-  lastRunById,
-  onSelect,
-}: {
-  active: CodexAutomation[];
-  paused: CodexAutomation[];
-  selectedId: string | null;
-  familiarsById: Map<string, ResolvedFamiliar>;
-  lastRunById: Map<string, AutomationRunRecord>;
-  onSelect: (auto: CodexAutomation) => void;
-}) {
-  return (
-    <>
-      <AutomationScheduleSection title="Active" items={active}
-        selectedId={selectedId}
-        familiarsById={familiarsById}
-        lastRunById={lastRunById}
-        onSelect={onSelect} />
-      <AutomationScheduleSection title="Paused" items={paused}
-        selectedId={selectedId}
-        familiarsById={familiarsById}
-        lastRunById={lastRunById}
-        onSelect={onSelect} />
-    </>
-  );
-}
-
-// ── Inbox feed (full inbox: reminders, summaries, agent + response items) ─────
-function InboxKindBadge({ kind }: { kind: InboxItem["kind"] }) {
-  return (
-    <span
-      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
-      style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-muted)" }}
-    >
-      {inboxKindLabel(kind)}
-    </span>
-  );
-}
-
-function InboxFeedRow({
-  item,
-  selected,
-  familiarLabel,
-  onSelect,
-}: {
-  item: InboxItem;
-  selected: boolean;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-}) {
-  const workspace = familiarLabel(item.familiarId);
-  const when = item.firedAt
-    ? `fired ${relTime(item.firedAt)}`
-    : item.fireAt
-    ? relTime(item.fireAt)
-    : relTime(item.updatedAt);
-
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={() => onSelect(item)}
-        className="focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
-        style={{ background: selected ? "rgba(255,255,255,0.05)" : "transparent" }}
-        onMouseEnter={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)"; }}
-        onMouseLeave={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-      >
-        <StatusIcon item={item} />
-        <span className="flex-1 min-w-0 flex items-center gap-2">
-          <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
-            {item.title}
-          </span>
-          <InboxKindBadge kind={item.kind} />
-          {workspace && (
-            <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {workspace}
-            </span>
-          )}
-        </span>
-        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-          {when}
-        </span>
-      </button>
-    </li>
-  );
-}
-
-function InboxFeedSection({
-  title,
-  accent,
-  items,
-  selectedId,
-  familiarLabel,
-  onSelect,
-}: {
-  title: string;
-  accent?: boolean;
-  items: InboxItem[];
-  selectedId: string | null;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <div className="mb-6">
-      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
-        style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
-        <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
-          {title}
-        </span>
-        <span
-          className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
-          style={
-            accent
-              ? { background: "color-mix(in oklch, var(--color-warning) 18%, transparent)", color: "var(--color-warning)" }
-              : { background: "var(--bg-raised)", color: "var(--text-muted)" }
-          }
-        >
-          {items.length}
-        </span>
-      </div>
-      <ul>
-        {items.map((item) => (
-          <InboxFeedRow
-            key={item.id}
-            item={item}
-            selected={selectedId === item.id}
-            familiarLabel={familiarLabel}
-            onSelect={onSelect}
-          />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function InboxFeedList({
-  needsYou,
-  active,
-  resolved,
-  selectedId,
-  familiarLabel,
-  onSelect,
-}: {
-  needsYou: InboxItem[];
-  active: InboxItem[];
-  resolved: InboxItem[];
-  selectedId: string | null;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-}) {
-  return (
-    <>
-      <InboxFeedSection title="Needs you" accent items={needsYou} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
-      <InboxFeedSection title="Active" items={active} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
-      <InboxFeedSection title="Resolved" items={resolved} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
-    </>
-  );
-}
+// ── Ritual overview ──────────────────────────────────────────────────────────
 
 // ── Root ──────────────────────────────────────────────────────────────────────
-export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdit, onOpenLink }: Props) {
+export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, calendarSlot, initialTab }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  const ritualNow = useRitualNow();
+  const confirm = useConfirm(); // still used by "Run now" (a non-delete action)
+  // Deferred + undoable deletes (reminders, automations, bulk): rows hide at
+  // once, the DELETEs fire only after the undo window, and Undo restores them.
+  const { pending: deletePending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<string[]>();
+  const [query, setQuery] = useState("");
   const [items, setItems] = useState<InboxItem[]>([]);
   const [codexAutos, setCodexAutos] = useState<CodexAutomation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ScheduleTab>("inbox");
+  // Async CRUD results are announced for AT — errors already hit the
+  // role="alert" banner and deletes are voiced by UndoToast; everything else
+  // (pause/resume/run/create/save/restore) was silent.
+  const { announce } = useAnnouncer();
+  // Focus lands here after a delete unmounts the detail panel that held it —
+  // otherwise it falls to <body> and keyboard users lose their place. The
+  // overview "New" button and the crons "New cron" button are mounted on
+  // different tabs, so deletes focus whichever header action exists.
+  const newBtnRef = useRef<HTMLButtonElement | null>(null);
+  const newCronBtnRef = useRef<HTMLButtonElement | null>(null);
+  const focusHeaderAction = useCallback(() => {
+    window.setTimeout(() => (newBtnRef.current ?? newCronBtnRef.current)?.focus(), 0);
+  }, []);
+  const manageBtnRef = useRef<HTMLButtonElement | null>(null);
+  const overviewSwipeStartRef = useRef<number | null>(null);
+  const [storedActiveTab, setStoredActiveTab] = useSurfacePreference(surfacePreferenceSpecs.schedules.activeTab);
+  const [deepLinkTab, setDeepLinkTab] = useState<AutomationTab | null>(
+    initialTab === "calendar" && calendarSlot ? "calendar" : initialTab === "crons" ? "crons" : null,
+  );
+  const activeTab = deepLinkTab ?? storedActiveTab;
+  const setActiveTab = useCallback((tab: AutomationTab) => {
+    setDeepLinkTab(null);
+    setStoredActiveTab(tab);
+  }, [setStoredActiveTab]);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [manageMenuOpen, setManageMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [eventsOpen, setEventsOpen] = useState(true);
+  const [overviewPane, setOverviewPane] = useState<RitualOverviewPane>("log");
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  // GitHub subscriptions manager, reachable from the Inbox tab (cave-hlxn).
+  const [subsOpen, setSubsOpen] = useState(false);
+  const [subsHasPat, setSubsHasPat] = useState(false);
   const [automationRuns, setAutomationRuns] = useState<AutomationRunRecord[]>([]);
   const [lastRunById, setLastRunById] = useState<Map<string, AutomationRunRecord>>(new Map());
+  // Guards async setState after unmount; runsReqRef drops a stale per-automation
+  // runs fetch when a faster, later selection won.
+  const mountedRef = useRef(true);
+  const runsReqRef = useRef(0);
+  // Sequence guard for load(), mirroring runsReqRef: load() runs from mount, the
+  // 15s poll, AND after every mutation (toggle/save/delete all await load()), so
+  // an in-flight poll can resolve *after* a mutation's reload and reapply its
+  // pre-mutation data — a just-paused cron would flip back to Active for up to
+  // 15s. Dropping a superseded load's writes closes that revert-flash.
+  const loadReqRef = useRef(0);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
+    const reqId = ++loadReqRef.current;
+    // Live only while this is still the newest load AND the view is mounted; a
+    // superseded (or unmounted) load drops all its writes.
+    const live = () => reqId === loadReqRef.current && mountedRef.current;
     try {
-      const [inboxRes, codexRes] = await Promise.all([
-        fetch("/api/inbox", { cache: "no-store" }),
-        fetch("/api/codex-automations", { cache: "no-store" }),
+      const [inboxResult, codexResult] = await Promise.all([
+        readSurfaceResource<{ ok?: boolean; items?: InboxItem[]; error?: string }>("schedules:inbox", force),
+        readSurfaceResource<{ ok?: boolean; automations?: CodexAutomation[]; error?: string }>("schedules:automations", force),
       ]);
-      const inboxJson = await inboxRes.json();
+      const inboxJson = inboxResult.data;
+      if (!live()) return;
       if (!inboxJson.ok) { setError(inboxJson.error ?? "load failed"); return; }
-      setItems(inboxJson.items ?? []);
-      const codexJson = await codexRes.json();
-      if (codexJson.ok) setCodexAutos(codexJson.automations ?? []);
+      // Content-equality guards (codebase convention — see board-view/workspace):
+      // an unchanged poll keeps the previous references, so derived memos,
+      // the selected-detail sync effect, and the per-cron runs fan-out all
+      // stay quiet instead of re-firing every 15s.
+      const nextItems = inboxJson.items ?? [];
+      setItems((prev) => (arrayContentEqual(prev, nextItems) ? prev : nextItems));
+      const codexJson = codexResult.data;
+      if (!live()) return;
+      if (codexJson.ok) {
+        const nextAutos = codexJson.automations ?? [];
+        setCodexAutos((prev) => (arrayContentEqual(prev, nextAutos) ? prev : nextAutos));
+      }
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "fetch failed");
+      if (live()) setError(err instanceof Error ? err.message : "fetch failed");
     } finally {
-      setInitialLoadDone(true);
+      if (live()) setInitialLoadDone(true);
     }
   }, []);
 
+  // A mutation can finish while a warm-up or poll request is still in flight.
+  // Drop that request before the forced reload so its pre-mutation response
+  // cannot win the cache coalescing race and restore the old list.
+  const reloadAfterMutation = useCallback(async () => {
+    invalidateSurfaceResources("schedules:inbox", "schedules:automations");
+    await load(true);
+  }, [load]);
+
   const refreshRuns = useCallback(async (id: string) => {
+    const reqId = ++runsReqRef.current;
     try {
       const res = await fetch(`/api/codex-automations/${encodeURIComponent(id)}/runs`);
       const json = await res.json().catch(() => null);
-      if (json?.ok && Array.isArray(json.runs)) setAutomationRuns(json.runs);
+      // Drop a stale runs response: a later selection (or poll) superseded it.
+      if (reqId !== runsReqRef.current || !mountedRef.current) return;
+      if (json?.ok && Array.isArray(json.runs)) {
+        // Content-guard: an unchanged poll keeps the array identity, so the
+        // in-flight poll effect below stops tearing down its interval every
+        // 2.5s tick (cave-1e6k).
+        const runs = json.runs as AutomationRunRecord[];
+        setAutomationRuns((prev) => (arrayContentEqual(prev, runs) ? prev : runs));
+        // This response already carries the newest run — update the row badge
+        // map here instead of re-fetching the same endpoint via the
+        // every-automation fan-out.
+        const newest = runs[0];
+        if (newest) {
+          setLastRunById((prev) => {
+            const current = prev.get(id);
+            if (current && JSON.stringify(current) === JSON.stringify(newest)) return prev;
+            const next = new Map(prev);
+            next.set(id, newest);
+            return next;
+          });
+        }
+      }
     } catch {
       /* ignore */
     }
@@ -1304,6 +247,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             .catch(() => [a.id, undefined] as const),
         ),
       );
+      if (!mountedRef.current) return;
       const map = new Map<string, AutomationRunRecord>();
       for (const [id, run] of entries) {
         if (run) map.set(id, run);
@@ -1314,18 +258,46 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, [codexAutos]);
 
+  // Background polling pauses while the tab is hidden — Schedules otherwise kept
+  // hitting /api/inbox + /api/codex-automations every 15s with nobody looking.
+  // A refetch on return brings it current immediately.
+  useEffect(() => { void load(); }, [load]);
+  usePausablePoll(() => { void load(true); }, 15_000, { pauseWhileInputActive: true });
+
+  // Workspace publishes this after inbox SSE writes, including writes initiated
+  // outside this surface. Besides keeping the visible list current, this makes
+  // an in-flight cache read stale via the request-id guard rather than surfacing
+  // its intentional AbortError as a failed Schedules load.
   useEffect(() => {
-    void load();
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
-  }, [load]);
+    const onSchedulesReload = () => { void reloadAfterMutation(); };
+    window.addEventListener("cave:schedules:reload", onSchedulesReload);
+    return () => window.removeEventListener("cave:schedules:reload", onSchedulesReload);
+  }, [reloadAfterMutation]);
+
+  // Keep the open reminder detail panel in sync after polls — without this it
+  // renders the snapshot captured at selection time until reselected.
+  useEffect(() => {
+    if (!selectedItem) return;
+    const fresh = items.find((it) => it.id === selectedItem.id);
+    if (fresh) {
+      if (JSON.stringify(fresh) !== JSON.stringify(selectedItem)) setSelectedItem(fresh);
+    } else {
+      setSelectedItem(null);
+    }
+  }, [items, selectedItem?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep selectedCodex in sync after reload
   useEffect(() => {
     if (!selectedCodex) return;
     const fresh = codexAutos.find((a) => a.id === selectedCodex.id);
-    if (fresh) setSelectedCodex(fresh);
-    else setSelectedCodex(null);
+    // Adopt the fresh object only when its content actually changed —
+    // a new-but-identical reference re-fires CodexDetailPanel's form reset
+    // and wipes whatever the user is typing.
+    if (fresh) {
+      if (JSON.stringify(fresh) !== JSON.stringify(selectedCodex)) setSelectedCodex(fresh);
+    } else {
+      setSelectedCodex(null);
+    }
   }, [codexAutos, selectedCodex?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh runs for the selected automation when it changes
@@ -1336,6 +308,22 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       setAutomationRuns([]);
     }
   }, [selectedCodex?.id, refreshRuns]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // While a run is in flight, poll so its status + log fill in without a manual refresh.
+  // Depends on a derived boolean (not the runs array) so the interval survives
+  // poll ticks; refreshRuns also maintains this automation's last-run badge,
+  // so the every-automation refreshLastRuns fan-out stays out of the hot loop
+  // (cave-1e6k).
+  const hasRunningRun = automationRuns.some((r) => r.status === "running");
+  useEffect(() => {
+    if (!selectedCodex?.id || !hasRunningRun) return;
+    const id = selectedCodex.id;
+    const t = setInterval(() => {
+      if (document.hidden) return; // don't poll a backgrounded tab
+      void refreshRuns(id);
+    }, 2500);
+    return () => clearInterval(t);
+  }, [selectedCodex?.id, hasRunningRun, refreshRuns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh last-run map whenever the automation list changes
   useEffect(() => {
@@ -1362,11 +350,11 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
-      await load();
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "patch failed");
     } finally { setBusyId(null); }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   const actItem = useCallback(async (id: string, path: string, body?: object) => {
     if (id.startsWith("eph:")) return;
@@ -1378,36 +366,150 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         body: body ? JSON.stringify(body) : undefined,
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
-      await load();
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "action failed");
     } finally { setBusyId(null); }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
-  const removeItem = useCallback(async (id: string) => {
+  const removeItem = useCallback((id: string) => {
     if (id.startsWith("eph:")) return;
     const target = items.find((i) => i.id === id);
-    const label = target?.title ? `“${target.title}”` : "this reminder";
-    if (!window.confirm(`Delete ${label}? This can't be undone.`)) return;
-    setBusyId(id);
-    try {
-      const res = await fetch(`/api/inbox/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`http ${res.status}`);
-      setSelectedItem((prev) => prev?.id === id ? null : prev);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "delete failed");
-    } finally { setBusyId(null); }
-  }, [items, load]);
+    const label = target?.title ? `“${target.title}”` : "reminder";
+    setSelectedItem((prev) => {
+      if (prev?.id === id) {
+        // The detail panel (which held focus) unmounts — hand focus somewhere
+        // stable instead of letting it fall to <body>.
+        focusHeaderAction();
+        return null;
+      }
+      return prev;
+    });
+    scheduleDelete([id], label, async () => {
+      setItems((prev) => prev.filter((i) => i.id !== id));
+      try {
+        const res = await fetch(`/api/inbox/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error(`http ${res.status}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "delete failed");
+      } finally { await reloadAfterMutation(); }
+    });
+  }, [items, scheduleDelete, reloadAfterMutation, focusHeaderAction]);
 
-  const runNow = (id: string) =>
-    patchItem(id, { fireAt: new Date().toISOString(), status: "pending" });
+  // Confirm before firing — crons and flows already do, and the identical Run
+  // buttons on the All tab must not behave differently per type.
+  const runNow = async (id: string) => {
+    const target = items.find((i) => i.id === id);
+    const name = target?.title;
+    if (!(await confirm({ title: name ? `Run “${name}” now?` : "Run reminder now?", body: "This fires the reminder immediately.", confirmLabel: "Run now" }))) return;
+    announce(`Running ${name ? `'${name}'` : "reminder"} now.`);
+    return patchItem(id, { fireAt: new Date().toISOString(), status: "pending" });
+  };
 
-  const togglePaused = (item: InboxItem) =>
-    patchItem(item.id, { status: item.status === "dismissed" ? "pending" : "dismissed" });
+  const togglePaused = (item: InboxItem) => {
+    const pausing = item.status !== "dismissed";
+    announce(`${pausing ? "Paused" : "Resumed"} '${item.title}'.`);
+    return patchItem(item.id, { status: pausing ? "dismissed" : "pending" });
+  };
 
   const stopRecurrence = (id: string) =>
     patchItem(id, { recurrence: { type: "none" } });
+
+  // ── Inbox feed row actions (Done / Snooze / Dismiss) ──────────────────────
+  const completeInboxItem = (item: InboxItem) => {
+    announce(`Marked '${item.title}' done.`);
+    return actItem(item.id, "done");
+  };
+  const snoozeInboxItem = (item: InboxItem) => {
+    announce(`Snoozed '${item.title}' for 1 hour.`);
+    return actItem(item.id, "snooze", { minutes: 60 });
+  };
+  const dismissInboxItem = (item: InboxItem) => {
+    announce(`Dismissed '${item.title}'.`);
+    return actItem(item.id, "dismiss");
+  };
+
+  // ── Detail panel notification controls (mark read/unread, mute, snooze
+  // presets, reopen) — the panel-level counterparts to the row quick-actions
+  // above, wired to the same endpoints. ─────────────────────────────────────
+  const snoozeItemFor = (item: InboxItem, minutes: number, label: string) => {
+    announce(`Snoozed '${item.title}' for ${label}.`);
+    return actItem(item.id, "snooze", { minutes });
+  };
+  const snoozeItemUntilTomorrow = (item: InboxItem) => {
+    const next = new Date();
+    next.setDate(next.getDate() + 1);
+    next.setHours(9, 0, 0, 0);
+    announce(`Snoozed '${item.title}' until tomorrow, 9 AM.`);
+    return actItem(item.id, "snooze", { untilIso: next.toISOString() });
+  };
+  const cancelSnoozeItem = (item: InboxItem) => {
+    announce(`Cancelled snooze for '${item.title}'.`);
+    return patchItem(item.id, { status: "fired", snoozeUntil: null });
+  };
+  const reopenInboxItem = (item: InboxItem) => {
+    announce(`Reopened '${item.title}'.`);
+    return patchItem(item.id, { status: "fired", readAt: null });
+  };
+  const toggleMuteItem = (item: InboxItem) => {
+    announce(item.muted ? `Unmuted '${item.title}'.` : `Muted '${item.title}'.`);
+    return patchItem(item.id, { muted: !item.muted });
+  };
+  const toggleReadItem = useCallback(async (item: InboxItem) => {
+    const action = item.readAt ? "unread" : "read";
+    setBusyId(item.id);
+    try {
+      const res = await fetch("/api/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, ids: [item.id] }),
+      });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      announce(action === "read" ? `Marked '${item.title}' as read.` : `Marked '${item.title}' as unread.`);
+      await reloadAfterMutation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "action failed");
+    } finally { setBusyId(null); }
+  }, [reloadAfterMutation, announce]);
+
+  const openSubscriptions = useCallback(async () => {
+    // The modal renders a connect hint without a PAT — resolve the live
+    // status on open instead of polling it alongside the feed.
+    try {
+      const res = await fetch("/api/github/pat", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      setSubsHasPat(Boolean(data?.hasPat));
+    } catch {
+      setSubsHasPat(false);
+    }
+    setSubsOpen(true);
+  }, []);
+
+  // One-click "stop these": drop the repo behind a GitHub-event notification
+  // from the watch list. Reversible from the Subscriptions manager.
+  const unwatchRepo = useCallback(async (item: InboxItem, repo: string) => {
+    setBusyId(item.id);
+    try {
+      const res = await fetch("/api/github/subscriptions", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!data?.ok) throw new Error(data?.error ?? "could not load subscriptions");
+      const repos: string[] = Array.isArray(data.prefs?.repos) ? data.prefs.repos : [];
+      if (repos.includes(repo)) {
+        const patch = await fetch("/api/github/subscriptions", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ repos: repos.filter((r) => r !== repo) }),
+        });
+        const patched = await patch.json().catch(() => null);
+        if (!patch.ok || !patched?.ok) throw new Error(patched?.error ?? `http ${patch.status}`);
+      }
+      announce(`Unwatched ${repo} — no new GitHub notifications from it.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "unwatch failed");
+    } finally {
+      setBusyId(null);
+    }
+  }, [announce]);
 
   // ── Codex toggle ──────────────────────────────────────────────────────────
   const toggleCodex = useCallback(async (auto: CodexAutomation) => {
@@ -1420,13 +522,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
-      await load();
+      announce(`${newStatus === "PAUSED" ? "Paused" : "Resumed"} '${auto.name}'.`);
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex patch failed");
     } finally {
       setBusyId(null);
     }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
   const saveCodex = useCallback(async (auto: CodexAutomation, patch: CodexAutomationPatch) => {
     setBusyId(auto.id);
@@ -1439,37 +542,38 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       if (json.automation) setSelectedCodex(json.automation);
-      await load();
+      announce(`Saved '${patch.name ?? auto.name}'.`);
+      await reloadAfterMutation();
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex save failed");
     } finally {
       setBusyId(null);
     }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
-  const deleteCodex = useCallback(async (auto: CodexAutomation) => {
-    if (!window.confirm(`Delete automation "${auto.name}"? This removes its file.`)) return;
-    setBusyId(auto.id);
-    try {
-      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, { method: "DELETE" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
-      setSelectedCodex(null);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "codex delete failed");
-    } finally {
-      setBusyId(null);
-    }
-  }, [load]);
+  const deleteCodex = useCallback((auto: CodexAutomation) => {
+    setSelectedCodex(null);
+    focusHeaderAction(); // panel held focus
+    scheduleDelete([auto.id], `automation “${auto.name}”`, async () => {
+      setCodexAutos((prev) => prev.filter((a) => a.id !== auto.id));
+      try {
+        const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, { method: "DELETE" });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "codex delete failed");
+      } finally { await reloadAfterMutation(); }
+    });
+  }, [scheduleDelete, reloadAfterMutation, focusHeaderAction]);
 
   const runCodexNow = useCallback(async (auto: CodexAutomation) => {
-    if (!window.confirm(`Run "${auto.name}" now? This executes the agent immediately.`)) return;
+    if (!(await confirm({ title: `Run “${auto.name}” now?`, body: "This executes the agent immediately.", confirmLabel: "Run now" }))) return;
     setBusyId(auto.id);
     try {
       const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}/run`, { method: "POST" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
+      announce(`Run started for '${auto.name}'.`);
       await refreshRuns(auto.id);
       await refreshLastRuns();
     } catch (err) {
@@ -1487,244 +591,575 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       setCreateOpen(false);
-      await load();
+      announce(`Created cron '${input.name}'.`);
+      await reloadAfterMutation();
       if (json.automation) { setSelectedCodex(json.automation); setSelectedItem(null); }
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex create failed");
     }
-  }, [load]);
+  }, [reloadAfterMutation]);
 
-  // ── Sections ──────────────────────────────────────────────────────────────
-  const reminderItems = useMemo(() =>
-    items.filter(isScheduleInboxItem),
-    [items]);
-
-  const current = useMemo(() =>
-    reminderItems.filter((it) =>
-      (it.status === "pending" || it.status === "fired") &&
-      it.recurrence && it.recurrence.type !== "none"
-    ).sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
-    [reminderItems]);
-
-  const paused = useMemo(() =>
-    reminderItems.filter((it) =>
-      it.status === "dismissed" && it.recurrence && it.recurrence.type !== "none"
-    ).sort((a, b) => (a.title).localeCompare(b.title)),
-    [reminderItems]);
-
-  const oneShots = useMemo(() =>
-    reminderItems.filter((it) =>
-      (!it.recurrence || it.recurrence.type === "none") &&
-      (it.status === "pending" || it.status === "snoozed")
-    ).sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
-    [reminderItems]);
-
-  const history = useMemo(() =>
-    reminderItems.filter((it) =>
-      it.status === "fired" || it.status === "done" ||
-      (it.status === "dismissed" && (!it.recurrence || it.recurrence.type === "none"))
-    ).sort((a, b) => (b.firedAt ?? b.updatedAt).localeCompare(a.firedAt ?? a.updatedAt))
-      .slice(0, 20),
-    [reminderItems]);
+  // Ids whose delete is pending in the undo window — hidden everywhere until the
+  // window lapses (committing the delete) or Undo restores them.
+  const hiddenIds = useMemo(() => new Set(deletePending?.item ?? []), [deletePending]);
+  // Normalized text filter applied to whichever tab is active (title/name).
+  const q = query.trim().toLowerCase();
 
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const familiarsById = useMemo(
     () => new Map(resolvedFamiliars.map((f) => [f.id, f])),
     [resolvedFamiliars],
   );
-  const [familiarFilter, setFamiliarFilter] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    const raw = window.localStorage.getItem("cave:automations:familiar-filter");
-    if (!raw) return new Set();
-    return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
-  });
+  const [storedFamiliarFilter, setStoredFamiliarFilter] = useSurfacePreference(surfacePreferenceSpecs.schedules.familiarFilter);
+  const familiarFilter = useMemo(
+    () => new Set(storedFamiliarFilter.split(",").map((value) => value.trim()).filter(Boolean)),
+    [storedFamiliarFilter],
+  );
   const updateFamiliarFilter = useCallback((next: Set<string>) => {
-    setFamiliarFilter(next);
-    try {
-      window.localStorage.setItem("cave:automations:familiar-filter", [...next].join(","));
-    } catch {
-      /* ignore storage errors */
-    }
-  }, []);
+    setStoredFamiliarFilter([...next].sort().join(","));
+  }, [setStoredFamiliarFilter]);
 
   const codexActive = useMemo(
     () =>
       codexAutos.filter(
-        (a) => a.status === "ACTIVE" && automationMatchesFilter(a.familiars, familiarFilter),
+        (a) => a.status === "ACTIVE" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
       ),
-    [codexAutos, familiarFilter],
+    [codexAutos, familiarFilter, hiddenIds, q],
   );
   const codexPaused = useMemo(
     () =>
       codexAutos.filter(
-        (a) => a.status === "PAUSED" && automationMatchesFilter(a.familiars, familiarFilter),
+        (a) => a.status === "PAUSED" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
       ),
-    [codexAutos, familiarFilter],
+    [codexAutos, familiarFilter, hiddenIds, q],
   );
 
-  // Inbox tab: the FULL feed (every kind), grouped by attention tier.
-  const inboxFeed = useMemo(() => groupInboxFeed(items), [items]);
-  const remindersEmpty = current.length + paused.length + oneShots.length + history.length === 0;
-  const automationsEmpty = codexAutos.length === 0;
-  const inboxEmpty = items.length === 0;
-  const selectedReminderId = selectedItem?.id ?? null;
-  const selectedAutomationId = selectedCodex?.id ?? null;
+  // Inbox tab: the FULL feed (every kind). `inboxVisible` is the search-filtered
+  // flat list — the selection universe, so "select all" always means "all
+  // matches" while a filter is active. Groups re-shape per the group-by control.
+  const inboxVisible = useMemo(
+    () => items.filter((it) => !hiddenIds.has(it.id) && (!q || (it.title ?? "").toLowerCase().includes(q))),
+    [items, hiddenIds, q],
+  );
+  const inboxFeed = useMemo(() => groupInboxFeed(inboxVisible), [inboxVisible]);
+  const ritualWeek = useMemo(
+    () => ritualNow ? buildRitualWeek(inboxVisible, ritualNow) : [],
+    [inboxVisible, ritualNow],
+  );
+  const ritualAgenda = useMemo(() => ritualAgendaItems(inboxVisible), [inboxVisible]);
+  const needsYouIds = useMemo(() => new Set(inboxFeed.needsYou.map((item) => item.id)), [inboxFeed.needsYou]);
+  const ritualLog = useMemo(
+    () => ritualLogItems(inboxVisible).filter((item) => !needsYouIds.has(item.id)),
+    [inboxVisible, needsYouIds],
+  );
+  const [inboxGroupBy, setInboxGroupBy] = useSurfacePreference(surfacePreferenceSpecs.schedules.groupBy);
+  const updateInboxGroupBy = useCallback((next: InboxGroupBy) => {
+    setInboxGroupBy(next);
+  }, [setInboxGroupBy]);
+  const inboxGroups = useMemo(
+    () => buildInboxGroups(inboxVisible, inboxGroupBy, familiarLabel),
+    [inboxVisible, inboxGroupBy, familiarLabel],
+  );
 
-  const selectTab = (tab: ScheduleTab) => {
+  // Multi-select over exactly the visible (search-filtered) feed, so "Select
+  // all" and per-group selection act on what's on screen — a live search term
+  // makes the selection universe "every match".
+  const inboxSelect = useMultiSelect(inboxVisible, (it) => it.id);
+  const [inboxBulkBusy, setInboxBulkBusy] = useState(false);
+  // Ephemeral (client-synthesized "eph:*") items have no server row — the
+  // single-item PATCH/DELETE paths skip them, and bulk must too.
+  const selectedInboxIds = () =>
+    inboxSelect
+      .selectedFrom(inboxVisible)
+      .map((it) => it.id)
+      .filter((id) => !id.startsWith("eph:"));
+
+  /** One-write collective action over the current selection (POST /api/inbox/bulk). */
+  const inboxBulkAct = async (action: "read" | "done" | "dismiss", pastTense: string) => {
+    const ids = selectedInboxIds();
+    if (ids.length === 0) { inboxSelect.exit(); return; }
+    setInboxBulkBusy(true);
+    try {
+      const res = await fetch("/api/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, ids }),
+      });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      announce(`${pastTense} ${ids.length} item${ids.length === 1 ? "" : "s"}.`);
+      await reloadAfterMutation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "bulk action failed");
+    } finally {
+      setInboxBulkBusy(false);
+      inboxSelect.exit();
+    }
+  };
+
+  /** Collective delete rides the shared undo toast, then ONE bulk request. */
+  const inboxBulkDelete = () => {
+    const ids = selectedInboxIds();
+    if (ids.length === 0) { inboxSelect.exit(); return; }
+    inboxSelect.exit();
+    scheduleDelete(ids, `${ids.length} inbox item${ids.length === 1 ? "" : "s"}`, async () => {
+      const idSet = new Set(ids);
+      setItems((prev) => prev.filter((i) => !idSet.has(i.id)));
+      try {
+        const res = await fetch("/api/inbox/bulk", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "delete", ids }),
+        });
+        if (!res.ok) throw new Error(`http ${res.status}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "bulk delete failed");
+      } finally { await reloadAfterMutation(); }
+    });
+  };
+  const automationsEmpty = codexAutos.length === 0;
+  const selectedAutomationId = selectedCodex?.id ?? null;
+  const detailOpen = Boolean(selectedItem || selectedCodex);
+  // The cron detail can grow from its side rail into the full page width —
+  // the compact rail stays the default; expanding gives the form room to
+  // breathe (summary tiles go 4-up, sections flow into two columns) and
+  // hides the list until collapsed again. Reminder details keep the rail.
+  const [detailExpanded, setDetailExpanded] = useState(false);
+  const cronDetailExpanded = detailExpanded && Boolean(selectedCodex);
+
+  // At-a-glance operational summary for the header: how many automations are
+  // live vs paused. Crons fire server-side, so they don't contribute a next-fire
+  // timestamp in this narrowed Calendar/Crons surface.
+  const summary = useMemo(() => {
+    return {
+      active: codexActive.length,
+      paused: codexPaused.length,
+      soonest: undefined as string | undefined,
+    };
+  }, [codexActive.length, codexPaused.length]);
+
+  const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
-    // Reminders and Inbox both select InboxItems (DetailPanel); Automations
-    // selects CodexAutomations. Clear the other selection on switch.
-    if (tab === "automations") setSelectedItem(null);
-    else setSelectedCodex(null);
+    setQuery(""); // the filter is scoped to one tab at a time
+    setSearchOpen(false);
+    inboxSelect.exit(); // selection is an inbox-tab mode, never carried across
+    // Clear any open detail on switch — the new tab may not host that type.
+    setSelectedItem(null);
+    setSelectedCodex(null);
+  };
+
+  const openCalendarDay = (day: RitualDay) => {
+    window.sessionStorage.setItem("cave:calendar:pending-open-date", day.key);
+    selectTab("calendar");
+  };
+
+  const finishOverviewSwipe = (clientX: number) => {
+    const start = overviewSwipeStartRef.current;
+    overviewSwipeStartRef.current = null;
+    if (start === null) return;
+    const distance = clientX - start;
+    if (distance <= -40) setOverviewPane("agenda");
+    if (distance >= 40) setOverviewPane("log");
   };
 
   return (
-    <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
+    <ScheduleActionsContext.Provider
+      value={{
+        runAutomation: runCodexNow,
+        togglePauseAutomation: toggleCodex,
+      }}
+    >
+    <section className="flex h-full [background:var(--bg-base)]!">
       {/* ── Main list ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-w-0 flex-col">
-        {/* Page header */}
-        <div className="flex items-center justify-between px-8 pt-8 pb-5">
-          <h1 className="text-[22px] font-semibold" style={{ color: "var(--text-primary)" }}>
-            Schedules
-          </h1>
-          <div className="flex items-center gap-2">
-            {activeTab === "automations" && (
-              <Button leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
-                New automation
-              </Button>
-            )}
-            {onNewReminder && (
-              <button
-                type="button"
+      <div className={`${detailOpen ? (cronDetailExpanded ? "hidden" : "hidden md:flex") : "flex"} flex-1 min-w-0 flex-col`}>
+        <div className="surface-compact-header rituals-overview__header">
+          <Icon name="ph:moon" width={15} className="rituals-overview__moon" aria-hidden />
+          <h1 className="surface-compact-title">Rituals</h1>
+          {activeTab === "overview" ? (
+            <p className="surface-compact-summary">{ritualWeekLabel(ritualWeek)}</p>
+          ) : null}
+          {activeTab === "calendar" ? <p className="surface-compact-summary">Calendar</p> : null}
+          {activeTab === "crons" && initialLoadDone && summary.active + summary.paused > 0 && (
+            <p className="surface-compact-summary">
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full [background:var(--accent-presence)]!" />
+                {summary.active} active
+              </span>
+              {summary.paused > 0 && <span>· {summary.paused} paused</span>}
+              {summary.soonest && (
+                <span title={`Next fire: ${summary.soonest}`}>· next fire {relTime(summary.soonest)}</span>
+              )}
+            </p>
+          )}
+          <div className="surface-compact-actions">
+            {activeTab === "overview" && searchOpen && initialLoadDone ? (
+              <div className="surface-compact-search">
+                <SearchInput
+                  value={query}
+                  onValueChange={setQuery}
+                  onClear={() => { setQuery(""); setSearchOpen(false); }}
+                  placeholder="Filter rituals…"
+                  aria-label="Filter rituals"
+                />
+              </div>
+            ) : null}
+            {activeTab === "overview" && !searchOpen ? (
+              <Button
+                aria-label="Search rituals"
+                size="sm"
+                variant="ghost"
+                leadingIcon="ph:magnifying-glass"
+                onClick={() => setSearchOpen(true)}
+              />
+            ) : null}
+            {activeTab === "crons" && initialLoadDone && codexAutos.length > 0 ? (
+              <div className="surface-compact-search">
+                <SearchInput
+                  value={query}
+                  onValueChange={setQuery}
+                  onClear={() => setQuery("")}
+                  placeholder="Filter crons…"
+                  aria-label="Filter crons"
+                />
+              </div>
+            ) : null}
+            {activeTab === "overview" ? (
+              <>
+                <Button
+                  ref={newBtnRef}
+                  size="sm"
+                  className="automation-create-chat-btn"
+                  leadingIcon="ph:plus"
+                  aria-expanded={newMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setNewMenuOpen((open) => !open)}
+                >
+                  New
+                </Button>
+                <Popover
+                  open={newMenuOpen}
+                  onOpenChange={setNewMenuOpen}
+                  anchorRef={newBtnRef}
+                  placement="bottom-end"
+                  minWidth={190}
+                  ariaLabel="Create ritual"
+                >
+                  <PopoverBody role="menu" ariaLabel="Create ritual">
+                    <PopoverItem icon="ph:bell" disabled={!onNewReminder} onSelect={() => { setNewMenuOpen(false); onNewReminder?.(); }}>
+                      New reminder
+                    </PopoverItem>
+                    <PopoverItem icon="ph:clock-countdown" onSelect={() => { setNewMenuOpen(false); setCreateOpen(true); }}>
+                      New cron
+                    </PopoverItem>
+                  </PopoverBody>
+                </Popover>
+                <Button
+                  ref={manageBtnRef}
+                  size="sm"
+                  variant="ghost"
+                  aria-label="More Rituals options"
+                  aria-expanded={manageMenuOpen}
+                  aria-haspopup="menu"
+                  leadingIcon="ph:dots-three"
+                  onClick={() => setManageMenuOpen((open) => !open)}
+                />
+                <Popover
+                  open={manageMenuOpen}
+                  onOpenChange={setManageMenuOpen}
+                  anchorRef={manageBtnRef}
+                  placement="bottom-end"
+                  minWidth={220}
+                  ariaLabel="Rituals options"
+                >
+                  <PopoverBody role="menu" ariaLabel="Rituals options">
+                    <PopoverItem icon="ph:github-logo" onSelect={() => { setManageMenuOpen(false); void openSubscriptions(); }}>
+                      Subscriptions
+                    </PopoverItem>
+                    {inboxVisible.length > 0 ? (
+                      <PopoverItem icon="ph:check-square" onSelect={() => { setManageMenuOpen(false); inboxSelect.setSelectMode(true); }}>
+                        Select ritual items
+                      </PopoverItem>
+                    ) : null}
+                    {INBOX_GROUP_BY_OPTIONS.map((option) => (
+                      <PopoverItem
+                        key={option.value}
+                        checked={inboxGroupBy === option.value}
+                        onSelect={() => { setManageMenuOpen(false); updateInboxGroupBy(option.value); }}
+                      >
+                        Group selection by {option.label.toLowerCase()}
+                      </PopoverItem>
+                    ))}
+                  </PopoverBody>
+                </Popover>
+              </>
+            ) : null}
+            {activeTab === "calendar" && onNewReminder ? (
+              <Button
+                size="sm"
+                className="automation-create-chat-btn"
+                leadingIcon="ph:plus"
                 onClick={onNewReminder}
-                className="automation-create-chat-btn inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors hover:bg-white/5"
-                style={{
-                  background: "var(--bg-raised)",
-                  border: "1px solid var(--border-hairline)",
-                  color: "var(--text-primary)",
-                }}
               >
-                Create via chat
-                <span style={{ color: "var(--text-muted)", display: "flex" }}><Icon name="ph:caret-down" width={11} /></span>
-              </button>
-            )}
+                New reminder
+              </Button>
+            ) : null}
+            {activeTab === "crons" ? (
+              <Button ref={newCronBtnRef} size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
+                New cron
+              </Button>
+            ) : null}
           </div>
         </div>
-
-        <div className="px-8 pb-4">
-          <Tabs
-            variant="segment"
-            ariaLabel="Schedules tabs"
-            value={activeTab}
-            onChange={selectTab}
-            items={[
-              { id: "inbox", label: "Inbox", count: items.length },
-              { id: "reminders", label: "Reminders", count: reminderItems.length },
-              { id: "automations", label: "Automations", count: codexAutos.length },
-            ] satisfies TabItem<ScheduleTab>[]}
+        <Tabs
+          items={RITUAL_TABS}
+          value={activeTab}
+          onChange={selectTab}
+          ariaLabel="Rituals sections"
+          idPrefix="automations"
+          size="sm"
+          className="shrink-0 px-3"
+        />
+        {RITUAL_TABS.filter((tab) => tab.id !== activeTab).map((tab) => (
+          <div
+            key={tab.id}
+            role="tabpanel"
+            id={`automations-panel-${tab.id}`}
+            aria-labelledby={`automations-tab-${tab.id}`}
+            hidden
           />
-        </div>
+        ))}
 
         {error && (
           <div
             role="alert"
-            className="mx-8 mb-3 flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[11px] text-[var(--color-warning)]"
+            className="mx-8 mt-3 mb-3 flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[length:var(--text-xs)] text-[var(--color-warning)]"
           >
             <Icon name="ph:warning-circle" width={13} className="shrink-0" />
             <span className="min-w-0 flex-1 truncate">{error}</span>
             <button
               type="button"
-              onClick={() => void load()}
-              className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-white/10"
+              onClick={() => void load(true)}
+              className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
             >
               Retry
             </button>
           </div>
         )}
 
-        {/* List */}
-        <div className="flex-1 overflow-y-auto px-8 pb-8">
-          {!initialLoadDone ? (
+        {/* List (or the Calendar surface when that tab is active) */}
+        <div
+          role="tabpanel"
+          id={`automations-panel-${activeTab}`}
+          aria-labelledby={`automations-tab-${activeTab}`}
+          aria-label={activeTab === "overview" ? "Rituals overview" : activeTab === "calendar" ? "Rituals calendar" : "Rituals crons"}
+          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : activeTab === "overview" ? "@container flex-1 overflow-y-auto rituals-overview" : "@container flex-1 overflow-y-auto px-4 pt-4 pb-8 @min-[640px]:px-8"}>
+          {activeTab === "calendar" ? (
+            calendarSlot
+          ) : !initialLoadDone ? (
             <div className="space-y-2 pt-2">
               {Array.from({ length: 5 }).map((_, index) => (
                 <div
                   key={index}
-                  className="h-14 animate-pulse rounded-lg bg-[var(--bg-raised)]"
+                  className="ui-skeleton ui-skeleton--row [height:56px]!"
                 />
               ))}
             </div>
-          ) : activeTab === "reminders" && remindersEmpty ? (
+          ) : activeTab === "overview" ? (
+            inboxFeed.needsYou.length + inboxFeed.active.length + inboxFeed.resolved.length === 0 ? (
+              q ? (
+                <EmptyState
+                  className="mt-12"
+                  icon="ph:magnifying-glass"
+                  headline={`No matches for “${query.trim()}”`}
+                  subtitle="Try a different search term."
+                />
+              ) : (
+                <EmptyState className="mt-12" icon="ph:moon" headline="All quiet"
+                  subtitle="Reminders, events, and familiar activity will gather here."
+                  actions={onNewReminder ? <Button leadingIcon="ph:plus" onClick={onNewReminder}>New reminder</Button> : undefined} />
+              )
+            ) : (
+              <>
+                {inboxSelect.selectMode ? (
+                  <SelectionToolbar
+                    allSelected={inboxSelect.allSelected(inboxVisible)}
+                    count={inboxSelect.selectedCount}
+                    onToggleSelectAll={() => inboxSelect.toggleSelectAll(inboxVisible)}
+                    onCancel={() => inboxSelect.exit()}
+                    selectAllLabel={
+                      q
+                        ? `Select all ${inboxVisible.length} match${inboxVisible.length === 1 ? "" : "es"}`
+                        : "Select all"
+                    }
+                  >
+                    <Button size="xs" variant="ghost" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={() => void inboxBulkAct("read", "Marked read")} title="Stamp the selected items as read">
+                      Read
+                    </Button>
+                    <Button size="xs" variant="ghost" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={() => void inboxBulkAct("done", "Marked done")} title="Mark the selected items done">
+                      Done
+                    </Button>
+                    <Button size="xs" variant="ghost" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={() => void inboxBulkAct("dismiss", "Dismissed")} title="Dismiss the selected items">
+                      Dismiss
+                    </Button>
+                    <Button size="xs" variant="danger" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={inboxBulkDelete} title="Delete the selected items (undo window applies)">
+                      Delete
+                    </Button>
+                  </SelectionToolbar>
+                ) : null}
+                {inboxSelect.selectMode ? (
+                  <div className="rituals-overview__selection">
+                    <InboxFeedList
+                      groups={inboxGroups}
+                      selectedId={selectedItem?.id ?? null}
+                      selectMode
+                      isSelected={inboxSelect.isSelected}
+                      groupSelected={(group) => inboxSelect.allSelected(group.items)}
+                      onToggleGroup={(group) => inboxSelect.toggleSelectAll(group.items)}
+                      onToggle={inboxSelect.toggle}
+                      familiarLabel={familiarLabel}
+                      onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
+                      onDone={(item) => void completeInboxItem(item)}
+                      onSnooze={(item) => void snoozeInboxItem(item)}
+                      onDismiss={(item) => void dismissInboxItem(item)}
+                      onUnwatch={(item, repo) => void unwatchRepo(item, repo)}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <section className="rituals-overview__events" aria-labelledby="rituals-events-heading">
+                      <button
+                        type="button"
+                        className="rituals-overview__section-toggle focus-ring"
+                        aria-label="Toggle events ribbon"
+                        aria-expanded={eventsOpen}
+                        onClick={() => setEventsOpen((open) => !open)}
+                      >
+                        <span id="rituals-events-heading">Events</span>
+                        <Icon name={eventsOpen ? "ph:caret-down" : "ph:caret-right"} width={11} aria-hidden />
+                        <span aria-hidden className="rituals-overview__fade-rule" />
+                      </button>
+                      {eventsOpen && ritualWeek.length > 0 ? (
+                        <div className="rituals-overview__week" aria-label={ritualWeekLabel(ritualWeek)}>
+                          {ritualWeek.map((day) => (
+                            <button
+                              type="button"
+                              key={day.key}
+                              className={`rituals-overview__day focus-ring${day.isToday ? " rituals-overview__day--today" : ""}`}
+                              aria-label={`Open ${new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(day.date)} in calendar`}
+                              aria-current={day.isToday ? "date" : undefined}
+                              onClick={() => openCalendarDay(day)}
+                            >
+                              <span>{day.weekday}</span>
+                              <strong>{day.day}</strong>
+                              {day.hasItems ? <i aria-hidden /> : null}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
+
+                    {inboxFeed.needsYou.length > 0 ? (
+                      <section className="rituals-overview__needs" aria-labelledby="rituals-needs-heading">
+                        <h2 id="rituals-needs-heading">Needs you · {inboxFeed.needsYou.length}</h2>
+                        <ul>
+                          {inboxFeed.needsYou.map((item) => (
+                            <RitualNeedsRow
+                              key={item.id}
+                              item={item}
+                              familiarLabel={familiarLabel}
+                              onSelect={(next) => { setSelectedItem(next); setSelectedCodex(null); }}
+                              onDone={(next) => void completeInboxItem(next)}
+                              onSnooze={(next) => void snoozeInboxItem(next)}
+                              onDismiss={(next) => void dismissInboxItem(next)}
+                              onUnwatch={(next, repo) => void unwatchRepo(next, repo)}
+                            />
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+
+                    <section className="rituals-overview__lower" aria-label="Ritual activity">
+                      <div className="rituals-overview__pane-nav">
+                        <button type="button" className="focus-ring" aria-label="Show ritual log"
+                          aria-pressed={overviewPane === "log"} onClick={() => setOverviewPane("log")}>
+                          Log · {ritualLog.length}
+                        </button>
+                        <button type="button" className="focus-ring" aria-label="Show agenda thread"
+                          aria-pressed={overviewPane === "agenda"} onClick={() => setOverviewPane("agenda")}>
+                          Agenda thread
+                        </button>
+                        <span />
+                        <button type="button" className="focus-ring" aria-label="Show previous ritual pane"
+                          onClick={() => setOverviewPane("log")} disabled={overviewPane === "log"}>
+                          <Icon name="ph:caret-left" width={13} aria-hidden />
+                        </button>
+                        <button type="button" className="focus-ring" aria-label="Show next ritual pane"
+                          onClick={() => setOverviewPane("agenda")} disabled={overviewPane === "agenda"}>
+                          <Icon name="ph:caret-right" width={13} aria-hidden />
+                        </button>
+                      </div>
+                      <div
+                        className="rituals-overview__pane"
+                        onPointerDown={(event) => { overviewSwipeStartRef.current = event.clientX; }}
+                        onPointerUp={(event) => finishOverviewSwipe(event.clientX)}
+                        onPointerCancel={() => { overviewSwipeStartRef.current = null; }}
+                      >
+                        {overviewPane === "log" ? (
+                          <div className="rituals-overview__log">
+                            {ritualLog.length > 0 ? ritualLog.map((item) => (
+                              <RitualItemRow key={item.id} item={item} familiarLabel={familiarLabel} timeMode="log"
+                                onSelect={(next) => { setSelectedItem(next); setSelectedCodex(null); }} />
+                            )) : <p className="rituals-overview__empty">No quiet activity yet.</p>}
+                          </div>
+                        ) : (
+                          <RitualAgendaThread items={ritualAgenda} familiarLabel={familiarLabel}
+                            onSelect={(next) => { setSelectedItem(next); setSelectedCodex(null); }} />
+                        )}
+                      </div>
+                    </section>
+                  </>
+                )}
+              </>
+            )
+          ) : q && codexActive.length + codexPaused.length === 0 ? (
             <EmptyState
               className="mt-12"
-              icon="ph:bell"
-              headline="No reminders yet"
-              subtitle="Reminders nudge you or a familiar at a scheduled time."
-              actions={
-                onNewReminder ? (
-                  <Button leadingIcon="ph:plus" onClick={onNewReminder}>
-                    Create via chat
-                  </Button>
-                ) : undefined
-              }
+              icon="ph:magnifying-glass"
+              headline={`No matches for “${query.trim()}”`}
+              subtitle="Try a different search term."
             />
-          ) : activeTab === "automations" && automationsEmpty ? (
+          ) : activeTab === "crons" && automationsEmpty ? (
             <EmptyState
               className="mt-12"
-              icon="ph:robot"
-              headline="No automations configured"
-              subtitle="Automations run a familiar on a schedule — set one up to get started."
-            />
-          ) : activeTab === "inbox" && inboxEmpty ? (
-            <EmptyState
-              className="mt-12"
-              icon="ph:tray"
-              headline="Inbox is empty"
-              subtitle="Reminders, responses, and agent notifications all land here."
+              icon="ph:clock-countdown"
+              headline="No crons configured"
+              subtitle="A cron runs a familiar on a recurring schedule — set one up to get started."
+              actions={<Button leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>New cron</Button>}
             />
           ) : (
             <>
-              {activeTab === "reminders" ? (
-                <ReminderTaskList
-                  current={current}
-                  paused={paused}
-                  oneShots={oneShots}
-                  history={history}
-                  selectedId={selectedReminderId}
-                  familiarLabel={familiarLabel}
-                  onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
+              {resolvedFamiliars.length > 0 && (
+                <FamiliarMultiSelect
+                  familiars={resolvedFamiliars}
+                  selected={familiarFilter}
+                  onChange={updateFamiliarFilter}
                 />
-              ) : activeTab === "inbox" ? (
-                <InboxFeedList
-                  needsYou={inboxFeed.needsYou}
-                  active={inboxFeed.active}
-                  resolved={inboxFeed.resolved}
-                  selectedId={selectedReminderId}
-                  familiarLabel={familiarLabel}
-                  onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
-                />
-              ) : (
-                <>
-                  {resolvedFamiliars.length > 0 && (
-                    <FamiliarMultiSelect
-                      familiars={resolvedFamiliars}
-                      selected={familiarFilter}
-                      onChange={updateFamiliarFilter}
-                    />
-                  )}
-                  <AutomationsPanel
-                    active={codexActive}
-                    paused={codexPaused}
-                    selectedId={selectedAutomationId}
-                    familiarsById={familiarsById}
-                    lastRunById={lastRunById}
-                    onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
-                  />
-                  {familiarFilter.size > 0 && codexActive.length === 0 && codexPaused.length === 0 && (
-                    <p className="mt-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
-                      No automations match this familiar filter.
-                    </p>
-                  )}
-                </>
+              )}
+              <AutomationsPanel
+                active={codexActive}
+                paused={codexPaused}
+                selectedId={selectedAutomationId}
+                familiarsById={familiarsById}
+                lastRunById={lastRunById}
+                onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
+              />
+              {familiarFilter.size > 0 && codexActive.length === 0 && codexPaused.length === 0 && (
+                <p className="mt-2 text-[length:var(--text-sm)] [color:var(--text-muted)]!">
+                  No crons match this familiar filter.
+                </p>
               )}
             </>
           )}
@@ -1732,8 +1167,12 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       </div>
 
       {/* ── Detail panel ───────────────────────────────────────────────────── */}
-      {(selectedItem || selectedCodex) && (
-        <div className="w-[380px] max-w-[42vw] shrink-0 overflow-hidden" style={{ borderLeft: "1px solid var(--border-hairline)" }}>
+      {detailOpen && (
+        <div
+          className={[(cronDetailExpanded
+              ? "w-full min-w-0 flex-1 overflow-hidden"
+              : "w-full min-w-0 shrink-0 overflow-hidden md:w-[380px] md:max-w-[42vw]"), "[border-left:1px_solid_var(--border-hairline)]!"].filter(Boolean).join(" ")}
+        >
           {selectedItem && (
             <DetailPanel
               item={selectedItem}
@@ -1746,13 +1185,23 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               removeItem={removeItem}
               onEdit={onEdit}
               onOpenLink={onOpenLink}
+              onDone={completeInboxItem}
+              onReopen={reopenInboxItem}
+              onSnooze10={(next) => snoozeItemFor(next, 10, "10 minutes")}
+              onSnooze60={(next) => snoozeItemFor(next, 60, "1 hour")}
+              onSnoozeTomorrow={snoozeItemUntilTomorrow}
+              onCancelSnooze={cancelSnoozeItem}
+              onToggleMute={toggleMuteItem}
+              onToggleRead={(next) => void toggleReadItem(next)}
             />
           )}
           {selectedCodex && (
             <CodexDetailPanel
               auto={selectedCodex}
               busy={busyId === selectedCodex.id}
-              onClose={() => setSelectedCodex(null)}
+              expanded={cronDetailExpanded}
+              onToggleExpanded={() => setDetailExpanded((v) => !v)}
+              onClose={() => { setSelectedCodex(null); setDetailExpanded(false); }}
               onToggle={toggleCodex}
               onSave={saveCodex}
               onDelete={deleteCodex}
@@ -1771,6 +1220,29 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           onCreate={(i) => void createCodex(i)}
         />
       )}
+
+      {/* ── GitHub subscriptions manager (Inbox tab) ───────────────────────── */}
+      {subsOpen && (
+        <GithubSubscriptionsModal
+          hasPat={subsHasPat}
+          onConnectPat={() => {
+            setSubsOpen(false);
+            navigateToMode("github");
+          }}
+          onClose={() => setSubsOpen(false)}
+        />
+      )}
+
+      {deletePending ? (
+        <UndoToast
+          key={deletePending.id}
+          message={`Deleted ${deletePending.label}`}
+          undoAriaLabel="Undo delete"
+          onUndo={() => { announce(`Restored ${deletePending.label}.`); undoDelete(); }}
+          onDismiss={commitDelete}
+        />
+      ) : null}
     </section>
+    </ScheduleActionsContext.Provider>
   );
 }

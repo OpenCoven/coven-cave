@@ -29,11 +29,37 @@ export type Familiar = {
   avatarUrl?: string;
   // CovenCave-side enrichment from cave-config.json
   harness?: string;
+  /**
+   * Explicit familiar Type id(s) (FamiliarTypeId from familiar-types.ts): the
+   * user-modifiable vocation(s) that unlock Role Surface rooms alongside the
+   * free-text `role` label. May be a single id or a comma-separated list of
+   * ids for multi-type selection. "general" or absent/empty = General.
+   */
+  familiarType?: string;
+  defaultHarness?: string;
+  harnessOverride?: string | null;
   model?: string;
   note?: string;
   voiceProvider?: string;
   voiceModel?: string;
   voiceName?: string;
+  /** Image generation (Brain tab): "" inherit | "openai" | "gemini" | "off". */
+  imageProvider?: string;
+  imageModel?: string;
+  imageSize?: string;
+  imageQuality?: string;
+  autoSelfReport?: boolean;
+  /** Per-agent Asana assignment (see FamiliarBinding). Undefined = on when the
+   *  app is connected; false opts this familiar out. */
+  asanaEnabled?: boolean;
+  /** Optional Asana workspace gid this familiar is scoped to. */
+  asanaWorkspaceGid?: string;
+  /** Per-familiar Omnigent fleet defaults (agent / host / workspace on host). */
+  omnigent?: {
+    agentId?: string;
+    hostId?: string;
+    workspace?: string;
+  };
 };
 
 export type DaemonStatus = {
@@ -58,11 +84,36 @@ export type SessionRow = {
   updated_at: string;
   familiarId?: string | null;
   origin?: SessionOrigin;
+  /** Cave has a saved local conversation transcript; preserves recoverable interrupted chats without surfacing daemon-only dead runs. */
+  hasLocalConversation?: boolean;
+  /**
+   * True for daemon sessions with no Cave conversation behind them — runs
+   * spawned by generators (journal narratives, flows, automations, CLI runs)
+   * rather than by someone chatting. Chat lists hide these; the sessions stay
+   * reachable from their origination surfaces (Work Queue, Schedules, …).
+   */
+  generated?: boolean;
   initiator?: SessionInitiator;
   git?: SessionGitContext | null;
+  /**
+   * Branch recorded from the chat's own cwd when its last turn was saved —
+   * per-session attribution for PR context. Distinct from `git.branch`, which
+   * is whatever branch the project root happens to have checked out at poll
+   * time (a shared checkout churns branches, so that must never be treated as
+   * "this session's branch").
+   */
+  workBranch?: string | null;
+  /** PR URL the chat itself reported in an assistant reply (transcript
+   *  snapshot; see chat-pr-link.ts) — fallback PR attribution for chats whose
+   *  work happens in agent worktrees rather than their own cwd. */
+  chatPrUrl?: string | null;
   pullRequest?: SessionPullRequestContext | null;
   /** Working-tree change size vs HEAD, for the Recent Activity roll-up's `+N -N`. */
   diff?: { additions: number; deletions: number } | null;
+  /** Keep mark from Cave state (never auto-archived when true). */
+  keep?: boolean;
+  /** Cave-local auto-archive defer-until timestamp, if set. */
+  archive_extended_until?: string | null;
 };
 
 export type SessionGitContext = {
@@ -78,6 +129,12 @@ export type SessionPullRequestContext = {
   state?: string;
   branch?: string;
   draft?: boolean;
+  /** How the PR was attributed to the session. Absent/"branch" = resolved
+   *  from the session's own work branch (authoritative — feeds the merged-PR
+   *  auto-archive sweep). "transcript" = derived from a PR URL the chat
+   *  reported in a reply — badge-only, never swept (long-lived familiar chats
+   *  report many PRs over their lifetime). */
+  attribution?: "branch" | "transcript";
 };
 
 export type SessionOrigin =
@@ -86,7 +143,10 @@ export type SessionOrigin =
   | "board"
   | "cron"
   | "heartbeat"
-  | "call";
+  | "call"
+  | "canvas"
+  | "journal"
+  | "enhance";
 
 export type SessionInitiator = {
   kind: "human" | "familiar" | "system" | "unknown";

@@ -1,0 +1,117 @@
+/* Composer Host chip + popover — shared by the chat and home composers, so
+   the chip carries its full styling here rather than leaning on the chat
+   surface's stylesheet. Values mirror .cave-composer-select in cave-chat.css;
+   on the chat surface both apply (identical), on home these stand alone. */
+
+.cave-composer-host-chip {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 260px;
+  height: 30px;
+  padding: 0 11px;
+  font-size: var(--text-xs);
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  border: 1px solid var(--border-hairline);
+  /* Pill radius — matches the runtime chip and the pill icon buttons it sits
+     between in the composer control row (see composer-runtime-chip.css).
+     Tracks the corner radius appearance setting. */
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-surface) 50%, transparent);
+  color: var(--text-secondary);
+}
+.cave-composer-host-chip:disabled { opacity: 0.5; cursor: default; }
+.cave-composer-host-chip svg { flex-shrink: 0; color: var(--accent-presence); }
+.cave-composer-host-chip .cave-composer-select__label { color: var(--text-muted); }
+.cave-composer-host-chip .cave-composer-select__value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cave-host-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.cave-host-dot--online { background: var(--color-success); }
+.cave-host-dot--offline { background: var(--color-danger); }
+.cave-host-dot--unknown { background: var(--text-muted); }
+.cave-host-row { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.cave-host-row__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cave-host-status { display: inline-flex; align-items: center; gap: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.cave-host-status--online { color: var(--color-success); }
+.cave-host-status--online .cave-host-dot--inline { background: var(--color-success); }
+.cave-host-status--offline { color: var(--color-danger); }
+.cave-host-status--offline .cave-host-dot--inline { background: var(--color-danger); }
+.cave-host-status--unknown { color: var(--text-muted); }
+.cave-host-status--unknown .cave-host-dot--inline { background: var(--text-muted); }
+
+/* Inline host picker — the radiogroup rendered inside the composer Options panel
+   (and the standalone chip's popover). Full-width rows so the status reads on the
+   trailing edge. */
+.cave-host-choices { display: flex; flex-direction: column; gap: 3px; }
+.cave-host-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.cave-host-choice:hover { background: var(--bg-raised); color: var(--text-primary); }
+.cave-host-choice.is-selected {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--text-primary);
+}
+.cave-host-choice--connect { color: var(--text-muted); }
+.cave-host-choice--connect:hover { color: var(--text-primary); }
+
+/* Row wrapper: the radio row plus (for ssh hosts) a small remove affordance —
+   the registry had no removal path anywhere (cave-4zdp). Two-step: the button
+   swaps to a "Remove?" confirm before firing. */
+.cave-host-choice-row { display: flex; align-items: center; gap: 4px; }
+.cave-host-choice-row .cave-host-choice { flex: 1; min-width: 0; }
+.cave-host-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 var(--space-1);
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+.cave-host-remove:hover { background: var(--bg-raised); color: var(--color-danger); }
+.cave-host-remove.is-armed {
+  border-color: color-mix(in oklch, var(--color-danger) 42%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 10%, transparent);
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+/* Connect-new-host dialog */
+.cave-connect-host { display: flex; flex-direction: column; gap: 12px; }
+.cave-connect-host__hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+.cave-connect-host__hint code { font-size: 11px; padding: 0 4px; border-radius: 4px; background: var(--bg-elevated); border: 1px solid var(--border-hairline); }
+.cave-connect-host__field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-secondary); }
+.cave-connect-host__field input { width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg-base); color: var(--text-primary); outline: none; }
+.cave-connect-host__field input:focus { border-color: color-mix(in oklch, var(--accent-presence) 60%, transparent); }
+.cave-connect-host__error { margin: 0; font-size: 11px; line-height: 1.4; color: var(--color-danger); }

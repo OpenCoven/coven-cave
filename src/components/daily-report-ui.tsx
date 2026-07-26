@@ -1,3 +1,4 @@
+import "@/styles/dashboard.css";
 // Presentational building blocks shared by the standalone `/daily-report/[date]`
 // and `/dashboard` routes. These are server components — they render the
 // client-only <Icon> as a leaf island, which Next.js allows. Keeping them here
@@ -7,6 +8,7 @@
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
+import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import {
   KIND_ICON,
   KIND_LABEL,
@@ -32,6 +34,7 @@ export function MetricCard({
   caption,
   accent = "lavender",
   href,
+  trend,
 }: {
   icon: IconName;
   value: number | string;
@@ -39,6 +42,8 @@ export function MetricCard({
   caption?: string;
   accent?: Accent;
   href?: string;
+  /** Optional 7-day trend — renders a hover-able sparkline under the metric. */
+  trend?: SparkPoint[];
 }) {
   const muted = value === 0 || value === "0";
   const className = `dr-metric${muted ? " dr-metric--muted" : ""}${href ? " dr-metric--link" : ""}`;
@@ -58,6 +63,11 @@ export function MetricCard({
       <div className="dr-metric__value">{value}</div>
       <div className="dr-metric__label">{label}</div>
       {caption ? <div className="dr-metric__caption">{caption}</div> : null}
+      {trend && trend.length ? (
+        <div className="dr-metric__spark">
+          <Sparkline points={trend} color={ACCENT_VAR[accent]} height={26} />
+        </div>
+      ) : null}
     </>
   );
   if (href) {
@@ -111,6 +121,7 @@ const ROW_ACCENT: Record<InboxItem["kind"], string> = {
   agent: ACCENT_VAR.lavender,
   "response-needed": ACCENT_VAR.rose,
   "daily-summary": ACCENT_VAR.blue,
+  milestone: ACCENT_VAR.green,
 };
 
 /** A single actionable inbox item. Renders as a deep link when it has a target. */
@@ -174,11 +185,11 @@ export function QuickLink({
       <span className="dr-quicklink__icon">
         <Icon name={icon} aria-hidden />
       </span>
-      <span style={{ minWidth: 0 }}>
-        <span className="dr-quicklink__label" style={{ display: "block" }}>
+      <span className="[min-width:0]!">
+        <span className="dr-quicklink__label [display:block]!">
           {label}
         </span>
-        {sub ? <span className="dr-quicklink__sub" style={{ display: "block" }}>{sub}</span> : null}
+        {sub ? <span className="dr-quicklink__sub [display:block]!">{sub}</span> : null}
       </span>
     </a>
   );

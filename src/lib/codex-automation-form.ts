@@ -6,6 +6,17 @@ export type ScheduleMode = "daily" | "weekly" | "raw";
 
 export const RRULE_DAY_ORDER = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 
+/** RRULE weekday code → short label, for day-chip pickers. */
+export const RRULE_DAY_LABEL: Record<string, string> = {
+  SU: "Sun",
+  MO: "Mon",
+  TU: "Tue",
+  WE: "Wed",
+  TH: "Thu",
+  FR: "Fri",
+  SA: "Sat",
+};
+
 export function parseCodexRrule(rrule: string | null): {
   mode: ScheduleMode;
   days: string[];
@@ -33,7 +44,12 @@ export function parseCodexRrule(rrule: string | null): {
 
 export function buildCodexRrule(mode: ScheduleMode, time: string, days: string[], raw: string): string {
   if (mode === "raw") return raw.trim();
-  const [hour = "9", minute = "0"] = time.split(":");
+  // A cleared <input type=time> yields "" — split gives [""], so the "9"
+  // default never applies and Number("") is 0: the cron silently lands at
+  // midnight. Fall back per-part instead.
+  const [rawHour, rawMinute] = time.split(":");
+  const hour = rawHour || "9";
+  const minute = rawMinute || "0";
   const parts = [
     "RRULE:FREQ=" + (mode === "daily" ? "DAILY" : "WEEKLY"),
     `BYHOUR=${Number(hour)}`,

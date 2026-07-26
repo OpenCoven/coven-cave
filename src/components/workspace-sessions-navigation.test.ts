@@ -37,3 +37,30 @@ assert.match(
   /else if \(daemonStatusResolved\)/,
   "daemon-offline banner is gated on a resolved status, not the initial unknown state",
 );
+
+assert.match(
+  workspace,
+  /classifyDaemonStatusPoll\(/,
+  "daemon status polling should distinguish definitive offline from unavailable checks",
+);
+
+assert.match(
+  workspace,
+  /!requestGate\.isLatest\(requestId\)/,
+  "an older status poll must not overwrite a newer post-start result",
+);
+
+assert.match(
+  workspace,
+  /id: "daemon-status-unavailable"[\s\S]{0,300}label: "Retry"/,
+  "inconclusive daemon checks should be retryable without offering Start daemon",
+);
+
+const unavailableBranch = workspace.match(
+  /if \(result\.kind === "unavailable"\) \{([\s\S]*?)\n    \}/,
+)?.[1] ?? "";
+assert.doesNotMatch(
+  unavailableBranch,
+  /setDaemonOffline\(false\)/,
+  "an inconclusive check must not clear a previously confirmed sticky offline state",
+);

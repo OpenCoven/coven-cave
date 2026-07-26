@@ -1,0 +1,25 @@
+{
+  "name": "remotion",
+  "version": "0.1.0",
+  "description": "Create and edit programmatic videos in React with Remotion \u2014 compositions, animations, sequencing, audio, and captions backed by a 30-topic rules library.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Remotion Video",
+    "shortDescription": "Create and edit programmatic videos in React with Remotion \u2014 compositions, animations, sequencing, audio, and captions backed by a 30-topic rules library.",
+    "longDescription": "Use before writing any Remotion code \u2014 creating or editing compositions, animations, sequences, transitions, audio, captions, charts, or 3D scenes in a React video project (remotion.config.ts, remotion-videos/*). A rules/ library carries topic-specific guidance for ~30 areas \u2014 timing and interpolation curves, sequencing and trimming, assets and fonts, Mediabunny media probing, TikTok-style captions, Lottie, Mapbox maps, TailwindCSS \u2014 plus ready-made typewriter and word-highlight text-animation components.",
+    "developerName": "OpenCoven",
+    "category": "Media & Creative",
+    "capabilities": [
+      "remotion",
+      "video",
+      "react",
+      "animation",
+      "composition",
+      "captions"
+    ],
+    "defaultPrompt": "Help me use Remotion Video safely."
+  }
+}

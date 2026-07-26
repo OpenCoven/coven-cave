@@ -5,26 +5,96 @@ import { readFileSync } from "node:fs";
 const src = readFileSync(new URL("./settings-fonts.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 
-assert.match(src, /FONT_OPTIONS/, "FontSettings reads FONT_OPTIONS");
-assert.match(src, /slot === "sans"/, "filters the sans slot");
-assert.match(src, /slot === "mono"/, "filters the mono slot");
-assert.match(src, /<select/, "renders selects");
-assert.match(src, /writeFontPref/, "persists the choice");
-assert.match(src, /applyFont/, "applies the choice live");
+assert.match(src, /FONT_PAIRS/, "FontSettings reads curated FONT_PAIRS");
+assert.doesNotMatch(src, /SANS_OPTIONS/, "does not expose an independent sans picker");
+assert.doesNotMatch(src, /MONO_OPTIONS/, "does not expose an independent mono picker");
+assert.match(src, /readFontPairPref/, "loads the saved curated font pair");
+assert.match(src, /writeFontPairPref/, "persists font pairs as a unit");
+assert.match(src, /applyFontPair/, "applies font pairs as a unit");
+assert.match(src, /StandardSelect/, "renders the shared custom select");
+assert.doesNotMatch(src, /<select/, "does not render native selects");
+assert.match(src, /import \{ Button \}/, "font settings actions use the shared Button primitive");
+assert.doesNotMatch(src, /<button\b/, "font settings should not hand-roll button controls");
+assert.match(src, /rounded-\[var\(--radius-control\)\]/, "font settings controls use the shared control radius token");
+assert.doesNotMatch(src, /rounded-md/, "font settings controls do not hard-code Tailwind's md radius");
+assert.doesNotMatch(
+  src,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "font settings controls do not hard-code rounded classes",
+);
 assert.match(src, /fontStack\(/, "preview rendered with fontStack");
-assert.match(src, /DEFAULT_FONT_ID/, "reset targets the defaults");
+assert.match(src, /DEFAULT_FONT_PAIR_ID/, "reset targets the default pair");
 assert.match(src, /Reset/, "exposes a reset control");
+assert.match(src, /Typography pair/, "renders a single pair selector");
+assert.match(
+  src,
+  /label="Typography pair"[\s\S]{0,180}\[width:min\(100%,_300px\)\]! \[max-width:100%\]!/,
+  "typography pair selector uses a responsive width that fits curated pair labels",
+);
+// Row controls share one standard 28px height: the select trigger pins h-7
+// explicitly and the segmented wrappers pin the same h-7.
+assert.doesNotMatch(src, /gh-select/, "settings does not borrow the board view's 26px control chrome");
+assert.match(
+  src,
+  /const segWrap =\s*\n?\s*"flex h-7 /,
+  "segmented control wrappers pin the standard settings control height",
+);
+assert.match(
+  src,
+  /const selectTrigger =\s*\n?\s*"h-7 /,
+  "select triggers pin the standard settings control height",
+);
+assert.match(
+  src,
+  /className=\{\[selectTrigger,/,
+  "typography pair selector uses the shared standard-height trigger styling",
+);
+assert.match(src, /Display/, "renders a display (serif) preview specimen");
+assert.match(src, /Interface/, "keeps the interface preview");
+assert.match(src, /Code &amp; terminal/, "keeps the code and terminal preview");
 
 assert.match(shell, /import \{ FontSettings \} from "\.\/settings-fonts"/, "shell imports FontSettings");
 assert.match(shell, /<FontSettings\s*\/>/, "AppearanceSection renders <FontSettings />");
 
-// The component must apply the saved fonts on mount (the boot script that would
-// otherwise do it pre-paint is not mounted), so the rendered font matches the
-// persisted selection after a reload — not just after a user change.
+// ── The selected segment must actually LOOK selected (cave-q42g) ─────────────
+// SegmentButton renders through Button variant="ghost"; .ui-btn--ghost is
+// UNLAYERED CSS (background: transparent + its own :hover), and unlayered rules
+// beat Tailwind's layered utilities unconditionally — so the active accent
+// classes never painted and Reading text / Date & time selections were
+// invisible (Corner radius, on the shared Segmented's plain <button>, was
+// fine). The cure is the mode-toggle precedent: a scoped unlayered pressed-
+// state rule that wins the background back.
 assert.match(
   src,
-  /useEffect\(\(\) => \{[\s\S]*?applyFont\("sans"[\s\S]*?applyFont\("mono"[\s\S]*?\}, \[\]\)/,
-  "mount effect applies both saved fonts",
+  /className=\{`settings-segment \$\{segBtn\(active, extra\)\}`\}/,
+  "SegmentButton carries the settings-segment class the pressed-state CSS keys on",
+);
+{
+  const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(
+    globals,
+    /\.settings-segment\[aria-pressed="true"\] \{\s*\n\s*background: var\(--accent-presence\) !important;\s*\n\s*color: var\(--accent-presence-foreground\) !important;/,
+    "the pressed segment's accent fill is unlayered CSS — Button/ghost's unlayered transparent background beats Tailwind utilities, so utilities alone cannot express the selected state",
+  );
+  assert.match(
+    globals,
+    /\.settings-segment\[aria-pressed="true"\]:hover \{/,
+    "hover on the selected segment keeps the accent fill (ghost's own hover would repaint it)",
+  );
+}
+
+// The component applies the bootstrapped pair on mount but does not write an
+// unchanged value back and create a redundant canonical revision, so the
+// mounted UI simply reflects the already-persisted selection.
+assert.match(
+  src,
+  /useEffect\(\(\) => \{[\s\S]*?const pair = readFontPairPref\(\)[\s\S]*?setPairId\(pair\.id\)[\s\S]*?applyFontPair\(pair\.id\)[\s\S]*?\}, \[\]\)/,
+  "mount effect reads and applies the saved font pair",
+);
+assert.doesNotMatch(
+  src.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[\]\)/)?.[0] ?? "",
+  /writeFontPairPref/,
+  "mounting Typography must not rewrite an unchanged preference",
 );
 
 // Text size control (reframed Screen magnification) lives in Typography.
@@ -105,15 +175,8 @@ assert.match(
   "reset restores the default hyphenation",
 );
 
-// Drop cap control (library reader only).
-assert.match(src, /Drop cap/, "renders a Drop cap control");
-assert.match(src, /READING_DROPCAP_OPTIONS/, "uses the reading-dropcap ladder");
-assert.match(src, /applyReadingDropcap/, "applies drop cap via the shared helper");
-assert.match(src, /aria-pressed=\{dropcap === option\}/, "drop-cap buttons expose selected state");
-assert.match(
-  src,
-  /const reset = \(\) => \{[\s\S]*?DEFAULT_READING_DROPCAP[\s\S]*?\}/,
-  "reset restores the default drop cap",
-);
+assert.match(src, /Applies to chat and memory\./, "reading text copy should only name integrated app surfaces");
+assert.doesNotMatch(src, /Applies to chat, library, and memory\./, "feature-branch Library should not appear in integrated Settings copy");
+assert.doesNotMatch(src, /Drop cap|READING_DROPCAP|applyReadingDropcap/, "Library-only drop-cap controls stay out of integrated Settings");
 
 console.log("settings-fonts.test.ts OK");

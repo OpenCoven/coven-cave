@@ -11,9 +11,20 @@ assert.match(
   "doneCards memo filters the current-scope `filtered` list by status done",
 );
 
-// Toolbar control + gating + inline confirm.
+// Toolbar control + gating + inline confirm. The trash icon button owns the
+// destructive verbs: outside select mode it is Clear done, gated on the
+// done-card count; the confirm group replaces it inline while deciding.
 assert.match(source, /Clear done/, "Clear done control label present");
-assert.match(source, /disabled=\{doneCards\.length === 0\}/, "Clear done gated on done-card count");
+assert.match(
+  source,
+  /title=\{cardSelect\.selectMode \? "Delete selected" : "Clear done"\}/,
+  "the trash button reads Clear done outside select mode, Delete selected inside",
+);
+assert.match(
+  source,
+  /disabled=\{cardSelect\.selectMode \? !hasSelection : doneCards\.length === 0\}/,
+  "Clear done gated on done-card count; Delete selected on the selection",
+);
 assert.match(source, /setClearConfirm\(true\)/, "clicking the control opens an inline confirm");
 assert.match(source, /Clear \{doneCards\.length\} done/, "confirm names the count");
 
@@ -21,9 +32,15 @@ assert.match(source, /Clear \{doneCards\.length\} done/, "confirm names the coun
 const clearFn = source.match(/const handleClearDone = async[\s\S]*?\n {2}\};/)?.[0] ?? "";
 assert.match(clearFn, /setCards\(\(prev\) => prev\.filter\(/, "optimistically removes the done cards");
 assert.match(clearFn, /`\/api\/board\/\$\{[^}]+\}`, \{ method: "DELETE" \}/, "fires DELETE per done card");
-assert.match(clearFn, /await load\(\)/, "failure path resyncs from the server");
+assert.match(clearFn, /await load\(\{ force: true \}\)/, "failure path bypasses the cache to resync from the server");
 assert.match(clearFn, /setActionError\(/, "failure path surfaces the action banner");
 assert.match(clearFn, /setClearedBanner\(/, "success path shows the undo banner");
+
+assert.match(
+  source,
+  /onClick=\{\(\) => void load\(\{ force: true \}\)\}>\s*Retry/,
+  "Board retry actions bypass a fresh warm-cache entry",
+);
 
 // handleUndoClear: re-create via POST.
 const undoFn = source.match(/const handleUndoClear = async[\s\S]*?\n {2}\};/)?.[0] ?? "";

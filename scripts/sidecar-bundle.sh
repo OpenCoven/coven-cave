@@ -1,32 +1,95 @@
 #!/usr/bin/env bash
-# Build + assemble the Next.js standalone server with a flat, complete
-# node_modules so it can boot from inside the Tauri .app bundle without any
-# pnpm symlink magic. Output: src-tauri/resources/server/.
+# Build + assemble the Next.js standalone server from its emitted file traces
+# plus Cave's explicit runtime data. macOS/Linux package the expanded tree;
+# Windows packages a bounded archive that the launcher expands into its
+# versioned local runtime cache.
 #
-# Mobile-Tauri builds: skip entirely. iOS and Android sandboxes can't spawn
-# a child Node.js process, the resulting IPA / APK would balloon by ~100MB
-# of `node_modules`, and the daemon model on mobile is "point at the user's
-# home Tailscale daemon" anyway — see docs/mobile-tailscale.md. Tauri sets
-# `TAURI_PLATFORM` for us during `tauri ios build` / `tauri android build`,
-# so a simple branch on that variable is enough.
+# Desktop-only: the Cave app ships the Node sidecar exclusively on the desktop
+# Tauri targets. The mobile experience is the native Swift app under `apps/ios/`,
+# which points at the user's home Tailscale daemon rather than a bundled sidecar
+# (see docs/mobile-tailscale.md), so there is no mobile build path through here.
 set -euo pipefail
-
-case "${TAURI_PLATFORM:-}" in
-  ios|android)
-    echo "==> sidecar-bundle.sh: skipping for mobile target ($TAURI_PLATFORM)"
-    echo "    mobile-Tauri builds rely on the user's remote Tailscale daemon;"
-    echo "    no bundled Node sidecar is shipped. See docs/mobile-tailscale.md."
-    exit 0
-    ;;
-esac
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/src-tauri/resources/server"
+WINDOWS_ARCHIVE_DIR="$ROOT/src-tauri/resources/server-archive"
+WINDOWS_ARCHIVE="$WINDOWS_ARCHIVE_DIR/server.tar.zst"
+WINDOWS_ARCHIVE_MANIFEST="$WINDOWS_ARCHIVE_DIR/manifest.json"
+WINDOWS_ARCHIVE_TEMP="$WINDOWS_ARCHIVE_DIR/.server.tar.zst.$$.tmp"
+WINDOWS_ARCHIVE_MANIFEST_TEMP="$WINDOWS_ARCHIVE_DIR/.manifest.json.$$.tmp"
 BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
-STATIC="$ROOT/.next/static"
-PUBLIC="$ROOT/public"
+PIPER_RUNTIME_DIR="$ROOT/src-tauri/resources/piper"
+# Use Node rather than shell-specific environment variables (such as OS) so
+# Git Bash and CI build the same Windows resource layout.
+BUILD_PLATFORM="$(node -p 'process.platform')"
 PNPM_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/coven-cave-sidecar-pnpm.XXXXXX")"
-trap 'rm -rf "$PNPM_STAGE"' EXIT
+cleanup_staging() {
+  rm -rf "$PNPM_STAGE"
+  rm -f "$WINDOWS_ARCHIVE_TEMP" "$WINDOWS_ARCHIVE_MANIFEST_TEMP"
+}
+trap cleanup_staging EXIT
+
+bundle_piper_runtime() {
+  local platform asset expected_sha archive extract_root executable runtime_root actual_sha
+  platform="$(node -p 'process.platform')"
+  case "$platform/$(node -p 'process.arch')" in
+    linux/x64)
+      asset="piper_linux_x86_64.tar.gz"
+      expected_sha="a50cb45f355b7af1f6d758c1b360717877ba0a398cc8cbe6d2a7a3a26e225992"
+      executable="piper"
+      ;;
+    win32/x64)
+      asset="piper_windows_amd64.zip"
+      expected_sha="f3c58906402b24f3a96d92145f58acba6d86c9b5db896d207f78dc80811efcea"
+      executable="piper.exe"
+      ;;
+    darwin/arm64)
+      asset="piper_macos_aarch64.tar.gz"
+      expected_sha="6b1eb03b3735946cb35216e063e7eebcc33a6bbf5dd96ec0217959bf1cdcb0cc"
+      executable="piper"
+      ;;
+    darwin/x64)
+      asset="piper_macos_x64.tar.gz"
+      expected_sha="ced85c0a3df13945b1e623b878a48fdc2854d5c485b4b67f62857cf551deaf8b"
+      executable="piper"
+      ;;
+    *)
+      echo "ERROR: no managed Piper runtime for $platform/$(node -p 'process.arch')" >&2
+      exit 1
+      ;;
+  esac
+
+  archive="$PNPM_STAGE/$asset"
+  extract_root="$PNPM_STAGE/piper-runtime"
+  echo "==> downloading pinned Piper runtime $asset"
+  curl --fail --location --retry 3 --silent --show-error \
+    "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/$asset" \
+    --output "$archive"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
+  else
+    actual_sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
+  fi
+  if [ "$actual_sha" != "$expected_sha" ]; then
+    echo "ERROR: Piper runtime checksum mismatch for $asset" >&2
+    exit 1
+  fi
+
+  rm -rf "$extract_root" "$PIPER_RUNTIME_DIR"
+  mkdir -p "$extract_root" "$PIPER_RUNTIME_DIR"
+  case "$asset" in
+    *.zip) unzip -q "$archive" -d "$extract_root" ;;
+    *.tar.gz) tar -xzf "$archive" -C "$extract_root" ;;
+  esac
+  runtime_root="$(dirname "$(find "$extract_root" -type f -name "$executable" -print -quit)")"
+  if [ -z "$runtime_root" ] || [ ! -f "$runtime_root/$executable" ]; then
+    echo "ERROR: Piper archive does not contain $executable" >&2
+    exit 1
+  fi
+  cp -a "$runtime_root/." "$PIPER_RUNTIME_DIR/"
+  chmod +x "$PIPER_RUNTIME_DIR/$executable" 2>/dev/null || true
+  printf "generated at release build time\n" > "$PIPER_RUNTIME_DIR/placeholder.txt"
+}
 
 fix_node_pty_spawn_helpers() {
   local base="$1"
@@ -53,7 +116,7 @@ prune_foreign_native_packages() {
     return 0
   fi
 
-  local platform arch libc target next_pkg sharp_pkg sharp_vips_pkg node_pty_prebuild
+  local platform arch libc target next_pkg sharp_pkg sharp_vips_pkg node_pty_prebuild SIDECAR_SUPPORTED
   platform="$(node -p "process.platform")"
   arch="$(node -p "process.arch")"
   libc=""
@@ -61,37 +124,15 @@ prune_foreign_native_packages() {
     libc="$(node -p "process.report?.getReport?.().header?.glibcVersionRuntime ? 'gnu' : 'musl'")"
   fi
 
-  case "$platform" in
-    darwin)
-      target="darwin-$arch"
-      next_pkg="@next/swc-$target"
-      sharp_pkg="@img/sharp-$target"
-      sharp_vips_pkg="@img/sharp-libvips-$target"
-      node_pty_prebuild="$target"
-      ;;
-    linux)
-      target="linux-$arch"
-      next_pkg="@next/swc-$target-$libc"
-      sharp_pkg="@img/sharp-$target"
-      sharp_vips_pkg="@img/sharp-libvips-$target"
-      if [ "$libc" = "musl" ]; then
-        sharp_pkg="@img/sharp-linuxmusl-$arch"
-        sharp_vips_pkg="@img/sharp-libvips-linuxmusl-$arch"
-      fi
-      node_pty_prebuild="$target"
-      ;;
-    win32)
-      target="win32-$arch"
-      next_pkg="@next/swc-$target-msvc"
-      sharp_pkg="@img/sharp-$target"
-      sharp_vips_pkg=""
-      node_pty_prebuild="$target"
-      ;;
-    *)
-      echo "==> sidecar native prune: unsupported platform $platform/$arch; leaving native packages intact"
-      return 0
-      ;;
-  esac
+  # Single source of truth for the native target mapping, shared with the
+  # cross-environment conformance suite (scripts/sidecar-target.mjs). Keeps the
+  # release prune from ever drifting from what the tests assert per-OS.
+  SIDECAR_SUPPORTED=0
+  eval "$(node "$ROOT/scripts/sidecar-target.mjs" --sh "$platform" "$arch" "$libc")"
+  if [ "$SIDECAR_SUPPORTED" != "1" ]; then
+    echo "==> sidecar native prune: unsupported platform $platform/$arch; leaving native packages intact"
+    return 0
+  fi
 
   echo "==> pruning sidecar native packages for $platform/$arch${libc:+/$libc}"
 
@@ -145,20 +186,122 @@ prune_sidecar_nonruntime_files() {
 
   echo "==> pruning sidecar non-runtime files"
 
+  # NOTE: do NOT prune node_modules/sharp or node_modules/@img here — sharp is a
+  # runtime dependency of the familiar avatar route, which transcodes seeded
+  # raster avatars at request time (#2010). prune_foreign_native_packages has
+  # already trimmed @img down to the single build-target sharp + libvips pair,
+  # so keeping them costs little and avatars actually render in the packaged app.
   rm -rf \
     "$dest/node_modules/@playwright" \
     "$dest/node_modules/@types" \
     "$dest/node_modules/playwright" \
     "$dest/node_modules/playwright-core" \
-    "$dest/node_modules/sharp" \
-    "$dest/node_modules/@img"
+    "$dest/node_modules/node-pty/deps" \
+    "$dest/node_modules/node-pty/scripts" \
+    "$dest/node_modules/node-pty/src" \
+    "$dest/node_modules/node-pty/typings"
 
   find "$dest" -type f \( \
     -name '*.map' -o \
     -name '*.d.ts' -o \
-    -name '*.d.ts.map' \
+    -name '*.d.ts.map' -o \
+    -name '*.pdb' -o \
+    -name '*.test.js' \
   \) -delete
 }
+
+copy_node_shared_runtime() {
+  local node_bin="$1"
+  local dest_dir="$2"
+  local lib_ref=""
+
+  case "$(uname -s)" in
+    Darwin)
+      if command -v otool >/dev/null 2>&1; then
+        lib_ref="$(otool -L "$node_bin" | awk '/libnode.*\.dylib/ {print $1; exit}')"
+      fi
+      ;;
+    Linux)
+      if command -v ldd >/dev/null 2>&1; then
+        lib_ref="$(ldd "$node_bin" | awk '/libnode.*\.so/ {print $3; exit}')"
+      fi
+      ;;
+  esac
+
+  if [ -z "$lib_ref" ]; then
+    return 0
+  fi
+
+  local lib_name="${lib_ref##*/}"
+  local lib_path=""
+  if [ -f "$lib_ref" ]; then
+    lib_path="$lib_ref"
+  else
+    local dir
+    for dir in \
+      "$(dirname "$node_bin")" \
+      "$(dirname "$node_bin")/../lib" \
+      "$(dirname "$node_bin")/../../lib" \
+      "$(dirname "$node_bin")/../../../lib"; do
+      if [ -f "$dir/$lib_name" ]; then
+        lib_path="$(cd "$dir" && pwd -P)/$lib_name"
+        break
+      fi
+    done
+  fi
+
+  if [ -z "$lib_path" ]; then
+    echo "ERROR: node runtime depends on $lib_ref, but the library could not be found" >&2
+    exit 1
+  fi
+
+  mkdir -p "$dest_dir/lib"
+  cp "$lib_path" "$dest_dir/lib/$lib_name"
+  chmod +r "$dest_dir/lib/$lib_name" 2>/dev/null || true
+  echo "==> bundled Node shared runtime $lib_name"
+}
+
+write_windows_sidecar_archive() {
+  mkdir -p "$WINDOWS_ARCHIVE_DIR"
+  # A killed prior build must not leave unbounded staging files. Final archive
+  # and manifest paths remain untouched until the replacement passes all
+  # integrity and size gates.
+  find "$WINDOWS_ARCHIVE_DIR" -maxdepth 1 -type f -mmin +1440 \( \
+    -name '.server.tar.zst.*.tmp' -o \
+    -name '.manifest.json.*.tmp' \
+  \) -delete
+
+  # The standalone output can retain valid pnpm symlinks. Materialize those
+  # few links in place instead of copying the entire 500+ MiB tree a second
+  # time. The manifest and runtime both reject any link that survives.
+  while IFS= read -r -d '' link; do
+    if [ ! -e "$link" ]; then
+      echo "ERROR: dangling sidecar symlink cannot be archived: $link" >&2
+      exit 1
+    fi
+    materialized="${link}.materialized.$$"
+    cp -aL "$link" "$materialized"
+    rm -f "$link"
+    mv "$materialized" "$link"
+  done < <(find "$DEST" -type l -print0)
+
+  echo "==> archiving Windows sidecar -> $WINDOWS_ARCHIVE_TEMP"
+  # The Node writer emits a canonical tar stream (byte-sorted paths, fixed
+  # uid/gid/mtime/modes) and wraps it in deterministic zstd level 3. Identical payloads
+  # therefore keep the same digest/cache key across release builds and hosts.
+  node "$ROOT/scripts/sidecar-archive-manifest.mjs" --publish \
+    "$DEST" "$WINDOWS_ARCHIVE_TEMP" \
+    "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE_MANIFEST" \
+    "$WINDOWS_ARCHIVE_MANIFEST_TEMP"
+
+  # Keep the expanded tree out of the Windows build workspace as a second
+  # guard against accidentally reintroducing thousands of WiX components.
+  rm -rf "$DEST"
+  mkdir -p "$DEST"
+  printf "generated at release build time\n" > "$DEST/placeholder.txt"
+}
+
+bundle_piper_runtime
 
 echo "==> next build"
 (cd "$ROOT" && pnpm build) >&2
@@ -170,7 +313,7 @@ if [ ! -f "$STANDALONE/server.js" ]; then
 fi
 
 echo "==> staging Node runtime for bundled sidecar"
-if [ "${OS:-}" = "Windows_NT" ]; then
+if [ "$BUILD_PLATFORM" = "win32" ]; then
   NODE_BIN="$(command -v node.exe || command -v node || true)"
   NODE_NAME="node.exe"
 else
@@ -185,7 +328,12 @@ rm -rf "$BUNDLED_NODE_DIR"
 mkdir -p "$BUNDLED_NODE_DIR/bin"
 cp "$NODE_BIN" "$BUNDLED_NODE_DIR/bin/$NODE_NAME"
 chmod +x "$BUNDLED_NODE_DIR/bin/$NODE_NAME" 2>/dev/null || true
+copy_node_shared_runtime "$NODE_BIN" "$BUNDLED_NODE_DIR"
+"$BUNDLED_NODE_DIR/bin/$NODE_NAME" -e "process.exit(0)" >/dev/null
 printf "generated at release build time\n" > "$BUNDLED_NODE_DIR/placeholder.txt"
+
+echo "==> staging bundled Whisper runtime"
+bash "$ROOT/scripts/whisper-runtime-bundle.sh"
 
 # Next.js + pnpm leaves a node_modules full of pnpm-style symlinks
 # (.pnpm/* paths) that don't survive the copy into the .app bundle. Recreate
@@ -204,90 +352,16 @@ fi
 prune_foreign_native_packages "$PNPM_STAGE/node_modules"
 fix_node_pty_spawn_helpers "$PNPM_STAGE/node_modules"
 
-echo "==> copying standalone tree → $DEST"
-rm -rf "$DEST"
-mkdir -p "$DEST"
-# Skip the standalone's broken pnpm-style node_modules; we'll bring in the
-# locked, dereferenced pnpm one instead.
-(cd "$STANDALONE" && find . -mindepth 1 -maxdepth 1 ! -name node_modules \
-   -exec cp -a {} "$DEST/" \;)
+echo "==> assembling traced sidecar runtime → $DEST"
+node "$ROOT/scripts/sidecar-runtime-closure.mjs" \
+  "$ROOT" "$STANDALONE" "$PNPM_STAGE/node_modules" "$DEST"
 
-echo "==> grafting locked node_modules → $DEST/node_modules"
-cp -aL "$PNPM_STAGE/node_modules" "$DEST/node_modules"
+echo "==> pruning sidecar runtime for the release target"
+prune_foreign_native_packages "$DEST/node_modules"
 fix_node_pty_spawn_helpers "$DEST/node_modules"
 
-# The standalone tree's server.js is Next's generated entrypoint — it serves
-# the app but has no /api/pty-ws websocket bridge, so the terminal cannot
-# reach a shell through the sidecar. Ship the custom server (server.ts →
-# server.mjs, produced by `pnpm build:server` inside `pnpm build` above);
-# the Tauri launcher prefers server.mjs when present.
-echo "==> shipping custom PTY-bridge server → $DEST/server.mjs"
-if [ ! -f "$ROOT/server.mjs" ]; then
-  echo "ERROR: $ROOT/server.mjs missing after build — build:server should have produced it" >&2
-  exit 1
-fi
-cp "$ROOT/server.mjs" "$DEST/server.mjs"
-
-# But Next.js's compiled server.js can require the standalone's own internal
-# next package layout. Merge any package the standalone shipped that the
-# locked production install did not include (rare, but cheap to do).
-if [ -d "$STANDALONE/node_modules" ]; then
-  echo "==> backfilling any pnpm-only packages from standalone"
-  (cd "$STANDALONE/node_modules" && find . -maxdepth 2 -mindepth 1 -type d \
-     ! -path "./.pnpm*" -print0 2>/dev/null \
-     | while IFS= read -r -d '' pkg; do
-        rel="${pkg#./}"
-        if [ ! -e "$DEST/node_modules/$rel" ]; then
-          mkdir -p "$DEST/node_modules/$(dirname "$rel")"
-          cp -aL "$STANDALONE/node_modules/$rel" \
-            "$DEST/node_modules/$rel" 2>/dev/null || true
-        fi
-      done)
-fi
-
-if [ -d "$STATIC" ]; then
-  mkdir -p "$DEST/.next/static"
-  echo "==> copying .next/static → $DEST/.next/static"
-  cp -a "$STATIC/." "$DEST/.next/static/"
-fi
-
-# Next.js + pnpm also drops symlinks under .next/node_modules/ that point at
-# ../../node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg> (e.g. shiki,
-# oniguruma-to-es). After we swap in the locked top-level node_modules
-# above, those symlinks dangle, and Tauri's resource glob rejects the bundle
-# with `resource path doesn't exist`. Resolve each into a real directory.
-if [ -d "$DEST/.next/node_modules" ]; then
-  echo "==> resolving dangling pnpm symlinks in .next/node_modules"
-  while IFS= read -r link; do
-    # Only patch dangling symlinks (non-dangling ones are fine as-is).
-    if [ -e "$link" ]; then
-      continue
-    fi
-    # Strip the trailing -<16hex> webpack-content-hash suffix
-    pkg="$(basename "$link" | sed -E 's/-[a-f0-9]{16}$//')"
-    src=""
-    if [ -d "$PNPM_STAGE/node_modules/$pkg" ]; then
-      src="$PNPM_STAGE/node_modules/$pkg"
-    elif [ -d "$ROOT/node_modules/$pkg" ]; then
-      src="$ROOT/node_modules/$pkg"
-    fi
-    if [ -n "$src" ] && [ -d "$src" ]; then
-      rm -f "$link"
-      cp -aL "$src" "$link"
-      echo "    resolved $(basename "$link") ← $pkg"
-    else
-      echo "    ! could not resolve $(basename "$link") (pkg=$pkg)" >&2
-    fi
-  done < <(find "$DEST/.next/node_modules" -mindepth 1 -maxdepth 1 -type l)
-fi
-
-if [ -d "$PUBLIC" ]; then
-  mkdir -p "$DEST/public"
-  echo "==> copying public/ → $DEST/public"
-  cp -a "$PUBLIC/." "$DEST/public/"
-fi
-
 prune_sidecar_nonruntime_files "$DEST"
+node "$ROOT/scripts/sidecar-runtime-closure.mjs" --verify "$DEST"
 
 # Sanity check
 for must in node_modules/@next/env node_modules/@swc/helpers/_; do
@@ -296,5 +370,20 @@ for must in node_modules/@next/env node_modules/@swc/helpers/_; do
     exit 1
   fi
 done
+
+# Sharp must actually load from the bundle, or familiar raster avatars 404 in
+# the packaged app (#2010). The prune keeps only the build-host-arch native
+# binary, and release bundles are built on the matching host (same constraint
+# as @next/swc and node-pty), so requiring it here exercises the real load
+# path and fails fast if @img/sharp-<target> or libvips went missing.
+if ! (cd "$DEST" && node -e "require('sharp')") >&2 2>&1; then
+  echo "==> ! sharp failed to load from sidecar bundle — raster avatars will 404 (#2010)" >&2
+  echo "    expected @img/sharp-<build-target> native binary under $DEST/node_modules/@img" >&2
+  exit 1
+fi
+
+if [ "$BUILD_PLATFORM" = "win32" ]; then
+  write_windows_sidecar_archive
+fi
 
 echo "==> sidecar bundle ready ($(du -sh "$DEST" | cut -f1))"

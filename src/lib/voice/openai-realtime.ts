@@ -1,4 +1,5 @@
-import type { VoiceProvider, VoiceClientAdapter, LiveSession, VoiceCallbacks, VoiceSessionGrant } from "./types";
+import type { VoiceProvider, VoiceClientAdapter, LiveSession, VoiceCallbacks, VoiceSessionGrant } from "./types.ts";
+import { VoiceConnectError } from "./types.ts";
 
 const CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
 const REALTIME_BASE = "https://api.openai.com/v1/realtime";
@@ -46,7 +47,11 @@ const serverProvider: Pick<VoiceProvider, "id" | "label" | "mintSession"> = {
       expiresAt: new Date((expiresAtSec ?? Math.floor(Date.now() / 1000) + 60) * 1000).toISOString(),
       connection: {
         kind: "openai-realtime",
-        url: `${REALTIME_BASE}?model=${encodeURIComponent(req.model)}`,
+        // GA WebRTC SDP exchange endpoint. The ephemeral token is bound to the
+        // model at mint time, so no ?model= query param (a mismatched param is
+        // rejected with invalid_model; the legacy /v1/realtime?model= shape now
+        // returns beta_api_shape_disabled).
+        url: `${REALTIME_BASE}/calls`,
         model: req.model,
         voice: req.voice,
       },
@@ -88,7 +93,14 @@ const clientAdapter: VoiceClientAdapter = {
         body: offer.sdp,
       });
       if (!res.ok) {
-        throw new Error(`sdp_exchange_failed_${res.status}`);
+        // The mint endpoint accepts unknown models, so a bad voiceModel only
+        // surfaces here — keep the provider's explanation. (cave-8c9c)
+        let hint: string | undefined;
+        try {
+          const body = JSON.parse(await res.text()) as { error?: { message?: string } };
+          if (typeof body.error?.message === "string") hint = body.error.message;
+        } catch { /* non-JSON body: code alone */ }
+        throw new VoiceConnectError(`sdp_exchange_failed_${res.status}`, hint);
       }
       const answer = await res.text();
       await pc.setRemoteDescription({ type: "answer", sdp: answer });
@@ -120,14 +132,16 @@ function handleEvent(raw: unknown, callbacks: VoiceCallbacks) {
   if (!type) return;
   if (type === "conversation.item.input_audio_transcription.completed") {
     if (typeof ev.transcript === "string") callbacks.onUserTranscriptFinal(ev.transcript);
-  } else if (type === "response.audio_transcript.done") {
+  } else if (type === "response.output_audio_transcript.done" || type === "response.audio_transcript.done") {
+    // GA name first; beta name kept for compatibility.
     if (typeof ev.transcript === "string") callbacks.onAssistantTranscriptFinal(ev.transcript);
-  } else if (type === "response.audio_transcript.delta") {
+  } else if (type === "response.output_audio_transcript.delta" || type === "response.audio_transcript.delta") {
     if (typeof ev.delta === "string") callbacks.onPartialTranscript("assistant", ev.delta);
   } else if (type === "conversation.item.input_audio_transcription.delta") {
     if (typeof ev.delta === "string") callbacks.onPartialTranscript("user", ev.delta);
   } else if (type === "error") {
-    callbacks.onError(new Error(ev.error?.message ?? "provider_error"));
+    const detail = typeof ev.error?.message === "string" ? ev.error.message : undefined;
+    callbacks.onError(new VoiceConnectError("provider_error", detail));
   }
 }
 

@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+const markdownStream = readFileSync(new URL("../lib/message-markdown-stream.ts", import.meta.url), "utf8");
+const domWiring = readFileSync(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
 
 // StrictMode regression guard: a ref-based "same text" check poisons itself
 // when the first (dev double-invoke) effect run is cancelled — run 2 then
@@ -176,12 +178,12 @@ assert.match(
 // add an entry per throttle tick. Guards: (1) transient streaming renders
 // skip cache writes entirely, (2) the cache is a small LRU with a hard cap.
 assert.match(
-  source,
+  markdownStream,
   /const RENDER_CACHE_MAX = \d+/,
   "renderCache has a named size cap",
 );
 assert.match(
-  source,
+  markdownStream,
   /if \(renderCache\.size > RENDER_CACHE_MAX\) \{\s*const oldest = renderCache\.keys\(\)\.next\(\)\.value;/,
   "On overflow the least-recently-used entry is evicted",
 );
@@ -202,17 +204,19 @@ assert.match(
   "MessageBubble should accept a link-open callback so chat links can route into the side-panel browser",
 );
 assert.match(
-  source,
+  domWiring,
   /wireMarkdownLinks\(el, onOpenUrl\)/,
-  "MarkdownContent should wire rendered markdown links through the chat link-open callback",
+  "The markdown DOM boundary should wire rendered links through the chat link-open callback",
 );
 assert.match(
-  source,
+  domWiring,
   /event\.preventDefault\(\)[\s\S]*onOpenUrl\(href\)/,
   "Markdown link clicks should prevent normal navigation and open in the provided browser target",
 );
 
-const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 assert.match(
   css,
   /\.cave-copy-btn:focus-visible \{ opacity: 1; \}/,
@@ -255,9 +259,14 @@ assert.match(
 );
 assert.match(
   source,
-  /mermaidPlugin\(\{ theme: "dark", config: \{ securityLevel: "strict" \} \}\)/,
-  "mermaid is initialized with the dark theme and a strict (safe) security level",
+  /mermaidPlugin\(\{[\s\S]{0,320}theme: "base"[\s\S]{0,320}securityLevel: "strict", suppressErrorRendering: true/,
+  "mermaid initializes on the base theme (the only one honoring themeVariables) with strict security and syntax-error SVG rendering disabled",
 );
+// cave-po4f: theme tokens reach mermaid as canvas-resolved hex (khroma cannot
+// parse oklch/color-mix), and the inline-SVG CSS overrides in cave-chat.css
+// keep diagrams tracking the live theme regardless.
+assert.match(source, /function themeToken\(name: string, fallback: string\): string/, "theme tokens resolve through the canvas hex helper");
+assert.match(source, /darkMode: true,/, "base theme derives shades on the dark ramp");
 assert.match(
   source,
   /function isMermaidCodeBlock[\s\S]{0,360}=== "mermaid"/,
@@ -286,6 +295,27 @@ assert.match(
   css,
   /\.cave-md \.cm-mermaid-diagram \{/,
   "cave-chat.css styles the rendered mermaid diagram card",
+);
+
+// ── Block rhythm: the preview shell must be stripped ─────────────────────────
+// renderAsync wraps documents in <div class="cm-preview">; left in place it
+// makes every block a GRANDCHILD of .cave-md, so the owl spacing rule
+// (.cave-md > * + *) never fires and a bulleted list renders glued to the
+// paragraph introducing it — no line break before bullets.
+assert.match(
+  source,
+  /import \{ unwrapPreviewShell \} from "@\/lib\/markdown-preview-shell"/,
+  "the shell unwrap comes from the pure, unit-tested lib",
+);
+assert.match(
+  source,
+  /sanitizedHtml = unwrapPreviewShell\(sanitizedHtml\);/,
+  "mdToHtml strips the cm-preview shell after sanitize/mermaid so blocks are direct .cave-md children",
+);
+assert.match(
+  css,
+  /\.cave-md > \* \+ \* \{ margin-top: 0\.8em; \}/,
+  "the owl block-rhythm rule the unwrap exists to feed",
 );
 
 console.log("message-bubble-markdown.test.ts: ok");

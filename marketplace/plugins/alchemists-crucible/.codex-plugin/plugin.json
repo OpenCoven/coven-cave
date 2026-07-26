@@ -1,0 +1,33 @@
+{
+  "name": "alchemists-crucible",
+  "version": "0.1.0",
+  "description": "Reproducible data, training, tracking, and experiment recipes.",
+  "author": {
+    "name": "OpenCoven",
+    "url": "https://github.com/OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "craft"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Alchemist's Crucible",
+    "shortDescription": "Reproducible data, training, tracking, and experiment recipes.",
+    "longDescription": "Reproducible data, training, tracking, and experiment recipes.",
+    "developerName": "OpenCoven",
+    "category": "Research Crafts",
+    "capabilities": [
+      "read_files",
+      "write_files",
+      "shell"
+    ],
+    "websiteURL": "https://opencoven.ai",
+    "defaultPrompt": [
+      "Use Alchemist's Crucible to open a bounded research direction."
+    ]
+  }
+}

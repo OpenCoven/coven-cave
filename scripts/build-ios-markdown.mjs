@@ -14,6 +14,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
 const srcDir = resolve(root, "apps/ios/markdown");
 const outHtml = resolve(root, "apps/ios/CovenCave/CovenCave/Resources/markdown.html");
+// The CSS is also emitted standalone so the native full-screen zoom view
+// (ContentZoom.swift) can restyle a lifted table/diagram to match the chat.
+const outCss = resolve(root, "apps/ios/CovenCave/CovenCave/Resources/markdown.css");
 
 const result = await build({
   entryPoints: [resolve(srcDir, "entry.mjs")],
@@ -40,3 +43,5 @@ const html = `<!doctype html>
 mkdirSync(dirname(outHtml), { recursive: true });
 writeFileSync(outHtml, html);
 console.log(`wrote ${outHtml} (${(html.length / 1024).toFixed(0)} KB)`);
+writeFileSync(outCss, css);
+console.log(`wrote ${outCss} (${(css.length / 1024).toFixed(0)} KB)`);

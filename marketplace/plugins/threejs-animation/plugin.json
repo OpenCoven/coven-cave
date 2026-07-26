@@ -1,0 +1,40 @@
+{
+  "name": "threejs-animation",
+  "version": "0.1.0",
+  "description": "Three.js animation \u2014 keyframe tracks, skeletal animation, morph targets, animation mixing and blending, GLTF clip playback, and procedural motion patterns.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "threejs",
+    "animation",
+    "keyframe",
+    "skeletal",
+    "morph-targets",
+    "blending"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/threejs-animation",
+  "x-coven": {
+    "displayName": "Three.js Animation",
+    "category": "Media & Creative",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/threejs-animation"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

@@ -1,0 +1,113 @@
+/* status-bar.css — bottom status strip of the Home/Chat detail column
+ * (chat-revamp phase D; component: src/components/status-bar.tsx).
+ *
+ * ~28px band on the panel background with a hairline top border. Left chips
+ * are display-only (no pointer, no chevron); the PR/Tasks chips are buttons.
+ * Semantic tokens only — the 16 themes × dark/light must keep resolving. */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.status-bar__lead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.status-bar__trail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  margin-left: auto;
+}
+
+.status-bar__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: inherit;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.status-bar__chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Interactive chips (buttons) earn the pointer + hover wash; the display-only
+   spans keep the default cursor so they never pretend to be pickers. */
+.status-bar__chip--action {
+  cursor: pointer;
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.status-bar__chip--action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* PR chip: hairline outline + accent presence dot (accent = presence, not CTA). */
+.status-bar__chip--pr {
+  border-color: var(--border-hairline);
+  color: color-mix(in oklch, var(--accent-presence) 78%, var(--text-primary));
+}
+
+.status-bar__chip--action.status-bar__chip--pr:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: color-mix(in oklch, var(--accent-presence) 60%, var(--text-primary));
+}
+
+.status-bar__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+}
+
+.status-bar__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--text-primary) 14%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Mobile keeps its bottom tab bar — the status strip is desktop chrome. */
+@media (max-width: 1023px) {
+  .status-bar {
+    display: none;
+  }
+}

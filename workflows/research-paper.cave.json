@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "positions": {
+    "input": {
+      "x": 80,
+      "y": 80
+    },
+    "scope-paper": {
+      "x": 320,
+      "y": 80
+    },
+    "source-plan": {
+      "x": 560,
+      "y": 80
+    },
+    "gather-sources": {
+      "x": 800,
+      "y": 80
+    },
+    "distinct-source-check": {
+      "x": 1040,
+      "y": 80
+    },
+    "outline-paper": {
+      "x": 1280,
+      "y": 80
+    },
+    "draft-markdown": {
+      "x": 1520,
+      "y": 80
+    },
+    "quality-check": {
+      "x": 1760,
+      "y": 80
+    },
+    "final-paper": {
+      "x": 2000,
+      "y": 80
+    },
+    "save-paper": {
+      "x": 2240,
+      "y": 80
+    },
+    "output": {
+      "x": 2480,
+      "y": 80
+    }
+  }
+}

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildFamiliarsToml,
   normalizeFamiliarDraft,
+  parseFamiliarsToml,
 } from "./onboarding-familiars.ts";
 
 assert.equal(buildFamiliarsToml(null), "# User familiars for this Coven.\n");
@@ -22,7 +23,7 @@ assert.deepEqual(draft, {
   description: "Finds evidence and summarizes it.",
   glyph: "ph:leaf-fill",
   harness: "openclaw",
-  model: "openai/gpt-5.5",
+  model: "openai/gpt-5.6-sol",
   openclawAgentId: "riley",
   runtime: undefined,
 });
@@ -30,18 +31,31 @@ assert.deepEqual(draft, {
 const toml = buildFamiliarsToml(draft);
 assert.match(toml, /id = "riley-research"/);
 assert.match(toml, /display_name = "Riley Research"/);
+assert.match(toml, /description = "Finds evidence and summarizes it\."/);
 assert.match(toml, /harness = "openclaw"/);
-assert.match(toml, /model = "openai\/gpt-5.5"/);
+assert.match(toml, /model = "openai\/gpt-5.6-sol"/);
 assert.match(toml, /openclaw_agent = "riley"/);
 
 assert.equal(
-  normalizeFamiliarDraft({ displayName: "Cody", openclawAgentId: "cody" }).id,
+  normalizeFamiliarDraft({
+    displayName: "Cody",
+    description: "Handles code tasks.",
+    openclawAgentId: "cody",
+  }).id,
   "cody",
 );
+
+for (const description of [undefined, "", "   \t\n"]) {
+  assert.throws(
+    () => normalizeFamiliarDraft({ displayName: "Descriptionless", description }),
+    /Familiar description is required\./,
+  );
+}
 
 const localDraft = normalizeFamiliarDraft({
   displayName: "Codex Local",
   role: "Code",
+  description: "Writes and reviews code.",
   harness: "codex",
   model: "local-codex",
 });
@@ -50,7 +64,7 @@ assert.deepEqual(localDraft, {
   id: "codex-local",
   displayName: "Codex Local",
   role: "Code",
-  description: "",
+  description: "Writes and reviews code.",
   glyph: "ph:sparkle-fill",
   harness: "codex",
   model: "local-codex",
@@ -58,11 +72,15 @@ assert.deepEqual(localDraft, {
   runtime: undefined,
 });
 
-assert.equal(normalizeFamiliarDraft({ displayName: "Solo" }).harness, "codex");
+assert.equal(
+  normalizeFamiliarDraft({ displayName: "Solo", description: "Works independently." }).harness,
+  "codex",
+);
 
 const hermesDraft = normalizeFamiliarDraft({
   displayName: "Hermes Local",
   role: "Planning",
+  description: "Plans and coordinates work.",
   harness: "hermes",
   model: "hermes-local",
 });
@@ -71,7 +89,7 @@ assert.deepEqual(hermesDraft, {
   id: "hermes-local",
   displayName: "Hermes Local",
   role: "Planning",
-  description: "",
+  description: "Plans and coordinates work.",
   glyph: "ph:sparkle-fill",
   harness: "hermes",
   model: "hermes-local",
@@ -79,13 +97,32 @@ assert.deepEqual(hermesDraft, {
   runtime: undefined,
 });
 
+assert.match(buildFamiliarsToml(hermesDraft), /description = "Plans and coordinates work\."/);
 assert.match(buildFamiliarsToml(hermesDraft), /harness = "hermes"/);
+
+const escapedDescriptionToml = buildFamiliarsToml(
+  normalizeFamiliarDraft({
+    displayName: "Escaped",
+    description: 'First line\nSecond line\twith a quote " and a slash \\.',
+  }),
+);
+assert.match(
+  escapedDescriptionToml,
+  /description = "First line\\nSecond line\\twith a quote \\" and a slash \\\\."/,
+  "control characters and quotes are escaped into a valid TOML basic string",
+);
+assert.doesNotMatch(
+  escapedDescriptionToml,
+  /description = "First line\nSecond line/,
+  "a multiline description never creates a multiline TOML basic string",
+);
 
 
 assert.throws(
   () =>
     normalizeFamiliarDraft({
       displayName: "Evil",
+      description: "Attempts an unsupported adapter.",
       harness: "attacker-adapter",
       model: "evil-local",
     }),
@@ -96,6 +133,7 @@ assert.throws(
 
 const sshDraft = normalizeFamiliarDraft({
   displayName: "Remote Codex",
+  description: "Runs code work on a remote host.",
   harness: "codex",
   model: "codex-remote",
   runtime: { kind: "ssh", host: "build-box", cwd: "/srv/work", command: "" },
@@ -115,6 +153,7 @@ assert.throws(
   () =>
     normalizeFamiliarDraft({
       displayName: "Half Remote",
+      description: "Has incomplete remote settings.",
       runtime: { kind: "ssh", host: "build-box", cwd: "" },
     }),
   /SSH runtime needs a host/,
@@ -125,16 +164,29 @@ assert.throws(
   () =>
     normalizeFamiliarDraft({
       displayName: "Bad Host",
+      description: "Uses an invalid remote host.",
       runtime: { kind: "ssh", host: "host name!", cwd: "/srv" },
     }),
   /SSH runtime needs a host/,
 );
 
-// Non-ssh runtime input is ignored entirely.
-assert.equal(
+// An explicit local runtime must survive normalization so it can override a
+// workspace-level SSH default in the persisted familiar binding.
+assert.deepEqual(
   normalizeFamiliarDraft({
     displayName: "Local",
+    description: "Stays on this machine.",
     runtime: { kind: "local" },
+  }).runtime,
+  { kind: "local" },
+);
+
+// Unknown runtime kinds remain ignored for compatibility with older callers.
+assert.equal(
+  normalizeFamiliarDraft({
+    displayName: "Unknown Runtime",
+    description: "Does not request a supported runtime override.",
+    runtime: { kind: "unsupported" },
   }).runtime,
   undefined,
 );
@@ -144,9 +196,65 @@ assert.equal(
 {
   const manyDashes = "-".repeat(100_000);
   const start = Date.now();
-  normalizeFamiliarDraft({ displayName: manyDashes + "x" });
+  normalizeFamiliarDraft({
+    displayName: manyDashes + "x",
+    description: "Exercises the slugifier guard.",
+  });
   const elapsed = Date.now() - start;
   assert.ok(elapsed < 500, `slugify ReDoS guard: took ${elapsed}ms on long dash string (expected <500ms)`);
 }
+
+// ── parseFamiliarsToml (cave-7cv4) ───────────────────────────────────────────
+// The familiars route merges locally-declared familiars into the roster while
+// the daemon hasn't re-read the file (or a hub doesn't know it), so the parser
+// must round-trip exactly what buildFamiliarsToml writes — escapes included.
+{
+  const written = buildFamiliarsToml({
+    id: "sage-remote",
+    displayName: 'Sage "The Wise"',
+    role: "Guide",
+    description: "Line one.\nLine two.",
+    glyph: "ph:cat-fill",
+    harness: "codex",
+    model: "gpt-5",
+  });
+  const twoBlocks = `${written}
+[[familiar]]
+id = "salem"
+display_name = "Salem"
+role = "Archivist"
+description = "Keeps the archives."
+
+[other-table]
+id = "not-a-familiar"
+`;
+  assert.deepEqual(parseFamiliarsToml(twoBlocks), [
+    {
+      id: "sage-remote",
+      displayName: 'Sage "The Wise"',
+      role: "Guide",
+      description: "Line one.\nLine two.",
+      emoji: "ph:cat-fill",
+    },
+    {
+      id: "salem",
+      displayName: "Salem",
+      role: "Archivist",
+      description: "Keeps the archives.",
+      emoji: undefined,
+    },
+  ]);
+}
+assert.deepEqual(parseFamiliarsToml(""), [], "empty file parses to no familiars");
+assert.deepEqual(
+  parseFamiliarsToml("# User familiars for this Coven.\n"),
+  [],
+  "the header-only file parses to no familiars",
+);
+assert.deepEqual(
+  parseFamiliarsToml('[[familiar]]\ndisplay_name = "No Id"\n'),
+  [],
+  "a block without an id is skipped",
+);
 
 console.log("onboarding-familiars ssh runtime: ok");

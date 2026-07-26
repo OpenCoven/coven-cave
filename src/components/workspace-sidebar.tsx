@@ -1,0 +1,923 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useMinuteTick } from "@/lib/use-minute-tick";
+import { FamiliarSwitcher } from "@/components/familiar-switcher";
+import { Icon, type IconName } from "@/lib/icon";
+import { SidebarFooter } from "@/components/sidebar-footer";
+import { ProjectAvatar } from "@/components/project-avatar";
+import { sessionRailTitle } from "@/lib/session-rail-title";
+import { relativeTime } from "@/lib/relative-time";
+import { sessionPrStatus, type SessionPrStatus } from "@/lib/session-pr-status";
+import type { SessionRow } from "@/lib/types";
+import { useProjects } from "@/lib/use-projects";
+import { useProjectOverrides } from "@/lib/use-project-overrides";
+import { applyProjectOverrides } from "@/lib/chat-project-overrides";
+import {
+  deriveChatProjectGroups,
+  filterVisibleChatSessions,
+  type ChatProjectGroup,
+} from "@/lib/chat-projects";
+import {
+  isSessionPinned,
+  toggleStoredPinnedSession,
+  readChatSidebarView,
+  writeChatSidebarView,
+  type ChatSidebarView,
+} from "@/lib/chat-session-prefs";
+import { usePinnedSessions } from "@/lib/use-pinned-sessions";
+import { deriveChatRecencyBuckets } from "@/lib/chat-recency";
+import {
+  CHAT_SESSION_DRAG_MIME,
+  emitChatSessionDragEnd,
+  emitChatSessionDragStart,
+} from "@/lib/chat-split";
+import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
+import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
+import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+
+type WorkspaceSidebarMode = "home" | "inbox" | "marketplace";
+
+type Props = {
+  sessions: SessionRow[];
+  /** Roster for the header switcher — familiar selection's one home. */
+  familiars: ResolvedFamiliar[];
+  /** Selected familiar (null = "All familiars"). Scopes the project list, the
+   *  per-project session rows, and the project grant when registering. */
+  activeFamiliarId?: string | null;
+  activeSessionId?: string | null;
+  responseNeeded?: Set<string>;
+  /** Change the familiar scope from the header switcher (`null` = All). */
+  onSelectFamiliar: (id: string | null) => void;
+  onOpenSession: (session: SessionRow) => void;
+  /** ⌥↵ / ⌥-click / drag on a thread row: open it in a split pane beside the
+   *  current chat (the chat surface falls back to a plain open on mobile). */
+  onOpenSessionInSplit?: (session: SessionRow) => void;
+  /** Home / Scheduled / Plugins shortcuts route through Workspace so it can
+   *  coordinate mode changes with mobile drawer dismissal. */
+  onNavigate: (mode: WorkspaceSidebarMode) => void;
+  onNewChat: (projectRoot: string | null) => void;
+  onDeleteSession: (session: SessionRow) => Promise<void>;
+  /** Refresh the workspace sessions poll after an archive/unarchive PATCH so
+   *  the row leaves (or re-enters) the live list without waiting a cycle. */
+  onSessionsChanged?: () => void;
+  /** Opens the thread's pull request in the in-app browser (PR badge click);
+   *  without it the badge falls back to a new tab. Same chain as chat-list. */
+  onOpenUrl?: (url: string) => void;
+  /** Badge count for the Scheduled shortcut (from code-sidebar). */
+  scheduledCount?: number;
+  /** Opens Settings — powers the shared footer so Chat keeps the same
+   *  Dashboard/Settings footer as every other surface. */
+  onOpenSettings: () => void;
+};
+
+const THREADS_PREVIEW = 6;
+
+function bareTime(iso: string): string {
+  return relativeTime(iso, Date.now(), "bare");
+}
+
+function statusDotClass(status: string): string {
+  if (status === "running") return "animate-pulse bg-[var(--color-success)]";
+  if (status === "failed") return "bg-[var(--color-danger)]";
+  if (status === "queued") return "bg-[var(--color-warning)]";
+  if (status === "paused") return "bg-[var(--accent-presence-soft)]";
+  return "bg-[var(--text-muted)]";
+}
+
+// A stable key per group for expand/collapse state. The ungrouped ("No project")
+// bucket has a null root, so it gets its own sentinel.
+function groupKey(group: ChatProjectGroup): string {
+  return group.projectRoot ?? "__no-project__";
+}
+
+function folderLabel(group: ChatProjectGroup): string {
+  if (group.projectName) return group.projectName;
+  if (group.projectRoot) return projectNameForRoot(group.projectRoot);
+  return "No project";
+}
+
+// A registered project shows a solid folder; an unregistered cwd (a real dir
+// that maps to no project) and the null "No project" bucket read as a dashed
+// folder — the visual cue that these threads live outside a project context.
+function folderIcon(group: ChatProjectGroup, expanded: boolean): IconName {
+  if (group.projectId) return expanded ? "ph:folder-open" : "ph:folder";
+  return "ph:folder-simple-dashed";
+}
+
+// Activity meta line under the folder name: "2 running · 12m" while sessions
+// run, else "6 chats · 3h". Subsumes the old count badge, so the header keeps
+// a single right-aligned slot for the hover actions.
+function groupMeta(group: ChatProjectGroup): string {
+  const running = group.sessions.filter((s) => s.status === "running").length;
+  const count =
+    running > 0
+      ? `${running} running`
+      : `${group.sessions.length} ${group.sessions.length === 1 ? "chat" : "chats"}`;
+  const age = group.updatedAt ? bareTime(group.updatedAt) : null;
+  return age ? `${count} · ${age}` : count;
+}
+
+// Returns a context-aware leading icon for threads whose title suggests a PR
+// or branch operation (from code-sidebar). Returns null for ordinary threads.
+function threadLeadingIcon(title: string): IconName | null {
+  if (/^\s*resolve\s+pr\b|\bpr\s*#?\d+/i.test(title)) return "ph:git-pull-request";
+  if (/\bbranch\b|\bmerge\b|\brebase\b/i.test(title)) return "ph:git-branch";
+  return null;
+}
+
+// PR-status badge in a thread row's leading slot — the workspace-sidebar twin
+// of the chat list's badge (#2983): GitHub state colors, click opens the PR
+// (in-app browser when wired) without opening the chat. Rendered as a sibling
+// of the row's main <button> (never nested inside it — invalid HTML), with CSS
+// aligning it over the status-dot gutter.
+function ThreadPrBadge({
+  prStatus,
+  onOpenUrl,
+}: {
+  prStatus: SessionPrStatus;
+  onOpenUrl?: (url: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="cnav__pr-badge focus-ring"
+      data-pr-state={prStatus.key}
+      title={`Open ${prStatus.label}`}
+      aria-label={`Open pull request (${prStatus.label})`}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onOpenUrl) onOpenUrl(prStatus.url);
+        else window.open(prStatus.url, "_blank", "noopener,noreferrer");
+      }}
+    >
+      <Icon name={prStatus.icon} width={12} aria-hidden />
+    </button>
+  );
+}
+
+type ThreadRowProps = {
+  session: SessionRow;
+  active: boolean;
+  pinned: boolean;
+  confirming: boolean;
+  deleting: boolean;
+  /** "folder" indents under a project folder; "flat" aligns with section headers. */
+  indent: "folder" | "flat";
+  /** Shown in the time-bucketed Recent view, where rows from every project
+   *  interleave — the folder view already says this via the group header. */
+  project?: { root: string; name: string; color: string | null } | null;
+  /** PR/branch glyph from threadLeadingIcon — shown instead of the status dot when truthy. */
+  glyph?: IconName | null;
+  /** In-app URL opener for the PR badge (new-tab fallback without it). */
+  onOpenUrl?: (url: string) => void;
+  onOpen: () => void;
+  /** ⌥↵ / ⌥-click / drag: open beside the current chat in a split pane. */
+  onOpenInSplit?: () => void;
+  onTogglePin: () => void;
+  /** Archive/unarchive via the sessions PATCH (same endpoint as chat-list). */
+  onToggleArchive: () => void;
+  /** True while any row's archive PATCH is in flight — disables the buttons. */
+  archiving: boolean;
+  onRequestDelete: () => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: () => void;
+};
+
+function ThreadRow({
+  session,
+  active,
+  pinned,
+  confirming,
+  deleting,
+  indent,
+  project = null,
+  glyph,
+  onOpenUrl,
+  onOpen,
+  onOpenInSplit,
+  onTogglePin,
+  onToggleArchive,
+  archiving,
+  onRequestDelete,
+  onCancelDelete,
+  onConfirmDelete,
+}: ThreadRowProps) {
+  const title = sessionRailTitle(session);
+  // Real PR context beats the title-heuristic glyph — when the thread's work
+  // reached an actual pull request, the leading slot shows the clickable
+  // state-colored badge instead of the dot or heuristic icon.
+  const prStatus = sessionPrStatus(session.pullRequest);
+  // Archived rows (visible via the "Show archived" option) read muted, and the
+  // leading slot shows the archive glyph so they can't pass for live threads.
+  const archived = Boolean(session.archived_at);
+  const leadGlyph = archived ? ("ph:archive" as IconName) : glyph;
+  return (
+    <div
+      className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
+    >
+      {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
+      <button
+        type="button"
+        aria-current={active ? "page" : undefined}
+        onClick={(e) => {
+          // ⌥-click opens beside the current chat instead of replacing it.
+          if (e.altKey && onOpenInSplit) {
+            onOpenInSplit();
+            return;
+          }
+          onOpen();
+        }}
+        onKeyDown={(e) => {
+          // ⌥↵ opens in a split pane (keyboard twin of drag-to-split); stop
+          // the native button activation so onClick doesn't also fire.
+          if (e.key === "Enter" && e.altKey && onOpenInSplit) {
+            e.preventDefault();
+            onOpenInSplit();
+          }
+        }}
+        // Dragging the row onto the chat surface snaps it into a split pane
+        // (chat-split-host's drop zone; same protocol as the project rail).
+        draggable={Boolean(onOpenInSplit)}
+        onDragStart={(e) => {
+          if (!onOpenInSplit) return;
+          e.dataTransfer.setData(CHAT_SESSION_DRAG_MIME, session.id);
+          e.dataTransfer.setData("text/plain", title);
+          e.dataTransfer.effectAllowed = "copyMove";
+          emitChatSessionDragStart({ sessionId: session.id, title });
+        }}
+        onDragEnd={() => {
+          if (onOpenInSplit) emitChatSessionDragEnd();
+        }}
+        className="cnav__thread-main focus-ring"
+      >
+        {prStatus ? null : leadGlyph ? (
+          <Icon name={leadGlyph} width={13} className="cnav__lead" aria-hidden />
+        ) : (
+          <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
+        )}
+        {project ? (
+          <span className="cnav__thread-proj" title={project.name}>
+            <ProjectAvatar name={project.name} root={project.root} color={project.color} size="sm" />
+            <span className="sr-only">{project.name}</span>
+          </span>
+        ) : null}
+        <span className="cnav__thread-title" title={title}>{title}</span>
+        {confirming ? null : (
+          <span className="cnav__time">{bareTime(session.updated_at || session.created_at)}</span>
+        )}
+      </button>
+      {confirming ? (
+        <span className="cnav__confirm">
+          <button type="button" onClick={onCancelDelete} className="cnav__confirm-cancel focus-ring">
+            Cancel
+          </button>
+          <button type="button" disabled={deleting} onClick={onConfirmDelete} className="cnav__confirm-del focus-ring">
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
+        </span>
+      ) : (
+        <span className="cnav__row-actions">
+          <button
+            type="button"
+            title={pinned ? "Unpin thread" : "Pin thread"}
+            aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
+            aria-pressed={pinned}
+            onClick={onTogglePin}
+            className={`cnav__icon-btn focus-ring${pinned ? " is-on" : ""}`}
+          >
+            <Icon name={pinned ? "ph:bookmark-simple-fill" : "ph:bookmark-simple"} width={12} aria-hidden />
+          </button>
+          <button
+            type="button"
+            title={archived ? "Unarchive chat" : "Archive chat"}
+            aria-label={`${archived ? "Unarchive" : "Archive"} chat ${title}`}
+            disabled={archiving}
+            onClick={onToggleArchive}
+            className="cnav__icon-btn focus-ring"
+          >
+            <Icon name={archived ? "ph:arrow-counter-clockwise" : "ph:archive"} width={12} aria-hidden />
+          </button>
+          <button
+            type="button"
+            title="Delete thread"
+            aria-label={`Delete thread ${title}`}
+            onClick={onRequestDelete}
+            className="cnav__icon-btn is-danger focus-ring"
+          >
+            <Icon name="ph:x-bold" width={10} aria-hidden />
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function WorkspaceSidebar({
+  sessions,
+  familiars,
+  activeFamiliarId = null,
+  activeSessionId,
+  responseNeeded,
+  onSelectFamiliar,
+  onOpenSession,
+  onOpenSessionInSplit,
+  onNavigate,
+  onNewChat,
+  onDeleteSession,
+  onSessionsChanged,
+  onOpenUrl,
+  scheduledCount,
+  onOpenSettings,
+}: Props) {
+  const { projects, createProject, reload } = useProjects({ familiarId: activeFamiliarId });
+  const overrides = useProjectOverrides();
+  const minuteTick = useMinuteTick();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
+  const [showAllByKey, setShowAllByKey] = useState<Set<string>>(() => new Set());
+  // Pins come from the shared cross-surface store (chat list + thread rail +
+  // this sidebar all read and write the same subscribable list).
+  const pinnedIds = usePinnedSessions();
+  const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const [registeringRoot, setRegisteringRoot] = useState<string | null>(null);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Archived rows are excluded server-side by /api/sessions/list; the Organize
+  // menu's "Show archived" option opts in with its own includeArchived fetch,
+  // mirroring the chat list's toggle (the workspace poll stays archive-free).
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [archiveNonce, setArchiveNonce] = useState(0);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [view, setView] = useState<ChatSidebarView>("recent");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuAnchorRef = useRef<HTMLButtonElement>(null);
+  const menuBodyRef = useRef<HTMLDivElement>(null);
+
+  // Trap focus inside the Organize menu while it is open (same convention as
+  // the GitHub action popover, #2288). Also hydrates the organize-view preference.
+  useFocusTrap(menuOpen, menuBodyRef, { onEscape: () => setMenuOpen(false) });
+
+  // The organize-view preference loads after mount so SSR and first client
+  // render agree (same idiom as the chat list).
+  useEffect(() => {
+    setView(readChatSidebarView());
+  }, []);
+
+  // Archived sessions only load while "Show archived" is on; archive/unarchive
+  // bumps archiveNonce so the opt-in list refetches after each change (same
+  // idiom as the chat list's toggle).
+  useEffect(() => {
+    if (!showArchived) {
+      setArchivedRows([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        // Scope archived rows to the active familiar's projects, same as the
+        // live list — keeps forbidden-project sessions out of the archive view.
+        const scope = activeFamiliarId ? `&familiarId=${encodeURIComponent(activeFamiliarId)}` : "";
+        const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store" });
+        const json = await res.json().catch(() => ({ ok: false }));
+        if (cancelled || !json.ok || !Array.isArray(json.sessions)) return;
+        setArchivedRows((json.sessions as SessionRow[]).filter((s) => s.archived_at));
+      } catch {
+        // keep whatever archived rows we already have
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showArchived, archiveNonce, activeFamiliarId]);
+
+  const visibleSessions = useMemo(() => {
+    let rows: SessionRow[] = sessions;
+    if (showArchived && archivedRows.length > 0) {
+      const seen = new Set(sessions.map((s) => s.id));
+      rows = [...sessions, ...archivedRows.filter((s) => !seen.has(s.id))];
+    }
+    return filterVisibleChatSessions(rows, activeFamiliarId ?? null, { includeArchived: showArchived });
+  }, [sessions, showArchived, archivedRows, activeFamiliarId]);
+
+  const groups = useMemo(
+    () => deriveChatProjectGroups(applyProjectOverrides(visibleSessions, overrides), projects),
+    [visibleSessions, overrides, projects],
+  );
+
+  // Session → project identity for the Recent view, derived from the SAME
+  // override-aware grouping the folder view renders — a chat dragged into
+  // another folder shows that folder's tile, not its recorded cwd's.
+  const sessionProjectById = useMemo(() => {
+    const byId = new Map<string, { root: string; name: string; color: string | null }>();
+    for (const group of groups) {
+      if (!group.projectRoot) continue;
+      const name = folderLabel(group);
+      for (const session of group.sessions) {
+        byId.set(session.id, { root: group.projectRoot, name, color: group.projectColor });
+      }
+    }
+    return byId;
+  }, [groups]);
+
+  const pinnedSessions = useMemo(
+    () =>
+      pinnedIds
+        .map((id) => visibleSessions.find((s) => s.id === id))
+        .filter((s): s is SessionRow => Boolean(s)),
+    [pinnedIds, visibleSessions],
+  );
+
+  const hasSearch = query.trim().length > 0;
+  const visibleGroups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return groups;
+    return groups
+      .map((group) => ({
+        ...group,
+        sessions: group.sessions.filter((s) => sessionRailTitle(s).toLowerCase().includes(q)),
+      }))
+      .filter(
+        (group) =>
+          group.sessions.length > 0 ||
+          folderLabel(group).toLowerCase().includes(q),
+      );
+  }, [groups, query]);
+
+  // Recent view: search filters rows (empty buckets drop out via derive).
+  const recentSessions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return visibleSessions;
+    return visibleSessions.filter((s) => sessionRailTitle(s).toLowerCase().includes(q));
+  }, [visibleSessions, query]);
+
+  // Buckets depend on wall-clock day boundaries, and the sessions poll bails
+  // out identity-unchanged when content is identical — so a data refresh alone
+  // will NOT re-derive after midnight. The minute tick keeps the day buckets
+  // (and the bare row times rendered each pass) on the same clock.
+  const recentBuckets = useMemo(
+    () => (view === "recent" ? deriveChatRecencyBuckets(recentSessions, Date.now()) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- minuteTick is the clock dependency
+    [view, recentSessions, minuteTick],
+  );
+
+  const toggleCollapse = (key: string) => {
+    setCollapsedKeys((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const togglePin = (sessionId: string) => {
+    toggleStoredPinnedSession(sessionId);
+  };
+
+  const selectView = (next: ChatSidebarView) => {
+    setView(next);
+    writeChatSidebarView(next);
+    setMenuOpen(false);
+  };
+
+  async function handleDeleteSession(session: SessionRow) {
+    setDeletingSessionId(session.id);
+    setDeleteError(null);
+    try {
+      await onDeleteSession(session);
+      setConfirmingSessionId(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "delete failed");
+    } finally {
+      setDeletingSessionId(null);
+    }
+  }
+
+  // Archive/unarchive rides the same undo-safe sessions PATCH as the chat
+  // list; a success refreshes both the workspace poll and the opt-in list.
+  async function setSessionArchived(session: SessionRow, archived: boolean) {
+    setArchivingId(session.id);
+    setArchiveError(null);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived }),
+      });
+      const json = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !json.ok) {
+        setArchiveError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
+        return;
+      }
+      setArchiveNonce((n) => n + 1);
+      onSessionsChanged?.();
+    } catch (err) {
+      setArchiveError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
+  async function handleRegister(group: ChatProjectGroup) {
+    if (!group.projectRoot) return;
+    setRegisteringRoot(group.projectRoot);
+    setRegisterError(null);
+    try {
+      const result = await addChatProject({
+        root: group.projectRoot,
+        familiarId: activeFamiliarId ?? null,
+        createProject,
+      });
+      if (result.ok) reload();
+      else setRegisterError(result.error);
+    } finally {
+      setRegisteringRoot(null);
+    }
+  }
+
+  return (
+    <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
+      <div className="workspace-sidebar__full chat-sidebar__full cnav">
+        {/* Header — the labeled familiar switcher (#2747). WorkspaceSidebar owns
+            the primary Shell nav during Chat; Home exits Chat and restores the
+            normal navigation. This scope control was restored by cave-l3ay
+            after #2750 removed it as a supposed duplicate. */}
+        <header className="cnav__header">
+          <div className="cnav__switcher">
+            <FamiliarSwitcher
+              familiars={familiars}
+              activeFamiliarId={activeFamiliarId}
+              sessions={sessions}
+              responseNeeded={responseNeeded}
+              onSelectFamiliar={onSelectFamiliar}
+              placement="bottom-start"
+              labeled
+            />
+          </div>
+          <button
+            type="button"
+            aria-label="Go to Home"
+            title="Home"
+            onClick={() => onNavigate("home")}
+            className="cnav__back focus-ring ml-auto"
+          >
+            <Icon name="ph:house-bold" width={15} aria-hidden />
+          </button>
+          <button
+            ref={menuAnchorRef}
+            type="button"
+            aria-label="Sidebar options"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title="Sidebar options"
+            onClick={() => setMenuOpen((cur) => !cur)}
+            className="cnav__back focus-ring"
+          >
+            <Icon name="ph:dots-three-bold" width={15} aria-hidden />
+          </button>
+          <Popover
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+            anchorRef={menuAnchorRef}
+            placement="bottom-end"
+            minWidth={190}
+            ariaLabel="Sidebar options"
+          >
+            <div ref={menuBodyRef} tabIndex={-1}>
+              <PopoverBody role="menu" ariaLabel="Organize sidebar">
+                <PopoverLabel>Organize sidebar</PopoverLabel>
+                <PopoverItem icon="ph:clock" checked={view === "recent"} onSelect={() => selectView("recent")}>
+                  Recent chats
+                </PopoverItem>
+                <PopoverItem icon="ph:folder" checked={view === "projects"} onSelect={() => selectView("projects")}>
+                  By project
+                </PopoverItem>
+                <PopoverSeparator />
+                <PopoverItem
+                  icon="ph:archive"
+                  checked={showArchived}
+                  onSelect={() => {
+                    setShowArchived((v) => !v);
+                    setMenuOpen(false);
+                  }}
+                >
+                  Show archived
+                </PopoverItem>
+              </PopoverBody>
+            </div>
+          </Popover>
+        </header>
+
+        {/* One-row quick actions: New chat takes the slack; the Scheduled and
+            Plugins shortcuts ride along as icon chips (labels live in
+            title/aria — the badge still shows the scheduled count). */}
+        <div className="cnav__quick">
+          <button type="button" title="New chat (⌘N)" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
+            <Icon name="ph:pencil-simple" width={15} className="cnav__new-icon" aria-hidden />
+            <span className="cnav__new-label">New chat</span>
+          </button>
+          <button
+            type="button"
+            title="Scheduled"
+            aria-label={scheduledCount ? `Scheduled (${scheduledCount})` : "Scheduled"}
+            onClick={() => onNavigate("inbox")}
+            className="cnav__mini focus-ring"
+          >
+            <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
+            {typeof scheduledCount === "number" && scheduledCount > 0 ? (
+              <span className="cnav__mini-count">{scheduledCount}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            title="Plugins"
+            aria-label="Plugins"
+            onClick={() => onNavigate("marketplace")}
+            className="cnav__mini focus-ring"
+          >
+            <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
+          </button>
+        </div>
+
+        <div className="cnav__search-wrap">
+          <label className="cnav__search">
+            <Icon name="ph:magnifying-glass" width={13} className="cnav__search-icon" aria-hidden />
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search chats…"
+              aria-label="Search projects and threads"
+            />
+            {query ? (
+              <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="cnav__search-clear">
+                <Icon name="ph:x-bold" width={9} aria-hidden />
+              </button>
+            ) : null}
+          </label>
+        </div>
+
+        {registerError ? (
+          <div role="alert" className="cnav__error">
+            <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+            <span className="cnav__error-text">{registerError}</span>
+            <button type="button" onClick={() => setRegisterError(null)} aria-label="Dismiss" className="shrink-0">
+              <Icon name="ph:x-bold" width={9} aria-hidden />
+            </button>
+          </div>
+        ) : null}
+        {deleteError ? (
+          <div role="alert" className="cnav__error">
+            <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+            <span className="cnav__error-text">{deleteError}</span>
+            <button type="button" onClick={() => setDeleteError(null)} aria-label="Dismiss" className="shrink-0">
+              <Icon name="ph:x-bold" width={9} aria-hidden />
+            </button>
+          </div>
+        ) : null}
+        {archiveError ? (
+          <div role="alert" className="cnav__error">
+            <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+            <span className="cnav__error-text">{archiveError}</span>
+            <button type="button" onClick={() => setArchiveError(null)} aria-label="Dismiss" className="shrink-0">
+              <Icon name="ph:x-bold" width={9} aria-hidden />
+            </button>
+          </div>
+        ) : null}
+
+        <nav aria-label="Chat threads" className="cnav__scroll">
+          {!hasSearch && pinnedSessions.length > 0 ? (
+            <section aria-label="Pinned threads">
+              <div className="cnav__label">Pinned</div>
+              <ul>
+                {/* Pinned rail is compact; the trailing always-visible bookmark
+                    doubles as the pin marker AND a one-click unpin — otherwise
+                    the only unpin lives on the (possibly truncated/collapsed)
+                    copy of the row further down the rail. */}
+                {pinnedSessions.map((session) => {
+                  const title = sessionRailTitle(session);
+                  const active = activeSessionId === session.id;
+                  const prStatus = sessionPrStatus(session.pullRequest);
+                  return (
+                    <li key={`pin-${session.id}`}>
+                      <div className={`cnav__thread cnav__thread--flat${active ? " is-active" : ""}`}>
+                        {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
+                        <button
+                          type="button"
+                          aria-current={active ? "page" : undefined}
+                          onClick={() => onOpenSession(session)}
+                          className="cnav__thread-main focus-ring"
+                        >
+                          {prStatus ? null : (
+                            <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
+                          )}
+                          <span className="cnav__thread-title" title={title}>{title}</span>
+                        </button>
+                        <button
+                          type="button"
+                          title="Unpin chat"
+                          aria-label={`Unpin ${title}`}
+                          aria-pressed
+                          onClick={() => togglePin(session.id)}
+                          className="cnav__icon-btn is-on focus-ring"
+                        >
+                          <Icon name="ph:bookmark-simple-fill" width={12} aria-hidden />
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+
+          {view === "recent" ? (
+            recentBuckets.length === 0 ? (
+              <p className="cnav__empty">
+                {hasSearch ? "No threads match your search." : "No conversations yet."}
+              </p>
+            ) : (
+              recentBuckets.map((bucket) => {
+                const key = `bucket:${bucket.key}`;
+                const rows =
+                  showAllByKey.has(key) || hasSearch
+                    ? bucket.sessions
+                    : bucket.sessions.slice(0, THREADS_PREVIEW);
+                return (
+                  <section key={bucket.key} aria-label={bucket.label}>
+                    <div className="cnav__label">{bucket.label}</div>
+                    <ul>
+                      {rows.map((session) => (
+                        <li key={session.id}>
+                          <ThreadRow
+                            session={session}
+                            active={activeSessionId === session.id}
+                            pinned={isSessionPinned(pinnedIds, session.id)}
+                            confirming={confirmingSessionId === session.id}
+                            deleting={deletingSessionId === session.id}
+                            indent="flat"
+                            project={sessionProjectById.get(session.id) ?? null}
+                            glyph={threadLeadingIcon(sessionRailTitle(session))}
+                            onOpenUrl={onOpenUrl}
+                            onOpen={() => onOpenSession(session)}
+                            onOpenInSplit={
+                              onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                            }
+                            onTogglePin={() => togglePin(session.id)}
+                            onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
+                            archiving={archivingId !== null}
+                            onRequestDelete={() => setConfirmingSessionId(session.id)}
+                            onCancelDelete={() => setConfirmingSessionId(null)}
+                            onConfirmDelete={() => void handleDeleteSession(session)}
+                          />
+                        </li>
+                      ))}
+                      {bucket.sessions.length > THREADS_PREVIEW && !showAllByKey.has(key) && !hasSearch ? (
+                        <li>
+                          <button
+                            type="button"
+                            onClick={() => setShowAllByKey((cur) => new Set(cur).add(key))}
+                            className="cnav__more focus-ring [padding-left:13px]!"
+                          >
+                            Show {bucket.sessions.length - THREADS_PREVIEW} more
+                          </button>
+                        </li>
+                      ) : null}
+                    </ul>
+                  </section>
+                );
+              })
+            )
+          ) : visibleGroups.length === 0 ? (
+            <p className="cnav__empty">
+              {hasSearch ? "No threads match your search." : "No conversations yet."}
+            </p>
+          ) : (
+            <ul>
+              {visibleGroups.map((group) => {
+                const key = groupKey(group);
+                const expanded = !collapsedKeys.has(key) || hasSearch;
+                const label = folderLabel(group);
+                const unregistered = Boolean(group.projectRoot) && !group.projectId;
+                const registering = registeringRoot === group.projectRoot;
+                const rows = showAllByKey.has(key) || hasSearch
+                  ? group.sessions
+                  : group.sessions.slice(0, THREADS_PREVIEW);
+                return (
+                  <li key={key} className={`cnav__group${expanded ? "" : " is-collapsed"}`}>
+                    <div className="cnav__group-head">
+                      <button
+                        type="button"
+                        aria-expanded={expanded}
+                        aria-label={`${expanded ? "Collapse" : "Expand"} ${label} threads`}
+                        onClick={() => toggleCollapse(key)}
+                        className="cnav__group-toggle focus-ring"
+                      >
+                        <Icon name="ph:caret-down" width={10} className="cnav__chev" aria-hidden />
+                        {group.projectId ? (
+                          <ProjectAvatar name={label} root={group.projectRoot} color={group.projectColor} size="sm" className="cnav__folder" />
+                        ) : (
+                          <Icon name={folderIcon(group, expanded)} width={14} className="cnav__folder" aria-hidden />
+                        )}
+                        <span className="cnav__group-text">
+                          <span className="cnav__group-name" title={group.projectRoot ?? "Threads with no project"}>
+                            {label}
+                          </span>
+                          <span className="cnav__group-meta">{groupMeta(group)}</span>
+                        </span>
+                      </button>
+                      {unregistered ? (
+                        <button
+                          type="button"
+                          disabled={registering}
+                          onClick={() => handleRegister(group)}
+                          title={`Register ${label} as a project`}
+                          aria-label={`Register ${label} as a project`}
+                          className="cnav__icon-btn is-accent focus-ring"
+                        >
+                          <Icon name={registering ? "ph:arrows-clockwise" : "ph:folders-bold"} width={13} className={registering ? "animate-spin" : undefined} aria-hidden />
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        // (cave-gg5d) A "cave:code-select-project" dispatch used
+                        // to precede this — its only listener lived in the
+                        // retired (now deleted) ComuxView; onNewChat does the work.
+                        onClick={() => onNewChat(group.projectRoot)}
+                        title={`New chat in ${label}`}
+                        aria-label={`New chat in ${label}`}
+                        className="cnav__icon-btn focus-ring"
+                      >
+                        <Icon name="ph:plus" width={12} aria-hidden />
+                      </button>
+                    </div>
+                    {expanded ? (
+                      group.sessions.length === 0 ? (
+                        <p className="cnav__thread-empty">No threads yet.</p>
+                      ) : (
+                        <ul>
+                          {rows.map((session) => {
+                            const title = sessionRailTitle(session);
+                            const glyph = threadLeadingIcon(title);
+                            return (
+                              <li key={session.id}>
+                                <ThreadRow
+                                  session={session}
+                                  active={activeSessionId === session.id}
+                                  pinned={isSessionPinned(pinnedIds, session.id)}
+                                  confirming={confirmingSessionId === session.id}
+                                  deleting={deletingSessionId === session.id}
+                                  indent="folder"
+                                  glyph={glyph}
+                                  onOpenUrl={onOpenUrl}
+                                  onOpen={() => onOpenSession(session)}
+                                  onOpenInSplit={
+                                    onOpenSessionInSplit
+                                      ? () => onOpenSessionInSplit(session)
+                                      : undefined
+                                  }
+                                  onTogglePin={() => togglePin(session.id)}
+                                  onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
+                                  archiving={archivingId !== null}
+                                  onRequestDelete={() => setConfirmingSessionId(session.id)}
+                                  onCancelDelete={() => setConfirmingSessionId(null)}
+                                  onConfirmDelete={() => void handleDeleteSession(session)}
+                                />
+                              </li>
+                            );
+                          })}
+                          {group.sessions.length > THREADS_PREVIEW && !showAllByKey.has(key) && !hasSearch ? (
+                            <li>
+                              <button
+                                type="button"
+                                onClick={() => setShowAllByKey((cur) => new Set(cur).add(key))}
+                                className="cnav__more focus-ring"
+                              >
+                                Show {group.sessions.length - THREADS_PREVIEW} more
+                              </button>
+                            </li>
+                          ) : null}
+                        </ul>
+                      )
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </nav>
+
+        {/* Shared footer (Dashboard + Settings + version) so Chat keeps the same
+            side-panel footer as every other surface; it sits below the scrolling
+            thread list because .cnav__scroll flexes and this stays put. */}
+        <SidebarFooter onOpenSettings={onOpenSettings} />
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,29 @@
+{
+  "name": "pretext",
+  "version": "0.1.0",
+  "description": "DOM-free multiline text measurement & layout for web UIs via @chenglou/pretext \u2014 get wrapped height, line count, and per-line ranges from pure arithmetic, with no getBoundingClientRect/offsetHeight reflow. Powers list virtualization, layout-shift prevention, CI-time overflow checks, multiline shrink-wrap / balanced text, and manual line rendering to Canvas/SVG/WebGL.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Pretext \u2014 Text Measurement & Layout",
+    "shortDescription": "DOM-free multiline text measurement & layout for web UIs via @chenglou/pretext \u2014 get wrapped height, line count, and per-line ranges from pure arithmetic, with no getBoundingClientRect/offsetHeight reflow. Powers list virtualization, layout-shift prevention, CI-time overflow checks, multiline shrink-wrap / balanced text, and manual line rendering to Canvas/SVG/WebGL.",
+    "longDescription": "Use when measuring or laying out multiline text in a web UI WITHOUT triggering DOM reflow (getBoundingClientRect / offsetHeight / measuring a hidden clone) \u2014 the @chenglou/pretext library (pure JS/TS, works across all languages, renders to DOM/Canvas/SVG/WebGL and soon server-side). Covers the prepare()/layout() split (one-time analysis + canvas measurement vs the cheap pure-arithmetic hot path; never re-run prepare() on resize), height + lineCount measurement for list virtualization/occlusion, layout-shift prevention when text loads late, dev/CI-time button/label overflow checks (browser-free), and userland masonry/JS-flexbox layout; manual line layout via prepareWithSegments + layoutWithLines / walkLineRanges / measureLineStats / measureNaturalWidth / layoutNextLine(Range) / materializeLineRange (multiline shrink-wrap, balanced text, text flowed around a float, canvas/SVG/WebGL rendering); the @chenglou/pretext/rich-inline helper for inline chips/mentions/code-spans with break:'never' + caller-owned extraWidth; options whiteSpace normal|pre-wrap (textarea-like), wordBreak normal|keep-all (CJK/Hangul), letterSpacing px, soft-hyphen break points, setLocale/clearCache. Encodes the load-bearing caveats \u2014 the canvas `font` string AND the `lineHeight`/`letterSpacing` you pass MUST match the element's CSS; `system-ui` is unsafe for layout() accuracy on macOS (use a named font); requires Intl.Segmenter + Canvas 2D; empty string returns {lineCount:0} (clamp with Math.max(1,lineCount)); it is horizontal-only and NOT a full CSS inline/bidi formatting engine.",
+    "developerName": "OpenCoven",
+    "category": "Design & UI",
+    "capabilities": [
+      "pretext",
+      "text-measurement",
+      "text-layout",
+      "line-breaking",
+      "virtualization",
+      "layout-shift",
+      "canvas",
+      "typography",
+      "intl-segmenter",
+      "chenglou"
+    ],
+    "defaultPrompt": "Help me use Pretext \u2014 Text Measurement & Layout safely."
+  }
+}

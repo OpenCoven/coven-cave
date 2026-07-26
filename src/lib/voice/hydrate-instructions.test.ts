@@ -8,13 +8,13 @@ import { join } from "node:path";
 const TMP = mkdtempSync(join(tmpdir(), "voice-hydrate-"));
 process.env.HOME = TMP;
 
-const { hydrateForVoiceCall } = await import("./hydrate-instructions.ts");
+const { hydrateForVoiceCall, VOICE_INSTRUCTIONS_CHARS } = await import("./hydrate-instructions.ts");
 
 const FAMILIAR_ID = "milo";
 const SESSION_ID = "sess-1";
 
 function writeConvFile(turns: Array<{ role: string; text: string }>) {
-  const dir = join(TMP, ".coven", "cave-conversations");
+  const dir = join(TMP, ".coven", "cave", "conversations");
   mkdirSync(dir, { recursive: true });
   const conv = {
     sessionId: SESSION_ID,
@@ -32,12 +32,15 @@ function writeConvFile(turns: Array<{ role: string; text: string }>) {
   writeFileSync(join(dir, `${SESSION_ID}.json`), JSON.stringify(conv));
 }
 
-function writeFamiliarConfig(familiar: Record<string, unknown>) {
-  const dir = join(TMP, ".coven");
+function writeFamiliarConfig(
+  familiar: Record<string, unknown>,
+  extra: Record<string, unknown> = {},
+) {
+  const dir = join(TMP, ".coven", "cave");
   mkdirSync(dir, { recursive: true });
   writeFileSync(
-    join(dir, "cave-config.json"),
-    JSON.stringify({ familiars: { [FAMILIAR_ID]: familiar } }),
+    join(dir, "config.json"),
+    JSON.stringify({ familiars: { [FAMILIAR_ID]: familiar }, ...extra }),
   );
 }
 
@@ -120,4 +123,110 @@ test("conversationSeed is [] when the session file is missing", async () => {
     undefined,
   );
   assert.deepEqual(out.conversationSeed, []);
+});
+
+// ── Deep hydration: canon / roles / contract files / knowledge vault ─────────
+// Ordering matters below: contract files and vault entries persist in TMP once
+// written, so absence assertions run before the tests that create them.
+
+test("instructions carry the Coven identity canon with the familiar id", async () => {
+  writeFamiliarConfig({ display_name: "Milo", role: "scout" });
+  writeConvFile([]);
+  const out = await hydrateForVoiceCall({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID });
+  assert.match(out.instructions, /Coven identity canon:/);
+  assert.match(out.instructions, /Current familiar: milo\./);
+});
+
+test("active roles for this familiar are listed; inactive and foreign roles are not", async () => {
+  writeFamiliarConfig(
+    { display_name: "Milo", role: "scout" },
+    {
+      roles: [
+        { id: "researcher", familiar: FAMILIAR_ID, active: true },
+        { id: "dormant", familiar: FAMILIAR_ID, active: false },
+        { id: "scribe", familiar: "someone-else", active: true },
+      ],
+    },
+  );
+  writeConvFile([]);
+  const out = await hydrateForVoiceCall({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID });
+  assert.match(out.instructions, /Active roles: researcher\./);
+  assert.doesNotMatch(out.instructions, /dormant/);
+  assert.doesNotMatch(out.instructions, /scribe/);
+});
+
+test("no contract block when the familiar has no identity files", async () => {
+  writeFamiliarConfig({ display_name: "Milo", role: "scout" });
+  writeConvFile([]);
+  const out = await hydrateForVoiceCall({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID });
+  assert.doesNotMatch(out.instructions, /<FAMILIAR_CONTRACT>/);
+});
+
+test("an invalid familiar id degrades to persona defaults without throwing", async () => {
+  const out = await hydrateForVoiceCall({ familiarId: "../evil", sessionId: SESSION_ID });
+  assert.match(out.instructions, /the familiar, a familiar/);
+  assert.doesNotMatch(out.instructions, /<FAMILIAR_CONTRACT>/);
+});
+
+function writeContractFile(name: string, content: string) {
+  const dir = join(TMP, ".coven", "workspaces", "familiars", FAMILIAR_ID);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, name), content);
+}
+
+test("SOUL.md / IDENTITY.md / MEMORY.md are inlined under FAMILIAR_CONTRACT", async () => {
+  writeFamiliarConfig({ display_name: "Milo", role: "scout" });
+  writeConvFile([]);
+  writeContractFile("SOUL.md", "# SOUL.md — Who I Am\n## I am Milo\nMy purpose is scouting.");
+  writeContractFile("IDENTITY.md", "# IDENTITY.md - Milo\n- **Creature:** fox");
+  writeContractFile("MEMORY.md", "# MEMORY.md\nThe user prefers terse answers.");
+  const out = await hydrateForVoiceCall({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID });
+  assert.match(out.instructions, /<FAMILIAR_CONTRACT>/);
+  assert.match(out.instructions, /## SOUL\.md\n# SOUL\.md — Who I Am/);
+  assert.match(out.instructions, /My purpose is scouting\./);
+  assert.match(out.instructions, /\*\*Creature:\*\* fox/);
+  assert.match(out.instructions, /The user prefers terse answers\./);
+  assert.match(out.instructions, /<\/FAMILIAR_CONTRACT>/);
+  // The voice-call behavioral instruction stays last, after every identity block.
+  assert.ok(
+    out.instructions.indexOf("live voice call") >
+      out.instructions.indexOf("</FAMILIAR_CONTRACT>"),
+  );
+});
+
+test("an oversized SOUL.md is clamped and can never fail the mint", async () => {
+  writeFamiliarConfig({ display_name: "Milo", role: "scout" });
+  writeConvFile([]);
+  writeContractFile("SOUL.md", `# SOUL.md\n${"s".repeat(50_000)}`);
+  const out = await hydrateForVoiceCall({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID });
+  assert.match(out.instructions, /<FAMILIAR_CONTRACT>/);
+  assert.ok(out.instructions.length <= VOICE_INSTRUCTIONS_CHARS);
+  assert.match(out.instructions, /…/);
+  // Clamping one file must not swallow the blocks after it.
+  assert.match(out.instructions, /live voice call/);
+});
+
+function writeVaultEntry(id: string, frontmatter: string, body: string) {
+  const dir = join(TMP, ".coven", "knowledge");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${id}.md`), `---\n${frontmatter}\n---\n${body}\n`);
+}
+
+test("familiar-scoped Knowledge Vault entries reach the voice instructions", async () => {
+  writeFamiliarConfig({ display_name: "Milo", role: "scout" });
+  writeConvFile([]);
+  writeVaultEntry(
+    "style-guide",
+    'title: "Style Guide"\ntags: [style]\nscope: global\nenabled: true',
+    "Always answer in haiku.",
+  );
+  writeVaultEntry(
+    "other-secret",
+    'title: "Other Secret"\ntags: []\nscope: [someone-else]\nenabled: true',
+    "Not for milo.",
+  );
+  const out = await hydrateForVoiceCall({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID });
+  assert.match(out.instructions, /<KNOWLEDGE_VAULT>/);
+  assert.match(out.instructions, /Always answer in haiku\./);
+  assert.doesNotMatch(out.instructions, /Not for milo\./);
 });

@@ -4,6 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const UNDO_WINDOW_MS = 4_000;
 
+export function scheduleDeferredDelete(
+  deleteFn: () => Promise<void>,
+  delayMs = UNDO_WINDOW_MS,
+): ReturnType<typeof setTimeout> {
+  return setTimeout(() => {
+    void deleteFn();
+  }, delayMs);
+}
+
 export type UndoEntry<T> = {
   id: string;       // unique key for this pending deletion
   item: T;          // the item being deleted, for potential restore
@@ -41,10 +50,10 @@ export function useUndoDelete<T>() {
       }
 
       const id = `undo-${Date.now()}`;
-      const timeoutId = setTimeout(() => {
+      const timeoutId = scheduleDeferredDelete(async () => {
         setPending(null);
-        void deleteFn();
-      }, UNDO_WINDOW_MS);
+        await deleteFn();
+      });
 
       const entry: UndoEntry<T> = { id, item, label, deleteFn, timeoutId };
       setPending(entry);
@@ -57,6 +66,24 @@ export function useUndoDelete<T>() {
     clearTimeout(pendingRef.current.timeoutId);
     setPending(null);
   }, []);
+
+  // While a delete is pending, ⌘Z / Ctrl+Z undoes it — the keyboard affordance
+  // users reach for. ⌘⇧Z (redo) is left alone, and we defer to native text undo
+  // when focus is in an editable field. One handler per active toast; only one
+  // surface shows a toast at a time, so there's no cross-surface ambiguity.
+  useEffect(() => {
+    if (!pending) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      if (e.key !== "z" && e.key !== "Z") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      e.preventDefault();
+      undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pending, undo]);
 
   const commit = useCallback(() => {
     if (!pendingRef.current) return;

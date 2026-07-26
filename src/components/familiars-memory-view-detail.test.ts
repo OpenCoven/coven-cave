@@ -2,10 +2,18 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+const source = [
+  await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./familiars-memory-files.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./familiars-memory-utils.ts", import.meta.url), "utf8"),
+].join("\n");
 const hook = await readFile(new URL("../lib/use-memory-file.ts", import.meta.url), "utf8");
-assert.match(hook, /\/api\/memory\/file\?path=\$\{encodeURIComponent\(path\)\}/,
+assert.match(hook, /path=\$\{encodeURIComponent\(path\)\}/,
+  "the shared hook must URL-encode the requested path");
+assert.match(hook, /\/api\/memory\/file\?\$\{query\}/,
   "the shared hook must fetch the redaction-safe memory/file endpoint");
+assert.match(hook, /reveal \? "&reveal=1" : ""/,
+  "reveal (un-redacted) fetches are an explicit opt-in for edit mode");
 
 // ───────── #6 basename-prominent rows + file size ─────────
 
@@ -19,7 +27,7 @@ assert.match(
 );
 assert.match(
   source,
-  /<span className="block truncate text-\[12px\] font-medium text-\[var\(--text-primary\)\]" title=\{entry\.relPath\}>\{base\}<\/span>/,
+  /<span className="block truncate text-\[length:var\(--text-sm\)\] font-medium text-\[var\(--text-primary\)\]" title=\{entry\.relPath\}>\{base\}<\/span>/,
   "Row title must show the basename (full relPath on hover)",
 );
 
@@ -39,20 +47,20 @@ assert.match(
 
 assert.match(
   source,
-  /const \[sortMode, setSortMode\] = useState<"recent" \| "oldest" \| "name" \| "size" \| "staleFirst">\("recent"\);/,
-  "Files must default to recency sort with the extended sort alternatives",
+  /const \[sortMode, setSortMode\] = useSurfacePreference\(surfacePreferenceSpecs\.familiarMemory\.sort\);/,
+  "Files must retain the recency-default sort preference through the Workspace registry",
 );
 // Sort now lives in the management controls bar (group/sort/stale-only).
 assert.match(source, /value=\{sortMode\}/, "Sort control must be bound to sortMode");
 for (const opt of ["recent", "name", "size"]) {
-  assert.ok(source.includes(`value="${opt}"`), `Sort option ${opt} must be offered`);
+  assert.ok(source.includes(`{ value: "${opt}",`), `Sort option ${opt} must be offered`);
 }
 assert.match(source, /\.sort\(cmp\[sortMode\]\)/, "visibleFiles must sort by the active mode");
 
 // ───────── #9 search a11y + clear ─────────
 
 assert.match(source, /aria-label="Clear search"/, "Search must offer a labelled clear button");
-assert.match(source, /aria-label="Filter memory by familiar"/, "Familiar select must be labelled");
+assert.match(source, /label="Filter memory by familiar"/, "Familiar select must be labelled");
 assert.match(
   source,
   /event\.key === "Escape" && query/,

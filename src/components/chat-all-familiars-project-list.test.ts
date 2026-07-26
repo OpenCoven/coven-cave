@@ -7,6 +7,7 @@ const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const chatProjectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const githubTaskContext = readFileSync(new URL("../lib/workspace-github-task-context.ts", import.meta.url), "utf8");
 
 assert.match(
   chatSurface,
@@ -34,7 +35,7 @@ assert.match(
 
 assert.match(
   chatRouter,
-  /newChat: \(projectRoot\?: string, initialPrompt\?: string, familiarId\?: string \| null\)/,
+  /newChat: \(projectRoot\?: string, initialPrompt\?: string, familiarId\?: string \| null, origin\?: SessionOrigin, initialControls\?: InitialCommandControls, initialAttachments\?: ChatAttachment\[\]\)/,
   "Imperative new-chat launches should carry a familiar id with the project root",
 );
 
@@ -52,7 +53,7 @@ assert.match(
 
 assert.match(
   chatList,
-  /\{chatDate\(s\.updated_at, dtPrefs\)\}[\s\S]*\{rel\}/,
+  /\{rel\}[\s\S]*\{chatDate\(s\.updated_at, dtPrefs\)\}/,
   "Chat rows should show the absolute date next to the relative updated age",
 );
 
@@ -69,19 +70,64 @@ assert.match(
 );
 
 assert.match(
+  chatProjectSidebar,
+  /onOpenProjectsTab\?: \(\) => void/,
+  "Chat project rail should accept a Projects-tab jump callback",
+);
+
+assert.match(
+  chatProjectSidebar,
+  /aria-label="Open Projects tab"[\s\S]{0,180}onClick=\{openProjectsTab\}/,
+  "Chat project rail should expose a keyboard-accessible Projects-tab button",
+);
+
+assert.match(
+  chatProjectSidebar,
+  /CHAT_OPEN_PROJECTS_EVENT/,
+  "Chat project rail should know how to route the shortcut through the shared Projects event",
+);
+
+assert.match(
+  chatProjectSidebar,
+  /function openProjectsTab\(\) \{[\s\S]*?onOpenProjectsTab\(\);[\s\S]*?window\.dispatchEvent\(new CustomEvent\(CHAT_OPEN_PROJECTS_EVENT\)\);[\s\S]*?\}/,
+  "Chat project rail should supply a Projects-tab fallback when the parent callback is absent",
+);
+
+assert.match(
+  chatRouter,
+  /onOpenProjectsTab=\{openProjectsTab\}/,
+  "ChatRouter should pass the concrete Projects-tab handler to the rail",
+);
+
+assert.match(
   workspace,
   /normalizeGitHubTasks/,
   "Workspace should normalize GitHub task context when refreshing sessions",
 );
 assert.match(
-  workspace,
-  /pullRequest: \{[\s\S]*number: task\.prNumber[\s\S]*state: task\.status/,
-  "Workspace should attach linked PR number and state to chat sessions",
+  githubTaskContext,
+  /pullRequest: session\.pullRequest \?\? \{[\s\S]*number: task\.prNumber[\s\S]*state: task\.status/,
+  "GitHub task context should attach linked PR number and state without replacing server-enriched state",
 );
 assert.match(
   workspace,
-  /addons\.github\s*\?[\s\S]{0,120}fetch\("\/api\/github\/tasks"/,
-  "Workspace should only poll GitHub task context when the GitHub addon is enabled",
+  /attachGitHubTaskContext\(visibleBaseSessions, tasks\)/,
+  "Workspace should apply the extracted GitHub task context when refreshing sessions",
+);
+assert.match(
+  workspace,
+  /usePausablePoll\(\(\) => void loadGitHubTasks\(\), GITHUB_TASKS_POLL_MS/,
+  "Workspace refreshes GitHub task context on its dedicated slow cadence",
+);
+assert.doesNotMatch(
+  workspace,
+  /const loadSessions = useCallback[\s\S]*?fetch\("\/api\/github\/tasks"/,
+  "The four-second session poll must not fetch GitHub tasks",
+);
+assert.match(
+  workspace,
+  /startedDuringForcedRefresh[\s\S]*?forceEpoch !== loadGitHubTasksForceEpochRef\.current/,
+  "A scheduled read cannot supersede an explicit GitHub task refresh",
 );
 
 console.log("chat-all-familiars-project-list.test.ts: ok");

@@ -4,11 +4,20 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-const menuBarSwitcherRule = globals.match(/\.menu-bar__group--chat \.familiar-switcher__trigger\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+const desktopChrome = readFileSync(
+  new URL("../styles/globals/desktop-chrome.css", import.meta.url),
+  "utf8",
+);
+const foundations = readFileSync(
+  new URL("../styles/globals/foundations.css", import.meta.url),
+  "utf8",
+);
+const notificationBell = readFileSync(new URL("./notification-bell.tsx", import.meta.url), "utf8");
+// The switcher moved to the sidenav header (cave-vtk9); its compact geometry
+// is pinned in sidebar-minimal.test.ts against the rail rules instead.
 
 // The bar provides desktop top chrome: chat with familiars, global
-// context-aware search, and view tasks/inbox. It is a labelled landmark so
+// context-aware search, and view tasks/schedules. It is a labelled landmark so
 // screen readers can find it.
 assert.match(
   source,
@@ -47,27 +56,26 @@ assert.doesNotMatch(
   "desktop menu bar search must NOT open on focus — the palette restores focus to this input on close, which would reopen it and trap the user",
 );
 
-// Left group — chat. The bar embeds FamiliarQuickSwitch: a strip of recent +
-// pinned familiar avatars for one-tap switching, plus the full switcher menu.
-assert.match(
+// Familiar scope moved to the SIDENAV header (cave-vtk9) — present on every
+// page there. The bar keeps search + task and schedule chrome and must not
+// hand-roll any familiar markup.
+assert.doesNotMatch(
   source,
-  /<FamiliarQuickSwitch[\s\S]*onSelectFamiliar=\{onSelectFamiliar\}/,
-  "embeds the quick-switch strip + switcher for scope/full list",
+  /FamiliarQuickSwitch|FamiliarSwitcher|menu-bar__group--chat/,
+  "the menu bar no longer hosts familiar selection (it lives in the sidenav header)",
 );
-// The avatar bubbles + presence live inside FamiliarQuickSwitch, not inlined
-// here — the menu bar must not hand-roll its own bubble/presence markup.
 assert.doesNotMatch(
   source,
   /menu-bar__familiars|menu-bar__familiar|MAX_QUICK_CHAT|quickChat/,
-  "menu bar delegates bubbles to FamiliarQuickSwitch rather than its own markup",
+  "menu bar must not hand-roll familiar bubble/presence markup",
 );
 assert.doesNotMatch(
   source,
   /computePresence\(|<FamiliarAvatar/,
-  "presence/avatar computation lives in FamiliarQuickSwitch, not the menu bar",
+  "presence/avatar computation does not live in the menu bar",
 );
 // The New chat control now lives at the top of the left sidebar
-// (SidebarMinimal), not the desktop menu bar — the bar keeps only the switcher.
+// (SidebarMinimal), not the desktop menu bar.
 assert.doesNotMatch(
   source,
   /menu-bar__new|menu-bar__compose|NewChatMenu/,
@@ -78,19 +86,9 @@ assert.doesNotMatch(
   /onChatWithFamiliar|onComposeChat/,
   "the menu bar no longer owns the chat-start handlers",
 );
-assert.match(
-  menuBarSwitcherRule,
-  /width:\s*28px;/,
-  "desktop menu-bar familiar selector should stay a square avatar button, not collapse to content width",
-);
-assert.doesNotMatch(
-  menuBarSwitcherRule,
-  /width:\s*auto;/,
-  "desktop menu-bar familiar selector must not use content-width sizing after the label/caret were removed",
-);
 
-// Right group — tasks. A Tasks button (board) and an Inbox button, each with a
-// live count badge that is hidden at zero.
+// Right group — tasks. A Tasks button (board) and a Schedules button, each
+// with a live count badge that is hidden at zero.
 assert.match(
   source,
   /className="menu-bar__task focus-ring"[\s\S]*onClick=\{onViewTasks\}/,
@@ -101,15 +99,118 @@ assert.match(
   /taskCount > 0 \? <span className="menu-bar__badge">\{fmtBadge\(taskCount\)\}<\/span> : null/,
   "the Tasks badge shows the open-task count and hides at zero",
 );
+// The old "Inbox" button was dishonest: workspace mode "inbox" IS the
+// Schedules surface (calendar + crons) and no dedicated inbox surface exists
+// (inbox items live in the notification bell). The button now says what it
+// does: Schedules, calendar icon, schedule needs-you badge.
 assert.match(
   source,
-  /onClick=\{onViewInbox\}/,
-  "the Inbox button jumps to the inbox",
+  /onClick=\{onViewSchedules\}/,
+  "the Schedules button jumps to the Schedules surface",
 );
 assert.match(
   source,
-  /inboxCount > 0 \? \(\s*<span className="menu-bar__badge menu-bar__badge--alert">/,
-  "the Inbox badge shows the attention count and hides at zero",
+  /aria-label=\{scheduleNeedsCount > 0 \? `View rituals — \$\{scheduleNeedsCount\} need attention` : "View rituals"\}/,
+  "the Rituals button is announced as rituals, not inbox",
+);
+assert.match(
+  source,
+  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">Rituals<\/span>/,
+  "the Rituals button matches the sidebar's Rituals label + icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
+);
+assert.doesNotMatch(
+  source,
+  /"View inbox"|<span>Inbox<\/span>|ph:tray/,
+  "no top-bar control claims to be an Inbox — there is no inbox surface to land on",
+);
+assert.match(
+  source,
+  /scheduleNeedsCount > 0 \? \(\s*<span className="menu-bar__badge">/,
+  "the Schedules badge matches the Tasks badge chrome (no alert tint) and hides at zero",
+);
+// The running-processes control is workspace-owned (it needs the sessions
+// state and chat navigation): the bar renders it as the `runningStatus` slot
+// in the right status cluster, exactly like the bell — no hand-rolled markup.
+assert.match(
+  source,
+  /<div className="menu-bar__group menu-bar__group--status">\s*\{runningStatus\}\s*\{bell\}\s*<\/div>/,
+  "the status cluster hosts the workspace-owned running-processes control beside the bell",
+);
+assert.doesNotMatch(
+  source,
+  /menu-bar__status|runningCount|ph:waveform/,
+  "the bar no longer hand-rolls the running-status markup (it lives in RunningSessionsPopover)",
+);
+assert.doesNotMatch(
+  source,
+  /menu-bar__running-dot/,
+  "the running status no longer uses a presence dot",
+);
+// Clicking the waveform trigger must SHOW the running processes: the workspace
+// feeds the popover the live running-session rows and the chat-open handler.
+const runningSessionsPopover = readFileSync(
+  new URL("./running-sessions-popover.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  workspace,
+  /runningStatus=\{\s*<RunningSessionsPopover\s+sessions=\{runningSessions\}\s+familiars=\{familiars\}\s+onOpenSession=\{openFamiliarSession\}\s*\/>\s*\}/,
+  "workspace mounts RunningSessionsPopover in the menu bar's runningStatus slot, fed live running sessions and the session-open handler",
+);
+assert.match(
+  workspace,
+  /runningSessions = useMemo\(\s*\(\) => sessions\.filter\(\(s\) => !s\.archived_at && sessionStatusTone\(s\.status\) === "running"\)/,
+  "running rows use the shared sessionStatusTone vocabulary and exclude archived sessions",
+);
+assert.match(
+  runningSessionsPopover,
+  /className="menu-bar__status focus-ring"[\s\S]{0,200}?aria-haspopup="dialog"[\s\S]{0,120}?aria-expanded=\{open\}/,
+  "the popover trigger keeps the menu-bar status chrome and announces the popover",
+);
+assert.match(
+  notificationBell,
+  /displayBadgeCount > 0 \? \(\s*<span[^>]*className="notification-bell__badge"[^>]*>[\s\S]{0,120}?\)\s*:\s*null/,
+  "notification alerts render their badge only inside the displayBadgeCount conditional and fall back to null",
+);
+assert.match(
+  desktopChrome,
+  /\.menu-bar__badge,\s*\n\.menu-bar \.notification-bell__badge \{\s*\n\s*min-width:\s*15px;\s*\n\s*height:\s*15px;\s*\n\s*border-radius:\s*var\(--radius-control\);/,
+  "desktop corner badges share the same compact geometry",
+);
+assert.match(
+  desktopChrome,
+  /\.notification-bell__badge \{[\s\S]{0,180}?padding:\s*0 var\(--space-1\);/,
+  "notification badges keep horizontal padding only on the base rule",
+);
+assert.match(
+  desktopChrome,
+  /\.notification-bell__badge \{[^}]*background:\s*color-mix\(in oklch, var\(--color-warning\) 14%, var\(--bg-raised\)\);/,
+  "notification badges tint from the bell's warning hue over an opaque surface (the chip overlaps the glyph)",
+);
+assert.match(
+  desktopChrome,
+  /\.notification-bell__badge \{[^}]*border:\s*1px solid color-mix\(in oklch, var\(--color-warning\) 40%, var\(--bg-raised\)\);/,
+  "the count chip is the bordered element — fill vs outline separates it from the solid glyph",
+);
+assert.match(
+  foundations,
+  /:root \{[\s\S]*?--color-danger:\s*oklch\(0\.74 0\.18 24\);\s*\n\s*--color-danger-foreground:\s*#111111;\s*\n\s*--color-danger-soft:/,
+  "the default dark danger palette uses deterministic near-black foreground ink",
+);
+assert.match(
+  foundations,
+  /:root\[data-mode="light"\] \{[\s\S]*?--color-danger:\s*oklch\(0\.52 0\.20 24\);\s*\n\s*--color-danger-foreground:\s*#ffffff;\s*\n\s*--color-danger-soft:/,
+  "the light danger palette overrides the foreground with deterministic white ink",
+);
+assert.match(
+  desktopChrome,
+  /\.notification-bell__badge \{[^}]*color:\s*var\(--color-warning\);/,
+  "the count is solid warning text — same hue as the unread bell icon, per the one-token tint recipe",
+);
+assert.match(
+  notificationBell,
+  /name=\{displayBadgeCount > 0 \? "ph:bell-fill" : "ph:bell"\}/,
+  "unread solidifies the bell glyph; idle keeps the outline — fill, not a second hue, is the unread channel",
 );
 
 // Wiring in the workspace: the bar mounts in the Shell topBar slot with the
@@ -121,13 +222,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /onViewInbox=\{\(\) => setMode\("inbox"\)\}/,
-  "View inbox switches to the inbox surface",
+  /onViewSchedules=\{\(\) => setMode\("inbox"\)\}/,
+  "View schedules switches to the Schedules surface (workspace mode id 'inbox')",
 );
 assert.match(
   workspace,
-  /taskCount=\{boardTaskCount\}[\s\S]*inboxCount=\{inboxBadgeCount\}/,
-  "the bar is fed the live board task count and inbox badge count",
+  /taskCount=\{boardTaskCount\}[\s\S]*scheduleNeedsCount=\{scheduleNeedsCount\}/,
+  "the bar is fed the live board task count and the schedule needs-you count (same source as the sidebar Schedules badge)",
 );
 assert.match(
   workspace,
@@ -136,8 +237,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /salemSlot=\{[\s\S]*?<SalemChatPanel\s+familiarId=\{[\s\S]*?model=\{/,
-  "Salem should remain available in the companion sidepanel",
+  /<SalemChatPanel\s+familiarId=\{[\s\S]*?model=\{/,
+  "Salem should remain available — re-homed into the drag-to-split pane",
 );
 assert.doesNotMatch(
   workspace,
@@ -162,11 +263,33 @@ assert.match(
 );
 
 // Desktop-only: the bar shows ≥1024px (where the mobile .top-bar is hidden).
-assert.match(globals, /\.menu-bar \{\s*display: none;/, "menu bar is hidden by default");
+assert.match(desktopChrome, /\.menu-bar \{\s*display: none;/, "menu bar is hidden by default");
 assert.match(
-  globals,
+  desktopChrome,
   /@media \(min-width: 1024px\) \{\s*\.menu-bar \{\s*display: flex;/,
   "menu bar shows on desktop (≥1024px)",
+);
+
+// Desktop quick-chat entry point: the bar carries the quick-chat trigger (the
+// mobile top bar's copy is hidden ≥1024px), tagged so the popover anchors under
+// it as a dropdown from this menubar.
+assert.match(
+  source,
+  /data-quick-chat-trigger[\s\S]{0,140}onClick=\{onOpenQuickChat\}[\s\S]{0,140}aria-label="Quick chat"/,
+  "the desktop menu bar renders a data-quick-chat-trigger button wired to onOpenQuickChat",
+);
+// cave-xsq.6: the quick-chat trigger jumps straight into a fresh chat with the
+// active familiar (the parallel overlay was retired) rather than opening a
+// duplicate mini-chat popover.
+assert.match(
+  workspace,
+  /<FamiliarMenuBar[\s\S]*?onOpenQuickChat=\{\(\) => startFamiliarChat\(activeId\)\}/,
+  "workspace wires the desktop menu bar's quick-chat trigger to start a chat with the active familiar",
+);
+assert.doesNotMatch(
+  workspace,
+  /QuickChatOverlay/,
+  "the parallel in-app quick-chat overlay is retired",
 );
 
 console.log("familiar-menu-bar.test.ts: ok");

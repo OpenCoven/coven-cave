@@ -1,0 +1,43 @@
+{
+  "name": "skill-creator",
+  "version": "0.1.0",
+  "description": "Create and update skills that extend agents with specialized knowledge, workflows, and tools \u2014 init, author, validate, and package with bundled scripts.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "skills",
+    "authoring",
+    "skill-creation",
+    "progressive-disclosure",
+    "packaging",
+    "agents"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/skill-creator",
+  "x-coven": {
+    "displayName": "Skill Creator",
+    "category": "Agents & Harnesses",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/coleam00/second-brain-skills",
+      "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/skill-creator",
+      "https://agentskills.io"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

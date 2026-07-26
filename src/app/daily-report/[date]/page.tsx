@@ -1,6 +1,6 @@
 import { loadInbox } from "@/lib/cave-inbox";
 import { Icon } from "@/lib/icon";
-import { CopyLinkButton } from "@/components/copy-link-button";
+import { AnalyticsPageShell } from "@/components/analytics-page-shell";
 import { EmptyState, ItemRow, MetricCard, QuickLink, SectionHead } from "@/components/daily-report-ui";
 import {
   breakdownForDay,
@@ -8,8 +8,12 @@ import {
   parseDateSlug,
   parseRecentSessions,
   parseStatsFromBody,
+  recentReports,
   relativeTime,
+  type DailyReportStats,
 } from "@/lib/daily-report";
+import { extractNextPaths } from "@/lib/next-paths";
+import { ShippedTable } from "@/components/shipped-table";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +29,10 @@ export default async function DailyReportPage({ params }: Props) {
 
   if (!item) {
     return (
-      <main className="dr-page">
-        <div className="dr-topbar">
+      <AnalyticsPageShell>
+      {/* div, not main: the shell's aps-main is the page's main landmark. */}
+      <div className="dr-page">
+        <div className="dr-topbar" data-tauri-drag-region="deep">
           <a className="dr-back" href="/dashboard">
             <Icon name="ph:arrow-left" aria-hidden />
             Dashboard
@@ -56,21 +62,54 @@ export default async function DailyReportPage({ params }: Props) {
             </div>
           </section>
         </div>
-      </main>
+      </div>
+      </AnalyticsPageShell>
     );
   }
 
   const stats = item.media?.stats ?? parseStatsFromBody(item.body);
   const breakdown = breakdownForDay(inbox.items, parsedDate ?? new Date());
+
+  // 7-day trend per metric, ending on this report's date, from the daily reports.
+  const slugFor = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const statBySlug = new Map(recentReports(inbox.items).map((r) => [r.slug, r.stats]));
+  const trendBase = parsedDate ?? new Date();
+  const trendFor = (metric: keyof DailyReportStats) => {
+    const out: { label: string; value: number | null }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(trendBase);
+      d.setDate(trendBase.getDate() - i);
+      const s = statBySlug.get(slugFor(d));
+      out.push({
+        label: d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
+        // Optional metrics are absent on pre-Phase-B reports — chart as gaps.
+        value: s ? (s[metric] ?? null) : null,
+      });
+    }
+    return out;
+  };
   const recentSessions = parseRecentSessions(item.body);
-  const generatedAt = item.firedAt ?? item.updatedAt ?? null;
+  // Structured day-in-review facts — frozen per refresh, absent on old items.
+  const report = item.media?.report ?? null;
+  // media.generatedAt moves on every in-place refresh; firedAt stays at the
+  // day's first generation, so prefer the former for a truthful timestamp.
+  const generatedAt = item.media?.generatedAt ?? item.firedAt ?? item.updatedAt ?? null;
+  const isToday = parsedDate ? slugFor(parsedDate) === slugFor(new Date()) : false;
   const totalEvents = stats
-    ? stats.reminders + stats.responses + stats.familiars + stats.sessions
+    ? stats.reminders +
+      stats.responses +
+      stats.familiars +
+      stats.sessions +
+      (stats.prsMerged ?? 0) +
+      (stats.cardsCompleted ?? 0)
     : 0;
 
   return (
-    <main className="dr-page">
-      <div className="dr-topbar">
+    <AnalyticsPageShell>
+    {/* div, not main: the shell's aps-main is the page's main landmark. */}
+    <div className="dr-page">
+      <div className="dr-topbar" data-tauri-drag-region="deep">
         <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">
           <a className="dr-back" href="/dashboard">
             <Icon name="ph:arrow-left" aria-hidden />
@@ -80,7 +119,6 @@ export default async function DailyReportPage({ params }: Props) {
           <span className="dr-crumb-current">{item.title}</span>
         </nav>
         <div className="dr-topbar__actions">
-          <CopyLinkButton />
           <a className="dr-btn dr-btn--sm" href="/">
             <Icon name="ph:house-bold" aria-hidden />
             Open CovenCave
@@ -105,8 +143,14 @@ export default async function DailyReportPage({ params }: Props) {
           <div className="dr-meta-row">
             <span className="dr-meta-row__item">
               <Icon name="ph:clock" aria-hidden />
-              Generated {generatedAt ? relativeTime(generatedAt) : "today"}
+              Updated {generatedAt ? relativeTime(generatedAt) : "today"}
             </span>
+            {isToday ? (
+              <span className="dr-meta-row__item">
+                <Icon name="ph:arrows-clockwise" aria-hidden />
+                Live — refreshes today
+              </span>
+            ) : null}
             {breakdown.openItems.length > 0 ? (
               <span className="dr-meta-row__item">
                 <Icon name="ph:warning-circle" aria-hidden />
@@ -130,6 +174,7 @@ export default async function DailyReportPage({ params }: Props) {
               label="Reminders fired"
               caption={stats.reminders === 1 ? "1 reminder" : `${stats.reminders} reminders`}
               accent="amber"
+              trend={trendFor("reminders")}
             />
             <MetricCard
               icon="ph:chat-circle-dots"
@@ -137,6 +182,7 @@ export default async function DailyReportPage({ params }: Props) {
               label="Responses waiting"
               caption="Need your reply"
               accent="rose"
+              trend={trendFor("responses")}
             />
             <MetricCard
               icon="ph:sparkle"
@@ -144,6 +190,7 @@ export default async function DailyReportPage({ params }: Props) {
               label="Familiar updates"
               caption="From your agents"
               accent="lavender"
+              trend={trendFor("familiars")}
             />
             <MetricCard
               icon="ph:graph-bold"
@@ -151,7 +198,28 @@ export default async function DailyReportPage({ params }: Props) {
               label="Sessions updated"
               caption="Coding & chat work"
               accent="green"
+              trend={trendFor("sessions")}
             />
+            {typeof stats.prsMerged === "number" ? (
+              <MetricCard
+                icon="ph:git-pull-request"
+                value={stats.prsMerged}
+                label="PRs merged"
+                caption="Shipped to main"
+                accent="blue"
+                trend={trendFor("prsMerged")}
+              />
+            ) : null}
+            {typeof stats.cardsCompleted === "number" ? (
+              <MetricCard
+                icon="ph:kanban-bold"
+                value={stats.cardsCompleted}
+                label="Cards completed"
+                caption="Task work finished"
+                accent="amber"
+                trend={trendFor("cardsCompleted")}
+              />
+            ) : null}
           </section>
         ) : null}
 
@@ -192,8 +260,75 @@ export default async function DailyReportPage({ params }: Props) {
           </section>
         ) : null}
 
-        {/* Sessions — recovered from the frozen summary body (daemon-backed). */}
-        {recentSessions.length > 0 ? (
+        {/* Shipped — PRs merged during this day (day-in-review facts). */}
+        {report?.prsMerged && report.prsMerged.length > 0 ? (
+          <section className="dr-section" aria-label="Merged pull requests">
+            <SectionHead
+              icon="ph:git-pull-request"
+              title="Merged pull requests"
+              count={report.prsMerged.length}
+            />
+            <ShippedTable rows={report.prsMerged} nowMs={Date.now()} />
+          </section>
+        ) : null}
+
+        {/* Sessions grouped by project (structured facts), falling back to the
+            flat list recovered from the frozen body on pre-Phase-B reports. */}
+        {report?.sessionGroups && report.sessionGroups.length > 0 ? (
+          <section className="dr-section" aria-label="Sessions by project">
+            <SectionHead
+              icon="ph:graph-bold"
+              title="Sessions by project"
+              count={report.sessionGroups.length}
+            />
+            <div className="dr-groups">
+              {report.sessionGroups.map((group) => (
+                <div key={group.key} className="dr-group">
+                  <div className="dr-group__head">
+                    <span className="dr-group__label">
+                      <Icon name="ph:code-bold" aria-hidden />
+                      {group.label}
+                    </span>
+                    {group.additions + group.deletions > 0 ? (
+                      <span className="dr-diffstat">
+                        <span className="dr-diffstat__add">+{group.additions}</span>
+                        <span className="dr-diffstat__del">-{group.deletions}</span>
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="dr-list">
+                    {group.sessions.map((session) => (
+                      <div
+                        key={session.id}
+                        className="dr-row"
+                        style={{ ["--row-accent" as string]: "var(--color-success)" }}
+                      >
+                        <span className="dr-row__icon">
+                          <Icon name="ph:code-bold" aria-hidden />
+                        </span>
+                        <span className="dr-row__body">
+                          <span className="dr-row__title">{session.title}</span>
+                        </span>
+                        {session.pr?.url ? (
+                          <a
+                            className="dr-pr-chip"
+                            href={session.pr.url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <Icon name="ph:git-pull-request" aria-hidden />
+                            {session.pr.repo?.split("/").pop() ?? session.pr.repo}
+                            {typeof session.pr.number === "number" ? `#${session.pr.number}` : ""}
+                          </a>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : recentSessions.length > 0 ? (
           <section className="dr-section" aria-label="Recent sessions">
             <SectionHead
               icon="ph:graph-bold"
@@ -215,6 +350,41 @@ export default async function DailyReportPage({ params }: Props) {
           </section>
         ) : null}
 
+        {/* Board cards finished today. */}
+        {report?.cardsCompleted && report.cardsCompleted.length > 0 ? (
+          <section className="dr-section" aria-label="Cards completed">
+            <SectionHead
+              icon="ph:kanban-bold"
+              title="Cards completed"
+              count={report.cardsCompleted.length}
+            />
+            <div className="dr-list">
+              {report.cardsCompleted.map((card) => (
+                <a
+                  key={card.id}
+                  className="dr-row"
+                  href={`/#card-${card.id}`}
+                  style={{ ["--row-accent" as string]: "var(--color-warning)" }}
+                >
+                  <span className="dr-row__icon">
+                    <Icon name="ph:kanban-bold" aria-hidden />
+                  </span>
+                  <span className="dr-row__body">
+                    <span className="dr-row__title">{card.title}</span>
+                    <span className="dr-row__metaline">
+                      <span className="dr-row__time">completed {relativeTime(card.completedAt)}</span>
+                    </span>
+                  </span>
+                  <span className="dr-row__open">
+                    <span>Open</span>
+                    <Icon name="ph:arrow-right-bold" aria-hidden />
+                  </span>
+                </a>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <section
           className="dr-section"
           aria-label="Summary"
@@ -222,7 +392,27 @@ export default async function DailyReportPage({ params }: Props) {
         >
           <div className="dr-panel">
             <h2 className="dr-panel__title">Summary</h2>
-            <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>{item.body}</p>
+            {item.media?.narrative?.text ? (
+              <>
+                <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>
+                  {/* Narratives stored before the pipeline stripped the
+                      piggybacked next-paths block are cleaned at render. */}
+                  {extractNextPaths(item.media.narrative.text).visible}
+                </p>
+                <p className="dr-narrative-byline">
+                  <Icon name="ph:sparkle" aria-hidden />
+                  Written by {item.media.narrative.familiarName || "a familiar"}
+                  {" · "}
+                  {relativeTime(item.media.narrative.generatedAt)}
+                </p>
+                <h3 className="dr-panel__subtitle">By the numbers</h3>
+                <p className="dr-summary-body dr-summary-body--muted" style={{ whiteSpace: "pre-line" }}>
+                  {item.body}
+                </p>
+              </>
+            ) : (
+              <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>{item.body}</p>
+            )}
           </div>
           {item.media?.imageUrl ? (
             <img
@@ -238,7 +428,7 @@ export default async function DailyReportPage({ params }: Props) {
           <div className="dr-quicklinks">
             <QuickLink href="/dashboard" icon="ph:squares-four" label="Dashboard" sub="Overview & reports" />
             <QuickLink href="/" icon="ph:house-bold" label="Home" sub="Your cave" />
-            <QuickLink href="/#card-" icon="ph:kanban-bold" label="Board" sub="Cards & tasks" />
+            <QuickLink href="/#card-" icon="ph:kanban-bold" label="Tasks" sub="Cards & tasks" />
             <QuickLink href="/" icon="ph:calendar-bold" label="Calendar" sub="Reminders & agenda" />
           </div>
         </section>
@@ -249,6 +439,7 @@ export default async function DailyReportPage({ params }: Props) {
           stays live.
         </footer>
       </div>
-    </main>
+    </div>
+    </AnalyticsPageShell>
   );
 }

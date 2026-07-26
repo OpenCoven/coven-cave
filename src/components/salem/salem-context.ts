@@ -136,12 +136,12 @@ export const SALEM_PRELOAD_CONTEXT: SalemPreloadContext = {
     {
       id: "sessions",
       label: "Sessions",
-      purpose: "Harness sessions across OpenClaw, Codex, Claude Code, Hermes, and future adapters.",
+      purpose: "Harness sessions across OpenClaw, Codex, Claude Code, Copilot, Hermes, and future adapters.",
     },
     {
       id: "tasks",
       label: "Tasks",
-      purpose: "Workboard cards, familiar assignment, and execution tracking.",
+      purpose: "Task cards, familiar assignment, and execution tracking.",
     },
     {
       id: "roles",

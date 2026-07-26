@@ -2,7 +2,7 @@ id: tag-and-organize
 version: 0.1.0
 name: Tag And Organize
 summary: Normalize library metadata, tags, titles, collections, and retrieval paths without creating tag noise.
-familiar: sage
+familiar: research
 pattern: classify-and-act
 tags:
   - library
@@ -25,28 +25,28 @@ steps:
   - id: scan-items
     kind: agent
     name: Scan items
-    uses: sage
+    uses: research
     summary: Read target library entries, current tags, collections, titles, and statuses.
     requires:
       - input
   - id: normalize-metadata
     kind: agent
     name: Normalize metadata
-    uses: sage
+    uses: research
     summary: Standardize titles, source names, status fields, and collection placement.
     requires:
       - scan-items
   - id: choose-tags
     kind: agent
     name: Choose tags
-    uses: sage
+    uses: research
     summary: Apply fewer precise tags optimized for retrieval, not decoration.
     requires:
       - normalize-metadata
   - id: conflict-check
     kind: agent
     name: Conflict check
-    uses: sage
+    uses: research
     summary: Detect duplicate entries, dead links, ambiguous categories, and destructive edits.
     requires:
       - choose-tags

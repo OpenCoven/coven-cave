@@ -1,15 +1,56 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Icon } from "@/lib/icon";
-import { relativeTime } from "@/lib/relative-time";
+// The GitHub surface's styles (every `gh-*` class) live in board.css. Import it
+// here so the surface is styled even when it loads before the Board surface —
+// both views are code-split, and board.css was previously only pulled in by
+// board-view, so opening GitHub first left this surface unstyled.
+import "@/styles/board.css";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
+import {
+  Group,
+  Panel,
+  Separator,
+  useDefaultLayout,
+  type PanelImperativeHandle,
+} from "react-resizable-panels";
+import { SeparatorHandle } from "@/components/ui/separator-handle";
+import { useIsMobile } from "@/lib/use-viewport";
+import { useAppPreferences } from "@/lib/app-preferences";
+import { Icon, type IconName } from "@/lib/icon";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { EmptyState } from "@/components/ui/empty-state";
+import { useArmedConfirm } from "@/lib/use-armed-confirm";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
+import { SkeletonRows } from "@/components/ui/skeleton";
+import { StandardSelect } from "@/components/ui/select";
+import { arrayContentEqual } from "@/lib/array-content-equal";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { useCopy } from "@/lib/use-copy";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
-import type { Card, CardStatus } from "@/lib/cave-board-types";
+import type { Card } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
+import type { GitHubItemTarget } from "@/lib/github-item-url";
+import { githubItemMatchesQuery } from "@/lib/github-search";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { DiffHunk } from "@/components/gh-diff-view";
+import { GhReviewActions } from "@/components/gh-review-actions";
 import { gfmAutolink } from "@/lib/gfm-autolink";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
@@ -17,153 +58,73 @@ import {
   type PopoverMode,
 } from "@/components/github-action-popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-type ActivityResult = {
-  ok: true;
-  authed: boolean;
-  login: string | null;
-  items: GitHubItem[];
-  rateLimit: { remaining: number; limit: number } | null;
-};
-
-type PatStatus = { hasPat: boolean; login: string | null };
-
-type Filter = "all" | "pr" | "review_request" | "issue";
-
-type SortKey = "kind" | "repo" | "title" | "tasks" | "updatedAt";
-type SortDir = "asc" | "desc";
-
-type GroupBy = "none" | "org" | "repo";
-
-/** `item.repo` is "owner/name" — the organization is the slash prefix. */
-function orgOf(repo: string): string {
-  const i = repo.indexOf("/");
-  return i === -1 ? repo : repo.slice(0, i);
-}
+import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
+import { openExternalUrl } from "@/lib/open-external";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import {
+  GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER, STATUS_DOT_COLOR,
+  linkedCardsForItem, orgOf, useCards, useFamiliars,
+  type ActivityResult, type Filter, type GroupBy, type PatStatus, type SortKey,
+} from "./github-view-data";
 
 type Props = {
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard?: (cardId: string) => void;
+  /** Refresh the shell's cached GitHub assignment/session enrichment. */
+  onTasksRefresh?: () => void;
+  /** Deep-link target from a GitHub-event inbox notification — opens that
+   *  PR/issue's detail natively, even when it isn't in the activity list. */
+  initialTarget?: GitHubItemTarget | null;
+  /** When set, the host owns the content filter (e.g. the Code Workshop's
+   *  PRs/Issues/Reviews top tabs). The view is driven to this filter and hides
+   *  its own filter control to avoid a redundant second switch. */
+  initialFilter?: Filter | null;
 };
+
+type ActivityPayload = ActivityResult | { ok: false; error?: string };
 
 // ── Data hooks ─────────────────────────────────────────────────────────────────
 
-function useFamiliars(): Familiar[] {
-  const [familiars, setFamiliars] = useState<Familiar[]>([]);
-  useEffect(() => {
-    fetch("/api/familiars")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.ok && Array.isArray(data.familiars)) {
-          setFamiliars(data.familiars as Familiar[]);
-        }
-      })
-      .catch(() => {});
-  }, []);
-  return familiars;
-}
-
-function useCards(): { cards: Card[]; reload: () => void } {
-  const [cards, setCards] = useState<Card[]>([]);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/board")
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data?.ok && Array.isArray(data.cards)) {
-          setCards(data.cards as Card[]);
-        }
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [tick]);
-  return { cards, reload: () => setTick((t) => t + 1) };
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const KIND_ICON: Record<string, "ph:git-pull-request" | "ph:circle-dashed" | "ph:bell" | "ph:github-logo"> = {
-  pr: "ph:git-pull-request",
-  issue: "ph:circle-dashed",
-  review_request: "ph:git-pull-request",
-  notification: "ph:bell",
-};
-
-const KIND_LABEL: Record<string, string> = {
-  pr: "PR",
-  issue: "Issue",
-  review_request: "Review",
-  notification: "Notif",
-};
-
-const KIND_DETAIL_LABEL: Record<string, string> = {
-  pr: "Pull request",
-  issue: "Issue",
-  review_request: "Review request",
-  notification: "Notification",
-};
-
-const KIND_COLOR: Record<string, string> = {
-  pr: "var(--color-success)",
-  issue: "var(--accent-presence)",
-  review_request: "var(--color-warning)",
-  notification: "var(--text-muted)",
-};
-
-const KIND_ORDER: Record<string, number> = {
-  review_request: 0,
-  pr: 1,
-  issue: 2,
-  notification: 3,
-};
-
-const STATUS_DOT_COLOR: Record<CardStatus, string> = {
-  backlog: "var(--text-muted)",
-  inbox: "var(--accent-presence)",
-  running: "var(--color-warning)",
-  review: "var(--color-warning)",
-  blocked: "var(--color-danger)",
-  done: "var(--color-success)",
-};
-
-function linkedCardsForItem(cards: Card[], item: GitHubItem): Card[] {
-  const url = item.url.trim().toLowerCase();
-  const id = item.id.trim().toLowerCase();
-  return cards.filter((c) =>
-    (c.github ?? []).some(
-      (g) =>
-        g.url.trim().toLowerCase() === url ||
-        (id && g.id.trim().toLowerCase() === id),
-    ),
-  );
-}
-
-// ── PAT Setup Modal ───────────────────────────────────────────────────────────
 
 function PatSetupModal({
   onSaved,
   onClose,
   username,
+  hasPat = false,
+  canRemoveStoredPat = false,
 }: {
-  onSaved: (login: string, hasPat: boolean) => void;
+  onSaved: () => void;
   onClose: () => void;
   username: string | null;
+  /** A GitHub credential is configured, including an external launcher token. */
+  hasPat?: boolean;
+  /** Only Cave-managed credentials can be removed through the local API. */
+  canRemoveStoredPat?: boolean;
 }) {
   const [pat, setPat] = useState("");
   const [usernameInput, setUsernameInput] = useState(username ?? "");
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const removeConfirm = useArmedConfirm();
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+  // While a save is in flight, dismissal is deferred: closing mid-save would
+  // unmount under the pending setStates and leave the user unsure whether the
+  // PAT persisted (cave-b8ba).
+  const savingRef = useRef(false);
+  savingRef.current = saving;
+  const closeUnlessSaving = () => {
+    if (!savingRef.current) onClose();
+  };
   // Trap Tab/Shift+Tab inside the modal and close on Escape. focusFirst is off
   // so the username input's focus effect above keeps the initial focus.
-  useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
+  useFocusTrap(true, dialogRef, { onEscape: closeUnlessSaving, focusFirst: false });
 
   async function save() {
     const trimmedPat = pat.trim();
@@ -191,7 +152,8 @@ function PatSetupModal({
         setError(data?.error ?? "Failed to save. Check that your PAT has read:user and repo scopes.");
         return;
       }
-      onSaved(data.login ?? trimmedUser, !!trimmedPat);
+      invalidateSurfaceResources("github:pat", "github:activity");
+      onSaved();
     } catch {
       setError("Network error — please try again.");
     } finally {
@@ -203,7 +165,7 @@ function PatSetupModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
       role="presentation"
-      onClick={onClose}
+      onClick={closeUnlessSaving}
     >
       <div
         ref={dialogRef}
@@ -212,27 +174,25 @@ function PatSetupModal({
         aria-modal="true"
         aria-labelledby="github-pat-modal-title"
         onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-md rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-6 shadow-2xl"
+        className="gh-pat-dialog"
       >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Icon name="ph:github-logo" width={18} className="text-[var(--text-secondary)]" />
-            <h3 id="github-pat-modal-title" className="text-[15px] font-semibold">Connect GitHub</h3>
+            <h3 id="github-pat-modal-title" className="text-[length:var(--text-md)] font-semibold">Connect GitHub</h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
+          <IconButton
+            icon="ph:x"
+            size="sm"
             aria-label="Close"
-            className="rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          >
-            <Icon name="ph:x" width={14} />
-          </button>
+            onClick={onClose}
+          />
         </div>
 
-        <p className="text-[12px] text-[var(--text-muted)] mb-1">
+        <p className="text-[length:var(--text-sm)] text-[var(--text-muted)] mb-1">
           Enter your GitHub username to pull live public data (free, no auth needed).
         </p>
-        <p className="text-[12px] text-[var(--text-muted)] mb-4">
+        <p className="text-[length:var(--text-sm)] text-[var(--text-muted)] mb-4">
           Optionally add a Personal Access Token to unlock private repos and review requests.
           Your PAT is stored only on this machine — never synced, never shared.
         </p>
@@ -244,7 +204,7 @@ function PatSetupModal({
           }}
         >
           <div className="mb-3">
-            <label htmlFor="gh-pat-username" className="block text-[11px] font-medium text-[var(--text-secondary)] mb-1.5">
+            <label htmlFor="gh-pat-username" className="block text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] mb-1.5">
               GitHub username
             </label>
             <input
@@ -256,12 +216,12 @@ function PatSetupModal({
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
               placeholder="your-username"
-              className="w-full rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
+              className="gh-input"
             />
           </div>
 
           <div className="mb-2">
-            <label htmlFor="gh-pat-token" className="block text-[11px] font-medium text-[var(--text-secondary)] mb-1.5">
+            <label htmlFor="gh-pat-token" className="block text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] mb-1.5">
               Personal Access Token <span className="font-normal text-[var(--text-muted)]">(optional — for private repos)</span>
             </label>
             <input
@@ -272,32 +232,77 @@ function PatSetupModal({
               value={pat}
               onChange={(e) => setPat(e.target.value)}
               placeholder="ghp_…"
-              className="w-full rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
+              className="gh-input"
             />
           </div>
 
           {error && (
-            <p className="mb-3 text-[11px] text-[var(--color-danger)]">{error}</p>
+            <p className="mb-3 text-[length:var(--text-xs)] text-[var(--color-danger)]">{error}</p>
           )}
 
           <div className="flex items-center justify-between mt-4">
-            <a
-              href="https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[11px] text-[var(--accent-presence)] hover:underline"
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => void openExternalUrl(GITHUB_PAT_URL)}
             >
               Generate a PAT on GitHub →
-            </a>
-            <button
+            </Button>
+            <Button
               type="submit"
+              variant="primary"
+              size="sm"
               disabled={(!pat.trim() && !usernameInput.trim()) || saving}
-              className="rounded-lg bg-[var(--accent-presence)] px-4 py-1.5 text-[12px] font-medium text-white disabled:opacity-40 hover:opacity-90 transition-opacity"
+              loading={saving}
             >
               {saving ? "Verifying…" : "Save"}
-            </button>
+            </Button>
           </div>
         </form>
+
+        {canRemoveStoredPat && (
+          <div className="mt-3 border-t border-[var(--border-hairline)] pt-3">
+            <Button
+              variant="ghost"
+              size="xs"
+              disabled={removing || saving}
+              onClick={() => {
+                if (removing) return;
+                // Two-step, matching the app's armed-confirm standard (cave-w96h).
+                removeConfirm.trigger(() => {
+                  setRemoving(true);
+                  setError(null);
+                  void (async () => {
+                    try {
+                      const res = await fetch("/api/github/pat", { method: "DELETE" });
+                      const data = await res.json().catch(() => null);
+                      if (!res.ok || data?.ok === false) {
+                        setError(data?.error ?? "Couldn't remove the token.");
+                        return;
+                      }
+                      invalidateSurfaceResources("github:pat", "github:activity");
+                      onSaved();
+                    } catch {
+                      setError("Network error — please try again.");
+                    } finally {
+                      setRemoving(false);
+                    }
+                  })();
+                });
+              }}
+            >
+              {removing ? "Removing…" : removeConfirm.armed ? "Really remove?" : "Remove stored token"}
+            </Button>
+            <p className="mt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+              Drops back to public data for @{usernameInput.trim() || username || "…"}.
+            </p>
+          </div>
+        )}
+        {hasPat && !canRemoveStoredPat && (
+          <p className="mt-3 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+            GitHub authentication is supplied by the launch environment; manage that credential outside Cave.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -344,6 +349,8 @@ function OpenChatAction({
   linkedCards,
   familiars,
   cards,
+  familiarsFailed = false,
+  cardsFailed = false,
   onJumpToSession,
   onAfterLink,
 }: {
@@ -351,6 +358,8 @@ function OpenChatAction({
   linkedCards: Card[];
   familiars: Familiar[];
   cards: Card[];
+  familiarsFailed?: boolean;
+  cardsFailed?: boolean;
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onAfterLink: () => void;
 }) {
@@ -429,16 +438,16 @@ function OpenChatAction({
 
   return (
     <div className="gh-action-wrap">
-      <button
-        type="button"
+      <Button
+        size="xs"
+        variant="secondary"
+        leadingIcon="ph:chat-circle-dots"
         onClick={handleClick}
         disabled={busy}
         title={title}
-        className="gh-action-btn"
       >
-        <Icon name="ph:chat-circle-dots" width={12} />
-        <span className="gh-action-btn-label">{label}</span>
-      </button>
+        {label}
+      </Button>
 
       {error && <span className="gh-action-error" role="img" aria-label={`Error: ${error}`} title={error}>!</span>}
 
@@ -484,11 +493,107 @@ function OpenChatAction({
             mode="chat"
             item={item}
             familiars={familiars}
+            familiarsFailed={familiarsFailed}
             cards={cards}
+            cardsFailed={cardsFailed}
             onClose={() => setPopoverOpen(false)}
           />
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Safe merge action ─────────────────────────────────────────────────────────
+
+function SafeMergeAction({
+  item,
+  linkedCards,
+  familiars,
+}: {
+  item: GitHubItem;
+  linkedCards: Card[];
+  familiars: Familiar[];
+}) {
+  const [busy, setBusy] = useState(false);
+  const { announce } = useAnnouncer();
+  const [error, setError] = useState<string | null>(null);
+  if (item.kind !== "pr" && item.kind !== "review_request") return null;
+
+  const linkedCard = linkedCards.find((card) => card.cwd) ?? linkedCards[0] ?? null;
+  const familiarId = linkedCard?.familiarId ?? familiars[0]?.id ?? null;
+
+  async function startSafeMerge(e: React.MouseEvent) {
+    e.stopPropagation();
+    setBusy(true);
+    setError(null);
+    let safeMergeRoot: string | null = linkedCard?.cwd ?? null;
+    let worktreeLine =
+      "Worktree: no linked local project root was available; resolve the repo root before editing.";
+
+    try {
+      if (linkedCard?.cwd) {
+        const res = await fetch("/api/github/worktree", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectRoot: linkedCard.cwd,
+            kind: item.kind,
+            number: item.number ?? null,
+            title: item.title,
+          }),
+        });
+        const json = (await res.json().catch(() => null)) as {
+          ok?: boolean;
+          worktree?: string;
+          branch?: string;
+          created?: boolean;
+          error?: string;
+        } | null;
+        if (!res.ok || !json?.ok) {
+          throw new Error(json?.error ?? `worktree HTTP ${res.status}`);
+        }
+        safeMergeRoot = typeof json.worktree === "string" && json.worktree ? json.worktree : linkedCard.cwd;
+        worktreeLine = `Worktree: ${json.worktree} (${json.created ? "created" : "reused"}). Branch: ${json.branch}.`;
+        announce(`Worktree ${json.created ? "created" : "reused"} for the safe merge.`);
+      }
+
+      const initialPrompt = [
+        `**Safely merge this PR: ${item.title}**`,
+        `Repo: \`${item.repo}\`${item.number != null ? ` #${item.number}` : ""}`,
+        `URL: ${item.url}`,
+        worktreeLine,
+        "",
+        "Prefer the worktree path over switching branches in the shared checkout.",
+        "Fetch latest refs, inspect the diff, verify mergeability, run the relevant checks, and only merge after verification evidence is clear.",
+        "Use the repository's PR merge flow when available; do not push directly to main unless explicitly instructed.",
+      ].join("\n");
+
+      window.dispatchEvent(
+        new CustomEvent("cave:agents-new-chat", {
+          detail: { familiarId, projectRoot: safeMergeRoot ?? undefined, initialPrompt },
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "safe merge setup failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="gh-action-wrap">
+      <Button
+        size="xs"
+        variant="secondary"
+        leadingIcon="ph:git-merge"
+        onClick={startSafeMerge}
+        disabled={busy}
+        title="Safely merge from a worktree"
+      >
+        {busy ? "Prep…" : "Merge"}
+      </Button>
+      {error && <span className="gh-action-error" role="img" aria-label={`Error: ${error}`} title={error}>!</span>}
     </div>
   );
 }
@@ -499,11 +604,15 @@ function AddToBoardAction({
   item,
   familiars,
   cards,
+  familiarsFailed = false,
+  cardsFailed = false,
   onAfterLink,
 }: {
   item: GitHubItem;
   familiars: Familiar[];
   cards: Card[];
+  familiarsFailed?: boolean;
+  cardsFailed?: boolean;
   onAfterLink: () => void;
 }) {
   const [mode, setMode] = useState<PopoverMode | null>(null);
@@ -514,28 +623,30 @@ function AddToBoardAction({
   }
   function close() {
     setMode(null);
-    onAfterLink();
   }
 
   return (
     <div className="gh-action-wrap">
-      <button
-        type="button"
+      <Button
+        size="xs"
+        variant="secondary"
+        leadingIcon="ph:kanban"
         onClick={(e) => open("board", e)}
         title="Add to task"
-        className="gh-action-btn"
       >
-        <Icon name="ph:kanban" width={12} />
-        <span className="gh-action-btn-label">Task</span>
-      </button>
+        Task
+      </Button>
       {mode && (
         <div className="gh-action-popover gh-action-popover--wide" onClick={(e) => e.stopPropagation()}>
           <GitHubActionPopover
             mode={mode}
             item={item}
             familiars={familiars}
+            familiarsFailed={familiarsFailed}
             cards={cards}
+            cardsFailed={cardsFailed}
             onClose={close}
+            onComplete={onAfterLink}
           />
         </div>
       )}
@@ -587,19 +698,22 @@ function useGitHubItemDetail(item: GitHubItem | null): DetailState {
       setState({ status: "idle" });
       return;
     }
-    let cancelled = false;
+    // AbortController (not a cancelled flag): arrowing through the list must
+    // actually cancel the left-behind request, not just ignore its response —
+    // uncancelled fetches burn the 60/hr unauthenticated rate limit (cave-b8ba).
+    const ctl = new AbortController();
     setState({ status: "loading" });
-    fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`)
+    fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`, { signal: ctl.signal })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return;
+        if (ctl.signal.aborted) return;
         if (data?.ok) setState({ status: "ready", detail: data as ItemDetail });
         else setState({ status: "error" });
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error" });
+        if (!ctl.signal.aborted) setState({ status: "error" });
       });
-    return () => { cancelled = true; };
+    return () => ctl.abort();
   }, [repo, number]);
 
   return state;
@@ -607,7 +721,7 @@ function useGitHubItemDetail(item: GitHubItem | null): DetailState {
 
 /** A tiny copy-to-clipboard affordance for the issue number. */
 function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopy(1200);
   return (
     <button
       type="button"
@@ -616,13 +730,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
       aria-label={label}
       onClick={(e) => {
         e.stopPropagation();
-        navigator.clipboard?.writeText(value).then(
-          () => {
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1200);
-          },
-          () => {},
-        );
+        copy(value);
       }}
     >
       <Icon name={copied ? "ph:check" : "ph:copy"} width={11} />
@@ -630,10 +738,242 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
-/** GitHub person avatar + login. Falls back to a monogram when no avatar. */
-function PersonChip({ person, prefix }: { person: GitHubPerson; prefix?: string }) {
+// ── User profile viewer (click a person → GitHub profile card) ───────────────
+
+type UserProfile = {
+  ok: true;
+  login: string;
+  name: string | null;
+  avatarUrl: string | null;
+  htmlUrl: string | null;
+  bio: string | null;
+  company: string | null;
+  location: string | null;
+  blog: string | null;
+  twitter: string | null;
+  type: string;
+  followers: number;
+  following: number;
+  publicRepos: number;
+  createdAt: string | null;
+};
+
+type ProfileViewer = { open: (login: string, anchor: HTMLElement) => void };
+const ProfileViewerContext = createContext<ProfileViewer | null>(null);
+/** Real GitHub logins only — bot logins ("x[bot]") have no profile to open. */
+const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
+
+type ProfileState =
+  | { status: "loading" }
+  | { status: "ready"; profile: UserProfile }
+  | { status: "error" };
+
+/** Compact number for follower/repo counts (1200 → "1.2k"). */
+function compactCount(n: number): string {
+  if (n < 1000) return String(n);
+  const k = n / 1000;
+  return `${k >= 100 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, "")}k`;
+}
+
+// Session-lifetime profile cache: reopening a person's card is instant and
+// doesn't respend the GitHub rate limit. Profiles change rarely enough that a
+// page-load-scoped cache never going stale in practice is the right trade.
+const profileCache = new Map<string, UserProfile>();
+
+/**
+ * Floating GitHub profile card. Anchored under the clicked chip, clamped to the
+ * viewport, focus-trapped, and dismissed on Escape / outside click. Fetches the
+ * public profile on open (cache-first); a since-closed selection's response is
+ * dropped.
+ */
+function UserProfileCard({
+  login,
+  anchor,
+  onClose,
+}: {
+  login: string;
+  anchor: DOMRect;
+  onClose: () => void;
+}) {
+  const [state, setState] = useState<ProfileState>({ status: "loading" });
+  const cardRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(true, cardRef, { onEscape: onClose, focusFirst: false });
+
+  useEffect(() => {
+    const cached = profileCache.get(login);
+    if (cached) {
+      setState({ status: "ready", profile: cached });
+      return;
+    }
+    const ctl = new AbortController();
+    setState({ status: "loading" });
+    fetch(`/api/github/user?login=${encodeURIComponent(login)}`, { signal: ctl.signal })
+      .then((r) => r.json())
+      .then((data) => {
+        if (ctl.signal.aborted) return;
+        if (data?.ok) {
+          const profile = data as UserProfile;
+          profileCache.set(login, profile);
+          setState({ status: "ready", profile });
+        } else setState({ status: "error" });
+      })
+      .catch(() => { if (!ctl.signal.aborted) setState({ status: "error" }); });
+    return () => ctl.abort();
+  }, [login]);
+
+  // Outside-click dismissal (deferred one tick so the opening click doesn't
+  // immediately close it).
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) onClose();
+    }
+    const id = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 30);
+    return () => { window.clearTimeout(id); document.removeEventListener("mousedown", onDoc); };
+  }, [onClose]);
+
+  // Clamp to the viewport: prefer opening just below the chip, flip up if it
+  // would overflow the bottom, and keep a gutter from the right edge.
+  const CARD_W = 288;
+  const left = Math.max(8, Math.min(anchor.left, window.innerWidth - CARD_W - 8));
+  const below = anchor.bottom + 6;
+  const flipUp = below + 210 > window.innerHeight;
+  const style: React.CSSProperties = flipUp
+    ? { left, bottom: window.innerHeight - anchor.top + 6, width: CARD_W }
+    : { left, top: below, width: CARD_W };
+
+  const p = state.status === "ready" ? state.profile : null;
+
   return (
-    <span className="gh-person">
+    <div
+      ref={cardRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`GitHub profile for ${login}`}
+      tabIndex={-1}
+      className="gh-profile-card"
+      style={style}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {state.status === "loading" ? (
+        <div className="gh-profile-loading">Loading @{login}…</div>
+      ) : state.status === "error" || !p ? (
+        <div className="gh-profile-error">
+          <p>Couldn’t load @{login}’s profile.</p>
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:arrow-square-out"
+            onClick={() => openExternalUrl(`https://github.com/${login}`)}
+          >
+            Open on GitHub
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div className="gh-profile-head">
+            {p.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.avatarUrl} alt="" className="gh-profile-avatar" width={48} height={48} />
+            ) : (
+              <span className="gh-profile-avatar gh-profile-avatar--fallback" aria-hidden>
+                {p.login.slice(0, 1).toUpperCase()}
+              </span>
+            )}
+            <div className="gh-profile-id">
+              {p.name && <strong className="gh-profile-name">{p.name}</strong>}
+              <span className="gh-profile-login">
+                @{p.login}
+                {p.type === "Organization" && <span className="gh-profile-type">org</span>}
+              </span>
+            </div>
+          </div>
+
+          {p.bio && <p className="gh-profile-bio">{p.bio}</p>}
+
+          <div className="gh-profile-stats">
+            <span><strong>{compactCount(p.followers)}</strong> followers</span>
+            <span><strong>{compactCount(p.following)}</strong> following</span>
+            <span><strong>{compactCount(p.publicRepos)}</strong> repos</span>
+          </div>
+
+          <div className="gh-profile-meta">
+            {p.company && (
+              <span title="Company"><Icon name="ph:users-three" width={12} />{p.company}</span>
+            )}
+            {p.location && (
+              <span title="Location"><Icon name="ph:globe" width={12} />{p.location}</span>
+            )}
+            {p.blog && (
+              <button
+                type="button"
+                className="gh-profile-link"
+                title={p.blog}
+                onClick={() => openExternalUrl(p.blog!)}
+              >
+                <Icon name="ph:link" width={12} />
+                {p.blog.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+              </button>
+            )}
+            {p.twitter && (
+              <button
+                type="button"
+                className="gh-profile-link"
+                title={`@${p.twitter} on X`}
+                onClick={() => openExternalUrl(`https://twitter.com/${p.twitter}`)}
+              >
+                <Icon name="ph:x-logo-bold" width={12} />@{p.twitter}
+              </button>
+            )}
+          </div>
+
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:github-logo"
+            onClick={() => openExternalUrl(p.htmlUrl ?? `https://github.com/${p.login}`)}
+          >
+            View full profile
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Owns the single open profile card; children open it via {@link useProfileViewer}. */
+function GitHubProfileProvider({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState<{ login: string; anchor: DOMRect } | null>(null);
+  const viewer = useMemo<ProfileViewer>(
+    () => ({
+      open: (login, el) => setOpen({ login, anchor: el.getBoundingClientRect() }),
+    }),
+    [],
+  );
+  return (
+    <ProfileViewerContext.Provider value={viewer}>
+      {children}
+      {/* Portal to <body> so the fixed-position card escapes the workspace's
+          transformed content area — otherwise `position:fixed` resolves against
+          that transformed ancestor and the card lands offset by the nav width. */}
+      {open && typeof document !== "undefined" &&
+        createPortal(
+          <UserProfileCard login={open.login} anchor={open.anchor} onClose={() => setOpen(null)} />,
+          document.body,
+        )}
+    </ProfileViewerContext.Provider>
+  );
+}
+
+/**
+ * GitHub person avatar + login. Falls back to a monogram when no avatar. When a
+ * profile viewer is in context and the login is a real user (not a bot), the
+ * chip becomes a button that opens the GitHub profile card.
+ */
+function PersonChip({ person, prefix }: { person: GitHubPerson; prefix?: string }) {
+  const viewer = useContext(ProfileViewerContext);
+  const clickable = viewer != null && LOGIN_RE.test(person.login);
+  const inner = (
+    <>
       {person.avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={person.avatarUrl} alt="" className="gh-person-avatar" width={16} height={16} />
@@ -643,17 +983,49 @@ function PersonChip({ person, prefix }: { person: GitHubPerson; prefix?: string 
         </span>
       )}
       <span className="gh-person-login">{prefix}{person.login}</span>
-    </span>
+    </>
+  );
+
+  if (!clickable) {
+    return <span className="gh-person">{inner}</span>;
+  }
+  return (
+    <button
+      type="button"
+      className="gh-person gh-person--button"
+      title={`View @${person.login}’s GitHub profile`}
+      aria-label={`View @${person.login}’s GitHub profile`}
+      onClick={(e) => {
+        e.stopPropagation();
+        viewer!.open(person.login, e.currentTarget);
+      }}
+    >
+      {inner}
+    </button>
   );
 }
 
-// ── Comments + review threads (read · resolve · tag a familiar) ───────────────
+// ── Comments + review threads (read · resolve · reply) ───────────────────────
+
+type GhReaction = { content: string; count: number };
 
 type GhComment = {
   id: string;
   author: GitHubPerson | null;
   body: string;
   createdAt: string | null;
+  url: string | null;
+  authorAssociation: string | null;
+  reactions?: GhReaction[];
+};
+
+/** PR review summary — APPROVED / CHANGES_REQUESTED / COMMENTED / DISMISSED. */
+type GhReview = {
+  id: string;
+  author: GitHubPerson | null;
+  state: string;
+  body: string;
+  submittedAt: string | null;
   url: string | null;
   authorAssociation: string | null;
 };
@@ -674,6 +1046,7 @@ type CommentsResult = {
   canResolve: boolean;
   issueComments: GhComment[];
   reviewThreads: GhReviewThread[];
+  reviews: GhReview[];
 };
 
 type CommentsState =
@@ -695,19 +1068,19 @@ function CommentHeader({ comment }: { comment: GhComment }) {
         <span className="gh-comment-assoc">{comment.authorAssociation.toLowerCase()}</span>
       )}
       {comment.createdAt && (
-        <span className="gh-comment-time" title={comment.createdAt}>
-          {relativeTime(comment.createdAt)}
-        </span>
+        <RelativeTime iso={comment.createdAt} className="gh-comment-time" />
       )}
       {comment.url && (
         <a
           href={comment.url}
-          target="_blank"
-          rel="noreferrer"
           className="gh-comment-link"
           title="Open this comment on GitHub"
           aria-label="Open this comment on GitHub"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (comment.url) openExternalUrl(comment.url);
+          }}
         >
           <Icon name="ph:arrow-square-out" width={11} />
         </a>
@@ -724,28 +1097,119 @@ function CommentBody({ comment, repo }: { comment: GhComment; repo: string }) {
   );
 }
 
+// GitHub reaction slugs → emoji glyph, for the reaction summary chips.
+const REACTION_EMOJI: Record<string, string> = {
+  "+1": "👍",
+  "-1": "👎",
+  laugh: "😄",
+  hooray: "🎉",
+  confused: "😕",
+  heart: "❤️",
+  rocket: "🚀",
+  eyes: "👀",
+};
+
+const REACTION_LABEL: Record<string, string> = {
+  "+1": "thumbs up",
+  "-1": "thumbs down",
+  laugh: "laugh",
+  hooray: "hooray",
+  confused: "confused",
+  heart: "heart",
+  rocket: "rocket",
+  eyes: "eyes",
+};
+
+/** Read-only reaction summary (emoji + count) under a comment. */
+function CommentReactions({ reactions }: { reactions?: GhReaction[] }) {
+  if (!reactions || reactions.length === 0) return null;
+  return (
+    <div className="gh-reactions" aria-label="Reactions">
+      {reactions.map((r) => (
+        <span
+          key={r.content}
+          className="gh-reaction"
+          title={`${r.count} ${r.content}`}
+          aria-label={`${r.count} ${REACTION_LABEL[r.content] ?? r.content} ${r.count === 1 ? "reaction" : "reactions"}`}
+        >
+          <span aria-hidden>{REACTION_EMOJI[r.content] ?? "•"}</span>
+          {r.count}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// PR review state → presentation. Only states GitHub actually submits appear.
+const REVIEW_STATE: Record<
+  string,
+  { icon: IconName; color: string; label: string; cls: string }
+> = {
+  APPROVED: { icon: "ph:check-circle-fill", color: "var(--color-success)", label: "approved these changes", cls: "is-approved" },
+  CHANGES_REQUESTED: { icon: "ph:x-circle-fill", color: "var(--color-danger)", label: "requested changes", cls: "is-changes" },
+  COMMENTED: { icon: "ph:chat-circle-dots", color: "var(--text-muted)", label: "reviewed", cls: "is-commented" },
+  DISMISSED: { icon: "ph:minus-circle", color: "var(--text-muted)", label: "dismissed a review", cls: "is-dismissed" },
+};
+
+/** A single PR review summary entry in the conversation timeline. */
+function ReviewEntry({ review, repo }: { review: GhReview; repo: string }) {
+  const cfg = REVIEW_STATE[review.state] ?? REVIEW_STATE.COMMENTED;
+  return (
+    <div className={`gh-review-entry ${cfg.cls}`}>
+      <div className="gh-comment-head">
+        <span className="gh-review-verdict" style={{ color: cfg.color }}>
+          <Icon name={cfg.icon} width={13} />
+        </span>
+        {review.author ? <PersonChip person={review.author} /> : <span className="gh-person-login">ghost</span>}
+        <span className="gh-review-verb">{cfg.label}</span>
+        {review.submittedAt && <RelativeTime iso={review.submittedAt} className="gh-comment-time" />}
+        {review.url && (
+          <a
+            href={review.url}
+            className="gh-comment-link"
+            title="Open this review on GitHub"
+            aria-label="Open this review on GitHub"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (review.url) openExternalUrl(review.url);
+            }}
+          >
+            <Icon name="ph:arrow-square-out" width={11} />
+          </a>
+        )}
+      </div>
+      {review.body.trim() && (
+        <MarkdownBlock text={gfmAutolink(review.body, { repo })} className="gh-comment-body" />
+      )}
+    </div>
+  );
+}
+
 /**
  * Reads the conversation timeline + inline PR review threads, resolves threads
- * (PAT only), and posts a reply with optional `@familiar` tagging. The whole
- * surface is reused verbatim by the native iOS app via the same API routes.
+ * (PAT only), and posts a reply. The whole surface is reused verbatim by the
+ * native iOS app via the same API routes.
  */
 function GitHubComments({
   item,
   detail,
-  familiars,
 }: {
   item: GitHubItem;
   detail: ItemDetail | null;
-  familiars: Familiar[];
 }) {
   const [state, setState] = useState<CommentsState>({ status: "idle" });
   const [tick, setTick] = useState(0);
   const [draft, setDraft] = useState("");
   const [posting, setPosting] = useState(false);
+  const { announce } = useAnnouncer();
   const [postError, setPostError] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
-  const [familiarPickerOpen, setFamiliarPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Optimistic thread-resolve flips awaiting API confirmation — applied over
+  // fetched data so a post-comment refetch during GitHub's read-after-write
+  // lag can't overwrite them (cave-b8ba). Confirmed entries drop out.
+  const pendingResolveRef = useRef(new Map<string, boolean>());
 
   const repo = item.repo;
   const number = item.number ?? null;
@@ -755,7 +1219,6 @@ function GitHubComments({
   useEffect(() => {
     setDraft("");
     setPostError(null);
-    setFamiliarPickerOpen(false);
   }, [repo, number]);
 
   useEffect(() => {
@@ -763,24 +1226,42 @@ function GitHubComments({
       setState({ status: "idle" });
       return;
     }
-    let cancelled = false;
+    const ctl = new AbortController();
     setState({ status: "loading" });
     fetch(
       `/api/github/comments?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}${isPull ? "&isPull=1" : ""}`,
+      { signal: ctl.signal },
     )
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return;
-        if (data?.ok) setState({ status: "ready", data: data as CommentsResult });
-        else setState({ status: "error" });
+        if (ctl.signal.aborted) return;
+        if (data?.ok) {
+          const result = data as CommentsResult;
+          const pending = pendingResolveRef.current;
+          if (pending.size > 0) {
+            result.reviewThreads = result.reviewThreads.map((t) => {
+              const want = pending.get(t.id);
+              if (want === undefined) return t;
+              if (t.isResolved === want) {
+                pending.delete(t.id); // API caught up — stop overriding
+                return t;
+              }
+              return { ...t, isResolved: want };
+            });
+          }
+          setState({ status: "ready", data: result });
+        } else setState({ status: "error" });
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error" });
+        if (!ctl.signal.aborted) setState({ status: "error" });
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => ctl.abort();
   }, [repo, number, isPull, tick]);
+
+  // A different PR's threads can't inherit stale overrides.
+  useEffect(() => {
+    pendingResolveRef.current.clear();
+  }, [repo, number]);
 
   const data = state.status === "ready" ? state.data : null;
   const canResolve = data?.canResolve ?? false;
@@ -791,9 +1272,28 @@ function GitHubComments({
   const resolvedThreads = threads.filter((t) => t.isResolved);
   const visibleThreads = showResolved ? threads : unresolvedThreads;
 
+  // Merge issue comments and PR review summaries into one chronological
+  // timeline so "X approved these changes" reads in-order with the discussion.
+  const reviews = data?.reviews ?? [];
+  const timeline: Array<
+    | { kind: "comment"; at: string; comment: GhComment }
+    | { kind: "review"; at: string; review: GhReview }
+  > = [
+    ...(data?.issueComments ?? []).map(
+      (c) => ({ kind: "comment" as const, at: c.createdAt ?? "", comment: c }),
+    ),
+    ...reviews.map((r) => ({ kind: "review" as const, at: r.submittedAt ?? "", review: r })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+
   async function toggleResolve(thread: GhReviewThread) {
     if (!canResolve || state.status !== "ready") return;
     const next = !thread.isResolved;
+    announce(next ? "Thread resolved." : "Thread unresolved.");
+    // Record the optimistic value: a post-comment refetch during GitHub's
+    // read-after-write lag would otherwise overwrite the flip with stale
+    // isResolved (cave-b8ba). The fetch handler applies pending overrides
+    // until the API confirms them.
+    pendingResolveRef.current.set(thread.id, next);
     // Optimistic flip — revert on failure.
     setState({
       status: "ready",
@@ -813,32 +1313,10 @@ function GitHubComments({
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? "failed");
     } catch {
-      // Revert by refetching the authoritative state.
+      // Revert by refetching the authoritative state (and stop overriding).
+      pendingResolveRef.current.delete(thread.id);
       setTick((n) => n + 1);
     }
-  }
-
-  function insertMention(familiar: Familiar) {
-    const handle = (familiar.name ?? familiar.display_name).replace(/\s+/g, "-");
-    const mention = `@${handle}`;
-    const el = textareaRef.current;
-    if (!el) {
-      setDraft((d) => (d ? `${d} ${mention} ` : `${mention} `));
-    } else {
-      const start = el.selectionStart ?? draft.length;
-      const end = el.selectionEnd ?? draft.length;
-      const before = draft.slice(0, start);
-      const after = draft.slice(end);
-      const spacer = before && !before.endsWith(" ") ? " " : "";
-      const next = `${before}${spacer}${mention} ${after}`;
-      setDraft(next);
-      requestAnimationFrame(() => {
-        el.focus();
-        const pos = before.length + spacer.length + mention.length + 1;
-        el.setSelectionRange(pos, pos);
-      });
-    }
-    setFamiliarPickerOpen(false);
   }
 
   async function postComment() {
@@ -859,6 +1337,7 @@ function GitHubComments({
       }
       setDraft("");
       setTick((n) => n + 1);
+      announce("Comment posted.");
     } catch (e) {
       setPostError(e instanceof Error ? e.message : "Network error");
     } finally {
@@ -936,14 +1415,13 @@ function GitHubComments({
                     )}
                   </div>
                   {thread.diffHunk && (
-                    <pre className="gh-thread-diff">
-                      {thread.diffHunk.split("\n").slice(-4).join("\n")}
-                    </pre>
+                    <DiffHunk hunk={thread.diffHunk} path={thread.path} previewLines={4} className="gh-thread-diff" />
                   )}
                   {thread.comments.map((c) => (
                     <div key={c.id} className="gh-comment gh-comment--inline">
                       <CommentHeader comment={c} />
                       <CommentBody comment={c} repo={repo} />
+                      <CommentReactions reactions={c.reactions} />
                     </div>
                   ))}
                 </div>
@@ -951,15 +1429,21 @@ function GitHubComments({
             </div>
           )}
 
-          {/* Conversation timeline. */}
-          {data && data.issueComments.length > 0 ? (
+          {/* Conversation timeline — issue comments and PR review summaries,
+              interleaved in chronological order. */}
+          {timeline.length > 0 ? (
             <div className="gh-comment-list">
-              {data.issueComments.map((c) => (
-                <div key={c.id} className="gh-comment">
-                  <CommentHeader comment={c} />
-                  <CommentBody comment={c} repo={repo} />
-                </div>
-              ))}
+              {timeline.map((entry) =>
+                entry.kind === "review" ? (
+                  <ReviewEntry key={`rv-${entry.review.id}`} review={entry.review} repo={repo} />
+                ) : (
+                  <div key={`c-${entry.comment.id}`} className="gh-comment">
+                    <CommentHeader comment={entry.comment} />
+                    <CommentBody comment={entry.comment} repo={repo} />
+                    <CommentReactions reactions={entry.comment.reactions} />
+                  </div>
+                ),
+              )}
             </div>
           ) : (
             isPull && threads.length > 0 ? null : <p className="gh-glass-muted">No comments yet.</p>
@@ -971,7 +1455,9 @@ function GitHubComments({
               <textarea
                 ref={textareaRef}
                 className="gh-composer-input"
-                placeholder="Reply… use @ to tag a familiar"
+                aria-label="Reply to this thread"
+                aria-keyshortcuts="Meta+Enter Control+Enter"
+                placeholder="Reply… (⌘↵ to send)"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -982,49 +1468,16 @@ function GitHubComments({
                 }}
                 rows={2}
               />
-              {postError && <p className="gh-composer-error">{postError}</p>}
+              {postError && <p className="gh-composer-error" role="alert">{postError}</p>}
               <div className="gh-composer-actions">
-                <div className="gh-composer-tag">
-                  <button
-                    type="button"
-                    className="gh-composer-tag-btn"
-                    onClick={() => setFamiliarPickerOpen((v) => !v)}
-                    aria-expanded={familiarPickerOpen}
-                    title="Tag a familiar"
-                    disabled={familiars.length === 0}
-                  >
-                    <Icon name="ph:at" width={12} />
-                    Tag familiar
-                  </button>
-                  {familiarPickerOpen && (
-                    <div className="gh-composer-tag-menu" role="menu">
-                      {familiars.map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          role="menuitem"
-                          className="gh-composer-tag-item"
-                          onClick={() => insertMention(f)}
-                        >
-                          <span
-                            className="gh-task-chip-dot"
-                            style={{ background: f.color ?? "var(--accent-presence)" }}
-                            aria-hidden
-                          />
-                          {f.display_name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="gh-composer-submit"
+                <Button
+                  size="sm"
+                  variant="primary"
                   onClick={() => void postComment()}
                   disabled={!draft.trim() || posting}
                 >
                   {posting ? "Posting…" : "Comment"}
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
@@ -1038,7 +1491,566 @@ function GitHubComments({
   );
 }
 
+// ── CI action details (per-PR check runs) ────────────────────────────────────
+
+type CheckRunDetail = {
+  id: string;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  detailsUrl: string | null;
+  appName: string | null;
+  appAvatarUrl: string | null;
+};
+
+type StatusDetail = {
+  context: string;
+  state: string;
+  description: string | null;
+  targetUrl: string | null;
+};
+
+type ChecksResult = {
+  ok: true;
+  authed: boolean;
+  sha: string;
+  rollup: "passing" | "failing" | "pending" | null;
+  runs: CheckRunDetail[];
+  statuses: StatusDetail[];
+};
+
+type ChecksState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; data: ChecksResult }
+  | { status: "error" };
+
+const CHECK_FAIL = new Set(["failure", "timed_out", "action_required", "startup_failure"]);
+const CHECK_SKIP = new Set(["neutral", "skipped"]);
+const CHECK_STALE = new Set(["cancelled", "stale"]);
+
+/** Map a check-run's status/conclusion to an icon, tint, and short verb. */
+function checkPresentation(status: string, conclusion: string | null): {
+  icon: IconName;
+  color: string;
+  bucket: "passed" | "failed" | "skipped" | "cancelled" | "running";
+} {
+  if (status !== "completed") {
+    return { icon: "ph:circle-dashed", color: "var(--color-warning)", bucket: "running" };
+  }
+  const c = conclusion ?? "";
+  if (c === "success") return { icon: "ph:check-circle-fill", color: "var(--color-success)", bucket: "passed" };
+  if (CHECK_FAIL.has(c)) return { icon: "ph:x-circle-fill", color: "var(--color-danger)", bucket: "failed" };
+  if (CHECK_SKIP.has(c)) return { icon: "ph:minus-circle", color: "var(--text-muted)", bucket: "skipped" };
+  if (CHECK_STALE.has(c)) return { icon: "ph:minus-circle", color: "var(--text-muted)", bucket: "cancelled" };
+  return { icon: "ph:circle", color: "var(--text-muted)", bucket: "skipped" };
+}
+
+/** Human duration between two ISO timestamps ("1m 20s", "12s"); null if unknown. */
+function checkDuration(startedAt: string | null, completedAt: string | null): string | null {
+  if (!startedAt || !completedAt) return null;
+  const ms = Date.parse(completedAt) - Date.parse(startedAt);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const secs = Math.round(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const rem = secs % 60;
+  return rem ? `${mins}m ${rem}s` : `${mins}m`;
+}
+
+function useGitHubChecks(item: GitHubItem | null, enabled: boolean): ChecksState {
+  const [state, setState] = useState<ChecksState>({ status: "idle" });
+  const [tick, setTick] = useState(0);
+  const repo = item?.repo ?? null;
+  const number = item?.number ?? null;
+  // Tracks the last-fetched PR so a live-refresh of the SAME PR is silent (no
+  // skeleton flash, list stays mounted) while switching PRs shows loading.
+  const keyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !repo || number == null) {
+      keyRef.current = null;
+      setState({ status: "idle" });
+      return;
+    }
+    const key = `${repo}#${number}`;
+    const silent = keyRef.current === key;
+    keyRef.current = key;
+    const ctl = new AbortController();
+    if (!silent) setState({ status: "loading" });
+    fetch(`/api/github/checks?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`, { signal: ctl.signal })
+      .then((r) => r.json())
+      .then((data) => {
+        if (ctl.signal.aborted) return;
+        if (data?.ok) setState({ status: "ready", data: data as ChecksResult });
+        else if (!silent) setState({ status: "error" }); // a failed refresh keeps the last good list
+      })
+      .catch(() => { if (!ctl.signal.aborted && !silent) setState({ status: "error" }); });
+    return () => ctl.abort();
+  }, [enabled, repo, number, tick]);
+
+  // Live-refresh while CI is still running: poll every 30s until the rollup
+  // leaves "pending". usePausablePoll (cave-e794) keeps the hidden-tab skip
+  // (a backgrounded tab doesn't spend rate limit) and adds an immediate
+  // refresh on return, so CI status is current the moment the tab comes back
+  // instead of up to 30s later.
+  const rollup = state.status === "ready" ? state.data.rollup : null;
+  usePausablePoll(() => setTick((t) => t + 1), 30_000, { enabled: rollup === "pending" });
+
+  return state;
+}
+
+/** Combined-status state → icon + tint (legacy commit statuses / contexts). */
+function statusPresentation(state: string): { icon: IconName; color: string } {
+  if (state === "success") return { icon: "ph:check-circle-fill", color: "var(--color-success)" };
+  if (state === "failure" || state === "error") return { icon: "ph:x-circle-fill", color: "var(--color-danger)" };
+  return { icon: "ph:circle-dashed", color: "var(--color-warning)" };
+}
+
+/**
+ * Expandable CI breakdown for the selected PR: a rollup summary line
+ * (passed/failed/running counts) over the individual GitHub Actions check-runs
+ * and legacy statuses, each with its timing and a link out to the run logs.
+ * PR-only; issues have no checks. Read-only, so no announcer.
+ */
+function GitHubChecks({ item }: { item: GitHubItem }) {
+  const isPull = item.kind === "pr" || item.kind === "review_request";
+  const state = useGitHubChecks(item, isPull);
+  const data = state.status === "ready" ? state.data : null;
+  const runs = data?.runs ?? [];
+  const statuses = data?.statuses ?? [];
+  const total = runs.length + statuses.length;
+
+  // Default the list open when something's wrong; collapse a clean run.
+  const [open, setOpen] = useState(false);
+  const rollup = data?.rollup ?? null;
+  useEffect(() => { setOpen(rollup === "failing"); }, [rollup, item.repo, item.number]);
+
+  if (!isPull) return null;
+  if (state.status === "idle") return null;
+
+  const buckets = runs.reduce(
+    (acc, r) => {
+      acc[checkPresentation(r.status, r.conclusion).bucket] += 1;
+      return acc;
+    },
+    { passed: 0, failed: 0, skipped: 0, cancelled: 0, running: 0 } as Record<string, number>,
+  );
+  const summary = [
+    buckets.passed ? `${buckets.passed} passed` : "",
+    buckets.failed ? `${buckets.failed} failed` : "",
+    buckets.running ? `${buckets.running} running` : "",
+    buckets.skipped ? `${buckets.skipped} skipped` : "",
+    buckets.cancelled ? `${buckets.cancelled} cancelled` : "",
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <div className="gh-glass-section gh-checks">
+      <div className="gh-glass-section-title gh-checks-title">
+        <span>Checks</span>
+        {rollup && (
+          <span className={`gh-checks-rollup gh-checks-rollup--${rollup}`}>
+            <span className="gh-checks-rollup-dot" aria-hidden />
+            {rollup === "passing" ? "All checks passed" : rollup === "failing" ? "Some checks failed" : "Checks running"}
+          </span>
+        )}
+      </div>
+
+      {state.status === "loading" ? (
+        <p className="gh-glass-muted">Loading checks…</p>
+      ) : state.status === "error" ? (
+        <p className="gh-glass-muted">Couldn’t load checks — open on GitHub for the run details.</p>
+      ) : total === 0 ? (
+        <p className="gh-glass-muted">No CI checks reported on the latest commit.</p>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="gh-checks-toggle"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+          >
+            <Icon name={open ? "ph:caret-down" : "ph:caret-right"} width={11} />
+            {summary || `${total} check${total === 1 ? "" : "s"}`}
+          </button>
+          {open && (
+            <ul className="gh-checks-list">
+              {runs.map((r) => {
+                const pres = checkPresentation(r.status, r.conclusion);
+                const dur = checkDuration(r.startedAt, r.completedAt);
+                return (
+                  <li key={r.id} className="gh-check-row">
+                    <span className="gh-check-icon" style={{ color: pres.color }} title={pres.bucket}>
+                      <Icon name={pres.icon} width={13} />
+                    </span>
+                    <span className="gh-check-name" title={r.name}>{r.name}</span>
+                    {r.appName && <span className="gh-check-app">{r.appName}</span>}
+                    {dur && <span className="gh-check-dur">{dur}</span>}
+                    {r.detailsUrl && (
+                      <button
+                        type="button"
+                        className="gh-check-logs"
+                        title="Open the run logs on GitHub"
+                        aria-label={`Open logs for ${r.name}`}
+                        onClick={() => openExternalUrl(r.detailsUrl!)}
+                      >
+                        <Icon name="ph:arrow-square-out" width={11} />
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+              {statuses.map((s) => {
+                const pres = statusPresentation(s.state);
+                return (
+                  <li key={s.context} className="gh-check-row">
+                    <span className="gh-check-icon" style={{ color: pres.color }} title={s.state}>
+                      <Icon name={pres.icon} width={13} />
+                    </span>
+                    <span className="gh-check-name" title={s.description ?? s.context}>{s.context}</span>
+                    {s.targetUrl && (
+                      <button
+                        type="button"
+                        className="gh-check-logs"
+                        title="Open the status details on GitHub"
+                        aria-label={`Open details for ${s.context}`}
+                        onClick={() => openExternalUrl(s.targetUrl!)}
+                      >
+                        <Icon name="ph:arrow-square-out" width={11} />
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Workspace split (list ⇄ detail) ──────────────────────────────────────────
+
+const GH_WORKSPACE_GROUP_ID = "cave.github.workspace.v1";
+const GH_DETAIL_COLLAPSED_KEY = "cave:github:details-collapsed:v1";
+// Icons-only rail the detail panel collapses to — keeps the expand control
+// visible instead of vanishing the panel entirely (shell nav-rail pattern).
+const GH_DETAIL_RAIL_PX = 40;
+// Below this measured workspace width the side-by-side split would crush the
+// table, so the detail stacks above the list instead. Measured on the pane,
+// not the viewport — a drag-to-split pane can be narrow in a wide window.
+const GH_SPLIT_MIN_PX = 760;
+
+// Width persistence for the resizable split. Guards mirror shell.tsx's
+// shellStorage: drop corrupt layouts, and drop rail-width saves — collapse
+// state lives in its own pref, so a stale collapsed layout must never restore
+// as a crushed "expanded" panel.
+const ghWorkspaceStorage = {
+  getItem(key: string): string | null {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as unknown;
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            const values = Object.values(parsed as Record<string, unknown>).filter(
+              (v): v is number => typeof v === "number" && Number.isFinite(v),
+            );
+            if (values.length >= 2) {
+              const sum = values.reduce((a, b) => a + b, 0);
+              const anyCollapsed = values.some((v) => v >= 0 && v <= 6);
+              if (anyCollapsed || sum < 98 || sum > 102) {
+                window.localStorage.removeItem(key);
+                return null;
+              }
+            }
+          }
+        } catch { /* not a layout object, pass through */ }
+      }
+      return raw;
+    } catch {
+      return null;
+    }
+  },
+  setItem(key: string, value: string): void {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(key, value);
+    } catch { /* ignore — strict privacy mode or storage quota */ }
+  },
+};
+
+function readDetailCollapsedPref(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(GH_DETAIL_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function GhWorkspace({ detail, children }: { detail: ReactNode; children: ReactNode }) {
+  const isMobile = useIsMobile();
+  // Until the first measurement lands, fall back to the viewport heuristic so
+  // SSR and first paint agree with the CSS (chat-surface pattern).
+  const [width, setWidth] = useState<number | null>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const measureRef = useCallback((el: HTMLDivElement | null) => {
+    roRef.current?.disconnect();
+    roRef.current = null;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const next = entries[0]?.contentRect.width ?? el.clientWidth;
+      setWidth((prev) => (prev === next ? prev : next));
+    });
+    ro.observe(el);
+    roRef.current = ro;
+  }, []);
+  useEffect(() => () => roRef.current?.disconnect(), []);
+  const split = width === null ? !isMobile : width >= GH_SPLIT_MIN_PX;
+
+  const [collapsed, setCollapsed] = useState(readDetailCollapsedPref);
+  const collapsedRef = useRef(collapsed);
+  const detailPanelRef = useRef<PanelImperativeHandle | null>(null);
+  // Last width the user actually saw expanded. expand() restores the panel's
+  // "most recent size", but a panel that MOUNTS collapsed (persisted pref) has
+  // no such size and would pop open at minSize — onResize seeds this ref from
+  // the restored layout before the mount-time collapse lands.
+  const lastExpandedPxRef = useRef<number | null>(null);
+  const persistCollapsed = useCallback((next: boolean) => {
+    collapsedRef.current = next;
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem(GH_DETAIL_COLLAPSED_KEY, next ? "1" : "0");
+    } catch { /* ignore */ }
+  }, []);
+  const toggleCollapsed = useCallback(() => {
+    const next = !collapsedRef.current;
+    // Flip the ref BEFORE the imperative call — collapse()/expand() fire
+    // onLayoutChanged synchronously, and the save gate must already see the
+    // new state or collapsing overwrites the saved width with the rail's.
+    collapsedRef.current = next;
+    const panel = detailPanelRef.current;
+    if (next) {
+      panel?.collapse();
+    } else {
+      panel?.expand();
+      const px = lastExpandedPxRef.current;
+      if (panel && px != null && px >= 100) panel.resize(`${Math.round(px)}px`);
+    }
+    persistCollapsed(next);
+  }, [persistCollapsed]);
+
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: GH_WORKSPACE_GROUP_ID,
+    panelIds: ["gh-list", "gh-detail"],
+    storage: ghWorkspaceStorage,
+  });
+
+  // The detail Panel remounts whenever the layout flips stacked → split;
+  // re-apply the persisted collapse before paint so it never flashes open.
+  // Capture the restored width first — collapsing this early means the panel
+  // never reports an expanded onResize, so this is the only seed for the
+  // width toggle-expand should return to.
+  useLayoutEffect(() => {
+    if (!split) return;
+    const panel = detailPanelRef.current;
+    if (panel && collapsedRef.current && !panel.isCollapsed()) {
+      const px = panel.getSize().inPixels;
+      if (px > GH_DETAIL_RAIL_PX + 8) lastExpandedPxRef.current = px;
+      panel.collapse();
+    }
+  }, [split]);
+
+  if (!split) {
+    return (
+      <div ref={measureRef} className="gh-workspace gh-workspace--stacked">
+        {children}
+        {collapsed ? (
+          <button
+            type="button"
+            className="gh-detail-toggle-bar"
+            aria-expanded={false}
+            onClick={toggleCollapsed}
+          >
+            <Icon name="ph:caret-down-bold" width={11} aria-hidden />
+            Show details
+          </button>
+        ) : (
+          <div className="gh-detail-holder reveal-scope">
+            {detail}
+            <IconButton
+              icon="ph:sidebar-simple"
+              aria-label="Collapse details panel"
+              aria-expanded
+              size="sm"
+              className="gh-detail-collapse reveal-on-hover"
+              onClick={toggleCollapsed}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div ref={measureRef} className="gh-workspace gh-workspace--split">
+      <Group
+        orientation="horizontal"
+        className="gh-workspace-group"
+        defaultLayout={defaultLayout}
+        onLayoutChanged={(...args) => {
+          // Never persist the collapsed rail as the saved width.
+          if (!collapsedRef.current) onLayoutChanged(...args);
+        }}
+      >
+        <Panel id="gh-list" className="gh-list-pane" minSize="320px">
+          {children}
+        </Panel>
+        <Separator className="shell-separator gh-workspace-separator">
+          <SeparatorHandle orientation="col" />
+        </Separator>
+        <Panel
+          id="gh-detail"
+          className="gh-detail-pane"
+          defaultSize="380px"
+          minSize="300px"
+          maxSize="560px"
+          collapsible
+          collapsedSize={GH_DETAIL_RAIL_PX}
+          panelRef={detailPanelRef}
+          onResize={(size) => {
+            // Dragging past minSize collapses without the toggle button —
+            // keep the pref in sync with what the user can see.
+            const px = size.inPixels ?? 0;
+            const next = px <= GH_DETAIL_RAIL_PX + 8;
+            if (!next) lastExpandedPxRef.current = px;
+            if (next !== collapsedRef.current) persistCollapsed(next);
+          }}
+        >
+          {collapsed ? (
+            <div className="gh-detail-rail">
+              <IconButton
+                icon="ph:sidebar-simple"
+                aria-label="Expand details panel"
+                aria-expanded={false}
+                size="sm"
+                onClick={toggleCollapsed}
+              />
+            </div>
+          ) : (
+            <div className="gh-detail-holder reveal-scope">
+              {detail}
+              <IconButton
+                icon="ph:sidebar-simple"
+                aria-label="Collapse details panel"
+                aria-expanded
+                size="sm"
+                className="gh-detail-collapse reveal-on-hover"
+                onClick={toggleCollapsed}
+              />
+            </div>
+          )}
+        </Panel>
+      </Group>
+    </div>
+  );
+}
+
 // ── Selected item detail ─────────────────────────────────────────────────────
+
+/**
+ * Watch/unwatch the selected item's repo right from the detail panel — the
+ * subscribe path for "the repo you're viewing" (cave-hlxn). Backed by
+ * /api/github/subscriptions; the first watch also flips the watcher's master
+ * switch on (watching a repo means you want its notifications). Hidden until
+ * the current watch state is known so it never lies.
+ */
+function WatchRepoChip({ repo }: { repo: string }) {
+  const { announce } = useAnnouncer();
+  const [watched, setWatched] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWatched(null);
+    (async () => {
+      try {
+        const res = await fetch("/api/github/subscriptions", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        if (!cancelled && data?.ok) {
+          setWatched(Array.isArray(data.prefs?.repos) && data.prefs.repos.includes(repo));
+        }
+      } catch {
+        /* leave null — the chip stays hidden rather than guessing */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [repo]);
+
+  const toggle = async () => {
+    if (watched === null || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/github/subscriptions", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        // Refresh failed — deriving repos from a failed read could PATCH the
+        // user's whole watch list away (empty repos). Keep state, tell them.
+        announce(`Could not update the watch list for ${repo} — try again.`);
+        return;
+      }
+      const repos: string[] = Array.isArray(data?.prefs?.repos) ? data.prefs.repos : [];
+      const next = watched ? repos.filter((r) => r !== repo) : [...new Set([...repos, repo])];
+      const body = watched ? { repos: next } : { repos: next, enabled: true };
+      const patch = await fetch("/api/github/subscriptions", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const patched = await patch.json().catch(() => null);
+      if (patch.ok && patched?.ok) {
+        setWatched(!watched);
+        announce(
+          watched
+            ? `Unwatched ${repo}.`
+            : `Watching ${repo} — new PRs and CI results land in your Inbox.`,
+        );
+      } else {
+        announce(`Could not update the watch list for ${repo} — try again.`);
+      }
+    } catch {
+      announce(`Could not update the watch list for ${repo} — try again.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (watched === null) return null;
+  return (
+    <Button
+      size="sm"
+      variant="secondary"
+      leadingIcon={watched ? "ph:bell-ringing" : "ph:bell"}
+      aria-pressed={watched}
+      disabled={busy}
+      onClick={() => void toggle()}
+      title={
+        watched
+          ? `Stop watching ${repo}`
+          : `Watch ${repo} — new PRs and CI results land in your Inbox`
+      }
+    >
+      {watched ? "Watching" : "Watch repo"}
+    </Button>
+  );
+}
 
 function GitHubItemGlassPanel({
   item,
@@ -1046,6 +2058,8 @@ function GitHubItemGlassPanel({
   familiars,
   resolvedById,
   cards,
+  familiarsFailed = false,
+  cardsFailed = false,
   counts,
   onJumpToSession,
   onFocusCard,
@@ -1056,6 +2070,8 @@ function GitHubItemGlassPanel({
   familiars: Familiar[];
   resolvedById: Map<string, ResolvedFamiliar>;
   cards: Card[];
+  familiarsFailed?: boolean;
+  cardsFailed?: boolean;
   counts: Record<Filter, number>;
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard?: (cardId: string) => void;
@@ -1133,9 +2149,26 @@ function GitHubItemGlassPanel({
               {" · "}
               {item.repo}
               {" · "}
-              {relativeTime(detail?.createdAt ?? item.updatedAt)}
+              <RelativeTime iso={detail?.createdAt ?? item.updatedAt} />
             </span>
           </div>
+          <div className="[margin-top:6px]!">
+            <WatchRepoChip repo={item.repo} />
+          </div>
+          {(item.kind === "pr" || item.kind === "review_request") && (
+            <GhReviewActions
+              pr={{
+                repo: item.repo,
+                number: item.number ?? null,
+                title: detail?.title ?? item.title,
+                state: stateKind,
+                author: detail?.author?.login ?? null,
+                url: detail?.htmlUrl ?? item.url,
+                body: detail?.body ?? null,
+              }}
+              familiars={familiars}
+            />
+          )}
         </div>
 
         <div className="gh-glass-section">
@@ -1163,7 +2196,9 @@ function GitHubItemGlassPanel({
           )}
         </div>
 
-        <GitHubComments item={item} detail={detail} familiars={familiars} />
+        <GitHubChecks item={item} />
+
+        <GitHubComments item={item} detail={detail} />
 
         <div className="gh-glass-section">
           <div className="gh-glass-section-title">Linked work</div>
@@ -1207,6 +2242,8 @@ function GitHubItemGlassPanel({
             linkedCards={linkedCards}
             familiars={familiars}
             cards={cards}
+            familiarsFailed={familiarsFailed}
+            cardsFailed={cardsFailed}
             onJumpToSession={onJumpToSession}
             onAfterLink={onAfterLink}
           />
@@ -1214,17 +2251,26 @@ function GitHubItemGlassPanel({
             item={item}
             familiars={familiars}
             cards={cards}
+            familiarsFailed={familiarsFailed}
+            cardsFailed={cardsFailed}
             onAfterLink={onAfterLink}
           />
-          <a
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            className="gh-action-btn"
+          <SafeMergeAction
+            item={item}
+            linkedCards={linkedCards}
+            familiars={familiars}
+          />
+          <Button
+            size="xs"
+            variant="secondary"
+            leadingIcon="ph:arrow-square-out"
+            onClick={(e) => {
+              e.preventDefault();
+              openExternalUrl(item.url);
+            }}
           >
-            <Icon name="ph:arrow-square-out" width={12} />
-            <span className="gh-action-btn-label">GitHub</span>
-          </a>
+            GitHub
+          </Button>
         </div>
       </div>
     </aside>
@@ -1246,23 +2292,69 @@ const COLS: ColDef[] = [
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
+export function GitHubView({
+  onJumpToSession,
+  onFocusCard,
+  onTasksRefresh,
+  initialTarget,
+  initialFilter,
+}: Props = {}) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [activity, setActivity] = useState<ActivityResult | null>(null);
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<Filter>("all");
-  const [orgFilter, setOrgFilter] = useState<string>("all");
-  const [repoFilter, setRepoFilter] = useState<string>("all");
-  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [filter, setFilter] = useSurfacePreference(surfacePreferenceSpecs.github.filter);
+  // Host-driven filter (Code Workshop's PRs/Issues/Reviews tabs): follow the
+  // prop whenever it changes so switching tabs re-filters the same mounted view.
+  useEffect(() => {
+    if (initialFilter && initialFilter !== filter) setFilter(initialFilter);
+    // Only react to the host's prop, not the user's own later chip changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFilter]);
+  const [orgFilter, setOrgFilter] = useSurfacePreference(surfacePreferenceSpecs.github.organization);
+  const [repoFilter, setRepoFilter] = useSurfacePreference(surfacePreferenceSpecs.github.repository);
+  const [query, setQuery] = useState("");
+  const [groupBy, setGroupBy] = useSurfacePreference(surfacePreferenceSpecs.github.groupBy);
   const [showPatModal, setShowPatModal] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [showSubsModal, setShowSubsModal] = useState(false);
+  const [sortKey, setSortKey] = useSurfacePreference(surfacePreferenceSpecs.github.sortKey);
+  const [sortDir, setSortDir] = useSurfacePreference(surfacePreferenceSpecs.github.sortDir);
+  const [selectedTarget, setSelectedTarget] = useSurfacePreference(surfacePreferenceSpecs.github.selected);
+  // Notifications without a PR/issue number cannot be restored semantically,
+  // but still need to remain selected for the current visit.
+  const [transientSelectedItemId, setTransientSelectedItemId] = useState<string | null>(null);
+  // Deep-linked PR/issue from a GitHub-event notification. Cleared when the
+  // user picks a row themselves — from then on selection owns the detail.
+  const [deepLink, setDeepLink] = useState<GitHubItemTarget | null>(initialTarget ?? null);
+  useEffect(() => {
+    setDeepLink(initialTarget ?? null);
+  }, [initialTarget]);
+  const selectRow = useCallback((id: string) => {
+    setDeepLink(null);
+    setTransientSelectedItemId(id);
+    const item = activity?.items.find((candidate) => candidate.id === id);
+    // The durable selection is a semantic GitHub identity, not the API row id.
+    // Notifications without a PR/issue number continue to open for the current
+    // visit but are intentionally not persisted.
+    setSelectedTarget(item && typeof item.number === "number"
+      ? { repo: item.repo, number: item.number, kind: item.kind }
+      : null);
+  }, [activity?.items, setSelectedTarget]);
   const timerRef = useRef<number | null>(null);
+  // Guards against setState after unmount from an in-flight fetch (mirrors useCards).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
-  const familiars = useFamiliars();
-  const { cards, reload: reloadCards } = useCards();
+  const { familiars, familiarsFailed } = useFamiliars();
+  const { cards, cardsFailed, reload: reloadCards } = useCards();
+  const refreshLinkedWork = useCallback(() => {
+    reloadCards();
+    onTasksRefresh?.();
+  }, [reloadCards, onTasksRefresh]);
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
   const resolvedById = useMemo(
     () => new Map(resolvedFamiliars.map((f) => [f.id, f])),
@@ -1271,48 +2363,80 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
 
   async function fetchPatStatus() {
     try {
-      const res = await fetch("/api/github/pat");
-      const data = await res.json().catch(() => null);
+      const { data } = await readSurfaceResource<PatStatus>("github:pat");
       if (data) setPatStatus(data as PatStatus);
     } catch { /* non-fatal */ }
   }
 
-  async function fetchActivity(silent = false) {
-    if (!silent) setLoading(true);
+  // Schedule the next poll, unless the tab is hidden — a backgrounded tab keeps
+  // burning the GitHub rate limit for output nobody's looking at. The
+  // visibilitychange effect refetches (and reschedules) on return.
+  function schedulePoll(ms: number) {
+    if (typeof document !== "undefined" && document.hidden) return;
+    timerRef.current = window.setTimeout(() => void fetchActivity(true, true), ms);
+  }
+
+  async function fetchActivity(silent = false, force = false) {
+    // Skeleton only on the first load — a manual refresh with data already on
+    // screen must not unmount the list (and any open composer draft with it).
+    if (!silent && !activity) setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/github/activity");
-      const data = await res.json().catch(() => null);
-
-      if (res.status === 401 && data?.error === "no_user") {
-        setError("no_user");
-        setLoading(false);
+      const { data } = await readSurfaceResource<ActivityPayload>("github:activity", force);
+      if (!mountedRef.current) return;
+      if (!data.ok) {
+        if (data.error === "no_user") {
+          setError("no_user");
+          return;
+        }
+        setError(data.error ?? "GitHub activity unavailable");
+        schedulePoll(60_000);
         return;
       }
-
-      if (!res.ok || !data?.ok) {
-        setError(data?.error ?? `GitHub error (${res.status})`);
-        setLoading(false);
-        timerRef.current = window.setTimeout(() => void fetchActivity(true), 60_000);
-        return;
-      }
-
-      setActivity(data as ActivityResult);
+      const nextActivity = data;
+      setActivity((prev) =>
+        prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid
+          && arrayContentEqual(prev.organizations, nextActivity.organizations)
+          && arrayContentEqual(prev.items, nextActivity.items)
+          ? prev
+          : nextActivity);
       setError(null);
-      const interval = (data as ActivityResult).authed ? 90_000 : 120_000;
-      timerRef.current = window.setTimeout(() => void fetchActivity(true), interval);
+      schedulePoll(nextActivity.authed ? 90_000 : 120_000);
     } catch (e) {
+      if (!mountedRef.current) return;
       setError(e instanceof Error ? e.message : "Failed to load GitHub activity");
-      timerRef.current = window.setTimeout(() => void fetchActivity(true), 60_000);
+      schedulePoll(60_000);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
+  }
+
+  // Manual refresh: cancel the pending scheduled poll first so we never spawn a
+  // second self-scheduling timer chain (the error-state Retry used to skip this
+  // and leak a chain, doubling the poll rate — and the GitHub rate-limit spend).
+  function refreshActivity() {
+    if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
+    void fetchActivity(false, true);
   }
 
   useEffect(() => {
     void fetchPatStatus();
     void fetchActivity();
     return () => { if (timerRef.current !== null) window.clearTimeout(timerRef.current); };
+  }, []);
+
+  // Pause polling while the tab is hidden; refetch (and resume the chain) on
+  // return so a backgrounded tab doesn't keep spending the rate limit.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.hidden) {
+        if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
+      } else {
+        void fetchActivity(true, true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   useEffect(() => {
@@ -1325,35 +2449,40 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       const tag = target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       e.preventDefault();
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-      void fetchActivity();
+      refreshActivity();
+      refreshLinkedWork(); // keep linked cards and shell task context fresh too
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [refreshLinkedWork]);
 
   const items = activity?.items ?? [];
-  const filtered = filter === "all" ? items : items.filter((i) => i.kind === filter);
+  // The configured organization scope (Settings → GitHub). Empty = all
+  // memberships; a non-empty list limits the whole surface to those orgs.
+  const orgScope = useAppPreferences().github.orgScope;
+  const filtered = useMemo(() => {
+    const byKind = filter === "all" ? items : items.filter((i) => i.kind === filter);
+    return orgScope.length === 0 ? byKind : byKind.filter((i) => orgScope.includes(orgOf(i.repo)));
+  }, [items, filter, orgScope]);
 
-  // Organization options come from the kind-filtered set; repository options
-  // narrow to the chosen org so the two selects cascade (org → repo).
+  // Org filter options are derived only from organizations represented in the
+  // current base item set (after kind + orgScope filtering, but before org/repo
+  // filters and the search query). The active orgFilter is still included so a
+  // selection whose rows dropped out doesn't fall out of the select's options.
   const orgOptions = useMemo(
-    () => Array.from(new Set(filtered.map((i) => orgOf(i.repo)))).sort((a, b) => a.localeCompare(b)),
-    [filtered],
+    () => Array.from(new Set([
+      ...filtered.map((i) => orgOf(i.repo)),
+      ...(orgFilter === "all" ? [] : [orgFilter]),
+    ])).sort((a, b) => a.localeCompare(b)),
+    [filtered, orgFilter],
   );
   const repoOptions = useMemo(() => {
     const base = orgFilter === "all" ? filtered : filtered.filter((i) => orgOf(i.repo) === orgFilter);
-    return Array.from(new Set(base.map((i) => i.repo))).sort((a, b) => a.localeCompare(b));
-  }, [filtered, orgFilter]);
-
-  // Drop a stale org/repo selection when the underlying options change (e.g.
-  // the kind filter or org filter removed the previously-selected value).
-  useEffect(() => {
-    if (orgFilter !== "all" && !orgOptions.includes(orgFilter)) setOrgFilter("all");
-  }, [orgOptions, orgFilter]);
-  useEffect(() => {
-    if (repoFilter !== "all" && !repoOptions.includes(repoFilter)) setRepoFilter("all");
-  }, [repoOptions, repoFilter]);
+    return Array.from(new Set([
+      ...base.map((i) => i.repo),
+      ...(repoFilter === "all" ? [] : [repoFilter]),
+    ])).sort((a, b) => a.localeCompare(b));
+  }, [filtered, orgFilter, repoFilter]);
   // Selecting a repo pins the Org filter to that repo's org (the Org select is
   // disabled while a repo is chosen — clearing the repo re-enables it).
   useEffect(() => {
@@ -1367,9 +2496,10 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       filtered.filter(
         (i) =>
           (orgFilter === "all" || orgOf(i.repo) === orgFilter) &&
-          (repoFilter === "all" || i.repo === repoFilter),
+          (repoFilter === "all" || i.repo === repoFilter) &&
+          githubItemMatchesQuery(i, query),
       ),
-    [filtered, orgFilter, repoFilter],
+    [filtered, orgFilter, repoFilter, query],
   );
 
   const linkedMap = useMemo(() => {
@@ -1426,26 +2556,53 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     return Array.from(m.entries());
   }, [sorted, groupBy]);
 
-  const counts: Record<Filter, number> = {
-    all: items.length,
-    pr: items.filter((i) => i.kind === "pr").length,
-    review_request: items.filter((i) => i.kind === "review_request").length,
-    issue: items.filter((i) => i.kind === "issue").length,
-  };
+  const counts: Record<Filter, number> = useMemo(
+    () => ({
+      all: items.length,
+      pr: items.filter((i) => i.kind === "pr").length,
+      review_request: items.filter((i) => i.kind === "review_request").length,
+      issue: items.filter((i) => i.kind === "issue").length,
+    }),
+    [items],
+  );
+
+  const sameSelectedTarget = useCallback((item: GitHubItem) =>
+    selectedTarget !== null &&
+    item.repo === selectedTarget.repo &&
+    item.number === selectedTarget.number &&
+    (item.kind === selectedTarget.kind ||
+      ((item.kind === "pr" || item.kind === "review_request") &&
+        (selectedTarget.kind === "pr" || selectedTarget.kind === "review_request"))),
+  [selectedTarget]);
 
   useEffect(() => {
-    if (sorted.length === 0) {
-      if (selectedItemId !== null) setSelectedItemId(null);
-      return;
-    }
-    if (!selectedItemId || !sorted.some((item) => item.id === selectedItemId)) {
-      setSelectedItemId(sorted[0].id);
-    }
-  }, [sorted, selectedItemId]);
+    if (!selectedTarget || loading || error) return;
+    const exists = items.some(sameSelectedTarget);
+    if (!exists) setSelectedTarget(null);
+  }, [items, loading, error, selectedTarget, sameSelectedTarget, setSelectedTarget]);
+
+  // The deep-linked item may not be in the activity list (old PR, other repo):
+  // prefer the live row when present (real title/state, row highlight), else
+  // synthesize the minimal shape the detail pane needs to fetch
+  // /api/github/item?repo&number.
+  const deepLinkItem = useMemo<GitHubItem | null>(() => {
+    if (!deepLink) return null;
+    const listed = sorted.find((it) => it.repo === deepLink.repo && it.number === deepLink.number);
+    if (listed) return listed;
+    return {
+      kind: deepLink.kind,
+      id: `deeplink:${deepLink.repo}#${deepLink.number}`,
+      title: `${deepLink.repo} #${deepLink.number}`,
+      repo: deepLink.repo,
+      number: deepLink.number,
+      url: deepLink.url,
+      updatedAt: new Date().toISOString(),
+    };
+  }, [deepLink, sorted]);
 
   const selectedItem = useMemo(
-    () => sorted.find((item) => item.id === selectedItemId) ?? sorted[0] ?? null,
-    [sorted, selectedItemId],
+    () => deepLinkItem ?? sorted.find(sameSelectedTarget) ?? sorted.find((item) => item.id === transientSelectedItemId) ?? sorted[0] ?? null,
+    [deepLinkItem, sorted, sameSelectedTarget, transientSelectedItemId],
   );
   const selectedLinkedCards = selectedItem ? linkedMap.get(selectedItem.id) ?? [] : [];
 
@@ -1454,193 +2611,342 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     else { setSortKey(key); setSortDir(key === "updatedAt" || key === "tasks" ? "desc" : "asc"); }
   }
 
+  // Keyboard navigation for the rows: ↑/↓ + Home/End move a roving tab stop
+  // (the selected row carries tabIndex 0), selection follows focus so the
+  // detail panel tracks the keyboard, and Enter opens the item on GitHub. Keyed
+  // on the row count so the listeners (re)bind once the table mounts after the
+  // async fetch — the table isn't in the DOM during the loading/empty states.
+  const tbodyRef = useRef<HTMLTableSectionElement | null>(null);
+  useEffect(() => {
+    const tbody = tbodyRef.current;
+    if (!tbody) return;
+    const rowOf = (el: EventTarget | null) =>
+      (el as HTMLElement | null)?.closest?.('tr[data-gh-row="true"]') as HTMLElement | null;
+    const rows = () => Array.from(tbody.querySelectorAll<HTMLElement>('tr[data-gh-row="true"]'));
+    const focusRow = (i: number) => {
+      const list = rows();
+      if (list.length === 0) return;
+      const row = list[Math.max(0, Math.min(list.length - 1, i))];
+      if (row.dataset.itemId) selectRow(row.dataset.itemId);
+      row.focus();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const cur = rowOf(document.activeElement);
+      const list = rows();
+      const i = cur ? list.indexOf(cur) : list.findIndex((r) => r.getAttribute("aria-selected") === "true");
+      switch (e.key) {
+        case "ArrowDown": e.preventDefault(); focusRow((i < 0 ? -1 : i) + 1); break;
+        case "ArrowUp": e.preventDefault(); focusRow((i < 0 ? list.length : i) - 1); break;
+        case "Home": e.preventDefault(); focusRow(0); break;
+        case "End": e.preventDefault(); focusRow(list.length - 1); break;
+        case "Enter": {
+          const url = cur?.dataset.url;
+          if (url) { e.preventDefault(); openExternalUrl(url); }
+          break;
+        }
+      }
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      const row = rowOf(e.target);
+      if (row?.dataset.itemId) selectRow(row.dataset.itemId);
+    };
+    tbody.addEventListener("keydown", onKey);
+    tbody.addEventListener("focusin", onFocusIn);
+    return () => {
+      tbody.removeEventListener("keydown", onKey);
+      tbody.removeEventListener("focusin", onFocusIn);
+    };
+  }, [sorted.length]);
+
   return (
+    <GitHubProfileProvider>
     <section className="github-surface flex h-full flex-col text-[var(--text-primary)]">
 
       {showPatModal && (
         <PatSetupModal
           username={patStatus?.login ?? null}
-          onSaved={(login, hasPat) => {
-            setPatStatus({ hasPat, login });
+          hasPat={patStatus?.hasPat ?? false}
+          canRemoveStoredPat={patStatus?.canRemoveStoredPat ?? false}
+          onSaved={() => {
+            invalidateSurfaceResources("github:pat", "github:activity");
+            // A stored Cave PAT can coexist with a launcher-provided token.
+            // Re-read the server status after either save or removal instead of
+            // assuming the local mutation describes the remaining credential.
+            void fetchPatStatus();
             setShowPatModal(false);
-            if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-            void fetchActivity();
+            refreshActivity();
           }}
           onClose={() => setShowPatModal(false)}
         />
       )}
 
+      {showSubsModal && (
+        <GithubSubscriptionsModal
+          hasPat={patStatus?.hasPat ?? false}
+          onConnectPat={() => {
+            setShowSubsModal(false);
+            setShowPatModal(true);
+          }}
+          onClose={() => setShowSubsModal(false)}
+        />
+      )}
+
       {/* ── Header ── */}
-      <header className="github-surface-header flex items-center gap-3 pl-5 pr-5 py-2">
-        <div className="flex items-center gap-2">
+      <header className="github-surface-header gh-compact-header">
+        <div className="gh-compact-meta">
           {activity?.login && (
-            <span className="text-[12px] text-[var(--text-secondary)]">@{activity.login}</span>
+            <span className="gh-compact-login">@{activity.login}</span>
+          )}
+
+          {activity?.patInvalid && (
+            <button
+              type="button"
+              onClick={() => setShowPatModal(true)}
+              className="gh-compact-auth gh-compact-auth--invalid focus-ring"
+              title="GitHub rejected the stored token (revoked or expired) — update your PAT"
+            >
+              token rejected — update PAT
+            </button>
+          )}
+          {!activity?.patInvalid && activity?.authed === false && (
+            <span
+              className="gh-compact-auth gh-compact-auth--public"
+              title="Public API — add a PAT for private repos + review requests"
+            >
+              public API
+            </span>
+          )}
+          {activity?.authed === true && (
+            <span
+              className="gh-compact-auth gh-compact-auth--authed"
+              title="Authenticated — private repos included"
+            >
+              authenticated
+            </span>
+          )}
+
+          {activity?.rateLimit && (
+            <span
+              className="gh-compact-rate"
+              title="GitHub API requests left this hour — public gets 60/h, a PAT gets 5,000/h"
+            >
+              {activity.rateLimit.remaining}/{activity.rateLimit.limit} req left
+            </span>
           )}
         </div>
 
-        {activity?.authed === false && (
-          <span className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
-            public API
-          </span>
-        )}
-        {activity?.authed === true && (
-          <span className="rounded-full border border-[color-mix(in_oklch,var(--color-success)_55%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_40%,transparent)] px-2 py-0.5 text-[10px] text-[var(--color-success)]">
-            authenticated
-          </span>
+        {/* Host-driven filter (Code Workshop tabs) owns the switch — hide the
+            in-view chips so there is only one control. */}
+        {initialFilter ? null : (
+          <Tabs
+            className="gh-compact-tabs"
+            variant="segment"
+            size="sm"
+            ariaLabel="Filter GitHub activity"
+            value={filter}
+            onChange={setFilter}
+            items={(["all", "pr", "review_request", "issue"] as Filter[]).map((f) => ({
+              id: f,
+              label: ({ all: "All", pr: "PRs", review_request: "Reviews", issue: "Issues" } as Record<Filter, string>)[f],
+              count: counts[f] > 0 ? counts[f] : undefined,
+            })) satisfies TabItem<Filter>[]}
+          />
         )}
 
-        {activity?.rateLimit && (
-          <span className="text-[10px] text-[var(--text-muted)]">
-            {activity.rateLimit.remaining}/{activity.rateLimit.limit} req left
-          </span>
-        )}
+        <div className="gh-compact-filters">
+          <div className="gh-search">
+            <Icon name="ph:magnifying-glass" width={12} className="gh-search-icon" aria-hidden />
+            <input
+              type="search"
+              className="gh-search-input"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape" && query) { e.preventDefault(); setQuery(""); } }}
+              placeholder="Search…"
+              aria-label="Search GitHub items by title, repo, or number"
+              spellCheck={false}
+            />
+            {query && (
+              <button
+                type="button"
+                className="gh-search-clear"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+              >
+                <Icon name="ph:x" width={10} />
+              </button>
+            )}
+          </div>
+          <StandardSelect
+            label="Filter by organization"
+            className="gh-select"
+            value={orgFilter}
+            onChange={setOrgFilter}
+            title={repoFilter !== "all" ? "Org is locked to the selected repo — clear the repo to change it" : "Filter by organization"}
+            disabled={orgOptions.length === 0 || repoFilter !== "all"}
+            options={[
+              { value: "all", label: "All orgs" },
+              ...orgOptions.map((org) => ({ value: org, label: org })),
+            ]}
+          />
+          <StandardSelect
+            label="Filter by repository"
+            className="gh-select"
+            value={repoFilter}
+            onChange={setRepoFilter}
+            title="Filter by repository"
+            disabled={repoOptions.length === 0}
+            options={[
+              { value: "all", label: "All repos" },
+              ...repoOptions.map((repo) => ({
+                value: repo,
+                label: orgFilter === "all" ? repo : (repo.split("/")[1] ?? repo),
+              })),
+            ]}
+          />
+          {/* §8 chrome budget: the grouping radios and PAT management moved to
+              the overflow menu below — occasional configuration, not per-visit
+              chrome. "Add PAT" stays visible only while unconnected (setup CTA). */}
+        </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowPatModal(true)}
-            title={patStatus?.hasPat ? "Manage GitHub PAT" : "Connect GitHub PAT"}
-            aria-label={patStatus?.hasPat ? "GitHub PAT connected — manage" : "Connect GitHub PAT"}
-            className={`flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] py-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors ${patStatus?.hasPat ? "px-1.5" : "px-2"}`}
-          >
-            <Icon name="ph:key" width={11} />
-            {patStatus?.hasPat ? null : "Add PAT"}
-          </button>
-          <button
-            type="button"
+        <div className="gh-compact-actions">
+          {!patStatus?.hasPat ? (
+            <Button
+              size="xs"
+              variant="secondary"
+              leadingIcon="ph:key"
+              onClick={() => setShowPatModal(true)}
+              title="Connect GitHub PAT"
+              aria-label="Connect GitHub PAT"
+            >
+              Add PAT
+            </Button>
+          ) : null}
+          <IconButton
+            icon="ph:arrows-clockwise"
+            size="sm"
             onClick={() => {
-              if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-              void fetchActivity();
-              reloadCards();
+              refreshActivity();
+              refreshLinkedWork();
             }}
             title="Refresh (⌘R)"
             aria-label="Refresh GitHub activity"
-            className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
-          >
-            <Icon name="ph:arrows-clockwise" width={13} />
-          </button>
-        </div>
-      </header>
-
-      {/* ── Filter tabs ── */}
-      <div className="github-surface-controls flex items-center gap-2 px-4 py-2">
-        <Tabs
-          variant="segment"
-          ariaLabel="Filter GitHub activity"
-          value={filter}
-          onChange={setFilter}
-          items={(["all", "pr", "review_request", "issue"] as Filter[]).map((f) => ({
-            id: f,
-            label: ({ all: "All", pr: "PRs", review_request: "Reviews", issue: "Issues" } as Record<Filter, string>)[f],
-            count: counts[f] > 0 ? counts[f] : undefined,
-          })) satisfies TabItem<Filter>[]}
-        />
-        <div className="ml-auto flex items-center gap-2">
-          <select
-            className="gh-select"
-            value={orgFilter}
-            onChange={(e) => setOrgFilter(e.target.value)}
-            title={repoFilter !== "all" ? "Org is locked to the selected repo — clear the repo to change it" : "Filter by organization"}
-            aria-label="Filter by organization"
-            disabled={orgOptions.length === 0 || repoFilter !== "all"}
-          >
-            <option value="all">All orgs</option>
-            {orgOptions.map((o) => (
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </select>
-          <select
-            className="gh-select"
-            value={repoFilter}
-            onChange={(e) => setRepoFilter(e.target.value)}
-            title="Filter by repository"
-            aria-label="Filter by repository"
-            disabled={repoOptions.length === 0}
-          >
-            <option value="all">All repos</option>
-            {repoOptions.map((r) => (
-              <option key={r} value={r}>{orgFilter === "all" ? r : (r.split("/")[1] ?? r)}</option>
-            ))}
-          </select>
-          <span className="gh-select-sep" aria-hidden />
-          <div className="flex items-center gap-1" role="group" aria-label="Group rows">
+          />
+          <IconButton
+            icon="ph:bell-ringing"
+            size="sm"
+            onClick={() => setShowSubsModal(true)}
+            title="Event subscriptions — opened PRs, CI completions"
+            aria-label="Event subscriptions"
+          />
+          <OverflowMenu ariaLabel="More GitHub options">
+            <PopoverLabel>Group rows</PopoverLabel>
             {(["none", "org", "repo"] as GroupBy[]).map((g) => {
-              const labels: Record<GroupBy, string> = { none: "None", org: "Org", repo: "Repo" };
-              const isActive = groupBy === g;
+              const labels: Record<GroupBy, string> = { none: "No grouping", org: "Group by org", repo: "Group by repo" };
               return (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => setGroupBy(g)}
-                  aria-pressed={isActive}
-                  title={g === "none" ? "No grouping" : `Group by ${g}`}
-                  className={[
-                    "rounded-md px-2.5 py-1 text-[12px] transition-colors",
-                    isActive
-                      ? "bg-[var(--bg-raised)] text-[var(--text-primary)] font-medium"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
-                  ].join(" ")}
-                >
+                <PopoverItem key={g} checked={groupBy === g} onSelect={() => setGroupBy(g)}>
                   {labels[g]}
-                </button>
+                </PopoverItem>
               );
             })}
-          </div>
+            {patStatus?.hasPat ? (
+              <>
+                <PopoverSeparator />
+                <PopoverItem icon="ph:key" onSelect={() => setShowPatModal(true)}>
+                  Manage GitHub PAT
+                </PopoverItem>
+              </>
+            ) : null}
+          </OverflowMenu>
         </div>
-      </div>
+      </header>
 
       {/* ── Body ── */}
       <div className="github-surface-body min-h-0 flex-1 overflow-hidden">
 
         {loading ? (
-          <div className="flex h-full items-center justify-center">
-            <span className="text-[12px] text-[var(--text-muted)]">Loading…</span>
+          <div className="p-2">
+            <SkeletonRows count={8} />
           </div>
 
         ) : error === "no_user" ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
-            <Icon name="ph:github-logo" width={28} className="text-[var(--text-muted)]" />
-            <div>
-              <p className="text-[14px] font-medium text-[var(--text-primary)] mb-1">Connect your GitHub account</p>
-              <p className="text-[12px] text-[var(--text-muted)] max-w-xs">
-                Cave uses the public GitHub API (no auth needed) or your own PAT for private repos and reviews.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 items-center">
-              <button
-                type="button"
-                onClick={() => setShowPatModal(true)}
-                className="rounded-lg bg-[var(--accent-presence)] px-5 py-2 text-[13px] font-medium text-white hover:opacity-90 transition-opacity"
-              >
-                Set up GitHub
-              </button>
-            </div>
+          <div className="flex h-full items-center justify-center px-8">
+            <EmptyState
+              icon="ph:github-logo"
+              headline="Connect your GitHub account"
+              subtitle="Start with just a GitHub username to browse public repos — add a personal access token (PAT) later for private repos and reviews. Both stay on this machine."
+              actions={
+                <Button variant="primary" leadingIcon="ph:github-logo" onClick={() => setShowPatModal(true)}>
+                  Set up GitHub
+                </Button>
+              }
+            />
           </div>
 
         ) : error ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-            <p className="text-[12px] text-[var(--color-danger)]">{error}</p>
-            <button
-              type="button"
-              onClick={() => void fetchActivity()}
-              className="text-[11px] text-[var(--accent-presence)] hover:underline"
-            >
-              Retry
-            </button>
+          <div className="flex h-full items-center justify-center px-8">
+            <EmptyState
+              icon="ph:warning-circle"
+              headline="Couldn't load GitHub"
+              subtitle={error}
+              actions={
+                <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={refreshActivity}>
+                  Retry
+                </Button>
+              }
+            />
           </div>
 
-        ) : sorted.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <Icon name="ph:check-circle" width={22} className="text-[var(--text-muted)]" />
-            <p className="text-[13px] text-[var(--text-muted)]">
-              {filter === "all" ? "Nothing open right now." : `No open ${filter === "review_request" ? "review requests" : filter + "s"}.`}
-            </p>
+        ) : sorted.length === 0 && !deepLinkItem ? (
+          <div className="flex h-full items-center justify-center px-8">
+            {query.trim() ? (
+              <EmptyState
+                icon="ph:magnifying-glass"
+                headline={`No items match “${query.trim()}”`}
+                subtitle="Try a shorter query, or clear the search to see everything."
+              />
+            ) : activity?.patInvalid ? (
+              // A dead PAT means this emptiness is unverifiable — an all-clear
+              // check mark here would be a lie (cave-cjgg).
+              <EmptyState
+                icon="ph:key"
+                headline="GitHub token rejected"
+                subtitle="The stored token was revoked or expired, so private repos and reviews can't be read. Update the PAT to restore the full view."
+                actions={
+                  <Button variant="primary" leadingIcon="ph:key" onClick={() => setShowPatModal(true)}>
+                    Update PAT
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState
+                icon="ph:check-circle"
+                headline={filter === "all" ? "Nothing open right now" : `No open ${filter === "review_request" ? "review requests" : filter + "s"}`}
+                subtitle={filter === "all" ? "Pull requests, reviews, and issues that need you will show up here." : undefined}
+              />
+            )}
           </div>
 
         ) : (
-          <div className="gh-workspace">
+          <GhWorkspace
+            detail={
+              <GitHubItemGlassPanel
+                item={selectedItem}
+                linkedCards={selectedLinkedCards}
+                familiars={familiars}
+                resolvedById={resolvedById}
+                cards={cards}
+                familiarsFailed={familiarsFailed}
+                cardsFailed={cardsFailed}
+                counts={counts}
+                onJumpToSession={onJumpToSession}
+                onFocusCard={onFocusCard}
+                onAfterLink={refreshLinkedWork}
+              />
+            }
+          >
             <div className="board-table-wrap gh-list-panel">
-              <table className="board-table gh-table">
+              <table className="board-table gh-table" role="grid" aria-label="GitHub activity — use arrow keys to navigate rows">
                 <thead>
                   <tr>
                     {COLS.map((col, i) => (
@@ -1660,22 +2966,11 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                       >
                         {col.key ? (
                           // A real <button> so the column is sortable by keyboard;
-                          // styled inline to avoid touching the shared board-table CSS.
+                          // locally utility-styled to avoid touching shared table CSS.
                           <button
                             type="button"
-                            className="focus-ring"
+                            className="focus-ring [display:inline-flex]! [align-items:center]! [gap:2px]! [background:none]! [border:none]! [padding:0]! [font:inherit]! [color:inherit]! [cursor:pointer]!"
                             onClick={() => handleSortClick(col.key!)}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 2,
-                              background: "none",
-                              border: "none",
-                              padding: 0,
-                              font: "inherit",
-                              color: "inherit",
-                              cursor: "pointer",
-                            }}
                           >
                             {col.label}
                             <span className="board-table-sort-icon">
@@ -1691,7 +2986,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                     ))}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody ref={tbodyRef}>
                   {(() => {
                     const renderRow = (item: GitHubItem) => {
                   const linked = linkedMap.get(item.id) ?? [];
@@ -1705,8 +3000,12 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                   return (
                     <tr
                       key={item.id}
-                      className={`gh-row${selectedItem?.id === item.id ? " is-selected" : ""}`}
-                      onClick={() => setSelectedItemId(item.id)}
+                      data-gh-row="true"
+                      data-item-id={item.id}
+                      data-url={item.url}
+                      tabIndex={selectedItem?.id === item.id ? 0 : -1}
+                      className={`gh-row reveal-scope${selectedItem?.id === item.id ? " is-selected" : ""}`}
+                      onClick={() => selectRow(item.id)}
                       aria-selected={selectedItem?.id === item.id}
                     >
                       <td>
@@ -1729,10 +3028,12 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                       <td>
                         <a
                           href={item.url}
-                          target="_blank"
-                          rel="noreferrer"
                           className="gh-title"
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openExternalUrl(item.url);
+                          }}
                           title={item.title}
                         >
                           {item.title}
@@ -1748,6 +3049,26 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                             title="CI checks failing"
                           >
                             checks failed
+                          </span>
+                        )}
+                        {item.checkStatus === "passing" && (
+                          <span
+                            className="gh-badge gh-badge--success"
+                            role="img"
+                            aria-label="CI checks passing"
+                            title="CI checks passing"
+                          >
+                            checks pass
+                          </span>
+                        )}
+                        {item.checkStatus === "pending" && (
+                          <span
+                            className="gh-badge gh-badge--muted"
+                            role="img"
+                            aria-label="CI checks running"
+                            title="CI checks running"
+                          >
+                            checks…
                           </span>
                         )}
                       </td>
@@ -1794,36 +3115,49 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                           </div>
                         )}
                       </td>
-                      <td style={{ textAlign: "right" }}>
+                      <td className="[text-align:right]!">
                         <RelativeTime iso={item.updatedAt} className="board-table-cell-time" />
                       </td>
-                      <td style={{ textAlign: "right" }}>
-                        <div className="gh-actions">
+                      <td className="[text-align:right]!">
+                        {/* §8: per-row secondary actions reveal on row hover /
+                            focus-within (touch: always visible); the selected
+                            row and rows with an action error stay revealed
+                            (state never hides — see board.css). */}
+                        <div className="gh-actions reveal-on-hover">
                           <OpenChatAction
                             item={item}
                             linkedCards={linked}
                             familiars={familiars}
                             cards={cards}
+                            familiarsFailed={familiarsFailed}
+                            cardsFailed={cardsFailed}
                             onJumpToSession={onJumpToSession}
-                            onAfterLink={reloadCards}
+                            onAfterLink={refreshLinkedWork}
                           />
                           <AddToBoardAction
                             item={item}
                             familiars={familiars}
                             cards={cards}
-                            onAfterLink={reloadCards}
+                            familiarsFailed={familiarsFailed}
+                            cardsFailed={cardsFailed}
+                            onAfterLink={refreshLinkedWork}
                           />
-                          <a
-                            href={item.url}
-                            target="_blank"
-                            rel="noreferrer"
+                          <SafeMergeAction
+                            item={item}
+                            linkedCards={linked}
+                            familiars={familiars}
+                          />
+                          <IconButton
+                            icon="ph:arrow-square-out"
+                            size="xs"
                             title="Open on GitHub"
                             aria-label="Open on GitHub"
-                            className="gh-action-btn gh-action-btn--icon"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Icon name="ph:arrow-square-out" width={11} />
-                          </a>
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openExternalUrl(item.url);
+                            }}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -1850,40 +3184,22 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                 </tbody>
               </table>
             </div>
-            <GitHubItemGlassPanel
-              item={selectedItem}
-              linkedCards={selectedLinkedCards}
-              familiars={familiars}
-              resolvedById={resolvedById}
-              cards={cards}
-              counts={counts}
-              onJumpToSession={onJumpToSession}
-              onFocusCard={onFocusCard}
-              onAfterLink={reloadCards}
-            />
-          </div>
+          </GhWorkspace>
         )}
       </div>
 
-      {/* ── Footer ── */}
-      <footer className="github-surface-footer shrink-0 px-5 py-1.5 text-[10px] text-[var(--text-muted)] flex items-center justify-between gap-3">
-        <span>⌘R refresh · click a row to inspect · open icon launches GitHub</span>
-        <span className="inline-flex items-center gap-3">
-          {activity?.rateLimit && activity.rateLimit.remaining < 10 && (
-            <span className="inline-flex items-center gap-1 text-[var(--color-warning)]">
-              <Icon name="ph:warning-fill" width={12} aria-hidden />
-              {activity.rateLimit.remaining} requests remaining
-            </span>
-          )}
-          {activity && (
-            <span>
-              {activity.authed
-                ? "Authenticated — private repos included"
-                : "Public API — add a PAT for private repos + review requests"}
-            </span>
-          )}
-        </span>
-      </footer>
+      {/* Keyboard hints moved to the ⌘/ Shortcuts sheet (§8 chrome diet); the
+          low-rate warning lives beside the header rate chip context, and the
+          auth state is already the header's gh-compact-auth chip. */}
+      {activity?.rateLimit && activity.rateLimit.remaining < 10 && (
+        <footer className="github-surface-footer shrink-0 px-5 py-1.5 text-[length:var(--text-2xs)] flex items-center justify-end">
+          <span className="inline-flex items-center gap-1 text-[var(--color-warning)]">
+            <Icon name="ph:warning-fill" width={12} aria-hidden />
+            {activity.rateLimit.remaining} requests remaining
+          </span>
+        </footer>
+      )}
     </section>
+    </GitHubProfileProvider>
   );
 }

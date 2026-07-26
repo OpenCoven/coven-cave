@@ -18,11 +18,11 @@ import {
  */
 export function CornerRadiusController() {
   useEffect(() => {
-    applyCornerRadius(readCornerRadius());
+    applyCornerRadius(readCornerRadius(), { persist: false });
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== CORNER_RADIUS_KEY) return;
-      applyCornerRadius(readCornerRadius());
+      applyCornerRadius(readCornerRadius(), { persist: false });
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);

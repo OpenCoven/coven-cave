@@ -14,8 +14,14 @@ next-env.d.ts
 # placeholder in each tree so Tauri's resource globs validate on clean CI.
 src-tauri/resources/server/*
 !src-tauri/resources/server/placeholder.txt
+src-tauri/resources/server-archive/*
+!src-tauri/resources/server-archive/placeholder.txt
 src-tauri/resources/node/*
 !src-tauri/resources/node/placeholder.txt
+src-tauri/resources/whisper/*
+!src-tauri/resources/whisper/placeholder.txt
+src-tauri/resources/piper/*
+!src-tauri/resources/piper/placeholder.txt
 
 # Notarized release artifacts
 release/
@@ -46,7 +52,9 @@ ehthumbs.db
 .zed/
 
 # Agent / tool scratch state (local automation, not for sharing)
-.claude/
+.claude/*
+# …except the shared, version-controlled Claude Code project settings.
+!.claude/settings.json
 .cursor/
 .aider*
 .comux*
@@ -99,3 +107,14 @@ package-lock.json
 # Generated Canvas Sketch sandbox runtime (built in prebuild)
 /public/sandbox/
 /docs/audits
+test-results/
+/.agents
+
+# design-sync machine state
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+/.worktrees
+/.cave-trash

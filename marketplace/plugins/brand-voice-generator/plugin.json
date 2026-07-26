@@ -1,0 +1,41 @@
+{
+  "name": "brand-voice-generator",
+  "version": "0.1.0",
+  "description": "Generate brand-system and tone-of-voice files \u2014 colors, typography, assets, and writing voice \u2014 that power the PPTX Generator and other brand-aware skills.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "brand",
+    "voice",
+    "tone-of-voice",
+    "design-system",
+    "identity",
+    "content"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/brand-voice-generator",
+  "x-coven": {
+    "displayName": "Brand & Voice Generator",
+    "category": "Design",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/coleam00/second-brain-skills",
+      "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/brand-voice-generator"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

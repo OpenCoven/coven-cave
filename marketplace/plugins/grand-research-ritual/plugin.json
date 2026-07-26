@@ -1,0 +1,109 @@
+{
+  "name": "grand-research-ritual",
+  "version": "0.1.0",
+  "description": "Bounded research orchestration with resumable state and explicit checkpoints.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "craft"
+  ],
+  "capabilities": [
+    "research",
+    "workflows"
+  ],
+  "marketplaceId": "opencoven/grand-research-ritual",
+  "x-coven": {
+    "displayName": "Grand Research Ritual",
+    "category": "Research Crafts",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/orchestra-research/AI-Research-SKILLs/tree/773a52944ba4747a18bd4ae9ade53fff041adcbc"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  },
+  "kind": "craft",
+  "craft": {
+    "schemaVersion": "opencoven.craft.v1",
+    "components": {
+      "required": [
+        "filesystem",
+        "sequential-thinking",
+        "coven-evals"
+      ],
+      "optional": [
+        "memory",
+        "ml-engineer",
+        "research-ingestion"
+      ]
+    },
+    "bundled": {
+      "skills": [
+        {
+          "id": "0-autoresearch-skill",
+          "sourcePath": "craft-sources/grand-research-ritual/0-autoresearch-skill/SKILL.md",
+          "upstreamPath": "0-autoresearch-skill/SKILL.md",
+          "contentHash": "sha256:400178f8156280d9b7297d1e1b96701f6473ad2f44f82af7476dc1d56b839739",
+          "modifications": [
+            "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+            "Audited for local capability boundaries, reviewable checkpoints, and bounded execution."
+          ]
+        }
+      ],
+      "prompts": [
+        {
+          "id": "grand-research-ritual-review-install-plan",
+          "name": "Review the install plan",
+          "description": "Summarize the Craft footprint and confirm bounded use.",
+          "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+        }
+      ],
+      "workflows": [
+        {
+          "id": "grand-research-ritual-bounded-research-cycle",
+          "name": "Bounded research cycle",
+          "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+          "steps": [
+            "Declare scope, authority, provenance, and resource limits.",
+            "Select the smallest reproducible action and record its inputs.",
+            "Run only within the declared bounds and preserve resumable state.",
+            "Evaluate outputs against a predeclared criterion.",
+            "Summarize evidence, limitations, and the next human checkpoint."
+          ]
+        }
+      ]
+    },
+    "requiredCapabilities": [
+      "read_files",
+      "write_files",
+      "shell"
+    ],
+    "recommendedRoles": [
+      "Researcher",
+      "Research Lead"
+    ],
+    "provenance": {
+      "upstream": "Orchestra Research AI Research Skills",
+      "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+      "license": "MIT",
+      "modifications": [
+        "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+        "Rewrote continuous autonomy defaults to require explicit time, compute, storage, network, and spend bounds.",
+        "Removed implicit commit/push, recurring scheduling, external messaging, and autonomous scope/pivot/publication behavior; state remains resumable only in an approved project directory."
+      ],
+      "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+      "licensePath": "craft-sources/orchestra-research/LICENSE"
+    }
+  }
+}

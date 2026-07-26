@@ -1,0 +1,24 @@
+{
+  "name": "coven-evals",
+  "version": "0.1.0",
+  "description": "Build, run, and read eval suites and scorecards to measure familiar quality over time.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Coven Evals",
+    "shortDescription": "Build, run, and read eval suites and scorecards to measure familiar quality over time.",
+    "longDescription": "Assemble evals from templates and interpret scorecards honestly, including regressions.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "coven",
+      "evals",
+      "scorecards",
+      "quality",
+      "testing"
+    ],
+    "defaultPrompt": "Help me use Coven Evals safely."
+  }
+}

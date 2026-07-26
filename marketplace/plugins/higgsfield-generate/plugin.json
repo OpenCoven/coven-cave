@@ -1,0 +1,41 @@
+{
+  "name": "higgsfield-generate",
+  "version": "0.1.0",
+  "description": "Generate images and videos via Higgsfield AI across 30+ models plus Marketing Studio branded ads, wrapping the higgsfield CLI for text/image/video-to-media jobs.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "image-generation",
+    "video-generation",
+    "higgsfield",
+    "marketing-studio",
+    "ai-media",
+    "text-to-image"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/higgsfield-generate",
+  "x-coven": {
+    "displayName": "Higgsfield Generate",
+    "category": "Media & Creative",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/higgsfield-generate"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

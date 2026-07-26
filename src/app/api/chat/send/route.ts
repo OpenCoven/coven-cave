@@ -1,28 +1,31 @@
-import { spawn } from "node:child_process";
-import { mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
-import path from "node:path";
-import { stripAnsi } from "@/lib/ansi";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { homedir } from "node:os";
+import { StringDecoder } from "node:string_decoder";
+import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
+  enqueueOfflineTravelItem,
   type CaveConfig,
-  type FamiliarBinding,
   loadConfig,
   loadState,
   recordSessionFamiliar,
   setSessionTitle,
+  setSessionTitleAuto,
 } from "@/lib/cave-config";
+import { chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import {
-  chatTitleFromPrompt,
-  defaultChatTitleForSession,
-} from "@/lib/cave-chat-titles";
+  isAutoOwnedTitle,
+  isRenameDueAtTurn,
+  normalizeChatAutoRenamePolicy,
+  renameTitleFromLatestExchange,
+} from "@/lib/chat-auto-rename";
 import {
   buildPromptWithAttachments,
-  MAX_ATTACHMENT_IMAGE_BYTES,
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
+import type { SessionOrigin } from "@/lib/types";
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
 import {
   flattenToolResultContent,
@@ -31,28 +34,130 @@ import {
   toPersistedTools,
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
-import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand, type CovenLaunchCommand } from "@/lib/coven-bin";
+import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
+import {
+  detectBuiltinAdapterConflict,
+  healBuiltinShadowedManifest,
+  type BuiltinAdapterConflict,
+} from "@/lib/server/adapter-conflict-heal";
+import {
+  buildCopilotStreamArgs,
+  copilotIdentityPreamble,
+  copilotProtocolDiagnostic,
+  copilotStreamSpec,
+  CopilotMessageTranscript,
+  CopilotTextAssembler,
+  isSafeCopilotResumeSessionId,
+  parseCopilotChatEvent,
+} from "@/lib/copilot-stream";
+import { prepareCopilotChatRouting } from "./copilot-routing";
+import {
+  buildGrokBuildArgs,
+  grokIdentityRules,
+  grokResumeNeedsNewSandboxSession,
+  grokSandboxProfileForPermission,
+  grokShouldUseCliDefault,
+  parseGrokStreamEvent,
+} from "@/lib/grok-build";
+import { grokLaunchCommand } from "@/lib/grok-bin";
+import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
+import {
+  evaluateRuntimeAvailability,
+  localRuntimeLaunchError,
+  type DirectRunnerId,
+  type RuntimeAvailability,
+} from "@/lib/runtime-availability";
+import {
+  quarantineOpenCodeSchema,
+  redactedOpenCodeEventFingerprint,
+  resolveOpenCodeCompatibility,
+} from "@/lib/opencode-compatibility";
+import { handleOpenCodeJsonLine } from "@/lib/opencode-stream";
+import {
+  hasUnsupportedClaudeToolFrame,
+  isClaudeStreamJsonFrame,
+  parseClaudeMessageEnvelope,
+  parseClaudeTextOnlyEnvelope,
+} from "@/lib/claude-stream";
+import { redactedEventFingerprint } from "@/lib/runtime-compatibility";
+import {
+  claudeCompatibilityDiagnostic,
+  resolveInstalledClaudeCompatibility,
+} from "@/lib/server/claude-runtime-compatibility";
+import {
+  HermesSseDecoder,
+  hermesApiConfig,
+  hermesApiCanAccessLocalFiles,
+  isHermesResponsesEventName,
+  isHermesMissingPreviousResponseError,
+  hermesResponsesUrl,
+  isHermesInvalidPreviousResponseIdError,
+  parseHermesResponsesEvent,
+} from "@/lib/hermes-responses-stream";
+import { redactSecretText, redactSecretsDeep } from "@/lib/secret-redaction";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
-import { buildNextPathsDirective } from "@/lib/next-paths";
+import {
+  buildPromptWithKnowledgeVault,
+  listCollections,
+  readKnowledgeVaultForPrompt,
+} from "@/lib/server/knowledge-vault";
+import { parseAgentAttachments } from "@/lib/server/agent-attachments";
+import {
+  registerChatRun,
+  unregisterChatRun,
+  addChatRunKeys,
+  type ChatRunHandle,
+} from "@/lib/server/chat-stop-registry";
+import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
-import { loadProjects, projectForRoot } from "@/lib/cave-projects";
-import { openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv } from "@/lib/openclaw-bin";
+import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
+import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
+import { resolveCopilotRuntimeLaunch } from "@/lib/server/copilot-runtime-launch";
 import {
-  covenHome,
-  familiarWorkspacesRoot,
-  readFamiliarWorkspaces,
-} from "@/lib/coven-paths";
-import { isTrustedChatHarness, covenRunSupportsModelFlag } from "@/lib/harness-adapters";
+  probeReadyLocalRuntimeCapability,
+  type LocalRuntimeCapabilityPlan,
+} from "@/lib/server/local-runtime-capability-gate";
+import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
+import { loadProjects } from "@/lib/cave-projects";
+import { chatProjectAccessId } from "@/lib/chat-project-access";
 import {
-  type ConversationFile,
+  authorizeChatProjectLaunch,
+  ChatProjectLaunchError,
+  isProjectlessGenerationOrigin,
+} from "@/lib/server/chat-project-launch";
+import { validateCaveProjectRoot } from "@/lib/server/project-paths";
+import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
+import {
+  OpenClawAgentResolutionError,
+  extractOpenClawSessionId,
+  extractOpenClawText,
+  openClawAgentArgs,
+  openClawSessionKey,
+  resolveOpenClawAgentBinding,
+  type OpenClawAgentJson,
+} from "@/lib/openclaw-bridge";
+import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters";
+import {
   type ChatTurn,
+  createConversationStub,
   loadConversation,
   saveConversation,
+  stripConversationStubTurn,
+  withConversationLock,
 } from "@/lib/cave-conversations";
+import {
+  captureWorkBranch,
+  cwdFromConversationRuntime,
+} from "@/lib/server/chat-work-branch";
+import { latestPrUrlFromText } from "@/lib/chat-pr-link";
+import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
 import {
   cleanModelId,
   modelApplicationForHarness,
-  resolveChatModelState,
+  modelApplicationFromRun,
+  modelRejectionInError,
   type ChatModelState,
 } from "@/lib/chat-model-state";
 import {
@@ -62,77 +167,191 @@ import {
   type RuntimeScope,
 } from "@/lib/chat-runtime-scope";
 import {
+  buildPromptWithBoundaryReminder,
+  createBoundarySentinel,
+  formatBoundaryNotice,
+  recordBoundaryViolations,
+} from "@/lib/chat-boundary-sentinel";
+import {
   ProjectAccessDeniedError,
   assertProjectAccess,
+  filterProjectsForFamiliar,
 } from "@/lib/project-permissions";
 import {
+  buildTaskContext,
   buildTaskAwarePrompt,
-  taskContextForSession,
+  taskCardForSession,
 } from "@/lib/task-chat-context";
 import {
   buildPromptWithFamiliarStartupContext,
   readFamiliarDailyMemoryStartupContext,
+  buildOperatorProfileContext,
 } from "@/lib/server/familiar-startup-context";
-import { extractLinks } from "@/lib/link-extractor";
-import { routeLinkHandler } from "@/app/api/library/route-link/route";
 import {
   buildSshSpawnArgs,
   isSshRuntime,
 } from "@/lib/familiar-runtime";
+import { resolveRequestedRuntime, sshHostRegistry } from "@/lib/chat-hosts";
 import {
   parseCostUsd,
   parseStreamJsonUsage,
   type TurnUsage,
 } from "@/lib/usage-format";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import type { StreamEvent } from "@/lib/stream-events";
+import { deriveTravelClientStatus } from "@/lib/travel-client-state";
+import {
+  appendMentionedFilesBlock,
+  cleanupImageTempFiles,
+  resolveMentionedFiles,
+  writeImageAttachmentsToTemp,
+} from "./chat-send-attachments";
+import {
+  covenRunSupportsAddDir,
+  covenRunSupportsModel,
+  hermesChatSupportsModel,
+  covenRunSupportsPermission,
+  openCodeRunCapabilities,
+} from "./chat-send-capabilities";
+import {
+  buildPromptWithResponseControls,
+  modelIntentForSend,
+  persistedTurnControls,
+  persistSendModelIntent,
+  resolveSendModelMetadata,
+  turnRetryModel,
+} from "./chat-send-models";
+import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
+import { conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// A transport drop no longer kills the harness (deliberate Stop goes through
+// /api/chat/stop), but a detached run must not outlive its usefulness forever
+// — SIGTERM the child if it is still running this long after the client
+// vanished. Long enough for any real reply to finish, short enough to bound
+// runaway children nobody is listening to.
+const CHAT_DETACH_MAX_MS = Math.max(
+  60_000,
+  Number(process.env.COVEN_CAVE_CHAT_DETACH_MAX_MS ?? 10 * 60_000) || 10 * 60_000,
+);
+
+type LocalRuntimePlan = LocalRuntimeCapabilityPlan & {
+  command: string;
+  fixedArgs: string[];
+  env: NodeJS.ProcessEnv;
+  unresolvedWindowsShim?: boolean;
+  powerShellHostedCommand?: string;
+};
+
+function createLocalRuntimePlan(input: {
+  runner: DirectRunnerId;
+  launch: Pick<CovenLaunchCommand, "command" | "fixedArgs" | "unresolvedWindowsShim">;
+  env: NodeJS.ProcessEnv;
+  availability?: RuntimeAvailability;
+  powerShellHostedCommand?: string;
+}): LocalRuntimePlan {
+  const availability = input.availability ?? evaluateRuntimeAvailability({
+    runner: input.runner,
+    command: input.launch.command,
+    env: input.env,
+    unresolvedWindowsShim: input.launch.unresolvedWindowsShim === true,
+    powerShellHostedCommand: input.powerShellHostedCommand,
+  });
+  return {
+    runner: input.runner,
+    command: input.launch.command,
+    fixedArgs: input.launch.fixedArgs,
+    env: input.env,
+    availability,
+    ...(input.launch.unresolvedWindowsShim
+      ? { unresolvedWindowsShim: true as const }
+      : {}),
+    ...(input.powerShellHostedCommand
+      ? { powerShellHostedCommand: input.powerShellHostedCommand }
+      : {}),
+  };
+}
+
+function familiarEnvWithCanonicalPath(
+  familiarId: string,
+  canonicalEnv: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const env = harnessSpawnEnv(familiarId);
+  const canonicalPath =
+    canonicalEnv.PATH ?? canonicalEnv.Path ?? canonicalEnv.path;
+  if (canonicalPath !== undefined) {
+    env.PATH = canonicalPath;
+    delete env.Path;
+    delete env.path;
+  }
+  return env;
+}
+
 type SendBody = {
   familiarId: string;
   prompt?: string;
+  /** Per-send client token for /api/chat/stop — lets Stop target this run
+   *  before the server has assigned/echoed a conversation id. */
+  runId?: string;
   sessionId?: string;
+  /** A Board native-chat handoff reserves Cave's stable id before any harness
+   * session exists. Start its first turn fresh instead of treating that id as
+   * a harness resume token. */
+  startNewConversation?: boolean;
   projectRoot?: string;
   modelOverride?: string;
   modelOverrideScope?: "next-message" | "session";
   reasoningEffort?: string;
   responseSpeed?: string;
+  /** Composer Access chip: "full" (default) or "read". Forwarded to
+   *  `coven run --permission` (mapped to the harness's native sandbox flag)
+   *  only when the installed CLI advertises it; "full" is left implicit so the
+   *  harness keeps its default sandbox rather than being widened. */
+  permissionMode?: string;
+  /** Composer Host chip: "local" or a REGISTERED ssh host id from /api/hosts.
+   *  Resolved against the server-side registry (config.remoteHosts ∪ familiar
+   *  runtime bindings) — an unregistered host is rejected fail-closed, and the
+   *  remote command always comes from the registry, never this field. Absent ⇒
+   *  a conversation recorded on an ssh host stays pinned there, else the
+   *  familiar's own runtime binding decides. */
+  runtimeHost?: string;
   attachments?: ChatAttachment[];
   /** Repo-relative paths the user @-mentioned in the composer (CHAT-D1-04). */
   mentionedFiles?: string[];
   /** Project root the mentions are relative to — resumed sessions don't carry
    * projectRoot in the body, so the composer sends the root it knows. */
   mentionedFilesRoot?: string;
+  /** Branching: when set, the new user turn is parented here (its prior
+   *  sibling stays in the tree) and the new assistant turn becomes the tip.
+   *  Explicit null means "branch at the root" (sibling of a root turn) and is
+   *  distinct from the field being absent (a normal, non-branch send). */
+  parentTurnId?: string | null;
+  /** Provenance for a brand-new conversation (e.g. "eval"). Stamped on the
+   *  conversation file once, when it's first created. */
+  origin?: SessionOrigin;
 };
 
-type ReasoningEffort = "low" | "medium" | "high";
-type ResponseSpeed = "fast" | "balanced" | "careful";
+type OfflineChatQueuePayload = Pick<
+  SendBody,
+  | "familiarId"
+  | "projectRoot"
+  | "modelOverride"
+  | "modelOverrideScope"
+  | "reasoningEffort"
+  | "responseSpeed"
+  | "mentionedFiles"
+  | "mentionedFilesRoot"
+  | "parentTurnId"
+  | "origin"
+> & {
+  prompt: string;
+  sessionId: string;
+  attachments: ChatAttachment[];
+  responseMetadata: ChatResponseMetadata;
+};
 
-type StreamEvent =
-  | { kind: "session"; sessionId: string }
-  | { kind: "user"; text: string }
-  | { kind: "assistant_chunk"; text: string }
-  | { kind: "progress"; id?: string; label: string; detail?: string; status?: "running" | "done" | "error"; durationMs?: number }
-  | {
-      kind: "tool_use";
-      id?: string;
-      name: string;
-      input?: string;
-      output?: string;
-      status?: "running" | "ok" | "error";
-      durationMs?: number;
-    }
-  | {
-      kind: "done";
-      durationMs?: number;
-      isError?: boolean;
-      sessionId?: string;
-      usage?: TurnUsage;
-      costUsd?: number;
-      responseMetadata?: ChatResponseMetadata;
-    }
-  | { kind: "error"; message: string; code?: string };
 
 // Hook-line shapes emitted by codex/claude harnesses while a tool runs.
 // Examples:
@@ -146,523 +365,159 @@ async function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Cwd recorded on the conversation's first turn (`runtime: "local:<cwd>"`).
- *
- * Continued turns don't carry `projectRoot` in the body, but harness session
- * stores are scoped per working directory — resuming `--continue <id>` from
- * homedir instead of the original project either fails resume or silently
- * continues an unrelated homedir session. Both presented as "a new session
- * spun up mid-chat" with the project context gone. Deriving the cwd from the
- * saved conversation keeps resume directory-stable for every turn.
- */
-async function conversationCwd(sessionId?: string): Promise<string | undefined> {
-  if (!sessionId) return undefined;
-  try {
-    const conv = await loadConversation(sessionId);
-    const runtime = conv?.runtime;
-    if (runtime?.startsWith("local:")) {
-      const cwd = runtime.slice("local:".length).trim();
-      return cwd || undefined;
-    }
-  } catch {
-    /* fall back to the caller's default */
-  }
-  return undefined;
-}
-
-async function chatProjectAccessId(args: {
-  requestedProjectRoot?: string;
-  resumeCwd?: string;
-  resolvedCwd: string;
-}): Promise<string | null> {
-  const explicitRoot = args.requestedProjectRoot?.trim() || undefined;
-  const resumedRoot = !explicitRoot ? args.resumeCwd?.trim() || undefined : undefined;
-  const projectRoot = explicitRoot ?? resumedRoot;
-  if (!projectRoot) return null;
-
-  const projects = await loadProjects();
-  const project =
-    projectForRoot(projectRoot, projects) ??
-    projectForRoot(args.resolvedCwd, projects);
-  if (project) return project.id;
-
-  // An explicit projectRoot that is not registered is still a project-scoped
-  // chat request. Fail it closed through the shared permission chokepoint so
-  // the decision is audited and only Supreme can proceed.
-  return explicitRoot ? `unregistered:${projectRoot}` : null;
-}
-
-/** Resolve the familiar's Coven workspace dir.
- *  Uses ~/.coven/familiars.toml workspace when present, otherwise
- *  ~/.coven/workspaces/familiars/<id>. Falls back to undefined if the dir
- *  doesn't exist so callers can skip --cwd.
- */
-async function resolveFamiliarWorkspace(
-  familiarId: string,
-): Promise<string | undefined> {
-  // Guard against path traversal: familiar IDs should be simple slugs.
-  if (!/^[a-z0-9_-]+$/i.test(familiarId)) return undefined;
-  const declared = await readFamiliarWorkspaces();
-  const declaredWorkspace = declared.get(familiarId);
-  if (declaredWorkspace) {
-    try {
-      const resolvedDeclared = await realpath(declaredWorkspace);
-      const s = await stat(resolvedDeclared);
-      if (s.isDirectory()) return resolvedDeclared;
-    } catch {
-      /* fall through to default familiar workspace */
-    }
-  }
-  const familiarsRoot = familiarWorkspacesRoot();
-  const candidate = path.resolve(familiarsRoot, familiarId);
-  const relative = path.relative(familiarsRoot, candidate);
-  if (
-    relative.startsWith("..") ||
-    path.isAbsolute(relative) ||
-    relative.split(path.sep).includes("..")
-  ) {
-    return undefined;
-  }
-  try {
-    const root = await realpath(familiarsRoot);
-    const resolvedCandidate = await realpath(candidate);
-    if (resolvedCandidate !== root && !resolvedCandidate.startsWith(root + path.sep)) {
-      return undefined;
-    }
-    const s = await stat(resolvedCandidate);
-    if (s.isDirectory()) return resolvedCandidate;
-  } catch {
-    /* not found */
-  }
-  return undefined;
-}
-
-// ── Image attachment delivery ────────────────────────────────────────────
-// Local coven-run harnesses are agentic CLIs with a Read tool that can open
-// image files, so image payloads are written to private temp files and the
-// prompt points the harness at them. Bridges/remotes that cannot read this
-// machine's filesystem get an explicit unsupported notice instead.
-
-const ATTACHMENT_TMP_DIR = path.join(tmpdir(), "coven-cave-attachments");
-const IMAGE_EXT_BY_SUBTYPE: Record<string, string> = {
-  jpeg: "jpg",
-  "svg+xml": "svg",
-};
-
-function imageExtension(mimeType?: string): string {
-  const subtype = mimeType?.split("/")[1]?.toLowerCase() ?? "";
-  const mapped = IMAGE_EXT_BY_SUBTYPE[subtype] ?? subtype;
-  // Extension derives from the validated mime subtype only — never from a
-  // user-controlled filename — and falls back to a fixed token.
-  return /^[a-z0-9]{1,8}$/.test(mapped) ? mapped : "img";
-}
-
-async function writeImageAttachmentsToTemp(
-  attachments: ChatAttachment[],
-): Promise<Map<number, string>> {
-  const filePaths = new Map<number, string>();
-  for (const [index, attachment] of attachments.entries()) {
-    if (!attachment.dataUrl || !attachment.mimeType?.startsWith("image/")) continue;
-    const base64 = attachment.dataUrl.slice(attachment.dataUrl.indexOf(",") + 1);
-    const payload = Buffer.from(base64, "base64");
-    // Defense in depth: normalizeChatAttachments already enforces the cap,
-    // but never write more than the cap regardless.
-    if (payload.byteLength === 0 || payload.byteLength > MAX_ATTACHMENT_IMAGE_BYTES) continue;
-    try {
-      await mkdir(ATTACHMENT_TMP_DIR, { recursive: true, mode: 0o700 });
-      const filePath = path.join(
-        ATTACHMENT_TMP_DIR,
-        `${crypto.randomUUID()}.${imageExtension(attachment.mimeType)}`,
-      );
-      await writeFile(filePath, payload, { mode: 0o600 });
-      filePaths.set(index, filePath);
-    } catch {
-      /* best effort — the prompt falls back to the not-delivered notice */
-    }
-  }
-  return filePaths;
-}
-
-function cleanupImageTempFiles(filePaths: ReadonlyMap<number, string>) {
-  for (const filePath of filePaths.values()) {
-    void rm(filePath, { force: true }).catch(() => undefined);
-  }
-}
-
-// ── @-mentioned file delivery (CHAT-D1-04) ───────────────────────────────
-// The composer's `@` picker records repo-relative paths; the prompt gets a
-// compact "Referenced files" block of absolute paths the harness can open
-// with its Read tool. Validation mirrors /api/changes: repo-relative paths
-// only, resolved against the realpathed root with a prefix containment
-// check — absolute paths, NUL bytes, `..` segments, and symlinks that
-// escape the root are silently skipped, never errors.
-
-const MAX_MENTIONED_FILES = 10;
-
-async function resolveMentionedFiles(
-  relPaths: unknown,
-  root: unknown,
-): Promise<string[]> {
-  if (!Array.isArray(relPaths) || relPaths.length === 0) return [];
-  if (typeof root !== "string" || !path.isAbsolute(root)) return [];
-  let realRoot: string;
-  try {
-    realRoot = await realpath(path.resolve(root));
-    if (!(await stat(realRoot)).isDirectory()) return [];
-  } catch {
-    return [];
-  }
-  const resolved: string[] = [];
-  for (const rel of relPaths.slice(0, MAX_MENTIONED_FILES)) {
-    if (typeof rel !== "string" || !rel || rel.includes("\0") || path.isAbsolute(rel)) continue;
-    if (rel.split(/[\\/]+/).includes("..")) continue;
-    const candidate = path.resolve(realRoot, rel);
-    if (candidate === realRoot || !candidate.startsWith(realRoot + path.sep)) continue;
-    try {
-      // Containment must hold for the real file too, or a symlink inside the
-      // root could point the prompt at an arbitrary path outside it.
-      const real = await realpath(candidate);
-      if (real !== candidate && !real.startsWith(realRoot + path.sep)) continue;
-      if (!(await stat(real)).isFile()) continue;
-      if (!resolved.includes(candidate)) resolved.push(candidate);
-    } catch {
-      /* missing or unreadable — skip */
-    }
-  }
-  return resolved;
-}
-
-function appendMentionedFilesBlock(prompt: string, absPaths: string[]): string {
-  if (absPaths.length === 0) return prompt;
-  const block = [
-    "Referenced files (open with the Read tool):",
-    ...absPaths.map((p) => `- ${p}`),
-  ].join("\n");
-  return prompt ? `${prompt}\n\n${block}` : block;
-}
-
-function scheduleLinkRoute(args: {
-  prompt: string;
-  sessionId: string | null;
-  turnId: string | null;
-  chatTitle: string;
-  familiar: string;
-}) {
-  if (!args.sessionId || !args.turnId) return; // chat-source requires both
-  const { prompt } = args;
-  const urls = extractLinks(prompt);
-  for (const url of urls) {
-    void (async () => {
-      try {
-        await routeLinkHandler({
-          url,
-          source: {
-            kind: "chat",
-            sessionId: args.sessionId!,
-            turnId: args.turnId!,
-            chatTitle: args.chatTitle,
-          },
-          familiar: args.familiar,
-        });
-      } catch (err) {
-        console.warn("[chat-send] routeLink failed:", (err as Error).message);
-      }
-    })();
-  }
-}
-
 async function setDefaultSessionTitleIfMissing(sessionId: string, title: string) {
   const state = await loadState();
   if (state.sessionTitles[sessionId]) return;
   await setSessionTitle(sessionId, title);
 }
 
-function sse(event: StreamEvent): Uint8Array {
-  return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
-}
-
-// Model parity: probe once per process whether the installed `coven run`
-// advertises `--model`. `coven run` rejects unknown flags, so forwarding must be
-// a no-op until the companion CLI change ships. Cached; failures resolve false.
-let covenRunModelFlagProbe: Promise<boolean> | null = null;
-function covenRunSupportsModel(): Promise<boolean> {
-  if (!covenRunModelFlagProbe) {
-    covenRunModelFlagProbe = new Promise<boolean>((resolve) => {
-      let out = "";
-      let settled = false;
-      const done = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      try {
-        const child = spawn(covenBin(), ["run", "--help"], {
-          env: covenSpawnEnv(),
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        child.stdout.on("data", (d) => (out += d.toString()));
-        child.stderr.on("data", (d) => (out += d.toString()));
-        const t = setTimeout(() => {
-          try {
-            child.kill("SIGTERM");
-          } catch {
-            /* ignore */
-          }
-          done(false);
-        }, 2500);
-        child.on("close", () => {
-          clearTimeout(t);
-          done(covenRunSupportsModelFlag(out));
-        });
-        child.on("error", () => {
-          clearTimeout(t);
-          done(false);
-        });
-      } catch {
-        done(false);
-      }
-    });
-  }
-  return covenRunModelFlagProbe;
-}
-
-function resolveSendModelMetadata(args: {
-  body: SendBody;
-  config: CaveConfig;
-  binding: FamiliarBinding;
-  existingConversation: ConversationFile | null;
-  /**
-   * Whether `coven run --model` will actually be forwarded for this turn. When
-   * true the application state reads `pending` (saved, awaiting confirmation)
-   * instead of `unsupported`; the stream's init event later promotes it to
-   * `applied`.
-   */
-  modelForwardingEnabled: boolean;
-}): { desiredModel: string; modelState: ChatModelState } {
-  const requestedModel = cleanModelId(args.body.modelOverride);
-  const sessionModel =
-    args.body.modelOverrideScope === "session"
-      ? requestedModel
-      : args.existingConversation?.modelIntent?.model ?? null;
-  const modelState = resolveChatModelState({
-    familiarId: args.body.familiarId,
-    harness: args.binding.harness,
-    runtime: null,
-    globalDefaultModel: args.config.defaults.model,
-    familiarModel: args.config.familiars[args.body.familiarId]?.model ?? null,
-    sessionModel,
-    nextMessageModel: args.body.modelOverrideScope === "next-message" ? requestedModel : null,
-    application: { supported: args.modelForwardingEnabled },
-  });
-  const desiredModel = modelState.effectiveModel === "unknown" ? args.binding.model : modelState.effectiveModel;
-  return { desiredModel, modelState };
-}
-
-function persistSendModelIntent(
-  conversation: ConversationFile,
-  body: SendBody,
-  modelState: ChatModelState,
-) {
-  if (body.modelOverrideScope !== "session" || modelState.source !== "session") return;
-  conversation.modelIntent = {
-    model: modelState.effectiveModel,
-    source: "session",
-    applicationState: modelState.applicationState,
-    reason: modelState.reason ?? "Saved for this chat.",
-  };
-}
-
-function normalizeReasoningEffort(value: unknown): ReasoningEffort {
-  return value === "low" || value === "medium" || value === "high" ? value : "high";
-}
-
-function normalizeResponseSpeed(value: unknown): ResponseSpeed {
-  return value === "fast" || value === "balanced" || value === "careful" ? value : "fast";
-}
-
-function buildPromptWithResponseControls(prompt: string, body: SendBody): string {
-  const effort = normalizeReasoningEffort(body.reasoningEffort);
-  const speed = normalizeResponseSpeed(body.responseSpeed);
-  const effortInstruction: Record<ReasoningEffort, string> = {
-    low: "Use minimal internal planning and answer directly.",
-    medium: "Balance planning with a concise answer.",
-    high: "Spend extra internal planning on correctness before answering.",
-  };
-  const speedInstruction: Record<ResponseSpeed, string> = {
-    fast: "Prioritize a fast, terse, action-first response.",
-    balanced: "Balance speed, detail, and clarity.",
-    careful: "Prioritize careful completeness over speed.",
-  };
-  return [
-    "<response_controls>",
-    `thinking: ${effort} — ${effortInstruction[effort]}`,
-    `speed: ${speed} — ${speedInstruction[speed]}`,
-    "Do not mention these controls unless the user asks about them.",
-    "</response_controls>",
-    "",
-    buildNextPathsDirective(),
-    "",
-    prompt,
-  ].join("\n");
-}
-
-type OpenClawAgentJson = {
-  status?: string;
-  summary?: string;
-  sessionId?: string;
-  result?: {
-    payloads?: Array<{ text?: string; content?: unknown }>;
-    sessionId?: string;
-    meta?: { agentMeta?: { sessionId?: string } };
-  };
-  meta?: { agentMeta?: { sessionId?: string } };
-};
-
-type OpenClawAgentSummary = {
-  id?: string;
-  name?: string;
-  identityName?: string;
-  isDefault?: boolean;
-};
-
-function readTomlString(block: string, key: string): string | null {
-  const quoted = block.match(new RegExp(`^\\s*${key}\\s*=\\s*(['"])(.*?)\\1\\s*(?:#.*)?$`, "m"));
-  if (quoted) return quoted[2];
-  const bare = block.match(new RegExp(`^\\s*${key}\\s*=\\s*([^\\s#]+)\\s*(?:#.*)?$`, "m"));
-  return bare?.[1] ?? null;
-}
-
-function slugifyAgentName(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-async function readOpenClawAgentBinding(familiarId: string): Promise<string | null> {
+/** Auto-name a thread from its first user/assistant exchange with a short
+ *  summary title. Only fires while the stored title is still one of the
+ *  auto-derived defaults (prompt-derived or "New chat") — a manual rename,
+ *  even one made mid-stream, always wins. Best effort: failures leave the
+ *  default title in place. */
+async function autoNameSessionFromFirstExchange(
+  sessionId: string,
+  promptText: string,
+): Promise<void> {
   try {
-    const raw = await readFile(path.join(covenHome(), "familiars.toml"), "utf8");
-    const blocks = raw.split(/^\s*\[\[familiar\]\]\s*$/m).slice(1);
-    for (const block of blocks) {
-      if (readTomlString(block, "id") !== familiarId) continue;
-      return readTomlString(block, "openclaw_agent");
-    }
+    const summary = chatTitleFromPrompt(promptText);
+    if (!summary) return;
+    const autoDefaults = new Set(
+      [chatTitleFromPrompt(promptText), defaultChatTitleForSession(sessionId)].filter(
+        (t): t is string => Boolean(t),
+      ),
+    );
+    const state = await loadState();
+    const current = state.sessionTitles[sessionId];
+    if (current && !autoDefaults.has(current)) return;
+    if (current === summary) return;
+    await setSessionTitle(sessionId, summary);
   } catch {
-    /* no familiar binding file */
+    /* best effort */
   }
-  return null;
-}
-
-function listOpenClawAgents(): Promise<OpenClawAgentSummary[]> {
-  return new Promise((resolve) => {
-    const child = spawn(openClawBin(), openClawSpawnArgs(["agents", "list", "--json"]), {
-      stdio: ["ignore", "pipe", "ignore"],
-      env: openClawSpawnEnv(),
-      shell: openClawNeedsShell(),
-    });
-    let stdout = "";
-    child.stdout.on("data", (data: Buffer) => {
-      stdout += data.toString("utf8");
-    });
-    child.on("error", () => resolve([]));
-    child.on("close", () => {
-      try {
-        const parsed = JSON.parse(stdout.trim()) as OpenClawAgentSummary[];
-        resolve(Array.isArray(parsed) ? parsed : []);
-      } catch {
-        resolve([]);
-      }
-    });
-  });
-}
-
-async function resolveOpenClawAgentId(familiarId: string): Promise<string> {
-  const explicit = await readOpenClawAgentBinding(familiarId);
-  if (explicit) return explicit;
-
-  const agents = await listOpenClawAgents();
-  const exact = agents.find((agent) => agent.id === familiarId)?.id;
-  if (exact) return exact;
-
-  const named = agents.find(
-    (agent) =>
-      (agent.name && slugifyAgentName(agent.name) === familiarId) ||
-      (agent.identityName && slugifyAgentName(agent.identityName) === familiarId),
-  )?.id;
-  if (named) return named;
-
-  return familiarId;
-}
-
-function extractOpenClawText(json: OpenClawAgentJson): string {
-  const payloads = json.result?.payloads ?? [];
-  const text = payloads
-    .map((payload) => {
-      if (typeof payload.text === "string") return payload.text;
-      if (Array.isArray(payload.content)) {
-        return payload.content
-          .map((part) =>
-            part &&
-            typeof part === "object" &&
-            "text" in part &&
-            typeof part.text === "string"
-              ? part.text
-              : "",
-          )
-          .join("");
-      }
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
-  return text || json.summary?.trim() || "";
-}
-
-function extractOpenClawSessionId(
-  json: OpenClawAgentJson,
-  fallback?: string,
-): string | null {
-  return (
-    json.sessionId ??
-    json.result?.sessionId ??
-    json.result?.meta?.agentMeta?.sessionId ??
-    json.meta?.agentMeta?.sessionId ??
-    fallback ??
-    null
-  );
 }
 
 /**
- * Conversation identity for the OpenClaw bridge is CAVE-owned. OpenClaw
- * sessions are persisted per session *key* (`agent:<id>:<key>`); the
- * `sessionId` inside an entry rotates on daily resets, `/new`, and
- * compaction. Pinning each Cave chat to its own `--session-key` keeps one
- * durable gateway session per conversation. Without a key, every turn lands
- * in the shared `agent:<id>:main` session — id rotation then forked each
- * Cave chat into a brand-new conversation, and concurrent chats with the
- * same familiar interleaved context.
+ * Periodic, context-aware rename (chat-auto-rename.ts). Opt-in via the
+ * `chatAutoRename` policy: once a thread reaches a multiple of `everyTurns`
+ * assistant turns, re-derive its title from the LATEST exchange so a long
+ * conversation's name tracks where it actually went. Never overwrites a title
+ * a person set by hand (provenance in `sessionTitleAuto`). Best effort: any
+ * failure leaves the current title in place. `firstPromptText` seeds the set of
+ * auto-derived defaults the first-exchange name may have left behind.
  */
-function openClawSessionKey(conversationId: string): string {
-  return `cave-${conversationId.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`;
+async function maybeAutoRenameFromContext(
+  sessionId: string,
+  firstPromptText: string,
+): Promise<void> {
+  try {
+    const config = await loadConfig();
+    const policy = normalizeChatAutoRenamePolicy(config.chatAutoRename);
+    if (!policy.enabled) return;
+
+    const conversation = await loadConversation(sessionId);
+    const turns = conversation?.turns ?? [];
+    const assistantTurns = turns.filter((t) => t.role === "assistant").length;
+    if (!isRenameDueAtTurn(assistantTurns, policy.everyTurns)) return;
+
+    const lastUser = [...turns].reverse().find((t) => t.role === "user")?.text ?? null;
+    const lastAssistant = [...turns].reverse().find((t) => t.role === "assistant")?.text ?? null;
+    const next = renameTitleFromLatestExchange({ userText: lastUser, assistantText: lastAssistant });
+    if (!next) return;
+
+    const state = await loadState();
+    const current = state.sessionTitles[sessionId];
+    if (current === next) return;
+    const firstPrompt = turns.find((t) => t.role === "user")?.text ?? firstPromptText;
+    const autoDefaults = new Set(
+      [defaultChatTitleForSession(sessionId), chatTitleFromPrompt(firstPrompt)].filter(
+        (t): t is string => Boolean(t),
+      ),
+    );
+    if (
+      !isAutoOwnedTitle({
+        current,
+        lastAutoTitle: state.sessionTitleAuto[sessionId],
+        autoDefaults,
+        preserveManualTitles: policy.preserveManualTitles,
+      })
+    ) {
+      return;
+    }
+    await setSessionTitleAuto(sessionId, next);
+  } catch {
+    /* best effort */
+  }
 }
 
-function openClawAgentArgs(
-  harnessPrompt: string,
-  agentId: string,
-  conversationId: string,
-): string[] {
-  return [
-    "agent",
-    "--agent",
-    agentId,
-    "--message",
-    harnessPrompt,
-    "--json",
-    "--session-key",
-    openClawSessionKey(conversationId),
-  ];
+async function maybeQueueOfflineChat(args: {
+  body: SendBody;
+  config: CaveConfig;
+  promptText: string;
+  persistedAttachments: ChatAttachment[];
+  responseMetadata: ChatResponseMetadata;
+}): Promise<Response | null> {
+  const state = await loadState();
+  const travelStatus = deriveTravelClientStatus({
+    multiHost: args.config.multiHost,
+    travel: state.travel,
+    hubReachable: state.travel.hubUnreachableSince ? false : null,
+  });
+  if (travelStatus.authority !== "travel-local") return null;
+
+  const sessionId = args.body.sessionId ?? crypto.randomUUID();
+  const payload: OfflineChatQueuePayload = {
+    familiarId: args.body.familiarId,
+    prompt: args.promptText,
+    sessionId,
+    projectRoot: args.body.projectRoot,
+    modelOverride: args.body.modelOverride,
+    modelOverrideScope: args.body.modelOverrideScope,
+    reasoningEffort: args.body.reasoningEffort,
+    responseSpeed: args.body.responseSpeed,
+    attachments: args.persistedAttachments,
+    mentionedFiles: args.body.mentionedFiles,
+    mentionedFilesRoot: args.body.mentionedFilesRoot,
+    parentTurnId: args.body.parentTurnId,
+    origin: args.body.origin,
+    responseMetadata: args.responseMetadata,
+  };
+  const queued = await enqueueOfflineTravelItem({
+    kind: "chat",
+    summary: chatTitleFromPrompt(args.promptText) ?? `Offline chat with ${args.body.familiarId}`,
+    payload,
+  });
+
+  const stream = new ReadableStream<Uint8Array>({
+    start: (controller) => {
+      const push = (event: StreamEvent) => controller.enqueue(chatSse(event));
+      push({ kind: "session", sessionId });
+      push({ kind: "user", text: args.promptText });
+      push({
+        kind: "progress",
+        id: "queued-offline",
+        label: "Queued for travel sync",
+        status: "done",
+        detail: `${travelStatus.reason}: ${queued.id}`,
+      });
+      push({
+        kind: "done",
+        isError: false,
+        sessionId,
+        responseMetadata: args.responseMetadata,
+      });
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+    },
+  });
 }
 
 function openClawChatResponse(args: {
@@ -673,10 +528,31 @@ function openClawChatResponse(args: {
   attachments: ChatAttachment[];
   desiredModel: string;
   modelState: ChatModelState;
+  initialModelIntent: string | null;
 }): Response {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
-      const push = (event: StreamEvent) => controller.enqueue(sse(event));
+      let closed = false;
+      // A user "stop" aborts the request while the OpenClaw child is still
+      // running; its late `close`/`error` handlers keep calling push after the
+      // client stream has been cancelled. Guard every enqueue so those tail
+      // events are dropped instead of throwing ERR_INVALID_STATE on a closed
+      // controller (mirrors the native coven-run stream below).
+      const push = (event: StreamEvent) => {
+        // Tee EVERY event through the per-run ring first (cave-h40l): the
+        // buffer is what makes a dropped client resumable, so it must see
+        // events even after the original transport closed. The returned seq
+        // rides the SSE `id:` so live clients always hold a resume cursor.
+        const seq = runBuffer?.record(event);
+        if (closed || args.req.signal.aborted) return;
+        try {
+          controller.enqueue(chatSse(event, seq));
+        } catch (error) {
+          closed = true;
+          if (!args.req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
+        }
+      };
+      let runBuffer: RunBufferHandle | null = null;
       const pushProgress = (
         id: string,
         label: string,
@@ -692,10 +568,11 @@ function openClawChatResponse(args: {
           ...(detail ? { detail } : {}),
           ...(durationMs != null ? { durationMs } : {}),
         });
-      let closed = false;
+      const heartbeat = startChatSseHeartbeat(controller, () => closed || args.req.signal.aborted);
       const close = () => {
         if (closed) return;
         closed = true;
+        clearInterval(heartbeat);
         try {
           controller.close();
         } catch {
@@ -711,13 +588,70 @@ function openClawChatResponse(args: {
       // off this id, so it survives OpenClaw's internal session-id rotation.
       const conversationId = args.body.sessionId ?? crypto.randomUUID();
       pushProgress("openclaw-resolve", "Resolving OpenClaw agent", "running");
-      const agentId = await resolveOpenClawAgentId(args.body.familiarId);
-      pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", agentId);
+      let agentBinding;
+      try {
+        agentBinding = await resolveOpenClawAgentBinding(args.body.familiarId);
+      } catch (error) {
+        if (error instanceof OpenClawAgentResolutionError) {
+          pushProgress("openclaw-resolve", "OpenClaw agent resolution failed", "error", error.message);
+          push({ kind: "error", code: error.code, message: error.message });
+          push({
+            kind: "done",
+            durationMs: Date.now() - startedAt,
+            isError: true,
+          });
+          close();
+          return;
+        }
+        throw error;
+      }
+      const agentId = agentBinding.openclawAgentId;
+      pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
       const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
-      const spawnArgv = openClawSpawnArgs(argv);
-      const cwd = await resolveLocalRuntimeCwd(
-        args.body.projectRoot ?? (await conversationCwd(args.body.sessionId)),
-      );
+      const openclawLaunch = openClawLaunchCommand();
+      if (openclawLaunch.unresolvedWindowsShim) {
+        pushProgress(
+          "openclaw-start",
+          "OpenClaw bridge cannot start safely",
+          "error",
+          "The resolved OpenClaw Windows npm shim could not be mapped to its JavaScript entry point. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
+        );
+        push({
+          kind: "error",
+          code: "openclaw_unsafe_shell",
+          message:
+            "OpenClaw chat is unavailable because its Windows npm shim could not be launched without shell parsing. Reinstall OpenClaw or configure a native executable with OPENCLAW_BIN.",
+        });
+        push({
+          kind: "done",
+          durationMs: Date.now() - startedAt,
+          isError: true,
+        });
+        close();
+        return;
+      }
+      const spawnArgv = [...openclawLaunch.fixedArgs, ...argv];
+      let cwd: string;
+      try {
+        cwd = await resolveLocalRuntimeCwd(
+          args.body.projectRoot ??
+            (await conversationCwd(args.body.sessionId)) ??
+            (await daemonSessionCwd(args.body.sessionId)),
+        );
+      } catch (error) {
+        if (error instanceof RuntimeScopeError) {
+          pushProgress("openclaw-start", "OpenClaw bridge not started", "error", error.message);
+          push({ kind: "error", code: error.code, message: error.message });
+          push({
+            kind: "done",
+            durationMs: Date.now() - startedAt,
+            isError: true,
+          });
+          close();
+          return;
+        }
+        throw error;
+      }
       const responseMetadata: ChatResponseMetadata = {
         familiarId: args.body.familiarId,
         harness: "openclaw",
@@ -725,30 +659,88 @@ function openClawChatResponse(args: {
         runtime: `local:${cwd}`,
         desiredModel: args.desiredModel,
         confirmedModel: undefined,
+        retryModel: turnRetryModel({ requestedModel: args.body.modelOverride }),
         modelSource: args.modelState.source,
         modelApplicationState: args.modelState.applicationState,
         modelApplicationReason: args.modelState.reason,
+        openclawAgentId: agentBinding.openclawAgentId,
+        openclawAgentSource: agentBinding.source,
+        caveSessionId: conversationId,
+        gatewaySessionId: undefined,
+        sessionKey: openClawSessionKey(conversationId),
       };
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
-      const child = spawn(openClawBin(), spawnArgv, {
+      const child = spawn(openclawLaunch.command, spawnArgv, {
         cwd,
         stdio: ["ignore", "pipe", "pipe"],
         env: openClawSpawnEnv(),
-        shell: openClawNeedsShell(),
+        shell: false,
       });
       pushProgress("openclaw-start", "OpenClaw bridge started", "done");
       pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
 
       let stdout = "";
       let stderr = "";
-      const onAbort = () => {
+      const killChild = () => {
         try {
           child.kill("SIGTERM");
         } catch {
           /* ignore */
         }
       };
+      // Deliberate Stop arrives via /api/chat/stop (which kills through this
+      // registration); a bare transport abort means the client vanished — let
+      // the turn finish server-side so resync recovers the full reply, bounded
+      // by the detach cap in case nothing ever comes back for it.
+      const runHandle = registerChatRun([args.body.runId, conversationId], killChild);
+      let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
+      const armDetachKill = () => {
+        if (runHandle.stopRequested || detachKillTimer != null) return;
+        detachKillTimer = setTimeout(killChild, CHAT_DETACH_MAX_MS);
+      };
+      // Re-attach (GET /api/chat/stream) cancels the pending kill; the last
+      // tail dropping re-arms it — but only once the ORIGINAL request is
+      // gone, so a resume tail closing can't kill a still-attached turn.
+      runBuffer = openRunBuffer([args.body.runId, conversationId], {
+        attach: () => {
+          if (detachKillTimer != null) {
+            clearTimeout(detachKillTimer);
+            detachKillTimer = null;
+          }
+        },
+        detach: () => {
+          if (args.req.signal.aborted) armDetachKill();
+        },
+      });
+      const onAbort = () => armDetachKill();
       args.req.signal.addEventListener("abort", onAbort, { once: true });
+
+      // First-turn visibility (cave-0g2x): the OpenClaw path knows its
+      // conversation id up front, so persist the stub (and the default title)
+      // as soon as the bridge is running — the sessions list can surface the
+      // chat during its entire first turn. Best-effort; a no-op for resumed
+      // chats. The close handler strips the stub turn and re-appends the
+      // authoritative one under the same id.
+      const pendingUserTurnId = crypto.randomUUID();
+      const stubTitle =
+        chatTitleFromPrompt(args.promptText) ?? defaultChatTitleForSession(conversationId);
+      void setDefaultSessionTitleIfMissing(conversationId, stubTitle).catch(() => undefined);
+      const stubWrite = createConversationStub({
+        sessionId: conversationId,
+        familiarId: args.body.familiarId,
+        harness: "openclaw",
+        ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
+        ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
+        title: stubTitle,
+        ...(args.body.origin ? { origin: args.body.origin } : {}),
+        modelIntent: modelIntentForSend(args.body, args.modelState),
+        userTurn: {
+          id: pendingUserTurnId,
+          text: args.promptText,
+          ...(args.attachments.length ? { attachments: args.attachments } : {}),
+          ...persistedTurnControls(args.body, responseMetadata.retryModel),
+        },
+      }).catch(() => undefined);
 
       child.stdout.on("data", (data: Buffer) => {
         stdout += data.toString("utf8");
@@ -770,10 +762,15 @@ function openClawChatResponse(args: {
           responseMetadata,
         });
         args.req.signal.removeEventListener("abort", onAbort);
+        if (detachKillTimer != null) clearTimeout(detachKillTimer);
+        unregisterChatRun(runHandle);
+        runBuffer?.finish();
         close();
       });
       child.on("close", async (code) => {
         args.req.signal.removeEventListener("abort", onAbort);
+        if (detachKillTimer != null) clearTimeout(detachKillTimer);
+        unregisterChatRun(runHandle);
         const durationMs = Date.now() - startedAt;
         // Identity stays cave-owned: the gateway's internal session id is
         // surfaced as diagnostics only, never adopted as the conversation
@@ -791,20 +788,33 @@ function openClawChatResponse(args: {
           durationMs,
         );
 
-        // User cancel (CHAT-D5-02): a stopped response SIGTERMs the bridge,
-        // so stdout is usually empty or truncated JSON. Persist an honest
-        // cancelled marker — never raw truncated output or the fabricated
-        // "returned no text" error diagnostic.
-        const cancelledByUser = args.req.signal.aborted;
+        // User cancel (CHAT-D5-02): a deliberate Stop (/api/chat/stop)
+        // SIGTERMs the bridge, so stdout is usually empty or truncated JSON.
+        // Persist an honest cancelled marker — never raw truncated output or
+        // the fabricated "returned no text" error diagnostic. A bare transport
+        // abort is NOT a cancel: the turn ran to completion above and persists
+        // as a normal reply the client recovers on resync.
+        const cancelledByUser = runHandle.stopRequested;
 
         if (stdout.trim()) {
           try {
             const parsed = JSON.parse(stdout.trim()) as OpenClawAgentJson;
             gatewaySessionId = extractOpenClawSessionId(parsed);
+            if (gatewaySessionId) responseMetadata.gatewaySessionId = gatewaySessionId;
             assistantText = extractOpenClawText(parsed);
             isError = isError || parsed.status === "error";
           } catch {
-            if (!cancelledByUser) assistantText = stdout.trim();
+            // Never persist raw bridge output: it can contain prompts, paths,
+            // or secrets. Keep the fixed diagnostic, then fall through to the
+            // normal close/finalization path.
+            isError = true;
+            assistantText = "The OpenClaw bridge emitted an invalid response.";
+            pushProgress(
+              "openclaw-protocol",
+              "OpenClaw response was malformed",
+              "error",
+              "The bridge emitted an invalid response.",
+            );
           }
         }
         if (gatewaySessionId) {
@@ -838,61 +848,91 @@ function openClawChatResponse(args: {
         if (sessionId) {
           pushProgress("save-transcript", "Saving transcript", "running");
           await recordSessionFamiliar(sessionId, args.body.familiarId);
-          const existing = await loadConversation(sessionId);
-          const now = new Date().toISOString();
-          const userTurnId = crypto.randomUUID();
-          const assistantTurnId = crypto.randomUUID();
-          const chatTitle = existing?.title ?? defaultChatTitleForSession(sessionId);
-          if (!existing) await setDefaultSessionTitleIfMissing(sessionId, chatTitle);
-          const conv = existing ?? {
-            sessionId,
-            familiarId: args.body.familiarId,
-            harness: "openclaw",
-            model: responseMetadata.model,
-            runtime: responseMetadata.runtime,
-            title: chatTitle,
-            createdAt: now,
-            updatedAt: now,
-            turns: [],
-          };
-          conv.model = responseMetadata.model;
-          conv.runtime = responseMetadata.runtime;
-          persistSendModelIntent(conv, args.body, args.modelState);
-          conv.turns.push(
-            {
-              id: userTurnId,
-              role: "user",
-              text: args.promptText,
-              ...(args.attachments.length ? { attachments: args.attachments } : {}),
+          // Settle the spawn-time stub write first so it can never race (and
+          // clobber) the authoritative transcript saved below.
+          await stubWrite;
+          const isFirstExchange = await withConversationLock(sessionId, async () => {
+            const existing = await loadConversation(sessionId);
+            // First-turn visibility (cave-0g2x): drop the spawn-time stub turn
+            // so the authoritative user turn below re-lands under the same id.
+            const hadFirstTurnStub = existing
+              ? stripConversationStubTurn(existing, pendingUserTurnId)
+              : false;
+            const firstExchange = !existing || hadFirstTurnStub;
+            const now = new Date().toISOString();
+            const userTurnId = pendingUserTurnId;
+            const assistantTurnId = crypto.randomUUID();
+            const chatTitle = existing?.title ?? defaultChatTitleForSession(sessionId);
+            if (!existing) await setDefaultSessionTitleIfMissing(sessionId, chatTitle);
+            // Branching: same logic as the coven-run path — client-supplied
+            // parentTurnId takes precedence; falls back to prior activeLeafId for
+            // normal (non-branch) sends so the linear chain is preserved.
+            const branchParentId =
+              args.body.parentTurnId !== undefined
+                ? args.body.parentTurnId
+                : existing?.activeLeafId ?? null;
+            const conv = existing ?? {
+              sessionId,
+              familiarId: args.body.familiarId,
+              harness: "openclaw",
+              model: responseMetadata.model,
+              runtime: responseMetadata.runtime,
+              title: chatTitle,
+              ...(args.body.origin ? { origin: args.body.origin } : {}),
               createdAt: now,
-            },
-            {
-              id: assistantTurnId,
-              role: "assistant",
-              text: assistantText.trim(),
-              createdAt: new Date().toISOString(),
-              durationMs,
-              isError,
-              responseMetadata,
-              ...(cancelledByUser ? { cancelled: true } : {}),
-            },
-          );
-          await saveConversation(conv);
+              updatedAt: now,
+              turns: [],
+            };
+            conv.model = responseMetadata.model;
+            conv.runtime = responseMetadata.runtime;
+            persistSendModelIntent(
+              conv,
+              args.body,
+              args.modelState,
+              args.initialModelIntent,
+            );
+            // Work-branch snapshot from the chat's own cwd — per-session PR
+            // attribution (badges + merged-PR auto-archive). Best-effort; a
+            // failed capture keeps the previous snapshot.
+            const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
+            if (workBranch) conv.branch = workBranch;
+            // Transcript PR snapshot: the reply's last reported PR URL (fallback
+            // attribution for chats whose work happens in agent worktrees).
+            const reportedPrUrl = latestPrUrlFromText(assistantText);
+            if (reportedPrUrl) conv.prUrl = reportedPrUrl;
+            conv.turns.push(
+              {
+                id: userTurnId,
+                role: "user",
+                text: args.promptText,
+                ...(args.attachments.length ? { attachments: args.attachments } : {}),
+                ...persistedTurnControls(args.body, responseMetadata.retryModel),
+                createdAt: now,
+                ...(branchParentId != null ? { parentId: branchParentId } : {}),
+              },
+              {
+                id: assistantTurnId,
+                role: "assistant",
+                text: assistantText.trim(),
+                createdAt: new Date().toISOString(),
+                durationMs,
+                isError,
+                parentId: userTurnId,
+                responseMetadata,
+                ...(cancelledByUser ? { cancelled: true } : {}),
+              },
+            );
+            conv.activeLeafId = assistantTurnId;
+            await saveConversation(conv);
+            return firstExchange;
+          });
+          if (isFirstExchange && !isError) {
+            await autoNameSessionFromFirstExchange(sessionId, args.promptText);
+          }
+          // Periodic context-aware rename runs on every completed turn (the
+          // cadence gate inside decides when it's actually due).
+          if (!isError) await maybeAutoRenameFromContext(sessionId, args.promptText);
           pushProgress("save-transcript", "Transcript saved", "done");
-          scheduleLinkRoute({
-            prompt: args.promptText,
-            sessionId,
-            turnId: userTurnId,
-            chatTitle,
-            familiar: args.body.familiarId,
-          });
-          scheduleLinkRoute({
-            prompt: assistantText.trim(),
-            sessionId,
-            turnId: assistantTurnId,
-            chatTitle,
-            familiar: args.body.familiarId,
-          });
         }
 
         push({
@@ -902,6 +942,7 @@ function openClawChatResponse(args: {
           sessionId: sessionId ?? undefined,
           responseMetadata,
         });
+        runBuffer?.finish();
         await sleep(20);
         close();
       });
@@ -947,7 +988,12 @@ export async function POST(req: Request) {
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
-  const sshRuntime = isSshRuntime(binding.runtime) ? binding.runtime : null;
+  // Canonicalize the bound harness id up front so a familiar carrying a
+  // package/alias id (e.g. "hermes-agent" for Hermes) is recognized as the
+  // trusted "hermes" adapter — otherwise the trust gate below 403s and `coven
+  // run` is invoked with an unknown harness name. Every downstream check and
+  // the spawn use this canonical id.
+  binding.harness = canonicalHarnessId(binding.harness);
   const existingConversation = body.sessionId
     ? await loadConversation(body.sessionId).catch(() => null)
     : null;
@@ -957,11 +1003,221 @@ export async function POST(req: Request) {
       { status: 404, headers: { "content-type": "application/json" } },
     );
   }
-  // OpenClaw runs through its own agent bridge (no `coven run`), so it never
-  // forwards `--model`; every other bundled harness gates on the capability
-  // probe so this stays a no-op until the companion CLI ships the flag.
+  // Native Board handoffs reserve Cave's conversation id before the harness
+  // writes its transcript. Bind that pre-transcript id to the server-owned
+  // task card now, so a caller cannot use another familiar's reserved task.
+  const taskCard = await taskCardForSession(body.sessionId);
+  if (taskCard && taskCard.familiarId !== body.familiarId) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "not found" }),
+      { status: 404, headers: { "content-type": "application/json" } },
+    );
+  }
+  // Host picker: an explicit allowed host wins; with no request, a conversation
+  // recorded on an allowed ssh host stays pinned there; only then does the
+  // familiar's own runtime binding decide. Unregistered hosts are rejected
+  // fail-closed — inherited familiar runtimes are scoped to the current
+  // familiar so one familiar cannot borrow another familiar's SSH binding.
+  const runtimeSelection = resolveRequestedRuntime({
+    requestedHost: body.runtimeHost,
+    conversationRuntime: existingConversation?.runtime,
+    registry: sshHostRegistry({
+      remoteHosts: config.remoteHosts,
+      familiarRuntimes: [config.defaults?.runtime, binding.runtime],
+    }),
+    currentRuntime: binding.runtime,
+  });
+  if (!runtimeSelection.ok) {
+    return new Response(
+      JSON.stringify({ ok: false, error: runtimeSelection.error }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
+  const effectiveRuntime = runtimeSelection.runtime ?? binding.runtime;
+  const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
+  // Grok Build is a direct local integration. Do not silently send it through
+  // `coven run --stream-json` on SSH: its native JSONL/session protocol is
+  // different and the proposed registry manifest is not accepted upstream.
+  if (binding.harness === "grok" && sshRuntime) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "Grok Build chats currently run on this Cave host. Select a local runtime; SSH Grok is not routed through coven run.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
+  // Hermes, Grok Build, OpenCode, and compatible Copilot clients run directly.
+  // Resolve their passive launch vehicles before asking any of those binaries
+  // (or the generic Coven transport) about optional capabilities.
+  // OpenClaw's bridge has no CLI model passthrough; every other bundled
+  // harness uses coven run's capability probe.
+  const hermesDirect = !sshRuntime && binding.harness === "hermes";
+  const openCodeDirect = !sshRuntime && binding.harness === "opencode";
+  const grokDirect = !sshRuntime && binding.harness === "grok";
+  const copilotDirect = !sshRuntime && binding.harness === "copilot";
+  // Cave's Read-only control is a security promise, not a prompt hint.
+  // OpenCode's one-shot CLI exposes no read-only/sandbox flag, so do not even
+  // run its capability probes with the familiar-scoped credentials here.
+  if (openCodeDirect && body.permissionMode === "read") {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "OpenCode does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
+
+  // Tool activity from Hermes is only reliable over its documented structured
+  // API. The quiet CLI mode intentionally hides terminal tool previews, so it
+  // remains an explicit plain-text fallback when no API server is configured.
+  // Build its environment once: API configuration and any CLI fallback must
+  // observe the same familiar-scoped values.
+  const hermesSpawnEnvironment = hermesDirect
+    ? harnessSpawnEnv(body.familiarId)
+    : null;
+  const hermesApi = hermesSpawnEnvironment
+    ? hermesApiConfig(hermesSpawnEnvironment as {
+        HERMES_API_URL?: string;
+        HERMES_API_KEY?: string;
+      })
+    : null;
+
+  // Copilot's exact command is resolved once. The capability phase consumes
+  // that passive plan and cannot resolve a different npm shim. Its probe env
+  // is credential-free; the eventual model env keeps familiar-scoped values
+  // but is pinned to this same canonical PATH.
+  const copilotManifestStream = copilotDirect ? copilotStreamSpec() : null;
+  const copilotRuntimeLaunch = copilotManifestStream
+    ? await resolveCopilotRuntimeLaunch(copilotManifestStream.executable)
+    : null;
+  const copilotCapability = copilotManifestStream && copilotRuntimeLaunch
+    ? copilotRuntimeLaunch.availability.state === "ready"
+      ? await probeCopilotCapability(copilotManifestStream.executable, {
+          resolveRuntimeLaunch: async () => copilotRuntimeLaunch,
+        })
+      : {
+          version: null,
+          availability: copilotRuntimeLaunch.availability,
+        }
+    : null;
+  const copilotRouting = await prepareCopilotChatRouting({
+    harness: binding.harness,
+    isSshRuntime: Boolean(sshRuntime),
+    probe: async () => copilotCapability,
+    resolveCompatibility: () => resolveRuntimeCompatibility("copilot"),
+  });
+  const copilotStream = copilotRouting.spec;
+  const copilotCompatibilityDiagnostic = copilotRouting.compatibilityDiagnostic;
+
+  let localRuntimePlan: LocalRuntimePlan | null = null;
+  if (!sshRuntime && binding.harness !== "openclaw" && !(hermesDirect && hermesApi)) {
+    if (
+      copilotRuntimeLaunch &&
+      (copilotRuntimeLaunch.availability.state !== "ready" || copilotStream)
+    ) {
+      localRuntimePlan = createLocalRuntimePlan({
+        runner: "copilot",
+        launch: copilotRuntimeLaunch,
+        env: familiarEnvWithCanonicalPath(
+          body.familiarId,
+          copilotRuntimeLaunch.env,
+        ),
+        availability: copilotRuntimeLaunch.availability,
+      });
+    } else if (openCodeDirect) {
+      const env = openCodeSpawnEnv(body.familiarId);
+      const launch = openCodeLaunch([], process.platform, env);
+      localRuntimePlan = createLocalRuntimePlan({
+        runner: "opencode",
+        launch: { command: launch.command, fixedArgs: launch.args },
+        env,
+        powerShellHostedCommand:
+          launch.input !== undefined ? openCodeCommand() : undefined,
+      });
+    } else if (grokDirect) {
+      const env = harnessSpawnEnv(body.familiarId);
+      localRuntimePlan = createLocalRuntimePlan({
+        runner: "grok",
+        launch: grokLaunchCommand(),
+        env,
+      });
+    } else if (hermesDirect) {
+      localRuntimePlan = createLocalRuntimePlan({
+        runner: "hermes",
+        launch: {
+          command: process.platform === "win32" ? "hermes.exe" : "hermes",
+          fixedArgs: [],
+        },
+        env: hermesSpawnEnvironment!,
+      });
+    } else {
+      const env = harnessSpawnEnv(body.familiarId);
+      localRuntimePlan = createLocalRuntimePlan({
+        runner: "coven",
+        launch: covenLaunchCommand(),
+        env,
+      });
+    }
+  }
+  const openCodeCapabilities = openCodeDirect
+    ? await probeReadyLocalRuntimeCapability({
+        plan: localRuntimePlan,
+        runner: "opencode",
+        probe: () => openCodeRunCapabilities(body.familiarId),
+      })
+    : null;
+  const openCodeCompatibility = openCodeCapabilities
+    ? await resolveOpenCodeCompatibility(openCodeCapabilities)
+    : null;
+  const hermesModelCapability =
+    hermesDirect && hermesApi === null
+      ? await probeReadyLocalRuntimeCapability({
+          plan: localRuntimePlan,
+          runner: "hermes",
+          probe: hermesChatSupportsModel,
+        })
+      : null;
+  // SSH retains its existing remote routing semantics through the only
+  // no-local-plan bypass. Every local Coven probe requires the exact ready
+  // Coven plan.
+  const probeCovenCapability = <T,>(probe: () => Promise<T>) =>
+    probeReadyLocalRuntimeCapability({
+      plan: localRuntimePlan,
+      runner: "coven",
+      probe,
+      allowWithoutLocalPlan: Boolean(sshRuntime),
+    });
   const modelForwardingEnabled =
-    binding.harness !== "openclaw" && (await covenRunSupportsModel());
+    hermesDirect
+      ? hermesApi !== null ||
+        (hermesModelCapability ?? false)
+      : openCodeDirect
+        ? openCodeCompatibility?.capabilities.model ?? false
+        : copilotStream
+          ? true
+          : binding.harness === "grok" ||
+            (
+              binding.harness !== "openclaw" &&
+              ((await probeCovenCapability(covenRunSupportsModel)) ?? false)
+            );
+  // Direct integrations never wait on Coven probes for flags they do not
+  // execute. A plain Copilot compatibility fallback reaches these probes only
+  // when its separately planned Coven transport is ready.
+  const permissionForwardingEnabled =
+    !openCodeDirect &&
+    binding.harness !== "openclaw" &&
+    binding.harness !== "grok" &&
+    ((await probeCovenCapability(covenRunSupportsPermission)) ?? false);
+  // Same gating for directory grants (`--add-dir`). Without forwarding, the
+  // granted roots listed in the runtime-scope preamble are prompt-text-only
+  // and the harness denies every access to them.
+  const addDirForwardingEnabled =
+    !openCodeDirect &&
+    binding.harness !== "openclaw" &&
+    binding.harness !== "grok" &&
+    ((await probeCovenCapability(covenRunSupportsAddDir)) ?? false);
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
     config,
@@ -969,6 +1225,16 @@ export async function POST(req: Request) {
     existingConversation,
     modelForwardingEnabled,
   });
+  // Do not turn Cave's provider-level fallback into a pinned Grok model. The
+  // live `grok models` catalog is account-specific and may not contain the
+  // compile-time fallback, while omitting --model reliably selects the CLI's
+  // current authenticated default on every supported host.
+  const grokForwardModel = grokShouldUseCliDefault({
+    modelSource: modelState.source,
+    globalDefaultModel: config.defaults.model,
+  })
+    ? null
+    : cleanModelId(desiredModel);
 
   // Native Cave chat can drive Coven harnesses that resolve through
   // `coven run <harness> --stream-json`, including external adapter manifests.
@@ -993,6 +1259,27 @@ export async function POST(req: Request) {
       { status: 403, headers: { "content-type": "application/json" } },
     );
   }
+  // Claude's stream envelope is versioned independently of Cave. Resolve a
+  // trusted local capability profile before streaming; an unknown client still
+  // receives normal chat text, but never silently receives misleading tool
+  // bubbles from an unverified envelope shape.
+  const claudeCompatibility =
+    !sshRuntime && binding.harness === "claude"
+      ? await resolveInstalledClaudeCompatibility()
+      : null;
+  await ensureAdapterManifestScaffold(binding.harness);
+// The Responses API does not expose a documented, enforceable equivalent of
+  // Cave's read-only sandbox. Do not downgrade that security promise to a
+  // prompt merely because a familiar opted into the structured transport.
+  if (hermesDirect && hermesApi && body.permissionMode === "read") {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "Hermes API does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
   if (sshRuntime && binding.harness === "openclaw") {
     return new Response(
       JSON.stringify({
@@ -1011,13 +1298,106 @@ export async function POST(req: Request) {
   // directory the conversation started in, not homedir or the familiar
   // workspace, or `--continue <id>` misses (and the transparent retry forks
   // the chat into a fresh session).
-  const resumeCwd =
+  const conversationResumeCwd =
     !sshRuntime && !body.projectRoot && existingConversation?.runtime?.startsWith("local:")
       ? existingConversation.runtime.slice("local:".length).trim() || undefined
       : undefined;
+  // Threads opened from Familiar analytics (`/#chat-<id>`) can predate any
+  // Cave conversation record — the daemon spawned them, so only IT knows the
+  // cwd. Its session record is the trust anchor (see daemonSessionCwd);
+  // without this fallback those chats died on the 400 "projectRoot is
+  // required" refusal with nowhere to go (cave-yjnr). Conversations that
+  // recorded a runtime keep it authoritative (never cross an ssh: runtime
+  // onto a local root).
+  const resumeCwd =
+    conversationResumeCwd ??
+    (!sshRuntime && !body.projectRoot && existingConversation?.runtime == null
+      ? await daemonSessionCwd(body.sessionId)
+      : undefined);
+  const projectRootForLaunch = body.projectRoot ?? resumeCwd;
+  const projects = await loadProjects();
+  const resolvedFamiliarWorkspace = !sshRuntime
+    ? await resolveFamiliarWorkspace(body.familiarId)
+    : undefined;
+  // A persisted conversation owns its provenance. Never let a request relabel
+  // an existing user chat as a hidden generator to bypass project checks.
+  const generationOrigin = existingConversation?.origin ?? body.origin;
+  const projectlessGeneration =
+    !body.projectRoot && isProjectlessGenerationOrigin(generationOrigin);
+  // A Board task may be isolated in a worktree below its registered project.
+  // The worktree itself is intentionally not a separate project record, so
+  // its first native-chat turn must authorize against the card's server-owned
+  // project instead of failing as an arbitrary unregistered directory. This
+  // narrow exception applies only to the fresh reserved handoff and only when
+  // the browser submits the exact CWD persisted on that task card.
+  const taskWorktreeProjectId =
+    body.startNewConversation &&
+    !existingConversation &&
+    taskCard?.projectId &&
+    taskCard.cwd &&
+    body.projectRoot &&
+    taskCard.cwd === body.projectRoot
+      ? taskCard.projectId
+      : null;
+  let authorizedProjectRoot: string;
+  try {
+    if (projectlessGeneration) {
+      const generationRoot = sshRuntime ? homedir() : (resumeCwd ?? resolvedFamiliarWorkspace);
+      if (!generationRoot) {
+        throw new ChatProjectLaunchError(
+          "project_root_required",
+          400,
+          "This hidden generation has no safe familiar workspace.",
+        );
+      }
+      authorizedProjectRoot = generationRoot;
+    } else {
+      const authorized = await authorizeChatProjectLaunch(
+        {
+          validateProjectRoot: validateCaveProjectRoot,
+          resolveProjectId: (requestedRoot, resolvedRoot) =>
+            chatProjectAccessId({
+              projects,
+              requestedProjectRoot: requestedRoot,
+              resolvedCwd: resolvedRoot,
+            }),
+          isProjectRegistered: (projectId) =>
+            projects.some((project) => project.id === projectId),
+          hasProjectAccess: async (requestedFamiliarId, projectId, surface) => {
+            try {
+              await assertProjectAccess({ familiarId: requestedFamiliarId }, projectId, surface);
+              return true;
+            } catch (error) {
+              if (error instanceof ProjectAccessDeniedError) return false;
+              throw error;
+            }
+          },
+        },
+        {
+          familiarId: body.familiarId,
+          projectRoot: projectRootForLaunch,
+          projectIdOverride: taskWorktreeProjectId,
+          surface: "chat",
+        },
+      );
+      authorizedProjectRoot = authorized.root;
+    }
+  } catch (error) {
+    if (error instanceof ChatProjectLaunchError) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: error.message,
+          code: error.code,
+        }),
+        { status: error.status, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw error;
+  }
   let cwd: string;
   try {
-    cwd = sshRuntime ? homedir() : await resolveLocalRuntimeCwd(body.projectRoot ?? resumeCwd);
+    cwd = sshRuntime ? homedir() : await resolveLocalRuntimeCwd(authorizedProjectRoot);
   } catch (error) {
     if (error instanceof RuntimeScopeError) {
       return new Response(
@@ -1027,61 +1407,56 @@ export async function POST(req: Request) {
     }
     throw error;
   }
-  const chatProjectId = sshRuntime
-    ? null
-    : await chatProjectAccessId({
-        requestedProjectRoot: body.projectRoot,
-        resumeCwd,
-        resolvedCwd: cwd,
-      });
-  if (chatProjectId) {
-    try {
-      await assertProjectAccess({ familiarId: body.familiarId }, chatProjectId, "chat");
-    } catch (error) {
-      if (error instanceof ProjectAccessDeniedError) {
-        return new Response(
-          JSON.stringify({ ok: false, error: error.message }),
-          { status: error.status, headers: { "content-type": "application/json" } },
-        );
-      }
-      throw error;
-    }
-  }
-  const resolvedFamiliarWorkspace = !sshRuntime
-    ? await resolveFamiliarWorkspace(body.familiarId)
-    : undefined;
-  // Resolve familiar workspace for identity context. When a project root is
-  // explicitly set, the harness boots there (and should have the familiar's
-  // AGENTS.md injected separately). When there's no project root, boot in the
-  // familiar's own workspace so the selected harness picks up AGENTS.md /
-  // SOUL.md / IDENTITY.md and responds as the familiar instead of as the
-  // generic CLI identity. A resumed conversation keeps its recorded cwd over
-  // the workspace for the same reason. SSH runtimes own their remote cwd, so
-  // never stat the local filesystem for a remote familiar.
-  const familiarCwd = !sshRuntime && !body.projectRoot && !resumeCwd
-    ? resolvedFamiliarWorkspace
-    : undefined;
+  const grantedProjectRoots = sshRuntime
+    ? []
+    : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
+  // The selected project is always the runtime root. Familiar identity files
+  // are injected separately and remain an allowed side directory below.
   const runtimeScope: RuntimeScope = sshRuntime
     ? { kind: "ssh", host: sshRuntime.host, root: sshRuntime.cwd }
-    : { kind: "local", root: familiarCwd ?? cwd };
+    : { kind: "local", root: cwd, allowedProjectRoots: grantedProjectRoots };
+  // Boundary sentinel: watches the harness's streamed tool calls for paths
+  // outside the granted roots. Never blocks the stream — violations surface
+  // as a progress notice at turn end and steer the NEXT turn via a prompt
+  // reminder (see chat-boundary-sentinel.ts). SSH runtimes stream remote
+  // paths that can't be classified against local roots, so they skip it.
+  const boundarySentinel = sshRuntime
+    ? null
+    : createBoundarySentinel({
+        allowedRoots: [
+          cwd,
+          ...grantedProjectRoots,
+          ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+        ],
+      });
   const responseMetadata: ChatResponseMetadata = {
     familiarId: body.familiarId,
     harness: binding.harness,
     model: desiredModel,
     runtime: sshRuntime
       ? `ssh:${sshRuntime.host}:${sshRuntime.cwd}`
-      : `local:${familiarCwd ?? cwd}`,
+      : `local:${cwd}`,
     desiredModel,
     confirmedModel: undefined,
+    retryModel: turnRetryModel({ requestedModel: body.modelOverride }),
     modelSource: modelState.source,
     modelApplicationState: modelState.applicationState,
     modelApplicationReason: modelState.reason,
   };
+  const offlineChatResponse = await maybeQueueOfflineChat({
+    body,
+    config,
+    promptText,
+    persistedAttachments,
+    responseMetadata,
+  });
+  if (offlineChatResponse) return offlineChatResponse;
 
-  // Image delivery channel: only local coven-run harnesses can Read files on
-  // this machine. The OpenClaw bridge and SSH runtimes cannot, so their
-  // prompts carry an explicit unsupported notice instead of a dead path.
-  const imagesSupported = !sshRuntime && binding.harness !== "openclaw";
+  // Image delivery channel: only harnesses that can read Cave's local temp
+  // files may receive image paths. Remote Hermes Responses endpoints cannot,
+  // so they receive the same explicit unsupported notice as bridge/SSH runs.
+  const imagesSupported = !sshRuntime && binding.harness !== "openclaw" &&
+    !(hermesApi && !hermesApiCanAccessLocalFiles(hermesApi));
   const imageFilePaths = imagesSupported
     ? await writeImageAttachmentsToTemp(attachments)
     : new Map<number, string>();
@@ -1097,23 +1472,40 @@ export async function POST(req: Request) {
   const dailyMemoryContext = await readFamiliarDailyMemoryStartupContext(
     resolvedFamiliarWorkspace,
   );
+  // Operator profile — who the human is. New sessions only: resumed sessions
+  // already carry the block in their transcript.
+  const operatorProfileContext = body.sessionId
+    ? null
+    : buildOperatorProfileContext(config.profile);
+  // Knowledge Vault — curated, cross-harness reference knowledge, separate from
+  // memory. Injected here so every harness (claude/codex/hermes/openclaw) that
+  // consumes `harnessPrompt` below receives the same authoritative context.
+  const knowledgeVaultEntries = await readKnowledgeVaultForPrompt(body.familiarId);
+  const knowledgeVaultCollections = await listCollections();
 
-  const taskContext = await taskContextForSession(body.sessionId);
-  const harnessPrompt = buildPromptWithRuntimeScope(
+  // Reuse the task card already loaded to authorize this reserved handoff.
+  // Besides avoiding a second board-store read on every chat turn, this keeps
+  // the permission decision and prompt context on the same task snapshot.
+  const taskContext = taskCard ? buildTaskContext(taskCard) : null;
+  const scopedPrompt = buildPromptWithRuntimeScope(
     buildPromptWithCovenIdentityCanon(
       buildTaskAwarePrompt(
-        buildPromptWithFamiliarStartupContext(
-          appendMentionedFilesBlock(
-            buildPromptWithResponseControls(
-              buildPromptWithAttachments(promptText, attachments, {
-                imagesSupported,
-                imageFilePaths,
-              }),
-              body,
+        buildPromptWithKnowledgeVault(
+          buildPromptWithFamiliarStartupContext(
+            appendMentionedFilesBlock(
+              buildPromptWithResponseControls(
+                buildPromptWithAttachments(promptText, attachments, {
+                  imagesSupported,
+                  imageFilePaths,
+                }),
+                body,
+              ),
+              mentionedFiles,
             ),
-            mentionedFiles,
+            [operatorProfileContext, dailyMemoryContext],
           ),
-          [dailyMemoryContext],
+          knowledgeVaultEntries,
+          knowledgeVaultCollections,
         ),
         taskContext,
       ),
@@ -1121,6 +1513,24 @@ export async function POST(req: Request) {
     ),
     runtimeScope,
   );
+  // The boundary reminder rides OUTSIDE the runtime-scope wrapper: it refers
+  // back to the boundary block ("listed above") and only exists when the
+  // conversation's previous turn strayed out of the granted roots.
+  const harnessPrompt = buildPromptWithBoundaryReminder(scopedPrompt, body.sessionId);
+  // A selected schema may opt into the delimiter, but the installed client
+  // must also document it before Cave sends an otherwise unsupported flag.
+  const openCodeEndOfOptionsSupported = Boolean(
+    openCodeDirect
+    && openCodeCompatibility?.capabilities.endOfOptions
+    && (openCodeCompatibility?.mode === "plain" || openCodeCompatibility?.schema?.launch.endOfOptions === true),
+  );
+  const openCodePromptNeedsDelimiter = openCodeDirect && harnessPrompt.startsWith("--");
+  if (openCodePromptNeedsDelimiter && !openCodeEndOfOptionsSupported) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "This OpenCode client does not document support for prompts that begin with '--'. Start the prompt with text or update OpenCode." }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
 
   if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
@@ -1131,6 +1541,7 @@ export async function POST(req: Request) {
       attachments: persistedAttachments,
       desiredModel,
       modelState,
+      initialModelIntent: existingConversation?.modelIntent?.model ?? null,
     });
   }
 
@@ -1143,35 +1554,237 @@ export async function POST(req: Request) {
   // Emitted BEFORE the `--` separator for the same reason every other flag is.
   const forwardModel =
     modelForwardingEnabled && cleanModelId(desiredModel) ? desiredModel : null;
-  const buildArgs = (resumeSessionId: string | null): string[] => {
+  const forwardPermission =
+    permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
+  // Directory grants: forward every granted project root — plus the familiar's
+  // own workspace when it isn't the spawn cwd — so the harness actually trusts
+  // the roots the runtime-scope preamble grants. The spawn cwd is already
+  // trusted implicitly, so it's excluded. Gated on the `--add-dir` probe and
+  // local runtimes only (SSH runtimes own their remote filesystem).
+  const spawnRoot = cwd;
+  const grantDirs = !sshRuntime
+    ? Array.from(
+        new Set(
+          [
+            ...grantedProjectRoots,
+            ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+          ]
+            .map((root) => root.trim())
+            .filter((root) => root && root !== spawnRoot),
+        ),
+      )
+    : [];
+  const forwardAddDirs = addDirForwardingEnabled && !sshRuntime ? grantDirs : [];
+  // Hermes has a documented one-shot API (`hermes chat -Q -q <prompt>`), but
+  // its Coven adapter convention requires a POSIX shell shim to translate the
+  // positional prompt that `coven run` appends. The shim cannot be installed
+  // beside Hermes's Windows executable, which left Cave showing only a timer.
+  // Spawn Hermes directly for native local chats, as we already do for the
+  // Copilot JSONL adapter, and keep SSH runtimes on their remote Coven path.
+  // Grok Build has a documented streaming-json headless protocol. It is a
+  // direct local integration, deliberately independent of coven's generic
+  // `run --stream-json` adapter protocol.
+  const grokSandboxProfile = grokSandboxProfileForPermission(body.permissionMode);
+  // The copilot session id Cave chose for the CURRENT attempt: the resume
+  // target, or a pre-assigned fresh id (copilot events don't echo the id
+  // until the final result frame, so the stream handler announces this one).
+  let copilotSessionHint: string | null = null;
+  // Grok only emits its native session id in the final JSONL event. Assign a
+  // UUID for new native sessions so a stopped first turn can still be saved
+  // and resumed instead of disappearing with the unreceived end frame.
+  let grokSessionHint: string | null = null;
+  // Set only when the current OpenCode attempt forwards a native token.
+  // Fresh compatibility fallback must not retain a prior session by accident.
+  let openCodeNativeResumeUsed = false;
+  // `promptOverride` lets the transparent resume-retry (below) prime a fresh
+  // harness session with replayed conversation history — without it the retry
+  // forks a context-free session and the familiar loses the thread.
+  const buildArgs = (
+    resumeSessionId: string | null,
+    promptOverride?: string,
+  ): string[] => {
+    const prompt = promptOverride ?? harnessPrompt;
     if (sshRuntime) {
       return buildSshSpawnArgs({
         runtime: sshRuntime,
         harness: binding.harness,
         familiarId: body.familiarId,
-        prompt: harnessPrompt,
+        prompt,
         sessionId: resumeSessionId,
         model: forwardModel,
       });
     }
+    if (copilotStream) {
+      // A rejected resume token must start a named fresh native session. If
+      // argv silently omits it, retaining the invalid token here would make
+      // Cave announce/persist an id the CLI never used.
+      const safeResumeSessionId = isSafeCopilotResumeSessionId(resumeSessionId)
+        ? resumeSessionId
+        : null;
+      copilotSessionHint = safeResumeSessionId ?? crypto.randomUUID();
+      // The direct spawn bypasses `coven run --familiar`, so mirror coven's
+      // identity preamble here — without it the familiar answers as the
+      // generic Copilot CLI.
+      const identity = copilotIdentityPreamble(
+        body.familiarId,
+        binding.display_name,
+        binding.role,
+      );
+      return buildCopilotStreamArgs({
+        spec: copilotStream,
+        prompt: identity ? `${identity}\n\n${prompt}` : prompt,
+        resumeSessionId: safeResumeSessionId,
+        newSessionId: safeResumeSessionId ? null : copilotSessionHint,
+        model: cleanModelId(desiredModel),
+        permissionMode: body.permissionMode === "read" ? "read" : "full",
+        // Ungated grant list (cave-n1yc): the direct spawn never goes through
+        // `coven run`, so the coven CLI's --add-dir probe must not mask it.
+        // Copilot's native repeatable --add-dir ships in every CLI version
+        // this stream path supports, same trust basis as the manifest's
+        // session/sandbox flags above.
+        addDirs: grantDirs,
+      });
+    }
+    if (hermesDirect) {
+      const a = ["chat", "--source", "coven", "-Q"];
+      if (resumeSessionId) a.push("--resume", resumeSessionId);
+      // Hermes uses the provider-qualified model ID (for example
+      // `openai/gpt-5.6-sol`) to select the provider as well as the model.
+      if (forwardModel) a.push("--model", forwardModel);
+      a.push("--query", prompt);
+      return a;
+    }
+    if (grokDirect) {
+      grokSessionHint = resumeSessionId ? null : crypto.randomUUID();
+      return buildGrokBuildArgs({
+        prompt,
+        resumeSessionId,
+        newSessionId: grokSessionHint,
+        model: grokForwardModel,
+        permissionMode: body.permissionMode === "read" ? "read" : "full",
+        grantDirs,
+        identityRules: grokIdentityRules(
+          body.familiarId,
+          binding.display_name,
+          binding.role,
+        ),
+      });
+    }
+    if (openCodeDirect) {
+      // Reset for each attempt: a later fresh-session retry must not preserve
+      // the native token from an earlier failed compatibility launch.
+      openCodeNativeResumeUsed = false;
+      // The selected schema is capability based, never a version threshold.
+      // If JSON is unavailable, preserve plain chat instead of launching with
+      // an unsupported flag and losing the whole reply.
+      const a = ["run"];
+      if (openCodeCompatibility?.mode === "structured") {
+        const launch = openCodeCompatibility.schema!.launch;
+        a.push(
+          launch.structuredOutput.option,
+          ...(launch.structuredOutput.value === undefined ? [] : [launch.structuredOutput.value]),
+          ...launch.requiredFlags,
+        );
+        if (resumeSessionId && launch.sessionOption) {
+          a.push(launch.sessionOption, resumeSessionId);
+          openCodeNativeResumeUsed = true;
+        }
+      } else if (resumeSessionId) {
+        // Plain output can still resume a native session. Forward only the
+        // exact argument-taking option confirmed by `run --help`; never guess
+        // `--session` or feed an ID to a valueless "resume latest" switch.
+        const options = openCodeCompatibility?.capabilities.options ?? [];
+        const valueOptions = openCodeCompatibility?.capabilities.valueOptions ?? [];
+        const sessionOption = options.includes("--session") && valueOptions.includes("--session")
+          ? "--session"
+          : options.includes("--resume") && valueOptions.includes("--resume")
+            ? "--resume"
+            : null;
+        if (sessionOption) {
+          a.push(sessionOption, resumeSessionId);
+          openCodeNativeResumeUsed = true;
+        }
+      }
+      if (forwardModel) a.push("--model", forwardModel);
+      // Prompts are untrusted data. Insert the delimiter only after both the
+      // selected launch schema and `run --help` confirmed it is supported.
+      if (openCodeEndOfOptionsSupported) a.push("--");
+      a.push(prompt);
+      return a;
+    }
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
     if (forwardModel) a.push("--model", forwardModel);
+    // Enforce Read-only by mapping to the harness's native sandbox flag via
+    // `coven run --permission read-only` (codex --sandbox read-only / claude
+    // --permission-mode plan). Gated on the CLI advertising the flag.
+    if (forwardPermission) a.push("--permission", forwardPermission);
+    // Trust each granted root at the harness level; repeatable flag.
+    for (const dir of forwardAddDirs) a.push("--add-dir", dir);
     // Inject identity preamble. coven-cli renders this through the best
     // available identity channel for the chosen harness. Without this, the
     // harness answers as its generic CLI identity instead of as the familiar.
     if (/^[a-z0-9_-]+$/i.test(body.familiarId)) {
       a.push("--familiar", body.familiarId);
     }
-    a.push("--", harnessPrompt);
+    a.push("--", prompt);
     return a;
   };
   // Resume the harness's latest session id, not the stable conversation id —
   // after the first resume those diverge permanently.
-  const resumeTarget = body.sessionId
-    ? existingConversation?.harnessSessionId ?? body.sessionId
+  const resumeTarget = body.startNewConversation && !existingConversation
+    ? null
+    : body.sessionId
+      ? openCodeDirect
+        // If the Cave transcript was removed, the submitted token may still be
+        // a valid native OpenCode session. Preserve it for a help-confirmed
+        // resume rather than silently creating a context-free chat.
+        ? existingConversation?.harnessSessionId ?? body.sessionId
+        : existingConversation?.harnessSessionId ?? body.sessionId
+      : null;
+  // Grok deliberately refuses to change a resumed session's sandbox. Persist
+  // the profile used for the previous native session and transparently start a
+  // fresh one (with recent context replayed) when the access chip changed. An
+  // older conversation without this metadata also starts fresh, rather than
+  // risking a read-only request inheriting an unrestricted old session.
+  const grokFreshSessionForSandbox = grokDirect && grokResumeNeedsNewSandboxSession({
+    resumeSessionId: resumeTarget,
+    savedProfile: existingConversation?.grokSandboxProfile,
+    requestedProfile: grokSandboxProfile,
+  });
+  const grokSandboxRetry = grokFreshSessionForSandbox
+    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
-  const args = buildArgs(resumeTarget);
+  const openCodeNativeResumeSupported = openCodeCompatibility?.mode === "structured"
+    ? Boolean(openCodeCompatibility.schema?.launch.sessionOption)
+    : Boolean(
+      openCodeCompatibility?.capabilities.valueOptions?.includes("--session")
+      || openCodeCompatibility?.capabilities.valueOptions?.includes("--resume"),
+    );
+  const openCodeUnrecordedResume = Boolean(
+    openCodeDirect && body.sessionId && !existingConversation && !openCodeNativeResumeSupported,
+  );
+  // A client which no longer advertises a native resume option, or a prior
+  // turn which never received a native OpenCode id, must start fresh with
+  // bounded Cave transcript replay. Plain output can still safely resume when
+  // its exact option was confirmed by the capability probe.
+  const openCodeFreshSessionForCompatibility = Boolean(
+    openCodeDirect && body.sessionId && (
+      openCodeUnrecordedResume
+      || Boolean(existingConversation && (
+        !openCodeNativeResumeSupported
+        || !existingConversation.harnessSessionId
+      ))
+    ),
+  );
+  const openCodeSessionUnavailable = !openCodeNativeResumeSupported;
+  const openCodeCompatibilityRetry = openCodeFreshSessionForCompatibility
+    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    : null;
+  const args = buildArgs(
+    grokFreshSessionForSandbox || openCodeFreshSessionForCompatibility ? null : resumeTarget,
+    grokSandboxRetry?.prompt ?? openCodeCompatibilityRetry?.prompt,
+  );
 
   // Resume failures from common harnesses. Codex emits
   // "thread/resume failed: no rollout found ... (code -32600)" when the
@@ -1181,21 +1794,59 @@ export async function POST(req: Request) {
   // "No conversation found with session ID: <uuid>" when the requested
   // conversation vanished from Claude's local store. Coven itself emits
   // "session <uuid> not found in local store" when the requested --continue
-  // id exists only in Cave's local transcript store. In these cases we retry
-  // once without the resume flag so the chat starts fresh instead of erroring.
+  // id exists only in Cave's local transcript store. Copilot emits "No
+  // session, task, or name matched '<id>'" on `--resume` misses — including
+  // every conversation recorded before the direct-stream path existed, whose
+  // harnessSessionId lives only in coven's store. Hermes and OpenCode emit
+  // "Session not found" when their local session is gone. In these cases we
+  // retry once without the resume flag so the chat starts fresh instead of
+  // erroring.
   const RESUME_ERR_RE =
-    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store/i;
+    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched|Session not found\b/i;
 
+  // A first structured OpenCode frame can establish Cave's stable chat id
+  // before the child-run registry is installed. Keep this binding available
+  // to `announceSession` without putting it in the temporal dead zone.
+  let runHandle!: ChatRunHandle;
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
-      const push = (e: StreamEvent) => controller.enqueue(sse(e));
+      let closed = false;
+      const push = (e: StreamEvent) => {
+        // Tee EVERY event through the per-run ring first (cave-h40l): the
+        // buffer is what makes a dropped client resumable, so it must see
+        // events even after the original transport closed. The returned seq
+        // rides the SSE `id:` so live clients always hold a resume cursor.
+        const seq = runBuffer?.record(e);
+        if (closed || req.signal.aborted) return;
+        try {
+          controller.enqueue(chatSse(e, seq));
+        } catch (error) {
+          closed = true;
+          if (!req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
+        }
+      };
+      let runBuffer: RunBufferHandle | null = null;
+      // Compatibility notices are deliberately value-free and must survive
+      // transcript reloads; the live SSE buffer alone expires after two
+      // minutes. Keep only this narrowly-scoped subset of progress rows.
+      const persistedOpenCodeDiagnostics: NonNullable<ChatTurn["progress"]> = [];
       const pushProgress = (
         id: string,
         label: string,
         status: "running" | "done" | "error",
         detail?: string,
         durationMs?: number,
-      ) =>
+      ) => {
+        if (id === "opencode-compatibility") {
+          persistedOpenCodeDiagnostics.push({
+            id,
+            label,
+            status,
+            createdAt: new Date().toISOString(),
+            ...(detail ? { detail } : {}),
+            ...(durationMs != null ? { durationMs } : {}),
+          });
+        }
         push({
           kind: "progress",
           id,
@@ -1204,10 +1855,12 @@ export async function POST(req: Request) {
           ...(detail ? { detail } : {}),
           ...(durationMs != null ? { durationMs } : {}),
         });
-      let closed = false;
+      };
+      const heartbeat = startChatSseHeartbeat(controller, () => closed || req.signal.aborted);
       const close = () => {
         if (closed) return;
         closed = true;
+        clearInterval(heartbeat);
         try {
           controller.close();
         } catch {
@@ -1216,22 +1869,188 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
+      if (
+        copilotCompatibilityDiagnostic &&
+        copilotRuntimeLaunch?.availability.state === "ready"
+      ) {
+        pushProgress(
+          "copilot-client-compatibility",
+          "Copilot tool activity needs an update",
+          "error",
+          copilotCompatibilityDiagnostic,
+        );
+      }
+      if (hermesDirect && !hermesApi) {
+        // Do not fabricate tool bubbles from the CLI's presentation layer.
+        // This gives the operator an actionable, privacy-safe degradation
+        // notice while preserving normal CLI chat output.
+        pushProgress(
+          "hermes-tool-activity",
+          "Hermes tool activity unavailable",
+          "error",
+          "Configure valid HERMES_API_URL and HERMES_API_KEY values for the versioned structured event transport.",
+        );
+      }
+      if (grokFreshSessionForSandbox) {
+        pushProgress(
+          "grok-sandbox-restart",
+          "Access mode changed; starting a fresh Grok session with recent context",
+          "done",
+        );
+      }
 
       let sessionId: string | null = body.sessionId ?? null;
-      let assistantFilter = new AssistantFilter();
+      // Cave keeps `sessionId` as the stable conversation id for resumed
+      // chats. Grok's end frame still carries the native session id, which
+      // may change when an access-mode switch starts a fresh native session.
+      // Keep it separately so the next Grok turn resumes the actual CLI
+      // session rather than Cave's conversation id.
+      let grokSessionId: string | null = null;
+      // OpenCode's native session is distinct from Cave's stable conversation
+      // ID on resumed turns. Always retain the latest event-provided native ID
+      // for the next CLI resume, while only announcing the stable Cave ID.
+      let openCodeSessionId: string | null = null;
+      // Responses API ids rotate per turn like other harness session ids, but
+      // Cave's `sessionId` remains the stable conversation identity. Preserve
+      // the latest response id separately so follow-ups send
+      // `previous_response_id` instead of accidentally resuming from Cave's
+      // UUID.
+      let hermesResponseId: string | null = null;
+      // A conversation created by Hermes CLI has a CLI-native session id here,
+      // not a Responses id. If the API rejects it, the shared resume fallback
+      // replays saved context into one fresh Responses turn instead.
+      let hermesPreviousResponseId = existingConversation?.harnessSessionId ?? null;
+      // Legacy/failed conversations may not have a usable Responses id. A
+      // fresh API request must receive saved context rather than silently
+      // answering only the newest prompt.
+      const hermesNeedsContextReplay = Boolean(
+        hermesApi && body.sessionId && !hermesPreviousResponseId,
+      );
+      // First-turn visibility (cave-0g2x): the id of the in-flight user turn,
+      // minted up front so the announce-time stub conversation and the
+      // end-of-stream authoritative save agree on the turn's identity.
+      const pendingUserTurnId = crypto.randomUUID();
+      // The pending stub write; the end-of-stream save awaits it so a
+      // late-settling stub can never clobber the authoritative transcript.
+      let stubWrite: Promise<unknown> | null = null;
+      // The AssistantFilter's suppressions all key on codex/claude output
+      // shapes (marker lines, startup banners, exec echoes). External manifest
+      // adapters (copilot, opencode, hermes, …) pipe the CLI's raw stdout with
+      // none of those shapes — the phase gate ate whole replies ("completed
+      // but produced no output") and the banner heuristic ate bare-number
+      // answers — so their text passes through verbatim.
+      const rawStdoutHarness =
+        binding.harness !== "codex" && binding.harness !== "claude";
+      let assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
       let assistantText = "";
       let jsonBuf = "";
+      let stdoutDecoder = new StringDecoder("utf8");
+      // A protocol frame is control-plane data, not assistant text. Bound an
+      // unterminated/malformed OpenCode JSONL frame so a client regression or
+      // a tool dumping one huge value cannot retain unbounded route memory.
+      const MAX_OPENCODE_JSONL_FRAME_BYTES = 256 * 1024;
       let result: {
         duration_ms?: number;
         is_error?: boolean;
         usage?: TurnUsage;
         costUsd?: number;
       } = {};
+      // Launch-integrity flag (#3856): set when the pre-spawn availability
+      // gate or the post-spawn error handler proves the harness never
+      // actually ran. Downstream it suppresses the empty-output diagnostic
+      // (a never-launched CLI must not be diagnosed as "installed but not
+      // authenticated") and skips persisting a fabricated assistant turn.
+      let launchFailure: { code: string; message: string } | null = null;
       // Tracks open tool calls from both hook lines and stream-json
       // envelopes: per-name FIFO queues give concurrent same-name calls
       // distinct ids, and hook/envelope events describing the same call are
       // deduped onto one id (hook events win — they carry real durations).
-      let toolTracker = new ToolCallTracker();
+      let toolAttempt = 0;
+      let toolTracker = new ToolCallTracker(Date.now, "");
+      // A recovery retry is a separate harness execution, but its early tool
+      // activity has already reached the client and remains part of the turn's
+      // audit trail. Keep it for persistence and namespace retry ids so a
+      // same-name hook cannot upsert over the first attempt's tool bubble.
+      const priorAttemptTools: ReturnType<ToolCallTracker["snapshot"]> = [];
+      // JSONL frames can be replayed or reordered. Hold a completion until
+      // its request/start arrives so the shared tracker emits one settled
+      // tool bubble instead of later synthesizing a failure for the call.
+      let pendingCopilotToolCompletions = new Map<
+        string,
+        { output: string | undefined; isError: boolean }
+      >();
+      const MAX_PENDING_COPILOT_TOOL_COMPLETIONS = 64;
+      let claudeToolsEnabled =
+        binding.harness !== "claude" ||
+        (claudeCompatibility?.kind === "compatible" && !claudeCompatibility.stale);
+      const claudeDiagnostic = claudeCompatibility
+        ? claudeCompatibilityDiagnostic(claudeCompatibility)
+        : binding.harness === "claude" && sshRuntime
+          ? "Claude Code tool activity cannot be verified on an SSH host; chat text will continue without tool bubbles."
+          : null;
+      if (claudeDiagnostic) {
+        // Emit the fallback state before the child produces output: an absent
+        // or immediately-failing CLI must not hide the only useful diagnostic.
+        pushProgress("claude-runtime-compatibility", claudeDiagnostic, "error");
+      }
+      // A fallback reason is already a user-visible compatibility diagnostic.
+      // Later malformed frames still get a redacted log fingerprint, but must
+      // not overwrite that truthful state with a second, conflicting error.
+      let claudeCompatibilityDiagnosticSent = Boolean(claudeDiagnostic);
+      let claudeFallbackFingerprintLogged = false;
+      let claudeUnsupportedFrameDiagnosticSent = false;
+      const reportMalformedClaudeStreamFrame = (frame: unknown) => {
+        // One malformed frame means the selected envelope profile no longer
+        // describes this stream. Continue showing assistant text, but do not
+        // resume profile-selected tool decoding on later frames.
+        claudeToolsEnabled = false;
+        if (claudeUnsupportedFrameDiagnosticSent) return;
+        claudeUnsupportedFrameDiagnosticSent = true;
+        console.warn("[chat] Claude stream frame could not be decoded", {
+          fingerprint: redactedEventFingerprint(frame),
+        });
+        if (claudeCompatibilityDiagnosticSent) return;
+        claudeCompatibilityDiagnosticSent = true;
+        pushProgress(
+          "claude-runtime-compatibility",
+          "A Claude Code stream frame could not be decoded; chat text will continue without unverified tool bubbles.",
+          "error",
+        );
+      };
+      const reportUnsupportedClaudeToolFrame = (frame: unknown) => {
+        // An unrecognised tool block can change the meaning or ordering of
+        // later frames, so fail closed for the rest of this stream rather than
+        // treating subsequent familiar labels as independently trustworthy.
+        claudeToolsEnabled = false;
+        if (claudeUnsupportedFrameDiagnosticSent) return;
+        claudeUnsupportedFrameDiagnosticSent = true;
+        console.warn("[chat] Claude tool frame ignored by compatibility profile", {
+          fingerprint: redactedEventFingerprint(frame),
+        });
+        if (claudeCompatibilityDiagnosticSent) return;
+        claudeCompatibilityDiagnosticSent = true;
+        pushProgress(
+          "claude-runtime-compatibility",
+          "A Claude Code tool frame is not supported by the selected compatibility profile; chat text will continue without unverified tool bubbles.",
+          "error",
+        );
+      };
+      const settleUnfinishedTools = () => {
+        for (const toolEv of toolTracker.settleUnfinished()) {
+          push({ kind: "tool_use", ...toolEv });
+        }
+      };
+      const resetToolTrackerForRetry = () => {
+        settleUnfinishedTools();
+        // The prior attempt's assistant text is intentionally discarded before
+        // retrying, so place retained tool records at the start of the final
+        // response instead of preserving offsets into text that no longer
+        // exists.
+        priorAttemptTools.push(...toolTracker.snapshot().map((event) => ({ ...event, textOffset: 0 })));
+        toolAttempt += 1;
+        toolTracker = new ToolCallTracker(Date.now, `retry-${toolAttempt}:`);
+        pendingCopilotToolCompletions = new Map();
+      };
       // Keep stderr off the assistant stream — surface it only on failure
       // or empty-success so users don't see raw 401 traces mid-bubble.
       const stderrTail: string[] = [];
@@ -1243,10 +2062,41 @@ export async function POST(req: Request) {
       const STDOUT_ERR_KEEP = 10;
       const ERR_LINE_RE =
         /\b(error|failed|denied|unauthori[sz]ed|invalid|refused|missing|not found|401|403|500)\b/i;
+      const recordStdoutErrorTail = (text: string, force = false) => {
+        for (const part of text.split(/\r?\n/)) {
+          const trimmed = part.trim();
+          if (!trimmed || (!force && !ERR_LINE_RE.test(trimmed))) continue;
+          stdoutErrTail.push(trimmed);
+          if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
+        }
+      };
 
       // Set to true when the harness reports its resume failed (rollout DB
       // miss). Triggers a single transparent retry without --continue.
       let resumeFailed = false;
+
+      // Fatal registry conflict from a stale scaffolded manifest whose id a
+      // CLI upgrade promoted to built-in (copilot, coven-code). Kills every
+      // `coven run` at startup, so the turn ends with no assistant text.
+      // Detected from stderr; healed (manifest quarantined) and retried below.
+      let adapterConflict: BuiltinAdapterConflict | null = null;
+      let openCodeCompatibilityHealthNoticeSent = false;
+      let openCodeProtocolQuarantineNoticeSent = false;
+      let openCodeStructuredProtocolQuarantined = false;
+      let openCodeModelRejected = false;
+      const quarantineOpenCodeProtocol = (
+        label: string,
+        detail: "malformed-json-event" | "oversized-jsonl-event",
+      ) => {
+        // Structured-mode stdout can contain arbitrary tool payloads. Keep the
+        // error tail and persisted diagnostic value-free.
+        recordStdoutErrorTail("OpenCode emitted a malformed JSON event", true);
+        openCodeStructuredProtocolQuarantined = true;
+        quarantineOpenCodeSchema(openCodeCompatibility?.schema);
+        if (openCodeProtocolQuarantineNoticeSent) return;
+        openCodeProtocolQuarantineNoticeSent = true;
+        pushProgress("opencode-compatibility", label, "error", detail);
+      };
 
       // Model parity: the harness echoes its resolved model on the init/system
       // stream event. Capturing it lets the application state render honestly as
@@ -1254,11 +2104,526 @@ export async function POST(req: Request) {
       // model field arrives (older CLIs omit it → honest `pending`).
       let confirmedModel: string | null = null;
 
-      const handleLine = (line: string) => {
-        if (!line) return;
-        if (RESUME_ERR_RE.test(line)) resumeFailed = true;
-        const isJson = line.startsWith("{") && line.endsWith("}");
+      // Dedups copilot's streamed text deltas against the full-content
+      // assistant.message frame that follows them.
+      const copilotText = new CopilotTextAssembler();
+      const copilotTranscript = new CopilotMessageTranscript();
+      // A changed Copilot tool event must be visible, but diagnostics must
+      // remain bounded and never include the event payload (which can contain
+      // prompts, paths, or tool output). One status row per safe code avoids
+      // flooding the transcript when a newer CLI repeats the frame.
+      const copilotProtocolDiagnosticCodes = new Set<string>();
+
+      const reportCopilotProtocolDiagnostic = (code: string, detail: string) => {
+        if (copilotProtocolDiagnosticCodes.has(code)) return;
+        copilotProtocolDiagnosticCodes.add(code);
+        push({
+          kind: "progress",
+          id: `copilot-protocol-${code}`,
+          label: "Copilot tool activity needs an update",
+          detail,
+          status: "error",
+        });
+      };
+
+      const rememberPendingCopilotToolCompletion = (
+        toolCallId: string,
+        completion: { output: string | undefined; isError: boolean },
+      ) => {
+        // Preserve the first terminal result for an out-of-order call. A
+        // replay must not replace an already buffered completion.
+        if (pendingCopilotToolCompletions.has(toolCallId)) return;
+        if (!pendingCopilotToolCompletions.has(toolCallId) &&
+            pendingCopilotToolCompletions.size >= MAX_PENDING_COPILOT_TOOL_COMPLETIONS) {
+          const oldest = pendingCopilotToolCompletions.keys().next().value;
+          if (oldest) pendingCopilotToolCompletions.delete(oldest);
+          reportCopilotProtocolDiagnostic(
+            "orphan-tool-completion-limit",
+            "Copilot emitted too many unmatched tool completions; some tool details were discarded.",
+          );
+        }
+        pendingCopilotToolCompletions.set(toolCallId, completion);
+      };
+
+      const settlePendingCopilotToolCompletion = (toolCallId: string) => {
+        const completion = pendingCopilotToolCompletions.get(toolCallId);
+        if (!completion) return;
+        const toolEv = toolTracker.envelopeToolResult(
+          toolCallId,
+          completion.output,
+          completion.isError,
+        );
+        if (!toolEv) return;
+        pendingCopilotToolCompletions.delete(toolCallId);
+        push({ kind: "tool_use", ...toolEv });
+      };
+
+      const announceSession = (id: string) => {
+        sessionId = id;
+        // The client tracks the STABLE conversation id — on resumed
+        // turns the harness mints a fresh internal id, which must not
+        // leak out as a "new session" (it fragmented every continued
+        // chat into one sidebar entry per turn).
+        // An unrecorded resume token is not a Cave conversation identity. Its
+        // unsupported fallback gets a new stable Cave id before spawning.
+        const announcedId = body.sessionId && !openCodeUnrecordedResume
+          ? body.sessionId
+          : sessionId;
+        // A new chat registered with only the client runId (body.sessionId is
+        // null until the harness mints the id) — late-key the run so
+        // /api/chat/stop and the sessions-list liveness probe reach it by
+        // conversation id. runHandle is declared later in this scope but is
+        // always initialized before the stream handlers that call announce.
+        if (runHandle) addChatRunKeys(runHandle, [announcedId]);
+        // First-turn visibility (cave-0g2x): persist a stub conversation with
+        // the pending user turn as soon as the id exists, so the sessions
+        // list can surface this chat during its entire first turn (and after
+        // a mid-turn crash). Best-effort and a no-op for resumed chats; the
+        // end-of-stream save strips the stub turn and re-appends the
+        // authoritative one under the same id.
+        stubWrite = createConversationStub({
+          sessionId: announcedId,
+          familiarId: body.familiarId,
+          harness: binding.harness,
+          ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
+          ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
+          title: chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
+          ...(body.origin ? { origin: body.origin } : {}),
+          modelIntent: modelIntentForSend(body, modelState),
+          userTurn: {
+            id: pendingUserTurnId,
+            text: promptText,
+            ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
+            ...persistedTurnControls(body, responseMetadata.retryModel),
+          },
+        }).catch(() => undefined);
+        push({ kind: "session", sessionId: announcedId });
+        // Title the session from the user's prompt as soon as the id
+        // exists. The daemon's own title derives from the harness
+        // prompt — i.e. the identity-canon preamble — and is what the
+        // UI would otherwise show until the transcript save runs.
+        void setDefaultSessionTitleIfMissing(
+          announcedId,
+          chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
+        ).catch(() => undefined);
+      };
+
+      // Formatted OpenCode output carries no native session id. Cave still
+      // needs a stable conversation identity so a plain-mode first response
+      // is persisted and visible after reload; native resume remains disabled
+      // below and falls back to recent-context replay.
+      if (openCodeUnrecordedResume) {
+        announceSession(crypto.randomUUID());
+      } else if (openCodeDirect && !sessionId) {
+        // Cave owns the conversation identity in both structured and plain
+        // modes. Structured frames may announce a different native OpenCode
+        // token; retain that separately rather than exposing it as the chat id.
+        announceSession(crypto.randomUUID());
+      }
+
+      // Hermes's `-Q` mode reserves stdout for the reply and writes the
+      // resumable id to stderr as `session_id: <id>`. Buffer stderr because
+      // Node can split that short line across data events.
+      let hermesStderrBuffer = "";
+      const captureHermesSessionFromStderr = (text: string, flush = false) => {
+        if (!hermesDirect || sessionId) return;
+        hermesStderrBuffer += text;
+        const lines = hermesStderrBuffer.split(/\r?\n/);
+        hermesStderrBuffer = flush ? "" : (lines.pop() ?? "");
+        for (const line of lines) {
+          const hermesSession = line.trim().match(/^session_id:\s*(\S+)\s*$/i);
+          if (hermesSession) {
+            announceSession(hermesSession[1]);
+            return;
+          }
+        }
+      };
+
+      // Copilot JSONL stream (cave-yesg): the CLI's own event schema, not
+      // claude stream-json. Text arrives as message deltas + a full-content
+      // message frame (deduped by CopilotTextAssembler); tool calls arrive as
+      // toolRequests / execution_start / execution_complete keyed on a native
+      // toolCallId, which maps onto the tracker's envelope lifecycle so live
+      // chips, textOffset interleaving, and persistedTools all work exactly
+      // as they do for claude. Non-JSON stdout is never assistant text on
+      // this protocol — it only feeds the empty-response diagnostic tail.
+      const handleCopilotLine = (line: string, isJson: boolean) => {
         if (isJson) {
+          try {
+            const raw = JSON.parse(line);
+            const protocol = copilotStream?.protocol;
+            if (!protocol) return;
+            const ev = parseCopilotChatEvent(raw, protocol);
+            if (!ev) {
+              const diagnostic = copilotProtocolDiagnostic(raw, protocol);
+              if (diagnostic) reportCopilotProtocolDiagnostic(diagnostic.code, diagnostic.message);
+              return;
+            }
+            if (!confirmedModel && ev.kind !== "result") {
+              const echoed = cleanModelId(ev.model);
+              if (echoed) confirmedModel = echoed;
+            }
+            // Copilot only echoes the session id on the final result frame;
+            // announce the id Cave launched with as soon as the stream is
+            // live so the client can adopt the conversation immediately.
+            if (!sessionId && copilotSessionHint) announceSession(copilotSessionHint);
+            switch (ev.kind) {
+              case "text_delta": {
+                const text = copilotText.delta(ev.messageId, ev.text, ev.frameId);
+                if (text) {
+                  const previousAssistantText = assistantText;
+                  assistantText = copilotTranscript.appendDelta(ev.messageId, text);
+                  // Deltas for distinct message ids can interleave. Append
+                  // only when the aggregate transcript really gained a tail;
+                  // otherwise send the reconciled transcript to every client.
+                  if (assistantText === `${previousAssistantText}${text}`) {
+                    push({ kind: "assistant_chunk", text });
+                  } else {
+                    push({ kind: "assistant_replace", text: assistantText });
+                  }
+                }
+                break;
+              }
+              case "message": {
+                const text = copilotText.message(ev.messageId, ev.content);
+                const replacement = copilotText.takeReplacement(ev.messageId);
+                const correctionStart = copilotTranscript.offset(ev.messageId);
+                const previousMessageLength = copilotTranscript.messageLength(ev.messageId);
+                const previousAssistantText = assistantText;
+                const correctedText = copilotTranscript.setMessage(ev.messageId, ev.content);
+                // Tools can be announced after a delta but before this final
+                // frame. Shift later tool positions for every length change,
+                // including the normal "append suffix" confirmation path.
+                toolTracker.rebaseTextOffsets(
+                  correctionStart + previousMessageLength,
+                  ev.content.length - previousMessageLength,
+                );
+                if (replacement) {
+                  // A full frame corrects only its own message. Rebuild from
+                  // per-message spans so an interleaved later message survives.
+                  assistantText = correctedText;
+                  push({ kind: "assistant_replace", text: assistantText });
+                } else if (text) {
+                  if (correctedText === `${previousAssistantText}${text}`) {
+                    assistantText = correctedText;
+                    push({ kind: "assistant_chunk", text });
+                  } else {
+                    assistantText = correctedText;
+                    push({ kind: "assistant_replace", text: assistantText });
+                  }
+                } else {
+                  assistantText = correctedText;
+                }
+                if (ev.malformedToolRequests) {
+                  reportCopilotProtocolDiagnostic(
+                    "malformed-tool-event",
+                    "Copilot CLI emitted a malformed tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",
+                  );
+                }
+                // Tool requests announce calls before execution starts; the
+                // tracker links the later execution_start onto the same id.
+                for (const req of ev.toolRequests) {
+                  boundarySentinel?.observe(req.name, req.input);
+                  const toolEv = toolTracker.envelopeToolUse(
+                    req.toolCallId,
+                    req.name,
+                    formatToolInputValue(req.input),
+                    assistantText.length,
+                  );
+                  if (toolEv) push({ kind: "tool_use", ...toolEv });
+                  settlePendingCopilotToolCompletion(req.toolCallId);
+                }
+                break;
+              }
+              case "tool_start": {
+                boundarySentinel?.observe(ev.toolName, ev.input);
+                const toolEv = toolTracker.envelopeToolUse(
+                  ev.toolCallId,
+                  ev.toolName,
+                  formatToolInputValue(ev.input),
+                  assistantText.length,
+                );
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                settlePendingCopilotToolCompletion(ev.toolCallId);
+                break;
+              }
+              case "tool_end": {
+                const toolEv = toolTracker.envelopeToolResult(
+                  ev.toolCallId,
+                  ev.output,
+                  ev.isError,
+                );
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                else if (!toolTracker.hasSettledEnvelopeId(ev.toolCallId)) {
+                  rememberPendingCopilotToolCompletion(ev.toolCallId, {
+                    output: ev.output,
+                    isError: ev.isError,
+                  });
+                }
+                break;
+              }
+              case "result": {
+                if (!sessionId && ev.sessionId) announceSession(ev.sessionId);
+                result = {
+                  duration_ms: ev.durationMs,
+                  is_error: ev.isError,
+                };
+                break;
+              }
+            }
+            return;
+          } catch {
+            // Never persist raw malformed JSONL: tool inputs and outputs can
+            // contain prompts, paths, or secrets. Keep diagnostics fixed and
+            // redacted just like other protocol-drift reporting.
+            const code = "malformed-jsonl";
+            reportCopilotProtocolDiagnostic(code, "Copilot emitted a malformed protocol frame.");
+            recordStdoutErrorTail("Copilot emitted a malformed protocol frame.", true);
+            return;
+          }
+        }
+        // Direct Copilot stdout is protocol-only. Preserve no raw text here:
+        // future CLIs may write prompts, paths, tool input, or output before
+        // their JSONL frame, and the generic empty-response error is persisted.
+        reportCopilotProtocolDiagnostic(
+          "unframed-output",
+          "Copilot emitted an unrecognized protocol frame.",
+        );
+        recordStdoutErrorTail("Copilot emitted an unrecognized protocol frame.", true);
+      };
+
+      const handleGrokLine = (line: string, isJson: boolean) => {
+        if (!isJson) {
+          recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+          return;
+        }
+        try {
+          const event = parseGrokStreamEvent(JSON.parse(line));
+          // A fresh native session's id is assigned by Cave because Grok only
+          // returns it in its final frame. Once its first response frame
+          // confirms the process is live, retain that id for a cancelled
+          // partial turn too. Do not persist an id for a startup error: Grok
+          // did not create a resumable session in that case.
+          if (event.kind === "text" || event.kind === "end") {
+            if (!grokSessionId && grokSessionHint) grokSessionId = grokSessionHint;
+            if (!sessionId && grokSessionHint) announceSession(grokSessionHint);
+          }
+          switch (event.kind) {
+            case "text":
+              assistantText += event.text;
+              push({ kind: "assistant_chunk", text: event.text });
+              return;
+            case "end":
+              if (event.sessionId) grokSessionId = event.sessionId;
+              if (!sessionId && event.sessionId) announceSession(event.sessionId);
+              // Grok's end event does not echo model, but successful native
+              // launch means its --model contract accepted the selected id.
+              if (!confirmedModel && grokForwardModel) confirmedModel = desiredModel;
+              result = {
+                is_error: event.isError,
+                usage: parseStreamJsonUsage(event.usage),
+                costUsd: parseCostUsd(event.totalCostUsd),
+              };
+              return;
+            case "error":
+              result = {
+                is_error: true,
+                usage: parseStreamJsonUsage(event.usage),
+                costUsd: parseCostUsd(event.totalCostUsd),
+              };
+              recordStdoutErrorTail(event.message);
+              return;
+            case "ignore":
+              return;
+          }
+        } catch {
+          /* not valid JSON after all — fall through to the error tail */
+        }
+        recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+      };
+
+      const handleOpenCodeLine = (line: string) => {
+        // Current OpenCode can write a human-oriented permission control
+        // notice to stdout. Only structured mode has framing sufficient to
+        // recognize it without risking a valid assistant-text loss.
+        const plainText = resolveBackspaces(stripAnsi(line));
+        if (openCodeCompatibility?.mode === "plain") {
+          // Plain stdout has no framing that can distinguish OpenCode's control
+          // notice from an assistant reply that happens to contain the same
+          // words. Preserve every line rather than silently dropping valid text.
+          const text = `${plainText}\n`;
+          assistantText += text;
+          push({ kind: "assistant_chunk", text });
+          return;
+        }
+        // Structured JSON supplies a protocol boundary, so this known CLI
+        // control line cannot be mistaken for assistant content.
+        if (/^permission requested\b[\s\S]*\bauto-rejecting\b/i.test(plainText.trim())) return;
+        // Current OpenCode writes this human-oriented permission control
+        // notice to stdout even in `--format json` mode before it rejects the
+        // request. It is neither an event nor assistant output; parsing it as
+        // JSON would incorrectly quarantine an otherwise compatible stream.
+        if (openCodeStructuredProtocolQuarantined) {
+          // The schema has already proven incompatible in this stream. Keep
+          // only text that still satisfies its explicit envelope/kind contract;
+          // never allow later frames to create tools, results, or sessions.
+          handleOpenCodeJsonLine(line, openCodeCompatibility?.schema, {
+            onText: (ev) => {
+              const text = ev.text.endsWith("\n") ? ev.text : `${ev.text}\n`;
+              assistantText += text;
+              push({ kind: "assistant_chunk", text });
+            },
+          });
+          return;
+        }
+        handleOpenCodeJsonLine(line, openCodeCompatibility?.schema, {
+          onSession: (nativeSessionId) => {
+            openCodeSessionId = nativeSessionId;
+            if (!sessionId) announceSession(nativeSessionId);
+          },
+          onText: (ev) => {
+            const text = ev.text.endsWith("\n") ? ev.text : `${ev.text}\n`;
+            assistantText += text;
+            push({ kind: "assistant_chunk", text });
+          },
+          onTool: (ev) => {
+            boundarySentinel?.observe(ev.name, ev.input);
+            const started = toolTracker.envelopeToolUse(
+              ev.id,
+              ev.name,
+              formatToolInputValue(ev.input),
+              assistantText.length,
+            );
+            if (started) push({ kind: "tool_use", ...started });
+            // A split terminal result can arrive before this combined
+            // terminal snapshot. Preserve the first terminal outcome.
+            const reorderedEnd = toolTracker.consumePendingEnvelopeResult(ev.id);
+            if (reorderedEnd) {
+              push({ kind: "tool_use", ...reorderedEnd });
+              return;
+            }
+            const ended = toolTracker.envelopeToolResult(
+              ev.id,
+              typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
+              ev.isError,
+            );
+            if (ended) push({ kind: "tool_use", ...ended });
+          },
+          onToolStart: (ev) => {
+            boundarySentinel?.observe(ev.name, ev.input);
+            const started = toolTracker.envelopeToolUse(
+              ev.id,
+              ev.name,
+              formatToolInputValue(ev.input),
+              assistantText.length,
+            );
+            if (started) push({ kind: "tool_use", ...started });
+            const reorderedProgress = toolTracker.consumePendingEnvelopeProgress(ev.id);
+            if (reorderedProgress) push({ kind: "tool_use", ...reorderedProgress });
+            const reorderedEnd = toolTracker.consumePendingEnvelopeResult(ev.id);
+            if (reorderedEnd) push({ kind: "tool_use", ...reorderedEnd });
+          },
+          onToolProgress: (ev) => {
+            const progress = toolTracker.envelopeToolProgress(
+              ev.id,
+              typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
+            );
+            if (progress) push({ kind: "tool_use", ...progress });
+          },
+          onToolEnd: (ev) => {
+            const ended = toolTracker.envelopeToolResult(
+              ev.id,
+              typeof ev.output === "string" ? ev.output : formatToolInputValue(ev.output),
+              ev.isError,
+            );
+            if (ended) push({ kind: "tool_use", ...ended });
+          },
+          onError: (ev) => {
+            // This is an explicit error envelope, so retain its error state
+            // even if its message does not match the generic stderr filter.
+            // Error envelopes are provider-controlled and can repeat prompts,
+            // paths, command output, or credentials. Retain only the model
+            // rejection classification needed for response metadata; never
+            // copy their message into a persisted/user-visible diagnostic.
+            openCodeModelRejected ||= modelRejectionInError(ev.message);
+            resumeFailed ||= RESUME_ERR_RE.test(ev.message);
+            recordStdoutErrorTail("OpenCode reported an error event", true);
+            result = { ...result, is_error: true };
+          },
+          onOther: (ev, rawEvent) => {
+            // Do not treat arbitrary `text`/`content` on an unknown envelope
+            // as assistant output: tool progress and provider errors often
+            // carry those fields and may contain secrets or file contents.
+            openCodeStructuredProtocolQuarantined = true;
+            quarantineOpenCodeSchema(openCodeCompatibility?.schema);
+            if (!openCodeProtocolQuarantineNoticeSent) {
+              openCodeProtocolQuarantineNoticeSent = true;
+              pushProgress(
+                "opencode-compatibility",
+                "OpenCode sent an unrecognized event; future turns will use safe plain chat until a compatible schema is available",
+                "error",
+                `${ev.diagnostic ?? "unknown-event"}:${redactedOpenCodeEventFingerprint(rawEvent)}`,
+              );
+            }
+          },
+          onMalformedJson: () => {
+            quarantineOpenCodeProtocol(
+              "OpenCode sent a malformed event; future turns will use safe plain chat until a compatible schema is available",
+              "malformed-json-event",
+            );
+          },
+        });
+      };
+
+      const handleLine = (rawLine: string) => {
+        // stdout is split on bare \n; external adapters (copilot) emit CRLF,
+        // and a trailing \r would both fail the endsWith("}") JSON sniff and
+        // leak into bubble text.
+        const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+        // Plain fallback is ordinary assistant text, so preserve empty lines;
+        // structured JSONL control frames can still ignore blank transport rows.
+        if (!line && !(openCodeDirect && openCodeCompatibility?.mode === "plain")) return;
+        if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
+          openCodeCompatibilityHealthNoticeSent = true;
+          const diagnostic = openCodeCompatibility.diagnostic === "json-format-unavailable"
+            ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
+            : openCodeCompatibility.diagnostic === "no-compatible-schema"
+              ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
+              : openCodeCompatibility.diagnostic === "schema-quarantined"
+                ? "OpenCode's structured event protocol was quarantined; continuing without tool activity"
+              : openCodeCompatibility.diagnostic === "cached-schema-unavailable"
+                ? "OpenCode's compatibility registry is unavailable; continuing in plain chat without tool activity"
+              : openCodeCompatibility.bundleSource === "built-in"
+                ? "OpenCode schema refresh was not trusted; using the shipped compatible parser"
+                : "OpenCode schema refresh was not trusted; using the last known compatible parser";
+          pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
+        }
+        const openCodePlainFallback = openCodeDirect && openCodeCompatibility?.mode === "plain";
+        // Plain OpenCode has no structured error envelope, so stdout cannot
+        // distinguish a real resume failure from an assistant reply quoting it.
+        // Preserve every line rather than converting ordinary reply text into
+        // a dropped retry signal.
+        if (!openCodePlainFallback && RESUME_ERR_RE.test(line)) resumeFailed = true;
+        const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
+        // JSON.parse accepts primitive roots too. Claude needs those values to
+        // reach the redacted compatibility boundary instead of plain stdout.
+        const isClaudeStreamFrame = binding.harness === "claude" && isClaudeStreamJsonFrame(line);
+        if (copilotStream) {
+          // Direct Copilot output is JSONL. A truncated frame still starts
+          // with `{`, so route it through the fixed redacted diagnostic path
+          // instead of ever adding raw tool data to stdout error tails.
+          handleCopilotLine(line, isJson || line.trimStart().startsWith("{"));
+          return;
+        }
+        if (grokDirect) {
+          handleGrokLine(line, isJson);
+          return;
+        }
+        if (openCodeDirect) {
+          handleOpenCodeLine(line);
+          return;
+        }
+        if (isJson || isClaudeStreamFrame) {
           try {
             const ev = JSON.parse(line) as {
               type: string;
@@ -1269,6 +2634,7 @@ export async function POST(req: Request) {
               is_error?: boolean;
               total_cost_usd?: number;
               usage?: unknown;
+              text?: string;
               message?: {
                 content?: Array<{
                   type?: string;
@@ -1291,21 +2657,9 @@ export async function POST(req: Request) {
               if (echoed) confirmedModel = echoed;
             }
             if (ev.session_id && !sessionId) {
-              sessionId = ev.session_id;
-              // The client tracks the STABLE conversation id — on resumed
-              // turns the harness mints a fresh internal id, which must not
-              // leak out as a "new session" (it fragmented every continued
-              // chat into one sidebar entry per turn).
-              const announcedId = body.sessionId ?? sessionId;
-              push({ kind: "session", sessionId: announcedId });
-              // Title the session from the user's prompt as soon as the id
-              // exists. The daemon's own title derives from the harness
-              // prompt — i.e. the identity-canon preamble — and is what the
-              // UI would otherwise show until the transcript save runs.
-              void setDefaultSessionTitleIfMissing(
-                announcedId,
-                chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
-              ).catch(() => undefined);
+              // Same contract as announceSession (stable-id announce, default
+              // title, first-turn stub) for the stream-json protocol path.
+              announceSession(ev.session_id);
             }
             if (ev.type === "result") {
               // The result event also carries token usage and total cost
@@ -1318,64 +2672,137 @@ export async function POST(req: Request) {
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
             } else if (
-              ev.type === "assistant" &&
-              Array.isArray(ev.message?.content)
+              // `output` belongs to Coven's Windows Codex bridge, not the
+              // profile-selected Claude protocol. Let an unexpected Claude
+              // output frame reach the compatibility boundary below so its
+              // value cannot be rendered or retained in diagnostics.
+              binding.harness !== "claude" &&
+              ev.type === "output" &&
+              typeof ev.text === "string"
             ) {
-              // Claude stream-json wraps assistant text inside a message envelope.
-              // Extract every text chunk and surface it as an assistant_chunk so
-              // the chat bubble renders. tool_use blocks become structured
-              // tool events so harnesses WITHOUT pre/post_tool_use hooks still
-              // show tool activity; the tracker dedups against hook-derived
-              // events when both sources describe the same call.
-              for (const block of ev.message.content) {
-                if (block.type === "text" && block.text) {
-                  assistantText += block.text;
-                  push({ kind: "assistant_chunk", text: block.text });
-                } else if (block.type === "tool_use" && block.id && block.name) {
+              // Coven's Windows captured-piped Codex path wraps transcript
+              // bytes as stream-json `output` events so stdout remains a
+              // valid JSONL protocol. Preserve the original chunk boundaries:
+              // AssistantFilter buffers partial lines and exposes only the
+              // assistant phase after stripping Codex's startup transcript.
+              const cleaned = resolveBackspaces(stripAnsi(ev.text));
+              recordStdoutErrorTail(cleaned);
+              const filtered = assistantFilter.push(cleaned);
+              if (filtered) {
+                assistantText += filtered;
+                push({ kind: "assistant_chunk", text: filtered });
+              }
+            } else if (
+              binding.harness === "claude" &&
+              claudeCompatibility?.kind === "compatible" &&
+              !claudeCompatibility.stale &&
+              claudeToolsEnabled
+            ) {
+              // Profile-selected decoding keeps version-specific envelope names
+              // outside this route. The shared tracker continues to provide
+              // stable ids, hook/envelope deduplication, and persisted state.
+              if (hasUnsupportedClaudeToolFrame(ev, claudeCompatibility.profile)) {
+                reportUnsupportedClaudeToolFrame(ev);
+                // A partially known envelope is not a verified tool protocol:
+                // keep only ordinary assistant text rather than pairing its
+                // sibling tool blocks with untrusted frames.
+                for (const text of parseClaudeTextOnlyEnvelope(ev)) {
+                  assistantText += text;
+                  push({ kind: "assistant_chunk", text });
+                }
+                return;
+              }
+              for (const claudeEvent of parseClaudeMessageEnvelope(ev, claudeCompatibility.profile)) {
+                if (claudeEvent.kind === "text") {
+                  assistantText += claudeEvent.text;
+                  push({ kind: "assistant_chunk", text: claudeEvent.text });
+                } else if (claudeEvent.kind === "tool-use") {
+                  boundarySentinel?.observe(claudeEvent.name, claudeEvent.input);
                   const toolEv = toolTracker.envelopeToolUse(
-                    block.id,
-                    block.name,
-                    formatToolInputValue(block.input),
+                    claudeEvent.id,
+                    claudeEvent.name,
+                    formatToolInputValue(claudeEvent.input),
                     assistantText.length,
+                  );
+                  if (toolEv) push({ kind: "tool_use", ...toolEv });
+                  const reorderedEnd = toolTracker.consumePendingEnvelopeResult(claudeEvent.id);
+                  if (reorderedEnd) push({ kind: "tool_use", ...reorderedEnd });
+                } else {
+                  const toolEv = toolTracker.envelopeToolResult(
+                    claudeEvent.toolUseId,
+                    flattenToolResultContent(claudeEvent.content),
+                    claudeEvent.isError,
                   );
                   if (toolEv) push({ kind: "tool_use", ...toolEv });
                 }
               }
-            } else if (ev.type === "user" && Array.isArray(ev.message?.content)) {
-              // Tool outputs come back as tool_result blocks on the follow-up
-              // user envelope. Settle the matching tool event unless a post
-              // hook already did (hook output + duration win).
-              for (const block of ev.message.content) {
-                if (block.type === "tool_result" && block.tool_use_id) {
-                  const toolEv = toolTracker.envelopeToolResult(
-                    block.tool_use_id,
-                    flattenToolResultContent(block.content),
-                    block.is_error === true,
-                  );
-                  if (toolEv) push({ kind: "tool_use", ...toolEv });
-                }
+            } else if (
+              binding.harness === "claude" &&
+              ev.type === "assistant" &&
+              Array.isArray(ev.message?.content)
+            ) {
+              // An unrecognised Claude version must remain useful for ordinary
+              // chat. Preserve text-only content, while deliberately refusing
+              // to manufacture tool bubbles from an unverified envelope.
+              if (!claudeFallbackFingerprintLogged) {
+                claudeFallbackFingerprintLogged = true;
+                console.warn("[chat] Claude tool envelope ignored under compatibility fallback", {
+                  fingerprint: redactedEventFingerprint(ev),
+                });
+              }
+              for (const text of parseClaudeTextOnlyEnvelope(ev)) {
+                assistantText += text;
+                push({ kind: "assistant_chunk", text });
               }
             }
             return;
           } catch {
+            // Claude's stream-json frames can contain tool inputs and outputs.
+            // A malformed JSONL line must never fall through into the generic
+            // stdout/error diagnostics, which would expose that payload when a
+            // turn otherwise has no assistant text.
+            if (binding.harness === "claude") {
+              reportMalformedClaudeStreamFrame(line);
+              return;
+            }
             /* fall through to filter */
           }
         }
-        const cleaned = stripAnsi(line);
-        // Snapshot error-looking stdout lines for the empty-response diagnostic.
+        const cleaned = resolveBackspaces(stripAnsi(line));
         const trimmed = cleaned.trim();
-        if (trimmed && ERR_LINE_RE.test(trimmed)) {
-          stdoutErrTail.push(trimmed);
-          if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
+        // `isJson` requires an object with a closing brace, so malformed
+        // object and array JSONL frames reach this path. Treat them like any
+        // other malformed stream frame instead of rendering or retaining raw
+        // tool payload values in an empty-response diagnostic.
+        if (binding.harness === "claude" && (trimmed.startsWith("{") || trimmed.startsWith("["))) {
+          reportMalformedClaudeStreamFrame(line);
+          return;
+        }
+        // Older Hermes versions can print the durable session id to stdout.
+        // The current quiet path writes it to stderr (captured separately).
+        if (hermesDirect) {
+          const hermesSession = trimmed.match(/^Session ID:\s*(\S+)\s*$/i);
+          if (hermesSession && !sessionId) {
+            announceSession(hermesSession[1]);
+            return;
+          }
         }
         // Surface tool-use hook lines as structured events so the chat can
         // render a tool block. Hooks are still discarded by AssistantFilter
         // below, so this is purely additive.
         const toolMatch = trimmed.match(TOOL_HOOK_RE);
-        if (toolMatch) {
+        // Claude stdout can contain complete tool inputs or outputs, including
+        // on unrecognised non-hook lines. Do not retain any Claude stdout in
+        // the generic empty-response diagnostic, even when the profile is
+        // unavailable and no bubble is emitted.
+        if (binding.harness !== "claude") {
+          recordStdoutErrorTail(cleaned);
+        }
+        if (toolMatch && claudeToolsEnabled) {
           const isPost = trimmed.startsWith("hook: post_tool_use");
           const name = toolMatch[1];
           const rest = (toolMatch[2] ?? "").trim();
+          if (!isPost) boundarySentinel?.observe(name, rest);
           const toolEv = isPost
             ? toolTracker.hookEnd(
                 name,
@@ -1392,92 +2819,555 @@ export async function POST(req: Request) {
         }
       };
 
-      const runAttempt = (spawnArgs: string[]): Promise<void> =>
-        new Promise((resolve) => {
+      // One registration covers both attempts (resume retry replaces the
+      // child): /api/chat/stop kills whichever child is current and flags the
+      // run as user-cancelled. A bare transport abort no longer kills — the
+      // turn finishes and persists, bounded by the detach cap.
+      let currentChild: ReturnType<typeof spawn> | null = null;
+      let currentHermesAbort: AbortController | null = null;
+      const killCurrentChild = () => {
+        try {
+          currentChild?.kill("SIGTERM");
+          currentHermesAbort?.abort();
+        } catch {
+          /* ignore */
+        }
+      };
+      runHandle = registerChatRun(
+        [body.runId, body.sessionId, sessionId],
+        killCurrentChild,
+      );
+      let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
+      const armDetachKill = () => {
+        if (runHandle.stopRequested || detachKillTimer != null) return;
+        detachKillTimer = setTimeout(killCurrentChild, CHAT_DETACH_MAX_MS);
+      };
+      // Re-attach (GET /api/chat/stream) cancels the pending kill; the last
+      // tail dropping re-arms it — but only once the ORIGINAL request is
+      // gone, so a resume tail closing can't kill a still-attached turn.
+      runBuffer = openRunBuffer([body.runId, body.sessionId], {
+        attach: () => {
+          if (detachKillTimer != null) {
+            clearTimeout(detachKillTimer);
+            detachKillTimer = null;
+          }
+        },
+        detach: () => {
+          if (req.signal.aborted) armDetachKill();
+        },
+      });
+
+      const runHermesApiAttempt = async (apiPrompt: string): Promise<void> => {
+        // This is an opt-in local/API-server transport. Hermes quiet CLI output
+        // is intentionally not treated as a versioned tool-event protocol.
+        if (!hermesApi) return;
+        const attemptStartedAt = Date.now();
+        const abort = new AbortController();
+        currentHermesAbort = abort;
+        let hermesToolsSettled = false;
+        const settleOpenHermesTools = (reason: string) => {
+          if (hermesToolsSettled) return;
+          hermesToolsSettled = true;
+          for (const toolEv of toolTracker.failOpenCalls(reason)) {
+            push({ kind: "tool_use", ...toolEv });
+          }
+        };
+        // Endpoint paths can carry reverse-proxy credentials; never put a
+        // configured URL in browser-visible progress or run-replay events.
+        pushProgress("harness-start", "Starting Hermes API", "running");
+        const onAbort = () => {
+          // Transport loss is resumable, not a user Stop: keep consuming until
+          // the shared detach deadline, exactly like a child-process attempt.
+          armDetachKill();
+        };
+        req.signal.addEventListener("abort", onAbort, { once: true });
+        // AbortSignal does not replay an already-fired event. Route setup can
+        // outlive a client disconnect, so arm the shared deadline before the
+        // remote request starts in that race as well.
+        if (req.signal.aborted) onAbort();
+        try {
+          const previousResponseId = hermesPreviousResponseId;
+          const response = await fetch(hermesResponsesUrl(hermesApi), {
+            method: "POST",
+            signal: abort.signal,
+            // Do not let a configured server redirect prompts or bearer
+            // credentials past the validated endpoint boundary.
+            redirect: "error",
+            headers: {
+              "content-type": "application/json",
+              accept: "text/event-stream",
+              authorization: `Bearer ${hermesApi.apiKey}`,
+            },
+            body: JSON.stringify({
+              model: forwardModel ?? desiredModel,
+              input: apiPrompt,
+              stream: true,
+              ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
+            }),
+          });
+          const contentType = response.headers.get("content-type") ?? "";
+          if (!response.ok || !response.body || !/^text\/event-stream(?:\s*;|$)/i.test(contentType)) {
+            const apiError = !response.ok && /^application\/(?:[a-z0-9.-]+\+)?json(?:\s*;|$)/i.test(contentType)
+              ? await response.json().catch(() => undefined)
+              : undefined;
+            if (
+              previousResponseId &&
+              (isHermesInvalidPreviousResponseIdError(apiError) ||
+                (response.status === 404 && isHermesMissingPreviousResponseError(apiError)))
+            ) {
+              resumeFailed = true;
+            }
+            result = { ...result, is_error: true };
+            recordStdoutErrorTail(
+              !response.ok
+                ? `Hermes API request failed (${response.status})`
+                : `Hermes API protocol error: expected text/event-stream, received ${contentType || "no content type"}`,
+              true,
+            );
+            await response.body?.cancel().catch(() => undefined);
+            return;
+          }
+          const reader = response.body.getReader();
+          const utf8 = new TextDecoder();
+          const decoder = new HermesSseDecoder();
+          const hermesCallIdsByItemId = new Map<string, string>();
+          const hermesCallNamesById = new Map<string, string>();
+          const hermesArgumentBuffers = new Map<string, string>();
+          const consume = (frame: { event: string; data: string }): boolean => {
+            if (!frame.data.trim()) return false;
+            if (frame.data === "[DONE]") return true;
+            // Extensions commonly emit textual pings/progress. Unknown named
+            // events are deliberately forward-compatible; only supported
+            // protocol events must parse as JSON.
+            if (frame.event && frame.event !== "message" && !isHermesResponsesEventName(frame.event)) {
+              return false;
+            }
+            let payload: unknown;
+            try {
+              payload = JSON.parse(frame.data);
+            } catch {
+              // A malformed event can hide text or a tool transition. Do not
+              // present a later terminal frame as a completed response after
+              // silently discarding it.
+              result = { ...result, is_error: true };
+              recordStdoutErrorTail("Hermes API protocol error: malformed SSE payload", true);
+              return true;
+            }
+            const event = parseHermesResponsesEvent(frame.event, payload);
+            switch (event.kind) {
+              case "session":
+                hermesResponseId = event.id;
+                if (!sessionId) announceSession(event.id);
+                return false;
+              case "text":
+                assistantText += event.text;
+                push({ kind: "assistant_chunk", text: event.text });
+                return false;
+              case "tool_start": {
+                const input = formatToolInputValue(redactSecretsDeep(event.input));
+                if (event.itemId) hermesCallIdsByItemId.set(event.itemId, event.id);
+                hermesCallNamesById.set(event.id, event.name);
+                if (input !== undefined) hermesArgumentBuffers.set(event.id, input);
+                boundarySentinel?.observe(event.name, input ?? "");
+                const toolEv = toolTracker.envelopeToolUse(event.id, event.name, input, assistantText.length);
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                else if (input !== undefined) {
+                  // Hermes progress can announce a call before the canonical
+                  // Responses item. Keep the same bubble id but replace its
+                  // preliminary input when the canonical item is complete.
+                  const updated = toolTracker.envelopeToolInput(event.id, input);
+                  if (updated) push({ kind: "tool_use", ...updated });
+                }
+                return false;
+              }
+              case "tool_input": {
+                const id = event.id ?? (event.itemId ? hermesCallIdsByItemId.get(event.itemId) : undefined);
+                if (!id) return false;
+                const next = event.isFinal
+                  ? event.input
+                  : `${hermesArgumentBuffers.get(id) ?? ""}${event.input}`;
+                hermesArgumentBuffers.set(id, next);
+                // Standard Responses calls often arrive with empty arguments
+                // and stream their actual path-bearing input afterward. Check
+                // the assembled final value at the same runtime boundary as
+                // the initial tool announcement.
+                if (event.isFinal) {
+                  const name = hermesCallNamesById.get(id);
+                  if (name) boundarySentinel?.observe(name, next);
+                }
+                const toolEv = toolTracker.envelopeToolInput(id, formatToolInputValue(redactSecretText(next)));
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                return false;
+              }
+              case "tool_end": {
+                const safeOutput = redactSecretsDeep(event.output);
+                const rawOutput = flattenToolResultContent(safeOutput) ?? formatToolInputValue(safeOutput);
+                const output = rawOutput === undefined ? undefined : redactSecretText(rawOutput);
+                const toolEv = toolTracker.envelopeToolResult(event.id, output, event.isError);
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                return false;
+              }
+              case "done":
+                if (event.id) {
+                  hermesResponseId = event.id;
+                  if (!sessionId) announceSession(event.id);
+                }
+                result = { ...result, is_error: event.isError };
+                if (event.isError) recordStdoutErrorTail("Hermes API stream failed", true);
+                if (event.isError && previousResponseId && event.invalidPreviousResponseId) resumeFailed = true;
+                return true;
+              case "error":
+                result = { ...result, is_error: true };
+                if (previousResponseId && event.invalidPreviousResponseId) resumeFailed = true;
+                recordStdoutErrorTail("Hermes API stream failed", true);
+                return true;
+              case "ignore":
+                return false;
+            }
+          };
+          try {
+            let terminal = false;
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              for (const frame of decoder.push(utf8.decode(value, { stream: true }))) {
+                terminal = consume(frame) || terminal;
+                if (terminal) break;
+              }
+              if (terminal) {
+                await reader.cancel();
+                break;
+              }
+            }
+            if (!terminal) {
+              for (const frame of decoder.push(utf8.decode())) {
+                terminal = consume(frame) || terminal;
+                if (terminal) break;
+              }
+            }
+            if (!terminal) {
+              for (const frame of decoder.finish()) {
+                terminal = consume(frame) || terminal;
+                if (terminal) break;
+              }
+            }
+            if (!terminal && !abort.signal.aborted) {
+              // EOF without an explicit protocol terminal means a proxy or
+              // server cut the response short. Preserve any partial text for
+              // diagnostics, but never present or persist it as a completed
+              // model turn.
+              result = { ...result, is_error: true };
+              recordStdoutErrorTail("Hermes API stream ended before a terminal event", true);
+            }
+          } finally {
+            reader.releaseLock();
+          }
+        } catch (error) {
+          if (abort.signal.aborted) {
+            // A detach deadline aborts the fetch just like a child kill. It
+            // never received a protocol terminal, so do not persist partial
+            // output as a resumable completed turn. Explicit Stop follows the
+            // cancellation path below and remains intentionally non-error.
+            if (!runHandle.stopRequested) {
+              result = { ...result, is_error: true };
+              recordStdoutErrorTail("Hermes API stream aborted after client disconnect", true);
+            }
+          } else {
+            result = { ...result, is_error: true };
+            recordStdoutErrorTail("Hermes API request failed", true);
+          }
+        } finally {
+          settleOpenHermesTools(
+            abort.signal.aborted
+              ? "[tool interrupted because the Hermes stream was cancelled]"
+              : "[tool did not settle before the Hermes stream ended]",
+          );
+          req.signal.removeEventListener("abort", onAbort);
+          if (currentHermesAbort === abort) currentHermesAbort = null;
+          result.duration_ms = Date.now() - attemptStartedAt;
+          pushProgress(
+            "harness-start",
+            result.is_error ? "Hermes API stream failed" : "Hermes API stream finished",
+            result.is_error ? "error" : "done",
+            undefined,
+            result.duration_ms,
+          );
+        }
+      };
+
+      const runAttempt = (spawnArgs: string[], apiPrompt = harnessPrompt): Promise<void> => {
+        if (hermesApi) return runHermesApiAttempt(apiPrompt);
+        return new Promise((resolve) => {
           const attemptStartedAt = Date.now();
+          let discardingOpenCodeFrame = false;
           pushProgress(
             "harness-start",
             `Starting ${binding.harness}`,
             "running",
             sshRuntime
               ? `${sshRuntime.host}:${sshRuntime.cwd}`
-              : familiarCwd ?? cwd,
+              // OpenCode compatibility diagnostics must not expose a local
+              // workspace path. Other harnesses retain their existing launch
+              // location detail.
+              : openCodeDirect ? undefined : cwd,
           );
           const child = sshRuntime
             ? (() => {
                 const sshArgs = spawnArgs;
                 return spawn("ssh", sshArgs, {
                   stdio: ["ignore", "pipe", "pipe"],
-                  env: covenSpawnEnv(),
+                  env: harnessSpawnEnv(body.familiarId),
                 });
               })()
-            : spawn(covenBin(), spawnArgs, {
-                // Spawn IN the familiar's workspace when no project root was
-                // supplied, so coven's project-root resolver picks that dir as
-                // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
-                // from the familiar's home. When a project root IS supplied,
-                // honor that instead.
-                cwd: familiarCwd ?? cwd,
-                stdio: ["ignore", "pipe", "pipe"],
-                env: covenSpawnEnv(),
-              });
+            : (() => {
+                const localPlan = localRuntimePlan;
+                if (!localPlan) {
+                  const message =
+                    "Could not prepare the local runtime launch before starting it, so this turn was not run. Try again.";
+                  launchFailure = { code: "runtime_probe_failed", message };
+                  result.is_error = true;
+                  pushProgress(
+                    "harness-start",
+                    `${binding.harness} failed to start`,
+                    "error",
+                    message,
+                    Date.now() - attemptStartedAt,
+                  );
+                  push({ kind: "error", code: "runtime_probe_failed", message });
+                  return null;
+                }
+                // OpenCode's early plan already owns the exact outer command,
+                // PowerShell flags, inner command, and environment. Only the
+                // per-attempt argv payload is added here.
+                const openCodeLaunchCommand = openCodeDirect
+                  ? localPlan.powerShellHostedCommand
+                    ? {
+                        command: localPlan.command,
+                        args: [...localPlan.fixedArgs],
+                        input: JSON.stringify(spawnArgs),
+                      }
+                    : {
+                        command: localPlan.command,
+                        args: [...localPlan.fixedArgs, ...spawnArgs],
+                      }
+                  : null;
+                // Preserve the early no-spawn decision. Ready plans receive a
+                // second passive check immediately before spawn so a removed
+                // binary cannot drift into the empty-output/auth diagnostic.
+                const availability =
+                  localPlan.availability.state === "ready"
+                    ? evaluateRuntimeAvailability({
+                        runner: localPlan.runner,
+                        command: localPlan.command,
+                        env: localPlan.env,
+                        unresolvedWindowsShim:
+                          localPlan.unresolvedWindowsShim === true,
+                        powerShellHostedCommand:
+                          localPlan.powerShellHostedCommand,
+                      })
+                    : localPlan.availability;
+                if (availability.state !== "ready") {
+                  launchFailure = { code: availability.code, message: availability.message };
+                  result.is_error = true;
+                  pushProgress(
+                    "harness-start",
+                    `${binding.harness} failed to start`,
+                    "error",
+                    availability.message,
+                    Date.now() - attemptStartedAt,
+                  );
+                  push({ kind: "error", code: availability.code, message: availability.message });
+                  return null;
+                }
+                const command = openCodeLaunchCommand
+                  ?? {
+                    command: localPlan.command,
+                    args: [...localPlan.fixedArgs, ...spawnArgs],
+                  };
+                const child = spawn(command.command, command.args, {
+                  // Spawn IN the familiar's workspace when no project root was
+                  // supplied, so coven's project-root resolver picks that dir as
+                  // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
+                  // from the familiar's home. When a project root IS supplied,
+                  // honor that instead.
+                  cwd,
+                  stdio: openCodeLaunchCommand?.input === undefined
+                    ? ["ignore", "pipe", "pipe"]
+                    : ["pipe", "pipe", "pipe"],
+                  env: localPlan.env,
+                }) as ChildProcessWithoutNullStreams;
+                if (openCodeLaunchCommand) {
+                  writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
+                }
+                return child;
+              })();
 
+          if (!child) {
+            resolve();
+            return;
+          }
+
+          currentChild = child;
           const onAbort = () => {
-            try {
-              child.kill("SIGTERM");
-            } catch {
-              /* ignore */
-            }
+            // Transport drop, not Stop — arm the detach cap and let the turn
+            // finish. Deliberate stops kill through the registry instead.
+            armDetachKill();
           };
           req.signal.addEventListener("abort", onAbort, { once: true });
 
-          child.stdout.on("data", (data: Buffer) => {
-            jsonBuf += data.toString("utf8");
+          // Child-process chunks are arbitrary bytes, not UTF-8 character
+          // boundaries. Preserve a split code point until its remaining bytes
+          // arrive so JSONL text/tool payloads cannot silently gain U+FFFD.
+          const openCodeStdoutDecoder = openCodeDirect ? new StringDecoder("utf8") : null;
+          const handleStdoutChunk = (decodedChunk: string) => {
+            let chunk = decodedChunk;
+            // Once an unterminated frame crosses the cap, discard through its
+            // newline before looking for another frame. Parsing its tail could
+            // turn provider data into a misleading compatibility event.
+            if (discardingOpenCodeFrame) {
+              const newline = chunk.indexOf("\n");
+              if (newline < 0) return;
+              discardingOpenCodeFrame = false;
+              chunk = chunk.slice(newline + 1);
+            }
+            jsonBuf += chunk;
             let idx;
             while ((idx = jsonBuf.indexOf("\n")) >= 0) {
               const line = jsonBuf.slice(0, idx);
               jsonBuf = jsonBuf.slice(idx + 1);
+              if (
+                openCodeDirect
+                && openCodeCompatibility?.mode === "structured"
+                && Buffer.byteLength(line, "utf8") > MAX_OPENCODE_JSONL_FRAME_BYTES
+              ) {
+                quarantineOpenCodeProtocol(
+                  "OpenCode sent an oversized event; future turns will use safe plain chat until a compatible schema is available",
+                  "oversized-jsonl-event",
+                );
+                continue;
+              }
               handleLine(line);
             }
+            // Plain compatibility mode is ordinary assistant text, not a
+            // JSONL control frame. Flush a long partial line in bounded
+            // chunks so a hostile/no-newline client cannot retain it forever.
+            if (
+              openCodeDirect
+              && openCodeCompatibility?.mode === "plain"
+              && Buffer.byteLength(jsonBuf, "utf8") > MAX_OPENCODE_JSONL_FRAME_BYTES
+            ) {
+              const plainChunk = jsonBuf;
+              jsonBuf = "";
+              handleLine(plainChunk);
+            }
+            if (
+              openCodeDirect
+              && openCodeCompatibility?.mode === "structured"
+              && Buffer.byteLength(jsonBuf, "utf8") > MAX_OPENCODE_JSONL_FRAME_BYTES
+            ) {
+              jsonBuf = "";
+              discardingOpenCodeFrame = true;
+              quarantineOpenCodeProtocol(
+                "OpenCode sent an oversized event; future turns will use safe plain chat until a compatible schema is available",
+                "oversized-jsonl-event",
+              );
+            }
+          };
+
+          child.stdout.on("data", (data: Buffer) => {
+            const chunk = openCodeStdoutDecoder ? openCodeStdoutDecoder.write(data) : stdoutDecoder.write(data);
+            if (chunk) handleStdoutChunk(chunk);
           });
 
           child.stderr.on("data", (data: Buffer) => {
             const text = stripAnsi(data.toString("utf8"));
+            captureHermesSessionFromStderr(text);
             if (RESUME_ERR_RE.test(text)) resumeFailed = true;
+            if (!adapterConflict) {
+              adapterConflict = detectBuiltinAdapterConflict(text);
+            }
             for (const line of text.split(/\r?\n/)) {
               const trimmed = line.trim();
               if (!trimmed) continue;
-              stderrTail.push(trimmed);
-              if (stderrTail.length > STDERR_KEEP) stderrTail.shift();
+              // Claude stderr can include tool payloads. It must not be copied
+              // into the generic empty-response diagnostic, which is rendered
+              // to the chat transcript.
+              if (binding.harness !== "claude") {
+                stderrTail.push(trimmed);
+                if (stderrTail.length > STDERR_KEEP) stderrTail.shift();
+              }
             }
           });
 
           child.on("error", (err: NodeJS.ErrnoException) => {
+            // Local OS launch errors can include an absolute command,
+            // interpreter, or workspace path. Normalize them once and reuse
+            // the exact value-free message in state, progress, and SSE.
+            const localLaunchError = localRuntimeLaunchError(
+              localRuntimePlan?.runner ?? "coven",
+              err.code,
+            );
+            const launchError = sshRuntime
+              ? err.code === "ENOENT"
+                ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
+                : err.message
+              : localLaunchError.message;
+            // Race-safe fallback (#3856): the pre-spawn gate can pass and the
+            // binary still vanish before spawn. Mark the run errored BEFORE
+            // the empty-output diagnostic can run, so a launch failure is
+            // never misreported as "installed but not authenticated".
+            result.is_error = true;
+            launchFailure ??= {
+              code: localLaunchError.code,
+              message: launchError,
+            };
             pushProgress(
               "harness-start",
               `${binding.harness} failed to start`,
               "error",
-              err.message,
+              launchError,
               Date.now() - attemptStartedAt,
             );
             if (err.code === "ENOENT") {
               push({
                 kind: "error",
                 code: "ENOENT",
-                message:
-                  sshRuntime
-                    ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
-                    : "coven CLI not found on PATH. Open Setup to install it, then try again.",
+                message: launchError,
               });
             } else {
-              push({ kind: "error", message: err.message });
+              push({
+                kind: "error",
+                ...(sshRuntime ? {} : { code: localLaunchError.code }),
+                message: launchError,
+              });
             }
             req.signal.removeEventListener("abort", onAbort);
             resolve();
             close();
           });
 
-          child.on("close", () => {
+          child.on("close", (code) => {
+            const trailingOpenCodeText = openCodeStdoutDecoder?.end();
+            if (trailingOpenCodeText) handleStdoutChunk(trailingOpenCodeText);
+            const trailingStdoutText = openCodeStdoutDecoder ? "" : stdoutDecoder.end();
+            if (trailingStdoutText) handleStdoutChunk(trailingStdoutText);
+            captureHermesSessionFromStderr("", true);
+            // OpenCode normally emits a JSON error envelope, but older CLI
+            // builds can exit non-zero with only stderr. Do not mistake that
+            // failed invocation for a successful model application below.
+            if ((openCodeDirect || copilotStream) && code !== 0) {
+              result = { ...result, is_error: true };
+            }
+            // Copilot JSONL stderr can contain raw prompt or tool payloads on
+            // a successful malformed stream too. Its only user-facing
+            // diagnostics are fixed/redacted protocol messages.
+            if (copilotStream) {
+              stderrTail.length = 0;
+              if (code !== 0) {
+                stdoutErrTail.length = 0;
+                stdoutErrTail.push("Copilot exited before completing its response.");
+              }
+            }
             pushProgress(
               "harness-start",
               `${binding.harness} exited`,
@@ -1497,40 +3387,169 @@ export async function POST(req: Request) {
         });
 
       // First attempt — uses --continue if body.sessionId was set.
-      await runAttempt(args);
+      };
+      const turnSpawnStartMs = Date.now();
+      // A compatibility decision is meaningful even when the CLI exits before
+      // stdout. Announce it before spawning instead of relying on handleLine.
+      if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
+        openCodeCompatibilityHealthNoticeSent = true;
+        const diagnostic = openCodeCompatibility.diagnostic === "json-format-unavailable"
+          ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
+          : openCodeCompatibility.diagnostic === "no-compatible-schema"
+            ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
+            : openCodeCompatibility.diagnostic === "schema-quarantined"
+              ? "OpenCode's structured event protocol was quarantined; continuing without tool activity"
+            : openCodeCompatibility.diagnostic === "cached-schema-unavailable"
+              ? "OpenCode's compatibility registry is unavailable; continuing in plain chat without tool activity"
+            : openCodeCompatibility.bundleSource === "built-in"
+              ? "OpenCode schema refresh was not trusted; using the shipped compatible parser"
+              : "OpenCode schema refresh was not trusted; using the last known compatible parser";
+        pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
+      }
+      if (openCodeFreshSessionForCompatibility) {
+        pushProgress(
+          "opencode-compatibility",
+          openCodeUnrecordedResume
+            ? "This OpenCode session is not recorded locally and this client cannot resume it; starting a fresh chat"
+            : openCodeCompatibilityRetry?.replayedHistory
+            ? openCodeSessionUnavailable
+              ? "This OpenCode client cannot resume sessions; replaying recent context in a fresh chat"
+              : "This conversation has no resumable OpenCode session; replaying recent context in a fresh chat"
+            : openCodeSessionUnavailable
+              ? "This OpenCode client cannot resume sessions; starting a fresh chat"
+              : "This conversation has no resumable OpenCode session; starting a fresh chat",
+          "error",
+          "session-unavailable",
+        );
+      }
+      if (hermesNeedsContextReplay) {
+        const replay = buildResumeRetryPrompt(harnessPrompt, existingConversation);
+        pushProgress(
+          "resume-retry",
+          replay.replayedHistory
+            ? "No Responses session found; replaying recent context into a fresh chat"
+            : "No Responses session found; starting a fresh chat",
+          "done",
+        );
+        await runAttempt(buildArgs(null, replay.prompt), replay.prompt);
+      } else {
+        await runAttempt(args);
+      }
 
-      // Transparent retry: if codex reported its rollout-resume failed and
-      // we had been resuming, start a fresh thread (no --continue) so the
-      // user's prompt still gets answered.
-      if (resumeFailed && body.sessionId) {
-        pushProgress("resume-retry", "Resume failed; starting a fresh chat", "running");
-        sessionId = null;
-        assistantFilter = new AssistantFilter();
+      // Self-heal (cave-1c05): a stale scaffolded manifest whose id the
+      // installed CLI now ships as a built-in harness makes the registry load
+      // fatal, killing the run before any assistant output. Quarantine the
+      // manifest the CLI named (rename off the scanned `.json` extension) and
+      // retry the same turn. Bounded: several stale manifests can conflict,
+      // but each pass must have healed a new one to continue. Local runs
+      // only — an SSH runtime's error names a remote path.
+      for (
+        let heals = 0;
+        heals < 3 && adapterConflict && !sshRuntime && !runHandle.stopRequested;
+        heals++
+      ) {
+        const conflict: BuiltinAdapterConflict = adapterConflict;
+        const healed = await healBuiltinShadowedManifest(conflict);
+        if (!healed) break;
+        pushProgress(
+          "adapter-heal",
+          `Quarantined stale ${conflict.id} adapter manifest; retrying`,
+          "running",
+          conflict.manifestPath,
+        );
+        assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
         assistantText = "";
         jsonBuf = "";
+        stdoutDecoder = new StringDecoder("utf8");
         result = {};
-        toolTracker = new ToolCallTracker();
+        resetToolTrackerForRetry();
+        openCodeModelRejected = false;
+        copilotText.reset();
+        copilotTranscript.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         resumeFailed = false;
-        await runAttempt(buildArgs(null));
-        pushProgress("resume-retry", "Fresh chat started", "done");
+        adapterConflict = null;
+        // Settle the heal step BEFORE the retry attempt runs (same shape as
+        // the resume-retry step below): the quarantine itself is finished at
+        // relaunch, and a step left "running" until the attempt ended would
+        // headline the activity strip for the whole reply.
+        pushProgress(
+          "adapter-heal",
+          `Stale ${conflict.id} adapter manifest quarantined; retried`,
+          "done",
+          conflict.manifestPath,
+        );
+        await runAttempt(args);
+      }
+
+      // Transparent retry: if codex reported its rollout-resume failed and
+      // we had been resuming, start a fresh thread (no --continue) so the
+      // user's prompt still gets answered. A fresh harness session has no
+      // history of its own, so replay the recent conversation into the prompt —
+      // otherwise the familiar answers as if the thread just started and the
+      // user has to remind it of everything said so far.
+      if (resumeFailed && body.sessionId) {
+        const retry = buildResumeRetryPrompt(harnessPrompt, existingConversation);
+        pushProgress(
+          "resume-retry",
+          retry.replayedHistory
+            ? "Resume failed; replaying recent context into a fresh chat"
+            : "Resume failed; starting a fresh chat",
+          "running",
+        );
+        sessionId = null;
+        // The failed resumed stream can echo the stale native token before its
+        // error frame. This retry deliberately omits --session, so retaining
+        // that token would persist it again if the fresh process exits before
+        // announcing a replacement session.
+        openCodeSessionId = null;
+        hermesResponseId = null;
+        hermesPreviousResponseId = null;
+        assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
+        assistantText = "";
+        jsonBuf = "";
+        stdoutDecoder = new StringDecoder("utf8");
+        result = {};
+        resetToolTrackerForRetry();
+        openCodeModelRejected = false;
+        copilotText.reset();
+        copilotTranscript.reset();
+        stderrTail.length = 0;
+        stdoutErrTail.length = 0;
+        resumeFailed = false;
+        // Settle the retry step BEFORE the fresh attempt runs, not after it
+        // finishes: the step's own work (rebuild context, relaunch) is done
+        // the moment the fresh run launches. Left "running" until the attempt
+        // ended, "Resume failed…" stayed the live headline in the activity
+        // strip for the entire reply — minutes of what read like an
+        // unresolved failure while the fresh chat streamed fine underneath.
+        pushProgress(
+          "resume-retry",
+          retry.replayedHistory
+            ? "Recent context replayed into a fresh chat"
+            : "Fresh chat started",
+          "done",
+        );
+        await runAttempt(buildArgs(null, retry.prompt), retry.prompt);
       }
 
       // User cancel (CHAT-D5-02): when the client stops the response
-      // (Esc/Stop), req.signal aborts and the harness child gets SIGTERM —
+      // (Esc/Stop → POST /api/chat/stop), the harness child gets SIGTERM —
       // usually before any "result" event. Without this guard the
       // empty-response diagnostic below fabricates an auth-hint error and
       // saves it, so reloading the chat rewrote the user's cancel into a
       // harness error. Persist the honest record instead: the partial text
       // streamed so far (or a minimal "(cancelled)" marker), never an error,
       // and skip the diagnostic SSE chunk — the client already rendered its
-      // own cancelled state and is gone.
-      const cancelledByUser = req.signal.aborted;
+      // own cancelled state and is gone. A bare transport abort (signal loss,
+      // closed tab) is NOT a cancel: the turn ran to completion and persists
+      // as a normal reply the client recovers on resync.
+      const cancelledByUser = runHandle.stopRequested;
       if (cancelledByUser) {
         if (!assistantText.trim()) assistantText = "(cancelled)";
         result.is_error = false;
-      } else if (!assistantText.trim()) {
+      } else if (!assistantText.trim() && !launchFailure) {
         // Empty-response diagnostic: when the harness reports done but never
         // produced assistant text, the user otherwise sees a silent empty
         // bubble. Synthesize a short explanation so they know what to do.
@@ -1538,7 +3557,10 @@ export async function POST(req: Request) {
         const durMs = result.duration_ms;
         const durSuffix = durMs != null ? ` in ${durMs}ms` : "";
         const tailSource = stderrTail.length ? stderrTail : stdoutErrTail;
-        const tailBlock = tailSource.length
+        // OpenCode stderr can include request bodies, provider diagnostics, or
+        // local paths. It is useful for other harnesses' existing recovery
+        // guidance, but must never become assistant-visible/persisted text.
+        const tailBlock = !openCodeDirect && tailSource.length
           ? `\n\n\`\`\`\n${tailSource.slice(-5).join("\n")}\n\`\`\``
           : "";
         const diagnostic = result.is_error
@@ -1550,15 +3572,118 @@ export async function POST(req: Request) {
         push({ kind: "assistant_chunk", text: diagnostic });
       }
 
+      // Created-row leak sweep (bd cave-p08l): `coven run` registers the
+      // daemon session row before launching the harness, and the row's id
+      // only reaches this route via the stream handshake. A spawn that dies
+      // pre-handshake (fork exhaustion, missing adapter) strands the row in
+      // "created" forever — the daemon has no reaper. When a NEW chat's turn
+      // ends without ever learning a session id, reap the rows this turn
+      // provably registered: same spawn cwd, created inside the turn window,
+      // title == this turn's prompt head. Best-effort; never fails the turn.
+      if (!cancelledByUser && !body.sessionId && !sessionId && !sshRuntime) {
+        const swept = await sweepStuckCreatedSessions({
+          cwd,
+          prompt: harnessPrompt,
+          sinceMs: turnSpawnStartMs - 5000,
+        });
+        if (swept.length > 0) {
+          pushProgress(
+            "created-sweep",
+            `Cleaned up ${swept.length} orphaned session ${swept.length === 1 ? "row" : "rows"}`,
+            "done",
+            swept.join(", "),
+          );
+        }
+      }
+
+      // Boundary sentinel readout: one non-blocking notice per turn listing
+      // the out-of-boundary paths the harness touched, plus a recorded
+      // reminder that steers the conversation's next turn. Nothing here
+      // interrupts or fails the turn — enforcement is observe → surface →
+      // steer, not kill.
+      const boundaryViolations = boundarySentinel?.violations() ?? [];
+      if (boundaryViolations.length > 0) {
+        const boundarySessionId = body.sessionId ?? sessionId;
+        if (boundarySessionId) {
+          recordBoundaryViolations(boundarySessionId, boundaryViolations);
+        }
+        pushProgress(
+          "boundary-sentinel",
+          `Touched ${boundaryViolations.length === 1 ? "a path" : `${boundaryViolations.length} paths`} outside the granted roots`,
+          "error",
+          formatBoundaryNotice(boundaryViolations),
+        );
+      }
+
+      // Agent-produced inline attachments: pull `coven:attachment` marker
+      // blocks out of the reply, resolve+read the referenced files (allowlist
+      // -guarded, size-capped), and strip the markers from the text. Stream the
+      // attachments so the live turn renders file chips, and reuse them on the
+      // persisted assistant turn so they survive reload. `cleanedAssistantText`
+      // is the marker-free text that gets persisted (the client also strips
+      // markers from the live-streamed text for parity — see chat-view).
+      // Plain compatibility fallback has no structured boundary that permits
+      // us to normalize provider text. Preserve its leading indentation and
+      // trailing blank lines in the durable transcript as well as the live
+      // stream; other harnesses retain their established trim behavior.
+      const assistantTextForPersistence = openCodeDirect && openCodeCompatibility?.mode === "plain"
+        ? assistantText
+        : assistantText.trim();
+      const { text: cleanedAssistantText, attachments: agentAttachments } =
+        openCodeDirect && openCodeCompatibility?.mode === "plain"
+          ? { text: assistantTextForPersistence, attachments: [] }
+          : parseAgentAttachments(assistantTextForPersistence, {
+              allowedRoots: sshRuntime ? [] : [cwd, ...grantedProjectRoots],
+            });
+      for (const attachment of agentAttachments) {
+        push({ kind: "attachment", attachment });
+      }
+
       // Persist under the STABLE conversation id. The harness's per-turn id
       // is tracked on the file for the next resume but never becomes the
       // conversation's identity — keying off it created a new conversation
       // file (and sidebar entry) for every resumed turn.
-      const harnessSessionId = sessionId;
+      // A Grok resume can fail before producing a native event. In that case
+      // `sessionId` is Cave's stable conversation id, not a CLI resume id;
+      // do not overwrite the previous native id (or record a changed sandbox
+      // profile) and accidentally let a later read turn resume the old full
+      // access session.
+      const harnessSessionId = grokDirect
+        ? grokSessionId
+ : openCodeDirect
+          // Plain output has no new native id to announce, but a token is
+          // reusable only when this attempt actually forwarded it. A fresh
+          // compatibility fallback must invalidate an older native session.
+          ? openCodeSessionId ?? (openCodeNativeResumeUsed
+            ? existingConversation?.harnessSessionId ?? (!existingConversation ? body.sessionId : undefined)
+            : undefined)
+          : hermesDirect && hermesApi
+            ? !result.is_error && hermesResponseId
+              ? hermesResponseId
+              : existingConversation?.harnessSessionId ?? null
+          : sessionId;
+      // OpenCode's JSON event protocol does not echo the selected model. Its
+      // direct argv proves the selection was forwarded, while a successful
+      // exit is the only confirmation it was applied. Preserve an explicit
+      // model rejection as failed rather than incorrectly reporting applied.
+      if (openCodeDirect && forwardModel) {
+        const application = modelApplicationForHarness(
+          modelApplicationFromRun({
+            confirmedModel: forwardModel,
+            isError: result.is_error === true,
+            errorText: openCodeModelRejected ? "model unavailable" : [...stderrTail, ...stdoutErrTail].join("\n"),
+          }),
+        );
+        if (!result.is_error) responseMetadata.confirmedModel = forwardModel;
+        responseMetadata.modelApplicationState = application.state;
+        responseMetadata.modelApplicationReason = application.reason;
+        modelState.applicationState = application.state;
+        modelState.reason = application.reason;
+      }
       // Model parity: if the harness echoed its resolved model, promote the
       // application state from `pending` to `applied` and record what actually
       // ran. No echo ⇒ leave the honest `pending`/`unsupported` state untouched.
-      if (confirmedModel) {
+      else if (confirmedModel) {
         const application = modelApplicationForHarness({ supported: true, confirmed: true });
         responseMetadata.confirmedModel = confirmedModel;
         responseMetadata.modelApplicationState = application.state;
@@ -1566,79 +3691,140 @@ export async function POST(req: Request) {
         modelState.applicationState = application.state;
         modelState.reason = application.reason;
       }
-      const finalSessionId = body.sessionId ?? sessionId;
-      if (finalSessionId) {
+      const routedTurnModel = copilotStream
+        ? cleanModelId(desiredModel)
+        : grokDirect
+          ? grokForwardModel
+          : forwardModel;
+      responseMetadata.retryModel = turnRetryModel({
+        requestedModel: body.modelOverride,
+        confirmedModel: responseMetadata.confirmedModel,
+        routedModel: routedTurnModel,
+      });
+      const finalSessionId = body.sessionId && !openCodeUnrecordedResume
+        ? body.sessionId
+        : sessionId;
+      // Always settle the live chip before `done`, even if a malformed or
+      // early-exiting harness never supplied a session id and therefore has
+      // no conversation file to persist.
+      settleUnfinishedTools();
+      // Launch failures never produced a real assistant response: the client
+      // already received the structured error above, so persist nothing
+      // (matching the OpenClaw no-spawn precedent) instead of writing a
+      // fabricated turn the user would rediscover on reload.
+      if (finalSessionId && !launchFailure) {
         pushProgress("save-transcript", "Saving transcript", "running");
         await recordSessionFamiliar(finalSessionId, body.familiarId);
-        const existing = await loadConversation(finalSessionId);
-        const now = new Date().toISOString();
-        const userTurnId = crypto.randomUUID();
-        const assistantTurnId = crypto.randomUUID();
-        const chatTitle = existing?.title ?? defaultChatTitleForSession(finalSessionId);
-        if (!existing) await setDefaultSessionTitleIfMissing(finalSessionId, chatTitle);
-        const userTurn: ChatTurn = {
-          id: userTurnId,
-          role: "user",
-          text: promptText,
-          ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
-          createdAt: now,
-        };
-        // Persist the turn's tool rows: the live chips exist only in client
-        // state fed by SSE; without this, refresh/chat-switch loses them.
-        // Offsets were stamped against the untrimmed stream — shift by the
-        // leading trim so interleaving matches the saved text.
-        const persistedTools = toPersistedTools(toolTracker.snapshot(),
-          assistantText.length - assistantText.trimStart().length,
-        );
-        const assistantTurn: ChatTurn = {
-          id: assistantTurnId,
-          role: "assistant",
-          text: assistantText.trim(),
-          createdAt: new Date().toISOString(),
-          durationMs: result.duration_ms,
-          isError: result.is_error,
-          ...(cancelledByUser ? { cancelled: true } : {}),
-          ...(result.usage ? { usage: result.usage } : {}),
-          ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
-          ...(persistedTools ? { tools: persistedTools } : {}),
-          responseMetadata,
-        };
-        const conv = existing ?? {
-          sessionId: finalSessionId,
-          familiarId: body.familiarId,
-          harness: binding.harness,
-          model: responseMetadata.model,
-          runtime: responseMetadata.runtime,
-          title: chatTitle,
-          createdAt: now,
-          updatedAt: now,
-          turns: [],
-        };
-        conv.model = responseMetadata.model;
-        conv.runtime = responseMetadata.runtime;
-        persistSendModelIntent(conv, body, modelState);
-        if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
-        conv.turns.push(userTurn, assistantTurn);
-        await saveConversation(conv);
-        pushProgress("save-transcript", "Transcript saved", "done");
+        // Settle any in-flight stub write first so it can never race (and
+        // clobber) the authoritative transcript saved below.
+        if (stubWrite) await stubWrite;
 
-        // Fire-and-forget: extract URLs from user prompt and assistant text,
-        // route them to the library. Failures must never affect the chat stream.
-        const prompt = promptText;
-        scheduleLinkRoute({
-          prompt,
-          sessionId: finalSessionId,
-          turnId: userTurnId,
-          chatTitle,
-          familiar: body.familiarId,
+        const isFirstExchange = await withConversationLock(finalSessionId, async () => {
+          const existing = await loadConversation(finalSessionId);
+          // First-turn visibility (cave-0g2x): drop the announce-time stub turn
+          // so the authoritative user turn below re-lands under the same id.
+          // True only when this run's stub created the conversation, which keeps
+          // first-exchange behaviors (auto-naming) firing for new chats.
+          const hadFirstTurnStub = existing
+            ? stripConversationStubTurn(existing, pendingUserTurnId)
+            : false;
+          const firstExchange = !existing || hadFirstTurnStub;
+          const now = new Date().toISOString();
+          const userTurnId = pendingUserTurnId;
+          const assistantTurnId = crypto.randomUUID();
+          const chatTitle = existing?.title ?? defaultChatTitleForSession(finalSessionId);
+          if (!existing) await setDefaultSessionTitleIfMissing(finalSessionId, chatTitle);
+          // Branching: when the client passes parentTurnId, the new user turn is
+          // parented there (its prior sibling stays in the tree). For a normal
+          // (non-branch) send, fall back to the prior activeLeafId so the
+          // conversation stays a linear chain identical to the pre-branching
+          // behaviour. First turn of a new chat gets null (no parent).
+          const branchParentId =
+            body.parentTurnId !== undefined ? body.parentTurnId : existing?.activeLeafId ?? null;
+          const userTurn: ChatTurn = {
+            id: userTurnId,
+            role: "user",
+            text: promptText,
+            ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
+            ...persistedTurnControls(body, responseMetadata.retryModel),
+            createdAt: now,
+            ...(branchParentId != null ? { parentId: branchParentId } : {}),
+          };
+          // Persist the turn's tool rows: the live chips exist only in client
+          // state fed by SSE; without this, refresh/chat-switch loses them.
+          // Offsets were stamped against the untrimmed stream — shift by the
+          // leading trim so interleaving matches the saved text.
+          const persistedTools = toPersistedTools([...priorAttemptTools, ...toolTracker.snapshot()],
+            assistantText.length - assistantText.trimStart().length,
+          );
+          const assistantTurn: ChatTurn = {
+            id: assistantTurnId,
+            role: "assistant",
+            text: cleanedAssistantText,
+            ...(agentAttachments.length ? { attachments: agentAttachments } : {}),
+            createdAt: new Date().toISOString(),
+            durationMs: result.duration_ms,
+            isError: result.is_error,
+            ...(cancelledByUser ? { cancelled: true } : {}),
+            ...(result.usage ? { usage: result.usage } : {}),
+            ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
+            ...(persistedTools ? { tools: persistedTools } : {}),
+            ...(persistedOpenCodeDiagnostics.length
+              ? { progress: persistedOpenCodeDiagnostics }
+              : {}),
+            parentId: userTurnId,
+            responseMetadata,
+          };
+          const conv = existing ?? {
+            sessionId: finalSessionId,
+            familiarId: body.familiarId,
+            harness: binding.harness,
+            model: responseMetadata.model,
+            runtime: responseMetadata.runtime,
+            title: chatTitle,
+            ...(body.origin ? { origin: body.origin } : {}),
+            createdAt: now,
+            updatedAt: now,
+            turns: [],
+          };
+          conv.model = responseMetadata.model;
+          conv.runtime = responseMetadata.runtime;
+          persistSendModelIntent(
+            conv,
+            body,
+            modelState,
+            existingConversation?.modelIntent?.model ?? null,
+          );
+          // Work-branch snapshot from the chat's own cwd — per-session PR
+          // attribution (badges + merged-PR auto-archive). Best-effort; a
+          // failed capture keeps the previous snapshot.
+          const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
+          if (workBranch) conv.branch = workBranch;
+          // Transcript PR snapshot: the reply's last reported PR URL (fallback
+          // attribution for chats whose work happens in agent worktrees).
+          const reportedPrUrl = latestPrUrlFromText(cleanedAssistantText);
+          if (reportedPrUrl) conv.prUrl = reportedPrUrl;
+          if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
+          else if (openCodeDirect && existingConversation && !openCodeNativeResumeUsed) {
+            // A fresh compatibility fallback intentionally did not use the
+            // prior native session. Persist that invalidation so a later client
+            // upgrade cannot silently resume context that excludes this turn.
+            delete conv.harnessSessionId;
+          }
+          if (grokDirect && grokSessionId) conv.grokSandboxProfile = grokSandboxProfile;
+          conv.turns.push(userTurn, assistantTurn);
+          conv.activeLeafId = assistantTurnId;
+          await saveConversation(conv);
+          return firstExchange;
         });
-        scheduleLinkRoute({
-          prompt: assistantText.trim(),
-          sessionId: finalSessionId,
-          turnId: assistantTurnId,
-          chatTitle,
-          familiar: body.familiarId,
-        });
+        if (isFirstExchange && !result.is_error && !cancelledByUser) {
+          await autoNameSessionFromFirstExchange(finalSessionId, promptText);
+        }
+        // Periodic context-aware rename on every completed turn (cadence gated inside).
+        if (!result.is_error && !cancelledByUser) {
+          await maybeAutoRenameFromContext(finalSessionId, promptText);
+        }
+        pushProgress("save-transcript", "Transcript saved", "done");
       }
 
       push({
@@ -1654,6 +3840,9 @@ export async function POST(req: Request) {
       // exited (including any resume retry), so nothing can still be reading
       // the saved images. Failures just leave files in tmpdir.
       cleanupImageTempFiles(imageFilePaths);
+      if (detachKillTimer != null) clearTimeout(detachKillTimer);
+      unregisterChatRun(runHandle);
+      runBuffer?.finish();
       await sleep(20);
       close();
     },

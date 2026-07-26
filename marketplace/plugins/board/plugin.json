@@ -1,0 +1,40 @@
+{
+  "name": "board",
+  "version": "0.1.0",
+  "description": "Read and write the workspace BOARD.md shared task board via the bin/board Python CLI, which preserves the markdown schema and appends to the activity log automatically.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "board",
+    "tasks",
+    "workspace",
+    "multi-agent",
+    "activity-log"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/board",
+  "x-coven": {
+    "displayName": "BOARD \u2014 Shared Task Board",
+    "category": "Project Management",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/board"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

@@ -2,7 +2,7 @@ id: strategy-map
 version: 0.1.0
 name: Strategy Map
 summary: Clarify goals, compare routes, recommend direction, and turn strategy into next moves.
-familiar: astra
+familiar: strategy
 pattern: generate-and-filter
 tags:
   - strategy
@@ -26,28 +26,28 @@ steps:
   - id: clarify-goal
     kind: agent
     name: Clarify goal
-    uses: astra
+    uses: strategy
     summary: State the desired outcome, constraints, timing, and decision owner.
     requires:
       - input
   - id: map-options
     kind: agent
     name: Map options
-    uses: astra
+    uses: strategy
     summary: Generate viable routes and name what each route optimizes.
     requires:
       - clarify-goal
   - id: compare-tradeoffs
     kind: agent
     name: Compare tradeoffs
-    uses: astra
+    uses: strategy
     summary: Evaluate cost, risk, reversibility, dependency load, and uncertainty.
     requires:
       - map-options
   - id: recommend-route
     kind: agent
     name: Recommend route
-    uses: astra
+    uses: strategy
     summary: Choose the best path when evidence is enough or state what is missing.
     requires:
       - compare-tradeoffs

@@ -1,0 +1,224 @@
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+} from "node:fs/promises";
+import path from "node:path";
+import { caveHome } from "../coven-paths.ts";
+import type { ResearchMission } from "../research-missions.ts";
+import { ensureStandardArtifactRefs } from "../research-missions.ts";
+import { writeFileAtomic, writeJsonAtomic } from "./atomic-write.ts";
+
+const MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const ARTIFACT_FILE_RE = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
+
+export const MAX_RESEARCH_FILE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * A mission-file read that fails the workspace sandbox: the path escapes the
+ * mission workspace, resolves through a symlink, isn't a regular file, or
+ * exceeds the read cap. The request was well-formed — these are client-visible
+ * *containment* outcomes, not server faults — so routes surface them as 4xx,
+ * never 500 (cave-v73d). Missing files (ENOENT) are NOT integrity failures:
+ * they carry Node's errno code and callers special-case them separately.
+ */
+export class ResearchFileIntegrityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ResearchFileIntegrityError";
+  }
+}
+
+export function isResearchFileIntegrityError(
+  error: unknown,
+): error is ResearchFileIntegrityError {
+  return error instanceof Error && error.name === "ResearchFileIntegrityError";
+}
+
+declare global {
+  var __caveResearchMissionLocks: Map<string, Promise<void>> | undefined;
+}
+
+function missionLocks(): Map<string, Promise<void>> {
+  globalThis.__caveResearchMissionLocks ??= new Map();
+  return globalThis.__caveResearchMissionLocks;
+}
+
+export function researchMissionsRoot(): string {
+  return (
+    process.env.COVEN_RESEARCH_MISSIONS_DIR?.trim() ||
+    path.join(/* turbopackIgnore: true */ caveHome(), "research-missions")
+  );
+}
+
+export function isValidResearchMissionId(id: unknown): id is string {
+  return typeof id === "string" && MISSION_ID_RE.test(id);
+}
+
+function assertMissionId(id: string): void {
+  if (!isValidResearchMissionId(id)) throw new Error("invalid mission id");
+}
+
+export function researchMissionWorkspacePath(id: string): string {
+  assertMissionId(id);
+  return path.join(/* turbopackIgnore: true */ researchMissionsRoot(), id);
+}
+
+export function missionArtifactPath(id: string, fileName: string): string {
+  if (!ARTIFACT_FILE_RE.test(fileName) || path.basename(fileName) !== fileName) {
+    throw new Error("invalid artifact filename");
+  }
+  return path.join(/* turbopackIgnore: true */ researchMissionWorkspacePath(id), "artifacts", fileName);
+}
+
+function isWithin(candidate: string, root: string): boolean {
+  return candidate === root || candidate.startsWith(root + path.sep);
+}
+
+function isResearchMission(value: unknown): value is ResearchMission {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const mission = value as Partial<ResearchMission>;
+  return (
+    mission.version === 1 &&
+    typeof mission.id === "string" &&
+    MISSION_ID_RE.test(mission.id) &&
+    typeof mission.familiarId === "string" &&
+    typeof mission.title === "string" &&
+    typeof mission.intent === "string" &&
+    Array.isArray(mission.iterations) &&
+    Array.isArray(mission.artifacts) &&
+    Array.isArray(mission.sources)
+  );
+}
+
+export function withResearchMissionLock<T>(
+  id: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  assertMissionId(id);
+  const locks = missionLocks();
+  const previous = locks.get(id) ?? Promise.resolve();
+  const result = previous.then(operation, operation);
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  locks.set(id, tail);
+  void tail.then(() => {
+    if (locks.get(id) === tail) locks.delete(id);
+  });
+  return result;
+}
+
+async function assertRealMissionDirectory(id: string): Promise<string> {
+  const directory = researchMissionWorkspacePath(id);
+  // Research workspaces live beneath the user's runtime cave home. They are
+  // validated below, but are never build inputs for the Next server bundle.
+  const stat = await lstat(/* turbopackIgnore: true */ directory);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error("mission workspace must be a real directory");
+  }
+  const [resolvedDirectory, resolvedRoot] = await Promise.all([
+    realpath(/* turbopackIgnore: true */ directory),
+    realpath(/* turbopackIgnore: true */ researchMissionsRoot()),
+  ]);
+  if (!isWithin(resolvedDirectory, resolvedRoot)) {
+    throw new Error("mission workspace is outside research root");
+  }
+  return resolvedDirectory;
+}
+
+export async function createResearchMissionWorkspace(
+  mission: ResearchMission,
+): Promise<ResearchMission> {
+  assertMissionId(mission.id);
+  return withResearchMissionLock(mission.id, async () => {
+    const root = researchMissionsRoot();
+    const directory = researchMissionWorkspacePath(mission.id);
+    await mkdir(/* turbopackIgnore: true */ root, { recursive: true });
+    await mkdir(/* turbopackIgnore: true */ directory);
+    try {
+      await mkdir(path.join(/* turbopackIgnore: true */ directory, "artifacts"));
+      await Promise.all([
+        writeJsonAtomic(path.join(/* turbopackIgnore: true */ directory, "mission.json"), mission),
+        writeFileAtomic(
+          path.join(/* turbopackIgnore: true */ directory, "research-state.yaml"),
+          `version: 1\nmission: ${mission.id}\nstatus: ${mission.status}\niteration: 0\n`,
+        ),
+        writeFileAtomic(path.join(/* turbopackIgnore: true */ directory, "findings.md"), "# Findings\n"),
+        writeFileAtomic(path.join(/* turbopackIgnore: true */ directory, "research-log.md"), "# Research log\n"),
+        writeJsonAtomic(path.join(/* turbopackIgnore: true */ directory, "sources.json"), mission.sources),
+      ]);
+      return mission;
+    } catch (error) {
+      await rm(/* turbopackIgnore: true */ directory, { recursive: true, force: true });
+      throw error;
+    }
+  });
+}
+
+export async function saveResearchMission(mission: ResearchMission): Promise<void> {
+  assertMissionId(mission.id);
+  await withResearchMissionLock(mission.id, async () => {
+    const directory = await assertRealMissionDirectory(mission.id);
+    await writeJsonAtomic(path.join(/* turbopackIgnore: true */ directory, "mission.json"), mission);
+  });
+}
+
+export async function loadResearchMission(id: string): Promise<ResearchMission | null> {
+  assertMissionId(id);
+  try {
+    const directory = await assertRealMissionDirectory(id);
+    const raw = await readFile(path.join(/* turbopackIgnore: true */ directory, "mission.json"), "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    if (!isResearchMission(parsed) || parsed.id !== id) return null;
+    // Additive read-time backfill: missions created before the standard refs
+    // existed gain them on load; the refs persist on the next save.
+    return ensureStandardArtifactRefs(parsed);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || error instanceof SyntaxError) return null;
+    throw error;
+  }
+}
+
+export async function listResearchMissions(): Promise<ResearchMission[]> {
+  let entries;
+  try {
+    entries = await readdir(/* turbopackIgnore: true */ researchMissionsRoot(), { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const missions = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && MISSION_ID_RE.test(entry.name))
+      .map((entry) => loadResearchMission(entry.name)),
+  );
+  return missions
+    .filter((mission): mission is ResearchMission => mission !== null)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+export async function readValidatedMissionFile(
+  id: string,
+  relativePath: string,
+): Promise<string> {
+  const directory = await assertRealMissionDirectory(id);
+  const candidate = path.resolve(/* turbopackIgnore: true */ directory, relativePath);
+  if (!relativePath || path.isAbsolute(relativePath) || !isWithin(candidate, directory)) {
+    throw new ResearchFileIntegrityError("file is outside mission workspace");
+  }
+  const stat = await lstat(/* turbopackIgnore: true */ candidate);
+  if (stat.isSymbolicLink()) throw new ResearchFileIntegrityError("research files cannot be symlinks");
+  if (!stat.isFile()) throw new ResearchFileIntegrityError("research path is not a file");
+  if (stat.size > MAX_RESEARCH_FILE_BYTES) throw new ResearchFileIntegrityError("research file is too large");
+  const resolvedCandidate = await realpath(/* turbopackIgnore: true */ candidate);
+  if (!isWithin(resolvedCandidate, directory)) {
+    throw new ResearchFileIntegrityError("file is outside mission workspace");
+  }
+  return readFile(/* turbopackIgnore: true */ resolvedCandidate, "utf8");
+}

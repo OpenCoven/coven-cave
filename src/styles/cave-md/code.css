@@ -1,0 +1,256 @@
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HORIZONTAL RULE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline)) 20%,
+    color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline)) 80%,
+    transparent
+  );
+  margin: 1.2em 0;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CODE BLOCK OUTER WRAPPER
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-code-wrap {
+  position: relative;
+  border-radius: 9px;
+  border: 1px solid var(--border-hairline);
+  /* Near-opaque fixed dark: a 60%-alpha wash went muddy over a light
+     --bg-base (CHAT-D13-01). Shared with the file editor via --code-surface. */
+  background: var(--code-surface);
+  box-shadow:
+    0 1px 3px oklch(0 0 0 / 30%),
+    inset 0 1px 0 oklch(0.985 0 0 / 4%);
+  /* CHAT-D7-03: the wrap is the block's vertical scroll container — huge
+     blocks clamp instead of dominating the transcript (cf. the system
+     bubble's 320px cap; benchmark: Claude Code truncates long blocks).
+     520px reads as ~24 code lines.
+     overflow-x stays hidden: the inner <pre> owns horizontal scrolling,
+     and the wrap must keep clipping its rounded corners. */
+  max-height: min(60vh, 520px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent-presence) 20%, transparent) transparent;
+  font-size: var(--text-sm);
+  margin: 0.6em 0;
+}
+
+/* "Show more" lifts the clamp (toggled by wireCopyButtons' expand wiring). */
+.cave-code-wrap--expanded {
+  max-height: none;
+}
+
+/* Collapsed: fold the block to just its sticky header (toggled by the chevron
+   in wireCopyButtons' collapse wiring). The code body + "Show more" footer are
+   hidden; the header — language, filename, line count, Copy — stays. */
+.cave-code-wrap--collapsed {
+  max-height: none;
+  overflow: hidden;
+}
+.cave-code-wrap--collapsed > pre,
+.cave-code-wrap--collapsed > .cave-code-expand {
+  display: none;
+}
+
+.cave-code-collapse-btn {
+  order: -1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  /* Chrome ink, not --text-*: theme ink goes dark-on-dark in light mode
+     (CHAT-D13-01). */
+  color: var(--code-chrome-ink-faint);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.cave-code-collapse-btn:hover {
+  color: var(--code-chrome-ink);
+  background: color-mix(in oklch, var(--code-chrome-ink) 8%, transparent);
+}
+.cave-code-collapse-btn:focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 1px;
+}
+.cave-code-chevron {
+  transition: transform 0.12s ease;
+}
+.cave-code-wrap--collapsed .cave-code-chevron {
+  transform: rotate(-90deg);
+}
+
+.cave-code-lines {
+  font-size: var(--text-2xs);
+  color: var(--code-chrome-ink-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cave-code-wrap::-webkit-scrollbar { width: 4px; }
+.cave-code-wrap::-webkit-scrollbar-track { background: transparent; }
+.cave-code-wrap::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  border-radius: 2px;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CODE BLOCK HEADER
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-code-header {
+  /* CHAT-D7-02: stick to the top of the wrap's scroll viewport so the lang
+     label + Copy stay reachable on long blocks (benchmark: ChatGPT/Cursor).
+     Legible while stuck thanks to the near-opaque surface (CHAT-D13-01). */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.35em 0.75em;
+  background: var(--code-chrome-surface-raised);
+  border-bottom: 1px solid var(--code-chrome-border);
+  min-height: 28px;
+  backdrop-filter: blur(4px);
+}
+
+/* Phase-4 minimalism (cave-8bfz): the decorative mac-window traffic-light dots
+   were dropped from the code header — the language label + filename + Copy
+   button carry it, no ornamental chrome. */
+.cave-code-lang {
+  order: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* No opacity dimmer: alpha-stacking is how the old 40% ink evaded
+     automated contrast checks while reading ~3:1 (CHAT-D13-02). */
+  color: color-mix(in oklch, var(--code-chrome-accent) 80%, var(--code-chrome-ink-faint));
+  flex-shrink: 0;
+}
+
+.cave-code-filename {
+  order: 2;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  color: var(--code-chrome-ink-faint);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SHIKI PRE + CODE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-code-wrap pre {
+  margin: 0;
+  border-radius: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent-presence) 20%, transparent) transparent;
+  padding: 0.8em 0;
+  background: transparent !important;
+}
+
+.cave-code-wrap pre::-webkit-scrollbar { height: 4px; }
+.cave-code-wrap pre::-webkit-scrollbar-track { background: transparent; }
+.cave-code-wrap pre::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  border-radius: 2px;
+}
+
+.cave-code-wrap pre code {
+  display: block;
+  background: transparent !important;
+  border: none !important;
+  padding: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  line-height: 1; /* flex .cave-line rows set their own height; kill gap from \n text nodes */
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LINE ROWS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-line {
+  display: flex;
+  align-items: baseline;
+  padding: 0 1em;
+  min-height: 1.6em;
+  transition: background 0.08s;
+}
+.cave-line:hover { background: color-mix(in oklch, var(--foreground) 2.5%, transparent); }
+/* Jump-to-line target (e.g. opened from Projects search): a brief accent wash
+   that fades after landing so it draws the eye without staying loud. */
+.cave-line--active {
+  background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-presence, var(--foreground));
+  animation: cave-line-flash 1.6s ease-out;
+}
+@keyframes cave-line-flash {
+  0% { background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 38%, transparent); }
+  100% { background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 16%, transparent); }
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LINE NUMBERS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-ln {
+  flex-shrink: 0;
+  width: 2.6em;
+  padding-right: 0.8em;
+  /* AA at 10px on the code surface (was accent-28%/50%-alpha gray ≈ 2.2:1,
+     the "ordinals" finding in CHAT-D13-02). */
+  color: color-mix(in oklch, var(--code-chrome-accent) 30%, var(--code-chrome-ink-muted));
+  font-size: var(--text-2xs);
+  text-align: right;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DIFF GUTTER STRIPS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-diff-add {
+  background: color-mix(in oklch, var(--code-chrome-success) 10%, transparent);
+  border-left: 2px solid color-mix(in oklch, var(--code-chrome-success) 55%, transparent);
+  padding-left: calc(1em - 2px);
+}
+.cave-diff-del {
+  background: color-mix(in oklch, var(--code-chrome-danger) 12%, transparent);
+  border-left: 2px solid color-mix(in oklch, var(--code-chrome-danger) 55%, transparent);
+  padding-left: calc(1em - 2px);
+}
+/* CHAT-D8-03: @@ hunk headers read as muted metadata, not content. Shiki
+   tokens carry inline colors, so the ink override needs !important. Chrome
+   ink, not --text-muted: theme ink is dark-on-dark in light mode, and an
+   extra opacity dimmer would sink it back below AA (CHAT-D13-01/02). */
+.cave-diff-meta {
+  color: var(--code-chrome-ink-faint);
+}
+.cave-diff-meta span {
+  color: var(--code-chrome-ink-faint) !important;
+}
+/* Language-highlighted diffs re-attach the leading +/- as its own span so the
+   code keeps its token colors; tint the marker to match its line's strip. */
+.cave-diff-marker {
+  color: var(--code-chrome-ink-faint);
+}
+.cave-diff-add .cave-diff-marker {
+  color: var(--code-chrome-success);
+}
+.cave-diff-del .cave-diff-marker {
+  color: var(--code-chrome-danger);
+}

@@ -5,15 +5,19 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 
 const previousHome = process.env.HOME;
+const previousCovenHome = process.env.COVEN_HOME;
 const home = await mkdtemp(path.join(tmpdir(), "cave-conversations-"));
 process.env.HOME = home;
+process.env.COVEN_HOME = path.join(home, ".coven");
 
 const {
   deleteConversation,
   isSafeConversationSessionId,
+  listConversations,
   loadConversation,
   saveConversation,
 } = await import("./cave-conversations.ts");
+const { mapConversationHistoryTurns } = await import("./chat-turn-state.ts");
 
 assert.equal(isSafeConversationSessionId("session-1"), true);
 assert.equal(isSafeConversationSessionId("019e-a-valid-thread"), true);
@@ -23,6 +27,48 @@ assert.equal(isSafeConversationSessionId("nested\\session-1"), false);
 assert.equal(isSafeConversationSessionId("."), false);
 assert.equal(isSafeConversationSessionId(".."), false);
 assert.equal(isSafeConversationSessionId(""), false);
+
+assert.deepEqual(
+  mapConversationHistoryTurns([{
+    id: "turn-progress",
+    role: "assistant",
+    text: "Safe reply",
+    createdAt: "2026-07-25T00:00:00.000Z",
+    progress: [{
+      id: "opencode-compatibility",
+      label: "OpenCode compatibility notice",
+      detail: "unrecognized event",
+      status: "error",
+      createdAt: "2026-07-25T00:00:00.000Z",
+    }],
+  }]),
+  [{
+    id: "turn-progress",
+    parentId: undefined,
+    role: "assistant",
+    text: "Safe reply",
+    attachments: undefined,
+    reasoning: undefined,
+    tools: undefined,
+    progress: [{
+      id: "opencode-compatibility",
+      label: "OpenCode compatibility notice",
+      detail: "unrecognized event",
+      status: "error",
+      createdAt: "2026-07-25T00:00:00.000Z",
+    }],
+    durationMs: undefined,
+    usage: undefined,
+    costUsd: undefined,
+    responseMetadata: undefined,
+    error: undefined,
+    lifecycle: undefined,
+    createdAt: "2026-07-25T00:00:00.000Z",
+    origin: undefined,
+    voiceCallId: undefined,
+  }],
+  "persisted compatibility diagnostics round-trip into the client transcript after reload",
+);
 
 await saveConversation({
   sessionId: "delete-me",
@@ -77,6 +123,9 @@ const cancelledTurn = cancelledConv?.turns.find((turn) => turn.id === "turn-assi
 assert.equal(cancelledTurn?.cancelled, true, "cancelled flag must round-trip through the store");
 assert.equal(cancelledTurn?.isError, false, "a user cancel is not an error");
 assert.equal(cancelledTurn?.text, "Roses are red, violets", "partial streamed text must survive the save");
+const cancelledSummary = (await listConversations()).find((row) => row.sessionId === "cancelled-turn");
+assert.equal(cancelledSummary?.status, "completed", "cancelled conversations remain non-failures");
+assert.equal(cancelledSummary?.exitCode, 0, "cancelled conversations retain a successful exit code");
 assert.equal(await deleteConversation("cancelled-turn"), true);
 
 // CHAT-D12-02: per-turn token usage and cost round-trip through the store —
@@ -131,6 +180,205 @@ const noUsageTurn = usageConv?.turns.find((turn) => turn.id === "turn-assistant-
 assert.equal(noUsageTurn?.usage, undefined, "turns without usage stay absent — never fabricated");
 assert.equal(noUsageTurn?.costUsd, undefined, "turns without cost stay absent — never fabricated");
 assert.equal(await deleteConversation("usage-turn"), true);
+
+await saveConversation({
+  sessionId: "summary-ok",
+  familiarId: "charm",
+  harness: "codex",
+  title: "Healthy summary",
+  createdAt: "2026-06-12T00:00:00.000Z",
+  updatedAt: "2026-06-12T00:00:00.000Z",
+  activeLeafId: "summary-ok-assistant",
+  turns: [
+    {
+      id: "summary-ok-user",
+      role: "user",
+      text: "hello",
+      createdAt: "2026-06-12T00:00:00.000Z",
+    },
+    {
+      id: "summary-ok-assistant",
+      role: "assistant",
+      text: "hello",
+      createdAt: "2026-06-12T00:00:01.000Z",
+      parentId: "summary-ok-user",
+      isError: false,
+    },
+  ],
+});
+await saveConversation({
+  sessionId: "summary-failed",
+  familiarId: "charm",
+  harness: "codex",
+  title: "Failed summary",
+  createdAt: "2026-06-12T00:00:00.000Z",
+  updatedAt: "2026-06-12T00:00:00.000Z",
+  activeLeafId: "summary-failed-assistant",
+  turns: [
+    {
+      id: "summary-failed-user",
+      role: "user",
+      text: "fail",
+      createdAt: "2026-06-12T00:00:00.000Z",
+    },
+    {
+      id: "summary-failed-assistant",
+      role: "assistant",
+      text: "failed",
+      createdAt: "2026-06-12T00:00:01.000Z",
+      parentId: "summary-failed-user",
+      isError: true,
+    },
+  ],
+});
+const summaries = await listConversations();
+const okSummary = summaries.find((conv) => conv.sessionId === "summary-ok");
+const failedSummary = summaries.find((conv) => conv.sessionId === "summary-failed");
+assert.equal(okSummary?.status, "completed", "conversation summaries expose successful terminal status");
+assert.equal(okSummary?.exitCode, 0, "successful conversation summaries expose exit code 0");
+assert.equal(failedSummary?.status, "failed", "conversation summaries expose failed terminal status");
+assert.equal(failedSummary?.exitCode, 1, "failed conversation summaries expose exit code 1");
+assert.equal(await deleteConversation("summary-ok"), true);
+assert.equal(await deleteConversation("summary-failed"), true);
+
+// Issue #3266: metadata scans read each large transcript once, then use the
+// stat-keyed summary cache until that specific file changes.
+{
+  const {
+    clearConversationListMetadataCache,
+    CONV_DIR,
+    getConversationListMetrics,
+  } = await import("./cave-conversations.ts");
+  const { mkdir, rm, writeFile, utimes } = await import("node:fs/promises");
+  await mkdir(CONV_DIR, { recursive: true });
+  const fixtureIds = Array.from({ length: 12 }, (_, index) => `metadata-perf-${index}`);
+  const largeText = "x".repeat(128 * 1024);
+
+  for (const [index, sessionId] of fixtureIds.entries()) {
+    await writeFile(
+      path.join(CONV_DIR, `${sessionId}.json`),
+      JSON.stringify({
+        sessionId,
+        familiarId: "charm",
+        harness: "codex",
+        title: `Cached ${index}`,
+        branch: "main",
+        createdAt: "2026-06-12T00:00:00.000Z",
+        updatedAt: `2026-06-12T00:00:${String(index).padStart(2, "0")}.000Z`,
+        turns: [
+          {
+            id: `${sessionId}-assistant`,
+            role: "assistant",
+            text: largeText,
+            createdAt: "2026-06-12T00:00:00.000Z",
+          },
+        ],
+      }),
+      "utf8",
+    );
+  }
+
+  clearConversationListMetadataCache();
+  const coldRows = await listConversations();
+  const cold = getConversationListMetrics();
+  assert.equal(coldRows.length, fixtureIds.length);
+  assert.equal(cold.cacheMisses, fixtureIds.length);
+  assert.ok(cold.bytesRead >= fixtureIds.length * largeText.length);
+  assert.ok(cold.peakReadConcurrency <= 8, "cache misses stay under the read concurrency cap");
+
+  const warmRows = await listConversations();
+  const warm = getConversationListMetrics();
+  assert.deepEqual(warmRows, coldRows, "warm metadata rows remain identical");
+  assert.equal(warm.cacheHits, fixtureIds.length);
+  assert.equal(warm.cacheMisses, 0);
+  assert.equal(warm.cacheHitRate, 1);
+  assert.equal(warm.bytesRead, 0, "unchanged scans do not reread transcript bodies");
+
+  const externallyChanged = fixtureIds[0];
+  const externalFile = path.join(CONV_DIR, `${externallyChanged}.json`);
+  await writeFile(
+    externalFile,
+    JSON.stringify({
+      sessionId: externallyChanged,
+      familiarId: "charm",
+      harness: "codex",
+      title: "Changed outside Cave",
+      branch: "agent/external-change",
+      createdAt: "2026-06-12T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:00.000Z",
+      activeLeafId: "external-assistant",
+      turns: [
+        {
+          id: "external-assistant",
+          role: "assistant",
+          text: "failed externally",
+          isError: true,
+          createdAt: "2026-06-13T00:00:00.000Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  const future = new Date(Date.now() + 60_000);
+  await utimes(externalFile, future, future);
+  const changedRows = await listConversations();
+  const changed = changedRows.find((row) => row.sessionId === externallyChanged);
+  const changedMetrics = getConversationListMetrics();
+  assert.equal(changed?.title, "Changed outside Cave");
+  assert.equal(changed?.branch, "agent/external-change");
+  assert.equal(changed?.status, "failed");
+  assert.equal(changedMetrics.cacheMisses, 1, "only the externally changed file is reread");
+  assert.equal(changedMetrics.cacheHits, fixtureIds.length - 1);
+
+  const saved = await loadConversation(fixtureIds[1]);
+  assert.ok(saved);
+  saved.title = "Changed through saveConversation";
+  saved.branch = "agent/saved-change";
+  await saveConversation(saved);
+  const savedRows = await listConversations();
+  assert.equal(
+    savedRows.find((row) => row.sessionId === fixtureIds[1])?.title,
+    "Changed through saveConversation",
+  );
+  assert.equal(
+    savedRows.find((row) => row.sessionId === fixtureIds[1])?.branch,
+    "agent/saved-change",
+  );
+  assert.equal(getConversationListMetrics().cacheMisses, 1, "save invalidates one summary");
+
+  for (const sessionId of fixtureIds) assert.equal(await deleteConversation(sessionId), true);
+  assert.deepEqual(await listConversations(), []);
+  assert.equal(getConversationListMetrics().cacheEntries, 0, "deleted entries are pruned");
+
+  await writeFile(path.join(CONV_DIR, "metadata-corrupt.json"), "{ not json", "utf8");
+  const corruptRows = await listConversations();
+  assert.equal(corruptRows[0]?.sessionId, "metadata-corrupt");
+  assert.equal(corruptRows[0]?.familiarId, "");
+  await listConversations();
+  assert.equal(getConversationListMetrics().bytesRead, 0, "corrupt fallback rows are cached too");
+  assert.equal(await deleteConversation("metadata-corrupt"), true);
+
+  await writeFile(path.join(CONV_DIR, "metadata-invalid-shape.json"), "{}", "utf8");
+  const invalidShapeRows = await listConversations();
+  assert.equal(invalidShapeRows[0]?.sessionId, "metadata-invalid-shape");
+  assert.equal(invalidShapeRows[0]?.familiarId, "");
+  await listConversations();
+  assert.equal(
+    getConversationListMetrics().bytesRead,
+    0,
+    "valid JSON with an invalid conversation shape keeps the cached fallback row",
+  );
+  assert.equal(await deleteConversation("metadata-invalid-shape"), true);
+
+  const unreadablePath = path.join(CONV_DIR, "metadata-unreadable.json");
+  await mkdir(unreadablePath);
+  const unreadableRows = await listConversations();
+  assert.equal(unreadableRows[0]?.sessionId, "metadata-unreadable");
+  await listConversations();
+  assert.equal(getConversationListMetrics().cacheMisses, 1, "read failures are retried");
+  assert.equal(getConversationListMetrics().cacheHits, 0, "read failures are not cached");
+  await rm(unreadablePath, { recursive: true });
+}
 
 // ── CHAT-D9-02: conversation content search ──────────────────────────────────
 // Appended section — searchConversations over fixture transcripts written
@@ -264,6 +512,11 @@ if (previousHome === undefined) {
 } else {
   process.env.HOME = previousHome;
 }
+if (previousCovenHome === undefined) {
+  delete process.env.COVEN_HOME;
+} else {
+  process.env.COVEN_HOME = previousCovenHome;
+}
 await rm(home, { recursive: true, force: true });
 
 console.log("cave-conversations.test.ts: ok");
@@ -296,4 +549,295 @@ console.log("cave-conversations.test.ts: ok");
   const again = await searchConversations("unique-marker-bbb");
   assert.equal(again.length, 1, "repeat search via the cache returns the same hit");
 }
+
+// ── Atomic persistence (cave-1v95): no torn writes, no temp residue ──────────
+{
+  const { readdir, readFile } = await import("node:fs/promises");
+  const { CONV_DIR } = await import("./cave-conversations.ts");
+  await saveConversation({
+    sessionId: "atomic-check",
+    familiarId: "charm",
+    harness: "codex",
+    createdAt: "2026-07-15T00:00:00.000Z",
+    updatedAt: "2026-07-15T00:00:00.000Z",
+    turns: [],
+  });
+  const entries = await readdir(CONV_DIR);
+  assert.ok(entries.includes("atomic-check.json"), "the conversation file lands");
+  assert.equal(
+    entries.filter((name) => name.endsWith(".tmp")).length,
+    0,
+    "atomic replace leaves no temp residue behind",
+  );
+  const source = await readFile(new URL("./cave-conversations.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /writeJsonAtomic\(pathFor\(conv\.sessionId\), conv\)/,
+    "saveConversation must go through the atomic writer",
+  );
+  assert.doesNotMatch(
+    source,
+    /writeFile\(pathFor/,
+    "plain writeFile on a conversation path would reintroduce torn writes",
+  );
+}
+
+// ── First-turn visibility stubs (cave-0g2x) ──────────────────────────────────
+// A new chat must exist in the conversation store from the moment its session
+// id is announced — not only at end-of-stream — so /api/sessions/list can
+// surface it during the entire first turn, and a mid-turn crash leaves a
+// listed chat holding the user's message.
+{
+  const { createConversationStub, stripConversationStubTurn } = await import(
+    "./cave-conversations.ts"
+  );
+
+  const created = await createConversationStub({
+    sessionId: "stub-first-turn",
+    familiarId: "charm",
+    harness: "claude",
+    model: "claude-4",
+    runtime: "local:/tmp/project",
+    title: "Fix the flaky test",
+    modelIntent: {
+      model: "anthropic/claude-opus-4-6",
+      source: "session",
+      applicationState: "saved",
+      reason: "Saved for this chat.",
+    },
+    userTurn: {
+      id: "pending-user-turn",
+      text: "fix the flaky test please",
+      reasoningEffort: "medium",
+      responseSpeed: "careful",
+      modelOverride: "anthropic/claude-opus-4-6",
+    },
+  });
+  assert.equal(created, true, "a brand-new chat gets a stub conversation");
+
+  const stub = await loadConversation("stub-first-turn");
+  assert.equal(stub?.turns.length, 1, "stub holds only the pending user turn");
+  assert.equal(stub?.turns[0]?.id, "pending-user-turn");
+  assert.equal(stub?.turns[0]?.role, "user");
+  assert.equal(stub?.turns[0]?.text, "fix the flaky test please");
+  assert.equal(stub?.turns[0]?.reasoningEffort, "medium");
+  assert.equal(stub?.turns[0]?.responseSpeed, "careful");
+  assert.equal(stub?.turns[0]?.modelOverride, "anthropic/claude-opus-4-6");
+  assert.equal(stub?.modelIntent?.model, "anthropic/claude-opus-4-6");
+  assert.equal(stub?.activeLeafId, "pending-user-turn");
+  assert.equal(stub?.title, "Fix the flaky test");
+
+  // The stub's summary must NOT infer a terminal status from the missing
+  // assistant turn — the session-list merge would otherwise override a live
+  // daemon "running" with "completed".
+  const summaries = await listConversations();
+  const stubSummary = summaries.find((s) => s.sessionId === "stub-first-turn");
+  assert.ok(stubSummary, "stub appears in the conversation list");
+  assert.equal(stubSummary.status, undefined, "pending first reply ⇒ no terminal status");
+  assert.equal(stubSummary.exitCode, undefined, "pending first reply ⇒ no exit code");
+
+  // Resumed turns must never be clobbered: a second stub attempt is a no-op.
+  const again = await createConversationStub({
+    sessionId: "stub-first-turn",
+    familiarId: "other",
+    harness: "codex",
+    userTurn: { id: "other-turn", text: "clobber attempt" },
+  });
+  assert.equal(again, false, "stub creation no-ops when the conversation exists");
+  const untouched = await loadConversation("stub-first-turn");
+  assert.equal(untouched?.familiarId, "charm", "existing conversation is not clobbered");
+  assert.equal(untouched?.turns[0]?.text, "fix the flaky test please");
+
+  // End-of-stream: strip the stub turn and re-append the authoritative pair
+  // under the same user-turn id (mirrors the send route's save).
+  const conv = await loadConversation("stub-first-turn");
+  const hadStub = stripConversationStubTurn(conv, "pending-user-turn");
+  assert.equal(hadStub, true, "strip reports the conversation was stub-only");
+  assert.equal(conv.turns.length, 0, "stub turn is removed");
+  assert.equal(conv.activeLeafId, undefined, "active leaf reverts to the stub's parent");
+  const branchParentId = conv.activeLeafId ?? null;
+  assert.equal(branchParentId, null, "re-appended turn must not self-parent");
+  conv.turns.push(
+    {
+      id: "pending-user-turn",
+      role: "user",
+      text: "fix the flaky test please",
+      createdAt: "2026-07-21T00:00:01.000Z",
+      parentId: branchParentId,
+    },
+    {
+      id: "assistant-turn",
+      role: "assistant",
+      text: "done",
+      createdAt: "2026-07-21T00:00:02.000Z",
+      isError: false,
+      parentId: "pending-user-turn",
+    },
+  );
+  conv.activeLeafId = "assistant-turn";
+  await saveConversation(conv);
+
+  const finished = await loadConversation("stub-first-turn");
+  assert.equal(finished?.turns.length, 2, "authoritative save replaces the stub turn");
+  assert.equal(finished?.turns[0]?.id, "pending-user-turn", "user turn keeps its stub-era id");
+  const finishedSummary = (await listConversations()).find(
+    (s) => s.sessionId === "stub-first-turn",
+  );
+  assert.equal(finishedSummary?.status, "completed", "finished chat reports terminal status");
+  assert.equal(finishedSummary?.exitCode, 0);
+
+  // Resumed-chat path: stripping a turn id that never was a stub is a no-op.
+  const notStub = await loadConversation("stub-first-turn");
+  const turnCountBefore = notStub.turns.length;
+  assert.equal(stripConversationStubTurn(notStub, "never-existed"), false);
+  assert.equal(notStub.turns.length, turnCountBefore, "no-op strip leaves turns alone");
+  assert.equal(stripConversationStubTurn(notStub, undefined), false, "no id ⇒ no-op");
+
+  // Defensive re-parenting: children of the stripped stub turn re-point at the
+  // stub's parent, so no dangling parentId survives.
+  const branched = {
+    sessionId: "stub-branched",
+    familiarId: "charm",
+    harness: "claude",
+    createdAt: "2026-07-21T01:00:00.000Z",
+    updatedAt: "2026-07-21T01:00:00.000Z",
+    turns: [
+      { id: "stub-turn", role: "user", text: "hi", createdAt: "2026-07-21T01:00:00.000Z", parentId: null },
+      { id: "child-turn", role: "assistant", text: "…", createdAt: "2026-07-21T01:00:01.000Z", parentId: "stub-turn" },
+    ],
+    activeLeafId: "child-turn",
+  };
+  assert.equal(stripConversationStubTurn(branched, "stub-turn"), true);
+  assert.equal(branched.turns.length, 1);
+  assert.equal(branched.turns[0]?.parentId, null, "orphaned child re-points at stub's parent");
+  assert.equal(branched.activeLeafId, "child-turn", "active leaf off the stub is untouched");
+}
 console.log("cave-conversations cache test OK");
+
+// ── First-turn stub pending marker (cave-0g2x crash truth) ───────────────────
+// The stub write stamps pendingUserTurnId on the file and `pending` on the
+// summary; the sessions list resolves pending rows against the live run
+// registry (running vs failed) instead of letting a crashed first turn read
+// as a phantom "completed". Any end-of-stream save settles the marker.
+{
+  const { createConversationStub, stripConversationStubTurn } = await import(
+    "./cave-conversations.ts"
+  );
+
+  await createConversationStub({
+    sessionId: "stub-pending-marker",
+    familiarId: "charm",
+    harness: "codex",
+    userTurn: { id: "pending-turn", text: "long first prompt" },
+  });
+  const stub = await loadConversation("stub-pending-marker");
+  assert.equal(stub?.pendingUserTurnId, "pending-turn", "stub write stamps the pending marker");
+  const pendingSummary = (await listConversations()).find(
+    (s) => s.sessionId === "stub-pending-marker",
+  );
+  assert.equal(pendingSummary?.pending, true, "summary carries the pending flag");
+  assert.equal(pendingSummary?.status, undefined, "pending stays statusless (merge honesty)");
+
+  // Normal settle: the same process strips its own stub turn — marker gone.
+  const settled = await loadConversation("stub-pending-marker");
+  assert.equal(stripConversationStubTurn(settled, "pending-turn"), true);
+  assert.equal(settled.pendingUserTurnId, undefined, "strip clears the pending marker");
+  settled.turns.push(
+    { id: "pending-turn", role: "user", text: "long first prompt", createdAt: "2026-07-21T02:00:00.000Z", parentId: null },
+    { id: "reply", role: "assistant", text: "ok", createdAt: "2026-07-21T02:00:01.000Z", isError: false, parentId: "pending-turn" },
+  );
+  settled.activeLeafId = "reply";
+  await saveConversation(settled);
+  const settledSummary = (await listConversations()).find(
+    (s) => s.sessionId === "stub-pending-marker",
+  );
+  assert.equal(settledSummary?.pending, undefined, "settled conversation drops the flag");
+  assert.equal(settledSummary?.status, "completed");
+
+  // Crash-then-resume: a NEW server process saves a later turn without the
+  // crashed run's in-memory stub id. The marker must still clear — while the
+  // stubbed user turn deliberately stays as the record of the lost prompt.
+  await createConversationStub({
+    sessionId: "stub-crashed",
+    familiarId: "charm",
+    harness: "claude",
+    userTurn: { id: "lost-prompt", text: "prompt the crash orphaned" },
+  });
+  const crashed = await loadConversation("stub-crashed");
+  assert.equal(crashed?.pendingUserTurnId, "lost-prompt");
+  assert.equal(
+    stripConversationStubTurn(crashed, null),
+    false,
+    "a resumed save has no stub id to strip",
+  );
+  assert.equal(crashed.pendingUserTurnId, undefined, "…but the marker still settles");
+  assert.equal(crashed.turns.length, 1, "the orphaned prompt stays in the tree");
+  await saveConversation(crashed);
+  const recoveredSummary = (await listConversations()).find(
+    (s) => s.sessionId === "stub-crashed",
+  );
+  assert.equal(recoveredSummary?.pending, undefined, "recovered chat is no longer pending");
+
+  await deleteConversation("stub-pending-marker");
+  await deleteConversation("stub-crashed");
+}
+console.log("cave-conversations pending-marker test OK");
+
+// ── First-turn stub / mid-stream model PATCH serialization ──────────────────
+// The client receives a session id immediately and can PATCH its model while
+// the stub is still being written. Both mutations must queue by conversation
+// id so the PATCH sees the stub and the later transcript save sees the PATCH.
+{
+  const { createConversationStub, withConversationLock } = await import(
+    "./cave-conversations.ts"
+  );
+  const sessionId = "stub-model-lock";
+  let releaseHold;
+  let markEntered;
+  const entered = new Promise((resolve) => {
+    markEntered = resolve;
+  });
+  const hold = withConversationLock(sessionId, async () => {
+    markEntered();
+    await new Promise((resolve) => {
+      releaseHold = resolve;
+    });
+  });
+  await entered;
+
+  const stubWrite = createConversationStub({
+    sessionId,
+    familiarId: "nyx",
+    harness: "claude",
+    modelIntent: {
+      model: "anthropic/claude-opus-4-6",
+      source: "session",
+      applicationState: "saved",
+      reason: "Saved for this chat.",
+    },
+    userTurn: { id: "pending-model-turn", text: "Use the selected model." },
+  });
+  const modelPatch = withConversationLock(sessionId, async () => {
+    const conversation = await loadConversation(sessionId);
+    assert.ok(conversation, "the queued PATCH runs after first-turn stub persistence");
+    conversation.modelIntent = {
+      model: "anthropic/claude-haiku-4-5",
+      source: "session",
+      applicationState: "saved",
+      reason: "Saved for this chat.",
+    };
+    await saveConversation(conversation);
+  });
+
+  releaseHold();
+  await hold;
+  assert.equal(await stubWrite, true);
+  await modelPatch;
+  assert.equal(
+    (await loadConversation(sessionId))?.modelIntent?.model,
+    "anthropic/claude-haiku-4-5",
+    "a newer queued model PATCH wins without a transient 404 or lost update",
+  );
+  await deleteConversation(sessionId);
+}
+console.log("cave-conversations model-lock test OK");

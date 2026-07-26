@@ -6,8 +6,12 @@ const settings = await readFile(
   new URL("./settings-shell.tsx", import.meta.url),
   "utf8",
 );
-const themeScript = await readFile(
-  new URL("./theme-script.tsx", import.meta.url),
+const about = await readFile(
+  new URL("./settings-about.tsx", import.meta.url),
+  "utf8",
+);
+const themeBootScript = await readFile(
+  new URL("../../public/scripts/theme-init.js", import.meta.url),
   "utf8",
 );
 const layout = await readFile(
@@ -15,15 +19,19 @@ const layout = await readFile(
   "utf8",
 );
 const globals = await readFile(
-  new URL("../app/globals.css", import.meta.url),
+  new URL("../styles/globals/foundations.css", import.meta.url),
   "utf8",
 );
-const themeColorEditor = await readFile(
-  new URL("./theme-color-editor.tsx", import.meta.url),
+const themes = await readFile(
+  new URL("../styles/globals/themes.css", import.meta.url),
   "utf8",
 );
 const fontSettings = await readFile(
   new URL("./settings-fonts.tsx", import.meta.url),
+  "utf8",
+);
+const appearanceRestore = await readFile(
+  new URL("../lib/appearance-restore.ts", import.meta.url),
   "utf8",
 );
 
@@ -58,13 +66,13 @@ assert.match(
 );
 
 assert.match(
-  themeScript,
+  themeBootScript,
   /html\.style\.setProperty\(cssName, group\[name\]\)/,
   "ThemeScript should apply custom vars via setProperty so existing inline styles are preserved",
 );
 
 assert.match(
-  themeScript,
+  themeBootScript,
   /applyGroup\(cssVars\.theme\)[\s\S]*modeGroup[\s\S]*applyGroup\(modeGroup\)/,
   "ThemeScript should apply both theme-level (fonts/radius) and selected-mode CSS var groups",
 );
@@ -77,12 +85,12 @@ assert.match(
 
 assert.match(
   layout,
-  /<head>\s*<ThemeScript \/>[\s\S]*<\/head>/,
-  "Root layout should mount ThemeScript in <head> so persisted theme background applies before paint",
+  /<head>\s*<ThemeScript preferences=\{preferences\} authoritative=\{false\} \/>[\s\S]*<\/head>/,
+  "Root layout should pass an explicit paint-only snapshot to ThemeScript before paint",
 );
 
 assert.match(
-  themeScript,
+  themeBootScript,
   /name\.indexOf\("--"\) === 0 \? name : "--" \+ name/,
   "ThemeScript should accept tweakcn's bare-name keys by prefixing -- when missing",
 );
@@ -140,20 +148,20 @@ assert.match(
 );
 
 assert.match(
-  settings,
+  about,
   /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
   "About settings must import the shared app version source",
 );
 
 assert.match(
-  settings,
-  /<SettingsKV label="App version" value=\{APP_VERSION\} \/>/,
+  about,
+  /settings-about-row__label">App version<[\s\S]*v\{APP_VERSION\}/,
   "About settings must render the shared app version instead of a literal",
 );
 
 assert.doesNotMatch(
-  settings,
-  /<SettingsKV label="App version" value="[\d.]+"/,
+  about,
+  /settings-about-row__label">App version<[\s\S]{0,180}>\s*v?[\d.]+\s*</,
   "About settings must not hardcode an app version literal",
 );
 
@@ -177,10 +185,20 @@ assert.match(
   "Global themes must define a filled-accent foreground token",
 );
 
+// The Theme tokens editor is the single color-customization surface: editing
+// the accent must persist a readable foreground for filled accent UI.
 assert.match(
-  themeColorEditor,
-  /"--accent-presence-foreground":\s*readableTextColor\(accent\)/,
-  "Custom color editor must persist a readable foreground for custom accent colors",
+  settings,
+  /"--accent-presence-foreground":\s*readableTextColor\(value\)/,
+  "Token overrides must persist a readable foreground for custom accent colors",
+);
+
+// The old three-color "Customize colors" editor was redundant with the Theme
+// tokens editor and has been removed.
+assert.doesNotMatch(
+  settings,
+  /ThemeColorEditor|theme-color-editor|Customize colors/,
+  "the redundant Customize-colors editor must not come back — the Theme tokens editor owns color customization",
 );
 
 assert.doesNotMatch(
@@ -299,20 +317,15 @@ assert.match(
   /<ReadingHyphensController \/>/,
   "Root layout should mount the reading hyphenation controller so saved setting applies on load",
 );
-assert.match(
+assert.doesNotMatch(
   fontSettings,
-  /Drop cap/,
-  "Typography (FontSettings) should expose a Drop cap control",
+  /Drop cap|READING_DROPCAP|applyReadingDropcap/,
+  "Typography should not expose Library-only drop-cap controls in the integrated app",
 );
-assert.match(
-  fontSettings,
-  /aria-pressed=\{dropcap === option\}/,
-  "Drop cap buttons should expose the selected state to assistive tech",
-);
-assert.match(
+assert.doesNotMatch(
   layout,
-  /<ReadingDropcapController \/>/,
-  "Root layout should mount the drop-cap controller so saved setting applies on load",
+  /ReadingDropcapController/,
+  "Root layout should not mount the Library-only drop-cap controller",
 );
 
 assert.match(
@@ -321,26 +334,13 @@ assert.match(
   "Root layout should mount the global screen magnification controller",
 );
 
-// Familiar switcher style — choose the top-bar control (avatar strip vs dropdown).
-assert.match(
+// Familiar switcher style — RETIRED. Familiar selection is dropdown-only (the
+// chat sidebar header hosts it), so the avatar-strip style/scope/pin-order
+// settings are gone with the strip.
+assert.doesNotMatch(
   settings,
-  /Familiar switcher/,
-  "Appearance settings should expose a Familiar switcher style control",
-);
-assert.match(
-  settings,
-  /setFamiliarSwitcherStyle\(option\)/,
-  "the familiar-switcher control writes the chosen style preference",
-);
-assert.match(
-  settings,
-  /Pin order[\s\S]*<FamiliarPinOrder \/>/,
-  "the avatar style exposes a drag-to-reorder pin-order manager",
-);
-assert.match(
-  settings,
-  /familiarSwitcherStyle === "avatars" \?[\s\S]*<FamiliarPinOrder/,
-  "the pin-order manager only shows for the avatar strip style",
+  /setFamiliarSwitcherStyle|setFamiliarStripScope|FamiliarPinOrder/,
+  "the avatar-strip style, scope, and pin-order controls are retired (dropdown-only selection)",
 );
 
 // Corner radius drives the shared --radius tokens app-wide, so its boot block
@@ -356,9 +356,9 @@ assert.match(
   "Root layout should mount the corner-radius controller so saved radius applies on load",
 );
 assert.match(
-  themeScript,
-  /localStorage\.getItem\("cave:corner-radius"\)[\s\S]*--radius-control/,
-  "ThemeScript should apply the saved corner radius before paint (no flash)",
+  themeBootScript,
+  /appearance\.cornerRadius[\s\S]*--radius-control/,
+  "ThemeScript should apply the canonical corner radius before paint (no flash)",
 );
 
 assert.match(
@@ -373,40 +373,254 @@ assert.match(
   "Global CSS should magnify the app via rem-based root font scaling (not an app-wide zoom, which broke getBoundingClientRect math)",
 );
 
-assert.match(
+assert.doesNotMatch(
   settings,
-  /THEME_OWNED_APPEARANCE_KEYS[\s\S]*localStorage\.removeItem\(key\)/,
-  "Selecting a preset theme should clear stale typography/radius/reading overrides so theme-owned structure applies",
+  /THEME_OWNED_APPEARANCE_KEYS\s*=/,
+  "Selecting a preset must not carry a destructive list of independent appearance preferences",
 );
 
 assert.match(
-  globals,
+  settings,
+  /function applyPreset\(theme: PresetTheme\) \{[\s\S]{0,500}clearCustomThemeVariables\(\)[\s\S]{0,500}updateAppPreferences\(\{ appearance: \{ theme: \{ id: theme, custom: null \} \} \}\)[\s\S]{0,500}reapplyIndependentAppearance\(\)/,
+  "Selecting a preset should persist only the theme selection and then re-layer independent choices",
+);
+
+assert.match(
+  appearanceRestore,
+  /for \(const group of \[custom\.cssVars\.theme, custom\.cssVars\.light, custom\.cssVars\.dark\]\)[\s\S]*root\.style\.removeProperty\(name\)/,
+  "theme switching should remove only CSS variables introduced by the previous custom theme",
+);
+
+for (const independentApply of [
+  "applyFontPair", "applyScreenScale", "applyReadingLeading", "applyReadingTracking",
+  "applyReadingAlign", "applyReadingWidth", "applyReadingWeight", "applyReadingHyphens",
+  "applyCornerRadius", "applyBackdropToDocument",
+]) {
+  assert.ok(
+    appearanceRestore.includes(independentApply),
+    `preset/custom switches should reapply ${independentApply}`,
+  );
+}
+
+assert.doesNotMatch(
+  settings,
+  /localStorage\.removeItem\("cave:(?:font|screen-scale|reading|corner-radius|backdrop)/,
+  "theme selection must never delete independent saved appearance settings",
+);
+
+assert.match(
+  themes,
   /\[data-theme="pastel-dreams"\]\s*\{[\s\S]*--font-sans:\s*var\(--font-open-sans\)[\s\S]*--font-mono:\s*var\(--font-ibm-plex-mono\)[\s\S]*--radius:\s*1\.5rem[\s\S]*--radius-control:\s*18px[\s\S]*--shadow-popover:[\s\S]*--cave-reading-leading:\s*1\.7/,
   "Pastel Dreams should carry TweakCN typography, radius, shadow, and reading-spacing tokens, not just colors",
 );
 
+// ── Manual resync button + per-token overrides ───────────────────────────────
 assert.match(
   settings,
-  /Demo mode/,
-  "Settings should expose demo mode for tester screenshots without env-file editing",
+  /async function persistThemeTokens\(\): Promise<boolean>/,
+  "persistThemeTokens returns a result so the Resync button can report success",
 );
-
 assert.match(
   settings,
-  /clearDemoModeData/,
-  "Settings should offer an easy demo-mode reset path",
+  /persistThemeTokens\(\)[\s\S]{0,300}await flushAppPreferences\(\)[\s\S]{0,500}tokenOnly: true,[\s\S]{0,200}expectedSelectionRevision: preferences\.appearance\.theme\.selectionRevision/,
+  "token-only publication must wait for canonical selection persistence and carry its revision",
 );
-
-// Demo-mode toggle must hydrate SSR-safe: reading localStorage during render makes
-// the first client render's aria-pressed disagree with the server's → hydration
-// mismatch. Start from the default and read the real value after mount.
+assert.match(
+  settings,
+  /if \(res\.status === 409\) await refreshAppPreferences\(\)/,
+  "a stale token publisher should refresh the winning canonical selection",
+);
+assert.match(settings, /Resync to phone/, "Appearance exposes a manual Resync to phone button");
+assert.match(
+  settings,
+  /onClick=\{\(\) => void handleResync\(\)\}/,
+  "the Resync button triggers a manual theme push",
+);
+// ── Single token publisher (cave-gvtw) ───────────────────────────────────────
+// RemoteThemeController owns change-driven token publishing: every selection,
+// mode flip, and token commit in this section goes through updateAppPreferences,
+// and the controller's reconcile publishes on the resulting signature change.
+// The section's own on-change effect doubled every PUT /api/theme (identical
+// payloads, 409 window when a second device wrote between them). Settings may
+// only PUT via the user-invoked Resync button.
 assert.doesNotMatch(
   settings,
-  /useState\(\(\) => isDemoModeEnabled\(\)\)/,
-  "Demo-mode state must not read localStorage during render (SSR hydration mismatch)",
+  /void persistThemeTokens\(\)/,
+  "no automatic persistThemeTokens call may remain — RemoteThemeController is the sole on-change publisher (cave-gvtw double PUT)",
 );
 assert.match(
   settings,
-  /const sync = \(\) => setDemoMode\(isDemoModeEnabled\(\)\);\s*sync\(\);/,
-  "Demo-mode reads its real value after mount via sync() in the effect",
+  /Manual Resync only\. Change-driven publishing belongs to RemoteThemeController/,
+  "persistThemeTokens documents its manual-only contract so the on-change effect doesn't get reintroduced",
+);
+assert.match(settings, /function ThemeTokenOverrides\(/, "a per-token override panel exists");
+assert.match(
+  settings,
+  /THEME_SYNC_KEYS\.map\(\(key\)[\s\S]{0,500}<TokenColorRow/,
+  "the override panel renders an editable color row for each core token",
+);
+assert.match(
+  settings,
+  /function applyTokenOverride\(key: string, hex: string, mode: Mode\)/,
+  "editing a token forks the active theme to a custom theme and re-syncs",
+);
+
+// ── Token edits must layer on the SELECTED theme (regression) ────────────────
+// Flipping data-theme to "custom" un-applies the preset's whole CSS block, so
+// the fork must (a) snapshot the full preset look before mutating the DOM and
+// (b) live-apply the whole group — not just the edited key — or editing one
+// token visually resets every other token to the default theme.
+assert.match(
+  settings,
+  /const THEME_FORK_SNAPSHOT_KEYS = \[\s*\.\.\.THEME_SYNC_KEYS,[\s\S]*"--bg-panel",[\s\S]*"--background",[\s\S]*"--border",/,
+  "forking a preset must snapshot the hardcoded per-theme tokens AND the legacy-vocab aliases",
+);
+// A fork must capture BOTH mode palettes. Seeding only the edited mode made
+// the fork single-mode: flipping Light/Dark later kept rendering the edited
+// mode's colors (activeCustomThemeVariables falls back to the only group) and
+// the first edit in the other mode seeded it from the WRONG mode's computed
+// look (cave-hkfq: a dark-only fork seeded lightAccent from the dark accent).
+assert.match(
+  settings,
+  /if \(!existing\) \{\s*\n\s*for \(const name of THEME_FORK_SNAPSHOT_KEYS\) html\.style\.removeProperty\(name\);\s*\n\s*Object\.assign\(group, resolveTokens\(THEME_FORK_SNAPSHOT_KEYS\)\);/,
+  "a fresh fork clears in-drag preview inline vars, then seeds the edited mode from the preset's computed look",
+);
+assert.match(
+  settings,
+  /html\.setAttribute\("data-mode", otherGroupKey\);\s*\n\s*otherSeed = resolveTokens\(THEME_FORK_SNAPSHOT_KEYS\);[\s\S]{0,300}?html\.setAttribute\("data-mode", restore\);/,
+  "a fresh fork snapshots the OTHER mode's preset palette in the same task (getComputedStyle forces a sync recalc — nothing paints mid-flip)",
+);
+assert.match(
+  settings,
+  /\} else if \(Object\.keys\(group\)\.length === 0\) \{\s*\n\s*Object\.assign\(group, resolveTokens\(THEME_FORK_SNAPSHOT_KEYS\)\);/,
+  "an imported custom theme missing this mode group still fills from the current computed look on first edit",
+);
+assert.match(
+  settings,
+  /\.\.\.\(otherSeed \? \{ \[otherGroupKey\]: otherSeed \} : \{\}\),/,
+  "both mode groups land in the forked payload, so a Light/Dark flip actually changes the rendered palette",
+);
+assert.match(
+  settings,
+  /for \(const \[name, value\] of Object\.entries\(group\)\) \{\s*\n\s*html\.style\.setProperty\(name\.startsWith\("--"\) \? name : `--\$\{name\}`, value\);[\s\S]{0,200}html\.setAttribute\("data-theme", "custom"\)/,
+  "the whole group is applied live with keys normalized to custom properties — raw tweakcn keys like \"background\" must never set real CSS properties on <html> (cave-7eno) — before the data-theme flip so the selected theme's look survives",
+);
+assert.match(
+  settings,
+  /function deriveTokenCompanions\(/,
+  "core-token edits update their companion tokens (legacy aliases, accent tints)",
+);
+assert.match(
+  settings,
+  /case "--bg-base":[\s\S]{0,400}"--background": value/,
+  "editing the background must mirror the legacy --background alias legacy-vocab surfaces read",
+);
+
+// The picker fires per pointer-move. Drags must stay PAINT-ONLY: each rAF-
+// coalesced frame writes the edited key + companions inline (element.style
+// beats preset CSS), and the preferences store is untouched until commit.
+// Anything else write-amplifies: one measured ~1s drag as a store-write-per-
+// frame produced 8 PATCH /api/preferences + 4 PUT /api/theme, bumped
+// selectionRevision 0→12, and triggered 38 GETs + 58 accent setProperty calls
+// in a second open tab via the BroadcastChannel echo (cave-hkfq).
+assert.match(
+  settings,
+  /function previewTokenOverride\(key: string, hex: string, mode: Mode\) \{[\s\S]{0,600}?\n\}/,
+  "a paint-only preview path exists for in-drag token edits",
+);
+{
+  const previewBody = settings.match(
+    /function previewTokenOverride\(key: string, hex: string, mode: Mode\) \{([\s\S]{0,600}?)\n\}/,
+  )?.[1] ?? "";
+  assert.match(
+    previewBody,
+    /html\.style\.setProperty\(key, hex\)/,
+    "the preview writes the edited token inline",
+  );
+  assert.match(
+    previewBody,
+    /deriveTokenCompanions\(key, hex, mode\)/,
+    "the preview keeps companion tokens (accent washes, legacy aliases) in step",
+  );
+  assert.doesNotMatch(
+    previewBody,
+    /updateAppPreferences|readAppPreferences|setAttribute/,
+    "the preview must not touch the preferences store or data-theme — no reconcile, no PATCH, no broadcast per frame",
+  );
+}
+assert.match(
+  settings,
+  /frameRef\.current = requestAnimationFrame\(\(\) => \{[\s\S]{0,300}previewTokenOverride\(pending\.key, pending\.value/,
+  "live token previews are coalesced to one paint per animation frame",
+);
+assert.doesNotMatch(
+  settings,
+  /requestAnimationFrame\(\(\) => \{[\s\S]{0,300}applyTokenOverride\(/,
+  "no rAF frame may persist to the store — drags write pixels, commits write preferences",
+);
+assert.match(
+  settings,
+  /const handleCommit = [\s\S]{0,200}flushPendingPreview\(\);\s*\n\s*if \(!dirtyRef\.current\.has\(key\)\) return;[\s\S]{0,400}applyTokenOverride\(key, committed, modeRef\.current\);[\s\S]{0,300}onChange\(\);/,
+  "commit persists the finished edit exactly once, and closing the picker without a pick is a no-op (no bogus custom fork)",
+);
+assert.match(
+  settings,
+  /for \(const key of dirtyRef\.current\)[\s\S]{0,200}applyTokenOverride\(key, value, modeRef\.current\)/,
+  "unmounting mid-drag still persists the un-committed edit",
+);
+assert.doesNotMatch(
+  settings,
+  /const handlePick = [\s\S]{0,600}onChange\(\);\n {2}\};/,
+  "handlePick must not trigger the per-move daemon sync",
+);
+
+// ── An explicit accent pick must disarm the backdrop auto-match (cave-hkfq) ──
+// With a backdrop enabled and matchAccent armed (the default), every theme
+// reconcile re-fits --accent-presence to the image seed via
+// applyBackdropToDocument — silently overriding the user's pick during the
+// drag, recording the fit color in the synced tokens, and reverting the swatch
+// on reload. An explicit accent edit is a statement of intent: fold
+// matchAccent: false into the SAME preferences patch as the token edit so no
+// reconcile window exists between them. The backdrop settings toggle re-arms.
+assert.match(
+  settings,
+  /const disarmBackdropAccent =\s*\n?\s*key === "--accent-presence" && backdrop\.enabled && backdrop\.matchAccent;/,
+  "an explicit accent edit detects an armed backdrop auto-match",
+);
+assert.match(
+  settings,
+  /updateAppPreferences\(\{\s*\n\s*appearance: \{\s*\n\s*theme: \{ id: "custom", resolvedMode: mode, custom: data \},\s*\n\s*\.\.\.\(disarmBackdropAccent \? \{ backdrop: \{ matchAccent: false \} \} : \{\}\),\s*\n\s*\},\s*\n\s*\}\);/,
+  "the disarm rides the token edit's own atomic patch — no reconcile can re-fit in between",
+);
+assert.doesNotMatch(
+  settings,
+  /const raw = null;/,
+  "applyTokenOverride's dead localStorage-era fork branch stays deleted",
+);
+
+// ── The section must follow the store, not its mount-time snapshot ───────────
+// External theme changes — the 10s /api/theme poll, another tab via the
+// preferences BroadcastChannel, a phone PATCH — land in the store and repaint
+// the app, but AppearanceSection hydrated activeTheme/mode/customData once on
+// mount, so the theme grid and token-row swatches kept showing stale values
+// until a full page reload (cave-hkfq).
+assert.match(
+  settings,
+  /if \(!appearanceHydrated\) return;\s*\n\s*return subscribeAppPreferences\(\(\) => \{[\s\S]{0,300}setActiveTheme\(readPersistedTheme\(\)\);\s*\n\s*setMode\(readPersistedMode\(\)\);[\s\S]{0,600}\}\);\s*\n\s*\}, \[appearanceHydrated\]\);/,
+  "the appearance section re-syncs its selection state on every preferences-store notify",
+);
+assert.match(
+  settings,
+  /setCustomData\(\(prev\) => \{[\s\S]{0,400}JSON\.stringify\(prev\) === JSON\.stringify\(next\)[\s\S]{0,100}return prev;/,
+  "custom-theme state keeps its object identity when content is unchanged — unrelated store notifies must not churn renders or the content-keyed reloadKey",
+);
+assert.match(
+  settings,
+  /reloadKey=\{`\$\{activeTheme\}:\$\{mode\}:\$\{customData \? JSON\.stringify\(customData\.cssVars\) : "preset"\}`\}/,
+  "the token rows' reload key carries the custom payload's CONTENT, so external edits re-resolve the swatches",
+);
+assert.doesNotMatch(
+  settings,
+  /customData \? "c" : "p"/,
+  "the presence-flag reload key is gone — it never changed while staying on the custom theme",
 );

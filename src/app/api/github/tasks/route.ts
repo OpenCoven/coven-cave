@@ -1,9 +1,20 @@
 import { NextResponse } from "next/server";
+import { forceGitHubTasksRefresh, getGitHubTasks } from "@/lib/github-tasks-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
+  return respondWithTasks(false);
+}
+
+/** Explicit/user-initiated refreshes bypass a fresh TTL entry, while still
+ * joining any upstream request already in flight. */
+export async function POST() {
+  return respondWithTasks(true);
+}
+
+async function respondWithTasks(force: boolean) {
   const endpoint = githubTasksEndpoint();
   if (!endpoint) {
     return NextResponse.json({
@@ -14,20 +25,15 @@ export async function GET() {
   }
 
   try {
-    const res = await fetch(endpoint, { cache: "no-store" });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || data == null) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: `coven-github returned ${res.status}`,
-          tasks: [],
-        },
-        { status: 502 },
-      );
-    }
-
-    return NextResponse.json(data);
+    const result = force
+      ? await forceGitHubTasksRefresh(endpoint)
+      : await getGitHubTasks(endpoint);
+    return NextResponse.json(result.data, {
+      headers: {
+        "x-coven-cache": result.source,
+        "x-coven-cache-freshness": result.freshness,
+      },
+    });
   } catch (e) {
     return NextResponse.json(
       {

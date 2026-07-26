@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
+const primitives = readFileSync(new URL("./chat-list-primitives.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const topBar = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
@@ -16,9 +17,9 @@ assert.match(topBar, /labeled=\{familiarSwitcherLabeled\}/, "TopBar can render t
 assert.match(workspace, /familiarSwitcherLabeled=\{mode === "chat"\}/, "Workspace labels the top-bar selector on the Familiars page");
 
 // ── Counted PINNED / SESSIONS section headers ────────────────────────────────
-assert.match(source, /function ChatListSection/, "ChatList gains a counted section-header primitive");
+assert.match(primitives, /function ChatListSection/, "ChatList gains a counted section-header primitive");
 assert.match(
-  source,
+  primitives,
   /uppercase tracking-\[0\.12em\]/,
   "Section headers are uppercase + letter-spaced like the desktop rail",
 );
@@ -35,11 +36,17 @@ assert.match(
 // Headers are placed by first-member index so order/interleaving can't dupe them.
 assert.match(source, /const firstPinnedIdx = pinnedFlags\.indexOf\(true\)/, "PINNED header anchors to the first pinned row");
 assert.match(source, /const firstRestIdx = pinnedFlags\.indexOf\(false\)/, "SESSIONS header anchors to the first non-pinned row");
-// Section headers only split the flat (null-project) list, not scoped folders.
+// Section headers only split the flat ungrouped (null-project) list, not
+// scoped folders or the project/date grouping modes.
 assert.match(
   source,
-  /projectRoot === null && idx === firstPinnedIdx/,
-  "Sections only apply to the flat all-chats list",
+  /const sectioned = projectRoot === null && groupBy === "none";/,
+  "Sections only apply to the flat ungrouped all-chats list",
+);
+assert.match(
+  source,
+  /sectioned && idx === firstPinnedIdx/,
+  "The PINNED header anchors through the sectioned flag",
 );
 
 // ── Preserved: existing rows still sortable by session id ────────────────────

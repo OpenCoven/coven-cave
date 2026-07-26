@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+const source = await readFile(new URL("./familiars-memory-utils.ts", import.meta.url), "utf8");
 
 // Static-source assertions: the function must define a threshold + take the last 3 segments.
 assert.match(
@@ -34,17 +34,17 @@ const body = fnMatch[1].replace(/: string/g, "");
 const compactPath = new Function("path", body);
 
 assert.equal(
-  compactPath("/Users/buns/.openclaw/familiars/nova/memory/2026-06-03.md"),
+  compactPath("/Users/dev/.openclaw/familiars/nova/memory/2026-06-03.md"),
   "~/.openclaw/familiars/nova/memory/2026-06-03.md",
   "Under-threshold path keeps full structure",
 );
 assert.equal(
-  compactPath("/Users/buns/.openclaw/data/very/long/nested/path/familiars/nova/memory/2026-06-03.md"),
+  compactPath("/Users/dev/.openclaw/data/very/long/nested/path/familiars/nova/memory/2026-06-03.md"),
   "~/…/nova/memory/2026-06-03.md",
   "Over-threshold path collapses interior segments to ellipsis",
 );
 assert.equal(
-  compactPath("/Users/buns/short.md"),
+  compactPath("/Users/dev/short.md"),
   "~/short.md",
   "Trivial path round-trips through the ~ replacement",
 );

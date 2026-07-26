@@ -1,29 +1,72 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
+import { caveHome } from "./coven-paths.ts";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { withCaveHomeReconciledStore, withCaveHomeReconciledStores } from "./server/cave-home-migration.ts";
+import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
+import { rememberHubAccessToken, splitHubAccessToken } from "./hub-access-token.ts";
+import {
+  type ChatAutoArchivePolicy,
+  extendUntilIso,
+  normalizeChatAutoArchivePolicy,
+  SUMMON_GRACE_DAYS,
+} from "./chat-auto-archive.ts";
+import {
+  type ChatAutoRenamePolicy,
+  normalizeChatAutoRenamePolicy,
+} from "./chat-auto-rename.ts";
 import {
   type FamiliarRuntime,
   normalizeFamiliarRuntime,
-} from "@/lib/familiar-runtime";
+} from "./familiar-runtime.ts";
+import type { UserProfile } from "./user-profile-shared.ts";
+import {
+  defaultTravelState,
+  normalizeFamiliarOmnigent,
+  normalizeMultiHostConfig,
+  normalizeOmnigentConfig,
+  normalizeRemoteHosts,
+  normalizeTravelState,
+} from "./cave-config-normalize.ts";
 
-const CONFIG_PATH = path.join(homedir(), ".coven", "cave-config.json");
-const STATE_PATH = path.join(homedir(), ".coven", "cave-state.json");
+export {
+  defaultTravelState,
+  normalizeFamiliarOmnigent,
+  normalizeMultiHostConfig,
+  normalizeOmnigentConfig,
+  normalizeRemoteHosts,
+  normalizeTravelState,
+} from "./cave-config-normalize.ts";
+
+const CONFIG_PATH = path.join(caveHome(), "config.json");
+const STATE_PATH = path.join(caveHome(), "state.json");
 
 const DEFAULT_CONFIG: CaveConfig = {
   version: 1,
-  defaults: { harness: "codex", model: "openai/gpt-5.5" },
+  defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
   familiars: {},
   roles: [],
-  addons: { github: false, library: false },
+  addons: {
+    github: false,
+    code: false,
+    browser: false,
+    flow: false,
+    journal: false,
+    docs: false,
+  },
   marketplace: { installed: {} },
-};
-
-const DEFAULT_STATE: CaveState = {
-  sessionFamiliar: {},
-  sessionTitles: {},
-  sessionArchived: {},
-  sessionSacrificed: {},
-  sessionOwned: {},
+  multiHost: { mode: "local", hubUrl: "", executorUrls: [] },
+  omnigent: {
+    enabled: false,
+    baseUrl: "",
+    defaultAgentId: "",
+    defaultHostId: "",
+    defaultWorkspace: "",
+    hostMap: {},
+    hostWorkspaceMap: {},
+    exposeHostsInComposer: true,
+  },
+  remoteHosts: [],
 };
 
 function defaultConfig(): CaveConfig {
@@ -34,24 +77,76 @@ function defaultConfig(): CaveConfig {
     roles: [],
     addons: { ...DEFAULT_CONFIG.addons },
     marketplace: { installed: {} },
+    multiHost: { ...DEFAULT_CONFIG.multiHost, executorUrls: [] },
+    omnigent: { ...DEFAULT_CONFIG.omnigent },
+    remoteHosts: [],
   };
+}
+
+export async function recordKnowledgePackSeed(
+  packId: string,
+  target: { target: "vault" | "project"; root?: string },
+): Promise<string> {
+  return withConfigLock(async () => {
+    const cfg = await loadConfigUnlocked();
+    const seededAt = new Date().toISOString();
+    const nextEntry: KnowledgePackSeedEntry = {
+      id: packId,
+      target: target.target,
+      ...(target.root ? { root: target.root } : {}),
+      seededAt,
+    };
+    const existing = cfg.marketplace.knowledgePacks ?? [];
+    const knowledgePacks = [
+      ...existing.filter(
+        (entry) =>
+          !(entry.id === nextEntry.id && entry.target === nextEntry.target && (entry.root ?? "") === (nextEntry.root ?? "")),
+      ),
+      nextEntry,
+    ];
+    const updated: CaveConfig = {
+      ...cfg,
+      marketplace: {
+        ...cfg.marketplace,
+        knowledgePacks,
+      },
+    };
+    await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
+    await writeJsonAtomic(CONFIG_PATH, updated);
+    return seededAt;
+  });
 }
 
 function defaultState(): CaveState {
   return {
     sessionFamiliar: {},
     sessionTitles: {},
+    sessionTitleAuto: {},
     sessionArchived: {},
     sessionSacrificed: {},
+    sessionKeep: {},
+    sessionArchiveExtendedUntil: {},
     sessionOwned: {},
+    mergedPrAutoArchived: {},
+    travel: defaultTravelState(),
   };
 }
+
+/** Per-familiar overrides for Omnigent session create. */
+export type FamiliarOmnigentBinding = {
+  agentId?: string;
+  hostId?: string;
+  workspace?: string;
+};
 
 export type FamiliarBinding = {
   harness: string;
   model: string;
   display_name?: string;
   role?: string;
+  /** Explicit familiar Type id(s) (familiar-types.ts). May be a single id or
+   *  comma-separated list of ids for multi-type selection. Absent/empty = "general". */
+  familiarType?: string;
   pronouns?: string;
   description?: string;
   color?: string;
@@ -59,16 +154,39 @@ export type FamiliarBinding = {
   voiceProvider?: string;
   voiceModel?: string;
   voiceName?: string;
+  /** Image generation (Brain tab): "" inherit | "openai" | "gemini" | "off". */
+  imageProvider?: string;
+  imageModel?: string;
+  imageSize?: string;
+  imageQuality?: string;
+  autoSelfReport?: boolean;
+  /** Per-agent Asana assignment. The PAT is app-wide (one connection); this
+   *  decides whether THIS familiar works with Asana tasks. Undefined = on when
+   *  the app is connected (the seamless default); false opts the agent out. */
+  asanaEnabled?: boolean;
+  /** Optional Asana workspace gid this familiar is scoped to (empty = all of
+   *  the connected user's workspaces). */
+  asanaWorkspaceGid?: string;
   runtime?: FamiliarRuntime;
+  /** Per-familiar Omnigent fleet defaults (agent/host/workspace). */
+  omnigent?: FamiliarOmnigentBinding;
 };
 
 type FamiliarBindingPatch = {
   [K in keyof FamiliarBinding]?: FamiliarBinding[K] | null;
 };
 
-type CaveConfigPatch = Omit<Partial<CaveConfig>, "defaults" | "familiars"> & {
+type CaveConfigPatch = Omit<
+  Partial<CaveConfig>,
+  "defaults" | "familiars" | "chatAutoArchive" | "chatAutoRename"
+> & {
   defaults?: Partial<FamiliarBinding>;
   familiars?: Record<string, FamiliarBindingPatch | null>;
+  multiHost?: Partial<CaveMultiHostConfig>;
+  omnigent?: Partial<CaveOmnigentConfig>;
+  remoteHosts?: CaveRemoteHost[];
+  chatAutoArchive?: Partial<ChatAutoArchivePolicy>;
+  chatAutoRename?: Partial<ChatAutoRenamePolicy>;
 };
 
 export type RoleConfigEntry = {
@@ -82,6 +200,78 @@ export type MarketplaceInstallEntry = {
   version: string;
   source: string;
   installedAt: string;
+  /** Runtime that performed and verified the installation. Legacy entries omit it. */
+  runtime?: string;
+  /** ISO timestamp of the most recent runtime verification. */
+  verifiedAt?: string;
+  /** Version of the Craft specification/package that was verified. */
+  craftVersion?: string;
+};
+
+export type MarketplaceInstallMetadata = Pick<
+  MarketplaceInstallEntry,
+  "runtime" | "verifiedAt" | "craftVersion"
+>;
+
+export type KnowledgePackSeedEntry = {
+  id: string;
+  target: "vault" | "project";
+  root?: string;
+  seededAt: string;
+};
+
+export type CaveMultiHostConfig = {
+  mode: "local" | "hub";
+  hubUrl: string;
+  executorUrls: string[];
+};
+
+/** Omnigent control-plane settings for Cave Fleet. Token is never stored —
+ *  server reads `~/.omnigent/auth_tokens.json` (or OMNIGENT_TOKEN). */
+export type CaveOmnigentConfig = {
+  /** Explicit opt-in (Settings → Daemon toggle). The toggle only appears once
+   *  OMNIGENT_SERVER_URL is in the Cave Vault; until BOTH hold, every Omnigent
+   *  surface stays hidden and Cave makes no Omnigent requests. Default off. */
+  enabled: boolean;
+  baseUrl: string;
+  defaultAgentId: string;
+  defaultHostId: string;
+  defaultWorkspace: string;
+  hostMap: Record<string, string>;
+  /** host_id / name / hostMap alias → absolute workspace path on that host. */
+  hostWorkspaceMap: Record<string, string>;
+  exposeHostsInComposer: boolean;
+};
+
+/** A registered remote execution host chats can run on (over SSH). Cave never
+ *  stores key material — `host` is an ssh alias/hostname the user's own ssh
+ *  config can reach non-interactively. */
+export type CaveRemoteHost = {
+  host: string;
+  /** Remote working directory harness sessions start in. */
+  cwd: string;
+  /** Remote Coven executable. Defaults to "coven". */
+  command?: string;
+};
+
+export type CaveTravelQueueItem = {
+  id: string;
+  kind: "chat" | "workflow" | "job";
+  summary: string;
+  createdAt: string;
+  status: "pending" | "syncing" | "failed" | "synced";
+  payload?: unknown;
+  lastError?: string;
+};
+
+export type CaveTravelState = {
+  manualOffline: boolean;
+  hubUnreachableSince: string | null;
+  lastHubReachableAt: string | null;
+  staleCache: boolean;
+  localSubdaemonWakeRequestedAt: string | null;
+  localBindHost: "127.0.0.1";
+  offlineQueue: CaveTravelQueueItem[];
 };
 
 export type CaveConfig = {
@@ -91,11 +281,27 @@ export type CaveConfig = {
   roles: RoleConfigEntry[];
   addons?: {
     github?: boolean;
-    library?: boolean;
+    code?: boolean;
+    browser?: boolean;
+    flow?: boolean;
+    journal?: boolean;
+    docs?: boolean;
   };
   marketplace: {
     installed: Record<string, MarketplaceInstallEntry>;
+    knowledgePacks?: KnowledgePackSeedEntry[];
   };
+  multiHost: CaveMultiHostConfig;
+  /** Omnigent server used for fleet runs (hosts / sessions / host chip). */
+  omnigent: CaveOmnigentConfig;
+  /** Chat-selectable remote hosts (beyond per-familiar runtime bindings). */
+  remoteHosts: CaveRemoteHost[];
+  /** Operator profile (Settings → Profile). Image lives in ~/.coven/user-avatar.*, not here. */
+  profile?: UserProfile;
+  /** Auto-archive policy for chats (see chat-auto-archive.ts). Absent = defaults. */
+  chatAutoArchive?: ChatAutoArchivePolicy;
+  /** Periodic context-aware rename policy for chats (see chat-auto-rename.ts). Absent = defaults. */
+  chatAutoRename?: ChatAutoRenamePolicy;
 };
 
 export type CaveState = {
@@ -103,34 +309,103 @@ export type CaveState = {
   sessionFamiliar: Record<string, string>;
   /** Session to Cave-side title override. Wins over the daemon's title when present. */
   sessionTitles: Record<string, string>;
+  /** Session to the last title auto-rename set (provenance). Present only while the
+   *  current override still equals it — a manual rename clears the entry. Lets the
+   *  periodic rename tell its own titles from a person's (chat-auto-rename.ts). */
+  sessionTitleAuto: Record<string, string>;
   /** Session to ISO timestamp when archived in the Cave. Empty when unarchived. */
   sessionArchived: Record<string, string>;
   /** Session to ISO timestamp when sacrificed (soft-deleted) in the Cave. Hidden from lists. */
   sessionSacrificed: Record<string, string>;
+  /** Session to ISO timestamp when marked keep (never auto-archived). */
+  sessionKeep: Record<string, string>;
+  /** Session to ISO deadline before which auto-archive sweeps must skip it. */
+  sessionArchiveExtendedUntil: Record<string, string>;
   /** Sessions created through Cave's browser-facing session API. */
   sessionOwned: Record<string, string>;
+  /** Session → PR key ("owner/repo#N") whose merge already auto-archived it
+   *  once. Makes the merged-chat sweep one-shot: summoning the chat sticks. */
+  mergedPrAutoArchived: Record<string, string>;
+  /** Travel/offline authority state for laptop Cave when the server hub drops. */
+  travel: CaveTravelState;
 };
 
-export async function loadConfig(): Promise<CaveConfig> {
+async function loadConfigUnlocked(): Promise<CaveConfig> {
   try {
     const raw = await readFile(CONFIG_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<CaveConfig>;
-    return {
+    const config: CaveConfig = {
       version: parsed.version ?? 1,
       defaults: { ...DEFAULT_CONFIG.defaults, ...(parsed.defaults ?? {}) },
       familiars: parsed.familiars ?? {},
       roles: parsed.roles ?? [],
       addons: {
         github: parsed.addons?.github ?? false,
-        library: parsed.addons?.library ?? false,
+        code: parsed.addons?.code ?? false,
+        browser: parsed.addons?.browser ?? false,
+        flow: parsed.addons?.flow ?? false,
+        // addons.roles was removed (cave-vp4h); stored configs that still
+        // carry it parse fine — unknown keys are ignored and dropped on the
+        // next write.
+        journal: parsed.addons?.journal ?? false,
+        docs: parsed.addons?.docs ?? false,
       },
       marketplace: {
         installed: parsed.marketplace?.installed ?? {},
+        knowledgePacks: Array.isArray(parsed.marketplace?.knowledgePacks)
+          ? parsed.marketplace.knowledgePacks.flatMap((entry): KnowledgePackSeedEntry[] => {
+              if (!entry || typeof entry !== "object") return [];
+              const seed = entry as Partial<KnowledgePackSeedEntry>;
+              if (typeof seed.id !== "string" || !seed.id.trim()) return [];
+              if (seed.target !== "vault" && seed.target !== "project") return [];
+              if (typeof seed.seededAt !== "string" || !Number.isFinite(Date.parse(seed.seededAt))) return [];
+              return [{
+                id: seed.id,
+                target: seed.target,
+                ...(typeof seed.root === "string" && seed.root.trim() ? { root: seed.root } : {}),
+                seededAt: seed.seededAt,
+              }];
+            })
+          : [],
       },
+      multiHost: normalizeMultiHostConfig(parsed.multiHost),
+      omnigent: normalizeOmnigentConfig(parsed.omnigent),
+      remoteHosts: normalizeRemoteHosts(parsed.remoteHosts),
+      // Must be listed — this explicit shape drops unknown keys, and a dropped
+      // profile would be erased by the next saveConfig round-trip.
+      profile: parsed.profile,
+      ...(parsed.chatAutoArchive !== undefined
+        ? { chatAutoArchive: normalizeChatAutoArchivePolicy(parsed.chatAutoArchive) }
+        : {}),
+      ...(parsed.chatAutoRename !== undefined
+        ? { chatAutoRename: normalizeChatAutoRenamePolicy(parsed.chatAutoRename) }
+        : {}),
     };
+    // Self-healing migration (cave-1v95): a pre-existing config may still
+    // embed the hub access token in multiHost.hubUrl. Move it to the local
+    // encrypted vault and rewrite the file once, so config.json stops being a
+    // credential store. Best-effort — a failed vault write keeps the embedded
+    // token working exactly as before.
+    if (sanitizeMultiHostHubToken(config)) {
+      await writeJsonAtomic(CONFIG_PATH, config).catch(() => {});
+    }
+    return config;
   } catch {
     return defaultConfig();
   }
+}
+
+export function loadConfig(): Promise<CaveConfig> {
+  return withCaveHomeReconciledStore("cave-config.json", loadConfigUnlocked);
+}
+
+/** Split an embedded access token out of `config.multiHost.hubUrl` into the
+ *  local encrypted vault, in place. Returns whether the URL was rewritten. */
+function sanitizeMultiHostHubToken(config: Pick<CaveConfig, "multiHost">): boolean {
+  const { url, token } = splitHubAccessToken(config.multiHost.hubUrl);
+  if (!token || !rememberHubAccessToken(token)) return false;
+  config.multiHost = { ...config.multiHost, hubUrl: url };
+  return true;
 }
 
 function mergeFamiliarConfigs(
@@ -152,6 +427,11 @@ function mergeFamiliarConfigs(
         (typeof value === "string" && value.trim() === "")
       ) {
         delete next[key as keyof FamiliarBinding];
+      } else if (key === "omnigent" && value && typeof value === "object" && !Array.isArray(value)) {
+        // Replace (not deep-merge) so cleared fields in Studio drop prior values.
+        const merged = normalizeFamiliarOmnigent(value as FamiliarOmnigentBinding);
+        if (merged) next.omnigent = merged;
+        else delete next.omnigent;
       } else {
         (next as Record<string, unknown>)[key] = value;
       }
@@ -162,8 +442,28 @@ function mergeFamiliarConfigs(
   return updated;
 }
 
+// In-process serialization of cave-config.json mutations. writeJsonAtomic makes
+// each write torn-read-safe, but two concurrent load→merge→write calls both read
+// the same snapshot and the second write drops the first patch's field. The
+// Settings surface fires overlapping config PATCHes (palette-by-familiar loops,
+// daemon + add-on toggles), so every config writer serializes its
+// read-modify-write here — same pattern as stateMutex for cave-state.json.
+let configMutex: Promise<unknown> = Promise.resolve();
+async function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
+  const previous = configMutex;
+  let release!: () => void;
+  configMutex = new Promise<void>((resolve) => { release = resolve; });
+  try {
+    await previous.catch(() => {});
+    return await withCaveHomeReconciledStore("cave-config.json", fn);
+  } finally {
+    release();
+  }
+}
+
 export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
-  const current = await loadConfig();
+  return withConfigLock(async () => {
+  const current = await loadConfigUnlocked();
   const updated: CaveConfig = {
     ...current,
     ...patch,
@@ -177,61 +477,112 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
         ...current.marketplace.installed,
         ...(patch.marketplace?.installed ?? {}),
       },
+      knowledgePacks: patch.marketplace?.knowledgePacks ?? current.marketplace.knowledgePacks ?? [],
     },
+    multiHost: normalizeMultiHostConfig({
+      ...current.multiHost,
+      ...(patch.multiHost ?? {}),
+    }),
+    omnigent: normalizeOmnigentConfig({
+      ...current.omnigent,
+      ...(patch.omnigent ?? {}),
+    }),
     // Deep-merge defaults
     defaults: {
       ...current.defaults,
       ...(patch.defaults ?? {}),
     },
     familiars: mergeFamiliarConfigs(current.familiars, patch.familiars),
+    // Replace remoteHosts if provided (normalized + deduped, like roles)
+    remoteHosts:
+      patch.remoteHosts !== undefined ? normalizeRemoteHosts(patch.remoteHosts) : current.remoteHosts,
     // Replace roles if provided
     roles: patch.roles !== undefined ? patch.roles : current.roles,
+    // Replace-if-provided ("in" so `{ profile: undefined }` clears the key).
+    profile: "profile" in patch ? patch.profile : current.profile,
+    // Merge-if-provided; partial patches inherit current values then defaults.
+    chatAutoArchive:
+      patch.chatAutoArchive !== undefined
+        ? normalizeChatAutoArchivePolicy({
+            ...current.chatAutoArchive,
+            ...patch.chatAutoArchive,
+          })
+        : current.chatAutoArchive,
+    chatAutoRename:
+      patch.chatAutoRename !== undefined
+        ? normalizeChatAutoRenamePolicy({
+            ...current.chatAutoRename,
+            ...patch.chatAutoRename,
+          })
+        : current.chatAutoRename,
   };
+  // Split an embedded hub access token out before persisting (cave-1v95):
+  // pasting the tokened invite URL stays the pairing UX, but the credential
+  // goes to the local encrypted vault and only the clean URL reaches
+  // config.json. Best-effort by design — if the vault write fails, the
+  // embedded token is kept in place so hub connectivity never breaks.
+  sanitizeMultiHostHubToken(updated);
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(updated, null, 2), "utf8");
+  await writeJsonAtomic(CONFIG_PATH, updated);
   return updated;
+  });
 }
 
 export async function installMarketplacePlugin(
   pluginName: string,
   version: string,
   source: string,
+  metadata: MarketplaceInstallMetadata = {},
 ): Promise<string> {
-  const cfg = await loadConfig();
+  return withConfigLock(async () => {
+  const cfg = await loadConfigUnlocked();
   const installedAt = new Date().toISOString();
   const updated: CaveConfig = {
     ...cfg,
     marketplace: {
+      ...cfg.marketplace,
       installed: {
         ...cfg.marketplace.installed,
-        [pluginName]: { version, source, installedAt },
+        [pluginName]: {
+          version,
+          source,
+          installedAt,
+          ...(metadata.runtime ? { runtime: metadata.runtime } : {}),
+          ...(metadata.verifiedAt ? { verifiedAt: metadata.verifiedAt } : {}),
+          ...(metadata.craftVersion ? { craftVersion: metadata.craftVersion } : {}),
+        },
       },
     },
   };
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(updated, null, 2), "utf8");
+  await writeJsonAtomic(CONFIG_PATH, updated);
   return installedAt;
+  });
 }
 
 export async function uninstallMarketplacePlugin(pluginName: string): Promise<void> {
-  const cfg = await loadConfig();
+  return withConfigLock(async () => {
+  const cfg = await loadConfigUnlocked();
   const installed = { ...cfg.marketplace.installed };
   delete installed[pluginName];
   const updated: CaveConfig = {
     ...cfg,
-    marketplace: { installed },
+    marketplace: { ...cfg.marketplace, installed },
   };
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(updated, null, 2), "utf8");
+  await writeJsonAtomic(CONFIG_PATH, updated);
+  });
 }
 
 export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBinding {
   const f = config.familiars[familiarId] ?? {};
+  const omnigent = normalizeFamiliarOmnigent(f.omnigent ?? config.defaults.omnigent);
   return {
     harness: f.harness ?? config.defaults.harness,
     model: f.model ?? config.defaults.model,
     display_name: f.display_name,
     role: f.role,
+    familiarType: f.familiarType,
     pronouns: f.pronouns,
     description: f.description,
     color: f.color,
@@ -239,29 +590,54 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     voiceProvider: f.voiceProvider,
     voiceModel: f.voiceModel,
     voiceName: f.voiceName,
+    imageProvider: f.imageProvider,
+    imageModel: f.imageModel,
+    imageSize: f.imageSize,
+    imageQuality: f.imageQuality,
+    autoSelfReport: f.autoSelfReport ?? false,
+    asanaEnabled: f.asanaEnabled,
+    asanaWorkspaceGid: f.asanaWorkspaceGid,
     runtime: normalizeFamiliarRuntime(f.runtime ?? config.defaults.runtime),
+    ...(omnigent ? { omnigent } : {}),
   };
 }
 
-export async function loadState(): Promise<CaveState> {
+async function loadStateUnlocked(): Promise<CaveState> {
   try {
     const raw = await readFile(STATE_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<CaveState>;
     return {
       sessionFamiliar: parsed.sessionFamiliar ?? {},
       sessionTitles: parsed.sessionTitles ?? {},
+      sessionTitleAuto: parsed.sessionTitleAuto ?? {},
       sessionArchived: parsed.sessionArchived ?? {},
       sessionSacrificed: parsed.sessionSacrificed ?? {},
+      sessionKeep: parsed.sessionKeep ?? {},
+      sessionArchiveExtendedUntil: parsed.sessionArchiveExtendedUntil ?? {},
       sessionOwned: parsed.sessionOwned ?? {},
+      mergedPrAutoArchived: parsed.mergedPrAutoArchived ?? {},
+      travel: normalizeTravelState(parsed.travel),
     };
   } catch {
     return defaultState();
   }
 }
 
-async function saveState(state: CaveState): Promise<void> {
+export function loadState(): Promise<CaveState> {
+  return withCaveHomeReconciledStore("cave-state.json", loadStateUnlocked);
+}
+
+/** A coherent, lock-protected snapshot for the frequent daemon status poll. */
+export function loadDaemonStatusSnapshot(): Promise<{ config: CaveConfig; state: CaveState }> {
+  return withCaveHomeReconciledStores(["cave-config.json", "cave-state.json"], async () => ({
+    config: await loadConfigUnlocked(),
+    state: await loadStateUnlocked(),
+  }));
+}
+
+async function saveStateUnlocked(state: CaveState): Promise<void> {
   await mkdir(path.dirname(STATE_PATH), { recursive: true });
-  await writeFile(STATE_PATH, JSON.stringify(state, null, 2), "utf8");
+  await writeJsonAtomic(STATE_PATH, state);
 }
 
 // In-process serialization of cave-state.json mutations. Without this, two
@@ -277,23 +653,154 @@ async function updateState<T>(
   stateMutex = new Promise<void>((resolve) => { release = resolve; });
   try {
     await previous.catch(() => {});
-    const state = await loadState();
-    const result = await mutator(state);
-    await saveState(state);
-    return result;
+    return await withCaveHomeReconciledStore("cave-state.json", async () => {
+      const state = await loadStateUnlocked();
+      const result = await mutator(state);
+      await saveStateUnlocked(state);
+      return result;
+    });
   } finally {
     release();
   }
 }
 
+// Session-list mutators below call invalidateSessionsListCache() after their
+// state write (cave-53yx): the SWR cache behind /api/sessions/list would
+// otherwise serve the pre-mutation list to the event-driven refresh fired
+// right after the mutation, delaying the visible change by 1-2 polls.
 export async function recordOwnedSession(sessionId: string): Promise<void> {
-  const state = await loadState();
-  state.sessionOwned[sessionId] = new Date().toISOString();
   try {
-    await saveState(state);
+    await updateState((state) => {
+      state.sessionOwned[sessionId] = new Date().toISOString();
+    });
+    invalidateSessionsListCache();
   } catch {
     /* best effort */
   }
+}
+
+function nowIso(now: Date = new Date()): string {
+  return now.toISOString();
+}
+
+function hasPendingTravelQueue(state: CaveTravelState): boolean {
+  return state.offlineQueue.some((item) => item.status === "pending" || item.status === "syncing" || item.status === "failed");
+}
+
+export async function setManualTravelMode(enabled: boolean, now = new Date()): Promise<string | null> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    if (enabled) {
+      const iso = nowIso(now);
+      state.travel.manualOffline = true;
+      state.travel.staleCache = true;
+      state.travel.localSubdaemonWakeRequestedAt = iso;
+      state.travel.localBindHost = "127.0.0.1";
+      return iso;
+    }
+    state.travel.manualOffline = false;
+    if (!state.travel.hubUnreachableSince && !hasPendingTravelQueue(state.travel)) {
+      state.travel.staleCache = false;
+      state.travel.localSubdaemonWakeRequestedAt = null;
+    }
+    return null;
+  });
+}
+
+export async function recordTravelHubReachability(reachable: boolean, now = new Date()): Promise<CaveTravelState> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    const iso = nowIso(now);
+    if (reachable) {
+      state.travel.lastHubReachableAt = iso;
+      state.travel.hubUnreachableSince = null;
+      if (!state.travel.manualOffline && !hasPendingTravelQueue(state.travel)) {
+        state.travel.staleCache = false;
+        state.travel.localSubdaemonWakeRequestedAt = null;
+      }
+      return state.travel;
+    }
+    state.travel.hubUnreachableSince ??= iso;
+    state.travel.staleCache = true;
+    return state.travel;
+  });
+}
+
+export async function recordLocalSubdaemonWakeRequest(now = new Date()): Promise<CaveTravelState> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    state.travel.localSubdaemonWakeRequestedAt = nowIso(now);
+    state.travel.localBindHost = "127.0.0.1";
+    state.travel.staleCache = true;
+    return state.travel;
+  });
+}
+
+export async function enqueueOfflineTravelItem(
+  item: {
+    kind: CaveTravelQueueItem["kind"];
+    summary: string;
+    payload?: unknown;
+  },
+  now = new Date(),
+): Promise<CaveTravelQueueItem> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    const createdAt = nowIso(now);
+    const queued: CaveTravelQueueItem = {
+      id: `travel-${createdAt.replace(/[^0-9]/g, "")}-${Math.random().toString(36).slice(2, 8)}`,
+      kind: item.kind,
+      summary: item.summary.trim() || "Offline work",
+      createdAt,
+      status: "pending",
+      payload: item.payload,
+    };
+    state.travel.offlineQueue.push(queued);
+    state.travel.staleCache = true;
+    return queued;
+  });
+}
+
+export async function offlineTravelItemsNeedingSync(): Promise<CaveTravelQueueItem[]> {
+  const state = await loadState();
+  return normalizeTravelState(state.travel).offlineQueue.filter((item) => item.status !== "synced");
+}
+
+export async function markOfflineTravelItemSyncing(itemId: string): Promise<CaveTravelQueueItem | null> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    let marked: CaveTravelQueueItem | null = null;
+    state.travel.offlineQueue = state.travel.offlineQueue.map((item) => {
+      if (item.id !== itemId || item.status === "synced") return item;
+      marked = { ...item, status: "syncing", lastError: undefined };
+      return marked;
+    });
+    return marked;
+  });
+}
+
+export async function failOfflineTravelItem(itemId: string, error: string): Promise<void> {
+  await updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    state.travel.offlineQueue = state.travel.offlineQueue.map((item) =>
+      item.id === itemId
+        ? { ...item, status: "failed", lastError: error.trim() || "sync failed" }
+        : item,
+    );
+    state.travel.staleCache = true;
+  });
+}
+
+export async function completeOfflineTravelItem(itemId: string): Promise<void> {
+  await updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    state.travel.offlineQueue = state.travel.offlineQueue.map((item) =>
+      item.id === itemId ? { ...item, status: "synced", lastError: undefined } : item,
+    );
+    if (!state.travel.manualOffline && !state.travel.hubUnreachableSince && !hasPendingTravelQueue(state.travel)) {
+      state.travel.staleCache = false;
+    }
+  });
 }
 
 export async function isOwnedSession(sessionId: string): Promise<boolean> {
@@ -306,6 +813,7 @@ export async function recordSessionFamiliar(sessionId: string, familiarId: strin
     await updateState((state) => {
       state.sessionFamiliar[sessionId] = familiarId;
     });
+    invalidateSessionsListCache();
   } catch {
     /* best effort */
   }
@@ -316,15 +824,38 @@ export async function recordSessionFamiliar(sessionId: string, familiarId: strin
  * Pass an empty/whitespace-only title to clear the override.
  */
 export async function setSessionTitle(sessionId: string, title: string): Promise<string | null> {
-  return updateState((state) => {
+  const next = await updateState((state) => {
     const trimmed = title.trim();
     if (!trimmed) {
       delete state.sessionTitles[sessionId];
     } else {
       state.sessionTitles[sessionId] = trimmed;
     }
+    // A plain (manual / first-exchange) set clears auto-rename provenance so the
+    // periodic rename treats the new title as a person's choice and backs off.
+    delete state.sessionTitleAuto[sessionId];
     return trimmed || null;
   });
+  invalidateSessionsListCache();
+  return next;
+}
+
+/**
+ * Set a session title from the periodic auto-rename (chat-auto-rename.ts),
+ * recording provenance so a later rename knows it still owns the title while a
+ * person's manual rename (which clears the provenance via setSessionTitle) is
+ * left untouched. Pass an empty title to no-op.
+ */
+export async function setSessionTitleAuto(sessionId: string, title: string): Promise<string | null> {
+  const trimmed = title.trim();
+  if (!trimmed) return null;
+  const next = await updateState((state) => {
+    state.sessionTitles[sessionId] = trimmed;
+    state.sessionTitleAuto[sessionId] = trimmed;
+    return trimmed;
+  });
+  invalidateSessionsListCache();
+  return next;
 }
 
 /** Mark a session as archived in the Cave (does not touch the daemon row). */
@@ -333,14 +864,93 @@ export async function archiveSessionLocal(sessionId: string): Promise<string> {
   await updateState((state) => {
     state.sessionArchived[sessionId] = now;
   });
+  invalidateSessionsListCache();
   return now;
 }
 
-/** Restore a previously archived session in the Cave. */
+/** Restore a previously archived session in the Cave. Applies a short
+ *  auto-archive grace extension so an idle-based sweep doesn't immediately
+ *  re-archive the freshly summoned chat. */
 export async function summonSessionLocal(sessionId: string): Promise<void> {
   await updateState((state) => {
     delete state.sessionArchived[sessionId];
+    state.sessionArchiveExtendedUntil[sessionId] = extendUntilIso(
+      new Date(),
+      SUMMON_GRACE_DAYS,
+    );
   });
+  invalidateSessionsListCache();
+}
+
+/** Mark or unmark a session keep (never auto-archived). Manual archive still works. */
+export async function setSessionKeepLocal(sessionId: string, keep: boolean): Promise<boolean> {
+  await updateState((state) => {
+    if (keep) {
+      state.sessionKeep[sessionId] = new Date().toISOString();
+    } else {
+      delete state.sessionKeep[sessionId];
+    }
+  });
+  invalidateSessionsListCache();
+  return keep;
+}
+
+/** Push a session's auto-archive deadline out to `untilIso`. */
+export async function extendSessionAutoArchiveLocal(
+  sessionId: string,
+  untilIso: string,
+): Promise<string> {
+  await updateState((state) => {
+    state.sessionArchiveExtendedUntil[sessionId] = untilIso;
+  });
+  invalidateSessionsListCache();
+  return untilIso;
+}
+
+/**
+ * Archive a batch of sessions in one state write (auto-archive sweep).
+ * Sessions already archived or sacrificed are skipped. Returns the ids that
+ * were archived now, mapped to their shared archive timestamp.
+ *
+ * Deliberately does NOT invalidate the sessions-list cache: the sweeps run
+ * INSIDE the list compute and their result is already folded into the
+ * returned rows (applySweptRows); invalidating mid-compute would version-bump
+ * the entry away and leave the cache permanently cold.
+ */
+export async function autoArchiveSessionsLocal(
+  sessionIds: string[],
+): Promise<Map<string, string>> {
+  const archived = new Map<string, string>();
+  if (sessionIds.length === 0) return archived;
+  await updateState((state) => {
+    const now = new Date().toISOString();
+    for (const sessionId of sessionIds) {
+      if (state.sessionArchived[sessionId] || state.sessionSacrificed[sessionId]) continue;
+      state.sessionArchived[sessionId] = now;
+      archived.set(sessionId, now);
+    }
+  });
+  return archived;
+}
+
+/**
+ * Archive a batch of sessions whose pull requests just merged, recording each
+ * (session, PR) pair so the sweep is one-shot — summoning the chat later won't
+ * be undone by the next poll. Returns the archive timestamp used.
+ * Sweep-internal: no sessions-list cache invalidation (see
+ * autoArchiveSessionsLocal).
+ */
+export async function archiveSessionsForMergedPrs(
+  entries: Array<{ sessionId: string; prKey: string }>,
+): Promise<string> {
+  const at = new Date().toISOString();
+  await updateState((state) => {
+    for (const { sessionId, prKey } of entries) {
+      if (!state.sessionArchived[sessionId]) state.sessionArchived[sessionId] = at;
+      state.mergedPrAutoArchived[sessionId] = prKey;
+    }
+  });
+  return at;
 }
 
 /**
@@ -353,6 +963,7 @@ export async function sacrificeSessionLocal(sessionId: string): Promise<string> 
   await updateState((state) => {
     state.sessionSacrificed[sessionId] = now;
   });
+  invalidateSessionsListCache();
   return now;
 }
 
@@ -362,7 +973,8 @@ export async function upsertRoleConfig(
   familiar: string,
   active: boolean,
 ): Promise<void> {
-  const cfg = await loadConfig();
+  return withConfigLock(async () => {
+  const cfg = await loadConfigUnlocked();
   const now = new Date().toISOString();
   const idx = cfg.roles.findIndex(r => r.id === roleId && r.familiar === familiar);
   if (idx >= 0) {
@@ -371,5 +983,6 @@ export async function upsertRoleConfig(
     cfg.roles.push({ id: roleId, familiar, active, activatedAt: active ? now : undefined });
   }
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2), "utf8");
+  await writeJsonAtomic(CONFIG_PATH, cfg);
+  });
 }

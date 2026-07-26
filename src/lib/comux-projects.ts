@@ -17,6 +17,46 @@ export function projectName(root: string): string {
   return parts[parts.length - 1] ?? root;
 }
 
+/**
+ * Stable identity tint for a project's explorer icon tile. Deterministic from
+ * the root path — a project keeps the same colour across renders and sessions —
+ * so the Projects list reads like a set of distinct objects rather than a
+ * uniform monochrome stack. Moderate chroma + a fixed lightness keep every hue
+ * tasteful against both the dark and light themes; callers feed it to the
+ * `--tile` custom property the `.project-avatar` glass tile reads.
+ */
+export function projectTint(root: string): string {
+  let hash = 0;
+  for (let i = 0; i < root.length; i += 1) {
+    // Simple deterministic string hash (xorshift-ish, stays in uint32).
+    hash = (hash * 31 + root.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+  return `oklch(0.74 0.12 ${hue})`;
+}
+
+/**
+ * 1–2 char identity monogram for a project's tile. Splits the name on word
+ * boundaries (`-`, `_`, `/`, space, camelCase) and takes the initial of the
+ * first and last segments — so a prefix-heavy family like `coven-cave` /
+ * `coven-github` reads as `CC` / `CG` (recognisably "coven", distinct second
+ * letter) instead of a wall of identical single initials. Single-word names
+ * fall back to their first two letters. Always uppercase; non-alphanumerics are
+ * stripped so a leading "." or symbol never produces a blank tile.
+ */
+export function projectMonogram(name: string): string {
+  const segments = name
+    .replace(/([a-z])([A-Z])/g, "$1 $2") // split camelCase
+    .split(/[\s/_-]+/)
+    .map((s) => s.replace(/[^a-z0-9]/gi, ""))
+    .filter(Boolean);
+  if (segments.length === 0) return "•";
+  if (segments.length === 1) return segments[0].slice(0, 2).toUpperCase();
+  const first = segments[0][0];
+  const last = segments[segments.length - 1][0];
+  return (first + last).toUpperCase();
+}
+
 /** Strip trailing slashes so `/x/app` and `/x/app/` bucket as one project. */
 function normalizeRoot(root: string): string {
   const stripped = root.replace(/\\/g, "/").replace(/\/+$/, "");

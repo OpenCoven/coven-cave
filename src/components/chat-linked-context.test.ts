@@ -11,6 +11,7 @@ async function source(url: URL): Promise<string> {
 }
 
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const linkedWork = await source(new URL("./composer-linked-work-actions.tsx", import.meta.url));
 const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const conversationRoute = await readFile(new URL("../app/api/chat/conversation/[id]/route.ts", import.meta.url), "utf8");
@@ -78,14 +79,52 @@ assert.match(
 
 assert.match(
   chatView,
-  /function LinkedContextRow[\s\S]*const task = linkedContext\?\.task[\s\S]*const github = linkedContext\?\.github[\s\S]*github\.map[\s\S]*Open on GitHub/,
-  "ChatView should render task and GitHub context chips in the chat header",
+  /import \{ githubIcon, githubLabel, repoName \} from "@\/components\/composer-linked-work-actions"/,
+  "ChatView should keep only the GitHub label/icon helpers from the extracted linked-work module",
+);
+
+assert.doesNotMatch(
+  chatView,
+  /<ComposerLinkedWorkActions\b/,
+  "ChatView should route linked work through ComposerActionsMenu instead of mounting it directly",
+);
+
+// The 2026-07-21 "both" reconciliation keeps the footer band: the chip strip
+// (LinkedContextRow) rides it while the menu's linked-work group duplicates
+// the same flows as rows — both share useLinkedWorkController.
+assert.match(
+  chatView,
+  /className="cave-composer-footer-band">[\s\S]*?\{linkedContextRow\}/,
+  "ChatView should mount the linked-context strip in the composer footer band",
 );
 
 assert.match(
   chatView,
-  /onClick=\{\(\) => onOpenTask\(task\.id\)\}/,
-  "Clicking the linked task chip should emit the task id",
+  /<ComposerActionsMenu[\s\S]*?linkedWork=\{\{[\s\S]*?linkedContext,[\s\S]*?onLinkedContextChange:\s*setLinkedContext/,
+  "ChatView should supply linked context to the grouped composer actions",
+);
+
+assert.match(
+  linkedWork,
+  /export function compactGitHubContextLabel\(item: ChatLinkedContext\["github"\]\[number\]\)[\s\S]*repoName\(item\.repo\)[\s\S]*item\.number \? `\$\{repo\} #\$\{item\.number\}` : repo/,
+  "GitHub linked-work rows should still show compact repo names instead of repeating full owner/repo labels",
+);
+
+assert.match(
+  linkedWork,
+  /<PopoverItem[\s\S]*icon="ph:plus"[\s\S]*title="Link a task to this chat"/,
+  "The extracted linked-work actions should keep the link-task affordance and its accessible copy",
+);
+
+assert.match(
+  linkedWork,
+  /onSelect=\{\(\) => \{\s*onCloseMenu\?\.\(\);\s*onOpenTask\?\.\(t\.id\);/,
+  "Selecting a linked task row should emit the task id",
+);
+assert.match(
+  linkedWork,
+  /title=\{`Open task: \$\{t\.title\}`\}/,
+  "Linked task rows should keep a stable descriptive title for navigation and hover affordance",
 );
 
 assert.match(
@@ -101,18 +140,42 @@ assert.match(
 // stranded the user on the chat list instead of the task's board inspector.
 assert.match(
   workspace,
-  /modeRef\.current === "chat" && !window\.location\.hash\) showFamiliarChatList\(\)/,
+  /modeRef\.current === "chat" && !window\.location\.hash\) \{\s*showFamiliarChatList\(\)/,
   "Workspace popstate must only show the chat list on an empty hash, so the task chip's #card- navigation isn't hijacked back to the list",
 );
 
 assert.match(
   chatView,
-  /historyState === "loading"[\s\S]*Loading chat history/,
-  "ChatView should not show an empty new-chat state while an existing chat history is loading",
+  /historyState === "loading"[\s\S]*ChatHistorySkeleton/,
+  "ChatView should show a message-shaped skeleton (not an empty new-chat state) while an existing chat history is loading",
 );
 
 assert.match(
   chatView,
   /historyState === "missing"[\s\S]*Chat history unavailable/,
   "ChatView should make missing history visible instead of silently opening a blank chat",
+);
+
+assert.match(
+  chatView,
+  /function isFlowBackedSession\(session: SessionRow \| null \| undefined\)/,
+  "ChatView should explicitly detect sessions created by flow execution",
+);
+
+assert.match(
+  chatView,
+  /fetch\(`\/api\/flows\/session-transcript\?\$\{params\.toString\(\)\}`/,
+  "ChatView should query the flow transcript endpoint when a flow session has no saved chat conversation",
+);
+
+assert.match(
+  chatView,
+  /const cleanedTranscript = transcript \? stripStepMarkers\(transcript\) : ""[\s\S]*setFlowTranscriptFallback\(cleanedTranscript\)/,
+  "ChatView should render scrubbed flow output instead of the generic missing-history card",
+);
+
+assert.match(
+  chatView,
+  /title=\{flowBackedSession \? "Flow output unavailable" : "Chat history unavailable"\}/,
+  "Flow-backed sessions with no transcript should show a flow-specific fallback message",
 );

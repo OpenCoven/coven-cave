@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { Familiar } from "@/lib/types";
 import { useDateTimePrefs, readDateTimePrefs } from "@/lib/datetime-format";
+import { Icon } from "@/lib/icon";
+import { useAnnouncer } from "@/components/ui/live-region";
+import type { CardPatch } from "@/lib/board-card-ops";
 
 type ProjectLike = { id: string; name: string };
 
@@ -14,15 +17,62 @@ type Props = {
   selectedCardId: string | null;
   onSelect: (id: string) => void;
   /** Persist a card change — used to drag a bar to reschedule its dates. */
-  onPatch?: (id: string, patch: Partial<Card>) => void;
+  onPatch?: (id: string, patch: CardPatch) => void;
+  /**
+   * "project" (default): one bar per scheduled task, grouped by project.
+   * "task": one group per task, one bar per checklist step (using step dates,
+   * falling back to the task's own range for undated steps).
+   */
+  groupMode?: "project" | "task" | "familiar";
 };
 
-type ScheduledCard = { card: Card; start: Date; end: Date };
-type Group = { key: string; name: string; tasks: ScheduledCard[]; firstStart: number };
 type GanttCategory = "done" | "in-progress" | "pending" | "at-risk";
 
-const DAY_W = 22; // px per day column — keep in sync with --cg-day in board.css
-const LEFT_W = 416; // sum of the left table columns — keep in sync with .cg-left
+// A single timeline bar. In project mode it's a task; in task mode it's a step.
+type GanttRow = {
+  rowId: string;        // unique within the chart
+  cardId: string;       // the task this row belongs to (selected on click)
+  stepId?: string;      // set in task mode — the step this bar drags/patches
+  label: string;
+  start: Date;
+  end: Date;
+  category: GanttCategory;
+  /** Per-familiar bar colour, set only when grouping by familiar. */
+  color?: string;
+  /** Attachment count on the underlying card (task rows only). */
+  attachmentCount?: number;
+  /**
+   * Task mode only: the step had no dates of its own, so its position is an
+   * equal slice of the task's range (a waterfall by step order) rather than a
+   * real schedule. Rendered de-emphasised; dragging promotes it to real dates.
+   */
+  inferred?: boolean;
+};
+type Group = { key: string; name: string; rows: GanttRow[]; firstStart: number };
+
+const ZOOM_DAY_W = { day: 22, week: 11, month: 5 } as const; // px per day column at each zoom
+type GanttZoom = keyof typeof ZOOM_DAY_W;
+// Each zoom sets the column scale (px/day). Compact single-letter buttons keep
+// the control narrow; the full word + what it does live in the title/aria so
+// "D/W/M" next to the magnifier still reads as a timeline zoom.
+const ZOOM_LABELS: Array<[GanttZoom, string, string, string]> = [
+  ["day", "Day", "D", "Zoom in — one fat column per day"],
+  ["week", "Week", "W", "Medium zoom — a week spans the view"],
+  ["month", "Month", "M", "Zoom out — months fit on screen"],
+];
+// Pinch / ⌘-scroll zooms continuously between these bounds; D/W/M snap to presets.
+const DAY_W_MIN = 2; // zoomed out — months at a glance
+const DAY_W_MAX = 64; // zoomed in — a fat column per day
+const clampDayW = (w: number) => Math.max(DAY_W_MIN, Math.min(DAY_W_MAX, w));
+const LEFT_W = 442; // sum of the left table columns (300+58+58+26) — keep in sync with .cg-left
+// Status-filter chips: [category, short chip label, full status names]. Labels
+// match the legend's actual-status wording (Running/Blocked, not In Progress).
+const CATEGORY_CHIPS: Array<[GanttCategory, string, string]> = [
+  ["done", "Done", "Done"],
+  ["in-progress", "Running", "Running"],
+  ["pending", "Pending", "Backlog · Inbox · Review"],
+  ["at-risk", "Blocked", "Blocked"],
+];
 
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -44,6 +94,17 @@ function addDays(d: Date, n: number): Date {
   const x = new Date(d);
   x.setUTCDate(x.getUTCDate() + n);
   return x;
+}
+
+type DragMode = "move" | "resize-start" | "resize-end";
+
+// Clamp a drag delta so a resize can never invert the bar — the moving edge
+// stops one day short of the fixed edge (minimum 1-day duration). "move" is
+// unbounded (the whole bar slides freely).
+function clampDelta(mode: DragMode, delta: number, dur: number): number {
+  if (mode === "resize-start") return Math.min(delta, dur - 1); // start can't pass end
+  if (mode === "resize-end") return Math.max(delta, -(dur - 1)); // end can't pass start
+  return delta;
 }
 
 /** YYYY-MM-DD in UTC — the board's date storage format. */
@@ -79,196 +140,702 @@ function statusCategory(status: CardStatus): GanttCategory {
   return "pending"; // backlog · inbox · review
 }
 
-export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelect, onPatch }: Props) {
+// A card's own date range; start/end fall back to each other. null if neither.
+function cardRange(card: Card): { start: Date; end: Date } | null {
+  const s = parseDate(card.startDate);
+  const e = parseDate(card.endDate);
+  if (!s && !e) return null;
+  const a = s ?? e!;
+  const b = e ?? s!;
+  return a <= b ? { start: a, end: b } : { start: b, end: a };
+}
+
+export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelect, onPatch, groupMode = "project" }: Props) {
+  const { announce } = useAnnouncer();
+  // Click a group header to focus it (hide the others); click again to show all.
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [showUnscheduled, setShowUnscheduled] = useState(false);
+  // Status-category filter: chips toggle whole categories off so a busy
+  // timeline can be narrowed (e.g. only Blocked) or de-cluttered (hide Done).
+  const [hiddenCats, setHiddenCats] = useState<Set<GanttCategory>>(() => new Set());
+  const toggleCat = (cat: GanttCategory) =>
+    setHiddenCats((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  // Drag an undated task from the tray onto the timeline to schedule it. dropDay
+  // is the day-offset under the cursor while dragging (drives a drop-hint line).
+  const [dropDay, setDropDay] = useState<number | null>(null);
   // "Today" depends on the clock, so resolve it after mount to avoid an SSR
   // hydration mismatch — the line just isn't drawn on the first client render.
   const [todayMs, setTodayMs] = useState<number | null>(null);
   useEffect(() => setTodayMs(Date.now()), []);
   useDateTimePrefs();
+  // Timeline scale = px per day. Continuous — pinch or ⌘-scroll resizes it (see
+  // the wheel handler below); the D/W/M buttons snap to presets. Persisted so the
+  // zoom level survives reloads.
+  const [DAY_W, setDayWRaw] = useState<number>(() => {
+    if (typeof window === "undefined") return ZOOM_DAY_W.day;
+    const v = Number(window.localStorage.getItem("cave:board:ganttDayW"));
+    return Number.isFinite(v) && v >= DAY_W_MIN && v <= DAY_W_MAX ? v : ZOOM_DAY_W.day;
+  });
+  const setDayW = (w: number) => setDayWRaw(clampDayW(w));
+  useEffect(() => {
+    try { window.localStorage.setItem("cave:board:ganttDayW", String(DAY_W)); } catch { /* ignore */ }
+  }, [DAY_W]);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Latest scale for the (mount-only) wheel listener, avoiding a stale closure.
+  const dayWRef = useRef(DAY_W);
+  dayWRef.current = DAY_W;
 
-  // Drag-to-reschedule: while a bar is dragged we track the live day delta and
-  // shift the bar visually; the actual patch lands once on pointer-up.
+  // Drag a bar to reschedule it: grab the middle to MOVE both dates together,
+  // or grab a left/right edge handle to RESIZE one end — changing the start or
+  // end date independently. While dragging we track the live day delta and
+  // reshape the bar visually; the actual patch lands once on pointer-up.
   const draggable = !!onPatch;
-  const [drag, setDrag] = useState<{ id: string; deltaDays: number } | null>(null);
-  const dragRef = useRef<{ id: string; startX: number; moved: boolean } | null>(null);
+  const [drag, setDrag] = useState<{ id: string; mode: DragMode; deltaDays: number } | null>(null);
+  const dragRef = useRef<{ id: string; mode: DragMode; startX: number; moved: boolean } | null>(null);
+  // Keyboard reschedule (←/→ on a focused bar) accumulates consecutive presses
+  // into ONE patch — committing per keystroke would fire a write + an undo
+  // entry on every tap. kbShift drives the same live preview as a pointer drag;
+  // the pending shift flushes on idle, blur, or Escape.
+  const [kbShift, setKbShift] = useState<{ rowId: string; mode: DragMode; delta: number } | null>(null);
+  const kbShiftRef = useRef<{ row: GanttRow; mode: DragMode; delta: number } | null>(null);
+  const kbTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Suppresses the row's select-click that would otherwise fire after a drag.
   const suppressClickRef = useRef(false);
+  // Center the timeline on "today" the first time it opens, so a long project
+  // doesn't open scrolled to its earliest task. The scroll geometry is computed
+  // below the empty-state early return, so render assigns the scroller into this
+  // ref and the effect (declared above the return) calls through it.
+  const didAutoCenterRef = useRef(false);
+  const centerOnTodayRef = useRef<() => boolean>(() => false);
 
-  const beginDrag = (e: React.PointerEvent, cardId: string) => {
+  const beginDrag = (e: React.PointerEvent, rowId: string, mode: DragMode) => {
     if (!draggable) return;
     // Don't preventDefault — that would also swallow the click we rely on to
-    // select a bar that was tapped (not dragged).
+    // select a bar that was tapped (not dragged). stopPropagation keeps an
+    // edge-handle press from also starting the bar's move-drag.
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = { id: cardId, startX: e.clientX, moved: false };
-    setDrag({ id: cardId, deltaDays: 0 });
+    dragRef.current = { id: rowId, mode, startX: e.clientX, moved: false };
+    setDrag({ id: rowId, mode, deltaDays: 0 });
   };
   const moveDrag = (e: React.PointerEvent) => {
     const d = dragRef.current;
     if (!d) return;
     const dx = e.clientX - d.startX;
     if (Math.abs(dx) > 3) d.moved = true;
-    setDrag({ id: d.id, deltaDays: Math.round(dx / DAY_W) });
+    setDrag({ id: d.id, mode: d.mode, deltaDays: Math.round(dx / DAY_W) });
   };
-  const endDrag = (e: React.PointerEvent, card: Card) => {
+  // Apply a day-shift to a row in the given mode, persisting via onPatch.
+  // Shared by pointer drag-end and keyboard reschedule.
+  const commitShift = (row: GanttRow, mode: DragMode, rawDelta: number) => {
+    if (!onPatch) return;
+    const dur = daysBetween(row.start, row.end) + 1;
+    const delta = clampDelta(mode, rawDelta, dur);
+    if (delta === 0) return;
+    const card = cards.find((c) => c.id === row.cardId);
+    if (!card) return;
+    const newStart = fmtISO(addDays(row.start, delta));
+    const newEnd = fmtISO(addDays(row.end, delta));
+    const curStart = fmtISO(row.start);
+    const curEnd = fmtISO(row.end);
+    // Resolve the new {start,end} for the shifted mode.
+    const next =
+      mode === "move" ? { startDate: newStart, endDate: newEnd }
+      : mode === "resize-start" ? { startDate: newStart, endDate: curEnd }
+      : { startDate: curStart, endDate: newEnd };
+    if (row.stepId) {
+      // Task mode: write this step's dates (promoting a card-range fallback to
+      // explicit dates), leaving the other steps untouched.
+      onPatch(row.cardId, {
+        ops: {
+          stepOps: [
+            { op: "setDate", id: row.stepId, field: "startDate", value: next.startDate },
+            { op: "setDate", id: row.stepId, field: "endDate", value: next.endDate },
+          ],
+        },
+      });
+      // Step reschedules bypass board-view's card-level reschedule announcement
+      // — without this, a keyboard ←/→ commit is silent for AT.
+      announce(`Rescheduled '${row.label}': ${formatLabel(addDays(row.start, mode === "resize-end" ? 0 : delta))} to ${formatLabel(addDays(row.end, mode === "resize-start" ? 0 : delta))}.`);
+    } else {
+      // Project mode: a move shifts whichever of the task's own dates are set;
+      // a resize sets the dragged end explicitly.
+      const patch: Partial<Card> = {};
+      if (mode === "move") {
+        if (parseDate(card.startDate)) patch.startDate = newStart;
+        if (parseDate(card.endDate)) patch.endDate = newEnd;
+      } else if (mode === "resize-start") {
+        patch.startDate = newStart;
+      } else {
+        patch.endDate = newEnd;
+      }
+      if (patch.startDate || patch.endDate) onPatch(row.cardId, patch);
+    }
+  };
+  const endDrag = (row: GanttRow) => {
     const d = dragRef.current;
     const active = drag;
     dragRef.current = null;
     setDrag(null);
     if (!d) return;
     if (d.moved) suppressClickRef.current = true; // swallow the trailing click
-    const delta = active?.deltaDays ?? 0;
-    if (d.moved && delta !== 0 && onPatch) {
-      const patch: Partial<Card> = {};
-      const s = parseDate(card.startDate);
-      const en = parseDate(card.endDate);
-      if (s) patch.startDate = fmtISO(addDays(s, delta));
-      if (en) patch.endDate = fmtISO(addDays(en, delta));
-      if (patch.startDate || patch.endDate) onPatch(card.id, patch);
-    }
+    if (d.moved) commitShift(row, d.mode, active?.deltaDays ?? 0);
   };
 
-  const scheduled: ScheduledCard[] = [];
-  const unscheduled: Card[] = [];
-  for (const card of cards) {
-    const startDate = parseDate(card.startDate);
-    const endDate = parseDate(card.endDate);
-    if (!startDate && !endDate) {
-      unscheduled.push(card);
-      continue;
+  // Commit the accumulated keyboard shift (if any) as a single patch.
+  const flushKbShift = () => {
+    if (kbTimerRef.current) { clearTimeout(kbTimerRef.current); kbTimerRef.current = null; }
+    const pending = kbShiftRef.current;
+    kbShiftRef.current = null;
+    setKbShift(null);
+    if (pending && pending.delta !== 0) commitShift(pending.row, pending.mode, pending.delta);
+  };
+  // Add one arrow-key step to the running shift for this row+mode, restarting
+  // (and flushing the prior) if the target row or mode changed.
+  const pushKbShift = (row: GanttRow, mode: DragMode, dir: number) => {
+    const cur = kbShiftRef.current;
+    if (cur && (cur.row.rowId !== row.rowId || cur.mode !== mode)) {
+      commitShift(cur.row, cur.mode, cur.delta); // different target — commit the old one now
+      kbShiftRef.current = null;
     }
-    const start = startDate ?? endDate!;
-    const end = endDate ?? startDate!;
-    scheduled.push({ card, start: start <= end ? start : end, end: start <= end ? end : start });
-  }
+    const base = kbShiftRef.current?.delta ?? 0;
+    const next = { row, mode, delta: base + dir };
+    kbShiftRef.current = next;
+    setKbShift({ rowId: row.rowId, mode, delta: next.delta });
+    if (kbTimerRef.current) clearTimeout(kbTimerRef.current);
+    kbTimerRef.current = setTimeout(flushKbShift, 350);
+  };
+  // Drop the pending timer on unmount (the shift itself is best-effort).
+  useEffect(() => () => { if (kbTimerRef.current) clearTimeout(kbTimerRef.current); }, []);
 
-  if (scheduled.length === 0) {
+  const ownerName = useCallback(
+    (id: string | null): string =>
+      (id ? familiars?.find((f) => f.id === id)?.display_name : undefined) ?? "—",
+    [familiars],
+  );
+  const projectName = useCallback(
+    (id: string | null | undefined): string =>
+      (id ? projects?.find((p) => p.id === id)?.name : undefined) ?? "No project",
+    [projects],
+  );
+  // A stable per-familiar colour for by-familiar bars: the familiar's own
+  // colour when set, otherwise a hue derived from its id so distinct familiars
+  // stay visually distinct. Unassigned rows keep their status colour.
+  const familiarColor = useCallback(
+    (id: string | null): string | undefined => {
+      if (!id) return undefined;
+      const set = familiars?.find((f) => f.id === id)?.color;
+      if (set) return set;
+      let h = 0;
+      for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
+      return `hsl(${h} 52% 52%)`;
+    },
+    [familiars],
+  );
+
+  // Build the grouped row model. Memoised so a drag/keyboard reschedule (which
+  // re-renders on every pointer move) doesn't rebuild and re-sort every group.
+  const { groups, allRows, unscheduledCards } = useMemo(() => {
+    const groups: Group[] = [];
+    const placedCardIds = new Set<string>();
+
+    if (groupMode === "task") {
+      // One group per task; one bar per step. A step with its own dates uses
+      // them; an undated step is laid out as an equal slice of the task's range
+      // (a waterfall in step order) so undated steps no longer all collapse
+      // onto the full range as identical, overlapping bars.
+      for (const card of cards) {
+        const steps = card.steps ?? [];
+        if (steps.length === 0) continue;
+        const cr = cardRange(card);
+        const rangeDays = cr ? daysBetween(cr.start, cr.end) + 1 : 0;
+        const n = steps.length;
+        const rows: GanttRow[] = [];
+        steps.forEach((step, i) => {
+          let s = parseDate(step.startDate);
+          let e = parseDate(step.endDate);
+          let inferred = false;
+          if (!s && !e) {
+            if (!cr) return; // no step dates and no task range — can't place it
+            inferred = true;
+            // Contiguous equal slice for step i of n across the task range.
+            const sliceStart = Math.floor((i * rangeDays) / n);
+            const sliceEndExcl = Math.floor(((i + 1) * rangeDays) / n);
+            s = addDays(cr.start, sliceStart);
+            e = addDays(cr.start, Math.max(sliceStart, sliceEndExcl - 1));
+          }
+          const a = s ?? e!;
+          const b = e ?? s!;
+          rows.push({
+            rowId: `${card.id}:${step.id}`,
+            cardId: card.id,
+            stepId: step.id,
+            label: step.text,
+            start: a <= b ? a : b,
+            end: a <= b ? b : a,
+            category: step.done ? "done" : statusCategory(card.status),
+            inferred,
+          });
+        });
+        if (rows.length === 0) continue;
+        placedCardIds.add(card.id);
+        groups.push({ key: card.id, name: card.title, rows, firstStart: Math.min(...rows.map((r) => r.start.getTime())) });
+      }
+    } else {
+      // One group per project (or familiar); one bar per scheduled task.
+      const byFamiliar = groupMode === "familiar";
+      const groupMap = new Map<string, Group>();
+      for (const card of cards) {
+        const cr = cardRange(card);
+        if (!cr) continue;
+        placedCardIds.add(card.id);
+        const key = byFamiliar ? (card.familiarId ?? "__unassigned__") : (card.projectId ?? "__none__");
+        let group = groupMap.get(key);
+        if (!group) {
+          const name = byFamiliar
+            ? (card.familiarId ? ownerName(card.familiarId) : "Unassigned")
+            : projectName(card.projectId);
+          group = { key, name, rows: [], firstStart: cr.start.getTime() };
+          groupMap.set(key, group);
+        }
+        group.rows.push({
+          rowId: card.id,
+          cardId: card.id,
+          label: card.title,
+          start: cr.start,
+          end: cr.end,
+          category: statusCategory(card.status),
+          color: byFamiliar ? (familiarColor(card.familiarId) ?? "var(--text-muted)") : undefined,
+          attachmentCount: card.attachments?.length || undefined,
+        });
+        group.firstStart = Math.min(group.firstStart, cr.start.getTime());
+      }
+      groups.push(...groupMap.values());
+    }
+
+    groups.sort((a, b) => a.firstStart - b.firstStart);
+    for (const g of groups) {
+      g.rows.sort((a, b) => a.start.getTime() - b.start.getTime() || a.end.getTime() - b.end.getTime());
+    }
+
+    return {
+      groups,
+      allRows: groups.flatMap((g) => g.rows),
+      unscheduledCards: cards.filter((c) => !placedCardIds.has(c.id)),
+    };
+  }, [cards, groupMode, ownerName, projectName, familiarColor]);
+  const unscheduledCount = unscheduledCards.length;
+
+  // A selected card without dates lives only in the (default-closed)
+  // unscheduled tray, so the BoardView view-switch scroll pass would find no
+  // node for it (cave-iote). Reveal the tray whenever the selection lands on
+  // an unscheduled card; a manual re-collapse afterwards is left alone.
+  const selectedUnscheduled =
+    selectedCardId !== null && unscheduledCards.some((c) => c.id === selectedCardId);
+  useEffect(() => {
+    if (selectedUnscheduled) setShowUnscheduled(true);
+  }, [selectedUnscheduled]);
+
+  // Auto-center on today once the timeline can be drawn (keyed on the clock +
+  // zoom). centerOnTodayRef is assigned during render below; retry until it
+  // succeeds (scroller mounted, today in range), then latch so we never fight a
+  // manual scroll. Declared above the empty-state early return to keep hook order stable.
+  useEffect(() => {
+    if (didAutoCenterRef.current) return;
+    if (centerOnTodayRef.current()) didAutoCenterRef.current = true;
+  }, [todayMs, DAY_W, allRows.length]);
+
+  // Pinch / ⌘-scroll to zoom the timeline, anchored at the cursor (the day under
+  // the pointer stays put). A native non-passive listener so we can preventDefault
+  // the browser's page-zoom; plain scroll is left alone (it pans/scrolls the
+  // timeline natively — vertical when rows overflow, horizontal across days).
+  // Re-runs when the row count crosses zero: the empty state renders no scroller,
+  // so a mount-only ([]) effect grabbed a null ref and zoom never attached once
+  // data arrived.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      // Pinch (ctrlKey) or ⌘-scroll (metaKey) zooms; plain wheel gestures pan.
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const prev = dayWRef.current;
+      const next = clampDayW(prev * Math.exp(-e.deltaY * 0.0025));
+      if (next === prev) return;
+      const cursorX = e.clientX - el.getBoundingClientRect().left; // px within the scroller
+      const dayUnderCursor = (el.scrollLeft + cursorX - LEFT_W) / prev;
+      setDayWRaw(next);
+      // Re-anchor once the new width lays out so the day stays under the cursor.
+      requestAnimationFrame(() => {
+        el.scrollLeft = dayUnderCursor * next - (cursorX - LEFT_W);
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [allRows.length === 0]);
+
+  // Quick-schedule presets for undated tasks: drop a task onto this/next week
+  // (Mon–Sun) without opening the date pickers.
+  const schedulePreset = (cardId: string, weeksAhead: number) => {
+    if (!onPatch || todayMs === null) return;
+    const now = new Date(todayMs);
+    const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const start = addDays(startOfWeekMon(todayUtc), weeksAhead * 7);
+    const end = addDays(start, 6);
+    onPatch(cardId, { startDate: fmtISO(start), endDate: fmtISO(end) });
+  };
+
+  // The tasks the timeline can't place (no dates / no scheduled steps) used to
+  // be a dead-end count; make it an expandable tray so they can be scheduled.
+  const unscheduledTray =
+    unscheduledCount === 0 ? null : (
+      <div className="board-gantt-unscheduled">
+        <button
+          type="button"
+          onClick={() => setShowUnscheduled((v) => !v)}
+          aria-expanded={showUnscheduled}
+          className="[display:inline-flex]! [align-items:center]! [gap:6px]! [background:none]! [border:none]! [color:inherit]! [cursor:pointer]! [font:inherit]!"
+        >
+          <span aria-hidden>{showUnscheduled ? "▾" : "▸"}</span>
+          {unscheduledCount} task{unscheduledCount === 1 ? "" : "s"} {groupMode === "task" ? "without scheduled steps" : "without dates"}
+        </button>
+        {showUnscheduled ? (
+          <ul className="[list-style:none]! [margin:6px_0_0]! [padding:0]! [display:flex]! [flex-direction:column]! [gap:var(--space-1)]!">
+            {unscheduledCards.map((c) => (
+              <li key={c.id} data-card-id={c.id} className="[display:flex]! [flex-wrap:wrap]! [align-items:center]! [gap:var(--space-2)]!">
+                <button
+                  type="button"
+                  draggable={!!onPatch}
+                  onDragStart={(e) => { e.dataTransfer.setData("text/cave-gantt-card", c.id); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragEnd={() => setDropDay(null)}
+                  onClick={() => onSelect(c.id)}
+                  title={onPatch ? "Open task · drag onto the timeline to schedule" : "Open task"}
+                  style={{ flex: 1, minWidth: 120, textAlign: "left", background: "none", border: "none", color: "var(--text-secondary)", cursor: onPatch ? "grab" : "pointer", font: "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                >{c.title}</button>
+                <span className="[font-size:var(--text-xs)]! [color:var(--text-muted)]!">{ownerName(c.familiarId)}</span>
+                {onPatch ? (
+                  <span className="[display:inline-flex]! [align-items:center]! [gap:6px]! [flex-wrap:wrap]!">
+                    <button type="button" className="cg-preset-btn" disabled={todayMs === null} onClick={() => schedulePreset(c.id, 0)} title="Schedule Mon–Sun this week">This week</button>
+                    <button type="button" className="cg-preset-btn" disabled={todayMs === null} onClick={() => schedulePreset(c.id, 1)} title="Schedule Mon–Sun next week">Next week</button>
+                    <input type="date" aria-label={`Start date for ${c.title}`} value={c.startDate ?? ""} onChange={(e) => onPatch(c.id, { startDate: e.target.value || null })} className="[font-size:var(--text-xs)]! [padding:1px_var(--space-1)]! [border-radius:4px]! [border:1px_solid_var(--border-hairline)]! [background:var(--bg-base)]! [color:var(--text-secondary)]!" />
+                    <span aria-hidden className="[color:var(--text-muted)]!">→</span>
+                    <input type="date" aria-label={`End date for ${c.title}`} value={c.endDate ?? ""} onChange={(e) => onPatch(c.id, { endDate: e.target.value || null })} className="[font-size:var(--text-xs)]! [padding:1px_var(--space-1)]! [border-radius:4px]! [border:1px_solid_var(--border-hairline)]! [background:var(--bg-base)]! [color:var(--text-secondary)]!" />
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    );
+
+  if (allRows.length === 0) {
     return (
       <div className="board-gantt board-gantt--empty">
-        <p>No tasks have start and end dates yet.</p>
-        {unscheduled.length > 0 ? (
-          <span>{unscheduled.length} task{unscheduled.length === 1 ? "" : "s"} without dates</span>
-        ) : null}
+        <p>{groupMode === "task" ? "No tasks have steps with dates yet." : "No tasks have start and end dates yet."}</p>
+        {unscheduledTray}
       </div>
     );
   }
 
-  const ownerName = (id: string | null): string =>
-    (id ? familiars?.find((f) => f.id === id)?.display_name : undefined) ?? "—";
-  const projectName = (id: string | null | undefined): string =>
-    (id ? projects?.find((p) => p.id === id)?.name : undefined) ?? "No project";
+  // Focus: when a group is clicked, render only it (range stays global so bars don't jump).
+  const focused = focusedKey && groups.some((g) => g.key === focusedKey) ? focusedKey : null;
+  // Apply the focus narrowing, then drop bars whose status category is filtered
+  // out. The timeline range stays global (computed from all rows) so bars don't
+  // jump when chips toggle.
+  const visibleGroups = (focused ? groups.filter((g) => g.key === focused) : groups)
+    .map((g) => (hiddenCats.size ? { ...g, rows: g.rows.filter((r) => !hiddenCats.has(r.category)) } : g))
+    .filter((g) => g.rows.length > 0);
 
-  // Group scheduled tasks by project, each group sorted by start date.
-  const groupMap = new Map<string, Group>();
-  for (const item of scheduled) {
-    const key = item.card.projectId ?? "__none__";
-    let group = groupMap.get(key);
-    if (!group) {
-      group = { key, name: projectName(item.card.projectId), tasks: [], firstStart: item.start.getTime() };
-      groupMap.set(key, group);
-    }
-    group.tasks.push(item);
-    group.firstStart = Math.min(group.firstStart, item.start.getTime());
-  }
-  const groups = [...groupMap.values()].sort((a, b) => a.firstStart - b.firstStart);
-  for (const g of groups) {
-    g.tasks.sort((a, b) => a.start.getTime() - b.start.getTime() || a.end.getTime() - b.end.getTime());
-  }
-
-  const min = new Date(Math.min(...scheduled.map((i) => i.start.getTime())));
-  const max = new Date(Math.max(...scheduled.map((i) => i.end.getTime())));
-  const rangeStart = startOfWeekMon(min);
+  const min = new Date(Math.min(...allRows.map((r) => r.start.getTime())));
+  const max = new Date(Math.max(...allRows.map((r) => r.end.getTime())));
+  // Anchor the timeline on the earliest task itself so the first bar sits flush
+  // against the left edge. Snapping back to that week's Monday left a near-empty
+  // leading column whenever the first task started late in its week.
+  const rangeStart = new Date(Date.UTC(min.getUTCFullYear(), min.getUTCMonth(), min.getUTCDate()));
   const rangeEnd = addDays(startOfWeekMon(max), 7); // complete the final week
   const totalDays = Math.max(7, daysBetween(rangeStart, rangeEnd));
   const timelineW = totalDays * DAY_W;
 
   const weeks: Array<{ left: number; width: number; label: string }> = [];
   for (let i = 0; i < totalDays; i += 7) {
-    weeks.push({ left: i * DAY_W, width: 7 * DAY_W, label: `Week ${isoWeek(addDays(rangeStart, i))}` });
+    // Clamp the trailing column: the range no longer ends on a week boundary.
+    weeks.push({ left: i * DAY_W, width: Math.min(7, totalDays - i) * DAY_W, label: `Week ${isoWeek(addDays(rangeStart, i))}` });
+  }
+
+  // Month band above the week ruler so "Week N" has calendar context.
+  const monthFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+  const months: Array<{ key: number; left: number; width: number; label: string }> = [];
+  for (
+    let m = new Date(Date.UTC(rangeStart.getUTCFullYear(), rangeStart.getUTCMonth(), 1));
+    daysBetween(rangeStart, m) < totalDays;
+    m = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 1))
+  ) {
+    const next = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 1));
+    const startDays = Math.max(0, daysBetween(rangeStart, m));
+    const endDays = Math.min(totalDays, daysBetween(rangeStart, next));
+    if (endDays > startDays) {
+      months.push({ key: m.getTime(), left: startDays * DAY_W, width: (endDays - startDays) * DAY_W, label: monthFmt.format(m) });
+    }
   }
 
   let todayX: number | null = null;
-  if (todayMs !== null) {
-    const now = new Date(todayMs);
-    const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const offset = daysBetween(rangeStart, todayUtc);
+  // UTC midnight of "today" — also used to flag overdue bars (end before today).
+  const todayStartMs =
+    todayMs === null
+      ? null
+      : Date.UTC(new Date(todayMs).getUTCFullYear(), new Date(todayMs).getUTCMonth(), new Date(todayMs).getUTCDate());
+  if (todayStartMs !== null) {
+    const offset = daysBetween(rangeStart, new Date(todayStartMs));
     if (offset >= 0 && offset <= totalDays) todayX = offset * DAY_W + DAY_W / 2;
   }
 
+  // Weekend shading + today-column tint are painted into the track background
+  // via CSS vars (avoids stacking issues). Shift the 2-day weekend band so it
+  // lands on Sat/Sun given the (arbitrary) range start.
+  const weekendShiftPx = ((6 - rangeStart.getUTCDay() + 7) % 7) * DAY_W;
+  const todayColLeftPx = todayX === null ? -9999 : todayX - DAY_W / 2;
+
+  // Scroll the timeline so today sits in the middle of the viewport. Returns
+  // whether it actually scrolled (used by the auto-center effect to know when
+  // the scroller is ready and latch).
+  const scrollToToday = (): boolean => {
+    const el = scrollRef.current;
+    if (!el || todayX === null || el.clientWidth === 0) return false;
+    el.scrollLeft = Math.max(0, LEFT_W + todayX - el.clientWidth / 2);
+    return true;
+  };
+  centerOnTodayRef.current = scrollToToday;
+
+  // Drag-from-tray: map the cursor's x (within the scrolled timeline, minus the
+  // sticky left table) to a day-offset in range.
+  const dayFromClientX = (clientX: number): number | null => {
+    const el = scrollRef.current;
+    if (!el) return null;
+    const xInTimeline = clientX - el.getBoundingClientRect().left + el.scrollLeft - LEFT_W;
+    if (xInTimeline < 0) return null;
+    return Math.max(0, Math.min(totalDays - 1, Math.floor(xInTimeline / DAY_W)));
+  };
+  const onTimelineDragOver = (e: React.DragEvent) => {
+    if (!onPatch || !e.dataTransfer.types.includes("text/cave-gantt-card")) return;
+    e.preventDefault(); // allow the drop
+    setDropDay(dayFromClientX(e.clientX));
+  };
+  const onTimelineDrop = (e: React.DragEvent) => {
+    const cardId = e.dataTransfer.getData("text/cave-gantt-card");
+    setDropDay(null);
+    if (!onPatch || !cardId) return;
+    e.preventDefault();
+    const day = dayFromClientX(e.clientX);
+    if (day === null) return;
+    const date = fmtISO(addDays(rangeStart, day));
+    onPatch(cardId, { startDate: date, endDate: date });
+  };
+
   return (
     <div className="board-gantt">
-      <div className="board-gantt__scroll">
-        <div className="cg" style={{ ["--cg-day" as string]: `${DAY_W}px`, ["--cg-tl" as string]: `${timelineW}px` }}>
-          {/* Header: left column titles + week band */}
+      <div className="cg-controls [display:flex]! [gap:var(--space-2)]! [align-items:center]! [justify-content:flex-end]! [flex-wrap:wrap]! [padding:2px_var(--space-2)_6px]!">
+        <div className="cg-filter" role="group" aria-label="Filter by status">
+          {CATEGORY_CHIPS.map(([cat, label, full]) => {
+            const off = hiddenCats.has(cat);
+            return (
+              <button
+                key={cat}
+                type="button"
+                className={`cg-filter-chip${off ? " cg-filter-chip--off" : ""}`}
+                aria-pressed={!off}
+                onClick={() => toggleCat(cat)}
+                title={off ? `Show ${full}` : `Hide ${full}`}
+              >
+                <span className={`cg-dot cg-dot--${cat}`} aria-hidden />{label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="board-group-toggle" role="group" aria-label="Timeline zoom — or pinch / ⌘-scroll the timeline">
+          <span className="cg-zoom-cell" aria-hidden><Icon name="ph:magnifying-glass" width={13} /></span>
+          {ZOOM_LABELS.map(([z, full, short, hint]) => {
+            const active = DAY_W === ZOOM_DAY_W[z];
+            return (
+              <button
+                key={z}
+                type="button"
+                className={`board-group-toggle-btn${active ? " board-group-toggle-btn--active" : ""}`}
+                onClick={() => {
+                  setDayW(ZOOM_DAY_W[z]);
+                  requestAnimationFrame(() => centerOnTodayRef.current());
+                }}
+                aria-pressed={active}
+                aria-label={`Zoom: ${full}`}
+                title={`${full} — ${hint}. Or pinch / ⌘-scroll to zoom freely.`}
+              >
+                {short}
+              </button>
+            );
+          })}
+        </div>
+        <button type="button" className="board-group-toggle-btn board-group-toggle-btn--solo" onClick={scrollToToday} disabled={todayX === null} title="Scroll the timeline to today">Today</button>
+      </div>
+      <div className="board-gantt__scroll" ref={scrollRef}>
+        <div
+          className="cg"
+          style={{
+            ["--cg-day" as string]: `${DAY_W}px`,
+            ["--cg-tl" as string]: `${timelineW}px`,
+            ["--cg-weekend-shift" as string]: `${weekendShiftPx}px`,
+            ["--cg-today-x" as string]: `${todayColLeftPx}px`,
+          }}
+        >
+          {/* Header: left column titles + month band over the week ruler */}
           <div className="cg-head">
             <div className="cg-left cg-left--head">
               <span className="cg-c-task">Group / Task</span>
-              <span className="cg-c-owner">Owner</span>
               <span className="cg-c-date">Start</span>
               <span className="cg-c-date">End</span>
               <span className="cg-c-st">St</span>
             </div>
-            <div className="cg-weeks" style={{ width: `${timelineW}px` }}>
-              {weeks.map((w) => (
-                <span key={w.left} className="cg-week" style={{ left: `${w.left}px`, width: `${w.width}px` }}>
-                  {w.label}
-                </span>
-              ))}
+            <div className="cg-headstack">
+              <div className="cg-months" style={{ width: `${timelineW}px` }}>
+                {months.map((m) => (
+                  <span key={m.key} className="cg-month" style={{ left: `${m.left}px`, width: `${m.width}px` }}>
+                    {m.label}
+                  </span>
+                ))}
+              </div>
+              <div className="cg-weeks" style={{ width: `${timelineW}px` }}>
+                {weeks.map((w) => (
+                  <span key={w.left} className="cg-week" style={{ left: `${w.left}px`, width: `${w.width}px` }}>
+                    {w.label}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Body: today line + grouped rows */}
-          <div className="cg-body">
+          {/* Body: today line + grouped rows. Also the drop zone for scheduling
+              an undated task dragged out of the tray. */}
+          <div
+            className="cg-body"
+            onDragOver={onTimelineDragOver}
+            onDrop={onTimelineDrop}
+            onDragLeave={() => setDropDay(null)}
+          >
             {todayX !== null ? (
               <span className="cg-today" style={{ left: `calc(${LEFT_W}px + ${todayX}px)` }} aria-hidden>
                 <span className="cg-today__flag">TODAY</span>
               </span>
             ) : null}
+            {dropDay !== null ? (
+              <span className="cg-drop-hint" style={{ left: `calc(${LEFT_W}px + ${dropDay * DAY_W}px)`, width: `${DAY_W}px` }} aria-hidden />
+            ) : null}
 
-            {groups.map((g) => (
+            {visibleGroups.map((g) => (
               <div key={g.key} className="cg-group">
-                <div className="cg-grouprow">
-                  <div className="cg-left cg-left--group">
-                    <span className="cg-caret" aria-hidden>▾</span>
+                <button
+                  type="button"
+                  className={`cg-grouprow cg-grouprow--btn${focused === g.key ? " cg-grouprow--focused" : ""}`}
+                  onClick={() => setFocusedKey((cur) => (cur === g.key ? null : g.key))}
+                  aria-pressed={focused === g.key}
+                  title={focused === g.key ? "Show all groups" : `Focus ${g.name}`}
+                >
+                  <span className="cg-left cg-left--group">
+                    <span className="cg-caret" aria-hidden>{focused === g.key ? "▸" : "▾"}</span>
                     <span className="cg-groupname">{g.name}</span>
-                    <span className="cg-count">{g.tasks.length}</span>
-                  </div>
-                  <div className="cg-grouptl" style={{ width: `${timelineW}px` }} aria-hidden />
-                </div>
+                    <span className="cg-count">{g.rows.length}</span>
+                  </span>
+                  <span className="cg-grouptl" style={{ width: `${timelineW}px` }} aria-hidden />
+                </button>
 
-                {g.tasks.map(({ card, start, end }) => {
-                  const cat = statusCategory(card.status);
+                {g.rows.map((row) => {
+                  const { start, end } = row;
+                  const cat = row.category;
                   const offset = Math.max(0, daysBetween(rangeStart, start));
                   const dur = Math.max(1, daysBetween(start, end) + 1);
                   const milestone = dur === 1;
-                  const dragDelta = drag?.id === card.id ? drag.deltaDays : 0;
-                  const dragging = drag?.id === card.id && dragDelta !== 0;
-                  const left = (offset + dragDelta) * DAY_W;
+                  // Live reschedule state for this row, clamped so a resize
+                  // can't invert the bar — from a pointer drag or, failing that,
+                  // an in-flight keyboard shift (both preview identically).
+                  const active =
+                    drag?.id === row.rowId ? { mode: drag.mode, deltaDays: drag.deltaDays }
+                    : kbShift?.rowId === row.rowId ? { mode: kbShift.mode, deltaDays: kbShift.delta }
+                    : null;
+                  const mode: DragMode = active?.mode ?? "move";
+                  const dragDelta = active ? clampDelta(mode, active.deltaDays, dur) : 0;
+                  const dragging = active !== null && dragDelta !== 0;
+                  // Reshape the bar per mode: move slides it, resize-start moves
+                  // the left edge (offset + delta, shorter), resize-end stretches
+                  // the right edge (longer). Dates preview the same way.
+                  const previewOffset = mode === "resize-end" ? offset : offset + dragDelta;
+                  const previewDur =
+                    mode === "resize-start" ? dur - dragDelta : mode === "resize-end" ? dur + dragDelta : dur;
+                  const left = previewOffset * DAY_W;
+                  const previewStart = addDays(start, mode === "resize-end" ? 0 : dragDelta);
+                  const previewEnd = addDays(end, mode === "resize-start" ? 0 : dragDelta);
+                  // Overdue: bar ends before today and isn't done — mirrors the
+                  // Kanban urgency cue so the timeline shows slipping work.
+                  const overdue =
+                    todayStartMs !== null && cat !== "done" && previewEnd.getTime() < todayStartMs;
                   const barClass = (base: string) =>
-                    `${base}${draggable ? " cg-bar--grab" : ""}${dragging ? " cg-bar--dragging" : ""}`;
+                    `${base}${draggable ? " cg-bar--grab" : ""}${dragging ? " cg-bar--dragging" : ""}${overdue ? " cg-bar--overdue" : ""}${row.inferred ? " cg-bar--inferred" : ""}`;
                   const handlers = draggable
                     ? {
-                        onPointerDown: (e: React.PointerEvent) => beginDrag(e, card.id),
+                        onPointerDown: (e: React.PointerEvent) => beginDrag(e, row.rowId, "move"),
                         onPointerMove: moveDrag,
-                        onPointerUp: (e: React.PointerEvent) => endDrag(e, card),
+                        onPointerUp: () => endDrag(row),
                       }
                     : {};
+                  // Edge handles share the move pointer plumbing but start in a
+                  // resize mode; stopPropagation in beginDrag keeps them distinct.
+                  const resizeHandle = (which: "start" | "end") => (
+                    <span
+                      className={`cg-bar__resize cg-bar__resize--${which}`}
+                      onPointerDown={(e) => beginDrag(e, row.rowId, which === "start" ? "resize-start" : "resize-end")}
+                      onPointerMove={moveDrag}
+                      onPointerUp={() => endDrag(row)}
+                      aria-hidden
+                    />
+                  );
                   return (
                     <button
-                      key={card.id}
+                      key={row.rowId}
                       type="button"
-                      className={`cg-row${selectedCardId === card.id ? " cg-row--sel" : ""}`}
+                      data-card-id={row.cardId}
+                      className={`cg-row${selectedCardId === row.cardId ? " cg-row--sel" : ""}`}
                       onClick={() => {
                         if (suppressClickRef.current) { suppressClickRef.current = false; return; }
-                        onSelect(card.id);
+                        onSelect(row.cardId);
                       }}
-                      title={`${card.title} · ${formatLabel(addDays(start, dragDelta))}–${formatLabel(addDays(end, dragDelta))}${draggable ? " · drag to reschedule" : ""}`}
+                      onKeyDown={(e) => {
+                        // Keyboard reschedule on the focused bar: ←/→ move both
+                        // dates by a day, Shift+←/→ resize the end. Consecutive
+                        // presses coalesce into one patch (flushed on idle/blur);
+                        // Escape commits immediately. (Tab moves focus between bars.)
+                        if (e.key === "Escape" && kbShift?.rowId === row.rowId) { e.preventDefault(); flushKbShift(); return; }
+                        if (!draggable || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+                        e.preventDefault();
+                        const dir = e.key === "ArrowRight" ? 1 : -1;
+                        pushKbShift(row, e.shiftKey ? "resize-end" : "move", dir);
+                      }}
+                      onBlur={() => { if (kbShiftRef.current?.row.rowId === row.rowId) flushKbShift(); }}
+                      title={`${row.label} · ${formatLabel(previewStart)}–${formatLabel(previewEnd)}${row.inferred ? " · inferred from task range — drag to set real dates" : ""}${draggable ? " · drag to move, drag edges to resize · ←/→ to reschedule" : ""}`}
                     >
                       <span className="cg-left">
-                        <span className="cg-c-task">{card.title}</span>
-                        <span className="cg-c-owner">{ownerName(card.familiarId)}</span>
-                        <span className="cg-c-date">{formatLabel(addDays(start, dragDelta))}</span>
-                        <span className="cg-c-date">{formatLabel(addDays(end, dragDelta))}</span>
+                        <span className="cg-c-task">
+                          {row.label}
+                          {(row.attachmentCount ?? 0) > 0 && (
+                            <span className="cg-attach" title={`${row.attachmentCount} attachment${row.attachmentCount === 1 ? "" : "s"}`}>
+                              <Icon name="ph:paperclip" width={10} />
+                              {row.attachmentCount}
+                            </span>
+                          )}
+                        </span>
+                        <span className="cg-c-date">{formatLabel(previewStart)}</span>
+                        <span className="cg-c-date">{formatLabel(previewEnd)}</span>
                         <span className="cg-c-st"><span className={`cg-dot cg-dot--${cat}`} aria-hidden /></span>
                       </span>
                       <span className="cg-track" style={{ width: `${timelineW}px` }}>
@@ -281,16 +848,18 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                         ) : (
                           <span
                             className={barClass(`board-gantt-row__bar board-gantt-row__bar--${cat} cg-bar`)}
-                            style={{ left: `${left}px`, width: `${Math.max(DAY_W, dur * DAY_W - 3)}px`, touchAction: "none" }}
+                            style={{ left: `${left}px`, width: `${Math.max(DAY_W, previewDur * DAY_W - 3)}px`, touchAction: "none", ...(row.color ? { background: row.color } : {}) }}
                             {...handlers}
                           >
+                            {draggable ? resizeHandle("start") : null}
                             <span className="cg-bar__cap" aria-hidden />
+                            {draggable ? resizeHandle("end") : null}
                           </span>
                         )}
                         {dragging ? (
                           <span className="cg-drag-label" style={{ left: `${Math.max(0, left)}px` }}>
-                            {formatLabel(addDays(start, dragDelta))}
-                            {milestone ? "" : `–${formatLabel(addDays(end, dragDelta))}`}
+                            {formatLabel(previewStart)}
+                            {milestone ? "" : `–${formatLabel(previewEnd)}`}
                           </span>
                         ) : null}
                       </span>
@@ -301,22 +870,33 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
             ))}
           </div>
 
-          {/* Legend */}
+          {/* Legend: per-familiar colour swatches when grouped by familiar
+              (matching the bars' encoding); otherwise the status categories.
+              The four status colours collapse the six statuses — Running,
+              Blocked and Done map 1:1; Backlog, Inbox and Review share the
+              "pending" colour. */}
           <div className="cg-legend">
-            <span className="cg-leg"><span className="cg-sw cg-sw--done" aria-hidden />Done</span>
-            <span className="cg-leg"><span className="cg-sw cg-sw--in-progress" aria-hidden />In Progress</span>
-            <span className="cg-leg"><span className="cg-sw cg-sw--pending" aria-hidden />Pending</span>
-            <span className="cg-leg"><span className="cg-sw cg-sw--at-risk" aria-hidden />At Risk</span>
+            {groupMode === "familiar" ? (
+              groups.map((g) => (
+                <span key={g.key} className="cg-leg">
+                  <span className="cg-sw" style={{ background: familiarColor(g.key === "__unassigned__" ? null : g.key) ?? "var(--text-muted)" }} aria-hidden />
+                  {g.name}
+                </span>
+              ))
+            ) : (
+              <>
+                <span className="cg-leg"><span className="cg-sw cg-sw--done" aria-hidden />Done</span>
+                <span className="cg-leg"><span className="cg-sw cg-sw--in-progress" aria-hidden />Running</span>
+                <span className="cg-leg" title="Backlog, Inbox and Review tasks"><span className="cg-sw cg-sw--pending" aria-hidden />Backlog · Inbox · Review</span>
+                <span className="cg-leg"><span className="cg-sw cg-sw--at-risk" aria-hidden />Blocked</span>
+              </>
+            )}
             <span className="cg-leg"><span className="cg-diamond cg-diamond--leg" aria-hidden />Milestone</span>
             <span className="cg-leg"><span className="cg-today-sw" aria-hidden />Today</span>
           </div>
         </div>
       </div>
-      {unscheduled.length > 0 ? (
-        <div className="board-gantt-unscheduled">
-          {unscheduled.length} task{unscheduled.length === 1 ? "" : "s"} without dates
-        </div>
-      ) : null}
+      {unscheduledTray}
     </div>
   );
 }

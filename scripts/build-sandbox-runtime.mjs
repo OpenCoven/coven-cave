@@ -53,7 +53,7 @@ export async function buildSandboxRuntime() {
 }
 
 // Run when invoked directly (not when imported by the test).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   buildSandboxRuntime()
     .then(() => console.log(`sandbox assets → ${path.relative(root, OUTDIR)}/{react-runtime,tailwind}.js`))
     .catch((err) => {

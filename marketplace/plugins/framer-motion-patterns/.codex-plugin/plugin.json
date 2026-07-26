@@ -1,0 +1,27 @@
+{
+  "name": "framer-motion-patterns",
+  "version": "0.1.0",
+  "description": "Implement production UI motion in React with Motion (formerly Framer Motion): spring vs tween transitions, layout & shared-element transitions, AnimatePresence, gestures, scroll-linked motion, motion values, reduced-motion accessibility, and transform-only performance \u2014 with a concrete recipe library.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Motion (Framer Motion) Patterns",
+    "shortDescription": "Implement production UI motion in React with Motion (formerly Framer Motion): spring vs tween transitions, layout & shared-element transitions, AnimatePresence, gestures, scroll-linked motion, motion values, reduced-motion accessibility, and transform-only performance \u2014 with a concrete recipe library.",
+    "longDescription": "Use when implementing UI motion in React with Motion (formerly Framer Motion; npm `motion`, import from `motion/react`): declarative animate/initial/exit, spring-vs-tween transitions, layout & shared-element transitions (layout / layoutId / LayoutGroup), AnimatePresence enter/exit, staggering and imperative sequences (useAnimate / useAnimationControls), cross-device keyboard-aware gestures (hover/tap/focus/pan/drag/Reorder), scroll-linked & scroll-triggered motion (useScroll / useInView / useTransform), motion values as a no-re-render reactive primitive (useMotionValue / useTransform), and production concerns: prefers-reduced-motion a11y (MotionConfig reducedMotion / useReducedMotion), transform-only hardware-accelerated performance, and choosing Motion vs CSS vs React Spring vs GSAP vs the Web Animations API. Includes recipes: modal, drawer/sheet, toast stack, list reorder, page transitions, shared-element hero image, spinner, scroll progress, parallax, stagger-in lists.",
+    "developerName": "OpenCoven",
+    "category": "Design & UI",
+    "capabilities": [
+      "motion",
+      "framer-motion",
+      "animation",
+      "react",
+      "gestures",
+      "accessibility",
+      "prefers-reduced-motion",
+      "ui"
+    ],
+    "defaultPrompt": "Help me use Motion (Framer Motion) Patterns safely."
+  }
+}

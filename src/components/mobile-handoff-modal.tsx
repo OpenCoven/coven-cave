@@ -1,26 +1,38 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { PairingStepsList } from "@/components/pairing-steps-list";
 import { copyText } from "@/lib/clipboard";
+import type { PairingStep } from "@/lib/mobile-handoff";
+import { openExternalUrl } from "@/lib/open-external";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 type HandoffReady = {
   ok: true;
   backendUrl: string;
   serveUrl: string;
+  nativeUrl?: string;
+  nativeHost?: string;
   inviteUrl?: string;
-  url: string;
-  expiresAt: number;
-  expiresAtIso: string;
+  url?: string;
+  expiresAt?: number;
+  expiresAtIso?: string;
   qrSvg: string;
   warning?: string;
+  /** The proven probe ladder (cave-jr4r.1) — present on success too, so the
+   *  modal can show the live "Phone seen" rung instead of discarding it. */
+  steps?: PairingStep[];
+  lastSeenAt?: number | null;
 };
 
 type HandoffError = {
   ok: false;
   error?: string;
   stderr?: string;
+  /** Which rung broke — the route reports the whole ladder on failures. */
+  steps?: PairingStep[];
 };
 
 type HandoffResponse = HandoffReady | HandoffError;
@@ -29,6 +41,13 @@ type Props = {
   open: boolean;
   onClose: () => void;
   autoCopyRequest?: number;
+  mobileModeEnabled?: boolean;
+  nativeHost?: string | null;
+  mobileModeError?: string | null;
+  onMobileModeChange?: (enabled: boolean) => void;
+  /** Continue-on-phone (cave-i74f): when set, the QR carries `#chat-<id>` so
+   *  one scan opens THIS conversation on the phone, not just the app. */
+  chatId?: string | null;
 };
 
 function expiryLabel(expiresAtIso: string) {
@@ -43,15 +62,30 @@ function expiryLabel(expiresAtIso: string) {
   }
 }
 
-export function MobileHandoffModal({ open, onClose, autoCopyRequest = 0 }: Props) {
+export function MobileHandoffModal({
+  open,
+  onClose,
+  autoCopyRequest = 0,
+  mobileModeEnabled = true,
+  nativeHost = null,
+  mobileModeError = null,
+  onMobileModeChange,
+  chatId = null,
+}: Props) {
   const [handoff, setHandoff] = useState<HandoffReady | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Failure ladder from the route — which rung broke, not just one string. */
+  const [errorSteps, setErrorSteps] = useState<PairingStep[] | null>(null);
+  /** Live paired signal: flips the "Phone seen" rung the moment a scan lands. */
+  const [phoneSeenAt, setPhoneSeenAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState<"invite" | null>(null);
+  const [copied, setCopied] = useState<"host" | "invite" | null>(null);
   const lastAutoCopyRequestRef = useRef(0);
+  /** Aborts an in-flight start when the modal closes, remounts, or Refresh races. */
+  const startAbortRef = useRef<AbortController | null>(null);
 
   const copyHandoffUrl = useCallback(async (nextHandoff: HandoffReady) => {
-    const url = nextHandoff.inviteUrl || nextHandoff.url;
+    const url = nextHandoff.inviteUrl || nextHandoff.url || nextHandoff.nativeUrl;
     if (!url) return;
     try {
       if (!(await copyText(url))) throw new Error("Clipboard unavailable");
@@ -63,59 +97,136 @@ export function MobileHandoffModal({ open, onClose, autoCopyRequest = 0 }: Props
   }, []);
 
   const start = useCallback(async (copyRequest = 0) => {
+    startAbortRef.current?.abort();
+    const controller = new AbortController();
+    startAbortRef.current = controller;
+
     setLoading(true);
     setError(null);
+    setErrorSteps(null);
     setCopied(null);
     setHandoff(null);
     try {
       const res = await fetch("/api/mobile-handoff", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "start" }),
+        body: JSON.stringify(chatId ? { action: "app-start", chatId } : { action: "app-start" }),
+        signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
       const json = (await res.json()) as HandoffResponse;
+      if (controller.signal.aborted) return;
       if (!json.ok) {
         setHandoff(null);
         setError(json.stderr || json.error || "Mobile handoff failed.");
+        setErrorSteps(Array.isArray(json.steps) && json.steps.length > 0 ? json.steps : null);
         return;
       }
       setHandoff(json);
+      setPhoneSeenAt(json.lastSeenAt ?? null);
       if (copyRequest > 0 && copyRequest !== lastAutoCopyRequestRef.current) {
-        lastAutoCopyRequestRef.current = copyRequest;
         await copyHandoffUrl(json);
+        if (controller.signal.aborted) return;
+        lastAutoCopyRequestRef.current = copyRequest;
       }
     } catch (err) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
+        return;
+      }
       setHandoff(null);
       setError(err instanceof Error ? err.message : "Mobile handoff failed.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
+      if (startAbortRef.current === controller) startAbortRef.current = null;
     }
-  }, [copyHandoffUrl]);
+  }, [chatId, copyHandoffUrl]);
 
   useEffect(() => {
-    if (open) void start(autoCopyRequest);
+    if (!open) {
+      startAbortRef.current?.abort();
+      startAbortRef.current = null;
+      setLoading(false);
+      return;
+    }
+    void start(autoCopyRequest);
+    return () => {
+      startAbortRef.current?.abort();
+      startAbortRef.current = null;
+    };
   }, [autoCopyRequest, open, start]);
 
   const copyUrl = useCallback(async () => {
     if (handoff) await copyHandoffUrl(handoff);
   }, [copyHandoffUrl, handoff]);
 
+  // While the modal shows a healthy ladder that's still waiting on the first
+  // scan, poll the cheap paired-signal read (~5s, paused in hidden tabs) so
+  // "Waiting for the first scan" flips to a green "Phone seen" the moment the
+  // phone lands — the loop closes on the desktop, not just on the phone.
+  const phoneRungPending = Boolean(handoff?.steps) && !phoneSeenAt;
+  const pollPhoneSeen = useCallback(async () => {
+    try {
+      const res = await fetch("/api/mobile-handoff", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "status" }),
+      });
+      const json = (await res.json()) as { ok: boolean; lastSeenAt?: number | null };
+      if (json.ok && json.lastSeenAt) setPhoneSeenAt(json.lastSeenAt);
+    } catch {
+      // Best-effort signal — the next tick retries.
+    }
+  }, []);
+  usePausablePoll(() => void pollPhoneSeen(), 5000, { enabled: open && phoneRungPending });
+
+  /** The success ladder with the phone rung kept live by the poll. */
+  const displaySteps = useMemo(() => {
+    if (!handoff?.steps) return null;
+    if (!phoneSeenAt) return handoff.steps;
+    return handoff.steps.map((step) =>
+      step.id === "phone" ? { ...step, state: "ok" as const, detail: undefined } : step,
+    );
+  }, [handoff, phoneSeenAt]);
+
+  const copyHost = useCallback(async () => {
+    if (!handoff?.nativeHost) return;
+    try {
+      if (!(await copyText(handoff.nativeHost))) throw new Error("Clipboard unavailable");
+      setCopied("host");
+    } catch (err) {
+      setCopied(null);
+      setError(err instanceof Error ? err.message : "Failed to copy host.");
+    }
+  }, [handoff]);
+
   const resetServe = useCallback(async () => {
+    startAbortRef.current?.abort();
+    const controller = new AbortController();
+    startAbortRef.current = controller;
+
     setLoading(true);
     setError(null);
+    setErrorSteps(null);
     try {
       const res = await fetch("/api/mobile-handoff", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "reset" }),
+        signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
       const json = (await res.json()) as HandoffResponse;
+      if (controller.signal.aborted) return;
       if (!json.ok) setError(json.stderr || json.error || "Tailscale Serve reset failed.");
       setHandoff(null);
     } catch (err) {
+      if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
+        return;
+      }
       setError(err instanceof Error ? err.message : "Tailscale Serve reset failed.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
+      if (startAbortRef.current === controller) startAbortRef.current = null;
     }
   }, []);
 
@@ -123,16 +234,28 @@ export function MobileHandoffModal({ open, onClose, autoCopyRequest = 0 }: Props
     <Modal
       open={open}
       onClose={onClose}
-      breadcrumb={["CovenCave", "Open on phone"]}
+      breadcrumb={["CovenCave", chatId ? "Continue this chat on phone" : "Open on phone"]}
       footerActions={
         <>
           <Button variant="ghost" onClick={resetServe} disabled={loading}>
             Reset Serve
           </Button>
+          {onMobileModeChange ? (
+            <Button
+              variant="secondary"
+              onClick={() => onMobileModeChange(!mobileModeEnabled)}
+              disabled={loading}
+            >
+              {mobileModeEnabled ? "Turn off mobile mode" : "Turn on mobile mode"}
+            </Button>
+          ) : null}
           <Button variant="secondary" onClick={() => void start()} loading={loading}>
-            Refresh link
+            Refresh route
           </Button>
-          <Button variant="secondary" onClick={() => void copyUrl()} disabled={!(handoff?.inviteUrl || handoff?.url) || loading}>
+          <Button variant="secondary" onClick={() => void copyHost()} disabled={!handoff?.nativeHost || loading}>
+            {copied === "host" ? "Host copied" : "Copy host"}
+          </Button>
+          <Button variant="secondary" onClick={() => void copyUrl()} disabled={!(handoff?.inviteUrl || handoff?.url || handoff?.nativeUrl) || loading}>
             {copied === "invite" ? "Invite copied" : "Copy invite"}
           </Button>
         </>
@@ -154,32 +277,82 @@ export function MobileHandoffModal({ open, onClose, autoCopyRequest = 0 }: Props
         </div>
 
         <div className="mobile-handoff__body">
-          <p className="mobile-handoff__title">Scan to open CovenCave on your phone.</p>
+          <p className="mobile-handoff__title">
+            {chatId
+              ? "Scan to continue this conversation on your phone."
+              : "Connect CovenCave on your phone."}
+          </p>
           {handoff ? (
             <>
-              <p className="mobile-handoff__meta">
-                Expires at {expiryLabel(handoff.expiresAtIso)}
-              </p>
-              <a
-                className="mobile-handoff__url mobile-handoff__link"
-                href={handoff.inviteUrl || handoff.url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {handoff.inviteUrl || handoff.url}
-              </a>
+              {handoff.nativeHost ? (
+                <>
+                  <p className="mobile-handoff__meta">
+                    Enter this host in the native iOS app. Mobile mode stays alive until you turn it off in Settings.
+                  </p>
+                  <button
+                    type="button"
+                    className="mobile-handoff__url mobile-handoff__copy"
+                    onClick={() => void copyHost()}
+                  >
+                    {handoff.nativeHost}
+                  </button>
+                </>
+              ) : null}
+              {handoff.expiresAtIso ? (
+                <p className="mobile-handoff__meta">
+                  Expires at {expiryLabel(handoff.expiresAtIso)}
+                </p>
+              ) : null}
+              {handoff.inviteUrl || handoff.url ? (
+                <a
+                  className="mobile-handoff__url mobile-handoff__link"
+                  href={handoff.inviteUrl || handoff.url}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    openExternalUrl(handoff.inviteUrl || handoff.url || "");
+                  }}
+                >
+                  {handoff.inviteUrl || handoff.url}
+                </a>
+              ) : null}
               <p className="mobile-handoff__hint">
-                Scan the short-lived Tailscale invite link, or copy it and paste it into the mobile app.
+                The QR opens the Tailscale-served desktop page; the host is what the native app needs.
+                Don’t type your Mac’s 127.0.0.1 or Wi‑Fi LAN address into the phone — it can’t reach
+                your desktop that way.
               </p>
+              {displaySteps ? <PairingStepsList steps={displaySteps} className="mobile-handoff__steps" /> : null}
               {handoff.warning ? (
                 <p className="mobile-handoff__warning">{handoff.warning}</p>
               ) : null}
             </>
+          ) : nativeHost ? (
+            <>
+              <p className="mobile-handoff__meta">
+                Mobile mode is on. Enter this host in the native iOS app.
+              </p>
+              <button
+                type="button"
+                className="mobile-handoff__url mobile-handoff__copy"
+                onClick={() => void copyText(nativeHost)}
+              >
+                {nativeHost}
+              </button>
+              {mobileModeError ? (
+                <p className="mobile-handoff__warning">{mobileModeError}</p>
+              ) : null}
+            </>
           ) : error ? (
-            <p className="mobile-handoff__error">{error}</p>
+            <>
+              {errorSteps ? (
+                // The route's proven ladder: WHICH rung broke and what to do,
+                // instead of one opaque error string.
+                <PairingStepsList steps={errorSteps} className="mobile-handoff__steps" />
+              ) : null}
+              <p className="mobile-handoff__error">{error}</p>
+            </>
           ) : (
             <p className="mobile-handoff__meta">
-              Cave will publish the local sidecar through Tailscale Serve and create a short-lived invite.
+              Cave will publish this desktop through Tailscale Serve and show the native app host.
             </p>
           )}
         </div>

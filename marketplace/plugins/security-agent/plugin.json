@@ -1,0 +1,41 @@
+{
+  "name": "security-agent",
+  "version": "0.1.0",
+  "description": "Assess, harden, and monitor an OpenClaw deployment across 7 domains \u2014 gateway, channel/sender policy, tool/exec policy, credentials, prompt-injection defense, host OS, and continuous audit.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "security",
+    "audit",
+    "hardening",
+    "monitoring",
+    "credentials",
+    "threat-model"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/security-agent",
+  "x-coven": {
+    "displayName": "Security Agent",
+    "category": "Security",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/security-agent"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

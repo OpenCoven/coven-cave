@@ -1,0 +1,27 @@
+{
+  "name": "tailwind-design-tokens",
+  "version": "0.1.0",
+  "description": "Theme Tailwind CSS v4 UIs with a two-tier design token system: OKLCH primitive scales in @theme, semantic background/foreground tokens bridged via @theme inline, class/media/data-theme dark mode, safe dynamic classes, and v3-to-v4 migration.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Tailwind Design Tokens & Theming",
+    "shortDescription": "Theme Tailwind CSS v4 UIs with a two-tier design token system: OKLCH primitive scales in @theme, semantic background/foreground tokens bridged via @theme inline, class/media/data-theme dark mode, safe dynamic classes, and v3-to-v4 migration.",
+    "longDescription": "Use when building or theming a Tailwind CSS v4 (or migrating a v3) UI with design tokens, dark mode, or multi-theme support \u2014 covers the CSS-first `@theme` model, OKLCH color scales, the two-tier primitive/semantic token architecture (shadcn `background`/`foreground` pairs bridged with `@theme inline`), class vs media vs `data-theme` dark mode with FOUC-safe toggling, arbitrary values, `@source inline` safelisting, and v3\u2192v4 migration; framework-agnostic (React/Vue/Svelte/Astro/HTML) with shadcn-specific glue called out.",
+    "developerName": "OpenCoven",
+    "category": "Design & UI",
+    "capabilities": [
+      "tailwind",
+      "design-tokens",
+      "theming",
+      "dark-mode",
+      "oklch",
+      "shadcn",
+      "css-variables",
+      "frontend"
+    ],
+    "defaultPrompt": "Help me use Tailwind Design Tokens & Theming safely."
+  }
+}

@@ -7,21 +7,26 @@ import { join } from "node:path";
 
 const TMP = mkdtempSync(join(tmpdir(), "voice-session-route-"));
 process.env.HOME = TMP;
+// Hermetic vault: without these, resolveSecret's fallbacks read <cwd>/vault.yaml
+// (repo root maps OPENAI_API_KEY to a 1Password ref → shells out to `op`) and
+// <cwd>/.env.local — slow, and resolves REAL keys on a lived-in machine.
+process.env.COVEN_VAULT_FILE = join(TMP, "vault.yaml");
+process.env.COVEN_CAVE_ENV_FILE = join(TMP, ".env.local");
 
 const FAMILIAR_ID = "milo";
 const SESSION_ID = "sess-route";
 
 function writeFamiliar(record: Record<string, unknown>) {
-  const dir = join(TMP, ".coven");
+  const dir = join(TMP, ".coven", "cave");
   mkdirSync(dir, { recursive: true });
   writeFileSync(
-    join(dir, "cave-config.json"),
+    join(dir, "config.json"),
     JSON.stringify({ familiars: { [FAMILIAR_ID]: record } }),
   );
 }
 
 function writeSession(turns: any[] = []) {
-  const dir = join(TMP, ".coven", "cave-conversations");
+  const dir = join(TMP, ".coven", "cave", "conversations");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${SESSION_ID}.json`), JSON.stringify({
     sessionId: SESSION_ID, familiarId: FAMILIAR_ID, harness: "claude",
@@ -115,6 +120,41 @@ test("502 provider_mint_failed surfaces provider message verbatim", async () => 
   assert.equal(res.status, 502);
   assert.equal(json.error, "provider_mint_failed");
   assert.match(json.providerMessage, /quota exhausted/);
+  // Not a credentials failure — the overlay must not offer a key editor.
+  assert.equal(json.missingKey, undefined);
+});
+
+test("502 surfaces the machine code + vault key when ElevenLabs rejects the key (cave-xz57)", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "elevenlabs" });
+  writeSession([]);
+  process.env.ELEVENLABS_API_KEY = "xi-bad";
+  nextFetchResponse = new Response("{}", { status: 401 });
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  delete process.env.ELEVENLABS_API_KEY;
+  assert.equal(res.status, 502);
+  // The probe's `code: detail` shape splits into an overlay-mappable error
+  // plus a human hint, and names the key so the error card can fix it in
+  // place.
+  assert.equal(json.error, "elevenlabs_key_invalid");
+  assert.match(json.hint, /rejected the API key/);
+  assert.equal(json.missingKey, "ELEVENLABS_API_KEY");
+});
+
+test("502 names the vault key when OpenAI rejects credentials as free text (cave-xz57)", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "openai" });
+  writeSession([]);
+  process.env.OPENAI_API_KEY = "sk-bad";
+  nextFetchResponse = new Response(
+    JSON.stringify({ error: { message: "Incorrect API key provided: sk-bad" } }),
+    { status: 401 },
+  );
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 502);
+  assert.equal(json.error, "provider_mint_failed");
+  assert.match(json.providerMessage, /Incorrect API key/);
+  assert.equal(json.missingKey, "OPENAI_API_KEY");
 });
 
 test("200 happy path returns grant and ULID-shaped callId", async () => {
@@ -144,4 +184,55 @@ test("200 happy path returns grant and ULID-shaped callId", async () => {
   const sentBody = JSON.parse(lastFetchCall.init.body as string);
   assert.equal(sentBody.session.model, "gpt-realtime");
   assert.equal(sentBody.session.audio.output.voice, "alloy");
+});
+
+test("200 familiar-brain provider mints keyless and binds the session id", async () => {
+  writeFamiliar({
+    display_name: "M",
+    role: "x",
+    voiceProvider: "familiar",
+    voiceName: "Samantha",
+  });
+  writeSession([]);
+  // No vault key in env — a keyless provider must never hit the vault gate.
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(json.ok, true);
+  assert.equal(json.grant.provider, "familiar");
+  assert.equal(json.grant.connection.kind, "familiar-brain");
+  assert.equal(json.grant.connection.familiarId, FAMILIAR_ID);
+  assert.equal(json.grant.connection.sessionId, SESSION_ID);
+  assert.equal(json.grant.connection.voice, "Samantha");
+});
+
+test("400 vault_key_unresolved for elevenlabs without ELEVENLABS_API_KEY", async () => {
+  delete process.env.ELEVENLABS_API_KEY;
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "elevenlabs" });
+  writeSession([]);
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 400);
+  assert.equal(json.error, "vault_key_unresolved");
+  assert.equal(json.missingKey, "ELEVENLABS_API_KEY");
+});
+
+test("200 elevenlabs provider mints with defaults and binds the session id", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "elevenlabs" });
+  writeSession([]);
+  process.env.ELEVENLABS_API_KEY = "xi-good";
+  nextFetchResponse = new Response("[]", { status: 200 });
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  delete process.env.ELEVENLABS_API_KEY;
+  assert.equal(res.status, 200);
+  assert.equal(json.ok, true);
+  assert.equal(json.grant.provider, "elevenlabs");
+  assert.equal(json.grant.connection.kind, "elevenlabs-familiar");
+  assert.equal(json.grant.connection.sessionId, SESSION_ID);
+  // Route DEFAULTS applied: Rachel + turbo, overridable per-familiar.
+  assert.equal(json.grant.connection.voiceId, "21m00Tcm4TlvDq8ikWAM");
+  assert.equal(json.grant.connection.modelId, "eleven_turbo_v2_5");
+  // The vault key must never reach the client.
+  assert.equal(JSON.stringify(json).includes("xi-good"), false);
 });

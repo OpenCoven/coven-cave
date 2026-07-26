@@ -1,0 +1,23 @@
+{
+  "name": "prompt-pack-essentials",
+  "version": "0.1.0",
+  "description": "Starter prompt templates for everyday development chat \u2014 debugging, tests, refactors, PR prose. Installed templates appear under /prompts and the Prompt snippets picker.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Prompt Pack: Essentials",
+    "shortDescription": "Starter prompt templates for everyday development chat \u2014 debugging, tests, refactors, PR prose. Installed templates appear under /prompts and the Prompt snippets picker.",
+    "longDescription": "Starter prompt templates for everyday development chat \u2014 debugging, tests, refactors, PR prose. Installed templates appear under /prompts and the Prompt snippets picker.",
+    "developerName": "OpenCoven",
+    "category": "Productivity",
+    "capabilities": [
+      "prompts",
+      "templates",
+      "snippets",
+      "composer"
+    ],
+    "defaultPrompt": "Help me use Prompt Pack: Essentials safely."
+  }
+}

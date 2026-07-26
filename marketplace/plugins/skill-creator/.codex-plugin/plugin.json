@@ -1,0 +1,25 @@
+{
+  "name": "skill-creator",
+  "version": "0.1.0",
+  "description": "Create and update skills that extend agents with specialized knowledge, workflows, and tools \u2014 init, author, validate, and package with bundled scripts.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Skill Creator",
+    "shortDescription": "Create and update skills that extend agents with specialized knowledge, workflows, and tools \u2014 init, author, validate, and package with bundled scripts.",
+    "longDescription": "Use when creating a new skill or updating an existing one. Guides the full process \u2014 understand the skill through concrete usage examples, plan reusable contents (scripts for deterministic work, references for documentation, assets for output files), initialize with scripts/init_skill.py, author a concise SKILL.md with trigger-rich frontmatter, then validate and package with the bundled scripts. Built on the progressive-disclosure principle: SKILL.md stays lean and detailed material moves to references/ loaded only when needed.",
+    "developerName": "OpenCoven",
+    "category": "Agents & Harnesses",
+    "capabilities": [
+      "skills",
+      "authoring",
+      "skill-creation",
+      "progressive-disclosure",
+      "packaging",
+      "agents"
+    ],
+    "defaultPrompt": "Help me use Skill Creator safely."
+  }
+}

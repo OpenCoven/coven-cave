@@ -1,0 +1,39 @@
+{
+  "name": "opencoven-design",
+  "version": "0.1.0",
+  "description": "Opinionated design constraints for OpenCoven harness cockpits, docs, and agent-built UI \u2014 dark-first, minimal, symbolic, with controlled purple and tokenized colors and typography.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "design",
+    "brand",
+    "ui",
+    "cockpit",
+    "dark",
+    "tokens"
+  ],
+  "capabilities": [
+    "read_files"
+  ],
+  "marketplaceId": "opencoven/opencoven-design",
+  "x-coven": {
+    "displayName": "OpenCoven Design Skill",
+    "category": "Design",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/opencoven-design"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

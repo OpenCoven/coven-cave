@@ -24,3 +24,19 @@ export function usePrefersReducedMotion(): boolean {
 
   return reduced;
 }
+
+/**
+ * Imperative one-shot read of the reduced-motion preference, for event handlers
+ * and effects where a hook can't run. SSR-safe (returns false without a window).
+ * Use to gate JS-driven smooth scrolling, which bypasses the CSS reduced-motion
+ * reset because an explicit `behavior: "smooth"` option overrides scroll-behavior.
+ */
+export function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia(QUERY).matches;
+}
+
+/** Reduced-motion-aware scroll behavior: "auto" when the user prefers reduced motion, else "smooth". */
+export function smoothScrollBehavior(): ScrollBehavior {
+  return prefersReducedMotion() ? "auto" : "smooth";
+}

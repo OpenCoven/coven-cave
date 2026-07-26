@@ -22,13 +22,23 @@ assert.match(
 );
 assert.match(
   src,
-  /export function openClawNeedsShell\(\): boolean[\s\S]*process\.platform === "win32"/,
-  "Windows OpenClaw npm shims should be spawned through shell mode",
+  /export function openClawNeedsShell\(bin = openClawBin\(\)\): boolean[\s\S]*process\.platform === "win32"[\s\S]*endsWith\("\.cmd"\)/,
+  "Only Windows OpenClaw .cmd npm shims should require shell mode",
 );
 assert.match(
   src,
-  /export function openClawSpawnArgs\(argv: string\[\]\): string\[\][\s\S]*openClawNeedsShell\(\)[\s\S]*quoteWindowsShellArg/,
+  /export function openClawSpawnArgs\(argv: string\[\], bin = openClawBin\(\)\): string\[\][\s\S]*openClawNeedsShell\(bin\)[\s\S]*quoteWindowsShellArg/,
   "Windows shell-mode OpenClaw spawn args should quote argv entries before Node joins them for cmd.exe",
+);
+assert.match(
+  src,
+  /export function openClawSupportsUntrustedArgs\(bin = openClawBin\(\)\): boolean[\s\S]*!openClawNeedsShell\(bin\)/,
+  "OpenClaw chat should be able to reject shell-only shims before passing untrusted prompts",
+);
+assert.match(
+  src,
+  /export function openClawLaunchCommandForBinary\(binary: string\): CovenLaunchCommand[\s\S]*covenLaunchCommandForBinary\(binary, shimPlatform\)/,
+  "OpenClaw Windows npm shims should launch their JavaScript target with Node instead of cmd.exe",
 );
 assert.match(
   src,
@@ -39,6 +49,37 @@ assert.match(
   src,
   /delete env\[key\]/,
   "OpenClaw spawn env should strip forbidden secret keys before subprocess launch",
+);
+assert.match(
+  src,
+  /FORBIDDEN_SPAWN_ENV_RE/,
+  "OpenClaw spawn env should scrub secret-like Cave process variables by pattern, not a single hard-coded key",
+);
+assert.match(
+  src,
+  /OPENCLAW_ALLOW_ENV_KEYS/,
+  "OpenClaw spawn env should require explicit allowlisting before passing secret-like variables through",
+);
+assert.match(
+  src,
+  /allowedHarnessEnvKeys\(\)[\s\S]*OPENCLAW_ALLOW_ENV_KEYS/,
+  "OpenClaw should support both the shared harness opt-in and its existing runtime-specific opt-in",
+);
+assert.match(
+  src,
+  /restoreAllowedGitHubTokenEnv\(env, allowed, new Set\(Object\.keys\(map\)\)\)/,
+  "an explicitly allowed external GitHub token alias should survive Cave's generic child-env scrub for OpenClaw",
+);
+assert.match(
+  src,
+  /restoreGrantedVaultGitHubTokenEnv\(env, map\)/,
+  "OpenClaw should receive shared Vault-managed GitHub aliases while keeping familiar-scoped aliases unavailable",
+);
+
+assert.match(
+  src,
+  /const grantedVaultTokenKeys = new Set(?:<string>)?\([\s\S]*GITHUB_HARNESS_TOKEN_ENV_KEYS\.filter\([\s\S]*isVaultKeyGrantedTo\(map\[key\]\)[\s\S]*!grantedVaultTokenKeys\.has\(key\)/,
+  "OpenClaw must retain a shared Vault-managed GitHub credential through its final secret scrub",
 );
 
 console.log("openclaw-bin.test.ts: ok");

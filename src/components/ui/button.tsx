@@ -66,10 +66,18 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       aria-busy={loading || undefined}
       {...rest}
     >
-      {loading ? <span className="ui-btn-spinner" aria-hidden /> : null}
-      {!loading && leadingIcon ? <Icon name={leadingIcon} width={iconWidth} aria-hidden /> : null}
+      <span className={`ui-btn-spinner${loading ? " is-visible" : ""}`} aria-hidden="true" />
+      {leadingIcon ? (
+        <span className={`ui-btn-icon-slot${loading ? " is-hidden" : ""}`} aria-hidden="true">
+          <Icon name={leadingIcon} width={iconWidth} aria-hidden />
+        </span>
+      ) : null}
       {children}
-      {!loading && trailingIcon ? <Icon name={trailingIcon} width={iconWidth} aria-hidden /> : null}
+      {trailingIcon ? (
+        <span className={`ui-btn-icon-slot${loading ? " is-hidden" : ""}`} aria-hidden="true">
+          <Icon name={trailingIcon} width={iconWidth} aria-hidden />
+        </span>
+      ) : null}
     </button>
   );
 });

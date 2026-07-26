@@ -1,0 +1,40 @@
+{
+  "name": "memory-timeline-manager",
+  "version": "0.1.0",
+  "description": "Capture short-term timeline notes and curate long-term MEMORY.md safely: append daily notes, label retention, promote durable snippets, and run review sweeps.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "memory",
+    "timeline",
+    "notes",
+    "retention",
+    "curation"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/memory-timeline-manager",
+  "x-coven": {
+    "displayName": "Memory Timeline Manager",
+    "category": "Knowledge & Docs",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/memory-timeline-manager"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

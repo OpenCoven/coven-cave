@@ -1,20 +1,29 @@
 import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
 import { loadBoard, updateCard } from "@/lib/cave-board";
+import { loadProjects, projectById } from "@/lib/cave-projects";
+import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
+import { canonicalHarnessId, isTrustedChatHarness } from "@/lib/harness-adapters";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
+import {
+  authorizeChatProjectLaunch,
+  ChatProjectLaunchError,
+} from "@/lib/server/chat-project-launch";
+import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
 import { issueContentionKey, shouldIsolateInWorktree, type IssueWorktreeKind } from "@/lib/issue-worktree";
 import { provisionIssueWorktree, resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
+import { assertProjectAccess, ProjectAccessDeniedError } from "@/lib/project-permissions";
+import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
+import { isSshRuntime } from "@/lib/familiar-runtime";
 
 // Match the daemon's "harness X is not a supported harness" rejection
 // from `/api/v1/sessions`. The daemon emits this when the requested
-// harness isn't registered for daemon-managed sessions (e.g. `openclaw`
-// and `hermes` today, which ship as their own CLI flows in chat/send
-// but don't yet have a daemon session adapter). Surfacing a friendly
-// 409 here saves the user from staring at "daemon http 400" with no
-// idea what to do.
+// harness isn't registered for daemon-managed sessions. Trusted Chat runtimes
+// can fall back to Cave's native Chat launch; anything else gets a friendly
+// 409 instead of a misleading "daemon http 400".
 const UNSUPPORTED_HARNESS_RE = /not a supported harness/i;
 
 export const dynamic = "force-dynamic";
@@ -48,6 +57,121 @@ export async function POST(
     );
   }
 
+  const config = await loadConfig();
+  const binding = bindingFor(config, familiarId);
+  // Familiar bindings can retain a package or binary alias from older setup
+  // flows (for example `hermes-agent` or `opencode-ai`). Normalize before
+  // both model-override validation and bridge routing so the task inspector,
+  // Chat, and Board all select the same runtime behavior.
+  binding.harness = canonicalHarnessId(binding.harness);
+
+  // Resolve the project the task chat will run in. Security-critical: when the
+  // card is assigned to a project we resolve the root SERVER-SIDE from
+  // card.projectId (never trust a client-supplied body.projectRoot to point
+  // elsewhere), reject a mismatched requested root, and authorize the familiar
+  // for that project. Only when the card has no assigned project do we fall
+  // back to the supplied/persisted root.
+  //
+  // NEVER silently fall back to the app's own working directory for an assigned
+  // task: that roots the chat in the coven-cave checkout, records the wrong
+  // project_root on the session, and the chat picker then shows the wrong
+  // project for the task.
+  let projectRoot: string | null = null;
+  const projects = await loadProjects();
+
+  if (card.projectId) {
+    const assignedProject = projectById(card.projectId, projects);
+    if (!assignedProject) {
+      return NextResponse.json({ ok: false, error: "assigned project not found" }, { status: 409 });
+    }
+
+    const assignedProjectRoot = normalizeProjectRoot(assignedProject.root);
+    if (!assignedProjectRoot) {
+      return NextResponse.json({ ok: false, error: "assigned project root is invalid" }, { status: 409 });
+    }
+
+    if (body.projectRoot !== undefined && body.projectRoot !== null) {
+      const requestedProjectRoot = normalizeProjectRoot(body.projectRoot);
+      if (!requestedProjectRoot || requestedProjectRoot !== assignedProjectRoot) {
+        return NextResponse.json(
+          { ok: false, error: "project root does not match assigned task project" },
+          { status: 403 },
+        );
+      }
+    }
+
+    // Reopening an isolated task must prove that its persisted worktree still
+    // exists. A new task starts from the registered project root instead.
+    const persistedSessionRoot =
+      card.sessionId && card.cwd ? normalizeProjectRoot(card.cwd) : null;
+    if (card.sessionId && card.cwd && !persistedSessionRoot) {
+      return NextResponse.json({ ok: false, error: "task chat root is invalid" }, { status: 409 });
+    }
+    projectRoot = persistedSessionRoot ?? assignedProjectRoot;
+  } else {
+    const rawProjectRoot = body.projectRoot ?? card.cwd;
+    if (!rawProjectRoot) {
+      return NextResponse.json(
+        { ok: false, error: "assign a project to this task before starting chat" },
+        { status: 409 },
+      );
+    }
+    projectRoot = normalizeProjectRoot(rawProjectRoot);
+  }
+
+  if (!projectRoot) {
+    return NextResponse.json({ ok: false, error: "invalid project root" }, { status: 400 });
+  }
+
+  try {
+    const authorized = await authorizeChatProjectLaunch(
+      {
+        validateProjectRoot: validateCaveProjectRoot,
+        resolveProjectId: (requestedRoot, resolvedRoot) => {
+          const resolvedProjectId = chatProjectAccessId({
+            projects,
+            requestedProjectRoot: requestedRoot,
+            resolvedCwd: resolvedRoot,
+          });
+          return card.projectId && resolvedProjectId !== card.projectId
+            ? null
+            : resolvedProjectId;
+        },
+        isProjectRegistered: (projectId) =>
+          projects.some((project) => project.id === projectId),
+        hasProjectAccess: async (requestedFamiliarId, projectId, surface) => {
+          try {
+            await assertProjectAccess({ familiarId: requestedFamiliarId }, projectId, surface);
+            return true;
+          } catch (error) {
+            if (error instanceof ProjectAccessDeniedError) return false;
+            throw error;
+          }
+        },
+      },
+      {
+        familiarId,
+        projectRoot,
+        surface: "session-launch",
+      },
+    );
+    projectRoot = authorized.root;
+  } catch (error) {
+    if (error instanceof ChatProjectLaunchError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: error.message,
+          code: error.code,
+        },
+        { status: error.status },
+      );
+    }
+    throw error;
+  }
+
+  // A persisted card/session link can outlive deletion, permission changes, or
+  // reassignment. Reuse it only after the same launch gate as a new session.
   if (card.sessionId) {
     await recordSessionFamiliar(card.sessionId, familiarId);
     return NextResponse.json({
@@ -59,16 +183,26 @@ export async function POST(
     });
   }
 
-  // card.cwd wins; body.projectRoot covers "card had no CWD, user supplied one" flow.
-  const projectRoot = normalizeProjectRoot(card.cwd ?? body.projectRoot ?? process.cwd());
-  if (!projectRoot) {
-    return NextResponse.json({ ok: false, error: "invalid project root" }, { status: 400 });
-  }
-
-  const config = await loadConfig();
-  const binding = bindingFor(config, familiarId);
   if (!isAllowedHarness(binding.harness)) {
     return NextResponse.json({ ok: false, error: "unsupported harness" }, { status: 400 });
+  }
+
+  // Repair the known Windows-only Hermes manifest before asking the daemon to
+  // create its PTY. Without this the daemon attempts the POSIX-only
+  // `hermes-coven` shim and the task can never start.
+  await ensureAdapterManifestScaffold(binding.harness);
+
+  // A familiar can be reconfigured from one runtime to another without the
+  // card being reassigned. Model ids are runtime-specific, so only forward an
+  // override that was chosen for this exact canonical harness. Legacy or stale
+  // overrides are cleared before launch and the familiar's current default is
+  // used instead.
+  const taskModelOverride =
+    card.modelOverride && card.modelOverrideHarness === binding.harness
+      ? card.modelOverride
+      : null;
+  if (card.modelOverride && !taskModelOverride) {
+    await updateCard(card.id, { modelOverride: null, modelOverrideHarness: null });
   }
 
   // ── Intelligent worktree isolation ────────────────────────────────────────
@@ -109,25 +243,101 @@ export async function POST(
     }
   }
 
+  // A native Chat launch works for bridge-backed and direct runtimes without
+  // assuming how their executable was installed (npm shim, native binary,
+  // package manager, or a registry adapter). The Board still owns worktree
+  // isolation and the task link; Chat owns each runtime's launch contract.
+  const reserveNativeChatTask = async () => {
+    const sessionId = crypto.randomUUID();
+    const updated = await updateCard(card.id, {
+      sessionId,
+      familiarId,
+      ...(worktree
+        ? { cwd: sessionRoot }
+        : (card.projectId || body.projectRoot ? { cwd: projectRoot } : {})),
+    });
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "card disappeared" }, { status: 404 });
+    }
+    await Promise.all([
+      recordSessionFamiliar(sessionId, familiarId),
+      setSessionTitle(sessionId, `Task: ${card.title.trim()}`),
+    ]);
+    return NextResponse.json({
+      ok: true,
+      reused: false,
+      card: updated,
+      sessionId,
+      familiarId,
+      projectRoot: sessionRoot,
+      worktree,
+      initialPrompt: buildInitialTaskChatPrompt(card),
+      bridge: "native-chat",
+    });
+  };
+
+  // OpenClaw has no daemon adapter, so it must never be sent to the daemon.
+  // Its native bridge is local-only, though: reserving a card first for an
+  // SSH-bound familiar would leave the card linked to a conversation that
+  // chat/send must reject. Leave the card unmodified and surface the same
+  // actionable limitation as the Chat surface instead.
+  if (binding.harness === "openclaw") {
+    if (isSshRuntime(binding.runtime)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "OpenClaw SSH runtime is not supported yet. Use a local OpenClaw familiar or connect the remote agent through a future OpenClaw node bridge.",
+        },
+        { status: 409 },
+      );
+    }
+    return reserveNativeChatTask();
+  }
+
+  // Copilot's daemon session is the worst offender behind cave-aikv: the daemon
+  // spawns `copilot --interactive=<prompt>` as an immortal PTY child whose
+  // redraw output pumps millions of events into coven.sqlite3, and nothing in
+  // Cave ever attaches to it (task chat drives a native coven run instead). Its
+  // nonInteractive launch also mangles multi-word prompts. So — exactly as flows
+  // do (flow-executor.ts, cave-yesg) — a local copilot task takes the native
+  // Chat bridge, spawning the CLI directly with no orphaned daemon TUI. SSH/hub
+  // copilot must stay on the daemon path (remote host / hub authority boundary).
+  const sshBound = isSshRuntime(binding.runtime);
+  const hubAuthority = config.multiHost?.mode === "hub";
+  if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
+    return reserveNativeChatTask();
+  }
+
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",
     body: {
       projectRoot: sessionRoot,
       harness: binding.harness,
+      model: taskModelOverride ?? binding.model,
       prompt: buildInitialTaskChatPrompt(card),
+      // Non-interactive launch: the daemon streams the initial prompt's
+      // assistant output instead of spawning a fullscreen, never-reaped harness
+      // TUI (cave-aikv). Copilot only reaches here when SSH/hub-bound — where it
+      // must stay on the daemon — and there its nonInteractive prompt-mangling
+      // is the pre-existing limitation, so keep its historical interactive
+      // launch rather than regress it.
+      ...(binding.harness === "copilot" ? {} : { launchMode: "nonInteractive" }),
     },
     timeoutMs: 8000,
   });
 
   if (!res.ok || !res.data?.id) {
     const daemonMsg = extractDaemonError(res);
-    // Unsupported-harness errors aren't outages — they're a
-    // misconfiguration: the card is assigned to a familiar whose
-    // harness this daemon doesn't run as a task session. Return a 409
-    // with a message that tells the user what to do, instead of a 502
-    // that reads as "the daemon is broken".
+    // Unsupported-harness errors aren't outages. A trusted runtime can use
+    // native Chat; an untrusted one remains a configuration error with a
+    // helpful 409 instead of a generic daemon failure.
     if (daemonMsg && UNSUPPORTED_HARNESS_RE.test(daemonMsg)) {
+      // The daemon's adapter set can lag Cave's chat-supported runtimes.
+      // Fall back only after the daemon has explicitly declined a trusted
+      // runtime, preserving daemon sessions where they are supported while
+      // allowing direct/registry runtimes such as Hermes to start task work.
+      if (isTrustedChatHarness(binding.harness)) return reserveNativeChatTask();
       return NextResponse.json(
         {
           ok: false,
@@ -150,10 +360,11 @@ export async function POST(
     familiarId,
     // When we isolated into a worktree, pin the card's CWD to it so reopening
     // the chat lands back in the same worktree. Otherwise keep the prior
-    // behavior of recording a start-time CWD only when the card had none.
+    // behavior of recording the explicit project root when the caller supplied
+    // one.
     ...(worktree
       ? { cwd: sessionRoot }
-      : (!card.cwd && body.projectRoot ? { cwd: body.projectRoot } : {})),
+      : (card.projectId || body.projectRoot ? { cwd: projectRoot } : {})),
   });
   if (!updated) {
     return NextResponse.json({ ok: false, error: "card disappeared" }, { status: 404 });

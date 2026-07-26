@@ -9,7 +9,7 @@ struct ToastView: View {
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: message.systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(tint)
             Text(message.text)
                 .font(.subheadline.weight(.medium))
@@ -18,7 +18,7 @@ struct ToastView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
-        .background(.regularMaterial, in: Capsule())
+        .glassFill(.elevated, in: Capsule())
         .overlay(Capsule().strokeBorder(tint.opacity(0.35), lineWidth: 1))
         .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
         .padding(.horizontal, 24)
@@ -37,20 +37,22 @@ struct ToastView: View {
 private struct ToastModifier: ViewModifier {
     @Binding var message: ToastMessage?
     @State private var dismissTask: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .top) {
             if let message {
                 ToastView(message: message)
                     .padding(.top, 6)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    // Slide in by default; fade only when Reduce Motion is on.
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                     .id(message.id)
                     .onAppear { scheduleDismiss(message.id) }
                     // Tap to dismiss immediately.
-                    .onTapGesture { withAnimation(.snappy) { self.message = nil } }
+                    .onTapGesture { withAnimation(reduceMotion ? nil : .snappy) { self.message = nil } }
             }
         }
-        .animation(.snappy(duration: 0.28), value: message)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: message)
     }
 
     private func scheduleDismiss(_ id: UUID) {

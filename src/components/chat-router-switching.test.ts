@@ -38,14 +38,52 @@ assert.match(
 
 assert.match(
   source,
-  /<ChatProjectSidebar[\s\S]*activeSessionId=\{view\.kind === "chat" \? view\.sessionId : null\}[\s\S]*<ChatView/,
-  "ChatRouter should render the projects sidebar next to ChatView while a chat is open",
+  // The chat surface renders through ChatSplitHost (multi-pane chat); the
+  // sidebar still sits beside it while a chat is open.
+  /<ChatProjectSidebar[\s\S]*activeSessionId=\{view\.kind === "chat" \? view\.sessionId : null\}[\s\S]*<ChatSplitHost/,
+  "ChatRouter should render the projects sidebar next to the chat surface while a chat is open",
+);
+
+assert.match(
+  source,
+  /const chatFamiliar = selectedViewFamiliar \?\? sessionFamiliar \?\? familiar \?\? null/,
+  "ChatRouter should render an opened session with its own familiar before the parent active familiar catches up",
+);
+
+// ── Chat-first IA (cave-hsa6): boot into a compose view, not the list ───────
+const bootComposeEffect =
+  source.match(/const bootComposeRef = useRef\(false\);[\s\S]*?\}, \[familiar\?\.id, fallbackFamiliar\?\.id\]\);/)?.[0] ?? "";
+assert.match(
+  bootComposeEffect,
+  /if \(bootComposeRef\.current\) return;/,
+  "the boot-compose effect fires once, so returning to the list later sticks",
+);
+assert.doesNotMatch(
+  bootComposeEffect,
+  /sessionsLoaded/,
+  "boot must not wait for the sessions fetch (cave-qvwu) — /api/sessions/list can take many seconds cold, and gating compose on it left users staring at the list skeletons; the compose landing needs only a familiar",
+);
+assert.match(
+  bootComposeEffect,
+  /window\.location\.hash\.startsWith\("#chat-"\)/,
+  "a #chat-<id> deep link is deferred to workspace restore, not overridden by the compose boot",
+);
+assert.match(
+  bootComposeEffect,
+  /matchMedia\("\(max-width: 1023px\)"\)\.matches/,
+  "compose-first boot is desktop-only — mobile keeps the thread list as the chat home",
+);
+assert.match(
+  bootComposeEffect,
+  /prev\.kind === "list" \? \{ kind: "chat", sessionId: null, familiarId: bootFamiliarId \} : prev/,
+  "booting into chat opens a zero-session compose view (ChatEmptyState + composer), no server session created",
 );
 
 // ── CHAT-D9-01: URL deep links (#chat-<sessionId>) ───────────────────────────
 
 const workspaceSource = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const chatSurfaceSource = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const workspaceUrlStateSource = readFileSync(new URL("../lib/workspace-url-state.ts", import.meta.url), "utf8");
 
 const hashSyncEffect =
   source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[syncUrlHash, view\]\);/)?.[0] ?? "";
@@ -125,12 +163,41 @@ assert.match(
   "Unknown/stale deep-link ids must fall back to the chat list with the hash cleared — no crash",
 );
 
+// ── Deep-link loading hint (2026-07-04) ─────────────────────────────────────
+// The restore holds until the sessions fetch settles (~2s warm, longer under a
+// cold compile) — the shell must show intent for that beat, not flash Home.
+// REGRESSION (2026-07-04): seeding this state from the mount-time hash made
+// every #chat- URL a hydration mismatch (SSR renders false — the hash is
+// client-only), which regenerated the whole tree and spewed theme-script
+// console errors. It must start false and flip in a LAYOUT effect: that runs
+// before first paint, so the takeover still appears without a Home flash.
+assert.match(
+  workspaceSource,
+  /const \[chatDeepLinkPending, setChatDeepLinkPending\] = useState\(false\);\s*useLayoutEffect\(\(\) => \{\s*if \(pendingChatDeepLinkRef\.current !== null\) setChatDeepLinkPending\(true\);\s*\}, \[\]\);/,
+  "the pending flag starts hydration-safe (false) and reveals pre-paint via useLayoutEffect",
+);
+assert.doesNotMatch(
+  workspaceSource,
+  /useState<boolean>\(\s*\(\) => pendingChatDeepLinkRef\.current !== null,?\s*\)/,
+  "the hash-seeded initializer (hydration mismatch on #chat- URLs) must not return",
+);
+assert.match(
+  restoreEffect,
+  /setChatDeepLinkPending\(false\)/,
+  "resolving the deep link (found or stale) clears the takeover",
+);
+assert.match(
+  workspaceSource,
+  /\{chatDeepLinkPending && \([\s\S]{0,200}workspace-deeplink-pending[\s\S]{0,120}role="status"[\s\S]{0,200}Opening chat…/,
+  "while pending, the shell renders an announced Opening-chat takeover",
+);
+
 const readChatHashHelper =
-  workspaceSource.match(/function readChatHash\(\): string \| null \{[\s\S]*?\n\}/)?.[0] ?? "";
+  workspaceUrlStateSource.match(/function readChatHash\(\): string \| null \{[\s\S]*?\n\}/)?.[0] ?? "";
 
 assert.match(
   readChatHashHelper,
-  /try \{[\s\S]*decodeURIComponent\(hash\.slice\(CHAT_HASH_PREFIX\.length\)\)[\s\S]*\} catch/,
+  /try \{[\s\S]*decodeURIComponent\(window\.location\.hash\.slice\(CHAT_HASH_PREFIX\.length\)\)[\s\S]*\} catch/,
   "readChatHash should treat malformed percent-encoding as null instead of throwing during render/popstate",
 );
 
@@ -157,7 +224,9 @@ assert.match(
 // src/lib/transcript-find.ts. Intra-turn highlighting is deferred.
 
 const chatViewSource = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const chatCssSource = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const chatCssSource = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 
 // 1. Behavioral: the pure turn-level match helper.
 const { findMatchingTurnIds } = await import("../lib/transcript-find.ts");
@@ -328,4 +397,22 @@ assert.match(
   "cave-turn-found must disable its animation under prefers-reduced-motion (static tint instead)",
 );
 
+// cave-b63 (3): Back/Forward into a #chat-<id> before sessions load shows the
+// "Opening chat…" takeover (the popstate not-loaded branch arms the pending
+// flag, matching the mount-restore path).
+assert.match(
+  workspaceSource,
+  /pendingChatDeepLinkRef\.current = sid;\s*\n\s*\/\/[\s\S]*?setChatDeepLinkPending\(true\);/,
+  "the popstate deep-link-not-loaded branch shows the Opening chat… indicator",
+);
+
 console.log("chat-router-switching.test.ts: ok");
+
+// ── roster-error state is self-healing (issue #2990) ─────────────────────────
+// Workspace auto-retries loadFamiliars while the error shows; the copy must
+// not tell the user to retry manually as if nothing else will happen.
+assert.match(
+  source,
+  /retrying automatically/,
+  "the roster-error copy states that retries happen automatically",
+);

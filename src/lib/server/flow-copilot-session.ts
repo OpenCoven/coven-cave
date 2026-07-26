@@ -1,0 +1,305 @@
+// Direct copilot spawn for flow sessions (cave-lhc0).
+//
+// The daemon's nonInteractive session launch mangles multi-word prompts for
+// the copilot adapter (the CLI reports "your prompt was not quoted, so the
+// extra words were treated as separate arguments"), which broke every
+// copilot-familiar flow — including each bounded research-mission iteration.
+// Chat hit the same daemon deficiency and answers it by spawning the CLI
+// directly with a real argv (src/app/api/chat/send/route.ts, cave-yesg);
+// this gives flow sessions the same escape hatch.
+//
+// The spawned run persists its transcript as a Cave conversation under the
+// flow's session id, which is exactly where the flow transcript endpoint
+// (/api/flows/session-transcript) and the research-mission reconcile
+// (parseResearchControl over conversation turns) already look first.
+
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import { randomUUID } from "node:crypto";
+import { saveConversation } from "../cave-conversations.ts";
+import { formatToolInputValue, toPersistedTools, ToolCallTracker } from "../chat-tool-events.ts";
+import {
+  buildCopilotStreamArgs,
+  copilotIdentityPreamble,
+  copilotProtocolDiagnostic,
+  CopilotTextAssembler,
+  parseCopilotChatEvent,
+  type CopilotStreamSpec,
+} from "../copilot-stream.ts";
+import { harnessSpawnEnv } from "../harness-spawn-env.ts";
+
+/** One bounded flow iteration should never outlive this. */
+const FLOW_COPILOT_TIMEOUT_MS = 60 * 60_000;
+
+export type CopilotFlowLaunch = {
+  spec: CopilotStreamSpec;
+  prompt: string;
+  projectRoot: string;
+  familiarId: string | null;
+  familiarName?: string;
+  familiarRole?: string;
+  /**
+   * Directories to trust at the harness level (repeatable `--add-dir`) —
+   * typically the familiar's own workspace, which flow prompts direct memory
+   * and self-report writes into. Without this the one-shot CLI cannot prompt
+   * for permission and every shell/tool access outside the spawn cwd
+   * hard-fails. The spawn cwd (projectRoot) is already trusted and must not
+   * be listed (cave-n1yc contract).
+   */
+  addDirs?: string[];
+  /** Only trusted local automation may pre-approve tools and URLs. */
+  permissionMode?: "read" | "unattended";
+  /** Injected only by direct-spawn tests; production resolves the CLI safely. */
+  spawnCommand?: { command: string; fixedArgs: string[] };
+};
+
+export type CopilotFlowStart = {
+  sessionId: string;
+  /** Resolves when the one-shot exits and the transcript is persisted. */
+  done: Promise<void>;
+};
+
+// Live Cave-direct runs, keyed by session id. These sessions never exist on
+// the daemon, so this in-process registry is the only "still running" signal
+// the research-mission reconcile can consult (cave-ibb7). A server restart
+// clears it — correctly: non-detached children die with the server.
+const ACTIVE_RUNS = new Set<string>();
+
+export function isCopilotFlowRunActive(sessionId: string): boolean {
+  return ACTIVE_RUNS.has(sessionId);
+}
+
+/**
+ * Launch one non-interactive copilot run for a compiled flow prompt.
+ * Returns as soon as the process starts; the transcript (user prompt +
+ * assistant output) lands in the Cave conversation when the run finishes, so
+ * pollers see the complete output including any trailing control markers.
+ */
+export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart {
+  const sessionId = randomUUID();
+  const identity = launch.familiarId
+    ? copilotIdentityPreamble(launch.familiarId, launch.familiarName, launch.familiarRole)
+    : "";
+  const prompt = identity ? `${identity}\n\n${launch.prompt}` : launch.prompt;
+  const addDirs = Array.from(
+    new Set(
+      (launch.addDirs ?? [])
+        .map((root) => root.trim())
+        .filter((root) => root && root !== launch.projectRoot),
+    ),
+  );
+  const args = buildCopilotStreamArgs({
+    spec: launch.spec,
+    prompt,
+    resumeSessionId: null,
+    newSessionId: sessionId,
+    model: null,
+    // Flow runs are Cave-initiated one-shots with nobody at the prompt: they
+    // need pre-approved tools/URLs or the CLI auto-denies every write and the
+    // iteration "completes" with an untouched workspace (the research-mission
+    // "completed without artifacts/primary.md" failure). Path verification
+    // stays on — writes are confined to the spawn cwd plus addDirs.
+    // Webhook payloads are untrusted prompt data. Only a caller that has
+    // explicitly established a local automation boundary may pre-approve.
+    permissionMode: launch.permissionMode ?? "read",
+    addDirs,
+  });
+
+  const command = launch.spawnCommand ?? launch.spec.launchCommand ?? {
+    command: launch.spec.executable,
+    fixedArgs: [],
+  };
+  const child = spawn(command.command, [...command.fixedArgs, ...args], {
+    cwd: launch.projectRoot,
+    env: harnessSpawnEnv(launch.familiarId),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  ACTIVE_RUNS.add(sessionId);
+
+  const startedAt = new Date().toISOString();
+  let assistantText = "";
+  const deltaByMessage = new Map<string, string>();
+  const textAssembler = new CopilotTextAssembler();
+  const toolTracker = new ToolCallTracker();
+  const pendingToolCompletions = new Map<string, { output: string | undefined; isError: boolean }>();
+  const MAX_PENDING_TOOL_COMPLETIONS = 64;
+  const compatibilityDiagnostics = new Map<string, string>();
+  let protocolReportedFailure = false;
+
+  const rememberPendingToolCompletion = (
+    toolCallId: string,
+    completion: { output: string | undefined; isError: boolean },
+  ) => {
+    // First terminal frame wins, matching ToolCallTracker's settled-call
+    // policy. Replayed/reordered completions must not replace it.
+    if (pendingToolCompletions.has(toolCallId)) return;
+    if (!pendingToolCompletions.has(toolCallId) && pendingToolCompletions.size >= MAX_PENDING_TOOL_COMPLETIONS) {
+      const oldest = pendingToolCompletions.keys().next().value;
+      if (oldest) pendingToolCompletions.delete(oldest);
+      compatibilityDiagnostics.set(
+        "orphan-tool-completion-limit",
+        "Copilot emitted too many unmatched tool completions; some tool details were discarded.",
+      );
+    }
+    pendingToolCompletions.set(toolCallId, completion);
+  };
+
+  const rl = createInterface({ input: child.stdout });
+  rl.on("line", (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    if (!trimmed.startsWith("{")) {
+      compatibilityDiagnostics.set(
+        "unframed-output",
+        "Copilot emitted an unrecognized protocol frame.",
+      );
+      protocolReportedFailure = true;
+      return;
+    }
+    let raw: unknown;
+    try { raw = JSON.parse(trimmed); } catch {
+      compatibilityDiagnostics.set("malformed-jsonl", "Copilot emitted a malformed protocol frame.");
+      return;
+    }
+    const event = parseCopilotChatEvent(raw, launch.spec.protocol);
+    if (!event) {
+      const diagnostic = copilotProtocolDiagnostic(raw, launch.spec.protocol);
+      if (diagnostic) compatibilityDiagnostics.set(diagnostic.code, diagnostic.message);
+      return;
+    }
+    if (event.kind === "text_delta") {
+      const append = textAssembler.delta(event.messageId, event.text, event.frameId);
+      if (append) deltaByMessage.set(event.messageId, (deltaByMessage.get(event.messageId) ?? "") + append);
+    } else if (event.kind === "message") {
+      // The final frame carries the complete content — prefer it over deltas.
+      const messageEntries = [...deltaByMessage.entries()];
+      const messageIndex = messageEntries.findIndex(([id]) => id === event.messageId);
+      const previousContent = deltaByMessage.get(event.messageId) ?? "";
+      const precedingMessages = messageIndex >= 0 ? messageEntries.slice(0, messageIndex) : messageEntries;
+      const messageStart = precedingMessages
+        .reduce((length, [, content]) => length + content.length + 1, 0);
+      textAssembler.message(event.messageId, event.content);
+      deltaByMessage.set(event.messageId, event.content);
+      toolTracker.rebaseTextOffsets(
+        messageStart + previousContent.length,
+        event.content.length - previousContent.length,
+      );
+      if (event.malformedToolRequests) {
+        compatibilityDiagnostics.set(
+          "malformed-tool-event",
+          "Copilot CLI emitted a malformed tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",
+        );
+      }
+      for (const request of event.toolRequests) {
+        toolTracker.envelopeToolUse(
+          request.toolCallId,
+          request.name,
+          formatToolInputValue(request.input),
+          [...deltaByMessage.values()].join("\n").length,
+        );
+        const completion = pendingToolCompletions.get(request.toolCallId);
+        if (completion && toolTracker.envelopeToolResult(request.toolCallId, completion.output, completion.isError)) {
+          pendingToolCompletions.delete(request.toolCallId);
+        }
+      }
+    } else if (event.kind === "tool_start") {
+      toolTracker.envelopeToolUse(
+        event.toolCallId,
+        event.toolName,
+        formatToolInputValue(event.input),
+        [...deltaByMessage.values()].join("\n").length,
+      );
+      const completion = pendingToolCompletions.get(event.toolCallId);
+      if (completion && toolTracker.envelopeToolResult(event.toolCallId, completion.output, completion.isError)) {
+        pendingToolCompletions.delete(event.toolCallId);
+      }
+    } else if (event.kind === "tool_end") {
+      if (!toolTracker.envelopeToolResult(event.toolCallId, event.output, event.isError)) {
+        if (!toolTracker.hasSettledEnvelopeId(event.toolCallId)) {
+          rememberPendingToolCompletion(event.toolCallId, { output: event.output, isError: event.isError });
+        }
+      }
+    } else if (event.kind === "result") {
+      protocolReportedFailure ||= event.isError;
+    }
+  });
+
+  child.stderr.resume();
+
+  const timeout = setTimeout(() => {
+    try { child.kill("SIGKILL"); } catch { /* already gone */ }
+  }, FLOW_COPILOT_TIMEOUT_MS);
+  timeout.unref?.();
+
+  const done = new Promise<void>((resolve) => {
+    // "close" is the normal finalizer; a failed spawn emits "error" and, on
+    // some platforms, never "close" — finalize from whichever fires first so
+    // ACTIVE_RUNS can't leak a phantom "running" session and `done` always
+    // resolves.
+    let finalized = false;
+    const finalize = (code: number | null) => {
+      if (finalized) return;
+      finalized = true;
+      clearTimeout(timeout);
+      ACTIVE_RUNS.delete(sessionId);
+      for (const pending of textAssembler.flushUnconfirmed()) {
+        deltaByMessage.set(pending.messageId, pending.text);
+      }
+      const reconciledAssistantText = [...deltaByMessage.values()].join("\n");
+      assistantText = reconciledAssistantText.trim();
+      const persistedTools = toPersistedTools(
+        toolTracker.snapshot(),
+        reconciledAssistantText.length - reconciledAssistantText.trimStart().length,
+      );
+      // Any non-zero (or missing) exit code is an error — even with partial
+      // output, the run didn't finish cleanly and the diagnostics must not
+      // be dropped. Captured text is preserved ahead of the exit note.
+      const failed = code !== 0 || protocolReportedFailure;
+      const exitNote = code !== 0
+        ? `Copilot exited with code ${code ?? "?"}.`
+        : protocolReportedFailure
+          ? "Copilot reported a failed result."
+          : "";
+      const finishedAt = new Date().toISOString();
+      const text = [assistantText, ...compatibilityDiagnostics.values(), exitNote].filter(Boolean).join("\n\n");
+      void (async () => {
+        try {
+          const userTurnId = randomUUID();
+          const assistantTurnId = randomUUID();
+          await saveConversation({
+            sessionId,
+            harnessSessionId: sessionId,
+            familiarId: launch.familiarId ?? "",
+            harness: "copilot",
+            createdAt: startedAt,
+            updatedAt: finishedAt,
+            turns: [
+              { id: userTurnId, role: "user", text: prompt, createdAt: startedAt },
+              {
+                id: assistantTurnId,
+                parentId: userTurnId,
+                role: "assistant",
+                text,
+                createdAt: finishedAt,
+                ...(persistedTools ? { tools: persistedTools } : {}),
+                ...(failed ? { isError: true } : {}),
+              },
+            ],
+            activeLeafId: assistantTurnId,
+          });
+        } catch {
+          // Transcript persistence is best-effort; the run itself finished.
+        }
+        resolve();
+      })();
+    };
+    child.on("error", () => {
+      // Give a same-tick "close" the chance to carry the real exit code;
+      // finalize from here only if it never arrives.
+      setImmediate(() => finalize(null));
+    });
+    child.on("close", (code) => finalize(code));
+  });
+
+  return { sessionId, done };
+}

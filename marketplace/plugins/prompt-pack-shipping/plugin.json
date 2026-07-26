@@ -1,0 +1,45 @@
+{
+  "name": "prompt-pack-shipping",
+  "version": "0.1.0",
+  "description": "Release, review, and team-ritual prompts \u2014 launch notes, detailed PRs, bug repros, standups, retros. Showcases multi-placeholder templates with defaults. Installed templates appear under /prompts and the Prompt snippets picker.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "prompts",
+    "templates",
+    "release",
+    "team",
+    "review"
+  ],
+  "capabilities": [
+    "prompts"
+  ],
+  "marketplaceId": "opencoven/prompt-pack-shipping",
+  "x-coven": {
+    "displayName": "Prompt Pack: Shipping",
+    "category": "Productivity",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven-cave"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  },
+  "prompts": [
+    "release-notes-launch",
+    "pr-description-detailed",
+    "bug-repro",
+    "standup-update",
+    "retro-notes"
+  ]
+}

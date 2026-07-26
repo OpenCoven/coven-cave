@@ -1,10 +1,13 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  chatSummaryTitle,
   defaultChatTitleForSession,
   disambiguateSessionTitles,
+  MAX_SUMMARY_TITLE_LENGTH,
   mergeSessionTitleOverrides,
   normalizeChatTitle,
+  titleFromAssistantReply,
 } from "./cave-chat-titles.ts";
 
 const sessions = [
@@ -56,6 +59,53 @@ assert.deepEqual(
   ]);
   assert.equal(map.get("x"), "New chat", "no time => no suffix, no crash");
   assert.equal(map.get("y"), "New chat");
+}
+
+// chatSummaryTitle — auto-naming threads from the first exchange.
+{
+  // Short prompts pass through filler-cleaned, already title-shaped.
+  assert.equal(
+    chatSummaryTitle({ userText: "please fix the search bar" }),
+    "Fix the search bar",
+  );
+  // Long prompts fall back to an opening assistant heading when one exists.
+  const longAsk =
+    "I have been thinking about how our retry policy interacts with the queue " +
+    "backoff settings and I want to understand what the best configuration is " +
+    "for high-throughput consumers under sustained load";
+  assert.equal(
+    chatSummaryTitle({
+      userText: longAsk,
+      assistantText: "## Retry policy vs queue backoff\n\nHere is how they interact…",
+    }),
+    "Retry policy vs queue backoff",
+  );
+  // No usable heading → question lead-in stripped + word-boundary clamp.
+  const noHeading = chatSummaryTitle({
+    userText: "what's the best way to configure retry backoff for high-throughput queue consumers under sustained load",
+    assistantText: "They interact in a few ways.",
+  });
+  assert.ok(noHeading.length <= MAX_SUMMARY_TITLE_LENGTH, "clamped to summary length");
+  assert.match(noHeading, /^Best way to configure retry backoff/, "lead-in stripped, capitalized");
+  // Nothing meaningful → null (caller keeps the current title).
+  assert.equal(chatSummaryTitle({ userText: "   ", assistantText: "" }), null);
+  assert.equal(chatSummaryTitle({}), null);
+}
+
+// titleFromAssistantReply — only clean, early, plausible headings count.
+{
+  assert.equal(
+    titleFromAssistantReply("# **Fixing the parser** 🎉\nbody"),
+    "Fixing the parser",
+    "markdown syntax and edge emoji stripped",
+  );
+  assert.equal(titleFromAssistantReply("no headings here\njust text"), null);
+  assert.equal(
+    titleFromAssistantReply("line one\nline two\nline three\n# Too late"),
+    null,
+    "headings after the opening lines are ignored",
+  );
+  assert.equal(titleFromAssistantReply(null), null);
 }
 
 console.log("cave-chat-titles.test.ts ok");

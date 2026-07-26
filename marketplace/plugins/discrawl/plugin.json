@@ -1,0 +1,40 @@
+{
+  "name": "discrawl",
+  "version": "0.1.0",
+  "description": "Query a local Discord archive \u2014 search, freshness sync, DMs, channel slices, and read-only SQL counts \u2014 via the discrawl CLI before hitting live Discord APIs.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "discord",
+    "archive",
+    "search",
+    "sync",
+    "sql",
+    "cli"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/discrawl",
+  "x-coven": {
+    "displayName": "Discrawl",
+    "category": "Social",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/discrawl"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

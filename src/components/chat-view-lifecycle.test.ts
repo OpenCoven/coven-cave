@@ -3,23 +3,28 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const turnStateSource = readFileSync(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
+const draftHook = readFileSync(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
+const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat", "cave-chat/activity"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 
 assert.match(
-  source,
+  turnStateSource,
   /type ChatTurnLifecycle =[\s\S]*"queued"[\s\S]*"connecting"[\s\S]*"streaming"[\s\S]*"tooling"[\s\S]*"cancelled"[\s\S]*"failed"[\s\S]*"complete"/,
   "ChatView should model assistant send lifecycle with explicit phases",
 );
 
 assert.match(
-  source,
+  turnStateSource,
   /lifecycle\?: ChatTurnLifecycle/,
   "Assistant turns should carry lifecycle metadata for trustworthy status UI",
 );
 
 assert.match(
   source,
-  /function setAssistantLifecycle\(id: string, lifecycle: ChatTurnLifecycle\)/,
+  /function setAssistantLifecycle\([\s\S]*id: string,[\s\S]*lifecycle: ChatTurnLifecycle,[\s\S]*targetSessionId: string \| null = currentSessionRef\.current/,
   "ChatView should centralize assistant lifecycle updates",
 );
 
@@ -42,20 +47,20 @@ assert.match(
 );
 
 assert.match(
-  source,
-  /\{ kind: "progress"; id\?: string; label: string; detail\?: string; status\?: "running" \| "done" \| "error"; durationMs\?: number \}/,
+  streamEvents,
+  /\{\s*kind: "progress";\s*id\?: string;\s*label: string;\s*detail\?: string;\s*status\?: "running" \| "done" \| "error";\s*durationMs\?: number;\s*\}/,
   "Chat streams should expose non-token progress events for quiet phases",
 );
 
 assert.match(
-  source,
+  turnStateSource,
   /progress\?: ProgressEvent\[\]/,
   "Assistant turns should keep progress events alongside text, thinking, and tools",
 );
 
 assert.match(
   source,
-  /case "progress":[\s\S]*upsertTurnProgress\(assistantId, ev\)/,
+  /case "progress":[\s\S]*upsertTurnProgress\([\s\S]*?assistantId,[\s\S]*?ev,[\s\S]*?liveGeneration\.sessionId,[\s\S]*?liveStreamMetadata\(liveGeneration\)/,
   "Progress events should update the active assistant turn",
 );
 
@@ -91,13 +96,19 @@ assert.match(
 
 assert.match(
   source,
-  /case "assistant_chunk":[\s\S]*setAssistantLifecycle\(assistantId, "streaming"\)/,
+  /const applyAssistantChunk = \([\s\S]*?setAssistantLifecycle\([\s\S]*?assistantId,[\s\S]*?"streaming",[\s\S]*?liveGeneration\.sessionId,[\s\S]*?liveStreamMetadata\(liveGeneration\)/,
   "Assistant chunks should move the turn into a streaming lifecycle",
 );
 
 assert.match(
   source,
-  /case "tool_use":[\s\S]*setAssistantLifecycle\(assistantId, "tooling"\)/,
+  /case "assistant_chunk": \{[\s\S]{0,400}?applyAssistantChunk\(ev\.text, assistantId, liveGeneration\)/,
+  "The assistant_chunk event delegates to the shared streaming-lifecycle application",
+);
+
+assert.match(
+  source,
+  /case "tool_use":[\s\S]*setAssistantLifecycle\([\s\S]*?assistantId,[\s\S]*?"tooling",[\s\S]*?liveGeneration\.sessionId,[\s\S]*?liveStreamMetadata\(liveGeneration\)/,
   "Tool events should move the turn into a tool-use lifecycle",
 );
 
@@ -127,14 +138,160 @@ assert.match(
 
 assert.match(
   source,
-  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) return;[\s\S]*?setInput\(""\);[\s\S]*?setAttachments\(\[\]\);[\s\S]*?await sendRaw\(outgoingText, outgoingAttachments, outgoingMentions\)/,
-  "send() must run slash intents first, then bail on busy BEFORE clearing the composer — a mid-stream Enter must not destroy the draft (CHAT-D5-01)",
+  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?const queueing = busy \|\| abortRef\.current;[\s\S]*?if \(queueing\) \{[\s\S]*?enqueueMessage\(\{[\s\S]*?text: outgoingText,[\s\S]*?attachments: outgoingAttachments,[\s\S]*?mentionedFiles: outgoingMentions,[\s\S]*?controls:/,
+  "send() must queue a rich follow-up while busy instead of dropping it (CHAT-D5-01)",
 );
 
 assert.match(
   source,
-  /const sendRaw = async [\s\S]*?\|\| busy\) return;/,
-  "sendRaw should keep its own busy guard as the backstop behind send()'s",
+  /const sendRaw = async [\s\S]*?if \(\(busy \|\| abortRef\.current\) && !allowBusy\) \{[\s\S]*?enqueueMessage\(/,
+  "sendRaw should queue all programmatic sends while any runtime is in flight, while allowing the queue drain to hand off exactly one settled item",
+);
+
+assert.match(
+  source,
+  /if \(command === "\/run" \|\| command === "\/codex" \|\| command === "\/claude"\)[\s\S]*?setTimeout\(\(\) => sendRaw\(args\), 0\);[\s\S]*?const sendRaw = async [\s\S]*?enqueueMessage\(/,
+  "slash sends for Codex, Claude, and other harness-backed commands must queue through sendRaw instead of being dropped mid-response",
+);
+
+assert.match(
+  source,
+  /type ChatSendControls = \{[\s\S]*?permissionMode: CommandPermissionMode;/,
+  "queued messages must preserve the selected access level",
+);
+
+assert.match(
+  source,
+  /const sendOptions: ChatSendOptions = \{[\s\S]*?projectRoot: requestProjectRoot,[\s\S]*?mentionedFilesRoot: mentionRoot[\s\S]*?modelOverride:[\s\S]*?options: sendOptions,[\s\S]*?permissionMode,[\s\S]*?queuedRuntimeHost: runtimeHost/,
+  "queued messages must retain queue-time model, project, file-mention, access, and host metadata",
+);
+
+assert.match(
+  source,
+  /const queueing = busy \|\| abortRef\.current;[\s\S]*?const queuedParentTurnId = queueing[\s\S]*?branchParent !== undefined \? branchParent : \(activeLeafId \|\| null\)[\s\S]*?parentTurnId: queuedParentTurnId[\s\S]*?if \(queueing\) \{[\s\S]*?options: sendOptions/,
+  "queued messages must capture their visible branch leaf before later navigation can change it",
+);
+
+assert.match(
+  source,
+  /if \(\(busy \|\| abortRef\.current\) && !allowBusy\) \{[\s\S]*?parentTurnId:\s*opts\?\.parentTurnId !== undefined \? opts\.parentTurnId : \(activeLeafId \|\| null\)/,
+  "programmatic sends that queue through sendRaw must capture their visible branch leaf before later navigation can change it",
+);
+
+assert.match(
+  source,
+  /"queuedRuntimeHost" in controlsOverride[\s\S]*?\? controlsOverride\.queuedRuntimeHost[\s\S]*?: \(controlsOverride\?\.runtimeHost \?\? runtimeHost\)/,
+  "a queued automatic host choice must not be replaced by a later host picker change",
+);
+
+assert.match(
+  source,
+  /\.\.\.\(fleetHost \? \{ runtimeHost: fleetHost \} : \{\}\),/,
+  "the queued host choice must be forwarded to every chat bridge request, not only Omnigent runs",
+);
+
+assert.match(
+  source,
+  /const requestedProjectRoot = opts\?\.projectRoot \?\? requestProjectRoot;[\s\S]*?if \(!projectLaunchReadyForRequest\)[\s\S]*?const projectRootForRequest = requestedProjectRoot;[\s\S]*?const mentionedFilesRootForRequest = opts\?\.mentionedFilesRoot \?\? mentionRoot;[\s\S]*?projectRoot: projectRootForRequest,[\s\S]*?permissionMode: controlsOverride\?\.permissionMode \?\? permissionMode,[\s\S]*?mentionedFilesRoot: mentionedFilesRootForRequest/,
+  "delayed dispatch must authorize and use queued metadata rather than the latest composer state",
+);
+
+assert.match(
+  source,
+  /const drainNextQueuedMessage = useCallback\(\(\) => \{[\s\S]*?const \[next, \.\.\.rest\] = queuedMessagesRef\.current;[\s\S]*?void sendQueuedMessageRef\.current\(next\);[\s\S]*?if \(sawDone && !streamFailed && !controller\.signal\.aborted\) \{[\s\S]*?drainNextQueuedMessage\(\);/,
+  "only a naturally successful stream completion should drain one queued follow-up",
+);
+
+assert.match(
+  source,
+  /aria-label="Queued messages"[\s\S]*?steerQueuedMessage\(message\.id\)[\s\S]*?removeQueuedMessage\(message\.id\)/,
+  "queued messages should remain visible with send-next and remove controls",
+);
+
+assert.match(
+  source,
+  /if \(busy \|\| abortRef\.current\) \{[\s\S]*?announce\("Queued message will send next\.", "polite"\);[\s\S]*?const sendRaw = async [\s\S]*?if \(\(busy \|\| abortRef\.current\) && !allowBusy\)/,
+  "send-next and normal sends must recognize every supported runtime as in flight, including non-streaming hosts and the render gap before busy updates",
+);
+
+assert.match(
+  source,
+  /title="Queue message"[\s\S]*?aria-label="Queue message"[\s\S]*?title="Cancel \(esc\)"/,
+  "a live response must expose both Queue and Cancel controls",
+);
+
+assert.match(
+  turnStateSource,
+  /const liveChatRegistry = createLiveGenerationRegistry<Turn, LiveChatGenerationSnapshot>\(cloneLiveTurn\)/,
+  "In-flight chat generations should be persisted outside the ChatView component so navigation away does not lose them",
+);
+
+assert.match(
+  turnStateSource,
+  /function subscribeLiveChatGeneration\(\s*sessionId: string,\s*listener: \(snapshot: LiveChatGenerationSnapshot \| null\) => void,\s*\)/,
+  "ChatView should subscribe to live generation snapshots when returning to a session",
+);
+assert.match(
+  turnStateSource,
+  /type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn> & \{[\s\S]*runId\?: string \| null;[\s\S]*streamHealth\?: ChatStreamClientHealth;/,
+  "Live chat snapshots should persist run ownership and client stream health without widening unrelated registries",
+);
+assert.match(
+  turnStateSource,
+  /function stageLiveChatGenerationMetadata\([\s\S]*liveChatRegistry\.stage/,
+  "Chat-specific metadata should stage onto the registry without notifying separately from turn advances",
+);
+assert.match(
+  turnStateSource,
+  /function advanceLiveChatGeneration\([\s\S]*metadata\?: LiveChatGenerationMetadata[\s\S]*stageLiveChatGenerationMetadata\(sessionId, metadata\)[\s\S]*liveChatRegistry\.advance/,
+  "Every chat turn advance should stage its latest run and health metadata before the coalesced notification",
+);
+assert.match(
+  turnStateSource,
+  /function publishLiveChatGenerationMetadata\([\s\S]*recordLiveChatGeneration\(staged\)/,
+  "Infrequent health transitions should be able to publish a staged chat snapshot",
+);
+
+assert.match(
+  source,
+  /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns,[\s\S]*?runId,[\s\S]*?streamHealth: generationStreamHealth/,
+  "sendRaw should persist the active stream snapshot with its controller, run ID, and health",
+);
+
+assert.match(
+  source,
+  /readLiveChatGeneration\(sessionId\)[\s\S]*?adoptLiveGenerationMetadata\(live, sessionId\)[\s\S]*?setTurns\(live\.turns\)[\s\S]*?setActiveLeafId\(live\.activeLeafId\)[\s\S]*?abortRef\.current = live\.controller[\s\S]*?setBusy\(true\)/,
+  "History loading should restore run/health ownership before rehydrating a live generation snapshot",
+);
+
+assert.match(
+  source,
+  /subscribeLiveChatGeneration\(sessionId, \(live\) => \{[\s\S]*?adoptLiveGenerationMetadata\(live, sessionId\)[\s\S]*?setTurns\(live\.turns\)[\s\S]*?setBusy\(true\)[\s\S]*?setBusy\(false\)/,
+  "A remounted ChatView should restore ownership before following live generation updates and settle when the stream finishes",
+);
+
+// A live snapshot whose writing component unmounted (or whose stream died
+// without running cleanup) is never cleared from the registry; without a
+// staleness guard, every later mount on that session inherits a zombie
+// `busy = true` and shows "Streaming…" forever with nothing streaming. The
+// liveness rule itself lives in @/lib/live-chat-snapshot (unit-tested there);
+// ChatView imports and applies it at both adoption sites.
+assert.match(
+  source,
+  /import \{ isLiveSnapshotActive \} from "@\/lib\/live-chat-snapshot"/,
+  "ChatView should consume the extracted, unit-tested liveness rule",
+);
+
+assert.match(
+  source,
+  /readLiveChatGeneration\(sessionId\)[\s\S]*?isLiveSnapshotActive\(live, Date\.now\(\)\)[\s\S]*?setBusy\(true\)[\s\S]*?clearLiveChatGeneration\(sessionId\)/,
+  "Mount-time adoption should ignore and evict a stale live snapshot instead of pinning busy",
+);
+
+assert.match(
+  source,
+  /subscribeLiveChatGeneration\(sessionId, \(live\) => \{[\s\S]*?if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\)/,
+  "The live-generation subscription should gate busy on snapshot liveness",
 );
 
 assert.match(
@@ -173,7 +330,7 @@ assert.match(
 
 assert.match(
   source,
-  /onEdit=\{t\.role === "user" && t\.text\.trim\(\) \? \(\) => editTurnInComposer\(t\) : undefined\}/,
+  /onEdit=\{t\.role === "user" && t\.text\.trim\(\) \? \(\) => handlers\(\)\.editTurnInComposer\(t\) : undefined\}/,
   "Only user turns with text get the Edit affordance (CHAT-D6-01)",
 );
 
@@ -185,13 +342,13 @@ assert.match(
 
 assert.match(
   source,
-  /function regenerateFor\(turn: Turn\)[\s\S]*?role === "user"[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]\);/,
+  /function regenerateFor\(turn: Turn\)[\s\S]*?role === "user"[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]/,
   "Regenerate re-sends the preceding user turn (text + attachments) through the guarded sendRaw path, and hides when no user turn precedes (CHAT-D6-02)",
 );
 
 assert.match(
   source,
-  /onRegenerate=\{regenerateFor\(t\)\}/,
+  /onRegenerate=\{handlers\(\)\.regenerateFor\(t\)\}/,
   "Assistant turns get the Regenerate affordance via the gated helper (CHAT-D6-02)",
 );
 
@@ -213,7 +370,7 @@ assert.match(
 // false, error: true) must keep passing it, or the pill below never renders.
 const regenerateForBody =
   source.match(
-    /function regenerateFor\(turn: Turn\)[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]\);/,
+    /function regenerateFor\(turn: Turn\)[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]/,
   )?.[0] ?? "";
 assert.ok(regenerateForBody, "regenerateFor body should be extractable (CHAT-D12-03)");
 assert.doesNotMatch(
@@ -238,7 +395,7 @@ assert.match(
 // lastFailedSend banner state alongside the per-turn affordance.
 assert.match(
   source,
-  /case "done":[\s\S]*?if \(ev\.isError\) setLastFailedSend\(request\);/,
+  /case "done":[\s\S]*?if \(ev\.isError\) \{[\s\S]*?setLastFailedSend\(request\);/,
   "Failed dones must still arm lastFailedSend for the transport retry path (CHAT-D12-03)",
 );
 
@@ -251,8 +408,8 @@ assert.match(
 // ── CHAT-D12-02: per-turn token usage + cost ──
 
 assert.match(
-  source,
-  /kind: "done"; durationMs\?: number; isError\?: boolean; sessionId\?: string; usage\?: TurnUsage; costUsd\?: number/,
+  streamEvents,
+  /kind: "done";\s*durationMs\?: number;\s*isError\?: boolean;\s*sessionId\?: string;\s*usage\?: TurnUsage;\s*costUsd\?: number/,
   "The done StreamEvent must carry optional usage and cost fields (CHAT-D12-02)",
 );
 
@@ -263,8 +420,8 @@ assert.match(
 );
 
 assert.match(
-  source,
-  /durationMs: t\.durationMs,\s*\n\s*usage: t\.usage,\s*\n\s*costUsd: t\.costUsd,/,
+  turnStateSource,
+  /durationMs: turn\.durationMs,\s*\n\s*usage: turn\.usage,\s*\n\s*costUsd: turn\.costUsd,/,
   "History load must map persisted usage and cost back onto turns (CHAT-D12-02)",
 );
 
@@ -280,8 +437,8 @@ const usageTurnRow =
 assert.ok(usageTurnRow, "TurnRow body should be extractable (CHAT-D12-02)");
 assert.match(
   usageTurnRow,
-  /formatTimestamp\(turn\.createdAt, dtPrefs\)[\s\S]{0,180}?<UsageText usage=\{turn\.usage\} costUsd=\{turn\.costUsd\} \/>/,
-  "Assistant turn meta row appends the muted usage/cost readout after the formatted timestamp (CHAT-D12-02)",
+  /className="cave-linear-turn-recency"[\s\S]{0,220}?title=\{exactTime\}[\s\S]{0,220}?\{recency\}[\s\S]{0,700}?<UsageText usage=\{turn\.usage\} costUsd=\{turn\.costUsd\} \/>/,
+  "Assistant turn meta row keeps the muted usage/cost readout after the visible recency timestamp, now inside the reveal-on-hover extras cluster (CHAT-D12-02 / cave-xsq.2)",
 );
 
 // ── CHAT-D9-04: find highlight timer cleanup ──
@@ -367,11 +524,34 @@ assert.doesNotMatch(
 // (b) The synthetic "Receiving response" progress row settles at the first
 // assistant chunk instead of staying "running" for the whole stream — the
 // streamed text itself is the live signal, and the auto-open ProgressGroup
-// quiets down to real connect/tool events.
+// quiets down to real connect/tool events. (The chunk application lives in
+// applyAssistantChunk; both the coalesced stream-loop path and handleEvent's
+// assistant_chunk case delegate to it — see chat-view-chunk-coalescing.)
 assert.match(
   source,
-  /case "assistant_chunk":[\s\S]*?id: "stream",\s*\n\s*label: "Receiving response",\s*\n\s*status: "done",/,
+  /const applyAssistantChunk = \([\s\S]*?id: "stream",\s*\n\s*label: "Receiving response",\s*\n\s*status: "done",/,
   "The synthetic Receiving-response row settles (done) at first chunk (CHAT-D12-01)",
+);
+
+// (b2) The server's "Starting <harness>" step (id "harness-start") is only
+// settled server-side at process EXIT, so it spun as the live activity
+// headline for the whole reply. Streamed text or a tool event proves the
+// start completed — both apply sites settle it client-side; the server's
+// exit update (label + duration) still lands via the normal upsert.
+assert.match(
+  source,
+  /function settleProgressEventById\(\s*\n\s*progress: ProgressEvent\[\] \| undefined,\s*\n\s*id: string,/,
+  "settleProgressEventById settles a named running step on later evidence",
+);
+assert.match(
+  source,
+  /const applyAssistantChunk = \([\s\S]*?upsertProgressEvent\(settleProgressEventById\(t\.progress, "harness-start"\), \{\s*\n\s*id: "stream",/,
+  "First streamed chunk settles the harness-start step (it demonstrably started)",
+);
+assert.match(
+  source,
+  /upsertProgressEvent\(settleProgressEventById\(t\.progress, "harness-start"\), \{\s*\n\s*id: "tools",/,
+  "A tool event settles the harness-start step too (tooling turns can run long before prose)",
 );
 
 // (c) CHAT-D3-06: the MetaLine streaming state carries a compact ticking
@@ -414,33 +594,134 @@ assert.match(
 
 // The composer draft survives a reload: input initialises from localStorage
 // and is written back on change (and cleared when emptied, e.g. after a send).
+// The plumbing lives in the shared use-composer-draft hook (parity with home);
+// these pins hold the call sites, the hook test holds the semantics.
 assert.match(
   source,
-  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(\)\)/,
+  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(COMPOSER_DRAFT_KEY\)\)/,
   "composer input initialises from the persisted draft",
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \{\s*writeComposerDraft\(input\);\s*\}, \[input\]\)/,
-  "the draft is persisted whenever the composer input changes",
+  /const \{ clearNow: clearDraft \} = useDraftPersistence\(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS\)/,
+  "the draft persists through the shared debounced hook (no per-keystroke localStorage writes)",
 );
 assert.match(
-  source,
-  /if \(text\) window\.localStorage\.setItem\(COMPOSER_DRAFT_KEY, text\);\s*else window\.localStorage\.removeItem\(COMPOSER_DRAFT_KEY\)/,
+  draftHook,
+  /if \(text\) window\.localStorage\.setItem\(key, text\);\s*else window\.localStorage\.removeItem\(key\)/,
   "an emptied draft removes the key (sent messages don't reappear on reload)",
 );
 
-// The ↑/↓ prompt-history survives a reload: it initialises from localStorage
-// and is persisted whenever it changes.
+// The ↑/↓ prompt-history survives a reload — shared hook; the pin holds the
+// keyed call site, the hook test holds the recall/persist semantics.
 assert.match(
   source,
-  /const \[inputHistory, setInputHistory\] = useState<string\[\]>\(\(\) => readComposerHistory\(COMPOSER_HISTORY_KEY\)\)/,
-  "input history initialises from the persisted recall stack",
+  /const \{ push: pushHistory, handleArrowKey \} = useComposerHistory\(COMPOSER_HISTORY_KEY\)/,
+  "input history rides the shared persisted recall stack",
 );
 assert.match(
   source,
-  /writeComposerHistory\(COMPOSER_HISTORY_KEY, inputHistory\)/,
-  "input history is persisted when it changes",
+  /if \(handleArrowKey\(e, input, setInput\)\) return;/,
+  "↑/↓ recall is delegated to the shared hook from the composer keyboard handler",
+);
+
+// ── Mid-stream thread switch must not cross wires (2026-07-03 audit P0) ───────
+// A live stream accumulates in its session's registry snapshot — module scope,
+// so it survives thread switches AND full surface unmounts (cave-0er). Only a
+// view currently showing that session mirrors the update into setTurns.
+assert.match(
+  source,
+  /if \(targetSessionId\) \{[\s\S]*?const stored = advanceLiveChatGeneration\([\s\S]*?targetSessionId,[\s\S]*?updater,[\s\S]*?nextActiveLeafId,[\s\S]*?metadata,[\s\S]*?\);[\s\S]*?if \(targetSessionId === currentSessionRef\.current\) \{[\s\S]*?setTurns\(stored\.turns\);/,
+  "updateLiveTurns accumulates in the module-scope registry first so unmounted views can't drop chunks, mirroring into setTurns only for the on-screen session",
+);
+// A view that adopted (not started) a stream reconciles from disk on settle —
+// it never sees the stream's "done" event, and the server only persists the
+// exchange when the harness exits (cave-0er).
+assert.match(
+  source,
+  /if \(!live && refetchOnSettleRef\.current === sessionId && !streamOwnerRef\.current\) \{[\s\S]*?setHistoryRetryKey\(\(k\) => k \+ 1\);/,
+  "a non-owner view refetches the conversation from disk when an adopted/orphaned stream settles",
+);
+// Switching threads releases the previous thread's streaming lock so its busy
+// state / Esc-cancel don't bleed onto the newly displayed thread.
+assert.match(
+  source,
+  /release streaming state owned by the PREVIOUS thread[\s\S]{0,400}?setBusy\(false\);\s*\n\s*abortRef\.current = null;/,
+  "the history-load effect clears streaming state inherited from the previous thread",
+);
+
+// Thread-switch composer isolation (cave chat audit): ChatView is a single
+// instance reused across threads, so per-thread composer context must be reset
+// on session switch or it bleeds a reply-quote / attachments / branch-parent /
+// enhance-draft into the next conversation's next send.
+assert.match(
+  source,
+  /setMentionedFiles\(\[\]\);\s*\n\s*setRuntimeHost\(null\);[\s\S]{0,600}?setReplyTarget\(null\);\s*\n\s*clearAttachments\(\);\s*\n\s*setPendingBranchParent\(undefined\);\s*\n\s*promptEnhance\.reset\(\);/,
+  "the session-switch reset effect clears reply-target, attachments, pending branch parent, and enhance state so they don't leak across threads",
+);
+
+// Stream teardown must be ownership-scoped: a settling BACKGROUND stream must
+// not clobber a newer concurrent stream's abort/stop wiring or unlock the composer.
+assert.match(
+  source,
+  /if \(abortRef\.current === controller\) \{\s*\n\s*streamOwnerRef\.current = false;\s*\n\s*abortRef\.current = null;\s*\n\s*stopKeysRef\.current = \{ runId: null, sessionId: null \};\s*\n\s*setBusy\(false\);/,
+  "sendRaw's finally only tears down the shared stream wiring when it still owns the active controller",
+);
+
+// IME composition safety: the Enter that confirms a CJK/kana candidate must not send.
+assert.match(
+  source,
+  /e\.key === "Enter" && !e\.shiftKey && !e\.nativeEvent\.isComposing/,
+  "the composer's Enter-to-send is gated on !isComposing so IME candidate-confirm doesn't fire a half-composed message",
+);
+
+// New-chat background-generation isolation (cave-8zq): a generation started on
+// a brand-new chat carries an immutable originSessionId, and both the "session"
+// and "done" events only adopt the server-assigned id into the displayed
+// thread's currentSessionRef when the view is STILL on that origin thread.
+// Otherwise (user switched away during first-token latency) the late id would
+// splice the background stream into the wrong thread and mis-address the next
+// send — while onSessionStarted still fires so the router can register it.
+assert.match(
+  source,
+  /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,/,
+  "each generation records the immutable thread it started on (originSessionId)",
+);
+{
+  const guarded = source.match(
+    /if \(currentSessionRef\.current === liveGeneration\.originSessionId\) \{\s*\n\s*liveSessionIdRef\.current = ev\.sessionId;\s*\n\s*currentSessionRef\.current = ev\.sessionId;\s*\n\s*setHistoryState\("loaded"\);\s*\n\s*\}\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);/g,
+  );
+  assert.ok(
+    guarded && guarded.length === 2,
+    "both the session and done events gate currentSessionRef adoption on still owning the displayed thread, yet always notify onSessionStarted",
+  );
+}
+
+// cave-b63 (1): model-state / usage-plan refreshes gate their setState on a
+// caller predicate so a fetch resolving after a thread switch can't overwrite
+// the new thread's model/plan; the effects pass () => !cancelled.
+assert.match(
+  source,
+  /refreshModelState = useCallback\(async \(shouldApply: \(\) => boolean = \(\) => true\)[\s\S]*?if \(shouldApply\(\)\) setModelState\(next\);/,
+  "refreshModelState only applies its result when the caller's shouldApply() allows it",
+);
+assert.match(
+  source,
+  /void refreshModelState\(\(\) => !cancelled\);/,
+  "the model-state effect vetoes a stale apply via () => !cancelled",
+);
+assert.match(
+  source,
+  /void refreshUsagePlan\(undefined, \(\) => !cancelled\);/,
+  "the usage-plan effect vetoes a stale apply via () => !cancelled",
+);
+
+// cave-b63 (4): /clear tears down any in-flight stream first (cancelSend) so the
+// live registry doesn't mirror the cleared turns back on the next chunk.
+assert.match(
+  source,
+  /if \(command === "\/clear"\) \{\s*\n\s*\/\/[\s\S]*?cancelSend\(\);\s*\n\s*liveSessionIdRef\.current = null;\s*\n\s*setTurns\(\[\]\);/,
+  "/clear cancels an in-flight stream before clearing the transcript",
 );
 
 console.log("chat-view-lifecycle.test.ts: ok");

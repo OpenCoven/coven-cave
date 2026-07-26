@@ -1,11 +1,10 @@
 import SwiftUI
 
-/// The command reference — the mobile equivalent of the web `/help` block and
-/// the ⌘K palette. Grouped by section, searchable, and tappable: picking a
-/// command drops it into the composer ready to run.
+/// The native iOS command reference. Grouped by section, searchable, and
+/// tappable: picking a command drops it into the composer ready to run.
 struct CommandsSheet: View {
     @Environment(\.dismiss) private var dismiss
-    /// Called with the chosen command's canonical name (e.g. "/save ").
+    /// Called with the chosen command's canonical name.
     let onPick: (SlashCommand) -> Void
 
     @State private var query = ""
@@ -19,8 +18,8 @@ struct CommandsSheet: View {
 
     private var filtered: [SlashCommand] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return SlashCatalog.all }
-        return SlashCatalog.all.filter { command in
+        guard !q.isEmpty else { return SlashCatalog.available }
+        return SlashCatalog.available.filter { command in
             command.tokens.contains { $0.lowercased().contains(q) }
                 || command.description.lowercased().contains(q)
         }
@@ -42,6 +41,7 @@ struct CommandsSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .themedListBackground()
             .navigationTitle("Commands")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
@@ -52,6 +52,7 @@ struct CommandsSheet: View {
                 }
             }
         }
+        .themedSheetBackground()
     }
 
     private func row(_ command: SlashCommand) -> some View {
@@ -78,17 +79,9 @@ struct CommandsSheet: View {
                 }
             }
             Spacer(minLength: 6)
-            if command.availability == .desktopOnly {
-                Text("Desktop")
-                    .font(.system(size: 10, weight: .semibold))
-                    .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(Color.secondary.opacity(0.16), in: Capsule())
-                    .foregroundStyle(.secondary)
-            } else {
-                Image(systemName: "arrow.up.left")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
+            Image(systemName: "arrow.up.left")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 3)
         .contentShape(Rectangle())

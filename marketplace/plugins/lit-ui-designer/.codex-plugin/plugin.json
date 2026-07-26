@@ -1,0 +1,24 @@
+{
+  "name": "lit-ui-designer",
+  "version": "0.1.0",
+  "description": "Design, build, review, and polish production-grade Lit/LitElement web component UIs with idiomatic shadow DOM styling, design tokens, and WCAG 2.2 AA accessibility.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Lit UI Designer",
+    "shortDescription": "Design, build, review, and polish production-grade Lit/LitElement web component UIs with idiomatic shadow DOM styling, design tokens, and WCAG 2.2 AA accessibility.",
+    "longDescription": "Inspect existing components and conventions first, define the UX contract, then implement idiomatic Lit with native semantics, polished states, and verified accessibility.",
+    "developerName": "OpenCoven",
+    "category": "Design",
+    "capabilities": [
+      "lit",
+      "web-components",
+      "accessibility",
+      "shadow-dom",
+      "design-system"
+    ],
+    "defaultPrompt": "Help me use Lit UI Designer safely."
+  }
+}

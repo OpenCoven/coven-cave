@@ -19,6 +19,11 @@
  */
 
 import { useSyncExternalStore } from "react";
+import {
+  readAppPreferences,
+  subscribeAppPreferences,
+  updateAppPreferences,
+} from "./app-preferences.ts";
 
 export const DATETIME_CLOCK_KEY = "cave:datetime-clock";
 export const DATETIME_DATE_KEY = "cave:datetime-date";
@@ -77,16 +82,12 @@ function notify() {
 }
 
 function readFromStorage(): DateTimePrefs {
-  if (typeof window === "undefined") return DEFAULT_PREFS;
-  try {
-    return {
-      clock: normalizeClock(window.localStorage.getItem(DATETIME_CLOCK_KEY)),
-      date: normalizeDate(window.localStorage.getItem(DATETIME_DATE_KEY)),
-      density: normalizeDensity(window.localStorage.getItem(DATETIME_DENSITY_KEY)),
-    };
-  } catch {
-    return DEFAULT_PREFS;
-  }
+  const datetime = readAppPreferences().appearance.datetime;
+  return {
+    clock: normalizeClock(datetime.clock),
+    date: normalizeDate(datetime.date),
+    density: normalizeDensity(datetime.density),
+  };
 }
 
 function getSnapshot(): DateTimePrefs {
@@ -107,6 +108,7 @@ export function readDateTimePrefs(): DateTimePrefs {
 
 export function setClockFormat(value: ClockFormat): void {
   const clock = normalizeClock(value);
+  updateAppPreferences({ appearance: { datetime: { clock } } });
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(DATETIME_CLOCK_KEY, clock);
@@ -120,6 +122,7 @@ export function setClockFormat(value: ClockFormat): void {
 
 export function setDateFormat(value: DateFormat): void {
   const date = normalizeDate(value);
+  updateAppPreferences({ appearance: { datetime: { date } } });
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(DATETIME_DATE_KEY, date);
@@ -133,6 +136,7 @@ export function setDateFormat(value: DateFormat): void {
 
 export function setDensityFormat(value: DensityFormat): void {
   const density = normalizeDensity(value);
+  updateAppPreferences({ appearance: { datetime: { density } } });
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(DATETIME_DENSITY_KEY, density);
@@ -154,6 +158,11 @@ if (typeof window !== "undefined") {
     }
   });
 }
+
+subscribeAppPreferences(() => {
+  snapshot = null;
+  notify();
+});
 
 function subscribe(fn: () => void): () => void {
   listeners.add(fn);
@@ -209,10 +218,42 @@ export function formatTimestamp(iso: string, prefs: DateTimePrefs = DEFAULT_PREF
   return datePart ? `${datePart} ${time}` : time;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function localDayStart(input: Date): number {
+  return new Date(input.getFullYear(), input.getMonth(), input.getDate()).getTime();
+}
+
+/**
+ * Chat row timestamp for author headers: "Today at 11:58",
+ * "Yesterday at 11:58", weekday for the last week, then a short date.
+ */
+export function formatChatRecency(
+  iso: string,
+  prefs: DateTimePrefs = readDateTimePrefs(),
+  now: number = Date.now(),
+): string {
+  const d = new Date(iso);
+  const n = new Date(now);
+  if (Number.isNaN(d.getTime()) || Number.isNaN(n.getTime())) return "";
+  const time = formatClock(iso, prefs);
+  if (!time) return "";
+  const ageDays = Math.round((localDayStart(n) - localDayStart(d)) / DAY_MS);
+  const label =
+    ageDays === 0
+      ? "Today"
+      : ageDays === 1
+        ? "Yesterday"
+        : ageDays > 1 && ageDays < 7
+          ? d.toLocaleDateString([], { weekday: "long" })
+          : formatDate(iso, prefs, { year: d.getFullYear() !== n.getFullYear() });
+  return label ? `${label} at ${time}` : "";
+}
+
 /**
  * Verbose date honoring the date preference's ORDERING (month-first vs
  * day-first), keeping the month name (+ optional year/weekday) — so non-chat
- * date displays (library list, memory inspector, calendar header) follow the
+ * date displays (memory inspector, calendar header) follow the
  * user's regional date order without being forced into the compact "06.19"
  * form. `ddmm` → day-first ("19 Jun" / "19 Jun 2026"); anything else (mmdd, the
  * chat-only "off") → month-first ("Jun 19" / "Jun 19, 2026"). Accepts an ISO

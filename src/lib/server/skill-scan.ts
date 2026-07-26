@@ -1,12 +1,14 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 
 /**
- * Shared SKILL.md directory scanner. Used by /api/skills/local (coven-global,
- * per-familiar, and user skills) and /api/capabilities (supplementing harness
- * manifests when the daemon's own scan misses locally-installed skills).
+ * Shared SKILL.md directory scanner. Used by /api/skills/local (shared Coven
+ * and user skills) and /api/capabilities (supplementing harness manifests when
+ * the daemon's own scan misses locally-installed skills).
  */
+
+export type LocalSkillScope = "global" | "user" | "codex-user" | "agents-project" | "agents-user";
 
 export type LocalSkillEntry = {
   id: string;
@@ -15,8 +17,25 @@ export type LocalSkillEntry = {
   version?: string;
   kind?: string;
   tags?: string[];
+  owner?: string;
+  repo?: string;
+  packageName?: string;
+  topics?: string[];
+  agents?: string[];
+  /**
+   * Capabilities the skill needs, declared in its SKILL.md frontmatter as a
+   * `permissions:` list (e.g. `web.fetch`, `repo.read`). Surfaced as inherited
+   * permissions when the skill is attached to a workflow.
+   */
+  permissions?: string[];
+  /**
+   * Frontmatter `argument-hint` (Claude Code convention, e.g. `[pr-number]`).
+   * Drives the composer's autofill: a hinted skill inserts `/skill <id> ` for
+   * argument editing instead of sending immediately.
+   */
+  argumentHint?: string;
   path: string;
-  familiar: string;   // "global" for shared workspace skills, "user" for ~/.claude
+  familiar: LocalSkillScope;
 };
 
 export function parseFrontmatter(text: string): Record<string, string> {
@@ -59,13 +78,13 @@ export function parseFrontmatter(text: string): Record<string, string> {
   return fm;
 }
 
-function parseListField(text: string, field: string): string[] {
+export function parseListField(text: string, field: string): string[] {
   const match = text.match(new RegExp(`\\n${field}:\\s*\\n((?:\\s*-[^\\n]*\\n?)*)`));
   if (!match) return [];
   return match[1].match(/- (.+)/g)?.map(m => m.slice(2).trim()) ?? [];
 }
 
-export async function scanSkillsDir(dir: string, familiar: string, out: LocalSkillEntry[]): Promise<void> {
+export async function scanSkillsDir(dir: string, familiar: LocalSkillScope, out: LocalSkillEntry[]): Promise<void> {
   let entries: string[] = [];
   try {
     const dirents = await readdir(dir, { withFileTypes: true });
@@ -77,11 +96,14 @@ export async function scanSkillsDir(dir: string, familiar: string, out: LocalSki
 
   for (const skillName of entries) {
     const skillMdPath = path.join(dir, skillName, "SKILL.md");
-    try {
+  try {
       await stat(skillMdPath);
       const text = await readFile(skillMdPath, "utf8");
       const fm = parseFrontmatter(text);
       const tags = parseListField(text, "tags");
+      const permissions = parseListField(text, "permissions");
+      const topics = parseListField(text, "topics");
+      const agents = parseListField(text, "agents");
       out.push({
         id: skillName,
         name: fm.name ?? skillName,
@@ -89,6 +111,13 @@ export async function scanSkillsDir(dir: string, familiar: string, out: LocalSki
         version: fm.version,
         kind: fm.kind,
         tags: tags.length ? tags : (fm.tags ? [fm.tags] : []),
+        permissions: permissions.length ? permissions : undefined,
+        argumentHint: fm["argument-hint"],
+        owner: fm.owner,
+        repo: fm.repo,
+        packageName: fm.package,
+        topics: topics.length ? topics : undefined,
+        agents: agents.length ? agents : undefined,
         path: skillMdPath,
         familiar,
       });
@@ -96,9 +125,52 @@ export async function scanSkillsDir(dir: string, familiar: string, out: LocalSki
   }
 }
 
+/**
+ * Drop entries that are the same skill reached through different scan roots.
+ * The Skills CLI symlinks ~/.claude/skills/<id> to its canonical
+ * ~/.agents/skills copy, so an aggregate scan sees one physical skill twice
+ * and id-keyed consumers render duplicate rows (duplicate React keys).
+ * First-seen wins — the aggregation's scan order sets scope precedence.
+ */
+export async function dedupeByRealPath(entries: LocalSkillEntry[]): Promise<LocalSkillEntry[]> {
+  const seen = new Set<string>();
+  const out: LocalSkillEntry[] = [];
+  for (const entry of entries) {
+    let key = entry.path;
+    try {
+      key = await realpath(entry.path);
+    } catch {
+      // Unresolvable (dangling symlink, race) — fall back to the declared path.
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(entry);
+  }
+  return out;
+}
+
 /** The user's own Claude Code skills (~/.claude/skills). */
 export async function scanClaudeUserSkills(): Promise<LocalSkillEntry[]> {
   const out: LocalSkillEntry[] = [];
   await scanSkillsDir(path.join(homedir(), ".claude", "skills"), "user", out);
+  return out;
+}
+
+/** Codex global skills installed by `npx skills add -g -a codex`. */
+export async function scanCodexUserSkills(): Promise<LocalSkillEntry[]> {
+  const out: LocalSkillEntry[] = [];
+  await scanSkillsDir(path.join(homedir(), ".codex", "skills"), "codex-user", out);
+  return out;
+}
+
+/**
+ * Shared agent-skills roots used by the Skills CLI:
+ * - project `.agents/skills` for Codex and several universal agents
+ * - user `~/.agents/skills` as the CLI's canonical shared copy/link root
+ */
+export async function scanAgentSharedSkills(projectRoot = process.cwd()): Promise<LocalSkillEntry[]> {
+  const out: LocalSkillEntry[] = [];
+  await scanSkillsDir(path.join(projectRoot, ".agents", "skills"), "agents-project", out);
+  await scanSkillsDir(path.join(homedir(), ".agents", "skills"), "agents-user", out);
   return out;
 }

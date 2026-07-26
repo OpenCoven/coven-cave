@@ -27,39 +27,13 @@
     "sourceRefs": [
       "https://vercel.com/docs/agent-resources/vercel-mcp"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer",
-          "debugger"
-        ]
-      },
-      {
-        "familiar": "astra",
-        "roles": [
-          "strategic-navigator"
-        ]
-      },
-      {
-        "familiar": "sage",
-        "roles": [
-          "researcher"
-        ]
-      },
-      {
-        "familiar": "charm",
-        "roles": [
-          "devrel-liaison"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

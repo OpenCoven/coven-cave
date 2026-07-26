@@ -2,7 +2,40 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const source = readFileSync(new URL("./onboarding-overlay.tsx", import.meta.url), "utf8");
+const source = [
+  readFileSync(new URL("./onboarding-overlay.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./onboarding-model.ts", import.meta.url), "utf8"),
+].join("\n");
+
+// Setup status actions stay together as one compact row. On narrow panes the
+// row scrolls within its own width instead of wrapping or widening the page.
+const setupHeader = source.match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
+assert.match(
+  setupHeader,
+  /className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto lg:w-auto lg:shrink-0"/,
+  "Re-check, Copy diagnostics, and readiness render in one contained non-wrapping row",
+);
+assert.equal(
+  setupHeader.match(/focus-ring-inset/g)?.length,
+  2,
+  "scrollable setup actions keep their focus indicator inside the clipped row",
+);
+assert.equal(
+  setupHeader.match(/shrink-0 whitespace-nowrap/g)?.length,
+  3,
+  "each setup status action keeps its label on one line",
+);
+
+assert.doesNotMatch(
+  source,
+  /SalemPathfinder(?:Entry|Request)|Ask Salem for setup help/,
+  "the setup page no longer mounts or prepares the Ask Salem entry",
+);
+assert.doesNotMatch(
+  source,
+  /Installing the CovenCave app itself|platformCopy\.caveInstall/,
+  "the setup page no longer renders the redundant app-install accordion",
+);
 
 // Refresh-failure tracking
 assert.match(
@@ -49,40 +82,12 @@ assert.doesNotMatch(
   "Onboarding should not auto-close after setup becomes complete; adding a familiar must leave setup open",
 );
 
-// Glyph input validation
-assert.match(
+// Familiar creation (and its glyph validation) moved to the in-app summoning
+// circle — the wizard carries no familiar form fields at all.
+assert.doesNotMatch(
   source,
-  /aria-invalid=\{familiarGlyph\.trim\(\) !== "" && !familiarGlyph\.trim\(\)\.startsWith\("ph:"\)\}/,
-  "Glyph input should mark itself invalid when a non-ph: value is typed",
-);
-assert.match(
-  source,
-  /Must start with <code className="font-mono">ph:<\/code>/,
-  "Glyph input should explain the validation requirement inline",
-);
-
-// Both create buttons should refuse invalid glyphs
-const createBlocks = source.match(/disabled=\{[\s\S]*?\}/g) ?? [];
-const glyphGated = createBlocks.filter((block) =>
-  /familiarGlyph\.trim\(\) !== "" && !familiarGlyph\.trim\(\)\.startsWith\("ph:"\)/.test(
-    block,
-  ),
-);
-assert.ok(
-  glyphGated.length >= 2,
-  `Both create buttons should refuse invalid glyphs; found ${glyphGated.length} guarded block(s)`,
-);
-
-assert.match(
-  source,
-  /enableDemoMode/,
-  "Onboarding should let testers activate demo mode during setup",
-);
-
-assert.match(
-  source,
-  /setDemoModeEnabled\(true\)/,
-  "Onboarding demo activation should use the shared local-only demo mode toggle",
+  /familiarGlyph/,
+  "the wizard has no familiar glyph field — the summoning circle owns creation",
 );
 
 // Install polling gives up after a failure budget so a network drop mid-install
@@ -101,6 +106,300 @@ assert.match(
   source,
   /\+\+failures >= MAX_POLL_FAILURES\) giveUp\(\)/,
   "both error responses and network throws count toward the give-up budget",
+);
+
+// cave-0hhd: the 2s status/npm-lane heartbeat stops once every required step
+// is confirmed and nothing is running — a completed, idle wizard must not
+// keep re-probing the CLI install forever.
+assert.match(
+  source,
+  /const heartbeatIdle =\s*\n\s*\(status\?\.complete \?\? false\) &&/,
+  "the heartbeat idles only when the server says setup is complete",
+);
+assert.match(
+  source,
+  /heartbeatIdle[\s\S]{0,700}npmLane === null[\s\S]{0,700}installQueue\.length === 0[\s\S]{0,700}job\.status === "running"/,
+  "a busy npm lane, a queued install, or a running job keeps the heartbeat alive",
+);
+assert.match(
+  source,
+  /if \(!open \|\| heartbeatIdle\) return;[\s\S]{0,400}setInterval\(\(\) => \{\s*\n\s*void refresh\(\);\s*\n\s*void refreshNpmLane\(\);/,
+  "the recurring status/npm-lane interval is gated on the idle check",
+);
+assert.match(
+  source,
+  /const npmLaneRefreshInFlightRef = useRef\(false\)/,
+  "overlapping open-time and heartbeat npm-lane probes share an in-flight guard",
+);
+assert.match(
+  source,
+  /const refreshNpmLane = useCallback\(async \(\) => \{\s*if \(npmLaneRefreshInFlightRef\.current\) return;\s*npmLaneRefreshInFlightRef\.current = true;[\s\S]{0,1400}finally \{\s*npmLaneRefreshInFlightRef\.current = false;/,
+  "the npm-lane in-flight guard is released after every response outcome",
+);
+
+// Finishing setup must record the dismissal exactly like "Skip for now" —
+// otherwise the workspace auto-open relaunches the whole wizard for a
+// finished user whenever the daemon happens to be down (complete flips false).
+assert.match(
+  source,
+  /const finishOnboarding = useCallback\(\(\) => \{[\s\S]*?localStorage\.setItem\("cave:onboarding:dismissed", "1"\);[\s\S]*?onDismiss\(\);[\s\S]*?\}, \[onDismiss\]\)/,
+  "finishing onboarding writes the dismissed flag before closing",
+);
+assert.equal(
+  source.match(/(?:onClick=\{finishOnboarding\}|onOpenCave=\{finishOnboarding\})/g)?.length,
+  2,
+  "exactly two finish CTAs — the above-the-fold completion banner and the footer — both via finishOnboarding (the meet-familiars step stays retired)",
+);
+assert.match(
+  source,
+  /type Props = \{[\s\S]*autoFinishWhenComplete\?: boolean;[\s\S]*\}/,
+  "OnboardingOverlay accepts an optional autoFinishWhenComplete prop",
+);
+assert.match(
+  source,
+  /export function OnboardingOverlay\(\{[\s\S]*autoFinishWhenComplete = false,[\s\S]*\}: Props\)/,
+  "autoFinishWhenComplete defaults false at the component boundary",
+);
+assert.match(
+  source,
+  /import \{[\s\S]*advanceOnboardingAutoFinishGate[\s\S]*isLatestOnboardingStatusRequest[\s\S]*\} from "@\/lib\/onboarding-gate"/,
+  "OnboardingOverlay imports the shared onboarding gate helpers",
+);
+assert.match(
+  source,
+  /const statusGenerationRef = useRef\(0\)/,
+  "status polling tracks the latest onboarding-status generation",
+);
+assert.match(
+  source,
+  /const statusRefreshInFlightRef = useRef\(false\)/,
+  "status polling tracks whether a request is already in flight",
+);
+assert.match(
+  source,
+  /if \(statusRefreshInFlightRef\.current\) return;[\s\S]*statusRefreshInFlightRef\.current = true;[\s\S]*const requestId = \+\+statusGenerationRef\.current;/,
+  "overlapping poll ticks are skipped before a new status generation is created",
+);
+assert.match(
+  source,
+  /if \(!isLatestOnboardingStatusRequest\(\{ requestId, currentRequestId: statusGenerationRef\.current \}\)\) return;\s*setStatus\(json\);\s*setStatusFailures\(0\);/s,
+  "only the latest successful status poll may update status or clear failure count",
+);
+assert.match(
+  source,
+  /if \(!isLatestOnboardingStatusRequest\(\{ requestId, currentRequestId: statusGenerationRef\.current \}\)\) return;\s*setStatusFailures\(\(n\) => n \+ 1\);/s,
+  "stale failed polls cannot increment the failure counter",
+);
+assert.match(
+  source,
+  /finally \{\s*statusRefreshInFlightRef\.current = false;\s*\}/,
+  "status polling releases the in-flight guard after every request outcome",
+);
+assert.match(
+  source,
+  /return \(\) => \{[\s\S]*statusGenerationRef\.current \+= 1;[\s\S]*\};/s,
+  "closing onboarding invalidates in-flight status generations before late responses resolve",
+);
+assert.match(
+  source,
+  /const autoFinishFiredRef = useRef\(false\)/,
+  "auto-finish tracks whether the current open cycle already fired",
+);
+assert.match(
+  source,
+  /const autoFinishGate = advanceOnboardingAutoFinishGate\(\{\s*open,\s*enabled: autoFinishWhenComplete,\s*complete: setupComplete,\s*fired: autoFinishFiredRef\.current,\s*\}\)/s,
+  "the auto-finish effect delegates one-shot branching to the pure onboarding gate helper",
+);
+assert.match(
+  source,
+  /autoFinishFiredRef\.current = autoFinishGate\.fired;/,
+  "the effect stores the helper-returned auto-finish gate state back into the ref",
+);
+assert.match(
+  source,
+  /if \(autoFinishGate\.shouldFinish\) finishOnboarding\(\);/,
+  "auto-finish still reuses finishOnboarding only when the pure gate says to finish",
+);
+
+// The shared setup-action error banner must be a live alert with a dismiss —
+// every setup action (scaffold, daemon start, connection save) reports
+// through it, and a silent <div> means SR users never hear why their click
+// did nothing.
+assert.match(
+  source,
+  /\{setupError \? \([\s\S]{0,700}?role="alert"/,
+  "the setupError banner announces as an alert",
+);
+assert.match(
+  source,
+  /onClick=\{\(\) => setSetupError\(null\)\}/,
+  "the setupError banner is dismissible so a stale error doesn't outlive a retry",
+);
+
+// The empty-list harness retry loop has a failure budget + retry affordance;
+// without it a broken /api/harnesses left the runtime grid empty and polling
+// silently forever.
+assert.match(
+  source,
+  /const HARNESS_RETRY_BUDGET = 15/,
+  "harness retry loop declares a give-up budget",
+);
+assert.match(
+  source,
+  /if \(harnessFailures >= HARNESS_RETRY_BUDGET\) return;/,
+  "the harness retry interval stops once the budget is spent",
+);
+assert.match(
+  source,
+  /harnessesStuck \? \([\s\S]{0,400}?role="alert"/,
+  "a spent harness budget surfaces as a retryable alert in the runtime step",
+);
+
+// Step progress is announced to screen readers (steps tick via a 2s poll,
+// which is visually obvious and otherwise silent), and the spotlighted step
+// carries aria-current for AT step navigation.
+assert.match(
+  source,
+  /const \{ announce \} = useAnnouncer\(\)/,
+  "the wizard wires the shared polite live region",
+);
+assert.match(
+  source,
+  /announce\([\s\S]{0,200}?— done\. Next: step /,
+  "completing a step announces the completion and what comes next",
+);
+assert.match(
+  source,
+  /aria-current=\{isActive \? "step" : undefined\}/,
+  "the active step is exposed via aria-current",
+);
+
+// ── cave-4op: the wizard's primary CTAs use the shared Button primitive ──────
+// The four accent-background call-to-action buttons (Create Coven home, Start
+// local daemon, Install the Coven CLI, Install <adapter>) render through
+// <Button variant="primary">, so their radius / height / focus ring /
+// disabled + busy treatment come from one place. The two install CTAs use the
+// primitive's `loading` prop for their spinner. Bordered secondary actions,
+// option cards, and skip links stay bespoke here.
+assert.match(
+  source,
+  /import \{ Button \} from "@\/components\/ui\/button"/,
+  "imports the shared Button primitive",
+);
+assert.equal(
+  (source.match(/<Button\s+variant="primary"/g) ?? []).length,
+  4,
+  'all four primary CTAs render through <Button variant="primary">',
+);
+assert.match(
+  source,
+  /<Button[\s\S]{0,120}variant="primary"[\s\S]{0,160}scaffoldOnly/,
+  "Create Coven home is a primary Button",
+);
+assert.match(
+  source,
+  /<Button[\s\S]{0,140}loading=\{installBusy\}/,
+  "the OpenCoven tools CTA uses the primitive's loading state for its spinner",
+);
+assert.doesNotMatch(
+  source,
+  /className="focus-ring inline-flex[^"]*bg-\[var\(--accent-presence\)\][^"]*text-\[var\(--accent-presence-foreground\)\]/,
+  "the hand-rolled accent-bg CTA recipe is gone (now Button variant=primary)",
+);
+
+// ── cave-uvv7: the finish CTA keeps its promise ──────────────────────────────
+// "Open Cave — summon your familiar" must actually open the Summoning Circle
+// (requestSummonFamiliar walks to Familiars AND latches the circle open) when
+// the wizard's own fresh status shows a live daemon and an empty roster. The
+// decision must NOT ride the workspace's daemonRunning poll, which can lag a
+// just-auto-started daemon. Skip/Escape stay non-pushy: only finishOnboarding
+// summons.
+assert.match(
+  source,
+  /import \{ requestSummonFamiliar \} from "@\/lib\/summon-events"/,
+  "the finish path routes through the shared summon-events wiring",
+);
+assert.match(
+  source,
+  /const finishOnboarding = useCallback\(\(\) => \{[\s\S]*?if \(s\?\.daemon\.ok && !s\.familiars\.ok\) requestSummonFamiliar\(\);[\s\S]*?onDismiss\(\);/,
+  "finishOnboarding opens the Summoning Circle for a familiar-less machine with a live daemon",
+);
+assert.equal(
+  (source.match(/requestSummonFamiliar\(\);/g) ?? []).length,
+  1,
+  "only the finish CTA summons the circle — Skip for now and Escape never do",
+);
+
+// ── cave-uvv7: three-beat journey strip ──────────────────────────────────────
+// The wizard is beat one of Set up → Summon → First chat; the strip keeps the
+// page from reading as a dead-ended infra checklist.
+assert.match(
+  source,
+  /function JourneyStrip\(/,
+  "the journey strip component exists",
+);
+assert.match(
+  source,
+  /aria-label="First-run journey"/,
+  "the journey strip is labelled for assistive tech",
+);
+for (const beat of ["Set up Cave", "Summon a familiar", "First chat"]) {
+  assert.match(
+    source,
+    new RegExp(`label: "${beat}"`),
+    `journey strip carries the "${beat}" beat`,
+  );
+}
+assert.match(
+  source,
+  /<JourneyStrip\s+setupDone=\{setupComplete\}\s+familiarDone=\{hasFamiliars\}/,
+  "the strip's beats derive from live status (server complete / familiars step)",
+);
+
+// ── cave-uvv7: completion surfaces above the fold ────────────────────────────
+// The footer CTA sits below the fold of a long page; when the last step ticks
+// the user must see the next action without scrolling.
+assert.match(
+  source,
+  /\{setupComplete \? \([\s\S]{0,1200}?Setup complete — Cave is ready\./,
+  "a completion banner renders at the top of the wizard once setup is done",
+);
+assert.match(
+  source,
+  /\{hasFamiliars \? "Open Cave" : "Open Cave — summon your familiar"\}/,
+  "the footer CTA only promises a summoning when the roster is actually empty",
+);
+
+// ── cave-r6ro: setup failures carry a hint and a retry, never a dead end ─────
+// scaffold / daemon-start / connection-save previously dumped a raw message
+// into the banner with only a Dismiss — no next step, no way to try again
+// without hunting for the original button.
+for (const action of ["scaffold", "daemon-start", "connection-save"]) {
+  assert.match(
+    source,
+    new RegExp(`classifySetupFailure\\("${action}", err\\)`),
+    `${action} failures are classified into message + derived hint`,
+  );
+}
+assert.match(
+  source,
+  /\{setupError\.hint \? \(/,
+  "the banner renders the derived hint when the failure class is known",
+);
+assert.match(
+  source,
+  /onClick=\{retrySetupAction\}/,
+  "the banner offers a retry that re-runs exactly the failed action",
+);
+assert.match(
+  source,
+  /\{setupRetryLabel\(setupError\.action\)\}/,
+  "the retry affordance names the action it will re-run",
+);
+assert.match(
+  source,
+  /if \(!setupError \|\| setupRetryBusy\) return;/,
+  "retry is a no-op while the action is already in flight (no stacked requests)",
 );
 
 console.log("onboarding-polish.test.ts: ok");

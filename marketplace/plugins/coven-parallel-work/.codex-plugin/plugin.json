@@ -1,0 +1,24 @@
+{
+  "name": "coven-parallel-work",
+  "version": "0.1.0",
+  "description": "OpenClaw entry point to the harness-agnostic protocol letting multiple agents share one git repo safely via worktree isolation, per-branch claims, and branch protection.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Coven Parallel Work Protocol",
+    "shortDescription": "OpenClaw entry point to the harness-agnostic protocol letting multiple agents share one git repo safely via worktree isolation, per-branch claims, and branch protection.",
+    "longDescription": "Isolate each agent in its own worktree, claim the branch with cv-claim, and rely on pre-commit/pre-push hooks to block unsafe writes.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "worktree",
+      "claims",
+      "concurrency",
+      "git",
+      "protocol"
+    ],
+    "defaultPrompt": "Help me use Coven Parallel Work Protocol safely."
+  }
+}

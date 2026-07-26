@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildPreviewSrcDoc,
+  buildArtifactRepairPrompt,
   buildRefinePrompt,
   buildSketchPrompt,
   clampArtifactCode,
@@ -10,8 +11,10 @@ import {
   extractHtmlArtifact,
   isFullDocument,
   MAX_ARTIFACT_CODE_CHARS,
+  sanitizeAnnotations,
   sanitizeArtifacts,
   STARTER_ARTIFACT_HTML,
+  STARTER_ARTIFACT_REACT,
   titleFromPrompt,
 } from "./canvas-artifacts.ts";
 
@@ -48,11 +51,22 @@ assert.ok(isFullDocument("<HTML lang=en>"), "an <html> tag counts (case-insensit
 assert.ok(!isFullDocument("<div>fragment</div>"), "a bare fragment is not a full document");
 
 const fullDoc = "<!doctype html><html><body>x</body></html>";
-assert.equal(buildPreviewSrcDoc(fullDoc), fullDoc, "a full document is returned untouched");
+const inspectedFullDoc = buildPreviewSrcDoc(fullDoc);
+assert.match(inspectedFullDoc, /cave-canvas-inspector/, "a full document receives the inspector script");
+assert.equal(
+  inspectedFullDoc.replace(/<script>\(\(\) => \{[\s\S]*?<\/script>/, ""),
+  fullDoc,
+  "removing the inspector recovers every original full-document byte",
+);
+assert.ok(
+  inspectedFullDoc.indexOf("cave-canvas-inspector") < inspectedFullDoc.indexOf("<html>"),
+  "the inspector executes before artifact markup and scripts",
+);
 
 const wrapped = buildPreviewSrcDoc("<button>Click</button>");
 assert.match(wrapped, /^<!doctype html>/i, "a fragment is wrapped into a full document");
 assert.match(wrapped, /<button>Click<\/button>/, "the fragment is placed in the wrapped body");
+assert.match(wrapped, /cave-canvas-inspector/, "a wrapped fragment receives the inspector script");
 
 // ── titles, clamping, prompts ──────────────────────────────────────────────
 
@@ -74,6 +88,13 @@ assert.match(refine, /<!doctype html><html><\/html>/, "refine prompt embeds the 
 assert.match(refine, /FULL updated document/, "refine asks for the full document, not a diff");
 
 assert.match(STARTER_ARTIFACT_HTML, /^<!doctype html>/i, "starter template is a full document");
+assert.match(STARTER_ARTIFACT_REACT, /export default function App/, "React starter is a complete default-exported component");
+
+const repair = buildArtifactRepairPrompt("a responsive dashboard");
+assert.match(repair, /a responsive dashboard/, "repair carries the original intent");
+assert.match(repair, /one complete `html` or `tsx` fenced artifact/, "repair requests exactly one supported artifact");
+assert.doesNotMatch(repair, /previous response[\s\S]*```/, "repair does not echo an arbitrarily large malformed response");
+assert.match(buildArtifactRepairPrompt("add a button", "react"), /one complete `tsx` fenced artifact/);
 
 // ── sanitizeArtifacts: trust boundary for disk + request bodies ────────────
 
@@ -91,6 +112,176 @@ assert.equal(
   "build a thing",
   "a missing title is derived from the prompt",
 );
+
+// ── annotations: bounded component targets persisted with an artifact ──────
+
+{
+  const [artifact] = sanitizeArtifacts([{
+    id: "annotated",
+    prompt: "p",
+    annotations: [{
+      id: " comment-1 ",
+      target: {
+        selector: " main > button ",
+        label: " Primary action ",
+        excerpt: " Save changes ",
+      },
+      note: " Make this more prominent ",
+      createdAt: "2026-07-20T01:00:00.000Z",
+      updatedAt: "2026-07-20T02:00:00.000Z",
+    }],
+  }]);
+  assert.deepEqual(
+    artifact.annotations,
+    [{
+      id: "comment-1",
+      target: {
+        selector: "main > button",
+        label: "Primary action",
+        excerpt: "Save changes",
+      },
+      note: "Make this more prominent",
+      createdAt: "2026-07-20T01:00:00.000Z",
+      updatedAt: "2026-07-20T02:00:00.000Z",
+    }],
+    "valid annotations survive with every string trimmed",
+  );
+
+  const [bounded] = sanitizeAnnotations([{
+    id: ` ${"i".repeat(200)} `,
+    target: {
+      selector: ` ${"s".repeat(600)} `,
+      label: ` ${"l".repeat(300)} `,
+      excerpt: ` ${"e".repeat(1_100)} `,
+    },
+    note: ` ${"n".repeat(4_100)} `,
+    createdAt: "2026-07-20T01:00:00Z",
+    updatedAt: "2026-07-20T02:00:00Z",
+  }]);
+  assert.equal(bounded.id.length, 200, "annotation ids allow the bounded maximum");
+  assert.equal(bounded.target.selector.length, 500, "selectors are clamped");
+  assert.equal(bounded.target.label.length, 200, "labels are clamped");
+  assert.equal(bounded.target.excerpt.length, 1_000, "excerpts are clamped");
+  assert.equal(bounded.note.length, 4_000, "notes are clamped");
+
+  assert.deepEqual(
+    sanitizeAnnotations([
+      null,
+      { id: "", target: { selector: "button", label: "", excerpt: "" }, note: "" },
+      { id: "x", target: { selector: "", label: "", excerpt: "" }, note: "" },
+      { id: "x", target: null, note: "" },
+      { id: "x", target: { selector: "button", label: 1, excerpt: "" }, note: "" },
+      { id: "x", target: { selector: "button", label: "", excerpt: "" } },
+      { id: "i".repeat(201), target: { selector: "button", label: "", excerpt: "" }, note: "" },
+    ]),
+    [],
+    "malformed annotations are dropped instead of partially persisted",
+  );
+
+  const capped = sanitizeAnnotations(Array.from({ length: 105 }, (_, index) => ({
+    id: `annotation-${index}`,
+    target: { selector: `#item-${index}`, label: "", excerpt: "" },
+    note: "",
+    createdAt: "",
+    updatedAt: "",
+  })));
+  assert.equal(capped.length, 100, "only the first 100 valid annotations survive");
+  assert.equal(capped[99].id, "annotation-99", "the count cap is deterministic");
+
+  const [normalized] = sanitizeAnnotations([{
+    id: "dates",
+    target: { selector: "button", label: "", excerpt: "" },
+    note: "",
+    createdAt: "not-a-date",
+    updatedAt: "also-not-a-date",
+  }]);
+  assert.equal(normalized.createdAt, "", "invalid annotation createdAt is coerced to empty");
+  assert.equal(normalized.updatedAt, "", "invalid annotation updatedAt falls back to createdAt");
+
+  const [fallbackDate] = sanitizeAnnotations([{
+    id: "fallback-date",
+    target: { selector: "button", label: "", excerpt: "" },
+    note: "",
+    createdAt: "2026-07-20T01:00:00Z",
+    updatedAt: "not-a-date",
+  }]);
+  assert.equal(
+    fallbackDate.updatedAt,
+    "2026-07-20T01:00:00.000Z",
+    "invalid annotation updatedAt falls back to a valid createdAt",
+  );
+  const [canonical] = sanitizeAnnotations([{
+    id: "canonical-date",
+    target: { selector: "button", label: "", excerpt: "" },
+    note: "",
+    createdAt: "2026-07-17T00:00:00Z",
+    updatedAt: "2026-07-17T00:00:00Z",
+  }]);
+  assert.equal(canonical.createdAt, "2026-07-17T00:00:00.000Z");
+  assert.equal(canonical.updatedAt, "2026-07-17T00:00:00.000Z");
+
+  const [absent] = sanitizeArtifacts([{ id: "absent", prompt: "p" }]);
+  const [empty] = sanitizeArtifacts([{ id: "empty", prompt: "p", annotations: [] }]);
+  const [allInvalid] = sanitizeArtifacts([{
+    id: "invalid",
+    prompt: "p",
+    annotations: [{ id: "", target: { selector: "" } }],
+  }]);
+  assert.equal("annotations" in absent, false, "legacy artifacts stay annotation-free");
+  assert.equal("annotations" in empty, false, "empty annotation arrays are omitted");
+  assert.equal("annotations" in allInvalid, false, "artifacts omit annotations when none survive");
+}
+
+// ── sanitizeArtifact hardening (cave-byr5) ──────────────────────────────────
+
+import { MAX_ARTIFACT_PROMPT_CHARS } from "./canvas-artifacts.ts";
+
+{
+  const [longPrompt] = sanitizeArtifacts([{ id: "p", prompt: "x".repeat(MAX_ARTIFACT_PROMPT_CHARS + 500) }]);
+  assert.equal(
+    longPrompt.prompt.length,
+    MAX_ARTIFACT_PROMPT_CHARS,
+    "an unbounded prompt is clamped — it rides every store read and card tooltip",
+  );
+
+  assert.equal(
+    sanitizeArtifacts([{ id: "i".repeat(300), prompt: "p" }]).length,
+    0,
+    "an absurdly long id is rejected outright (truncating could collide)",
+  );
+
+  const [badDates] = sanitizeArtifacts([
+    { id: "d", prompt: "p", createdAt: "not-a-date", updatedAt: "also-not" },
+  ]);
+  assert.equal(badDates.createdAt, "", "unparseable createdAt is coerced to empty");
+  assert.equal(
+    badDates.updatedAt,
+    "",
+    "unparseable updatedAt is coerced too — garbage sorted a sketch as newest forever",
+  );
+
+  const [fallback] = sanitizeArtifacts([
+    { id: "f", prompt: "p", createdAt: "2026-07-18T00:00:00Z", updatedAt: "garbage" },
+  ]);
+  assert.equal(
+    fallback.updatedAt,
+    "2026-07-18T00:00:00.000Z",
+    "a garbage updatedAt falls back to the valid createdAt",
+  );
+
+  const [kept] = sanitizeArtifacts([
+    { id: "k", prompt: "p", createdAt: "2026-07-18T00:00:00Z", updatedAt: "2026-07-18T01:00:00Z" },
+  ]);
+  assert.equal(kept.updatedAt, "2026-07-18T01:00:00.000Z", "valid timestamps are canonicalized");
+  const [offset] = sanitizeArtifacts([{
+    id: "offset",
+    prompt: "p",
+    createdAt: "2026-07-20T12:00:00+05:00",
+    updatedAt: "2026-07-20T12:30:00+05:00",
+  }]);
+  assert.equal(offset.createdAt, "2026-07-20T07:00:00.000Z");
+  assert.equal(offset.updatedAt, "2026-07-20T07:30:00.000Z");
+}
 
 // ── extractArtifact: classify React vs HTML ────────────────────────────────
 

@@ -44,7 +44,7 @@ type TabsProps<T extends string> = {
   onChange: (id: T) => void;
   /** "horizontal" (underline, default) or "vertical" (left-border indicator). */
   orientation?: "horizontal" | "vertical";
-  /** Stretch tabs to fill the track (equal-width). Horizontal only. */
+  /** Stretch tabs to fill the track (equal-width). Horizontal and segment. */
   fill?: boolean;
   /** aria-label for the tablist. */
   ariaLabel?: string;
@@ -124,7 +124,7 @@ export function Tabs<T extends string>({
         const panelId = idPrefix ? `${idPrefix}-panel-${t.id}` : undefined;
 
         const className = segment
-          ? segmentTabClass(isActive, sm)
+          ? segmentTabClass(isActive, fill, sm)
           : vertical
             ? verticalTabClass(isActive, t.disabled, sm)
             : horizontalTabClass(isActive, fill, sm);
@@ -151,7 +151,7 @@ export function Tabs<T extends string>({
             {t.icon ? <Icon name={t.icon} width={sm ? 12 : 13} aria-hidden /> : null}
             <span className="cv-tab-label truncate">{t.label}</span>
             {typeof t.count === "number" ? (
-              <span className="cv-tab-count text-[10px] tabular-nums opacity-70">
+              <span className="cv-tab-count text-[length:var(--text-2xs)] tabular-nums opacity-70">
                 {t.count}
               </span>
             ) : null}
@@ -165,7 +165,7 @@ export function Tabs<T extends string>({
 function horizontalTabClass(isActive: boolean, fill: boolean, sm: boolean): string {
   return [
     "relative inline-flex items-center gap-1.5 outline-none",
-    sm ? "px-2.5 py-1.5 text-[11px]" : "px-3 py-2.5 text-[12px]",
+    sm ? "px-2.5 py-1.5 text-[length:var(--text-xs)]" : "px-3 py-2.5 text-[length:var(--text-sm)]",
     "font-medium transition-colors",
     fill ? "flex-1 justify-center min-w-0" : "",
     // 2px underline bar that sits flush on the tablist divider; faint preview
@@ -181,7 +181,7 @@ function horizontalTabClass(isActive: boolean, fill: boolean, sm: boolean): stri
 function verticalTabClass(isActive: boolean, disabled: boolean | undefined, sm: boolean): string {
   return [
     "relative inline-flex items-center gap-2 text-left outline-none",
-    sm ? "px-2 py-1.5 text-[11px]" : "px-3 py-2 text-[12px]",
+    sm ? "px-2 py-1.5 text-[length:var(--text-xs)]" : "px-3 py-2 text-[length:var(--text-sm)]",
     "font-medium transition-colors border-l-2",
     isActive
       ? "text-[var(--text-primary)] border-[var(--cv-tab-accent,var(--accent-presence))]"
@@ -191,13 +191,16 @@ function verticalTabClass(isActive: boolean, disabled: boolean | undefined, sm: 
   ].join(" ");
 }
 
-function segmentTabClass(isActive: boolean, sm: boolean): string {
+function segmentTabClass(isActive: boolean, fill: boolean, sm: boolean): string {
   return [
     "relative inline-flex items-center gap-1.5 outline-none rounded-md",
-    sm ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-[12px]",
-    "font-medium transition-colors",
+    sm ? "px-2.5 py-1 text-[length:var(--text-xs)]" : "px-3 py-1.5 text-[length:var(--text-sm)]",
+    fill ? "flex-1 justify-center min-w-0" : "",
+    // Every tab carries a transparent border so selecting one (which colours
+    // the border) never shifts layout.
+    "font-medium transition-colors border border-transparent",
     isActive
-      ? "bg-[var(--cv-tab-accent,var(--bg-raised))] text-[var(--text-primary)]"
+      ? "bg-[var(--cv-tab-accent,var(--bg-raised))] text-[var(--text-primary)] border-[var(--border-strong)]"
       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
     "focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] focus-visible:ring-offset-0",
   ].join(" ");

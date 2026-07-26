@@ -1,0 +1,24 @@
+{
+  "name": "notion",
+  "version": "0.1.0",
+  "description": "Read, search, and draft Notion pages and databases through Notion's official MCP server.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Notion",
+    "shortDescription": "Read, search, and draft Notion pages and databases through Notion's official MCP server.",
+    "longDescription": "Use Notion for knowledge lookup and drafting while keeping page edits behind approval.",
+    "developerName": "OpenCoven",
+    "category": "Productivity",
+    "capabilities": [
+      "notion",
+      "docs",
+      "wiki",
+      "knowledge-base",
+      "notes"
+    ],
+    "defaultPrompt": "Help me use Notion safely."
+  }
+}

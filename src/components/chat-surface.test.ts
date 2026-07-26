@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const railController = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
+const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const agentsMemoryView = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
@@ -40,7 +42,7 @@ assert.doesNotMatch(
 
 assert.match(
   workspace,
-  /fetch\("\/api\/daemon\/start", \{ method: "POST" \}\)/,
+  /runWorkspaceDaemonStart\(\{[\s\S]*fetchImpl: fetch/,
   "Workspace should make the offline daemon state actionable via the shared banner channel",
 );
 
@@ -56,22 +58,19 @@ assert.doesNotMatch(
   "ChatSurface should not reintroduce the busy GitHub-style hero/composer cards",
 );
 
+// The chat surface no longer hosts a memory scope — familiar memory lives in
+// the Familiars surface and the Grimoire editor (cave-liut). The "familiar"
+// scope is the capability panel promoted out of the retired inspector
+// sidepanel, sitting immediately left of Settings.
+assert.match(
+  chatSurface,
+  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "settings"/,
+  "ChatSurface scope union should carry the promoted familiar tab (and no dead memory scope)",
+);
 assert.doesNotMatch(
   chatSurface,
-  /import.*CovenFloor/,
-  "ChatSurface should not import CovenFloor — Floor is now an ambient widget in HomeComposer",
-);
-
-assert.match(
-  chatSurface,
-  /const scopedFamiliars = useMemo\(\(\) => activeFamiliar \? \[activeFamiliar\] : familiars, \[activeFamiliar, familiars\]\)/,
-  "ChatSurface should derive all familiars when the generic Familiars scope is selected",
-);
-
-assert.match(
-  chatSurface,
-  /<FamiliarsMemoryView[\s\S]*familiars=\{scopedFamiliars\}[\s\S]*activeFamiliar=\{activeFamiliar\}[\s\S]*lockToFamiliar/,
-  "ChatSurface memory should stay locked to the selected familiar",
+  /FamiliarsMemoryView/,
+  "ChatSurface should not mount FamiliarsMemoryView — memory is not a chat scope",
 );
 
 assert.doesNotMatch(
@@ -82,8 +81,27 @@ assert.doesNotMatch(
 
 assert.match(
   chatSurface,
-  /\{\s*id:\s*"memory",\s*label:\s*"Memory"\s*\}/,
-  "ChatSurface should label the secondary primary tab Memory instead of Traces",
+  /\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/,
+  "ChatSurface should label the secondary primary tab Projects instead of Traces",
+);
+
+// Group Chat ("coven") is demoted from a co-equal tab (cave-xsq.5): it's a quiet
+// icon-button on the right of the scope-tab row that switches to the coven scope,
+// not a third tab — so the default surface reads as Sessions / Projects.
+assert.doesNotMatch(
+  chatSurface,
+  /\{\s*id:\s*"coven",\s*label:\s*"Group"/,
+  "Group is no longer a co-equal scope tab",
+);
+assert.match(
+  chatSurface,
+  /className=\{`chat-scope-group-btn[\s\S]*onClick=\{\(\) => window\.dispatchEvent\(new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: "groupchat" \} \}\)\)\}/,
+  "ChatSurface exposes Group as a demoted icon-button that routes through workspace history",
+);
+assert.match(
+  chatSurface,
+  /scope === "coven" \?[\s\S]*<GroupChatView[\s\S]*familiars=\{resolvedFamiliars\}/,
+  "ChatSurface should render GroupChatView for the coven scope",
 );
 // Familiar selection now lives in the global top menu bar (and the sidebar /
 // mobile top-bar switcher), so the chat header carries only its scope tabs —
@@ -115,12 +133,6 @@ assert.doesNotMatch(
   chatSurface,
   /Traces/,
   "ChatSurface should not foreground trace terminology in the primary tabs",
-);
-
-assert.doesNotMatch(
-  chatSurface,
-  /fetch\("\/api\/coven-calls"|buildDelegationGraph|loadDelegations/,
-  "ChatSurface should not load trace graph data just to render the primary chat surface",
 );
 
 assert.match(
@@ -159,29 +171,23 @@ assert.match(
   "ChatSurface should keep live chat available inside the Chat tab",
 );
 
-// Code surface ("code" mode): the chat pane is transcript-only — the comux pane
-// owns project/file navigation. ChatSurface takes a `surface` prop, derives
-// isCodeSurface, drops the in-chat project sidebar by passing compact, and tags
-// the transcript wrapper so the reading-width cap applies.
-assert.match(
+// Retired Code mode: ChatSurface is now the only chat surface. The left
+// WorkspaceSidebar owns project/thread navigation in chat mode, so ChatSurface
+// only needs the explicit hideThreadRail compact flag.
+assert.doesNotMatch(
   chatSurface,
-  /surface\s*=\s*"chat"/,
-  "ChatSurface should accept a surface prop defaulting to standalone chat",
+  /surface\s*=\s*"chat"|surface === "code"|isCodeSurface|CodeInlineToolbar/,
+  "ChatSurface should not keep the retired code-surface switch",
 );
 assert.match(
   chatSurface,
-  /const isCodeSurface = surface === "code"/,
-  "ChatSurface should derive isCodeSurface from the surface prop",
+  /const compactRail = hideThreadRail/,
+  "ChatSurface should fold chat mode's hideThreadRail into the compact rail flag",
 );
 assert.match(
   chatSurface,
-  /<ChatRouter[\s\S]*?compact=\{isCodeSurface\}/,
-  "ChatSurface should suppress the in-chat project sidebar in Code mode via compact",
-);
-assert.match(
-  chatSurface,
-  /data-surface=\{surface\}/,
-  "ChatSurface should tag the transcript wrapper with the surface for the reading-width cap",
+  /<ChatRouter[\s\S]*?hideRail=\{compactRail\}/,
+  "ChatSurface should suppress only the in-chat project rail (hideRail) when chat-mode ChatSidebar owns threads — the full-width toolbar stays",
 );
 
 assert.match(
@@ -208,28 +214,53 @@ assert.doesNotMatch(
   "ChatSurface right sidebar should not render a second chat panel on the Chats page",
 );
 
+// The inspector sidepanel is retired: its Familiar section is a first-class
+// chat scope tab (left of Settings), Analytics/Automations are gone from chat,
+// and the code rail is the only right sidepanel. Canvas (saved sketches) sits
+// between Projects and Familiar.
 assert.match(
   chatSurface,
-  /<InspectorPane\s+familiar=\{activeFamiliar\}\s+inboxItems=\{inboxItems\}\s+onOpenInbox=\{onOpenInbox\}/,
-  "ChatSurface should preserve the inbox-backed inspector entry point",
+  /\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Skills" \},\s*\{ id: "settings", label: "Settings" \},/,
+  "the Skills tab (familiar scope) sits immediately left of Settings (after Canvas)",
+);
+// The skills-tab latch must be consumed on the LIVE event path too: "Manage
+// skills" from an already-mounted chat doesn't remount this surface, so a
+// latch consumed only at mount would linger and hijack a later fresh mount.
+assert.match(
+  chatSurface,
+  /if \(consumeSkillsTabPending\(\)\) setScope\("familiar"\);[\s\S]*?const open = \(\) => \{\s*consumeSkillsTabPending\(\);\s*setScope\("familiar"\);\s*\};[\s\S]*?addEventListener\(CHAT_OPEN_SKILLS_EVENT, open\)/,
+  "skills latch is consumed both at mount and in the live event handler",
+);
+assert.match(
+  chatSurface,
+  /scope === "familiar" \? \([\s\S]*?<ChatFamiliarView[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?selectedFamiliarIds=\{selectedFamiliarIds\}[\s\S]*?onFamiliarScopeChange=\{onFamiliarScopeChange\}[\s\S]*?onStartChat=\{startFamiliarHeroChat\}/,
+  "the familiar scope renders the scope-aware view with the canonical selection callback",
 );
 
 assert.match(
   chatSurface,
-  /<aside role="region" aria-label="Session panels" className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col border-l border-\[var\(--border-hairline\)\]">/,
-  "ChatSurface right side panel should be height-bounded so its body can scroll vertically (and read as a named region, not a nested complementary landmark — CHAT-D13-05)",
+  /scope === "coven" \? \([\s\S]*?\) : \(\s*<Group\s+className="flex min-h-0 min-w-0 flex-1"\s+orientation="horizontal"/,
+  "ChatSurface conversation branch should use remaining height below the tab bar instead of h-full",
 );
 
-assert.match(
+// cave-liut → inspector retirement: the right panel channel is gone entirely.
+// No RightPanel component, no rightPanel prop seam, no legacy boolean fallback.
+assert.doesNotMatch(
   chatSurface,
-  /<div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">\s*\{primaryPanel === "inspector" &&/,
-  "ChatSurface right side panel should put tab content in a min-height-zero scroll boundary",
+  /inspectorOpen|onSetInspectorOpen|onSetRightPanel|RightPanelKind|<RightPanel\b|INSPECTOR_SECTIONS/,
+  "ChatSurface must not keep any right-panel channel — the inspector sidepanel is retired",
 );
-
+// The old right-panel launch events now land on surviving surfaces: Inspect →
+// the Familiar chat tab; Git/Changes → the code rail's Changes tab.
 assert.match(
   chatSurface,
-  /scope === "memory" \? \([\s\S]*?\) : \(\s*<Group\s+className="flex min-h-0 min-w-0 flex-1"\s+orientation="horizontal"/,
-  "ChatSurface non-memory branch (conversation) should use remaining height below the tab bar instead of h-full",
+  /const onInspectorOpen = \(\) => setScope\("familiar"\)/,
+  "cave:inspector-open routes to the promoted Familiar tab",
+);
+assert.match(
+  railController,
+  /const openChanges = useCallback\(\(\) => \{[\s\S]*?rail\.reopen\(\);\s*rail\.setActiveTab\("changes"\)/,
+  "cave:changes-open routes to the code rail's Changes tab",
 );
 
 assert.match(
@@ -240,8 +271,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /onOpenInboxItem=\{\(item\) => \{[\s\S]*openFamiliarSession\(item\.sessionId, item\.familiarId\)[\s\S]*setMode\("inbox"\)/,
-  "Workspace should keep notification-bell inbox routing intact for session and non-session items",
+  /onOpenInboxItem=\{\(item\) => \{\s*markInboxItemRead\(item\.id\);\s*if \(item\.familiarId\) setActiveId\(item\.familiarId\);\s*setMode\("inbox"\);/,
+  "Workspace should route notification-bell Open to the Inbox view (cave-ipze), never straight into a session",
 );
 
 // The agents-new-chat bridge forwards an optional initialPrompt so callers
@@ -253,8 +284,20 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /newChat\(d\?\.projectRoot \?\? undefined, d\?\.initialPrompt \?\? undefined, d\?\.familiarId\)/,
+  /newChat\([\s\S]*d\?\.projectRoot \?\? undefined,[\s\S]*d\?\.initialPrompt \?\? undefined,[\s\S]*d\?\.familiarId,[\s\S]*d\?\.origin,[\s\S]*d\?\.initialControls \?\? undefined/,
   "ChatSurface should forward the seeded initialPrompt into newChat",
+);
+
+assert.match(
+  chatRouter,
+  /newChat: \([\s\S]*?initialControls\?: InitialCommandControls[\s\S]*?\) => void/,
+  "ChatRouterHandle.newChat should accept initial command controls",
+);
+
+assert.match(
+  chatRouter,
+  /<ChatView[\s\S]*initialControls=\{view\.kind === "chat" \? view\.initialControls : undefined\}/,
+  "ChatRouter should pass initial command controls into ChatView",
 );
 
 // ChatSurface only mounts in chat mode, so the Workspace must bridge
@@ -270,4 +313,19 @@ assert.match(
   workspace,
   /onAgentsNewChat[\s\S]*modeRef\.current === "chat"[\s\S]*return/,
   "Workspace skips the bridge when already in chat (ChatSurface owns it) to avoid double-open",
+);
+
+// cave-b63 (2): the change-count fetch dedupe is per effect-run (local), not a
+// cross-run ref — so a quick root switch's new fetch isn't blocked by the old
+// root's still-in-flight fetch (which left the badge showing a stale count), and
+// the count resets on a real root change.
+assert.match(
+  railController,
+  /let inFlight = false;[\s\S]*?const load = async \(opts\?: \{ force\?: boolean \}\) => \{\s*\n\s*if \(inFlight\) return;/,
+  "change-count fetch dedupe is scoped per effect-run, not a cross-run ref",
+);
+assert.match(
+  railController,
+  /if \(changeCountRootRef\.current !== root\) \{\s*\n\s*setChangeCount\(null\);/,
+  "changeCount drops to null (unknown) on a real root change — clears the stale badge AND keeps first-load dirt from faking a fresh-batch reveal (cave-xsq.7)",
 );

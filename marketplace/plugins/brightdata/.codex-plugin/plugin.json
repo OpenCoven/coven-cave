@@ -1,0 +1,24 @@
+{
+  "name": "brightdata",
+  "version": "0.1.0",
+  "description": "Search, extract, and navigate the public web at scale through Bright Data's Web MCP.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Bright Data",
+    "shortDescription": "Search, extract, and navigate the public web at scale through Bright Data's Web MCP.",
+    "longDescription": "Use Bright Data for resilient large-scale web extraction with respect for source policies.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "scraping",
+      "web-data",
+      "proxy",
+      "extract",
+      "search"
+    ],
+    "defaultPrompt": "Help me use Bright Data safely."
+  }
+}

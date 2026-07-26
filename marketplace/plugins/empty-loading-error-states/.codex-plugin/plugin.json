@@ -1,0 +1,27 @@
+{
+  "name": "empty-loading-error-states",
+  "version": "0.1.0",
+  "description": "Enforce the three-states discipline (loading, empty, error \u2014 plus partial and ideal) on every data-bound component: indicator selection, empty-state types, error taxonomy, retries, and WCAG 2.2 state-change announcements.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Empty, Loading & Error States",
+    "shortDescription": "Enforce the three-states discipline (loading, empty, error \u2014 plus partial and ideal) on every data-bound component: indicator selection, empty-state types, error taxonomy, retries, and WCAG 2.2 state-change announcements.",
+    "longDescription": "Use when building or reviewing any component that renders async/remote data (lists, tables, dashboards, search results, detail pages, feeds) in React/Vue/Svelte. Enforces the \"every data component has five states\" discipline: loading, empty, partial, error, ideal. Covers loading-indicator selection (spinner vs skeleton vs progress vs shimmer) against Nielsen 0.1/1/10s limits and the spinner-flash rule; the four empty-state types (first-run, no-results, permission-denied, deleted) with distinct copy+CTA; the five-class error taxonomy (user/network/server/permission/not-found); retry patterns (backoff+jitter, TanStack retry:3/min(1000*2^n,30000), when NOT to retry); toast-vs-inline-vs-banner-vs-dialog placement; the 404/500/offline trio; optimistic UI + Suspense; and WCAG 2.2 SC 4.1.3 announcements (role=status, role=alert, aria-live, aria-busy) + focus. Flags happy-path-only components, blank loading, raw stack traces, blame-the-user copy, and critical errors in auto-dismissing toasts.",
+    "developerName": "OpenCoven",
+    "category": "Design & UI",
+    "capabilities": [
+      "empty-states",
+      "loading",
+      "error-states",
+      "skeleton",
+      "suspense",
+      "retry",
+      "accessibility",
+      "ux"
+    ],
+    "defaultPrompt": "Help me use Empty, Loading & Error States safely."
+  }
+}

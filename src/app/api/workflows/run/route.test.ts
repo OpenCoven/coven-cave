@@ -15,9 +15,14 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 assert.match(source, /rejectNonLocalRequest\(req\)/, "run route must reject non-local requests");
 assert.match(source, /readJsonBody<RunBody>\(req, MAX_SESSION_JSON_BYTES\)/, "run route must read the body through the bounded guard");
 
-// Daemon-first: the native engine is still tried before anything local.
+// Native engine routing remains available for non-local-Copilot bindings.
 assert.match(source, /path:\s*"\/api\/v1\/workflows\/run"/, "run route probes the native daemon engine first");
 assert.match(source, /executor:\s*"engine"/, "a native-engine run is tagged executor: engine");
+assert.match(
+  source,
+  /if \(await usesLocalCopilotWorkflowRuntime\(body, gateWorkflow\)\) \{\s*return runViaSession\(body\);\s*\}[\s\S]*?runWorkflowEngineAfterCopilotGate\([\s\S]*?localCopilot:\s*false[\s\S]*?runEngine:\s*\(\)\s*=>\s*callDaemon<DaemonRunResponse>/,
+  "local Copilot bypasses the separately configured daemon engine and takes the directly probed session path",
+);
 
 // 404 (reachable, no engine) → the session executor runs it for real.
 assert.match(source, /engine\.status === 404[\s\S]{0,80}runViaSession\(body\)/, "a 404 from the engine hands off to the session executor");
@@ -26,6 +31,12 @@ assert.match(source, /engine\.status === 404[\s\S]{0,80}runViaSession\(body\)/, 
 assert.match(source, /buildWorkflowRunPrompt\(workflow, body\.inputs\)/, "session executor compiles the manifest and runtime inputs into a run prompt");
 assert.match(source, /path:\s*"\/api\/v1\/sessions"/, "session executor spawns a daemon agent session");
 assert.match(source, /harness:\s*binding\.harness/, "session executor honors the familiar's harness binding");
+assert.match(source, /model:\s*binding\.model/, "session executor honors the familiar's model binding");
+assert.match(
+  source,
+  /\{\s*harness:\s*config\.defaults\.harness,\s*model:\s*config\.defaults\.model\s*\}/,
+  "unassigned workflows inherit both default harness and default model",
+);
 assert.match(source, /\{\s*familiarId\s*\}/, "session executor passes the familiar to the daemon natively (camelCase familiarId, as the daemon keys on)");
 assert.match(source, /isAllowedHarness\(binding\.harness\)/, "session executor guards the harness allow-list");
 assert.match(source, /executor:\s*"session"/, "a session run is tagged executor: session");
@@ -38,5 +49,49 @@ assert.match(source, /source:\s*"cave"/, "a session-executed run is sourced to c
 // Honesty: only a truly unreachable daemon yields `unavailable: true`.
 assert.match(source, /engine\.status === 0[\s\S]{0,120}unavailable:\s*true/, "an offline daemon yields unavailable, not a fake run");
 assert.match(source, /res\.status === 0[\s\S]{0,120}unavailable:\s*true/, "a daemon that drops during spawn yields unavailable");
+// cave-aikv: a session-executed workflow must not spawn an immortal, never-
+// attached fullscreen harness TUI. Non-copilot sessions launch non-interactively
+// (copilot exempt — its nonInteractive launch mangles multi-word prompts and
+// this path has no native bridge to route it to).
+assert.match(
+  source,
+  /binding\.harness === "copilot" \? \{\} : \{ launchMode: "nonInteractive" \}/,
+  "non-copilot workflow sessions launch non-interactively (no immortal TUI)",
+);
+// cave-aikv follow-up: a local copilot workflow spawns the CLI directly (its
+// daemon launch is either an immortal TUI or a mangled prompt), whose transcript
+// persists as the Cave conversation the run's chat surface opens — mirroring
+// flows. SSH/hub copilot stays on the daemon.
+assert.match(
+  source,
+  /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]{0,1200}startCopilotFlowRun\(/,
+  "a local copilot workflow spawns the CLI directly instead of an orphaned daemon TUI",
+);
+assert.match(
+  source,
+  /Promise\.all\(\[\s*probeCopilotCapability\(\),\s*resolveRuntimeCompatibility\("copilot"\),[\s\S]*copilotStreamSpec\(\s*capability\.version,\s*compatibility\?\.eventProtocols,/,
+  "direct Copilot workflows select only event protocol data from a locally probed version and verified runtime catalog",
+);
+assert.match(
+  source,
+  /if \(binding\.harness === "copilot" && !sshBound && !hubAuthority\)[\s\S]*?if \(!spec\)[\s\S]*?NextResponse\.json\([\s\S]*?status: 409/,
+  "an unsupported local Copilot workflow fails explicitly instead of starting the known unattached daemon TUI",
+);
+assert.match(
+  source,
+  /const capabilityFailure = copilotCapabilityFailureMessage\(capability\);[\s\S]*?if \(capabilityFailure\)[\s\S]*?status: 409[\s\S]*?const spec = copilotStreamSpec\(/,
+  "a direct Copilot workflow returns the shared truthful capability cause before checking schema compatibility",
+);
+assert.match(
+  source,
+  /if \(capabilityFailure\)[\s\S]*?return NextResponse\.json\([\s\S]*?status: 409[\s\S]*?startCopilotFlowRun\(/,
+  "a failed capability gate cannot start a direct workflow session",
+);
+const compatibilityGateIndex = source.indexOf("if (!spec)");
+const directCopilotLaunchIndex = source.indexOf("startCopilotFlowRun", compatibilityGateIndex);
+assert.ok(
+  compatibilityGateIndex >= 0 && directCopilotLaunchIndex > compatibilityGateIndex,
+  "an unsupported local Copilot workflow returns before creating a durable running workflow record",
+);
 
 console.log("workflow run route.test.ts: ok");

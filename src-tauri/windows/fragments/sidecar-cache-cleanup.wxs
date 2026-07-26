@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <!--
+      Tauri's MSI is per-machine, but the extracted runtime belongs to the
+      interactive user. Run the cleanup impersonated so LOCALAPPDATA resolves
+      to that user, and skip major upgrades so rollback generations survive.
+    -->
+    <DirectoryRef Id="INSTALLDIR">
+      <Component
+        Id="SidecarRuntimeCleanupAnchor"
+        Guid="{5E1942A7-C665-472F-9EAA-508566D2FC7A}"
+        KeyPath="yes"
+      />
+    </DirectoryRef>
+    <!-- Declare the standard system directory so the deferred action always
+         has an existing working directory after INSTALLDIR is removed. -->
+    <DirectoryRef Id="TARGETDIR">
+      <Directory Id="SystemFolder" />
+    </DirectoryRef>
+
+    <CustomAction
+      Id="RemoveSidecarRuntimeCache"
+      Directory="SystemFolder"
+      Execute="commit"
+      Impersonate="yes"
+      Return="ignore"
+      ExeCommand="cmd.exe /D /C if defined LOCALAPPDATA if exist &quot;%LOCALAPPDATA%\ai.opencoven.cave\sidecar-runtime&quot; rmdir /S /Q &quot;%LOCALAPPDATA%\ai.opencoven.cave\sidecar-runtime&quot;"
+    />
+
+    <InstallExecuteSequence>
+      <Custom Action="RemoveSidecarRuntimeCache" Before="InstallFinalize">
+        (REMOVE = "ALL") AND NOT UPGRADINGPRODUCTCODE
+      </Custom>
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

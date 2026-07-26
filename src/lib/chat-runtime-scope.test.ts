@@ -21,10 +21,13 @@ await mkdir(outside, { recursive: true });
 const filePath = path.join(home, "not-a-dir.txt");
 await writeFile(filePath, "not a directory");
 
-assert.equal(
-  await resolveLocalRuntimeCwd(undefined, { homeDir: home }),
-  realpathSync(home),
-  "missing project root should default to the real home directory",
+await assert.rejects(
+  () => resolveLocalRuntimeCwd(undefined, { homeDir: home }),
+  (error) =>
+    error instanceof RuntimeScopeError &&
+    error.code === "project_root_required" &&
+    /refusing to start a homedir-scoped fallback session/.test(error.message),
+  "missing project roots should be refused instead of downgraded to home",
 );
 
 assert.equal(
@@ -64,6 +67,35 @@ await assert.rejects(
   assert.match(preamble, new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(preamble, /Do not read, edit, create, delete, commit, push, or run commands against files outside this directory/);
   assert.match(preamble, /ask the user to reopen/);
+}
+
+{
+  const docs = path.join(home, "docs");
+  const preamble = buildRuntimeScopePreamble({
+    kind: "local",
+    root: repo,
+    allowedProjectRoots: [repo, docs, repo],
+  });
+  assert.match(preamble, /Runtime filesystem boundary:/);
+  assert.match(preamble, /Primary root:/);
+  assert.match(preamble, /Granted project roots:/);
+  assert.match(preamble, new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(preamble, new RegExp(docs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(
+    preamble,
+    /You may read, edit, create, delete, commit, push, and run commands inside the primary root and the granted project roots listed above/,
+    "grant-aware local scopes should permit work inside every granted project root",
+  );
+  assert.doesNotMatch(
+    preamble,
+    /ask the user to reopen/,
+    "grant-aware local scopes should not tell the familiar to reopen when another granted project is requested",
+  );
+  assert.equal(
+    preamble.match(new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))?.length,
+    1,
+    "duplicate allowed roots should be listed once",
+  );
 }
 
 {

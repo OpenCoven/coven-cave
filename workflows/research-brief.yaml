@@ -2,7 +2,7 @@ id: research-brief
 version: 0.1.0
 name: Research Brief
 summary: Gather primary sources, map claims, synthesize findings, identify risks, and recommend next steps.
-familiar: sage
+familiar: research
 pattern: fan-out-and-synthesize
 tags:
   - research
@@ -26,28 +26,28 @@ steps:
   - id: scope-question
     kind: agent
     name: Scope question
-    uses: sage
+    uses: research
     summary: Define the research question, decision context, constraints, and evidence standard.
     requires:
       - input
   - id: gather-primary
     kind: agent
     name: Gather primary sources
-    uses: sage
+    uses: research
     summary: Search official docs, papers, repos, product pages, or direct evidence.
     requires:
       - scope-question
   - id: gather-local
     kind: agent
     name: Gather local context
-    uses: sage
+    uses: research
     summary: Search memory, library notes, and project files for related context.
     requires:
       - scope-question
   - id: map-claims
     kind: agent
     name: Map claims
-    uses: sage
+    uses: research
     summary: Separate claims, evidence, interpretation, speculation, and open questions.
     requires:
       - gather-primary
@@ -55,7 +55,7 @@ steps:
   - id: synthesize
     kind: agent
     name: Synthesize findings
-    uses: sage
+    uses: research
     summary: Produce a practical brief with citations, risks, uncertainty, and recommendation.
     requires:
       - map-claims

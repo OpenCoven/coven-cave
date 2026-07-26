@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,12 @@ import { spawnSync } from "node:child_process";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const hookSource = path.join(root, "scripts", "git-hooks", "pre-commit");
+// On Windows `bash` may resolve to the WSL launcher, which is not a usable
+// shell when WSL is uninstalled or partially configured. Prefer Git Bash when
+// available; the hook itself still executes under the same Bash implementation
+// used by Git for Windows and GitHub's Windows runners.
+const gitBash = "C:\\Program Files\\Git\\bin\\bash.exe";
+const bashCommand = process.platform === "win32" && existsSync(gitBash) ? gitBash : "bash";
 
 function run(cmd, args, cwd) {
   const result = spawnSync(cmd, args, { cwd, encoding: "utf8" });
@@ -32,7 +38,7 @@ function stagedRepo({ filePath, content }) {
 }
 
 function runHook(repo) {
-  return run("bash", ["scripts/git-hooks/pre-commit"], repo);
+  return run(bashCommand, ["scripts/git-hooks/pre-commit"], repo);
 }
 
 {
@@ -62,6 +68,17 @@ function runHook(repo) {
   const result = runHook(repo);
   assert.notEqual(result.status, 0, "GitHub PAT-shaped strings should be blocked");
   assert.match(result.stderr, /GitHub PAT/i);
+}
+
+{
+  const token = "sk-" + "or-v1-" + "a".repeat(64);
+  const repo = stagedRepo({
+    filePath: "src/lib/secrets.test.ts",
+    content: `const token = "${token}";\n`,
+  });
+  const result = runHook(repo);
+  assert.notEqual(result.status, 0, "OpenRouter key-shaped strings should be blocked");
+  assert.match(result.stderr, /OpenRouter/i);
 }
 
 console.log("git-hooks-pre-commit.test.mjs: ok");

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isLocalOrigin } from "@/lib/server/local-origin";
 import { snoozeItem } from "@/lib/cave-inbox";
 import { broadcastUpdated, startScheduler } from "@/lib/inbox-scheduler";
 
@@ -10,6 +11,9 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  if (!isLocalOrigin(req)) {
+    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  }
   const { id } = await params;
   let body: { untilIso?: string; minutes?: number };
   try {

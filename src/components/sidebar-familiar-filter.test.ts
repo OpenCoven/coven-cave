@@ -6,8 +6,6 @@ const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
-const agentPanel = readFileSync(new URL("./familiar-panel.tsx", import.meta.url), "utf8");
-const companionRail = readFileSync(new URL("./companion-rail.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -65,15 +63,15 @@ assert.doesNotMatch(
 );
 
 assert.doesNotMatch(
-  `${chatRouter}\n${agentPanel}\n${companionRail}`,
+  chatRouter,
   /from the rail/,
   "Visible empty states should point users to the sidebar selector, not the removed familiar rail",
 );
 
 assert.match(
   chatRouter,
-  /Choose a familiar from the sidebar selector/,
-  "ChatRouter should explain the new familiar selection path",
+  /Summon your first familiar/,
+  "ChatRouter's zero-roster empty state summons instead of pointing at a selector that lists nothing (cave-3em5)",
 );
 
 assert.match(
@@ -88,10 +86,13 @@ assert.match(
   "ChatSurface should destructure familiars so the generic scope can show all familiars",
 );
 
-assert.match(
+// The chat memory scope was retired (cave-liut): familiar memory lives in the
+// Familiars surface / Grimoire, so ChatSurface no longer derives a
+// scopedFamiliars list for it.
+assert.doesNotMatch(
   chatSurface,
-  /const scopedFamiliars = useMemo\(\(\) => activeFamiliar \? \[activeFamiliar\] : familiars, \[activeFamiliar, familiars\]\)/,
-  "ChatSurface should show all familiar memory/list context when Familiars is selected",
+  /const scopedFamiliars = useMemo/,
+  "ChatSurface should not keep the dead memory-scope familiar derivation",
 );
 
 assert.match(

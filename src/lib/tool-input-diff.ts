@@ -114,12 +114,11 @@ export function toolInputAsDiff(name: string, input?: string | null): string | n
 const FILE_TOOLS = new Set([...MUTATION_TOOLS, "read"]);
 
 /**
- * Best-effort absolute file path a tool call targets, for click-to-open in the
- * Code workspace. Returns null for non-file tools, unparseable input, or when
- * no concrete path is present (so the caller renders a plain, non-clickable
- * label rather than a dead link).
+ * Best-effort file path a tool call targets, for transcript display. Relative
+ * paths are still useful here because mutation diffs should remain visible in
+ * chat even when the Code workspace cannot open the file directly.
  */
-export function toolTargetFile(name: string, input?: string | null): string | null {
+export function toolTargetPath(name: string, input?: string | null): string | null {
   if (!FILE_TOOLS.has(name.toLowerCase())) return null;
   const raw = (input ?? "").trim();
   if (!raw) return null;
@@ -131,7 +130,16 @@ export function toolTargetFile(name: string, input?: string | null): string | nu
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const path = filePathOf(parsed as Rec);
-  // filePathOf falls back to the literal "file" when no key matched; treat that
-  // sentinel (and any non-absolute path) as "no openable target".
-  return path !== "file" && path.startsWith("/") ? path : null;
+  return path !== "file" ? path : null;
+}
+
+/**
+ * Best-effort absolute file path a tool call targets, for click-to-open in the
+ * Code workspace. Returns null for non-file tools, unparseable input, or when
+ * no concrete absolute path is present (so callers render a plain, non-clickable
+ * label rather than a dead link).
+ */
+export function toolTargetFile(name: string, input?: string | null): string | null {
+  const path = toolTargetPath(name, input);
+  return path && path.startsWith("/") ? path : null;
 }

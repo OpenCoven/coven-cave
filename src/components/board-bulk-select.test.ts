@@ -1,0 +1,68 @@
+// @ts-nocheck
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const view = readFileSync(new URL("./board-view.tsx", import.meta.url), "utf8");
+const kanban = readFileSync(new URL("./board-kanban.tsx", import.meta.url), "utf8");
+const table = readFileSync(new URL("./board-table.tsx", import.meta.url), "utf8");
+
+// board-view drives selection with the shared hook + toolbar.
+assert.match(view, /useMultiSelect\(filtered, \(c\) => c\.id\)/, "board uses the shared useMultiSelect over the filtered cards");
+assert.match(view, /import \{ SelectionToolbar \}/, "board imports the shared SelectionToolbar");
+assert.match(view, /<SelectionToolbar/, "select mode renders the shared SelectionToolbar");
+// The three bulk actions exist.
+assert.match(view, /const bulkMove = async \(status: CardStatus\)/, "bulk move-to-status is wired");
+assert.match(view, /const bulkAssign = async \(familiarId: string\)/, "bulk assign-familiar is wired");
+assert.match(view, /const bulkDelete = \(\) =>/, "bulk delete is wired");
+// Bulk delete is deferred + undoable (no native confirm): it routes through the
+// shared useUndoDelete helper and raises an UndoToast instead of window.confirm.
+assert.match(view, /deleteCards\(sel\)/, "bulk delete routes through the deferred deleteCards helper");
+assert.doesNotMatch(view, /window\.confirm/, "board no longer uses a native confirm for deletes");
+assert.match(view, /useUndoDelete<Card\[\]>\(\)/, "board uses the shared useUndoDelete hook");
+assert.match(view, /<UndoToast/, "board renders the shared UndoToast for deletes");
+// Select mode is threaded into BOTH the kanban and the table.
+assert.match(view, /<BoardKanban[\s\S]*?selectMode=\{cardSelect\.selectMode\}/, "kanban receives select mode");
+assert.match(view, /<BoardTable[\s\S]*?selectMode=\{cardSelect\.selectMode\}/, "table receives select mode");
+// The Select entry button only shows for kanban/table on desktop. Redesign:
+// it's a visible toolbar verb that TOGGLES select mode (enter/exit).
+assert.match(view, /viewMode === "kanban" \|\| viewMode === "table"[\s\S]*?cardSelect\.setSelectMode\(!cardSelect\.selectMode\)/, "a Select button toggles select mode for kanban/table");
+
+// Kanban cards become checkboxes and stop being draggable in select mode.
+assert.match(kanban, /<li draggable=\{!selectMode\}/, "kanban cards aren't draggable while selecting");
+assert.match(kanban, /role=\{selectMode \? "checkbox" : "button"\}/, "kanban cards flip to checkbox role in select mode");
+assert.match(kanban, /aria-checked=\{selectMode \? isSelected : undefined\}/, "kanban checkboxes expose aria-checked");
+
+// Table rows toggle selection instead of opening in select mode.
+assert.match(table, /onClick=\{\(\) => \(selectMode \? onToggleSelect\?\.\(card\.id\) : onSelect\(card\.id\)\)\}/, "table rows toggle selection in select mode");
+assert.match(table, /aria-selected=\{isSel\}/, "table rows expose selection without overriding native row semantics");
+
+// ── Extended bulk-edit: priority + label (#4) ──
+assert.match(view, /const bulkSetPriority = async \(priority: CardPriority\)/, "bulk set-priority handler");
+assert.match(view, /const bulkAddLabel = async \(raw: string\)/, "bulk add-label handler");
+assert.match(view, /\.filter\(\(c\) => !c\.labels\.includes\(label\)\)/, "bulk label skips cards that already have it");
+assert.match(view, /id="board-bulk-priority"/, "toolbar exposes a priority control");
+assert.match(view, /<StandardSelect<CardPriority \| "">[\s\S]*?onChange=\{\(next\) => \{ if \(next\) void bulkSetPriority\(next\); \}\}/, "priority picker wires bulkSetPriority");
+assert.match(view, /list="board-bulk-label-options"/, "label input is backed by a datalist of existing labels");
+assert.match(view, /void bulkAddLabel\(labelDraft\)/, "label form submits bulkAddLabel");
+
+// Redesign: Select-multiple and the trash are first-class toolbar verbs
+// (visible icon buttons). The trash owns BOTH destructive flows — delete the
+// selection in select mode, clear done otherwise — so the tasks header no
+// longer carries an overflow menu.
+assert.doesNotMatch(
+  view,
+  /<OverflowMenu/,
+  "the tasks header overflow menu is gone — the trash button owns clear-done",
+);
+assert.match(
+  view,
+  /className=\{`board-icon-btn\$\{cardSelect\.selectMode \? " board-icon-btn--active" : ""\}`\}/,
+  "Select multiple is a visible toolbar icon button",
+);
+assert.match(
+  view,
+  /if \(cardSelect\.selectMode\) \{\s*if \(hasSelection\) setToolbarDeleteConfirm\(true\);\s*\} else if \(doneCards\.length > 0\) \{\s*setClearConfirm\(true\);\s*\}/,
+  "the trash button routes to delete-selected in select mode and clear-done otherwise",
+);
+
+console.log("board-bulk-select.test.ts: ok");

@@ -1,0 +1,384 @@
+// @ts-nocheck
+// Familiar Work Queue model (cave-hlv.4) — the pure bead↔PR join: lane mapping,
+// per-familiar/per-surface labelling, stale + unlinked flags, no-open-PR and
+// post-merge-cleanup derivation. Clock injected for determinism.
+import assert from "node:assert/strict";
+
+const { buildWorkQueue, isActionableLane, laneTitle, hasVerificationEvidence, beadRefMatchesPr } = await import(
+  "./beads-work-queue.ts"
+);
+
+const NOW = Date.parse("2026-07-07T12:00:00Z");
+const HOURS = 3_600_000;
+
+function pr(number, lane, { beads = [], updatedAgoHours = 1 } = {}) {
+  return {
+    number,
+    title: `PR ${number}`,
+    url: `https://github.com/OpenCoven/coven-cave/pull/${number}`,
+    lane,
+    beadIds: beads,
+    checkStatus: lane === "checks-failing" ? "failing" : "passing",
+    reviewDecision: "APPROVED",
+    mergeStateStatus: "CLEAN",
+    headRefName: `feat/pr-${number}`,
+    updatedAt: new Date(NOW - updatedAgoHours * HOURS).toISOString(),
+  };
+}
+
+function bead(id, { priority = 2, labels = [], type = "feature", assignee = null } = {}) {
+  return { id, title: `Bead ${id}`, priority, status: "open", assignee, issue_type: type, labels, updated_at: null };
+}
+
+// ── Open PRs map to lanes and join to their bead for familiar/surface ─────────
+{
+  const beads = [bead("cave-aa1", { labels: ["familiar:kitty", "surface:github"] })];
+  const prs = [
+    pr(1, "checks-failing", { beads: ["cave-aa1"] }),
+    pr(2, "ready-to-merge", { beads: ["cave-bb2"] }),
+    pr(3, "needs-review", { beads: [] }),
+    pr(4, "draft", { beads: [] }),
+    pr(5, "changes-requested", { beads: ["cave-aa1"] }),
+    pr(6, "checks-pending", { beads: [] }),
+    pr(7, "blocked", { beads: [] }),
+  ];
+  const q = buildWorkQueue(beads, prs, [], { nowMs: NOW });
+  const laneOf = Object.fromEntries(q.lanes.map((l) => [l.key, l.items.map((i) => i.key)]));
+  assert.deepEqual(laneOf["checks-failing"], ["pr:1"], "failing PR in its lane");
+  assert.deepEqual(laneOf["changes-requested"], ["pr:5"]);
+  assert.deepEqual(laneOf["needs-review"], ["pr:3"]);
+  assert.deepEqual(laneOf["ready-to-merge"], ["pr:2"]);
+  assert.deepEqual(laneOf.waiting, ["pr:4", "pr:6", "pr:7"], "draft/pending/blocked fold into waiting");
+
+  const failing = q.lanes.find((l) => l.key === "checks-failing").items[0];
+  assert.equal(failing.familiar, "kitty", "PR joined to bead's familiar label");
+  assert.equal(failing.surface, "github", "PR joined to bead's surface label");
+
+  const review = q.lanes.find((l) => l.key === "needs-review").items[0];
+  assert.equal(review.familiar, "unassigned", "bead-less PR is unassigned");
+  assert.equal(review.surface, null);
+
+  assert.deepEqual(q.unlinked, [3, 4, 6, 7], "bead-less open PRs are flagged unlinked");
+  // waiting is not actionable; the four PR-action lanes are (2 with beads, but
+  // count is by item: failing+changes+review+ready = 4).
+  assert.equal(q.actionable, 4, "actionable excludes waiting");
+}
+
+// ── Lane ordering: fix-first → land → review → bead lanes → waiting ──────────
+{
+  const prs = [pr(1, "draft"), pr(2, "ready-to-merge"), pr(3, "checks-failing"), pr(4, "needs-review")];
+  const q = buildWorkQueue([], prs, [], { nowMs: NOW });
+  assert.deepEqual(
+    q.lanes.map((l) => l.key),
+    ["checks-failing", "needs-review", "ready-to-merge", "waiting"],
+    "lanes render in fix→land→review→waiting order, empty lanes dropped",
+  );
+}
+
+// ── no-open-PR: ready beads unreferenced by any open PR; epics excluded ──────
+{
+  const beads = [
+    bead("cave-x1", { labels: ["familiar:nova", "surface:ios"] }),
+    bead("cave-x2", { labels: ["familiar:kitty"] }), // has an open PR → not here
+    bead("cave-epic", { type: "epic", labels: ["familiar:nova"] }), // container, excluded
+  ];
+  const prs = [pr(9, "needs-review", { beads: ["cave-x2"] })];
+  const q = buildWorkQueue(beads, prs, [], { nowMs: NOW });
+  const noPr = q.lanes.find((l) => l.key === "no-open-PR");
+  assert.deepEqual(noPr.items.map((i) => i.bead.id), ["cave-x1"], "only the unreferenced non-epic bead");
+  assert.equal(noPr.items[0].familiar, "nova");
+  assert.equal(noPr.items[0].surface, "ios");
+}
+
+// ── post-merge-cleanup: merged PR whose bead is still open (in ready set) ────
+{
+  const beads = [bead("cave-open", { labels: ["familiar:kitty"] })];
+  const merged = [
+    { number: 50, title: "landed", url: "u/50", beadIds: ["cave-open"], mergedAt: "2026-07-07T00:00:00Z" },
+    { number: 51, title: "landed+closed bead", url: "u/51", beadIds: ["cave-closed"], mergedAt: "x" },
+    { number: 52, title: "no bead", url: "u/52", beadIds: [], mergedAt: "x" },
+  ];
+  const q = buildWorkQueue(beads, [], merged, { nowMs: NOW });
+  const cleanup = q.lanes.find((l) => l.key === "post-merge-cleanup");
+  assert.deepEqual(cleanup.items.map((i) => i.merged.number), [50], "only merged PRs whose bead is still open");
+  assert.equal(cleanup.items[0].familiar, "kitty");
+  assert.ok(isActionableLane("post-merge-cleanup"), "cleanup is actionable");
+  // A bead awaiting cleanup must NOT also appear in no-open-PR (it HAS a PR —
+  // it just merged). Otherwise it double-counts.
+  assert.equal(q.lanes.find((l) => l.key === "no-open-PR"), undefined, "cleanup bead is not in no-open-PR");
+  assert.equal(q.total, 1, "cave-open counted once, in cleanup only");
+}
+
+// ── post-merge-cleanup skips beads with an open follow-up PR, and dedups ─────
+{
+  // cave-seq landed in PR 60 but a follow-up PR 61 is still open: Close would
+  // be premature, so the bead shows only via the open PR's lane.
+  const beads = [bead("cave-seq", { labels: ["familiar:kitty"] }), bead("cave-dup", { labels: ["familiar:nova"] })];
+  const prs = [pr(61, "needs-review", { beads: ["cave-seq"] })];
+  const merged = [
+    { number: 60, title: "landed first half", url: "u/60", beadIds: ["cave-seq"], mergedAt: "2026-07-07T00:00:00Z" },
+    // cave-dup landed across TWO merged PRs → one cleanup item, freshest first.
+    { number: 72, title: "landed part 2", url: "u/72", beadIds: ["cave-dup"], mergedAt: "2026-07-07T02:00:00Z" },
+    { number: 71, title: "landed part 1", url: "u/71", beadIds: ["cave-dup"], mergedAt: "2026-07-07T01:00:00Z" },
+  ];
+  const q = buildWorkQueue(beads, prs, merged, { nowMs: NOW });
+  const cleanup = q.lanes.find((l) => l.key === "post-merge-cleanup");
+  assert.deepEqual(
+    cleanup.items.map((i) => i.merged.number),
+    [72],
+    "open-follow-up bead skipped; duplicate merged refs collapse to the first (freshest) PR",
+  );
+  const review = q.lanes.find((l) => l.key === "needs-review");
+  assert.deepEqual(review.items.map((i) => i.bead.id), ["cave-seq"], "cave-seq stays in its open PR's lane");
+  assert.equal(q.total, 2, "each bead counted exactly once");
+}
+
+// ── Stale flag + rollup by familiar ──────────────────────────────────────────
+{
+  const beads = [
+    bead("cave-k", { labels: ["familiar:kitty"] }),
+    bead("cave-n", { labels: ["familiar:nova"] }),
+  ];
+  const prs = [
+    pr(1, "checks-failing", { beads: ["cave-k"], updatedAgoHours: 40 }), // stale
+    pr(2, "needs-review", { beads: ["cave-n"], updatedAgoHours: 2 }),
+  ];
+  const q = buildWorkQueue(beads, prs, [], { nowMs: NOW, staleAfterHours: 24 });
+  assert.equal(q.stale, 1, "one stale PR at the 24h window");
+  const failing = q.lanes.find((l) => l.key === "checks-failing").items[0];
+  assert.equal(failing.stale, true, "the 40h PR is stale");
+
+  const kitty = q.byFamiliar.find((r) => r.familiar === "kitty");
+  const nova = q.byFamiliar.find((r) => r.familiar === "nova");
+  assert.equal(kitty.actionable, 1);
+  assert.equal(kitty.laneCounts["checks-failing"], 1);
+  assert.equal(nova.laneCounts["needs-review"], 1);
+  // Tie on actionable(1) → alphabetical: kitty before nova.
+  assert.deepEqual(q.byFamiliar.map((r) => r.familiar), ["kitty", "nova"]);
+}
+
+// ── unassigned familiar always trails the rollup ─────────────────────────────
+{
+  const prs = [pr(1, "needs-review", { beads: [] }), pr(2, "checks-failing", { beads: [] })];
+  const q = buildWorkQueue([], prs, [], { nowMs: NOW });
+  assert.equal(q.byFamiliar.at(-1).familiar, "unassigned", "unassigned sorts last");
+}
+
+// ── falls back to assignee when no familiar: label ───────────────────────────
+{
+  const beads = [bead("cave-z", { labels: ["surface:daemon"], assignee: "Cody" })];
+  const q = buildWorkQueue(beads, [], [], { nowMs: NOW });
+  const item = q.lanes.find((l) => l.key === "no-open-PR").items[0];
+  assert.equal(item.familiar, "cody", "assignee lowercased when no familiar: label");
+  assert.equal(item.surface, "daemon");
+}
+
+assert.equal(laneTitle("ready-to-merge"), "Ready to merge");
+
+// ── hasVerificationEvidence: a recorded comment gates Close (cave-hlv.2) ──────
+assert.equal(hasVerificationEvidence({ ...bead("cave-a"), comment_count: 1 }), true, "one comment = evidence");
+assert.equal(hasVerificationEvidence({ ...bead("cave-a"), comment_count: 3 }), true, "many comments = evidence");
+assert.equal(hasVerificationEvidence({ ...bead("cave-a"), comment_count: 0 }), false, "zero comments = no evidence");
+assert.equal(hasVerificationEvidence(bead("cave-a")), false, "absent comment_count = no evidence");
+assert.equal(hasVerificationEvidence(undefined), false, "no bead = no evidence");
+// notes alone (auto-populated planning text) must NOT count as evidence.
+assert.equal(
+  hasVerificationEvidence({ ...bead("cave-a"), notes: "some planning text", comment_count: 0 }),
+  false,
+  "notes without a comment are not verification evidence",
+);
+
+// ── Attention: unlinked and/or stale open PRs, with the PR summary (cave-x1j) ─
+{
+  const beads = [bead("cave-a", { labels: ["familiar:kitty"] })];
+  const prs = [
+    pr(1, "needs-review", { beads: ["cave-a"], updatedAgoHours: 40 }), // stale, linked
+    pr(2, "checks-failing", { beads: [], updatedAgoHours: 40 }), // unlinked AND stale
+    pr(3, "needs-review", { beads: [] }), // unlinked only (fresh)
+    pr(4, "ready-to-merge", { beads: ["cave-a"], updatedAgoHours: 1 }), // clean → excluded
+  ];
+  const q = buildWorkQueue(beads, prs, [], { nowMs: NOW, staleAfterHours: 24 });
+  assert.deepEqual(q.attention.map((a) => a.pr.number), [1, 2, 3], "clean PRs excluded; sorted by number");
+  const byNum = Object.fromEntries(q.attention.map((a) => [a.pr.number, a]));
+  assert.deepEqual({ u: byNum[1].unlinked, s: byNum[1].stale }, { u: false, s: true }, "#1 stale only");
+  assert.deepEqual({ u: byNum[2].unlinked, s: byNum[2].stale }, { u: true, s: true }, "#2 unlinked AND stale");
+  assert.deepEqual({ u: byNum[3].unlinked, s: byNum[3].stale }, { u: true, s: false }, "#3 unlinked only");
+  assert.ok(q.attention.every((a) => a.pr.title && a.pr.url), "carries the PR summary for display");
+
+  const clean = buildWorkQueue(
+    beads,
+    [pr(9, "ready-to-merge", { beads: ["cave-a"], updatedAgoHours: 1 })],
+    [],
+    { nowMs: NOW, staleAfterHours: 24 },
+  );
+  assert.deepEqual(clean.attention, [], "no unlinked/stale PRs → empty attention");
+}
+
+
+// ── cave-oa1z: the Work Queue rides the Tasks page as a tab ──────────────────
+// (Schedules pattern: legacy mode deep-links onto the tab; one nav entry.)
+{
+  const { readFileSync } = await import("node:fs");
+  const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
+
+  const workspace = read("../components/workspace.tsx");
+  if (!/mode === "board" \|\| mode === "familiar-work-queue"/.test(workspace)) {
+    throw new Error("workspace must resolve the legacy familiar-work-queue mode onto the merged Tasks surface");
+  }
+  if (!/initialTab=\{mode === "familiar-work-queue" \? "queue" : "tasks"\}/.test(workspace)) {
+    throw new Error("the legacy mode must deep-link onto the queue tab");
+  }
+  if (!/queueSlot=\{<FamiliarWorkQueueView[^>]*embedded/.test(workspace)) {
+    throw new Error("the queue rides the Tasks page as an embedded slot");
+  }
+
+  const board = read("../components/board-view.tsx");
+  if (!/idPrefix="tasks"/.test(board) || !/label: "Queue"/.test(board)) {
+    throw new Error("BoardView hosts the Tasks | Queue segment tabs");
+  }
+  if (!/activeTab === "queue" && queueSlot/.test(board)) {
+    throw new Error("the queue tabpanel renders the slot");
+  }
+
+  const sidebar = read("../components/sidebar-minimal.tsx");
+  if (/label: "Work Queue"/.test(sidebar)) {
+    throw new Error("the standalone Work Queue nav row stays retired — Tasks covers it");
+  }
+
+  const fwq = read("../components/familiar-work-queue-view.tsx");
+  if (!/embedded \? null : <h1 className="surface-compact-title">Queue<\/h1>/.test(fwq)) {
+    throw new Error("embedded queue suppresses its own h1 (the tab band names the surface)");
+  }
+  // Resilient load (user-requested "ensure it loads"): one failing source
+  // degrades with a banner; only BOTH failing rejects the load.
+  if (!/if \(!beadsOk && !prsOk\) throw new Error/.test(fwq)) {
+    throw new Error("the queue must load when either source (beads OR PR bridge) is available");
+  }
+  if (!/GitHub PR bridge unavailable — showing ready beads only/.test(fwq)) {
+    throw new Error("a PR-bridge failure surfaces as a truthful degradation banner, not a dead surface");
+  }
+}
+
+// ── no-open-PR triage order: priority asc, then oldest update first (cave-19jy)
+{
+  const at = (h) => new Date(NOW - h * HOURS).toISOString();
+  const beads = [
+    { ...bead("cave-fresh-p1", { priority: 1 }), updated_at: at(2) },
+    { ...bead("cave-old-p1", { priority: 1 }), updated_at: at(90) },
+    { ...bead("cave-old-p0", { priority: 0 }), updated_at: at(50) },
+    { ...bead("cave-any-p2", { priority: 2 }), updated_at: at(200) },
+    { ...bead("cave-undated-p1", { priority: 1 }), updated_at: null },
+  ];
+  const q = buildWorkQueue(beads, [], [], { nowMs: NOW });
+  const lane = q.lanes.find((l) => l.key === "no-open-PR");
+  assert.deepEqual(
+    lane.items.map((i) => i.bead.id),
+    ["cave-old-p0", "cave-old-p1", "cave-fresh-p1", "cave-undated-p1", "cave-any-p2"],
+    "P0 first; within a priority the stalest update leads; undated beads sort after dated peers",
+  );
+}
+
+// ── cave-p63a: ref join — a bead's external_ref or description can claim a
+// PR that mentions no bead id, so File-bead'd PRs link immediately.
+{
+  // external_ref `gh-<n>` links the PR: not unlinked, bead chip + familiar join,
+  // and the bead does NOT double-show in no-open-PR.
+  const refBead = {
+    ...bead("cave-ref", { labels: ["familiar:kitty", "surface:github"] }),
+    external_ref: "gh-77",
+  };
+  const q = buildWorkQueue([refBead], [pr(77, "needs-review", { beads: [] })], [], { nowMs: NOW });
+  assert.deepEqual(q.unlinked, [], "external_ref gh-<n> links the bead-less PR");
+  assert.deepEqual(q.attention, [], "a ref-linked fresh PR needs no attention");
+  const item = q.lanes.find((l) => l.key === "needs-review").items[0];
+  assert.equal(item.bead.id, "cave-ref", "the ref-matched bead populates the card's bead chip");
+  assert.equal(item.familiar, "kitty", "familiar joins through the ref-matched bead");
+  assert.equal(item.surface, "github");
+  assert.equal(q.lanes.find((l) => l.key === "no-open-PR"), undefined, "ref-linked bead leaves no-open-PR");
+  assert.equal(q.total, 1, "one PR item — the bead is not double-counted");
+}
+
+{
+  // Description fallback: the File-bead flow writes the PR URL into the
+  // description, and ready output carries no external_ref — the URL alone links.
+  const descBead = {
+    ...bead("cave-desc", { labels: ["familiar:nova"] }),
+    description: "Filed from unlinked PR #88 — https://github.com/OpenCoven/coven-cave/pull/88",
+  };
+  const q = buildWorkQueue([descBead], [pr(88, "checks-failing", { beads: [] })], [], { nowMs: NOW });
+  assert.deepEqual(q.unlinked, [], "description pull/<n> URL links the PR");
+  const item = q.lanes.find((l) => l.key === "checks-failing").items[0];
+  assert.equal(item.bead.id, "cave-desc");
+  assert.equal(item.familiar, "nova");
+  assert.equal(q.lanes.find((l) => l.key === "no-open-PR"), undefined);
+}
+
+{
+  // A non-matching ref does NOT link: the PR stays unlinked and the bead stays
+  // in no-open-PR. Near-miss numbers (gh-99 vs 991, pull/9910) must not match.
+  const otherBead = {
+    ...bead("cave-other"),
+    external_ref: "gh-99",
+    description: "See https://github.com/OpenCoven/coven-cave/pull/9910 and PR #9911",
+  };
+  const q = buildWorkQueue([otherBead], [pr(991, "needs-review", { beads: [] })], [], { nowMs: NOW });
+  assert.deepEqual(q.unlinked, [991], "a non-matching ref leaves the PR unlinked");
+  assert.equal(q.attention.length, 1);
+  assert.equal(q.attention[0].unlinked, true);
+  assert.equal(q.lanes.find((l) => l.key === "needs-review").items[0].bead, undefined);
+  assert.deepEqual(
+    q.lanes.find((l) => l.key === "no-open-PR").items.map((i) => i.bead.id),
+    ["cave-other"],
+    "the unrelated bead still waits in no-open-PR",
+  );
+}
+
+{
+  // cave-opld (review of #3426): the description fallback is anchored to the
+  // File-bead signature + the PR's own URL. A bead that merely MENTIONS a PR
+  // ("Follow-up to PR #88") or carries a FOREIGN repo's /pull/88 URL must not
+  // be consumed as PR 88's link — that silently dropped real work out of the
+  // no-open-PR lane and suppressed the unlinked flag.
+  const mentionBead = {
+    ...bead("cave-mention", { labels: ["familiar:kitty"] }),
+    description: "Follow-up to PR #88 — tighten the join later",
+  };
+  const foreignBead = {
+    ...bead("cave-foreign"),
+    description: "Port the upstream fix https://github.com/vercel/next.js/pull/88",
+  };
+  const q = buildWorkQueue([mentionBead, foreignBead], [pr(88, "needs-review", { beads: [] })], [], {
+    nowMs: NOW,
+  });
+  assert.deepEqual(q.unlinked, [88], "casual mentions and foreign URLs leave the PR unlinked");
+  assert.deepEqual(
+    q.lanes.find((l) => l.key === "no-open-PR").items.map((i) => i.bead.id).sort(),
+    ["cave-foreign", "cave-mention"],
+    "both beads keep waiting as their own work items",
+  );
+
+  // The File-bead signature alone (URL elided) still links — it is what the
+  // queue's own flow writes.
+  const signatureBead = {
+    ...bead("cave-signed"),
+    description: "Filed from unlinked PR #88 — see the PR for context",
+  };
+  const q2 = buildWorkQueue([signatureBead], [pr(88, "needs-review", { beads: [] })], [], { nowMs: NOW });
+  assert.deepEqual(q2.unlinked, [], "the File-bead signature is an anchor on its own");
+}
+
+// ── beadRefMatchesPr: the pure ref shapes ────────────────────────────────────
+assert.equal(beadRefMatchesPr("gh-123", 123), true, "gh-<n>");
+assert.equal(beadRefMatchesPr("#123", 123), true, "#<n>");
+assert.equal(beadRefMatchesPr("gh:OpenCoven/coven-cave#123", 123), true, "gh:owner/repo#<n> suffix");
+assert.equal(beadRefMatchesPr("https://github.com/OpenCoven/coven-cave/pull/123", 123), true, "PR URL");
+assert.equal(beadRefMatchesPr("https://github.com/OpenCoven/coven-cave/pull/123/", 123), true, "trailing slash");
+assert.equal(beadRefMatchesPr(" gh-123 ", 123), true, "whitespace trimmed");
+assert.equal(beadRefMatchesPr("gh-1234", 123), false, "gh near-miss");
+assert.equal(beadRefMatchesPr("#4123", 123), false, "# anchors the whole number");
+assert.equal(beadRefMatchesPr("https://github.com/x/y/pull/1234", 123), false, "URL near-miss");
+assert.equal(beadRefMatchesPr("https://github.com/x/y/issues/123", 123), false, "issue URL is not a PR");
+assert.equal(beadRefMatchesPr(null, 123), false, "null ref");
+assert.equal(beadRefMatchesPr("", 123), false, "empty ref");
+
+console.log("beads-work-queue.test.ts: ok");

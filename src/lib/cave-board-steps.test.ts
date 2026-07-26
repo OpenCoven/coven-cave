@@ -4,9 +4,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-// Salem "Save to Board" seeds a card with checklist steps. createCard must
+// Salem "Save to Tasks" seeds a card with checklist steps. createCard must
 // accept `steps: {text}[]` and round-trip them into CardStep[]. Isolated to a
-// temp home so it never touches the real ~/.coven/cave-board.json.
+// temp home so it never touches the real ~/.coven/cave/board.json.
 
 const tmpHome = await mkdtemp(path.join(tmpdir(), "cave-board-steps-"));
 process.env.HOME = tmpHome;

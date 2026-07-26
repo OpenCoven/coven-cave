@@ -1,0 +1,41 @@
+{
+  "name": "sop-creator",
+  "version": "0.1.0",
+  "description": "Create runbooks, playbooks, and technical documentation that people actually follow \u2014 scannable, actionable, specific, testable, and maintained.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "sop",
+    "runbook",
+    "playbook",
+    "documentation",
+    "process",
+    "operations"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/sop-creator",
+  "x-coven": {
+    "displayName": "SOP & Runbook Creator",
+    "category": "Knowledge & Docs",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/coleam00/second-brain-skills",
+      "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/sop-creator"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

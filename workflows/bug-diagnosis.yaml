@@ -2,7 +2,7 @@ id: bug-diagnosis
 version: 0.1.0
 name: Bug Diagnosis
 summary: Reproduce a failure, isolate the root cause, patch narrowly, and verify the original symptom.
-familiar: cody
+familiar: code
 pattern: sequential
 tags:
   - code
@@ -27,14 +27,14 @@ steps:
   - id: reproduce
     kind: agent
     name: Reproduce failure
-    uses: cody
+    uses: code
     summary: Run or inspect the failing path before proposing a cause.
     requires:
       - input
   - id: trace
     kind: agent
     name: Trace root cause
-    uses: cody
+    uses: code
     summary: Follow the symptom through logs, code paths, data, and configuration.
     requires:
       - reproduce
@@ -48,7 +48,7 @@ steps:
   - id: patch
     kind: agent
     name: Patch narrowly
-    uses: cody
+    uses: code
     summary: Apply the smallest code or config change that fixes the root cause.
     requires:
       - regression-test

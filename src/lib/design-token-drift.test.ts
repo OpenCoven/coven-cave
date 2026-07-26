@@ -1,0 +1,231 @@
+// Design-token drift gate — Cave UX P3 (Sage's 2026-07-03 audit).
+//
+// The design-language shipping checklist (docs/coven-design-language.md §9,
+// rule 1) is "tokens only — no hardcoded colors, radii, or font sizes". This
+// gate keeps that contract enforceable in two tiers:
+//
+//   1. ZERO TOLERANCE for on-scale literals: running the codemod
+//      (scripts/codemods/tokenize-css.mjs) over every in-scope CSS file must
+//      be a no-op. A `font-size: 12px` that should be `var(--text-sm)` fails
+//      here — fix by running:  node scripts/codemods/tokenize-css.mjs
+//
+//   2. RATCHETS for the judgment categories (off-scale px values, hex colors
+//      outside token definitions, inline TSX style objects). These can only
+//      go DOWN. If you add one deliberately (e.g. a genuinely dynamic inline
+//      style), lower-or-equal is enforced — raise the baseline in the same
+//      PR and say why. When you reduce drift, lower the baseline to bank it.
+//
+// The codemod's px→token tables are pinned against the live definitions in
+// src/app/globals.css, so a token retune fails loudly instead of letting the
+// codemod silently rewrite to stale values.
+
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+
+import cssContract from "../../scripts/css-source-contract.cjs";
+
+import {
+  tokenizeCss,
+  cssFilesInScope,
+  FONT_SIZE_TOKENS,
+  SPACE_TOKENS,
+  RADIUS_TOKENS,
+  FONT_SIZE_PROPS,
+  SPACING_PROPS,
+  RADIUS_PROPS,
+  SANCTIONED_FONT_SIZE_LITERALS,
+  EXEMPT_MARKER,
+} from "../../scripts/codemods/tokenize-css.mjs";
+
+// ── ratchet baselines ────────────────────────────────────────────────────────
+// Current counts as of the P3 codemod PR. Only lower these (banking progress)
+// or raise them with an explicit justification in your PR.
+const BASELINES = {
+  offScaleFontSizePx: 152, // 10.5px/11.5px/… — need per-case renormalization to the type scale (banked: canvas-editor.css on the type scale; familiar-tab retokenized the old hero/section styles; research-desk tabs shipped fully on the type scale, -3; familiar-tab five-section rebuild shipped fully on the type scale, -1; projects access page rebuild shipped fully on the type scale, -2). +1: Research Reader (Research Reader.dc.html handoff) — the EB Garamond findings hero <h1> keeps the design's 31px display size (between --text-display 28px and the next step); every other reader font-size uses the type scale and compact mono labels use the `font:` shorthand. -3: orphaned skill-browser removal reclaimed its off-scale sizes.
+  offScaleSpacingPx: 1537, // off-4px-grid pad/margin/gap components — banked: canvas-editor.css on the space scale (-1) + familiar-tab snapped to the 4px grid (-5). +123: research-desk redesign (cave-dl74) — the five tab sheets keep the design's compact even 2px-offset rhythm (6/10/14/18/22px gaps and paddings, same family the surface it replaced used); odd values were snapped to the grid in the same PR. +7: home-minimal PR (2026-07-22) — new home-composer/landing-composer.css + hearth-continuations.css compact UI rhythms (7px gaps, 6px accent-dot, 5px pill gap, 13px/14px organic pill padding — off-scale by design for visual compactness). -10: projects access page rebuild (cave-luq4) replaced the hub CSS fully on the space scale; re-banked at 1467 after rebasing onto main commits 7cf9d13f0..fbcadfd3b which added +4 (still -6 vs the pre-rebuild 1473). -1: drive-by banked in the hex-token chunk PR (cave-gyh2). +26: Queue tab redesign (Queue.dc.html handoff) — the refreshed familiar-work-queue.css keeps the design's compact rhythm (7px control gaps, 6px row-meta gaps, 5px check-dot gaps, 3px accent rail, 30px action-button height, 130px note-textarea min-height, 180px forward-menu min-width, 37px menu offset); on-scale values were tokenized by tokenize-css.mjs in the same PR and font-size literals were snapped to the type scale. -2: Tasks toolbar redesign (tasks-list-redesign-refresh) swapped the compact board header for the design's roomier command bar; net off-scale spacing dropped even though the new toolbar adds off-scale rhythm, because the removed compact-header + search-wrap block carried more off-grid values. +40: launcher 3a home dashboard (home-dashboard.css) — the work-led dashboard shell keeps the design mock's compact rhythm (13/22px chrome & board padding, 9/10/11/18/26px rail & row gaps/padding, 2/3/5/6/7px micro-gaps incl. the Resume CTA pill), off the 4px grid by design; the redesign also RECLAIMED the retired hearth/hero/Continue sheets, so this is the NET delta after removal; on-grid values were tokenized by the codemod in the same PR. +20: Review Deck redesign (Review Deck.dc.html handoff) — new review-deck.css keeps the design's compact rhythm (2px stat/pill micro-gaps, 3px pill padding, 5px pill gaps, 6px row/eyebrow margins, 7px key/button gaps, 14px panel-head padding), off the 4px grid by design; the trivially-equivalent 9/7/13px values were snapped to the space scale in the same PR and font-size literals to the type scale. +34: Familiar Analytics modernization (cave-q8uc, Familiar Analytics.dc.html handoff) — the refreshed familiar-analytics surface (surface-reporting.css) keeps the design mock's compact rhythm: 14px heal/contract-detail card padding, 10px attention/heal gaps, 11/13px collapse & button paddings, 7/9px heal-card button padding, 5/6px micro-gaps, 2/3px chip nudges — off the 4px grid by design for the dense card/chip/modal layout; on-scale values were tokenized by tokenize-css.mjs in the same PR. +3: Marketplace "Explore" redesign (Marketplace.dc.html handoff) — the merged Explore rail + toolbar keep the mock's compact rhythm (1px rail-row gap, 2px view-toggle inner padding, 10px rail-label inline padding); on-scale values were tokenized by tokenize-css.mjs in the same PR. -10: hearth-home restore / dashboard-to-new-chat — the hearth sheets' +7 compact rhythm returned, but relocating the dashboard into the chat empty state retired its chrome/dock/project-button blocks (13/22px chrome + 14/22px dock padding, 9/10/11px project paddings), a net reclaim. -12: new-chat dashboard simplification (cave-gxap) — the context rail retired (18px rail padding/gap, 9/10/11px project/quick/pick paddings & gaps, 2px micro-margin) and the board's 26px padding/gap snapped to the space scale; the rail-less board is a capped no-scroll column. +11: Research Reader (Research Reader.dc.html handoff) — the reader chrome keeps the design's compact reading rhythm off the 4px grid (34px page inset & doc top padding, 48px reading-column gutter, 22/14px contents-rail padding, 7px toc/link paddings, 15px lede indent, 20px list indent, 18px rail padding, and 5/6/7/9/10/11px micro paddings & gaps across the toolbar, source cards, and focus overlay); trivially on-grid values were tokenized by tokenize-css.mjs in the same PR. -39: orphaned skill-browser removal (cave-vewe follow-up) — deleting the retired surface's ~609-line .skill-browser__* block reclaimed its compact off-grid rhythm wholesale.
+  offScaleRadiusPx: 209, // 4px/6px/10px/14px/… radii between the sanctioned steps. +5: research-desk 2px/4px accent-mark radii (short solid marks, not container corners). -5: projects access page rebuild removed the hub's off-step radii. +1: Research Reader accent-mark radius (the section-heading 2px tick, same short-solid-mark family as the research desk). -3: orphaned skill-browser removal reclaimed its off-step radii.
+  hexOutsideDefinitions: 0, // hex in render CSS (token definitions excluded) — -104: cave-gyh2 chunk 1 (dropped stale var(--token, #hex) fallbacks; mapped accent/danger/success fills to their semantic foregrounds; promoted --color-success-foreground and the codex --cv-* strays). -1 banked in the design-doc reconcile PR (cave-kf3x). -51: cave-yxiz chunk 2 zeroed the ratchet — document grounds (sketch/preview/thumb/QR) now share the fixed --surface-paper token in foundations.css; GitHub state badges promote --gh-merged/--gh-merged-ink and pair open/closed with the semantic status foregrounds; profile-card strays joined the --pfc-* palette; the magic-cast spell art promotes --spell-violet/--spell-core; QR ink, dashboard mark ink, and the avatar photo-overlay ink became local definitions; and pure shade/alpha arithmetic in color-mix()/mask gradients uses the CSS black/white keywords (sanctioned: they're mix anchors, not colors — matching the pre-existing keyword usage in dashboard.css and surface-compact-calendar.css). New hexes belong in token definitions; keywords are only for mix/mask arithmetic.
+  inlineTsxStyles: 230, // style={{…}} in TSX; many are legit dynamic values (banked from 500 — the count had drifted far below the old ceiling; -2: projects access page rebuild dropped the hub's inline styles; +1: vendored Blaze.tsx canvas host uses dynamic style spread for WebGL positioning; +1: vendored Peel.tsx canvas host for page-peel reveal effect uses runtime-mutated inline styles; +2: project-setup modal color swatches paint runtime-only values (per-root tint + oklch palette choice); -1: orphaned skill-browser removal dropped its inline style)
+};
+
+// ── unit sanity for the codemod transform ───────────────────────────────────
+
+{
+  // On-scale literals tokenize; result is idempotent.
+  const src = ".a {\n  font-size: 12px;\n  padding: 8px 12px;\n  border-radius: 999px;\n}\n";
+  const out = tokenizeCss(src);
+  assert.ok(out.includes("font-size: var(--text-sm);"));
+  assert.ok(out.includes("padding: var(--space-2) var(--space-3);"));
+  assert.ok(out.includes("border-radius: var(--radius-pill);"));
+  assert.equal(tokenizeCss(out), out, "codemod must be idempotent");
+
+  // Off-scale, zero, negative, calc/var-wrapped, and rem values are untouched.
+  // font-size: 16px is the sanctioned iOS anti-zoom floor (see the codemod's
+  // table comment) and stays literal too.
+  const keep = [
+    "  font-size: 10.5px;",
+    "  font-size: 16px;",
+    "  font-size: 0.875rem;",
+    "  padding: 0 11px;",
+    "  margin: -8px;",
+    "  gap: calc(8px + 1px);",
+    "  padding: var(--x, 12px);",
+    "  border-radius: 6px;",
+    "  line-height: 16px;", // not a tokenized property
+    "  width: 12px;", // not a tokenized property
+  ];
+  for (const line of keep) {
+    const block = `.a {\n${line}\n}\n`;
+    assert.equal(tokenizeCss(block), block, `must not rewrite: ${line.trim()}`);
+  }
+
+  // Token definitions stay literal — that's where px belongs.
+  const def = ":root {\n  --space-2: 8px;\n  --text-sm: 12px;\n}\n";
+  assert.equal(tokenizeCss(def), def);
+
+  // Comments (block and inline-before) are never rewritten.
+  const comment = "/*\n  padding: 8px;\n*/\n.a { /* gap: 4px */ color: red; }\n";
+  assert.equal(tokenizeCss(comment), comment);
+
+  // The exempt marker is an explicit opt-out.
+  const exempt = `.a {\n  font-size: 12px; /* ${EXEMPT_MARKER}: needs fixed px */\n}\n`;
+  assert.equal(tokenizeCss(exempt), exempt);
+}
+
+// ── pin: codemod tables mirror the live globals.css token definitions ──────
+
+{
+  const globals = cssContract.readEffectiveCssSync("src/app/globals.css", "utf8") as string;
+  const defined = new Map<string, string>();
+  for (const m of globals.matchAll(/^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);/gim)) {
+    if (!defined.has(m[1])) defined.set(m[1], m[2].trim()); // first (=:root dark) wins
+  }
+  for (const [table, name] of [
+    [FONT_SIZE_TOKENS, "font-size"],
+    [SPACE_TOKENS, "space"],
+    [RADIUS_TOKENS, "radius"],
+  ] as const) {
+    for (const [px, token] of table as Map<string, string>) {
+      assert.equal(
+        defined.get(token),
+        px,
+        `${name} table drift: codemod maps ${px} -> ${token}, but globals.css defines ${token}: ${defined.get(token) ?? "(missing)"} — update scripts/codemods/tokenize-css.mjs to match`,
+      );
+    }
+  }
+}
+
+// ── tier 1: the codemod is a no-op over the tree (no on-scale literals) ─────
+
+const files = cssFilesInScope();
+assert.ok(files.length > 10, "scanner should find the src CSS tree");
+
+for (const rel of files) {
+  const source = readFileSync(rel, "utf8");
+  assert.equal(
+    tokenizeCss(source),
+    source,
+    `${rel} has on-scale px literals that must use tokens — run: node scripts/codemods/tokenize-css.mjs`,
+  );
+}
+
+// ── tier 2: ratchets ────────────────────────────────────────────────────────
+
+/** Strip block comments so commented-out CSS never counts as drift. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+}
+
+const DECL_RE = /^(\s*)([a-zA-Z-]+)(\s*:\s*)([^;]*);/;
+const PX_RE = /^([0-9]+(?:\.[0-9]+)?)px$/;
+
+function countOffScale(
+  source: string,
+  props: Set<string>,
+  table: Map<string, string>,
+  sanctioned: Set<string> = new Set(),
+): number {
+  let count = 0;
+  for (const line of stripComments(source).split("\n")) {
+    if (line.includes(EXEMPT_MARKER)) continue;
+    if (line.trimStart().startsWith("--")) continue;
+    const m = DECL_RE.exec(line);
+    if (!m || !props.has(m[2].toLowerCase())) continue;
+    for (const piece of m[4].split(/\s+/)) {
+      const px = PX_RE.exec(piece);
+      if (!px) continue;
+      const value = Number.parseFloat(px[1]);
+      if (value === 0) continue; // zero needs no token
+      if (sanctioned.has(`${value}px`)) continue;
+      if (!table.has(`${value}px`)) count += 1;
+    }
+  }
+  return count;
+}
+
+function countHexOutsideDefinitions(source: string): number {
+  let count = 0;
+  for (const line of stripComments(source).split("\n")) {
+    if (line.trimStart().startsWith("--")) continue; // token definitions are sanctioned
+    count += (line.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).length;
+  }
+  return count;
+}
+
+const totals = {
+  offScaleFontSizePx: 0,
+  offScaleSpacingPx: 0,
+  offScaleRadiusPx: 0,
+  hexOutsideDefinitions: 0,
+};
+for (const rel of files) {
+  const source = readFileSync(rel, "utf8");
+  totals.offScaleFontSizePx += countOffScale(
+    source,
+    FONT_SIZE_PROPS,
+    FONT_SIZE_TOKENS,
+    SANCTIONED_FONT_SIZE_LITERALS,
+  );
+  totals.offScaleSpacingPx += countOffScale(source, SPACING_PROPS, SPACE_TOKENS);
+  totals.offScaleRadiusPx += countOffScale(source, RADIUS_PROPS, RADIUS_TOKENS);
+  totals.hexOutsideDefinitions += countHexOutsideDefinitions(source);
+}
+
+function countInlineTsxStyles(dir: string): number {
+  let count = 0;
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry);
+    if (statSync(full).isDirectory()) count += countInlineTsxStyles(full);
+    else if (entry.endsWith(".tsx"))
+      count += (readFileSync(full, "utf8").match(/style=\{\{/g) ?? []).length;
+  }
+  return count;
+}
+const inlineTsxStyles = countInlineTsxStyles("src");
+
+function ratchet(name: keyof typeof BASELINES, actual: number) {
+  assert.ok(
+    actual <= BASELINES[name],
+    `token-drift ratchet "${name}" went UP: ${actual} > baseline ${BASELINES[name]}. ` +
+      `New hardcoded values need tokens (docs/coven-design-language.md §9 rule 1); ` +
+      `if this one is genuinely dynamic/off-scale by design, raise the baseline in this PR and justify it.`,
+  );
+  if (actual < BASELINES[name]) {
+    console.log(
+      `[token-drift] ${name}: ${actual} < baseline ${BASELINES[name]} — lower the baseline to bank the progress`,
+    );
+  }
+}
+
+ratchet("offScaleFontSizePx", totals.offScaleFontSizePx);
+ratchet("offScaleSpacingPx", totals.offScaleSpacingPx);
+ratchet("offScaleRadiusPx", totals.offScaleRadiusPx);
+ratchet("hexOutsideDefinitions", totals.hexOutsideDefinitions);
+ratchet("inlineTsxStyles", inlineTsxStyles);
+
+console.log(
+  `design-token-drift: ok (codemod no-op over ${files.length} css files; ratchets ` +
+    `font=${totals.offScaleFontSizePx} space=${totals.offScaleSpacingPx} radius=${totals.offScaleRadiusPx} ` +
+    `hex=${totals.hexOutsideDefinitions} inline=${inlineTsxStyles})`,
+);

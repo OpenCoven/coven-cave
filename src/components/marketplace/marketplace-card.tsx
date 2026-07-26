@@ -1,0 +1,229 @@
+"use client";
+
+import { memo } from "react";
+import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
+import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-catalog";
+
+const TRUST_LABEL: Record<string, string> = {
+  "official-remote": "Official",
+  "official-local": "Official",
+  "reference-local": "Reference",
+  "preview-local": "Preview",
+  "local-tool": "Local tool",
+  "local-draft": "Draft",
+};
+
+type Props = {
+  plugin: MarketplacePlugin;
+  busy: boolean;
+  // id-based so the parent can pass stable handlers (add/remove/setSelected/
+  // setConfiguringId) directly — without per-card lambdas the memo below lets
+  // unchanged cards skip re-render while the search box re-renders the surface.
+  onOpen: (id: string) => void;
+  onAdd: (id: string) => void;
+  onRemove: (id: string) => void;
+  onConfigure: (id: string) => void;
+};
+
+function kindIcon(kind: MarketplacePlugin["kind"]) {
+  if (kind === "knowledge-pack") return "ph:books";
+  if (kind === "craft") return "ph:package-bold";
+  if (kind === "mcp") return "ph:plug-bold";
+  if (kind === "api") return "ph:cloud-bold";
+  if (kind === "prompt") return "ph:chat-centered-text";
+  return "ph:sparkle-bold";
+}
+
+function kindLabel(kind: MarketplacePlugin["kind"]) {
+  if (kind === "knowledge-pack") return "Knowledge pack";
+  if (kind === "craft") return "Craft";
+  if (kind === "mcp") return "MCP";
+  if (kind === "api") return "API";
+  if (kind === "prompt") return "Prompts";
+  return "Skill";
+}
+
+// What "Add" actually does differs by kind — the button says so on hover
+// instead of leaving the verb ambiguous.
+function addHelp(kind: MarketplacePlugin["kind"]) {
+  if (kind === "knowledge-pack") return "Preview the pack manifest, choose a seed target, and install bundled skills";
+  if (kind === "craft") return "Preview the exact Codex install and Role capability plan";
+  if (kind === "mcp") return "Add this MCP server to your Cave — familiars can call its tools";
+  if (kind === "api") return "Connect this API so your familiars can use it";
+  if (kind === "prompt") return "Add this prompt pack — its templates join the / menu";
+  return "Install this skill — familiars load it while they work";
+}
+
+function setupEffortLabel(plugin: MarketplacePlugin) {
+  if (plugin.draft) return { icon: "ph:pencil-simple" as const, label: "Draft" };
+  if (!plugin.available) return { icon: "ph:warning" as const, label: "Unavailable" };
+  if (plugin.requiresSetup && !plugin.configured) {
+    const fields = plugin.requiredConfig.length;
+    return {
+      icon: "ph:key" as const,
+      label: fields > 0 ? `${fields} credential${fields === 1 ? "" : "s"}` : "Needs setup",
+    };
+  }
+  if (plugin.requiresSetup && plugin.configured) return { icon: "ph:check-circle" as const, label: "Configured" };
+  if (plugin.policy.authentication === "ON_INSTALL") return { icon: "ph:lock-simple" as const, label: "OAuth on first use" };
+  if (plugin.remoteUrl) return { icon: "ph:cloud-bold" as const, label: "Remote endpoint" };
+  return { icon: "ph:check-circle" as const, label: "No setup" };
+}
+
+// label is the clamped chip text; full is the untruncated list for the
+// tooltip — a "+3" chip whose title repeats the same "+3" hides the rest.
+function capabilityPreview(plugin: MarketplacePlugin) {
+  const capabilities = plugin.capabilities.length > 0 ? plugin.capabilities : plugin.keywords;
+  if (capabilities.length === 0) return { label: "Core capability", full: "Core capability" };
+  const first = capabilities.slice(0, 2).join(", ");
+  const more = capabilities.length > 2 ? ` +${capabilities.length - 2}` : "";
+  return { label: `${first}${more}`, full: capabilities.join(", ") };
+}
+
+function roleFitLabel(plugin: MarketplacePlugin) {
+  const roles = plugin.roleAffinity.flatMap((entry) => entry.roles).filter(Boolean);
+  if (roles.length === 0) return { label: "General fit", full: "General fit" };
+  const unique = [...new Set(roles)];
+  const first = unique.slice(0, 2).join(", ");
+  const more = unique.length > 2 ? ` +${unique.length - 2}` : "";
+  return { label: `${first}${more}`, full: unique.join(", ") };
+}
+
+export const MarketplaceCard = memo(function MarketplaceCard({
+  plugin,
+  busy,
+  onOpen,
+  onAdd,
+  onRemove,
+  onConfigure,
+}: Props) {
+  const state = pluginBadgeState(plugin);
+  const setup = setupEffortLabel(plugin);
+  const capability = capabilityPreview(plugin);
+  const roleFit = roleFitLabel(plugin);
+  return (
+    <div className="marketplace-card flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => onOpen(plugin.id)}
+          className="focus-ring flex min-w-0 items-center gap-3 rounded-md text-left"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
+            <Icon name={kindIcon(plugin.kind)} width={16} className="text-[var(--text-muted)]" />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">
+              {plugin.displayName}
+            </span>
+            <span className="block truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
+              {kindLabel(plugin.kind)} · {plugin.author}
+            </span>
+          </span>
+        </button>
+        {plugin.kind === "craft" && plugin.draft ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:pencil-simple"
+            onClick={() => onOpen(plugin.id)}
+            title="Review this local Craft draft"
+          >
+            Draft
+          </Button>
+        ) : plugin.kind === "knowledge-pack" && state !== "unavailable" ? (
+          <Button
+            variant={state === "added" ? "secondary" : "primary"}
+            size="sm"
+            leadingIcon={state === "added" ? "ph:check" : "ph:books"}
+            loading={busy}
+            onClick={() => onOpen(plugin.id)}
+            title={addHelp(plugin.kind)}
+          >
+            {state === "added" ? "Seed" : "Preview"}
+          </Button>
+        ) : plugin.kind === "craft" && state !== "unavailable" ? (
+          <Button
+            variant={state === "added" ? "secondary" : "primary"}
+            size="sm"
+            leadingIcon={state === "added" ? "ph:check" : "ph:package-bold"}
+            loading={busy}
+            onClick={() => onOpen(plugin.id)}
+            title={addHelp(plugin.kind)}
+          >
+            {state === "added" ? "Manage" : "Preview"}
+          </Button>
+        ) : state === "needs-setup" ? (
+          <Button variant="primary" size="sm" leadingIcon="ph:warning" onClick={() => onConfigure(plugin.id)}>
+            Set up
+          </Button>
+        ) : state === "added" ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:check"
+            loading={busy}
+            onClick={() => onRemove(plugin.id)}
+            title="In your Cave — click to remove it"
+          >
+            Added
+          </Button>
+        ) : state === "unavailable" ? (
+          <Button variant="ghost" size="sm" disabled>
+            Unavailable
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon="ph:plus"
+            loading={busy}
+            onClick={() => onAdd(plugin.id)}
+            title={addHelp(plugin.kind)}
+          >
+            Add
+          </Button>
+        )}
+      </div>
+      <p className="line-clamp-2 text-[length:var(--text-sm)] text-[var(--text-muted)]">{plugin.description}</p>
+      <div
+        className="marketplace-card__decision"
+        aria-label={`Decision notes: ${setup.label}; ${capability.full}; ${roleFit.full}`}
+      >
+        <span className="marketplace-card__decision-chip" title={setup.label}>
+          <Icon name={setup.icon} width={11} aria-hidden /> {setup.label}
+        </span>
+        <span className="marketplace-card__decision-chip" title={capability.full}>
+          <Icon name="ph:lightning-bold" width={11} aria-hidden /> {capability.label}
+        </span>
+        <span className="marketplace-card__decision-chip" title={roleFit.full}>
+          <Icon name="ph:mask-happy" width={11} aria-hidden /> {roleFit.label}
+        </span>
+      </div>
+      <div className="marketplace-card__meta">
+        <span>
+          <Icon name={kindIcon(plugin.kind)} width={11} aria-hidden />{" "}
+          {kindLabel(plugin.kind)}
+        </span>
+        <span>
+          <Icon name="ph:seal-check" width={11} aria-hidden /> {TRUST_LABEL[plugin.trust] ?? plugin.trust}
+        </span>
+        {plugin.requiresSetup && plugin.configured ? (
+          <button
+            type="button"
+            onClick={() => onConfigure(plugin.id)}
+            className="focus-ring hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:check-circle" width={11} aria-hidden /> Configured
+          </button>
+        ) : null}
+        {state === "needs-setup" ? (
+          <span className="text-[var(--text-primary)]">
+            <Icon name="ph:warning" width={11} aria-hidden /> Needs setup
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+});

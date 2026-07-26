@@ -16,12 +16,7 @@ const projectTreeClient = await readFile(
   new URL("../../components/project-tree.tsx", import.meta.url),
   "utf8",
 );
-const comuxView = await readFile(new URL("../../components/comux-view.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("../../components/chat-view.tsx", import.meta.url), "utf8");
-const codeQuickOpen = await readFile(
-  new URL("../../components/code-quick-open.tsx", import.meta.url),
-  "utf8",
-);
 
 assert.match(
   helper,
@@ -32,6 +27,11 @@ assert.match(
   helper,
   /export async function assertProjectApiAccess\([\s\S]*familiarId[\s\S]*projectRootForPath[\s\S]*await assertProjectAccess\(\{ familiarId \}, project\.id, surface\)/,
   "project API request helper should resolve a registered project from the requested path/root and assert access",
+);
+assert.doesNotMatch(
+  helper,
+  /bootstrapConfiguredFamiliarProjectGrants/,
+  "project API request helper must not auto-grant configured familiars before enforcing access",
 );
 assert.match(
   helper,
@@ -50,8 +50,18 @@ assert.match(
 );
 assert.match(
   helper,
-  /export function projectPermissionSurfaceForRequest\([\s\S]*MOBILE_ACCESS_HEADER[\s\S]*return "mobile"/,
-  "project API helper should map verified mobile requests to the mobile audit/check surface",
+  /const MOBILE_READ_FALLBACK_SURFACES:[\s\S]*"file-browse",[\s\S]*"file-read",[\s\S]*"project-api",/,
+  "project API helper should only map verified mobile read-capable fallbacks to the mobile audit/check surface",
+);
+assert.match(
+  helper,
+  /req\.headers\.get\(MOBILE_ACCESS_HEADER\) === "1" &&[\s\S]*MOBILE_READ_FALLBACK_SURFACES\.has\(fallback\)[\s\S]*return "mobile"/,
+  "project API helper should preserve write-capable fallback surfaces for verified mobile requests",
+);
+assert.doesNotMatch(
+  helper,
+  /MOBILE_READ_FALLBACK_SURFACES:[\s\S]*"file-write"/,
+  "mobile project API writes must keep the file-write surface so read-only grants cannot mutate files",
 );
 
 for (const [name, source] of [
@@ -127,24 +137,9 @@ assert.match(
   "ProjectTree move requests should include familiarId",
 );
 assert.match(
-  comuxView,
-  /const selectedProjectFamiliarId = useMemo\([\s\S]*selectedProjectSessions\[0\]\?\.familiarId/,
-  "Comux project view should derive a familiar for project-scoped API calls",
-);
-assert.match(
-  comuxView,
-  /familiarId: selectedProjectFamiliarId/,
-  "Comux file preview, save, tree, and search calls should pass familiarId",
-);
-assert.match(
   chatView,
   /new URLSearchParams\(\{ root: mentionRoot, familiarId: familiar\.id \}\)/,
   "chat mention file index should pass the active familiarId",
-);
-assert.match(
-  codeQuickOpen,
-  /new URLSearchParams\(\{ root, familiarId \}\)/,
-  "code quick open should pass familiarId to the file index",
 );
 
 console.log("project-permission-routes.test.ts: ok");

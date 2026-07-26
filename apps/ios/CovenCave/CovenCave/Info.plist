@@ -24,6 +24,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
@@ -32,6 +34,8 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
@@ -40,6 +44,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Coven Cave uses the camera to scan the pairing QR code shown on your desktop.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Coven Cave connects to your desktop over your private Tailscale network to chat with your familiars.</string>
 	<key>NSMicrophoneUsageDescription</key>
@@ -56,7 +62,18 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 		<key>NSAllowsArbitraryLoads</key>
-		<true/>
+		<false/>
 	</dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>ai.opencoven.cave</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>covencave</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

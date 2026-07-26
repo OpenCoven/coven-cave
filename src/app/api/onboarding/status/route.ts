@@ -6,7 +6,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadConfig } from "@/lib/cave-config";
-import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher } from "@/lib/coven-bin";
+import {
+  openCovenToolReadinessStatuses,
+  type OpenCovenToolReadinessStatus,
+} from "@/lib/opencoven-tools-status";
 import {
   COMPATIBILITY_ADAPTERS,
   covenHelpSupportsAdapterList,
@@ -35,26 +39,41 @@ function gitInstallHint(): string {
 }
 
 /**
- * Advisory: Cave boots and chats without git (Node ships inside the app
- * bundle), but the changes panel, project file tree, and checkpoints all
- * shell out to it. Missing git never blocks onboarding completion.
+ * Queue project selection lives on the Tasks page's Queue tab now, not in
+ * onboarding — but it remains a Git-repository boundary. Cave can render some
+ * surfaces without Git, yet it cannot safely initialize or load a selected
+ * Queue project until Git is available.
  */
 async function checkGit(): Promise<Step> {
   const found = await commandPath("git");
-  if (found) return { ok: true, optional: true, detail: found };
-  return {
-    ok: false,
-    optional: true,
-    hint: `Chat works without it, but the changes panel, project files, and checkpoints need Git. ${gitInstallHint()}`,
-  };
-}
-
-async function checkCovenCli(): Promise<Step> {
-  const found = await commandPath("coven");
   if (found) return { ok: true, detail: found };
   return {
     ok: false,
-    hint: `Install the coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
+    hint: `Git is required to select and use a Queue project. ${gitInstallHint()}`,
+  };
+}
+
+function checkCovenCli(tool: OpenCovenToolReadinessStatus | undefined): Step {
+  if (!tool?.installed) {
+    return {
+      ok: false,
+      hint: `Install the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
+    };
+  }
+  if (!tool.compatible) {
+    const detail = tool.current
+      ? `Update required: ${tool.current} is below ${tool.minimumVersion}`
+      : "Update required";
+    return {
+      ok: false,
+      detail,
+      hint: `Update the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, then re-check.`,
+    };
+  }
+  const location = tool.path ?? tool.binary;
+  return {
+    ok: true,
+    detail: tool.current ? `${tool.current} at ${location}` : `${location} (version unknown)`,
   };
 }
 
@@ -65,7 +84,10 @@ async function commandPath(binary: string): Promise<string | null> {
       env: covenSpawnEnv(),
       timeout: 1500,
     });
-    return stdout.trim().split(/\r?\n/)[0] || null;
+    const lines = stdout.split(/\r?\n/);
+    return process.platform === "win32"
+      ? pickWindowsLauncher(lines)
+      : lines.map((l) => l.trim()).find(Boolean) ?? null;
   } catch {
     return null;
   }
@@ -83,7 +105,9 @@ async function countOpenClawAgents(): Promise<number> {
   }
 }
 
-async function checkHarnessAdapters(openclawAgentCount: number): Promise<Step> {
+async function checkHarnessAdapters(
+  openclawAgentCount: number,
+): Promise<{ step: Step; reports: AdapterReport[] }> {
   const localReports: AdapterReport[] = await Promise.all(
     COMPATIBILITY_ADAPTERS.map(async (adapter) => {
       const found = await commandPath(adapter.binary);
@@ -105,19 +129,20 @@ async function checkHarnessAdapters(openclawAgentCount: number): Promise<Step> {
     localReports,
     await loadCovenAdapterSummaries(),
   );
-  return runtimeSourceSetupState(reports, openclawAgentCount);
+  return { step: runtimeSourceSetupState(reports, openclawAgentCount), reports };
 }
 
 async function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
   try {
-    const { stdout: helpText } = await execFileAsync(covenBin(), ["--help"], {
+    const { command, fixedArgs } = covenLaunchCommand();
+    const { stdout: helpText } = await execFileAsync(command, [...fixedArgs, "--help"], {
       env: covenSpawnEnv(),
       timeout: 1500,
     });
     if (!covenHelpSupportsAdapterList(helpText)) return [];
     const { stdout } = await execFileAsync(
-      covenBin(),
-      ["adapter", "list", "--json"],
+      command,
+      [...fixedArgs, "adapter", "list", "--json"],
       {
         env: covenSpawnEnv(),
         timeout: 3000,
@@ -150,6 +175,12 @@ async function checkDaemon(): Promise<Step> {
   return { ok: false, hint: res.error ?? `daemon http ${res.status}` };
 }
 
+/**
+ * Advisory since familiar creation moved out of the wizard: the roster count
+ * still ships in the payload (Salem context and the wizard read it), but a
+ * familiar-less machine is DONE with setup — the in-app Summoning Circle
+ * (Familiars surface) owns creation now, so this never gates `complete`.
+ */
 async function checkFamiliars(): Promise<{ step: Step; count: number }> {
   const res = await callDaemon<unknown[]>({
     path: "/api/v1/familiars",
@@ -160,6 +191,7 @@ async function checkFamiliars(): Promise<{ step: Step; count: number }> {
     return {
       step: {
         ok: true,
+        optional: true,
         detail: `${count} familiar${count === 1 ? "" : "s"} loaded`,
       },
       count,
@@ -168,21 +200,57 @@ async function checkFamiliars(): Promise<{ step: Step; count: number }> {
   return {
     step: {
       ok: false,
+      optional: true,
       hint: res.ok
-        ? "Create a familiar from any available runtime source, or add one to ~/.coven/familiars.toml."
+        ? "Summon your first familiar inside Cave — Familiars → Summon familiar."
         : "daemon offline",
     },
     count,
   };
 }
 
-async function checkBinding(familiarsAvailable: boolean, daemonOk: boolean): Promise<Step> {
+// A configured default harness is only a real binding if something can
+// actually back it: an installed runtime adapter, or — for OpenClaw —
+// at least one discoverable agent. Without this, a stale `defaults.harness`
+// (e.g. "openclaw") advertises a confident binding on a machine where neither
+// the runtime nor any agent exists.
+function defaultHarnessAvailable(
+  harness: string,
+  reports: AdapterReport[],
+  openclawAgentCount: number,
+): boolean {
+  if (harness === "openclaw" && openclawAgentCount > 0) return true;
+  return reports.some((report) => report.id === harness && report.installed);
+}
+
+function availableRuntimeLabels(
+  reports: AdapterReport[],
+  openclawAgentCount: number,
+): string[] {
+  const labels = reports
+    .filter((report) => report.installed)
+    .map((report) => report.label);
+  if (openclawAgentCount > 0 && !labels.includes("OpenClaw")) {
+    labels.push(
+      `OpenClaw (${openclawAgentCount} agent${openclawAgentCount === 1 ? "" : "s"})`,
+    );
+  }
+  return labels;
+}
+
+async function checkBinding(
+  familiarsAvailable: boolean,
+  daemonOk: boolean,
+  reports: AdapterReport[],
+  openclawAgentCount: number,
+): Promise<Step> {
   const config = await loadConfig();
-  const hasDefaults = !!config.defaults.harness && !!config.defaults.model;
+  const { harness, model } = config.defaults;
+  const hasDefaults = !!harness && !!model;
   if (!hasDefaults) {
     return {
       ok: false,
-      hint: "Create a familiar from Codex, Claude Code, Hermes, or an OpenClaw agent.",
+      hint: "Summon a familiar inside Cave (Familiars → Summon familiar) from Codex, Claude Code, Hermes, or an OpenClaw agent.",
     };
   }
   if (!familiarsAvailable) {
@@ -195,35 +263,67 @@ async function checkBinding(familiarsAvailable: boolean, daemonOk: boolean): Pro
         : "Waiting for the daemon — familiars load once it starts.",
     };
   }
+  // Defaults + familiars exist, but the default harness itself must be live —
+  // otherwise the binding detail advertises a runtime the user can't use.
+  if (!defaultHarnessAvailable(harness, reports, openclawAgentCount)) {
+    const report = reports.find((entry) => entry.id === harness);
+    const label = report?.label ?? harness;
+    const available = availableRuntimeLabels(reports, openclawAgentCount);
+    if (available.length > 0) {
+      return {
+        ok: false,
+        hint: `Default binding "${harness} · ${model}" points at ${label}, which has no installed runtime or agent. Summon a familiar from ${available.join(", ")} to update your default.`,
+      };
+    }
+    return {
+      ok: false,
+      hint: `Default binding "${harness} · ${model}" has no installed runtime or OpenClaw agent.${
+        report?.installHint ? ` ${report.installHint}` : ""
+      }`,
+    };
+  }
   return {
     ok: true,
-    detail: `${config.defaults.harness} · ${config.defaults.model}`,
+    detail: `${harness} · ${model}`,
   };
 }
 
 export async function GET() {
   const openclawAgentCount = await countOpenClawAgents();
-  const [covenCli, covenHome, git, daemon, familiarsRes] = await Promise.all([
-    checkCovenCli(),
+  const [openCovenTools, covenHome, git, daemon, familiarsRes] = await Promise.all([
+    openCovenToolReadinessStatuses(),
     checkCovenHome(),
     checkGit(),
     checkDaemon(),
     checkFamiliars(),
   ]);
+  const covenCli = checkCovenCli(
+    openCovenTools.find((tool) => tool.id === "coven-cli"),
+  );
   const adapters = await checkHarnessAdapters(openclawAgentCount);
-  const binding = await checkBinding(familiarsRes.count > 0, daemon.ok);
+  const binding = await checkBinding(
+    familiarsRes.count > 0,
+    daemon.ok,
+    adapters.reports,
+    openclawAgentCount,
+  );
 
-  const steps = {
+  const steps: Record<string, Step> = {
     covenCli,
     covenHome,
     git,
-    adapters,
+    adapters: adapters.step,
     daemon,
     familiars: familiarsRes.step,
-    binding,
+    // Advisory like `familiars`: creation lives in the in-app Summoning
+    // Circle, so setup is complete once the infrastructure is — the binding
+    // detail stays informative for the checklist and diagnostics only.
+    binding: { ...binding, optional: true },
   };
-  // Optional steps (git) surface in the checklist but never gate completion.
+  // Optional familiar and binding steps surface in the checklist but never
+  // gate completion. Git remains a required boundary; the Queue project is
+  // chosen on the Tasks page's Queue tab, not during onboarding.
   const complete = Object.values(steps).every((s) => s.ok || s.optional);
 
-  return NextResponse.json({ ok: true, complete, steps });
+  return NextResponse.json({ ok: true, complete, steps, tools: openCovenTools });
 }

@@ -34,6 +34,11 @@ assert.match(
   /data-card-id=/,
   "card rows expose data-card-id",
 );
+assert.doesNotMatch(
+  source,
+  /role=\{selectMode \? "checkbox" : "button"\}/,
+  "card rows preserve native table-row semantics",
+);
 
 // Sortable headers: keyboard-operable <button> + aria-sort state announced.
 assert.match(source, /aria-sort=\{sortKey === col\.key/, "th announces aria-sort");
@@ -41,5 +46,12 @@ assert.match(source, /board-table-sort-btn/, "header label is a real button");
 // Group rows: keyboard collapse/expand.
 assert.match(source, /board-table-group-row" role="button" tabIndex=\{0\}/, "group row is a button");
 assert.match(source, /aria-expanded=\{!collapsed\.has\(key\)\}/, "group row announces expanded state");
+// Copilot review on #3601: keys bubbling from interactive children (selects,
+// buttons) must not trigger the row-level Enter/Space handler.
+assert.match(
+  source,
+  /if \(event\.target !== event\.currentTarget\) return;\s*if \(event\.key !== "Enter" && event\.key !== " "\) return;/,
+  "row keydown ignores events bubbled from child controls",
+);
 
 console.log("board-table-keyboard.test.ts OK");

@@ -1,0 +1,39 @@
+{
+  "name": "disk-space-optimizer",
+  "version": "0.1.0",
+  "description": "Free disk space by diagnosing usage hotspots and removing build artifacts, caches, and stale-repo dependencies while preserving source code, .git history, and active projects.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "disk",
+    "cleanup",
+    "cache",
+    "build-artifacts",
+    "storage"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/disk-space-optimizer",
+  "x-coven": {
+    "displayName": "Disk Space Optimization",
+    "category": "Developer Tools",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/disk-space-optimizer"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

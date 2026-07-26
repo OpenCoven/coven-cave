@@ -1,0 +1,139 @@
+// @ts-nocheck
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createElement } from "react";
+import { act, create } from "react-test-renderer";
+
+import { resetProjectRegistryListenersForTests } from "./project-registry-events.ts";
+import { resetProjectsCacheForTests, useProjects } from "./use-projects.ts";
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+type DeferredResponse = {
+  url: string;
+  resolve: (value: { ok: boolean; status?: number; json: () => Promise<unknown> }) => void;
+};
+
+type Snapshot = {
+  familiarId: string | null;
+  projects: string[];
+  loading: boolean;
+  loadedSuccessfully: boolean;
+};
+
+function ScopeProbe({ familiarId, snapshots }: { familiarId: string | null; snapshots: Snapshot[] }) {
+  const state = useProjects({ familiarId });
+  snapshots.push({
+    familiarId,
+    projects: state.projects.map((project) => project.id),
+    loading: state.loading,
+    loadedSuccessfully: state.loadedSuccessfully,
+  });
+  return createElement("scope-probe");
+}
+
+function deferredFetch() {
+  const originalFetch = globalThis.fetch;
+  const pending: DeferredResponse[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    return await new Promise((resolve) => pending.push({ url, resolve }));
+  }) as typeof fetch;
+  return {
+    pending,
+    restore() {
+      globalThis.fetch = originalFetch;
+    },
+  };
+}
+
+const project = (id: string) => ({ id, name: id, root: `/repo/${id}` });
+
+async function settle(response: DeferredResponse, projects: unknown[]) {
+  await act(async () => {
+    response.resolve({ ok: true, json: async () => ({ ok: true, projects }) });
+    await Promise.resolve();
+  });
+}
+
+test("mounted global-to-familiar transition never renders the retained global projects", async () => {
+  resetProjectRegistryListenersForTests();
+  resetProjectsCacheForTests();
+  const fetch = deferredFetch();
+  const snapshots: Snapshot[] = [];
+  let renderer: ReturnType<typeof create> | null = null;
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(ScopeProbe, { familiarId: null, snapshots }));
+    });
+    assert.equal(fetch.pending.length, 1);
+    assert.equal(fetch.pending[0]!.url, "/api/projects");
+    await settle(fetch.pending.shift()!, [project("global-only")]);
+    assert.deepEqual(snapshots.at(-1)?.projects, ["global-only"]);
+    assert.equal(snapshots.at(-1)?.loadedSuccessfully, true);
+
+    snapshots.length = 0;
+    await act(async () => {
+      renderer!.update(createElement(ScopeProbe, { familiarId: "familiar-b", snapshots }));
+    });
+
+    assert.ok(fetch.pending.some((request) => request.url === "/api/projects?familiarId=familiar-b"));
+    assert.ok(
+      snapshots.every((snapshot) => snapshot.projects.length === 0 && !snapshot.loadedSuccessfully),
+      "the familiar B render and its pending request must not expose the retained global project",
+    );
+
+    const familiarB = fetch.pending.find((request) => request.url === "/api/projects?familiarId=familiar-b")!;
+    await settle(familiarB, []);
+    assert.deepEqual(snapshots.at(-1)?.projects, []);
+    assert.equal(snapshots.at(-1)?.loadedSuccessfully, true, "an empty successful B result is still scoped to B");
+  } finally {
+    await act(async () => {
+      renderer?.unmount();
+    });
+    fetch.restore();
+    resetProjectRegistryListenersForTests();
+    resetProjectsCacheForTests();
+  }
+});
+
+test("mounted familiar A-to-B transition stays empty through a failed B request", async () => {
+  resetProjectRegistryListenersForTests();
+  resetProjectsCacheForTests();
+  const fetch = deferredFetch();
+  const snapshots: Snapshot[] = [];
+  let renderer: ReturnType<typeof create> | null = null;
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(ScopeProbe, { familiarId: "familiar-a", snapshots }));
+    });
+    await settle(fetch.pending.shift()!, [project("a-only")]);
+    assert.deepEqual(snapshots.at(-1)?.projects, ["a-only"]);
+
+    snapshots.length = 0;
+    await act(async () => {
+      renderer!.update(createElement(ScopeProbe, { familiarId: "familiar-b", snapshots }));
+    });
+    assert.ok(
+      snapshots.every((snapshot) => snapshot.projects.length === 0 && !snapshot.loadedSuccessfully),
+      "the B transition must not render familiar A's retained project",
+    );
+
+    const familiarB = fetch.pending.find((request) => request.url === "/api/projects?familiarId=familiar-b")!;
+    await act(async () => {
+      familiarB.resolve({ ok: false, status: 500, json: async () => ({ ok: false, error: "offline" }) });
+      await Promise.resolve();
+    });
+    assert.deepEqual(snapshots.at(-1)?.projects, []);
+    assert.equal(snapshots.at(-1)?.loadedSuccessfully, false, "a failed B request cannot re-enable the picker");
+  } finally {
+    await act(async () => {
+      renderer?.unmount();
+    });
+    fetch.restore();
+    resetProjectRegistryListenersForTests();
+    resetProjectsCacheForTests();
+  }
+});

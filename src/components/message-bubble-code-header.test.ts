@@ -2,7 +2,22 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const css = await readFile(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const css = (
+  await Promise.all(
+    [
+      "../styles/globals/foundations.css",
+      "../styles/cave-md/prose.css",
+      "../styles/cave-md/code.css",
+      "../styles/cave-md/interactions.css",
+      "../styles/cave-composer.css",
+      "../styles/chat-list.css",
+      "../styles/calendar.css",
+      "../styles/cave-chat/activity.css",
+      "../styles/cave-chat/bubbles.css",
+      "../styles/cave-chat/transcript.css",
+    ].map((sheet) => readFile(new URL(sheet, import.meta.url), "utf8")),
+  )
+).join("\n");
 
 assert.doesNotMatch(
   css,
@@ -10,22 +25,18 @@ assert.doesNotMatch(
   "Terminal code chrome should not inject traffic lights before the language label",
 );
 
-assert.match(
+// Phase-4 minimalism (cave-8bfz): the decorative mac-window traffic-light dots
+// were dropped from the code header — no ornamental ::after chrome.
+assert.doesNotMatch(
   css,
-  /\.cave-code-header::after[\s\S]*box-shadow:/,
-  "Terminal code chrome should render traffic lights after the language label",
+  /\.cave-code-header::after/,
+  "The code header should not inject decorative traffic-light dots (Phase-4 minimalism)",
 );
 
 assert.match(
   css,
   /\.cave-code-lang[\s\S]*order:\s*0/,
-  "The language label should be first in terminal code headers",
-);
-
-assert.match(
-  css,
-  /\.cave-code-header::after[\s\S]*order:\s*1/,
-  "Traffic lights should sit immediately to the right of the language label",
+  "The language label should be first in code headers",
 );
 
 assert.match(
@@ -47,9 +58,10 @@ assert.match(
 // ---------------------------------------------------------------------------
 
 const source = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+const wiring = await readFile(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
 
 assert.match(
-  source,
+  wiring,
   /function useWireCopyButtons\([\s\S]*?wireCopyButtons\(el\)/,
   "A shared post-render hook should wire copy buttons once the injected HTML lands",
 );
@@ -86,39 +98,51 @@ assert.match(
 );
 
 // ---------------------------------------------------------------------------
-// Full-width chat (2026-06-18) — supersedes the 2026-06-13 centered-column
-// decision: the thread spans the whole pane (width: 100%, max-width: 100%, no
-// auto centering) so the transcript lines up with the full-width header and
-// composer. The old 920px and 1180px reading-measure caps stay gone.
+// Centered reading column (cave-xsq.1) — supersedes the 2026-06-18 full-width
+// decision: the transcript + composer share ONE comfortable measure
+// (--cave-chat-measure) and sit in a centered column so long responses read
+// like ChatGPT instead of running edge-to-edge on a wide pane. The old 920px /
+// 1180px hardcoded caps stay gone (the measure is now a token).
 // ---------------------------------------------------------------------------
 
+assert.match(
+  css,
+  /\.cave-chat-linear \{[^}]*--cave-chat-measure:/,
+  "the chat surface defines a shared reading measure token",
+);
+// The 2026-07-21 wide-column pass supersedes chat-revamp 1b's 760px: the
+// transcript reads on a roomier 1024px (64rem) column — long responses and
+// code blocks get width — still shared by the suggestion row and composer.
+// Pin the exact value so drift in either direction is a deliberate decision.
+{
+  const measure = /--cave-chat-measure:\s*([\d.]+)rem/.exec(css);
+  assert.ok(
+    measure && Number(measure[1]) === 64,
+    `the reading measure is the wide-column 1024px column (64rem; got ${measure?.[1] ?? "none"})`,
+  );
+}
 const linearThread = /\.cave-chat-linear \.cave-chat-thread \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearThread,
-  /width:\s*100%/,
-  "Linear thread must fill the pane (width: 100%)",
+  /max-width:\s*var\(--cave-chat-measure\)/,
+  "Linear thread caps to the shared reading measure",
 );
 assert.match(
   linearThread,
-  /max-width:\s*100%/,
-  "Linear thread must span full width (max-width: 100%)",
-);
-assert.doesNotMatch(
-  linearThread,
   /margin-inline:\s*auto/,
-  "Linear thread must not center (no margin-inline: auto)",
+  "Linear thread centers the reading column (margin-inline: auto)",
 );
 assert.doesNotMatch(
   linearThread,
   /max-width:\s*(?:min\(100%,\s*)?(?:920|1180)px/,
-  "The old reading-measure caps (920px / 1180px) must stay gone",
+  "the old hardcoded reading-measure caps (920px / 1180px) must stay gone",
 );
 
 const linearComposerShell = /\.cave-chat-linear \.cave-composer-shell \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearComposerShell,
-  /max-width:\s*100%/,
-  "Linear composer shell must share the thread's full-width measure so the input aligns with the column",
+  /max-width:\s*var\(--cave-chat-measure\)/,
+  "Linear composer shell shares the thread's reading measure so the input aligns under the column",
 );
 
 // ---------------------------------------------------------------------------
@@ -141,7 +165,9 @@ function ruleBlock(selector) {
 }
 
 // Every dark-chrome block that previously leaked theme ink must now use the
-// fixed properties — and none may still reference var(--text-*).
+// fixed properties — and none may still reference the theme ink tokens
+// (var(--text-primary/secondary/muted)). The --text-* SIZE tokens (--text-sm
+// and friends) are mode-independent px and are fine on fixed chrome.
 const darkChromeSelectors = [
   ".cave-code-wrap",
   ".cave-code-header",
@@ -160,8 +186,8 @@ const darkChromeSelectors = [
 for (const selector of darkChromeSelectors) {
   assert.doesNotMatch(
     ruleBlock(selector),
-    /var\(--text-/,
-    `${selector} is fixed dark chrome — it must not take theme ink (var(--text-*) flips dark in light mode)`,
+    /var\(--text-(?:primary|secondary|muted)\b/,
+    `${selector} is fixed dark chrome — it must not take theme ink (var(--text-primary/secondary/muted) flips dark in light mode)`,
   );
 }
 
@@ -203,10 +229,10 @@ assert.match(
 
 // The fixed dark surfaces must be near-opaque so they stay self-consistent
 // over a light --bg-base (a 60%-alpha wash goes muddy), and must not mix
-// with theme surfaces. The code-block read surface (.cave-code-wrap) draws its
-// ink from the shared --code-surface token so the Code page's file editor can
-// match it exactly; the system bubble keeps the literal.
-const codeSurfaceToken = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+// with theme surfaces. Both the code-block read surface (.cave-code-wrap) and
+// the system bubble draw their ink from the shared --code-surface token so
+// the Code page's file editor can match them exactly.
+const codeSurfaceToken = await readFile(new URL("../styles/globals/foundations.css", import.meta.url), "utf8");
 assert.match(
   codeSurfaceToken,
   /--code-surface:\s*oklch\([^)]*\/\s*9\d%\)/,
@@ -223,8 +249,8 @@ assert.match(
 const systemBubble = ruleBlock(".cave-bubble-system");
 assert.match(
   systemBubble,
-  /background:\s*oklch\([^)]*\/\s*9\d%\)/,
-  ".cave-bubble-system surface must be a near-opaque fixed dark oklch",
+  /background:\s*var\(--code-surface\)/,
+  ".cave-bubble-system surface must draw from the shared --code-surface token",
 );
 assert.doesNotMatch(
   systemBubble,
@@ -296,7 +322,7 @@ assert.match(
   "The expand footer must only be emitted for blocks tall enough to actually clamp",
 );
 
-const wireFn = /function wireCopyButtons\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const wireFn = /function wireCopyButtons\([\s\S]*?\n\}/.exec(wiring)?.[0] ?? "";
 assert.match(
   wireFn,
   /cave-code-expand-btn/,
@@ -338,7 +364,7 @@ assert.match(
 );
 assert.match(wireFn, /codeTextFromWrap/, "Copy clicks must read the code text from the DOM at click time");
 
-const codeTextFn = /function codeTextFromWrap\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const codeTextFn = /function codeTextFromWrap\([\s\S]*?\n\}/.exec(wiring)?.[0] ?? "";
 assert.match(
   codeTextFn,
   /closest\("\.cave-code-wrap"\)/,

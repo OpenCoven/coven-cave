@@ -2,7 +2,7 @@ id: devrel-response
 version: 0.1.0
 name: DevRel Response
 summary: Gather status, verify facts, draft developer-facing language, and hold publication for approval.
-familiar: charm
+familiar: comms
 pattern: sequential
 tags:
   - comms
@@ -25,21 +25,21 @@ steps:
   - id: gather-status
     kind: agent
     name: Gather status
-    uses: charm
+    uses: comms
     summary: Collect issue, release, support, or community context plus current project status.
     requires:
       - input
   - id: verify-facts
     kind: agent
     name: Verify facts
-    uses: charm
+    uses: comms
     summary: Check technical claims, dates, promises, and next steps against source context.
     requires:
       - gather-status
   - id: draft-reply
     kind: agent
     name: Draft reply
-    uses: charm
+    uses: comms
     summary: Write a developer-readable reply with concrete status, caveats, and action.
     requires:
       - verify-facts

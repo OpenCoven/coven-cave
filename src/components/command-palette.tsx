@@ -3,53 +3,36 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
-import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
+import { fuzzyMatch, bestFuzzyScore } from "@/lib/fuzzy-match";
 import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
-import { FOLDER_MODES, type FolderMode, type AddonsConfig } from "@/components/sidebar-minimal";
+import { FOLDER_MODES, type FolderMode } from "@/components/sidebar-minimal";
 import { useProjects } from "@/lib/use-projects";
-
-function shortProjectRoot(root: string): string {
-  const parts = root.replace(/\/+$/, "").split("/").filter(Boolean);
-  return parts.length <= 2 ? root : `…/${parts.slice(-2).join("/")}`;
-}
-
-// Section label for a row in empty-query "browse" mode, so the default palette
-// reads as grouped clusters (Recent / Go to / …) instead of one flat dump.
-// Returns "" for rows that never appear while browsing (salem-answer, etc.).
-function browseGroup(row: Row): string {
-  switch (row.kind) {
-    case "session":
-      return "Recent";
-    case "command":
-      if (row.id.startsWith("surface:")) return "Go to";
-      if (row.id.startsWith("project:")) return "Projects";
-      return "Commands";
-    case "familiar":
-      return "Familiars";
-    case "card":
-      return "Tasks";
-    case "coven-memory":
-    case "fs-memory":
-      return "Memory";
-    case "shortcut":
-      return "Shortcuts";
-    default:
-      return "";
-  }
-}
-
-// Section label for a row, used to print group headers. Conversation hits get a
-// "Conversations" header in BOTH browse and search mode (they're a distinct
-// content-search cluster); everything else only groups while browsing.
-function paletteGroup(row: Row, browsing: boolean): string {
-  if (row.kind === "conversation-hit") return "Conversations";
-  return browsing ? browseGroup(row) : "";
-}
+import {
+  PALETTE_CATEGORIES,
+  PALETTE_CATEGORY_LABEL,
+  filterPaletteRows,
+  paletteResultCounts,
+  paletteResultSummary,
+  type PaletteCategory,
+} from "@/lib/command-palette-search";
+import {
+  clearRecentSearches,
+  readRecentSearches,
+  recordRecentSearch,
+} from "@/lib/recent-searches";
+import {
+  SETTINGS_INDEX,
+  settingsSectionLabel,
+  type SettingsIndexEntry,
+} from "@/components/settings-sections";
+import { paletteGroup, shortProjectRoot } from "@/lib/command-palette-grouping";
+import { buildSalemSearchContext, isSalemContextRow } from "@/lib/command-palette-salem-context";
 
 // Status → dot class for session rows, mirroring the Sessions tab's colors. Only
 // "notable" states get a dot (running pulses green, failed/queued/paused tint);
@@ -69,11 +52,18 @@ type PaletteIntent =
   | { kind: "back-to-list" }
   | { kind: "open-tui-session"; sessionId: string }
   | { kind: "open-board" }
-  | { kind: "go-to-surface"; mode: FolderMode }
+  | { kind: "set-board-view"; view: "kanban" | "table" | "gantt" }
+  | { kind: "go-to-surface"; mode: FolderMode | `surface:${string}` }
   | { kind: "open-project"; root: string }
   | { kind: "focus-card"; cardId: string }
   | { kind: "create-task"; title: string }
-  | { kind: "open-memory-file"; path: string };
+  | { kind: "open-memory-file"; path: string }
+  | {
+      kind: "open-setting";
+      section: SettingsIndexEntry["section"];
+      group?: string;
+      familiarTab?: SettingsIndexEntry["familiarTab"];
+    };
 
 type Card = {
   id: string;
@@ -82,6 +72,7 @@ type Card = {
   priority: string;
   familiarId: string | null;
   labels: string[];
+  updatedAt?: string;
 };
 
 type CovenMemoryEntry = {
@@ -107,11 +98,13 @@ type Props = {
   familiars: Familiar[];
   sessions: SessionRow[];
   activeFamiliarId: string | null;
+  /** Role Surface rooms visible for the active familiar — appended to the
+   *  "Go to" launcher rows so ⌘K reaches rooms exactly like sidebar surfaces
+   *  (cave-cc5r). Registry-driven; empty/omitted adds nothing. */
+  roleSurfaces?: readonly { mode: `surface:${string}`; label: string; description: string }[];
   initialQuery?: string;
   onQueryChange?: (query: string) => void;
   onIntent: (intent: PaletteIntent) => void;
-  /** Add-on gating so palette navigation matches the sidebar's visible surfaces. */
-  addons?: AddonsConfig;
 };
 
 // One hit from the conversation content search (/api/chat/search).
@@ -132,19 +125,8 @@ type Row =
   | { id: string; kind: "shortcut"; label: string; shortcut: string; action: () => void }
   | { id: string; kind: "create-task"; title: string }
   | { id: string; kind: "conversation-hit"; hit: ConversationHit }
+  | { id: string; kind: "setting"; entry: SettingsIndexEntry }
   | { id: string; kind: "salem-answer"; query: string };
-
-type SalemSearchContextItem = {
-  type: string;
-  title: string;
-  detail?: string;
-};
-
-type SalemSearchContext = {
-  source: "top-search";
-  query: string;
-  matches: SalemSearchContextItem[];
-};
 
 const RESULT_LIMITS = {
   familiar: 6,
@@ -154,60 +136,8 @@ const RESULT_LIMITS = {
   fsMemory: 8,
   command: 6,
   conversation: 6,
+  setting: 8,
 };
-
-const SALEM_CONTEXT_LIMIT = 8;
-
-function buildSalemSearchContext(rows: Row[], query: string): SalemSearchContext {
-  const matches = rows
-    .filter((row) =>
-      row.kind === "familiar" ||
-      row.kind === "session" ||
-      row.kind === "card" ||
-      row.kind === "coven-memory" ||
-      row.kind === "fs-memory",
-    )
-    .slice(0, SALEM_CONTEXT_LIMIT)
-    .map((row): SalemSearchContextItem => {
-      if (row.kind === "familiar") {
-        return {
-          type: "familiar",
-          title: row.familiar.display_name,
-          detail: row.familiar.role,
-        };
-      }
-      if (row.kind === "session") {
-        return {
-          type: "chat",
-          title: row.session.title || "(untitled chat)",
-          detail: `${row.familiar?.display_name ?? row.session.familiarId ?? "Unknown familiar"} · ${row.session.harness}`,
-        };
-      }
-      if (row.kind === "card") {
-        return {
-          type: "task",
-          title: row.card.title,
-          detail: [row.card.status, row.card.priority, row.familiar?.display_name, ...row.card.labels]
-            .filter(Boolean)
-            .join(" · "),
-        };
-      }
-      if (row.kind === "coven-memory") {
-        return {
-          type: "memory",
-          title: row.entry.title,
-          detail: [row.familiar?.display_name ?? row.entry.familiar_id, row.entry.path].filter(Boolean).join(" · "),
-        };
-      }
-      return {
-        type: "memory-file",
-        title: row.entry.relPath,
-        detail: row.entry.rootLabel,
-      };
-    });
-
-  return { source: "top-search", query, matches };
-}
 
 // ── @familiar query parsing ────────────────────────────────────────────────
 // Users can scope the palette to a single familiar by typing `@<name>` anywhere
@@ -215,9 +145,9 @@ function buildSalemSearchContext(rows: Row[], query: string): SalemSearchContext
 // (case- and whitespace-insensitive, substring). Everything else in the query
 // becomes a free-text filter applied *within* that scope.
 //
-//   "@nova"              → scope: nova,        rest: ""
+//   "@researcher"        → scope: researcher,  rest: ""
 //   "@val readme"        → scope: valentina,   rest: "readme"
-//   "browser @nova"      → scope: nova,        rest: "browser"
+//   "browser @researcher"  → scope: researcher, rest: "browser"
 //   "@"                  → scope: all (suggest list), rest: ""
 //   "hello"              → no scope
 //
@@ -234,13 +164,21 @@ export function CommandPalette({
   familiars,
   sessions,
   activeFamiliarId,
+  roleSurfaces,
   initialQuery = "",
   onQueryChange,
   onIntent,
-  addons,
 }: Props) {
-  const { projects } = useProjects();
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  // "Open project" rows jump into the Projects hub, which is itself scoped to
+  // the active familiar — offer only projects that familiar can actually reach.
+  // The palette is always mounted (it self-returns null when closed), so gate
+  // the fetch on `open`, or it re-requests /api/projects on every active-familiar
+  // change while the user can't even see the palette.
+  const { projects } = useProjects({ familiarId: activeFamiliarId, enabled: open });
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<PaletteCategory>("all");
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [cards, setCards] = useState<Card[]>([]);
   const [covenMemory, setCovenMemory] = useState<CovenMemoryEntry[]>([]);
@@ -297,11 +235,14 @@ export function CommandPalette({
   useEffect(() => {
     if (!open) return;
     setQuery(initialQuery);
+    setCategory("all");
+    setRecentSearches(readRecentSearches(window.localStorage));
     setActiveIdx(0);
     setSalemAnswer(null);
     setSalemError(null);
     const t = setTimeout(() => inputRef.current?.focus(), 10);
 
+    let cancelled = false;
     void (async () => {
       try {
         const [boardRes, covenRes, fsRes] = await Promise.all([
@@ -312,6 +253,8 @@ export function CommandPalette({
         const board = await boardRes.json();
         const coven = await covenRes.json();
         const fs = await fsRes.json();
+        // Don't apply a corpus refresh after the palette closed/unmounted.
+        if (cancelled) return;
         if (board.ok) setCards(board.cards ?? []);
         if (coven.ok) setCovenMemory(coven.entries ?? []);
         if (fs.ok) setFsMemory(fs.entries ?? []);
@@ -320,21 +263,39 @@ export function CommandPalette({
       }
     })();
 
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [open]);
+
+  // Keep the keyboard-highlighted option visible: arrowing past the bottom of
+  // the max-h-[60vh] list must scroll it into view, not just advance the index.
+  useEffect(() => {
+    if (!open) return;
+    document
+      .getElementById(`command-palette-option-${activeIdx}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeIdx, open]);
 
   useEffect(() => {
     if (!open) return;
     setQuery(initialQuery);
+    setCategory("all");
     setActiveIdx(0);
     setSalemAnswer(null);
     setSalemError(null);
   }, [initialQuery, open]);
 
   const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
-  const rows: Row[] = useMemo(() => {
+  const allRows: Row[] = useMemo(() => {
     const { token, rest } = parseFamiliarToken(query);
     const q = rest.trim().toLowerCase();
+    // Fuzzy match: power users type subsequences ("brd" → Board). `fz` widens the
+    // per-field predicates; `rank` sorts a matched set by best fuzzy score (over
+    // its label fields) so the closest match floats to the top while searching.
+    const fz = (text: string) => fuzzyMatch(q, text);
+    const rank = <T,>(items: T[], fields: (item: T) => Array<string | null | undefined>): T[] =>
+      q
+        ? [...items].sort((a, b) => (bestFuzzyScore(q, fields(b)) ?? -Infinity) - (bestFuzzyScore(q, fields(a)) ?? -Infinity))
+        : items;
     const scope = resolveFamiliarIds(familiars, token);
     const scoped = scope !== null;
     // When the user has typed `@token` but no familiar matches it yet, we
@@ -342,16 +303,12 @@ export function CommandPalette({
     // and suppress everything else. This is also what we do for a bare `@`.
     const noFamiliarMatch = scoped && scope!.size === 0;
 
-    const familiarRows: Row[] = familiars
-      .filter((f) => {
-        if (scoped && !scope!.has(f.id)) return false;
-        if (!q) return true;
-        return (
-          f.display_name.toLowerCase().includes(q) ||
-          f.role.toLowerCase().includes(q) ||
-          (f.harness ?? "").toLowerCase().includes(q)
-        );
-      })
+    const familiarSuggestionPool = rank(noFamiliarMatch ? familiars : familiars.filter((f) => {
+      if (scoped && !scope!.has(f.id)) return false;
+      if (!q) return true;
+      return fz(f.display_name) || fz(f.role) || fz(f.harness ?? "");
+    }), (f) => [f.display_name, f.role, f.harness]);
+    const familiarRows: Row[] = familiarSuggestionPool
       .slice(0, RESULT_LIMITS.familiar)
       .map((f) => ({ id: `f:${f.id}`, kind: "familiar", familiar: f }));
 
@@ -363,24 +320,24 @@ export function CommandPalette({
       (Date.parse(a.updated_at || a.created_at) || 0);
     const matchedSessions = sessions.filter((s) => {
       if (!s.familiarId) return false;
+      // Browse mode is the "Recent chats" jump list — archived chats never
+      // resurface there (the chat list's "Show archived" toggle is their
+      // home). A typed query still finds them, like any explicit search.
+      if (!q && s.archived_at) return false;
       if (scoped) {
         if (!scope!.has(s.familiarId)) return false;
         if (!q) return true;
-        return (
-          (s.title ?? "").toLowerCase().includes(q) ||
-          s.harness.toLowerCase().includes(q)
-        );
+        return fz(s.title ?? "") || fz(s.harness);
       }
       // Empty query → the "Recent" jump list: every familiar's sessions, not
       // just the active one. Recency ordering happens below the filter.
       if (!q) return true;
-      return (
-        (s.title ?? "").toLowerCase().includes(q) ||
-        s.harness.toLowerCase().includes(q) ||
-        (s.familiarId ?? "").toLowerCase().includes(q)
-      );
+      return fz(s.title ?? "") || fz(s.harness) || fz(s.familiarId ?? "");
     });
-    const sessionRows: Row[] = (!q ? [...matchedSessions].sort(byRecency) : matchedSessions)
+    // Browse → recency; searching → best fuzzy match first.
+    const sessionRows: Row[] = (!q
+      ? [...matchedSessions].sort(byRecency)
+      : rank(matchedSessions, (s) => [s.title, s.familiarId]))
       .slice(0, RESULT_LIMITS.session)
       .map((s) => ({
         id: `s:${s.id}`,
@@ -389,19 +346,22 @@ export function CommandPalette({
         familiar: s.familiarId ? familiarById.get(s.familiarId) ?? null : null,
       }));
 
-    const cardRows: Row[] = cards
+    const cardRows: Row[] = rank(cards
       .filter((c) => {
         if (scoped) {
           if (!c.familiarId || !scope!.has(c.familiarId)) return false;
         }
         if (!q) return true;
         return (
-          c.title.toLowerCase().includes(q) ||
-          (c.labels ?? []).some((l) => l.toLowerCase().includes(q)) ||
-          c.status.toLowerCase().includes(q) ||
-          c.priority.toLowerCase().includes(q)
+          fz(c.title) ||
+          (c.labels ?? []).some((l) => fz(l)) ||
+          fz(c.status) ||
+          fz(c.priority)
         );
       })
+      // Empty query → lead with the most-recently-updated tasks ("recent tasks"
+      // jump-list); while searching `rank` (below) orders by fuzzy score.
+      .sort((a, b) => (q ? 0 : new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime())), (c) => [c.title, ...(c.labels ?? [])])
       .slice(0, RESULT_LIMITS.card)
       .map((c) => ({
         id: `card:${c.id}`,
@@ -414,11 +374,7 @@ export function CommandPalette({
       .filter((e) => {
         if (scoped && !scope!.has(e.familiar_id)) return false;
         if (!q) return true;
-        return (
-          e.title.toLowerCase().includes(q) ||
-          (e.excerpt ?? "").toLowerCase().includes(q) ||
-          e.familiar_id.toLowerCase().includes(q)
-        );
+        return fz(e.title) || (e.excerpt ?? "").toLowerCase().includes(q) || fz(e.familiar_id);
       })
       .slice(0, RESULT_LIMITS.covenMemory)
       .map((e) => ({
@@ -433,16 +389,11 @@ export function CommandPalette({
     const fsMemoryRows: Row[] = scoped
       ? []
       : fsMemory
-          .filter(
-            (e) =>
-              !q ||
-              e.relPath.toLowerCase().includes(q) ||
-              e.rootLabel.toLowerCase().includes(q),
-          )
+          .filter((e) => !q || fz(e.relPath) || fz(e.rootLabel))
           .slice(0, RESULT_LIMITS.fsMemory)
           .map((e) => ({ id: `fm:${e.fullPath}`, kind: "fs-memory", entry: e }));
 
-    // Slash queries carry arguments ("/save <url>", "/remind in 30m …").
+    // Slash queries carry arguments ("/remind in 30m …").
     // Command rows previously matched the whole query against the command
     // name, so any args made every command disappear and the query fell
     // through to create-task. Match on the first token and thread the rest
@@ -452,43 +403,6 @@ export function CommandPalette({
     const slashArgs = slashMatch?.[2]?.trim() ?? "";
     const slashCanonical = slashToken ? canonicalize(slashToken) : null;
 
-    // `/save <url>` gets one row per destination so the user chooses the
-    // link type (or lets the classifier decide). Tags typed after the URL
-    // ride along on every choice.
-    const saveRows: Row[] = [];
-    if (!scoped && (slashCanonical === "/save" || slashToken === "/save") && slashArgs) {
-      const parsed = slashSaveParse(slashArgs);
-      if (!("error" in parsed)) {
-        const host = (() => {
-          try {
-            return new URL(parsed.url).hostname;
-          } catch {
-            return parsed.url;
-          }
-        })();
-        const tagSuffix = parsed.tags.map((tag) => ` #${tag}`).join("");
-        const dest = (
-          label: string,
-          listHint?: "bookmarks" | "reading" | "github",
-        ) =>
-          saveRows.push({
-            id: `save:${listHint ?? "auto"}`,
-            kind: "command",
-            name: label,
-            hint: listHint ? `${host} → ${listHint}` : `${host} → auto-classify`,
-            intent: {
-              kind: "slash",
-              command: "/save",
-              args: `${parsed.url}${listHint ? ` ${listHint}` : ""}${tagSuffix}`,
-            },
-          });
-        dest("Save link");
-        dest("Save → Bookmarks", "bookmarks");
-        dest("Save → Reading", "reading");
-        dest("Save → GitHub", "github");
-      }
-    }
-
     const cmdRows: Row[] = scoped
       ? []
       : SLASH_COMMANDS.filter((c) =>
@@ -496,12 +410,10 @@ export function CommandPalette({
             ? c.name.startsWith(slashToken) ||
               (c.aliases ?? []).some((a) => a.startsWith(slashToken))
             : !q ||
-              c.name.includes(q) ||
-              (c.aliases ?? []).some((a) => a.includes(q)) ||
+              fz(c.name) ||
+              (c.aliases ?? []).some((a) => fz(a)) ||
               c.description.toLowerCase().includes(q),
         )
-          // /save renders its dedicated per-destination rows above instead.
-          .filter((c) => !(saveRows.length > 0 && c.name === "/save"))
           .slice(0, RESULT_LIMITS.command)
           .map((c) => ({
             id: `c:${c.name}`,
@@ -515,9 +427,32 @@ export function CommandPalette({
             },
           }));
 
+    // Reuse Settings' canonical index so a control relocated behind progressive
+    // disclosure remains one search away. Settings stay out of empty browse mode
+    // (83 rows would drown the useful recency list) and appear only for a query.
+    const settingRows: Row[] = (scoped || slashToken || !q)
+      ? []
+      : rank(
+          SETTINGS_INDEX.filter((entry) => {
+            const section = settingsSectionLabel(entry.section);
+            return (
+              fz(section) ||
+              fz(entry.group ?? "") ||
+              entry.keywords.toLowerCase().includes(q)
+            );
+          }),
+          (entry) => [settingsSectionLabel(entry.section), entry.group, entry.keywords],
+        )
+          .slice(0, RESULT_LIMITS.setting)
+          .map((entry) => ({
+            id: `setting:${entry.section}:${entry.group ?? "overview"}:${entry.familiarTab ?? "root"}`,
+            kind: "setting" as const,
+            entry,
+          }));
+
     const shortcutRows: Row[] = [];
     const toggleLabel = "Toggle Familiar Chat";
-    if (!scoped && (!q || toggleLabel.toLowerCase().includes(q) || "⌘⇧b".includes(q))) {
+    if (!scoped && (!q || fz(toggleLabel) || "⌘⇧b".includes(q))) {
       shortcutRows.push({
         id: "shortcut:toggle-agent",
         kind: "shortcut",
@@ -541,42 +476,49 @@ export function CommandPalette({
     // created card's title (e.g. "/task fix login" → "fix login").
     const trimmedTitle = query.trim().replace(/^\/task(\s+|$)/i, "").trim();
     // A query that names a real slash command is a command invocation, not a
-    // task title — "Create task: /save https://…" was a dead end.
+    // task title.
     const createRows: Row[] = trimmedTitle && !slashCanonical
       ? [{ id: "create-task", kind: "create-task", title: trimmedTitle }]
       : [];
 
-    // "Go to <surface>" rows make ⌘K a launcher for the sidebar surfaces. Gated
-    // the same way the sidebar gates them, and hidden while typing a slash
-    // command or a familiar scope (where surface nav would be noise).
+    // "Go to <surface>" rows make ⌘K a launcher for the visible sidebar
+    // surfaces. Hidden while typing a slash command or a familiar scope (where
+    // surface nav would be noise). Role Surface rooms (cave-cc5r) append with
+    // the same treatment so "Go to Code Workshop" works like any surface.
     const surfaceRows: Row[] = (scoped || slashToken)
       ? []
-      : FOLDER_MODES.filter((fm) => {
-          if (fm.id === "github") return addons?.github === true;
-          if (fm.id === "library") return addons?.library === true;
-          return true;
-        })
-          .filter(
-            (fm) =>
-              !q ||
-              fm.label.toLowerCase().includes(q) ||
-              fm.id.includes(q) ||
-              fm.description.toLowerCase().includes(q),
-          )
+      : [
+          ...rank(FOLDER_MODES
+          // Fuzzy on the short label/id; substring-only on the long description
+          // (subsequence-matching prose surfaces irrelevant items).
+          .filter((fm) => !q || fz(fm.label) || fz(fm.id) || fm.description.toLowerCase().includes(q)),
+          (fm) => [fm.label, fm.id])
           .map((fm) => ({
             id: `surface:${fm.id}`,
             kind: "command" as const,
             name: `Go to ${fm.label}`,
             hint: fm.kbd ? `${fm.description} · ${fm.kbd}` : fm.description,
-            intent: { kind: "go-to-surface", mode: fm.id },
-          }));
+            intent: { kind: "go-to-surface", mode: fm.id } as PaletteIntent,
+          })),
+          ...rank(
+            (roleSurfaces ?? []).filter(
+              (room) => !q || fz(room.label) || room.description.toLowerCase().includes(q),
+            ),
+            (room) => [room.label],
+          ).map((room) => ({
+            id: `room:${room.mode}`,
+            kind: "command" as const,
+            name: `Go to ${room.label}`,
+            hint: room.description,
+            intent: { kind: "go-to-surface", mode: room.mode } as PaletteIntent,
+          })),
+        ];
 
     // "Open project <name>" rows jump into a project's chats (the Projects tab,
     // expanded + scrolled to that project). Hidden while scoped or typing slash.
     const projectRows: Row[] = (scoped || slashToken)
       ? []
-      : projects
-          .filter((p) => !q || p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q))
+      : rank(projects.filter((p) => !q || fz(p.name) || fz(p.root)), (p) => [p.name, p.root])
           .slice(0, 6)
           .map((p) => ({
             id: `project:${p.id}`,
@@ -584,6 +526,24 @@ export function CommandPalette({
             name: `Open project ${p.name}`,
             hint: shortProjectRoot(p.root),
             intent: { kind: "open-project", root: p.root },
+          }));
+
+    // "Tasks: …" rows jump to the Tasks board and switch its view directly.
+    // Hidden while scoped or typing a slash command.
+    const BOARD_VIEWS: Array<{ view: "kanban" | "table" | "gantt"; label: string; hint: string; terms: string }> = [
+      { view: "kanban", label: "Tasks: Kanban", hint: "Columns by status", terms: "tasks board kanban columns" },
+      { view: "table", label: "Tasks: Table", hint: "Sortable task table", terms: "tasks board table list" },
+      { view: "gantt", label: "Tasks: Gantt timeline", hint: "Schedule timeline", terms: "tasks board gantt timeline schedule" },
+    ];
+    const boardViewRows: Row[] = (scoped || slashToken)
+      ? []
+      : rank(BOARD_VIEWS.filter((v) => !q || fz(v.label) || fz(v.terms)), (v) => [v.label, v.terms])
+          .map((v) => ({
+            id: `board-view:${v.view}`,
+            kind: "command" as const,
+            name: v.label,
+            hint: v.hint,
+            intent: { kind: "set-board-view", view: v.view },
           }));
 
     // Empty, unscoped query → "browse" mode: lead with the recency jump-list,
@@ -612,6 +572,7 @@ export function CommandPalette({
           ...familiarRows,
           ...cardRows,
           ...projectRows,
+          ...boardViewRows,
           ...covenMemoryRows,
           ...fsMemoryRows,
           ...cmdRows,
@@ -623,21 +584,37 @@ export function CommandPalette({
           ...cardRows,
           ...covenMemoryRows,
           ...fsMemoryRows,
-          ...saveRows,
+          ...settingRows,
           ...cmdRows,
           ...surfaceRows,
+          ...boardViewRows,
           ...projectRows,
           ...shortcutRows,
           ...createRows,
           ...conversationRows,
         ];
 
-    const salemRows: Row[] = query.trim() && !slashCanonical
+    const salemRows: Row[] = query.trim() && !slashCanonical && !noFamiliarMatch
       ? [{ id: "salem-answer", kind: "salem-answer", query: query.trim() }]
       : [];
 
-    return [...salemRows, ...localRows];
-  }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects, addons]);
+    // Ask-Salem is the FALLBACK row, not the default (cave-42r5): Enter on a
+    // typed query must open the best local match (sessions, familiars, cards,
+    // surfaces), not fire a network AI call. With zero local matches the
+    // Salem row is still rows[0], so unmatched queries keep their one-Enter
+    // AI path.
+    return [...localRows, ...salemRows];
+  }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects, roleSurfaces]);
+
+  const counts = useMemo(() => paletteResultCounts(allRows), [allRows]);
+  const rows = useMemo(
+    () => filterPaletteRows(allRows, category) as Row[],
+    [allRows, category],
+  );
+  const resultSummary = useMemo(
+    () => paletteResultSummary(rows, category, parseFamiliarToken(query).rest),
+    [rows, category, query],
+  );
 
   useEffect(() => {
     if (activeIdx >= rows.length) setActiveIdx(Math.max(0, rows.length - 1));
@@ -668,23 +645,27 @@ export function CommandPalette({
     setSalemAnswer(null);
     setSalemError(null);
     try {
-      // Use the local familiar (the one you're scoped to, falling back to Salem)
-      // so the answer is synthesized through it and the AI credits attribute to
-      // its connected model.
+      // Use the local familiar (the one you're scoped to, falling back to the
+      // Salem persona's familiar if one exists, then ANY available familiar)
+      // so the answer is synthesized through it and the AI credits attribute
+      // to its connected model. No invented ids: when the coven is empty the
+      // request goes familiar-less and the route uses its hosted fallback.
       const localFamiliarId =
         activeFamiliarId ??
         familiars.find((f) => f.id === "salem")?.id ??
-        "salem";
+        familiars[0]?.id;
       const localModel =
-        familiars.find((f) => f.id === activeFamiliarId)?.model ??
-        familiars.find((f) => f.id === "salem")?.model ??
+        familiars.find((f) => f.id === localFamiliarId)?.model ??
         undefined;
       const res = await fetch("/api/salem", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: query.trim(),
-          context: buildSalemSearchContext(rows, query.trim()),
+          context: buildSalemSearchContext(
+            rows.filter(isSalemContextRow),
+            query.trim(),
+          ),
           familiarId: localFamiliarId,
           model: localModel,
         }),
@@ -706,6 +687,10 @@ export function CommandPalette({
     if (row.kind === "salem-answer") {
       void askSalem();
       return;
+    }
+    const search = query.trim();
+    if (search.length >= 2 && row.kind !== "create-task") {
+      setRecentSearches(recordRecentSearch(window.localStorage, search));
     }
     if (row.kind === "familiar") {
       onIntent({ kind: "switch-familiar", familiarId: row.familiar.id });
@@ -736,6 +721,13 @@ export function CommandPalette({
         familiarId,
         findQuery: parseFamiliarToken(query).rest.trim(),
       });
+    } else if (row.kind === "setting") {
+      onIntent({
+        kind: "open-setting",
+        section: row.entry.section,
+        ...(row.entry.group ? { group: row.entry.group } : {}),
+        ...(row.entry.familiarTab ? { familiarTab: row.entry.familiarTab } : {}),
+      });
     } else {
       onIntent(row.intent);
     }
@@ -743,6 +735,10 @@ export function CommandPalette({
   };
 
   const onComposerKey = (e: React.KeyboardEvent) => {
+    // The Enter/arrows that drive an IME candidate picker (CJK input) belong
+    // to the IME — confirming a character must not fire the active row or
+    // move the highlight. Mirrors the ChatView / group-chat composer guards.
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIdx((i) => Math.min(i + 1, rows.length - 1));
@@ -756,46 +752,138 @@ export function CommandPalette({
     }
   };
 
+  // Click-through dismissal. Pressing the scrim closes the palette AND forwards
+  // that same press to whatever interactive control sits underneath, so a user
+  // reaching past the open palette for (say) a top-bar familiar avatar gets the
+  // selection in one gesture. Without this the full-viewport backdrop swallowed
+  // the first click as a throwaway dismiss, and the real target only registered
+  // on a second click ("doesn't grab unless I unfocus first").
+  const onScrimPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const { clientX, clientY, button } = e;
+    const scrim = e.currentTarget;
+    let target: HTMLElement | null = null;
+    // Only a primary (left) press forwards through; secondary/middle just close.
+    // Presses inside the dialog never reach here (it stops propagation), so the
+    // hit point is always over the backdrop itself.
+    if (button === 0) {
+      // Make the scrim transparent to hit-testing so elementFromPoint reports
+      // the app control beneath it, then restore it before unmounting.
+      const prev = scrim.style.pointerEvents;
+      scrim.style.pointerEvents = "none";
+      const under = document.elementFromPoint(clientX, clientY);
+      scrim.style.pointerEvents = prev;
+      target =
+        under?.closest<HTMLElement>(
+          'a[href], button:not([disabled]), input, textarea, select, [role="button"], [role="option"], [role="menuitem"], [role="tab"], [role="link"], [role="checkbox"], [role="switch"]',
+        ) ?? null;
+    }
+    onClose();
+    if (!target) return;
+    // Defer activation until the overlay has unmounted so the forwarded click
+    // lands with the palette already gone (and any close side-effects settled).
+    requestAnimationFrame(() => {
+      const tag = target!.tagName.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") target!.focus();
+      else target!.click();
+    });
+  };
+
   if (!open) return null;
 
   return (
     <div
-      onClick={onClose}
+      // Dismiss on press (pointerdown), not click, so the backdrop never lingers
+      // "armed" to swallow the next click. onScrimPointerDown also forwards the
+      // press to the control underneath (click-through) — see its definition.
+      onPointerDown={onScrimPointerDown}
       role="presentation"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
-      style={{ animation: "ui-modal-fade-in var(--duration-fast) var(--ease-decelerate)" }}
+      className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm [animation:ui-modal-fade-in_var(--duration-fast)_var(--ease-decelerate)]!"
     >
       <div
         ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
+        // Keep presses inside the dialog from bubbling to the backdrop's
+        // pointerdown dismissal (matches the dismissal event above).
+        onPointerDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
         tabIndex={-1}
-        className="mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl"
-        style={{ animation: "ui-modal-enter var(--duration-base) var(--ease-decelerate)" }}
+        className="glass-overlay mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] shadow-2xl [animation:ui-modal-enter_var(--duration-base)_var(--ease-decelerate)]!"
       >
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => {
-            updateQuery(e.target.value);
-            setActiveIdx(0);
-          }}
-          onKeyDown={onComposerKey}
-          placeholder="Search familiars · chats · cards · memory · commands… (try @familiar to scope)"
-          aria-label="Search and jump to anything"
-          aria-controls="command-palette-listbox"
-          aria-activedescendant={
-            rows.length > 0 ? `command-palette-option-${activeIdx}` : undefined
-          }
-          className="focus-ring-inset w-full border-b border-[var(--border-hairline)] bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-        />
+        <div className="flex items-center border-b border-[var(--border-hairline)]">
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => {
+              updateQuery(e.target.value);
+              setActiveIdx(0);
+            }}
+            onKeyDown={onComposerKey}
+            placeholder="Search familiars · chats · tasks · memory · settings… (try @familiar)"
+            role="combobox"
+            aria-label="Search and jump to anything"
+            aria-expanded={rows.length > 0}
+            aria-autocomplete="list"
+            aria-controls="command-palette-listbox"
+            aria-activedescendant={
+              rows.length > 0 ? `command-palette-option-${activeIdx}` : undefined
+            }
+            className="focus-ring-inset min-w-0 flex-1 bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+          />
+          {query ? (
+            <button
+              type="button"
+              className="focus-ring mr-3 rounded-full p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              aria-label="Clear search query"
+              onClick={() => {
+                updateQuery("");
+                setCategory("all");
+                setActiveIdx(0);
+                inputRef.current?.focus();
+              }}
+            >
+              <Icon name="ph:x-circle-fill" width="1rem" height="1rem" aria-hidden />
+            </button>
+          ) : null}
+        </div>
+        {browsing && recentSearches.length > 0 ? (
+          <div className="flex items-center gap-2 overflow-x-auto border-b border-[var(--border-hairline)] px-4 py-2" aria-label="Recent searches">
+            <Icon name="ph:clock-counter-clockwise" width="0.9rem" height="0.9rem" className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+            {recentSearches.map((recent) => (
+              <button
+                key={recent}
+                type="button"
+                className="focus-ring shrink-0 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                onClick={() => {
+                  updateQuery(recent);
+                  setActiveIdx(0);
+                  inputRef.current?.focus();
+                }}
+              >
+                {recent}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="focus-ring ml-auto shrink-0 rounded px-1.5 py-1 text-[length:var(--text-2xs)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              aria-label="Clear recent searches"
+              onClick={() => {
+                clearRecentSearches(window.localStorage);
+                setRecentSearches([]);
+                inputRef.current?.focus();
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
         {salemLoading || salemAnswer || salemError ? (
           <div
             role={salemLoading ? "status" : salemError ? "alert" : "region"}
             aria-label="Salem AI response"
-            className="border-b border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-4 py-3 text-xs text-[var(--text-secondary)]"
+            // Long answers scroll inside the palette instead of growing it past
+            // the viewport (issue #2988) — mirrors the listbox's own cap below.
+            className="max-h-[45vh] overflow-y-auto border-b border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-4 py-3 text-xs text-[var(--text-secondary)]"
           >
             {salemLoading ? (
               <span>Asking Salem through salem.opencoven.ai...</span>
@@ -840,13 +928,58 @@ export function CommandPalette({
             </span>
           </div>
         ) : null}
+        <div
+          role="toolbar"
+          aria-label="Filter search results"
+          className="flex items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-3 py-2"
+        >
+          {PALETTE_CATEGORIES.filter(
+            // Zero-count scopes are dead tabs — hide them. "All" always shows,
+            // and the active scope stays visible even at 0 so the filter can't
+            // vanish from under the user mid-narrowing (cave-4gg0).
+            (option) => option === "all" || option === category || counts[option] > 0,
+          ).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={category === option}
+              className={`focus-ring shrink-0 rounded-full border px-2.5 py-1 text-[length:var(--text-2xs)] font-medium transition-colors ${
+                category === option
+                  ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,var(--border-strong))] bg-[var(--accent-presence-soft)] text-[var(--text-primary)]"
+                  : "border-transparent text-[var(--text-muted)] hover:border-[var(--border-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              }`}
+              onClick={() => {
+                setCategory(option);
+                setActiveIdx(0);
+                inputRef.current?.focus();
+              }}
+            >
+              {PALETTE_CATEGORY_LABEL[option]}
+              <span className="ml-1 font-mono opacity-70">{counts[option]}</span>
+            </button>
+          ))}
+        </div>
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {resultSummary}
+        </div>
         <ul
           id="command-palette-listbox"
           role="listbox"
           className="max-h-[60vh] overflow-y-auto py-1"
         >
           {rows.length === 0 ? (
-            <li role="presentation" className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">No matches.</li>
+            <li role="presentation" className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">
+              <p>{resultSummary}</p>
+              {category !== "all" ? (
+                <button
+                  type="button"
+                  className="focus-ring mt-2 rounded-full border border-[var(--border-hairline)] px-3 py-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  onClick={() => setCategory("all")}
+                >
+                  Search all categories
+                </button>
+              ) : null}
+            </li>
           ) : null}
           {rows.map((row, i) => {
             const active = i === activeIdx;
@@ -870,7 +1003,7 @@ export function CommandPalette({
                 {showHeader ? (
                   <li
                     role="presentation"
-                    className="px-4 pb-1 pt-3 text-[10px] font-medium uppercase tracking-widest text-[var(--text-muted)] first:pt-1.5"
+                    className="px-4 pb-1 pt-3 text-[length:var(--text-2xs)] font-medium uppercase tracking-widest text-[var(--text-muted)] first:pt-1.5"
                   >
                     {group}
                   </li>
@@ -895,11 +1028,11 @@ export function CommandPalette({
                     <>
                       <span className="flex flex-1 flex-col">
                         <span className="text-[var(--text-primary)]">{row.familiar.display_name}</span>
-                        <span className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+                        <span className="text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-secondary)]">
                           {row.familiar.role}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">switch</span>
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">switch</span> : null}
                     </>
                   ) : null}
                   {row.kind === "session" ? (
@@ -918,61 +1051,75 @@ export function CommandPalette({
                             {row.session.title || "(untitled chat)"}
                           </span>
                         </span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {row.familiar?.display_name ?? row.session.familiarId} ·{" "}
                           {row.session.harness}
                         </span>
                       </span>
-                      <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{sessionAgo || "open"}</span>
+                      <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">{sessionAgo || "open"}</span>
                     </>
                   ) : null}
                   {row.kind === "card" ? (
                     <>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">{row.card.title}</span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {row.card.status} · {row.card.priority}
                           {row.familiar ? ` · ${row.familiar.display_name}` : ""}
                           {row.card.labels.length ? ` · ${row.card.labels.join(", ")}` : ""}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">card</span>
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">card</span> : null}
                     </>
                   ) : null}
-                  {row.kind === "coven-memory" ? (
-                    <>
+                  {row.kind === "coven-memory" ? (                    <>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">{row.entry.title}</span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {row.entry.familiar_id} · {row.entry.updated_at}
                           {row.entry.excerpt ? ` · ${row.entry.excerpt.slice(0, 70)}` : ""}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">memory</span>
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">memory</span> : null}
                     </>
                   ) : null}
                   {row.kind === "fs-memory" ? (
                     <>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">{row.entry.relPath}</span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {row.entry.rootLabel}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">file</span>
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">file</span> : null}
+                    </>
+                  ) : null}
+                  {row.kind === "setting" ? (
+                    <>
+                      <Icon name="ph:gear-six" className="text-[var(--text-secondary)]" width="1.1rem" height="1.1rem" aria-hidden />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-[var(--text-primary)]">
+                          {settingsSectionLabel(row.entry.section)}
+                          {row.entry.group ? ` › ${row.entry.group}` : ""}
+                        </span>
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                          {row.entry.familiarTab ? `Familiars · ${row.entry.familiarTab}` : row.entry.keywords}
+                        </span>
+                      </span>
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">open</span> : null}
                     </>
                   ) : null}
                   {row.kind === "command" ? (
                     <>
                       <span className="font-mono text-[var(--text-secondary)]">{row.name}</span>
                       <span className="flex-1 text-[var(--text-muted)]">{platformizeHint(row.hint, keys)}</span>
-                      <span className="text-[10px] text-[var(--text-muted)]">run</span>
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">run</span> : null}
                     </>
                   ) : null}
                   {row.kind === "shortcut" ? (
                     <>
                       <span className="flex-1 text-[var(--text-primary)]">{row.label}</span>
-                      <span className="font-mono text-[10px] text-[var(--text-muted)]">{platformizeHint(row.shortcut, keys)}</span>
+                      <kbd className="palette-kbd touch-hidden">{platformizeHint(row.shortcut, keys)}</kbd>
                     </>
                   ) : null}
                   {row.kind === "create-task" ? (
@@ -980,11 +1127,11 @@ export function CommandPalette({
                       <Icon name="ph:plus-bold" className="text-[var(--text-secondary)]" width="1.1rem" height="1.1rem" />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">Create task: {row.title}</span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
-                          New card on the board, scoped to the active familiar
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                          New task in Tasks, scoped to the active familiar
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">create</span>
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">create</span> : null}
                     </>
                   ) : null}
                   {row.kind === "conversation-hit" ? (
@@ -994,11 +1141,11 @@ export function CommandPalette({
                         <span className="truncate text-[var(--text-primary)]">
                           {row.hit.title || "(untitled chat)"}
                         </span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                           {row.hit.snippet}
                         </span>
                       </span>
-                      <span className="shrink-0 text-[10px] text-[var(--text-muted)]">
+                      <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                         {row.hit.matchCount} match{row.hit.matchCount !== 1 ? "es" : ""}
                       </span>
                     </>
@@ -1008,11 +1155,11 @@ export function CommandPalette({
                       <Icon name="ph:sparkle-bold" className="text-[var(--accent-presence)]" width="1.1rem" height="1.1rem" />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">Ask Salem: {row.query}</span>
-                        <span className="truncate text-[10px] text-[var(--text-muted)]">
-                          Context-aware AI answer via salem.opencoven.ai
+                        <span className="truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                          Salem is the docs familiar — answers from the OpenCoven docs
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">ask</span>
+                      {active ? <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">ask</span> : null}
                     </>
                   ) : null}
                 </button>
@@ -1021,9 +1168,21 @@ export function CommandPalette({
             );
           })}
         </ul>
-        <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
-          <span>{keys.up}{keys.down} navigate · {keys.enter} select · esc close</span>
-          <span>{keys.mod}K</span>
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--border-hairline)] px-4 py-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+          {/* Keyboard hints are desktop vocabulary — hidden on coarse-pointer
+              devices where there is no ⌘/esc to press (cave-4gg0). */}
+          <span className="touch-hidden flex items-center gap-1">
+            <kbd className="palette-kbd">{keys.up}{keys.down}</kbd> navigate ·{" "}
+            <kbd className="palette-kbd">{keys.enter}</kbd> select ·{" "}
+            <kbd className="palette-kbd">esc</kbd> close
+          </span>
+          <span className="hidden sm:inline">@familiar scopes results</span>
+          <span className="flex items-center gap-1">
+            {counts[category]} local
+            <span className="touch-hidden flex items-center gap-1">
+              {" "}· <kbd className="palette-kbd">{keys.mod}K</kbd>
+            </span>
+          </span>
         </div>
       </div>
     </div>

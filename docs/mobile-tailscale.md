@@ -34,6 +34,15 @@ pnpm mobile:tailscale:status   # show process/state info with host/token redacte
 pnpm mobile:tailscale:stop     # stop the dev server and reset Tailscale Serve
 ```
 
+For a local simulator/emulator workflow, use the checked-in wrappers:
+
+```bash
+pnpm mobile:ios:sim   # xcodegen generate + xcodebuild the native app onto the iOS simulator
+```
+
+The iOS wrapper drives the native Swift app under `apps/ios/CovenCave` (Android
+is not a supported target).
+
 Set `PRINT_URL=1` only when you intentionally want the raw invite printed in a trusted local terminal:
 
 ```bash
@@ -43,6 +52,39 @@ PRINT_URL=1 pnpm mobile:tailscale:invite
 The app stores the invite in an HTTP-only cookie after the first successful request and removes it from the visible URL.
 
 In the packaged desktop app, click **Open on phone** in the top bar to create the same kind of invite as a QR code. Scan it from a phone signed into the same tailnet.
+
+## Keep the Mac reachable
+
+The packaged macOS app has two explicit, default-off controls under **Settings
+→ Phone → Keep this Mac reachable**:
+
+- **Keep Mac awake for phone** holds a macOS power assertion after a phone has
+  paired. **Only keep awake on power** is on by default, so battery power keeps
+  the Mac's normal sleep policy. Turning either setting off releases the
+  assertion.
+- **Background availability** installs a per-user LaunchAgent. The GUI owns the
+  loopback server while its main window is open; after that window closes, the
+  LaunchAgent starts the bundled `server.mjs` without opening the app. Disabling
+  the option unloads and removes the LaunchAgent.
+
+Both the GUI server and the LaunchAgent server remain bound to
+`127.0.0.1`. Whenever either server chooses a different port, it repoints
+Tailscale Serve at that exact loopback backend. Existing signed phone tokens
+continue to use the same persisted mobile access secret.
+
+Tailscale cannot wake a sleeping Mac. Its userspace WireGuard daemon sleeps
+with the computer, so the phone has no path to deliver a wake packet. Bonjour
+sleep proxy is limited to local-network mDNS and does not make wake-on-LAN work
+across a tailnet. Use the keep-awake option or an always-on Server Hub when the
+phone must remain reachable.
+
+## Connect Cave to a remote Server Hub
+
+Open **Settings → Daemon → Connection**, choose **Server hub**, and use the **Tailnet devices** list to select the machine running the remote Coven daemon. Cave discovers this device and online peers from `tailscale status --json`; it uses the device's `100.x` address when available and fills the standard daemon port, `8787`. The current machine is labelled **This device**. You can still enter a MagicDNS name or another private HTTP URL manually.
+
+Before Cave saves a Server Hub URL, it checks `/api/v1/health` with a short timeout and shows the result and latency beside the field. A healthy target saves normally. An unreachable, unauthorized, or unhealthy target remains unsaved until you explicitly choose **Save anyway**. The Status group then distinguishes a connected hub and its last successful check from a configured-but-unreachable hub.
+
+When Phone pairing has already resolved this machine's tailnet address, expand **Manual setup** and choose **Use this device as hub** to carry that address into the Server Hub field. Cave still runs the reachability check before saving it.
 
 ## Remote Agent Handoff
 
@@ -110,33 +152,29 @@ curl -I http://127.0.0.1:3000
 
 If the app loads but actions fail, verify the host machine has the Coven daemon/runtime available. The phone is only a browser; the host machine still performs local work.
 
-## Native Tauri Mobile Shell
+## Native iOS App
 
-A Tauri iOS / Android binary (built via `pnpm tauri ios build` / `pnpm tauri android build`) ships exactly the same daemon-over-Tailscale model — there is **no bundled local Node sidecar** on mobile. iOS sandbox rules forbid spawning child processes, and the standalone Next.js server + node_modules tree would balloon the IPA past 100MB. The native shell is a thin webview that points at:
+The mobile experience is a **native Swift/SwiftUI app** at [`apps/ios/CovenCave`](../apps/ios/CovenCave), not a Tauri webview. (The Tauri iOS/Android shell was retired — see [`ios-native-rebuild.md`](ios-native-rebuild.md).) It ships exactly the same daemon-over-Tailscale model described above: there is **no bundled local Node sidecar** on mobile. The app is a native client that talks to a Cave daemon over the tailnet, pointed at either:
 
 - The Tailscale Serve URL of your laptop while you're on the same tailnet, OR
 - A long-lived `tailscale serve` on a home server that the phone always reaches over the tailnet.
 
-Either way the daemon lives on a desktop, not the phone. The phone only renders.
+Either way the daemon lives on a desktop, not the phone.
 
-### What changes in the native shell vs. mobile-web
+### Pairing the app to a daemon
 
-The native shell wraps the same Next.js UI. The only differences:
-
-- Push notifications: `tauri-plugin-notification` works on iOS and Android. The first call to `nativeNotify()` triggers the system permission prompt; thereafter the shell can fire local notifications even when the webview isn't focused.
-- "Add to Home Screen" isn't a thing because the shell ships as a regular app icon installed from TestFlight / Play.
-- The PWA service worker (`/sw.js`) is **not** registered inside Tauri. The desktop and mobile shells both rely on Tauri's webview cache, and an SW would intercept loopback requests and cache stale IPC responses (`PwaRegister` skips when `__TAURI_INTERNALS__` is present).
-- The bottom terminal and the embedded `BrowserPane` surfaces are unavailable, same as mobile-web — the `pty_*` / `browser_*` Rust commands are `cfg(desktop)`-gated and not registered on mobile-Tauri. Both surfaces detect this via `useTauriPlatform()` and render their "Terminal is only available inside the CovenCave desktop app" / iframe-fallback placeholder.
-
-### One-time scaffolding
+Expose the daemon over Tailscale Serve and print a pairing URL for the app:
 
 ```bash
-pnpm tauri ios init      # generates src-tauri/gen/apple/
-pnpm tauri android init  # generates src-tauri/gen/android/
+pnpm mobile:tailscale:app      # tailscale serve + a QR/pairing URL carrying the access token
 ```
 
-Both are interactive (Xcode signing team, Android SDK path). After scaffolding, builds run with `pnpm tauri ios build` / `pnpm tauri android build`. The `prebuild` hook (PWA icon generation) still runs but `sidecar-bundle.sh` short-circuits when `TAURI_PLATFORM` is `ios` or `android`.
+Scan or paste that URL in the app. The `coven_access_token` query param authorizes the client against the gated API (tailnet membership alone is not sufficient — Serve exposes every `/api` route).
 
-### Configuration: which daemon does the phone talk to?
+### Building / running the app
 
-The native shell's `devUrl` (in `src-tauri/tauri.conf.json`) points at the dev server. In production builds, point it at your Tailscale-served daemon URL before running `tauri ios build` — the `$COVEN_CAVE_DAEMON_URL` env var (or whatever your team adopts) should be honoured by a small `build.rs` patch. (Not yet wired; track in a follow-up.)
+```bash
+pnpm mobile:ios:sim            # xcodegen generate + xcodebuild against the iOS simulator
+```
+
+The Xcode project is generated by `xcodegen` from `apps/ios/CovenCave/project.yml` (the `.xcodeproj` is gitignored). Production builds ship through TestFlight. Because the app is native, there is no PWA service worker and no bundled sidecar to reason about.

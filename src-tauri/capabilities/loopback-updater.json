@@ -1,0 +1,26 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-updater",
+  "description": "lets the trusted main loopback webview run the native in-app updater end to end: check, download, install, and relaunch, plus platform/arch reads for installer fallback selection",
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
+  "webviews": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*",
+      "http://[\\:\\:1]:*/*"
+    ]
+  },
+  "permissions": [
+    "updater:default",
+    "process:allow-restart",
+    "os:allow-platform",
+    "os:allow-arch"
+  ]
+}

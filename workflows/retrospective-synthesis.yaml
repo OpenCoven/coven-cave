@@ -2,7 +2,7 @@ id: retrospective-synthesis
 version: 0.1.0
 name: Retrospective Synthesis
 summary: Read curated context, extract decisions and patterns, and propose memory candidates with uncertainty.
-familiar: echo
+familiar: memory
 pattern: sequential
 tags:
   - memory
@@ -26,28 +26,28 @@ steps:
   - id: intake-packet
     kind: agent
     name: Intake packet
-    uses: echo
+    uses: memory
     summary: Read curated notes, project summaries, and explicit retrospective scope.
     requires:
       - input
   - id: extract-decisions
     kind: agent
     name: Extract decisions
-    uses: echo
+    uses: memory
     summary: Identify decisions, repeated blockers, unresolved tensions, and changed assumptions.
     requires:
       - intake-packet
   - id: find-patterns
     kind: agent
     name: Find patterns
-    uses: echo
+    uses: memory
     summary: Name recurring signals and distinguish supported patterns from missing context.
     requires:
       - extract-decisions
   - id: propose-memory
     kind: agent
     name: Propose memory candidates
-    uses: echo
+    uses: memory
     summary: Select candidates worth preserving and mark uncertainty or privacy risks.
     requires:
       - find-patterns

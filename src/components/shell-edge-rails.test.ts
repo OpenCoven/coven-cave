@@ -1,20 +1,26 @@
 // @ts-nocheck
-// Side panel toggles live in the desktop top menu bar:
-//   - the nav toggle anchors the bar's left edge
-//   - the side-panel + expand toggles its right edge
-//   - they match the row's compact icon-button controls
+// The nav toggle lives in the desktop top menu bar, anchoring the bar's left
+// edge and matching the row's compact icon-button controls. (The right
+// side-panel + expand toggles were removed with the right companion panel.)
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const projectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// #3576 decomposed globals.css into @imported sheets under src/styles —
+// pin against the whole global cascade, wherever a rule now lives.
+const stylesDir = new URL("../styles/", import.meta.url);
+const css = [
+  readFileSync(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ...readdirSync(stylesDir, { recursive: true, encoding: "utf8" })
+    .filter((f) => f.endsWith(".css"))
+    .map((f) => readFileSync(new URL(f, stylesDir), "utf8")),
+].join("\n");
 const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
-
 assert.match(
   shell,
-  /import \{ Icon, CAVE_ICON_SIZE, type IconName \} from "@\/lib\/icon"/,
+  /import \{ Icon, CAVE_ICON_SIZE \} from "@\/lib\/icon"/,
   "Shell should import the shared icon size constants with the Icon wrapper",
 );
 
@@ -33,13 +39,36 @@ assert.match(
 );
 assert.match(
   shell,
-  /const rightToggles = !isMobile && hasFamiliar/,
-  "shell builds the right side-panel toggles on desktop only, when a familiar is active",
+  /<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>/,
+  "the top bar row leads with the nav toggle before the rendered top bar",
+);
+// `deep` (not the bare attribute) is load-bearing: Tauri drag.js only drags a
+// bare region on DIRECT presses on the attributed element, so empty chrome
+// inside .menu-bar/.top-bar children would short-circuit the composedPath walk
+// and never drag. `deep` covers the whole subtree while drag.js's clickable
+// check keeps buttons/inputs/focusable widgets working. The drag itself is an
+// ACL-gated IPC call — see capabilities/loopback-window-drag.json (the webview
+// is an external http://127.0.0.1 origin, a REMOTE ACL context, so it needs an
+// explicit remote-scoped grant; without it start_dragging is silently denied).
+assert.equal(
+  shell.match(/<div className="shell-top" data-tauri-drag-region="deep">/g)?.length,
+  2,
+  "both shell top bars (placeholder + desktop) should expose the deep Tauri drag region on the titlebar container",
+);
+assert.doesNotMatch(
+  shell,
+  /startDragging|onTitlebarPointerDown/,
+  "shell should not hand-roll a startDragging pointer handler — Tauri drag.js owns the drag (and double-click zoom) via the deep drag-region attributes",
+);
+assert.equal(
+  shell.match(/<div className="shell-top__bar" data-tauri-drag-region="deep">/g)?.length,
+  2,
+  "both rendered top-bar wrappers should remain draggable when their empty chrome is clicked",
 );
 assert.match(
   shell,
-  /<div className="shell-top">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar">\{renderedTopBar\}<\/div>[\s\S]*?\{rightToggles\}/,
-  "the top bar row flanks the rendered top bar with the nav (left) and side-panel (right) toggles",
+  /<div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" \/>\s*\{navToggle\}/,
+  "the desktop top bar should expose a dedicated non-interactive drag lane before its controls",
 );
 assert.match(
   shell,
@@ -48,13 +77,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /shell-top-toggle--right/,
-  "shell renders a top-bar right toggle for the active side panel",
-);
-assert.match(
-  shell,
-  /shell-top-toggle--nav[\s\S]*?aria-label=\{navOpen \? "Collapse navigation to icons" : "Expand navigation"\}/,
-  "nav toggle label reflects nav state",
+  /shell-top-toggle--nav[\s\S]*?aria-label=\{chatContextual[\s\S]*?\? "Collapse Chat sidebar"[\s\S]*?: "Expand Chat sidebar"[\s\S]*?\? "Collapse navigation to icons"[\s\S]*?: "Expand navigation"\}/,
+  "nav toggle label reflects both contextual Chat and normal navigation state",
 );
 assert.match(
   shell,
@@ -70,16 +94,6 @@ assert.match(
   shell,
   /const toggleNavPanel = \(\) => \{[\s\S]*?panel\.expand\(\); setNavOpen\(true\)[\s\S]*?panel\.collapse\(\); setNavOpen\(false\)/,
   "nav toggle collapses and expands the nav panel",
-);
-assert.match(
-  shell,
-  /shell-top-toggle--right[\s\S]*?aria-expanded=\{familiarOpen\}/,
-  "right toggle exposes the active side-panel state",
-);
-assert.match(
-  shell,
-  /const toggleRightPanel = \(\) => \{[\s\S]*?familiarRef\.current[\s\S]*?setFamiliarOpen/,
-  "right toggle toggles the active right panel via familiarRef",
 );
 // The old collapsed-only left edge rail and full-height corner floats are gone.
 assert.doesNotMatch(
@@ -97,13 +111,53 @@ assert.doesNotMatch(
 // icon buttons matching the other controls in the row.
 assert.match(
   css,
-  /\.shell-top\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?min-height:\s*44px;[\s\S]*?border-bottom:\s*1px solid var\(--border-hairline\);/,
-  "the top bar row owns the shared band background and centers its controls",
+  /\.shell-top\s*\{[\s\S]{0,600}?display:\s*flex;[\s\S]{0,200}?align-items:\s*center;[\s\S]{0,300}?min-height:\s*34px;[\s\S]{0,400}?border-bottom:\s*0;/,
+  "the top bar row is the slim seamless band (34px, borderless) and centers its controls",
 );
 assert.match(
   css,
   /\.shell-top__bar\s*\{[\s\S]*?flex:\s*1 1 auto;/,
   "the rendered top bar flexes to fill between the toggles",
+);
+assert.match(
+  css,
+  /\.shell-titlebar-drag-lane\s*\{[\s\S]*?display:\s*none;/,
+  "the drag lane should be hidden outside the macOS Tauri titlebar mode",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\s+\.shell-titlebar-drag-lane\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*-webkit-app-region:\s*drag;[^}]*app-region:\s*drag;/,
+  "macOS Tauri titlebar mode should make the full titlebar band draggable/clickable, not only a thin strip",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\s+\.shell-titlebar-drag-lane\s*\{[^}]*pointer-events:\s*none;/,
+  "the full-band drag lane must not intercept clicks meant for titlebar controls",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\s+:is\(\s*\.shell-top,\s*\.shell-top__bar,\s*\.shell-top \.menu-bar,\s*\.shell-top \.top-bar,\s*\.shell-top \.menu-bar__group,\s*\.shell-top \.top-bar__lead,\s*\.shell-top \.top-bar__actions\s*\)\s*\{[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?app-region:\s*drag;/,
+  "macOS Tauri titlebar mode should keep the full rendered top-bar band draggable, including inert layout wrappers",
+);
+assert.doesNotMatch(
+  css,
+  /:root\[data-tauri-titlebar\]\s+\.shell-top \*\s*\{[\s\S]*?app-region:\s*no-drag;/,
+  "macOS titlebar mode must not carve every header descendant out of the drag region",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\s+\.shell-top :is\(\s*button,\s*a,\s*input,\s*select,\s*textarea,\s*kbd,\s*label,[\s\S]*?\[role="button"\],[\s\S]*?\[role="textbox"\],[\s\S]*?\[contenteditable\],[\s\S]*?\.menu-bar__search\s*\),[\s\S]*?-webkit-app-region:\s*no-drag;[\s\S]*?app-region:\s*no-drag;/,
+  "macOS titlebar mode should carve only interactive header controls out of the drag region so controls stay clickable",
+);
+assert.match(
+  css,
+  /\.shell-top\s*\{[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?overflow:\s*hidden;/,
+  "the desktop shell header should stay one row and clip/contain crowded content instead of wrapping over controls",
+);
+assert.match(
+  css,
+  /\.menu-bar\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?width:\s*100%;[\s\S]*?overflow:\s*hidden;/,
+  "the rendered desktop menu bar should shrink inside the shell header on macOS/Windows/Linux",
 );
 assert.match(
   css,
@@ -115,12 +169,6 @@ assert.match(
   /\.shell-top-toggle--active\s*\{[\s\S]*?color:\s*var\(--accent-presence\);[\s\S]*?border-color:\s*color-mix\(in oklch, var\(--accent-presence\) 55%, var\(--border-hairline\)\);/,
   "an open panel's toggle tints accent while staying button-shaped",
 );
-assert.match(
-  css,
-  /\.shell-top-toggle--right > svg\s*\{[\s\S]*?transform:\s*scaleX\(-1\);/,
-  "the right toggle mirrors the sidebar glyph so it reads as a right-edge panel",
-);
-
 // The float is gone — no proximity-glow tracking or --shell-float-top plumbing.
 assert.doesNotMatch(
   shell,
@@ -159,10 +207,13 @@ assert.doesNotMatch(
   /familiarPanelRail=/,
   "workspace no longer passes a right edge-rail tab toggle to the shell",
 );
+// The chat projects rail migrated onto the shared SurfaceRail (Sessions
+// redesign): the collapsed 56px rail's own toggle is the reopen affordance,
+// so the bespoke edge-rail reopen chip is gone from this sidebar.
 assert.match(
   projectSidebar,
-  /edge-rail-chip[\s\S]{0,120}ph:sidebar-simple/,
-  "collapsed projects sidebar reopen tab uses the pressable chip",
+  /import \{ SurfaceRail \} from "@\/components\/ui\/surface-rail"/,
+  "collapsed projects sidebar reopen affordance comes from the shared SurfaceRail toggle",
 );
 
 assert.match(
@@ -180,26 +231,149 @@ assert.match(
   /matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*togglePanel\(navRef\.current\)/,
   "left panel toggles from the resolved left-panel shortcut",
 );
-assert.match(
-  shell,
-  /matchesPanelShortcut\(e, panelShortcuts\.toggleRightPanel\)[\s\S]*hasFamiliar[\s\S]*toggleFamiliarPanel\(\)/,
-  "right panel toggles from the resolved right-panel shortcut",
-);
 assert.doesNotMatch(
   shell,
   /key === "b"[\s\S]{0,120}togglePanel\(navRef\.current\)/,
   "Shift+B must not fall through to the left sidebar toggle",
 );
 assert.match(shortcuts, /keys: "⌘B"[\s\S]*Toggle the left sidebar/, "shortcut sheet documents the default left panel toggle");
-assert.match(shortcuts, /keys: "⌘⇧B"[\s\S]*Toggle the right side panel/, "shortcut sheet documents the default right panel toggle");
 
-// The CompanionRail's in-panel Hide button was removed along with its
-// cave:familiar-panel-toggle bridge — the top-bar right toggle (and ⌘⇧B) own
-// hiding the right panel now.
+// The right companion panel (and its in-panel collapse bridge) was removed.
 assert.doesNotMatch(
   shell,
   /cave:familiar-panel-toggle/,
   "Shell no longer wires the retired in-panel collapse event",
 );
+
+
+// ── Dia-style traffic lights follow the side panel (cave-9ja2) ──────────────
+{
+  const tauriSetup = readFileSync(new URL("../../src-tauri/src/tauri_setup.rs", import.meta.url), "utf8");
+  assert.match(
+    shell,
+    /const navPeekVisible = navPeekEnabled && navPeeking;/,
+    "traffic-light visibility is fed by the synchronously gated visible-peek state",
+  );
+  assert.match(
+    shell,
+    /const trafficLightsVisible = navOpen \|\| navPeekVisible \|\| isMobile;/,
+    "lights show whenever the panel is open, visibly hover-peeked, or the layout is mobile",
+  );
+  assert.match(
+    shell,
+    /invoke\("set_traffic_lights_visible", \{ visible \}\)/,
+    "the shell drives the native buttons through the app command",
+  );
+  // Title-bar fit contract: the 78px inset is released only AFTER the native
+  // hide is confirmed — marking "hidden" optimistically slid the nav toggle +
+  // history chevrons under still-visible lights when the command failed.
+  assert.match(
+    shell,
+    /applyNative\(false\)\s*\.then\(\(\) => \{\s*if \(!cancelled\) root\.dataset\.trafficLights = "hidden";/,
+    "the root attribute flips to hidden only once the native hide resolves",
+  );
+  assert.match(
+    shell,
+    /\.catch\(\(\) => \{[\s\S]{0,220}?if \(!cancelled\) root\.dataset\.trafficLights = "visible";/,
+    "a failed native hide keeps the inset reserved for the still-visible lights",
+  );
+  assert.match(
+    shell,
+    /window\.addEventListener\("focus", onFocus\)/,
+    "focus re-asserts the hidden state after AppKit re-shows the buttons",
+  );
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\]\[data-traffic-lights="hidden"\] \.shell-top \{[\s\S]*?padding-left: var\(--space-3\);/,
+    "hiding the lights releases the 78px title-bar inset",
+  );
+  assert.match(
+    tauriSetup,
+    /fn set_traffic_lights_visible\(window: tauri::WebviewWindow, visible: bool\)/,
+    "the Rust command exists",
+  );
+  assert.match(
+    tauriSetup,
+    /standardWindowButton: kind/,
+    "the command toggles NSWindow's standard buttons",
+  );
+  assert.match(
+    tauriSetup,
+    /shell_pick_directory,\s*set_traffic_lights_visible,/,
+    "the command is registered with the invoke handler",
+  );
+}
+
+// ── Title-bar fit is comprehensive (cave-i7wf follow-up) ────────────────────
+// The overlay title bar is a property of the WINDOW, not of the workspace
+// shell: the traffic lights float over every route (/settings, /dashboard,
+// reports, analytics) and at every window width. The root marker is owned
+// globally and each full-window title band reserves the lights inset.
+{
+  const layout = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  const marker = readFileSync(new URL("./tauri-titlebar-marker.tsx", import.meta.url), "utf8");
+  assert.match(layout, /<TauriTitlebarMarker \/>/, "the root layout owns the titlebar marker");
+  assert.match(
+    marker,
+    /isMacDesktopShell\(\)/,
+    "the marker uses the shared macOS-desktop-shell detection",
+  );
+  assert.doesNotMatch(
+    shell,
+    /dataset\.tauriTitlebar =/,
+    "the workspace shell no longer sets the marker — it must survive shell unmount",
+  );
+  assert.match(
+    shell,
+    /if \(!isMacDesktopShell\(\)\) return;/,
+    "the lights effect detects the platform directly instead of racing the marker mount",
+  );
+  // The shell-top reserve applies at every width (a sub-1024 window put the
+  // mobile top-bar's controls under the lights when it was media-gated).
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-top \{\s*padding-left: var\(--titlebar-lights-inset\);\s*\}/,
+    "the shell-top lights inset is not desktop-media-gated",
+  );
+  // Full-window route bands reserve the same inset…
+  for (const band of ["settings-shell__header", "dr-topbar", "fa-topbar"]) {
+    assert.match(
+      css,
+      new RegExp(`:root\\[data-tauri-titlebar\\] \\.${band} \\{\\s*padding-left: (?:var\\(--titlebar-lights-inset\\)|max\\(var\\(--titlebar-lights-inset\\))`),
+      `${band} reserves the traffic-light inset on macOS`,
+    );
+  }
+  // …but the analytics band embedded in the workspace shell (inspector tab)
+  // sits mid-window and must NOT.
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-frame \.fa-topbar \{\s*padding-left: var\(--space-6\);/,
+    "the inspector-embedded analytics breadcrumb keeps its own padding",
+  );
+  // Titlebar glass stays honest: blur is paired with the reduced-transparency
+  // and no-backdrop-filter fallbacks.
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,340}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
+    "the native shell titlebar carries subtle glass",
+  );
+  const dashboardCss = readFileSync(new URL("../styles/dashboard.css", import.meta.url), "utf8");
+  assert.match(
+    dashboardCss,
+    /\.settings-shell__header \{[\s\S]{0,600}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
+    "the settings header is glass",
+  );
+  assert.match(
+    dashboardCss,
+    /@media \(prefers-reduced-transparency: reduce\) \{[\s\S]{0,400}?\.settings-shell__header/,
+    "settings header glass respects reduced transparency",
+  );
+  const settingsShell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+  assert.match(
+    settingsShell,
+    /surface-compact-header shrink-0[^"]*"[\s\S]{0,400}?data-tauri-drag-region="deep"/,
+    "the settings header is a real window drag region (CSS app-region is inert on loopback URLs)",
+  );
+}
 
 console.log("shell-edge-rails.test.ts OK");

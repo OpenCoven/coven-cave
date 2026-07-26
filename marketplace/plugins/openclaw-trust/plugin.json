@@ -1,0 +1,38 @@
+{
+  "name": "openclaw-trust",
+  "version": "0.1.0",
+  "description": "Apply OpenClaw's MITRE ATLAS-mapped threat model to evaluate prompt injection, malicious skills, token theft, tool over-permission, and safe rollout of risky automations.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "threat-model",
+    "security",
+    "prompt-injection",
+    "trust",
+    "mitre-atlas"
+  ],
+  "capabilities": [
+    "read_files"
+  ],
+  "marketplaceId": "opencoven/openclaw-trust",
+  "x-coven": {
+    "displayName": "OpenClaw Trust",
+    "category": "Security",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/openclaw-trust"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

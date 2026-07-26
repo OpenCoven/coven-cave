@@ -150,4 +150,21 @@ function contextLine(path, lineNumber, text) {
   assert.deepEqual(result.files, []);
 }
 
+// ── .env-family files are redacted from project search results ──────────────
+{
+  const stdout = [
+    matchLine(".env", 1, "PUBLIC_SENTINEL=ok\n", 0),
+    contextLine(".env", 2, "SECRET_API_KEY=super-secret-token\n"),
+    matchLine("packages/app/.env.local", 1, "PUBLIC_SENTINEL=ok\n", 0),
+    contextLine("packages/app/.env.local", 2, "SECRET_API_KEY=super-secret-token\n"),
+    matchLine("src/env-example.ts", 1, "PUBLIC_SENTINEL=ok\n", 0),
+    contextLine("src/env-example.ts", 2, "not secret context\n"),
+  ].join("\n");
+  const result = parseRipgrepJson(stdout);
+  assert.equal(result.totalMatches, 1, ".env-family matches are dropped");
+  assert.equal(result.files.length, 1);
+  assert.equal(result.files[0].path, "src/env-example.ts");
+  assert.equal(result.files[0].matches[0].after, "not secret context");
+}
+
 console.log("project-search.test.ts: all assertions passed");

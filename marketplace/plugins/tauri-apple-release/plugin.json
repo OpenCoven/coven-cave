@@ -1,0 +1,39 @@
+{
+  "name": "tauri-apple-release",
+  "version": "0.1.0",
+  "description": "Standardize, debug, and execute Tauri iOS TestFlight and macOS Apple release pipelines: App Store Connect upload auth, Distribution signing, provisioning profiles, and notarization.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "tauri",
+    "apple",
+    "testflight",
+    "notarization",
+    "signing"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/tauri-apple-release",
+  "x-coven": {
+    "displayName": "Tauri Apple Release",
+    "category": "Developer Tools",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/tauri-apple-release"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

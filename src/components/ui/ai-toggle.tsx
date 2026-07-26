@@ -26,7 +26,7 @@ export function AiToggle({ mode, onChange, title }: AiToggleProps) {
       aria-label={`AI mode: ${mode}`}
     >
       <Icon name={mode === "agent" ? "ph:sparkle" : "ph:hand"} width={12} />
-      <span style={{ textTransform: "capitalize" }}>{mode}</span>
+      <span className="[text-transform:capitalize]!">{mode}</span>
     </button>
   );
 }

@@ -1,0 +1,24 @@
+{
+  "name": "cloudflare-docs",
+  "version": "0.1.0",
+  "description": "Search and read Cloudflare's developer documentation directly from the agent.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Cloudflare Docs",
+    "shortDescription": "Search and read Cloudflare's developer documentation directly from the agent.",
+    "longDescription": "Look up Cloudflare docs to ground answers in current product behavior.",
+    "developerName": "OpenCoven",
+    "category": "Cloud & Infrastructure",
+    "capabilities": [
+      "cloudflare",
+      "docs",
+      "workers",
+      "edge",
+      "reference"
+    ],
+    "defaultPrompt": "Help me use Cloudflare Docs safely."
+  }
+}

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   appendEvents,
   nextAfterSeq,
+  isDebugSessionLive,
   shouldPollEvents,
   formatEventPayload,
   buildDebugBundle,
@@ -38,11 +39,79 @@ assert.deepEqual(
 assert.equal(nextAfterSeq([]), 0);
 assert.equal(nextAfterSeq([ev(1), ev(7)]), 7);
 
-// shouldPollEvents: only while running and visible
-assert.equal(shouldPollEvents({ status: "running", visible: true }), true);
-assert.equal(shouldPollEvents({ status: "running", visible: false }), false);
-assert.equal(shouldPollEvents({ status: "completed", visible: true }), false);
-assert.equal(shouldPollEvents({ status: null, visible: true }), false);
+// isDebugSessionLive: any witness saying "live" wins — sessions-list status,
+// client transport phase, or the server run buffer (done: false)
+{
+  const idle = { status: null, clientPhase: "idle", serverStatus: null };
+  const buffer = (done) => ({
+    done,
+    oldestRetainedSeq: 1,
+    latestSeq: 5,
+    retainedEventCount: 5,
+    retainedBytes: 100,
+    hasEvictedEvents: false,
+    liveTails: 0,
+  });
+  assert.equal(isDebugSessionLive(idle), false, "no witness => not live");
+  assert.equal(isDebugSessionLive({ ...idle, status: "running" }), true, "sessions-list row wins");
+  for (const clientPhase of ["connecting", "streaming", "resuming"]) {
+    assert.equal(
+      isDebugSessionLive({ ...idle, clientPhase }),
+      true,
+      `client ${clientPhase} phase wins without a sessions-list row (poll lag / missing row)`,
+    );
+  }
+  for (const clientPhase of ["settled", "degraded", "stopped"]) {
+    assert.equal(
+      isDebugSessionLive({ ...idle, clientPhase }),
+      false,
+      `terminal client ${clientPhase} phase is not a live witness`,
+    );
+  }
+  assert.equal(
+    isDebugSessionLive({ ...idle, serverStatus: buffer(false) }),
+    true,
+    "an undone server run buffer self-detects runs this pane didn't start",
+  );
+  assert.equal(
+    isDebugSessionLive({ ...idle, serverStatus: buffer(true) }),
+    false,
+    "a finished buffer is not a live witness",
+  );
+  assert.equal(
+    isDebugSessionLive({ status: "completed", clientPhase: "settled", serverStatus: buffer(true) }),
+    false,
+    "all witnesses terminal => not live",
+  );
+}
+
+// shouldPollEvents: only while live and visible
+assert.equal(shouldPollEvents({ live: true, visible: true }), true);
+assert.equal(shouldPollEvents({ live: true, visible: false }), false);
+assert.equal(shouldPollEvents({ live: false, visible: true }), false);
+
+// filterEvents: case-insensitive over kind + raw payload; reference-stable when blank
+import { filterEvents } from "./session-debug.ts";
+{
+  const tail = [
+    { ...ev(1, "tool_use"), payload_json: '{"name":"grep"}' },
+    { ...ev(2, "output"), payload_json: '{"data":"Error: ENOENT /tmp/x"}' },
+    { ...ev(3, "lifecycle"), payload_json: "{}" },
+  ];
+  assert.equal(filterEvents(tail, ""), tail, "blank query returns the same array (memo bail)");
+  assert.equal(filterEvents(tail, "   "), tail, "whitespace-only query is blank");
+  assert.deepEqual(
+    filterEvents(tail, "TOOL").map((e) => e.seq),
+    [1],
+    "kind matches are case-insensitive",
+  );
+  assert.deepEqual(
+    filterEvents(tail, "enoent").map((e) => e.seq),
+    [2],
+    "payload text matches without parsing the JSON",
+  );
+  assert.deepEqual(filterEvents(tail, "nope").map((e) => e.seq), [], "no match → empty");
+}
 
 // formatEventPayload: pretty-prints JSON, passes through non-JSON untouched
 assert.equal(formatEventPayload('{"a":1}'), '{\n  "a": 1\n}');
@@ -58,27 +127,191 @@ assert.ok(
 );
 
 // buildDebugBundle: shape + familiar narrowed to {id, harness, model}
+const env = { appVersion: "0.1.2-test", exportedAt: "2026-07-17T12:00:00Z" };
+const streamHealth = {
+  client: {
+    phase: "streaming",
+    runId: "run-1",
+    cursor: 7,
+    resumeAttempts: 1,
+    gapDetected: false,
+    needsTranscriptResync: false,
+    lastEventAt: "2026-07-17T11:59:59Z",
+    lastErrorAt: null,
+    lastError: null,
+  },
+  server: {
+    done: false,
+    oldestRetainedSeq: 2,
+    latestSeq: 7,
+    retainedEventCount: 6,
+    retainedBytes: 4096,
+    hasEvictedEvents: true,
+    liveTails: 1,
+  },
+  serverStatusError: null,
+};
 const bundle = buildDebugBundle({
   session: { id: "s1", status: "completed" },
   familiar: { id: "f1", display_name: "Nova", role: "dev", harness: "claude", model: "opus" },
   turns: [{ id: "t1", role: "user", text: "hi", createdAt: "2026-06-10T00:00:00Z" }],
   events: [ev(1)],
+  streamHealth,
+  environment: env,
 });
 assert.equal(bundle.session.id, "s1");
 assert.deepEqual(bundle.familiar, { id: "f1", harness: "claude", model: "opus" });
 assert.equal(bundle.turns.length, 1);
 assert.equal(bundle.events.length, 1);
-assert.equal(buildDebugBundle({ session: null, familiar: null, turns: [], events: [] }).familiar, null);
+assert.equal(bundle.streamHealth, streamHealth, "bundle carries the exact stream-health snapshot reference");
+assert.deepEqual(bundle.environment, env, "bundle carries the repro environment block verbatim");
+assert.equal(
+  buildDebugBundle({ session: null, familiar: null, turns: [], events: [], streamHealth, environment: env })
+    .familiar,
+  null,
+);
 const turnsRef = [{ id: "t1", role: "user", text: "hi", createdAt: "2026-06-10T00:00:00Z" }];
 assert.equal(
-  buildDebugBundle({ session: null, familiar: null, turns: turnsRef, events: [] }).turns,
+  buildDebugBundle({
+    session: null,
+    familiar: null,
+    turns: turnsRef,
+    events: [],
+    streamHealth,
+    environment: env,
+  }).turns,
   turnsRef,
-  "turns are passed by reference, not cloned",
+  "attachment-free turns are passed by reference, not cloned",
+);
+
+// exportDebugTurn: preview-only attachment fields are stripped from exports
+import { exportDebugTurn } from "./session-debug.ts";
+
+const plainTurn = { id: "t1", role: "user", text: "hi", createdAt: "2026-06-10T00:00:00Z" };
+assert.equal(exportDebugTurn(plainTurn), plainTurn, "no attachments → same reference (no clone)");
+
+const attachedTurn = {
+  ...plainTurn,
+  attachments: [
+    { name: "shot.png", mimeType: "image/png", size: 12, dataUrl: "data:image/png;base64,AAAA" },
+  ],
+};
+const exported = exportDebugTurn(attachedTurn);
+assert.deepEqual(
+  exported.attachments,
+  [{ name: "shot.png", size: 12 }],
+  "preview-only fields (dataUrl, mimeType) are stripped; metadata survives",
+);
+assert.deepEqual(
+  attachedTurn.attachments[0].dataUrl,
+  "data:image/png;base64,AAAA",
+  "the live turn is not mutated by exporting",
+);
+const strippedBundle = buildDebugBundle({
+  session: null,
+  familiar: null,
+  turns: [attachedTurn],
+  events: [],
+  streamHealth,
+  environment: env,
+});
+assert.equal(
+  strippedBundle.turns[0].attachments[0].dataUrl,
+  undefined,
+  "bundle turns go through exportDebugTurn — no base64 previews in Copy all / Download",
 );
 
 // debugFileName
 assert.equal(debugFileName("s1"), "debug-s1.json");
 assert.equal(debugFileName(null), "debug-session.json");
+
+// ── per-session debug events cache: reopen restores the drained tail (A2) ───
+import {
+  clearDebugEventsCacheForTest,
+  readDebugEventsCache,
+  writeDebugEventsCache,
+} from "./session-debug.ts";
+
+{
+  clearDebugEventsCacheForTest();
+  assert.equal(readDebugEventsCache("s1"), null, "cold cache → null (pane starts from seq 0)");
+
+  const tail = { events: [ev(1), ev(2)], cursor: 2, tailCapped: false };
+  writeDebugEventsCache("s1", tail);
+  assert.equal(readDebugEventsCache("s1"), tail, "hit returns the exact stored snapshot");
+
+  const capped = { events: [ev(1), ev(2), ev(3)], cursor: 3, tailCapped: true };
+  writeDebugEventsCache("s1", capped);
+  assert.equal(readDebugEventsCache("s1"), capped, "rewrite replaces the snapshot for the key");
+  assert.equal(
+    readDebugEventsCache("s1").tailCapped,
+    true,
+    "tailCapped survives the round-trip so the Load-more notice reappears on reopen",
+  );
+
+  // LRU bound: writing beyond the cap evicts the least recently touched key.
+  clearDebugEventsCacheForTest();
+  for (let i = 0; i < 8; i++) {
+    writeDebugEventsCache(`s${i}`, { events: [ev(1)], cursor: 1, tailCapped: false });
+  }
+  readDebugEventsCache("s0"); // touch s0 so s1 is now the oldest
+  writeDebugEventsCache("s8", { events: [ev(1)], cursor: 1, tailCapped: false });
+  assert.notEqual(readDebugEventsCache("s0"), null, "recently read key survives eviction");
+  assert.equal(readDebugEventsCache("s1"), null, "least recently touched key is evicted at the cap");
+  assert.notEqual(readDebugEventsCache("s8"), null, "newest write is retained");
+
+  clearDebugEventsCacheForTest();
+  assert.equal(readDebugEventsCache("s8"), null, "test hook clears the cache");
+}
+
+// ── turnActualModel / turnMetaSummary: served-model + usage meta (S2) ───────
+import { turnActualModel, turnMetaSummary } from "./session-debug.ts";
+
+const baseTurn = { id: "t1", role: "assistant", text: "hi", createdAt: "2026-07-17T00:00:00Z" };
+
+assert.equal(turnActualModel(baseTurn), null, "no responseMetadata → no served model");
+assert.equal(
+  turnActualModel({ ...baseTurn, responseMetadata: { model: "opus-4" } }),
+  "opus-4",
+  "requested model reported when no confirmation exists",
+);
+assert.equal(
+  turnActualModel({ ...baseTurn, responseMetadata: { model: "opus-4", confirmedModel: "sonnet-4.6" } }),
+  "sonnet-4.6",
+  "confirmedModel (post-application truth) wins over the requested model",
+);
+assert.equal(
+  turnActualModel({ ...baseTurn, responseMetadata: { model: "  " } }),
+  null,
+  "whitespace-only model is not a model",
+);
+
+assert.equal(turnMetaSummary(baseTurn), null, "no model, no usage → null (row shows nothing)");
+assert.equal(
+  turnMetaSummary({ ...baseTurn, responseMetadata: { model: "opus-4" } }),
+  "opus-4",
+  "model-only meta",
+);
+assert.equal(
+  turnMetaSummary({ ...baseTurn, usage: { inputTokens: 1000, outputTokens: 234 }, costUsd: 0.08 }),
+  "1.2k tok · $0.08",
+  "usage-only meta reuses the shared usageSummary formatter",
+);
+assert.equal(
+  turnMetaSummary({
+    ...baseTurn,
+    responseMetadata: { confirmedModel: "sonnet-4.6" },
+    usage: { inputTokens: 1000, outputTokens: 234 },
+    costUsd: 0.08,
+  }),
+  "sonnet-4.6 · 1.2k tok · $0.08",
+  "combined meta: served model first, then tokens/cost",
+);
+assert.equal(
+  turnMetaSummary({ ...baseTurn, usage: { inputTokens: 0, outputTokens: 0 } }),
+  null,
+  "zero-token usage with no cost reports nothing, not '0 tok'",
+);
 
 console.log("session-debug core assertions passed");
 
@@ -227,8 +460,8 @@ assert.match(
 );
 assert.match(
   chatViewSource,
-  /\{!turn\.pending && turn\.tools\?\.length \? <ToolGroup tools=\{turn\.tools\} \/> : null\}/,
-  "every settled turn with tools renders the designated trailing ToolGroup section",
+  /!turn\.pending && turn\.tools\?\.length[\s\S]*otherTools\.length \? <ToolGroup tools=\{otherTools\} durationMs=\{turn\.durationMs\} \/>/,
+  "settled turns render edit-tool cards inline and collapse other tool activity into the work-line ToolGroup (chat-revamp 1b: above the answer, stamped with the turn duration)",
 );
 assert.match(
   chatViewSource,

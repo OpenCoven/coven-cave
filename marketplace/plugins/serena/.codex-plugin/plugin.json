@@ -1,0 +1,24 @@
+{
+  "name": "serena",
+  "version": "0.1.0",
+  "description": "Semantic code retrieval and editing toolkit purpose-built for coding agents and harnesses.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Serena",
+    "shortDescription": "Semantic code retrieval and editing toolkit purpose-built for coding agents and harnesses.",
+    "longDescription": "Use Serena for symbol-level code navigation and edits instead of dumping whole files into context.",
+    "developerName": "OpenCoven",
+    "category": "Agents & Harnesses",
+    "capabilities": [
+      "coding-agent",
+      "semantic-code",
+      "lsp",
+      "refactor",
+      "harness"
+    ],
+    "defaultPrompt": "Help me use Serena safely."
+  }
+}

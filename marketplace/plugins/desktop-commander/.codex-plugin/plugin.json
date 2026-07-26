@@ -1,0 +1,24 @@
+{
+  "name": "desktop-commander",
+  "version": "0.1.0",
+  "description": "Terminal commands, file operations, and process management on the local machine over MCP.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Desktop Commander",
+    "shortDescription": "Terminal commands, file operations, and process management on the local machine over MCP.",
+    "longDescription": "Use Desktop Commander for local shell and file work with explicit, narrow intent.",
+    "developerName": "OpenCoven",
+    "category": "Developer Tools",
+    "capabilities": [
+      "terminal",
+      "shell",
+      "files",
+      "process",
+      "local"
+    ],
+    "defaultPrompt": "Help me use Desktop Commander safely."
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "higgsfield-generate",
+  "version": "0.1.0",
+  "description": "Generate images and videos via Higgsfield AI across 30+ models plus Marketing Studio branded ads, wrapping the higgsfield CLI for text/image/video-to-media jobs.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Higgsfield Generate",
+    "shortDescription": "Generate images and videos via Higgsfield AI across 30+ models plus Marketing Studio branded ads, wrapping the higgsfield CLI for text/image/video-to-media jobs.",
+    "longDescription": "Pick a sensible default model, pass media inputs straight to flags, and submit with --wait so the CLI blocks and prints the result URL in one shot.",
+    "developerName": "OpenCoven",
+    "category": "Media & Creative",
+    "capabilities": [
+      "image-generation",
+      "video-generation",
+      "higgsfield",
+      "marketing-studio",
+      "ai-media",
+      "text-to-image"
+    ],
+    "defaultPrompt": "Help me use Higgsfield Generate safely."
+  }
+}

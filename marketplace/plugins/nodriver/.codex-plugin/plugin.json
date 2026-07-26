@@ -1,0 +1,25 @@
+{
+  "name": "nodriver",
+  "version": "0.1.0",
+  "description": "Write async Python browser automation scripts using nodriver (undetected CDP) for scraping, logins, form-filling, screenshots, and bypassing anti-bot systems without Selenium.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "nodriver",
+    "shortDescription": "Write async Python browser automation scripts using nodriver (undetected CDP) for scraping, logins, form-filling, screenshots, and bypassing anti-bot systems without Selenium.",
+    "longDescription": "Drive an undetected Chrome instance via nodriver's async CDP API to navigate, find elements, manage cookies, and handle anti-bot checks.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "nodriver",
+      "browser",
+      "automation",
+      "scraping",
+      "cdp",
+      "undetected"
+    ],
+    "defaultPrompt": "Help me use nodriver safely."
+  }
+}

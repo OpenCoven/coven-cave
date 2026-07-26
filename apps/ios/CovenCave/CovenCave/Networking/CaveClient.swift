@@ -1,7 +1,19 @@
 import Foundation
 
+/// The minimal client surface the connection bootstrap needs — lets tests
+/// drive the single-flight refresh and concurrent bootstrap without a live
+/// desktop. `CaveClient` conforms with its existing methods unchanged.
+protocol CaveBootstrapClient: Sendable {
+    func ping() async -> Bool
+    func familiars() async throws -> [Familiar]
+    func fetchTheme() async throws -> ThemeSnapshot
+    func operatorProfile() async throws -> OperatorProfile
+}
+
 /// REST + streaming client for the Coven Cave desktop API.
-/// No auth header — trust is the Tailscale tailnet boundary.
+/// When the desktop is token-gated (COVEN_CAVE_ACCESS_TOKEN), every request —
+/// REST and SSE alike — carries the paired credential as a Bearer header. This
+/// is required for the Tailscale app path because it exposes the full API.
 struct CaveClient {
     var connection: CaveConnection
 
@@ -12,23 +24,113 @@ struct CaveClient {
         }
     }
 
-    private var session: URLSession {
+    /// One shared session for REST calls. A `URLSession` is never deallocated
+    /// once created, so building one per request (the old computed property)
+    /// leaked sessions and re-negotiated TLS on every call; a single shared
+    /// instance keeps connections pooled and warm.
+    private static let restSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 20
-        config.waitsForConnectivity = false
+        config.timeoutIntervalForResource = 300
+        config.waitsForConnectivity = true
         return URLSession(configuration: config)
+    }()
+
+    /// Dedicated session for chat SSE streams. `timeoutIntervalForResource`
+    /// bounds the WHOLE transfer (the per-request `timeoutInterval` only
+    /// resets the idle clock), so sharing the REST session's cap silently
+    /// killed any reply that streamed longer than it — long agentic turns
+    /// died mid-stream at the old 60s cap. Streams get a day-long resource
+    /// window; the idle timeout still catches a genuinely dead connection.
+    private static let streamSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 600
+        config.timeoutIntervalForResource = 24 * 3600
+        config.waitsForConnectivity = true
+        return URLSession(configuration: config)
+    }()
+
+    private var session: URLSession { Self.restSession }
+
+    func data(for req: URLRequest) async throws -> (Data, URLResponse) {
+        let method = (req.httpMethod ?? "GET").uppercased()
+        let retryDelays: [Duration] = ["GET", "HEAD"].contains(method)
+            ? [.milliseconds(350), .seconds(1)]
+            : []
+        for attempt in 0...retryDelays.count {
+            do {
+                return try await session.data(for: req)
+            } catch {
+                guard attempt < retryDelays.count, Self.isTransient(error) else { throw error }
+                try await Task.sleep(for: retryDelays[attempt])
+            }
+        }
+        throw CaveError.transport("Network request failed.")
+    }
+
+    private static func isTransient(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost,
+             .dnsLookupFailed, .notConnectedToInternet, .internationalRoamingOff,
+             .callIsActive, .dataNotAllowed:
+            return true
+        default:
+            return false
+        }
     }
 
     private func request(_ path: String, method: String = "GET", body: Data? = nil) throws -> URLRequest {
-        let url = try base.appendingPathComponent(path)
+        // `appendingPathComponent` percent-encodes "?" to "%3F", which turns a
+        // path like "api/journal?date=…" into a bogus path segment the server
+        // 404s on. Split the query off, append only the path, then reattach the
+        // query as a real query string. Callers already percent-encode values
+        // (urlQuery), so set `percentEncodedQuery` to avoid double-encoding.
+        let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let pathPart = String(parts[0])
+        let queryPart = parts.count > 1 ? String(parts[1]) : nil
+        var url = try base.appendingPathComponent(pathPart)
+        if let queryPart, !queryPart.isEmpty {
+            guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+                throw CaveError.notConfigured
+            }
+            comps.percentEncodedQuery = queryPart
+            guard let composed = comps.url else { throw CaveError.notConfigured }
+            url = composed
+        }
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token = CaveConnection.accessToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         if let body {
             req.httpBody = body
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         return req
+    }
+
+    // MARK: - Pairing
+
+    private struct TokenRefreshResponse: Decodable {
+        var ok: Bool
+        var token: String?
+        var expiresAt: Double?
+    }
+
+    /// Rolling renewal: exchange the current credential for a fresh 30-day
+    /// token. Returns the new token, or nil when the desktop has no refresh
+    /// endpoint (503) or the credential can't refresh — callers treat nil as "keep
+    /// using what we have".
+    func refreshAccessToken() async -> String? {
+        guard let req = try? request("api/mobile-token/refresh", method: "POST") else { return nil }
+        guard let (data, resp) = try? await data(for: req),
+              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode(TokenRefreshResponse.self, from: data),
+              decoded.ok, let token = decoded.token, !token.isEmpty
+        else { return nil }
+        return token
     }
 
     // MARK: - Health
@@ -37,8 +139,8 @@ struct CaveClient {
     func ping() async -> Bool {
         guard let req = try? request("api/familiars") else { return false }
         do {
-            let (_, resp) = try await session.data(for: req)
-            return (resp as? HTTPURLResponse).map { (200..<500).contains($0.statusCode) } ?? false
+            let (_, resp) = try await data(for: req)
+            return (resp as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
         } catch {
             return false
         }
@@ -48,7 +150,7 @@ struct CaveClient {
 
     func familiars() async throws -> [Familiar] {
         let req = try request("api/familiars")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(FamiliarsResponse.self, from: data).familiars
@@ -63,11 +165,86 @@ struct CaveClient {
         return URL(string: path, relativeTo: base)?.absoluteURL
     }
 
+    // MARK: - Marketplace
+
+    func marketplacePlugins() async throws -> [MarketplacePlugin] {
+        let req = try request("api/marketplace")
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(MarketplaceResponse.self, from: data).plugins
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    func installMarketplacePlugin(id: String) async throws {
+        try await mutateMarketplacePlugin(path: "api/marketplace/install", id: id)
+    }
+
+    func uninstallMarketplacePlugin(id: String) async throws {
+        try await mutateMarketplacePlugin(path: "api/marketplace/uninstall", id: id)
+    }
+
+    private func mutateMarketplacePlugin(path: String, id: String) async throws {
+        struct Body: Encodable { let id: String }
+        struct Response: Decodable { let ok: Bool; let error: String? }
+        let payload = try JSONEncoder().encode(Body(id: id))
+        let req = try request(path, method: "POST", body: payload)
+        let (data, resp) = try await data(for: req)
+        let decoded = try? JSONDecoder().decode(Response.self, from: data)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw CaveError.transport(decoded?.error ?? "The plugin change was not accepted.")
+        }
+        guard decoded?.ok == true else {
+            throw CaveError.transport(decoded?.error ?? "The plugin change was not accepted.")
+        }
+    }
+
+    // MARK: - Operator profile
+
+    /// The human operator's profile (name + avatar metadata) from
+    /// `GET /api/profile`. Read-only on iOS; editing lives in the desktop's
+    /// Settings → Profile.
+    func operatorProfile() async throws -> OperatorProfile {
+        let req = try request("api/profile")
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(OperatorProfileResponse.self, from: data).operatorProfile
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    /// URL for the operator's server avatar image (`GET /api/profile/avatar`),
+    /// cache-busted by `updatedAt` so a new desktop upload invalidates the
+    /// image. A plain image load can't set an `Authorization` header, so when
+    /// the desktop enforces a mobile access token it is attached as a
+    /// `coven_access_token` query param — the same credential the server
+    /// accepts from the query string (server.ts). `nil` when unconfigured.
+    func operatorAvatarURL(updatedAt: String?) -> URL? {
+        guard let base = connection.baseURL,
+              var comps = URLComponents(
+                url: base.appendingPathComponent("api/profile/avatar"),
+                resolvingAgainstBaseURL: false)
+        else { return nil }
+        var items: [URLQueryItem] = []
+        if let updatedAt, !updatedAt.isEmpty {
+            items.append(URLQueryItem(name: "v", value: updatedAt))
+        }
+        if let token = CaveConnection.accessToken {
+            items.append(URLQueryItem(name: "coven_access_token", value: token))
+        }
+        if !items.isEmpty { comps.queryItems = items }
+        return comps.url
+    }
+
     // MARK: - Sessions
 
     func sessions(includeArchived: Bool = false) async throws -> [SessionRow] {
         let req = try request("api/sessions/list\(includeArchived ? "?includeArchived=1" : "")")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(SessionsResponse.self, from: data).sessions
@@ -80,7 +257,7 @@ struct CaveClient {
 
     func tasks() async throws -> [BoardCard] {
         let req = try request("api/board")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(BoardResponse.self, from: data).cards
@@ -112,8 +289,64 @@ struct CaveClient {
     @discardableResult
     func updateTaskSession(cardId: String, sessionId: String?) async throws -> BoardCard {
         let payload = try JSONEncoder().encode(SessionPatch(sessionId: sessionId))
+        return try await patchTask(cardId: cardId, payload: payload)
+    }
+
+    /// Fields a task edit can carry. Only the non-nil ones are sent, since the
+    /// board patch updates a field only when its key is present in the body.
+    struct TaskFieldsPatch: Encodable {
+        var status: CardStatus?
+        var priority: CardPriority?
+        var steps: [CardStep]?
+        var notes: String?
+        enum CodingKeys: String, CodingKey { case status, priority, steps, notes }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            if let status { try c.encode(status.rawValue, forKey: .status) }
+            if let priority { try c.encode(priority.rawValue, forKey: .priority) }
+            if let steps { try c.encode(steps, forKey: .steps) }
+            if let notes { try c.encode(notes, forKey: .notes) }
+        }
+    }
+
+    /// PATCH a task's editable fields (status, priority, steps, notes). Returns
+    /// the server's updated card. Pass `notes: ""` to clear the notes.
+    @discardableResult
+    func updateTask(cardId: String, status: CardStatus? = nil, priority: CardPriority? = nil,
+                    steps: [CardStep]? = nil, notes: String? = nil) async throws -> BoardCard {
+        let payload = try JSONEncoder().encode(
+            TaskFieldsPatch(status: status, priority: priority, steps: steps, notes: notes))
+        return try await patchTask(cardId: cardId, payload: payload)
+    }
+
+    /// PATCH a task's title.
+    @discardableResult
+    func updateTaskTitle(cardId: String, title: String) async throws -> BoardCard {
+        let payload = try JSONSerialization.data(withJSONObject: ["title": title])
+        return try await patchTask(cardId: cardId, payload: payload)
+    }
+
+    /// PATCH a task's start/due dates (date-only "yyyy-MM-dd" strings). Both keys
+    /// are always sent so passing nil clears that date.
+    @discardableResult
+    func updateTaskDates(cardId: String, startDate: String?, endDate: String?) async throws -> BoardCard {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "startDate": startDate.map { $0 as Any } ?? NSNull(),
+            "endDate": endDate.map { $0 as Any } ?? NSNull(),
+        ])
+        return try await patchTask(cardId: cardId, payload: payload)
+    }
+
+    /// `DELETE /api/board/{id}` — remove a task.
+    func deleteTask(cardId: String) async throws {
+        let req = try request("api/board/\(cardId)", method: "DELETE")
+        let (_, resp) = try await data(for: req)
+        try Self.check(resp)
+    }
+
+    private func patchTask(cardId: String, payload: Data) async throws -> BoardCard {
         let req = try request("api/board/\(cardId)", method: "PATCH", body: payload)
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         let decoded = try JSONDecoder().decode(BoardPatchResponse.self, from: data)
         if let card = decoded.card { return card }
@@ -122,10 +355,46 @@ struct CaveClient {
 
     func conversation(sessionId: String) async throws -> Conversation? {
         let req = try request("api/chat/conversation/\(sessionId)")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(ConversationResponse.self, from: data).conversation
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    // MARK: - Model control
+
+    private func urlQuery(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
+    }
+
+    /// The model this chat resolves to, plus the pickable menu for its runtime.
+    func chatModelState(familiarId: String, sessionId: String?) async throws -> ChatModelStateResponse {
+        var path = "api/chat/model-state?familiarId=\(urlQuery(familiarId))"
+        if let sessionId, !sessionId.isEmpty { path += "&sessionId=\(urlQuery(sessionId))" }
+        let req = try request(path)
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(ChatModelStateResponse.self, from: data)
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    /// Set the model for this chat (`session` scope) or the familiar (`familiar-default`).
+    @discardableResult
+    func setChatModel(familiarId: String, sessionId: String?, model: String, scope: String) async throws -> ChatModelStateResponse {
+        var body: [String: String] = ["familiarId": familiarId, "model": model, "scope": scope]
+        if let sessionId, !sessionId.isEmpty { body["sessionId"] = sessionId }
+        let payload = try JSONEncoder().encode(body)
+        let req = try request("api/chat/model-state", method: "PATCH", body: payload)
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(ChatModelStateResponse.self, from: data)
         } catch {
             throw CaveError.decoding(String(describing: error))
         }
@@ -146,10 +415,31 @@ struct CaveClient {
         var prompt: String
         var sessionId: String?
         var attachments: [ChatAttachment]?
+        /// Per-send client token (cave-h40l): the server keys its resumable
+        /// run buffer under this, so a NEW chat (no sessionId yet) is still
+        /// re-attachable after a transport drop.
+        var runId: String? = nil
+        /// Real per-send controls consumed by `/api/chat/send`.
+        var reasoningEffort: ChatThinkingEffort = .high
+        var responseSpeed: ChatResponseSpeed = .fast
+        /// A model selected before the first server session exists travels with
+        /// the send instead of mutating the familiar's global default.
+        var modelOverride: String? = nil
+        var modelOverrideScope: ChatModelOverrideScope? = nil
     }
 
-    /// Open the SSE stream for a chat send. Yields decoded `StreamEvent`s.
-    func sendStream(_ body: SendBody) -> AsyncThrowingStream<StreamEvent, Error> {
+    /// One decoded SSE frame: the event plus the server's `id:` (the run
+    /// buffer seq). Consumers update their resume cursor AFTER applying the
+    /// event, so a drop can never skip or double a frame on resume.
+    struct StreamFrame {
+        let event: StreamEvent
+        /// Resume cursor as of this frame — nil until the server sends ids.
+        let id: Int?
+    }
+
+    /// Open the SSE stream for a chat send. Yields decoded frames — keep the
+    /// last applied frame's `id` to resume mid-turn via `resumeStream`.
+    func sendStream(_ body: SendBody) -> AsyncThrowingStream<StreamFrame, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -158,36 +448,59 @@ struct CaveClient {
                     req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     req.timeoutInterval = 600
 
-                    let (bytes, resp) = try await session.bytes(for: req)
+                    let (bytes, resp) = try await Self.streamSession.bytes(for: req)
                     try Self.check(resp)
 
-                    var dataLines: [String] = []
+                    var parser = SSELineParser()
                     for try await line in bytes.lines {
-                        let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if trimmedLine.isEmpty {
-                            // Blank line = event boundary. Flush accumulated data.
-                            if !dataLines.isEmpty {
-                                let joined = dataLines.joined(separator: "\n")
-                                if let event = StreamEvent.decode(joined) {
-                                    continuation.yield(event)
-                                }
-                                dataLines.removeAll()
-                            }
-                            continue
+                        if let event = parser.consume(line) {
+                            continuation.yield(StreamFrame(event: event, id: parser.lastEventId))
                         }
-                        if trimmedLine.hasPrefix("data:") {
-                            let payload = String(trimmedLine.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                            if let event = StreamEvent.decode(payload) {
-                                continuation.yield(event)
-                                continue
-                            }
-                            dataLines.append(payload)
-                        }
-                        // ignore other SSE fields (event:, id:, :comment)
                     }
                     // Flush any trailing event with no terminating blank line.
-                    if !dataLines.isEmpty, let event = StreamEvent.decode(dataLines.joined(separator: "\n")) {
-                        continuation.yield(event)
+                    if let event = parser.flush() {
+                        continuation.yield(StreamFrame(event: event, id: parser.lastEventId))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// Signals `GET /api/chat/stream` had no buffered run for the key — the
+    /// turn finished long ago or the server restarted. Callers fall back to
+    /// the post-hoc transcript resync.
+    struct NoResumableRun: Error {}
+
+    /// Re-attach to a LIVE chat run after a transport drop (cave-h40l).
+    /// Replays buffered events past `cursor` (the last applied frame id),
+    /// then tails the run live; the server disarms its detach-cap kill while
+    /// a tail is attached. Throws `NoResumableRun` on 404.
+    func resumeStream(runId: String, cursor: Int) -> AsyncThrowingStream<StreamFrame, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var req = try request("api/chat/stream?runId=\(urlQuery(runId))&cursor=\(cursor)")
+                    req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    req.timeoutInterval = 600
+
+                    let (bytes, resp) = try await Self.streamSession.bytes(for: req)
+                    if (resp as? HTTPURLResponse)?.statusCode == 404 {
+                        throw NoResumableRun()
+                    }
+                    try Self.check(resp)
+
+                    var parser = SSELineParser()
+                    for try await line in bytes.lines {
+                        if let event = parser.consume(line) {
+                            continuation.yield(StreamFrame(event: event, id: parser.lastEventId))
+                        }
+                    }
+                    if let event = parser.flush() {
+                        continuation.yield(StreamFrame(event: event, id: parser.lastEventId))
                     }
                     continuation.finish()
                 } catch {
@@ -211,7 +524,7 @@ struct CaveClient {
     /// `/daemon` — desktop daemon health (`GET /api/daemon/status`).
     func daemonStatus() async throws -> DaemonStatus {
         let req = try request("api/daemon/status")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         return try JSONDecoder().decode(DaemonStatus.self, from: data)
     }
@@ -239,117 +552,103 @@ struct CaveClient {
         let payload = try JSONEncoder().encode(["command": command])
         var req = try request("api/coven/exec", method: "POST", body: payload)
         req.timeoutInterval = 30
-        let (data, _) = try await session.data(for: req)
+        let (data, _) = try await data(for: req)
         return try JSONDecoder().decode(CovenExecResult.self, from: data)
     }
 
-    struct RouteLinkBody: Encodable {
-        struct Source: Encodable {
-            var kind = "slash"
-            var originSessionId: String?
-        }
-        var url: String
-        var familiar: String
-        var source: Source
-        var tags: [String]?
-        var listHint: String?
-    }
+    // MARK: - Theme
 
-    struct RouteLinkResult: Decodable {
-        var ok: Bool
-        var deduped: Bool?
-        var error: String?
-        var item: Item?
-        var classify: Classify?
-        struct Item: Decodable { var title: String? }
-        struct Classify: Decodable { var rule: String? }
-    }
-
-    /// `/save` — route a URL into the library (`POST /api/library/route-link`).
-    func routeLink(_ body: RouteLinkBody) async throws -> RouteLinkResult {
-        let payload = try JSONEncoder().encode(body)
-        let req = try request("api/library/route-link", method: "POST", body: payload)
-        let (data, resp) = try await session.data(for: req)
-        try Self.check(resp)
-        return try JSONDecoder().decode(RouteLinkResult.self, from: data)
-    }
-
-    // MARK: - Reading list (library)
-
-    private struct ReadingListResponse: Decodable { var items: [ReadingItem] }
-    private struct ReadingItemResponse: Decodable { var ok: Bool; var item: ReadingItem? }
-
-    /// `GET /api/library/reading` — the reading list, newest first (server-sorted).
-    func reading() async throws -> [ReadingItem] {
-        let req = try request("api/library/reading")
-        let (data, resp) = try await session.data(for: req)
+    /// `GET /api/theme` — the desktop's active theme + resolved colour tokens, so
+    /// the app chrome can match the desktop appearance. Same connection as
+    /// `api/familiars` etc.
+    func fetchTheme() async throws -> ThemeSnapshot {
+        let req = try request("api/theme")
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
-            return try JSONDecoder().decode(ReadingListResponse.self, from: data).items
+            return try JSONDecoder().decode(ThemeResponse.self, from: data).theme
         } catch {
             throw CaveError.decoding(String(describing: error))
         }
     }
 
-    private struct ReadingPatch: Encodable {
-        var id: String
-        var status: String
-        var progress: Double?   // synthesised Encodable omits this when nil
-    }
-
-    /// `PATCH /api/library/reading` — change an item's status (and optionally
-    /// progress). Returns the server's updated item.
+    /// `PUT /api/theme` — override the desktop's active theme from the phone.
+    /// Sends only `{themeId, mode}`: the phone can't resolve the desktop's
+    /// `oklch` / `color-mix` tokens to hex, so it names the preset and lets the
+    /// desktop adopt it and re-publish the resolved tokens — which the app then
+    /// picks up on its next `fetchTheme` poll for full-fidelity chrome. Returns
+    /// the saved snapshot.
     @discardableResult
-    func updateReading(id: String, status: ReadingStatus, progress: Double? = nil) async throws -> ReadingItem? {
-        let payload = try JSONEncoder().encode(ReadingPatch(id: id, status: status.rawValue, progress: progress))
-        let req = try request("api/library/reading", method: "PATCH", body: payload)
-        let (data, resp) = try await session.data(for: req)
+    func publishTheme(themeId: String, mode: String) async throws -> ThemeSnapshot {
+        struct Body: Encodable { let themeId: String; let mode: String }
+        let payload = try JSONEncoder().encode(Body(themeId: themeId, mode: mode))
+        let req = try request("api/theme", method: "PUT", body: payload)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
-        return try? JSONDecoder().decode(ReadingItemResponse.self, from: data).item
+        do {
+            return try JSONDecoder().decode(ThemeResponse.self, from: data).theme
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
     }
 
-    /// `DELETE /api/library/reading?id=…` — remove an item.
-    func deleteReading(id: String) async throws {
-        let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
-        let req = try request("api/library/reading?id=\(escaped)", method: "DELETE")
-        let (_, resp) = try await session.data(for: req)
+    // MARK: - Reminders / inbox
+
+    /// `GET /api/inbox` — the reminders/inbox feed, filtered to reminders.
+    func reminders() async throws -> [Reminder] {
+        let req = try request("api/inbox")
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(InboxResponse.self, from: data).items
+                .filter { $0.kind == "reminder" }
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+
+    /// `POST /api/inbox` — create a reminder (used by the New Reminder App Intent).
+    func createReminder(title: String, fireAt: Date) async throws {
+        let iso = ISO8601DateFormatter().string(from: fireAt)
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "kind": "reminder", "title": title, "fireAt": iso, "source": "user",
+        ])
+        let req = try request("api/inbox", method: "POST", body: payload)
+        let (_, resp) = try await data(for: req)
         try Self.check(resp)
     }
+
+    /// `DELETE /api/inbox/{id}` — remove a reminder.
+    func deleteReminder(id: String) async throws {
+        let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let req = try request("api/inbox/\(escaped)", method: "DELETE")
+        let (_, resp) = try await data(for: req)
+        try Self.check(resp)
+    }
+
+    struct ReminderActionResponse: Decodable { var ok: Bool; var error: String?; var item: Reminder? }
+
+    /// `POST /api/inbox/{id}/{action}` — done / dismiss / snooze. Returns the
+    /// server's updated item when present.
+    @discardableResult
+    private func inboxAction(_ id: String, _ action: String, body: Data? = nil) async throws -> Reminder? {
+        let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let req = try request("api/inbox/\(escaped)/\(action)", method: "POST", body: body)
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        return try? JSONDecoder().decode(ReminderActionResponse.self, from: data).item
+    }
+
+    @discardableResult func markReminderDone(id: String) async throws -> Reminder? { try await inboxAction(id, "done") }
+    @discardableResult func dismissReminder(id: String) async throws -> Reminder? { try await inboxAction(id, "dismiss") }
+    @discardableResult func snoozeReminder(id: String, minutes: Int) async throws -> Reminder? {
+        try await inboxAction(id, "snooze", body: try JSONEncoder().encode(["minutes": minutes]))
+    }
+
 
     // MARK: - Canvas (generated artifacts)
 
-    private struct CanvasResponse: Decodable { var ok: Bool?; var artifacts: [CanvasArtifact]? }
-    private struct UpsertBody: Encodable { var artifact: CanvasArtifact }
-
-    /// `GET /api/canvas` — the saved canvas artifacts.
-    func canvasArtifacts() async throws -> [CanvasArtifact] {
-        let req = try request("api/canvas")
-        let (data, resp) = try await session.data(for: req)
-        try Self.check(resp)
-        do {
-            return try JSONDecoder().decode(CanvasResponse.self, from: data).artifacts ?? []
-        } catch {
-            throw CaveError.decoding(String(describing: error))
-        }
-    }
-
-    /// `POST /api/canvas` — upsert an artifact; returns the full updated list.
-    @discardableResult
-    func saveCanvasArtifact(_ artifact: CanvasArtifact) async throws -> [CanvasArtifact] {
-        let payload = try JSONEncoder().encode(UpsertBody(artifact: artifact))
-        let req = try request("api/canvas", method: "POST", body: payload)
-        let (data, resp) = try await session.data(for: req)
-        try Self.check(resp)
-        return (try? JSONDecoder().decode(CanvasResponse.self, from: data).artifacts) ?? []
-    }
-
-    /// `DELETE /api/canvas` — remove an artifact by id.
-    func deleteCanvasArtifact(id: String) async throws {
-        let payload = try JSONEncoder().encode(["id": id])
-        let req = try request("api/canvas", method: "DELETE", body: payload)
-        let (_, resp) = try await session.data(for: req)
-        try Self.check(resp)
-    }
 
     // MARK: - Helpers
 
@@ -360,3 +659,5 @@ struct CaveClient {
         }
     }
 }
+
+extension CaveClient: CaveBootstrapClient {}

@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CovenWiki manifest.json",
+  "description": "Render contract for a generated CovenWiki (Route B). A wiki resolves as <wikis-dir>/<slug>/manifest.json (default ~/.coven/wikis); manifest.slug must equal the wiki directory name. The Phase 2 coven-cave route reads only this file for the shell (title, summary, nav tree, page list, badges) and loads pages/<slug>.md + pages/<slug>.meta.json lazily per page. The Phase 3 regen hook (scripts/covenwiki-regen.ts) compares source.fingerprint against a live stat digest. Emitted by scripts/covenwiki-generate.ts; changes must stay additive or bump schemaVersion.",
+  "type": "object",
+  "required": ["schemaVersion", "slug", "title", "source", "generation", "navigation", "pages", "counts"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "generator": { "type": "string" },
+    "generatorVersion": { "type": "string" },
+    "slug": { "type": "string", "description": "== [repo] route segment == wiki dir name" },
+    "title": { "type": "string" },
+    "summary": { "type": "string" },
+    "index": { "type": "string", "description": "relative path to human index, e.g. index.md" },
+    "source": {
+      "type": "object",
+      "required": ["kind", "fingerprint"],
+      "properties": {
+        "kind": { "enum": ["local", "github"], "description": "github is Phase 5" },
+        "repoRoot": { "type": ["string", "null"] },
+        "revision": { "type": ["string", "null"], "description": "git sha when known; null in v0 local" },
+        "fingerprint": {
+          "type": ["string", "null"],
+          "description": "16-hex stat digest over the sorted source inventory (path+size+mtime); Phase 3 staleness key. Reference implementation: computeSourceFingerprint in src/lib/covenwiki-regen.ts over statInventory in scripts/covenwiki-fs.ts — shared by generator and regen hook."
+        },
+        "fileCount": { "type": ["integer", "null"] }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "required": ["generatedAt", "backend", "status"],
+      "properties": {
+        "generatedAt": { "type": "string", "description": "ISO-8601 UTC, e.g. 2026-07-03T12:09:52Z" },
+        "backend": { "enum": ["stub", "cli"] },
+        "scale": { "type": ["string", "null"], "enum": ["compact", "small", "medium", "large", null] },
+        "status": { "enum": ["stub", "complete", "partial"], "description": "stub => draft/placeholder prose" },
+        "models": {
+          "type": "object",
+          "properties": { "outline": { "type": "string" }, "page": { "type": "string" } }
+        },
+        "wordTarget": {
+          "type": ["array", "null"],
+          "items": { "type": "integer" },
+          "description": "[lo, hi] prose target for this scale; use to badge under-target pages"
+        }
+      }
+    },
+    "navigation": { "$ref": "#/definitions/navNodeList" },
+    "concepts": { "type": "array" },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slug", "title", "path", "meta", "priority"],
+        "properties": {
+          "slug": { "type": "string" },
+          "title": { "type": "string" },
+          "purpose": { "type": "string" },
+          "priority": { "enum": ["required", "recommended", "optional"] },
+          "path": { "type": "string", "description": "relative, e.g. pages/overview.md" },
+          "meta": { "type": "string", "description": "relative, e.g. pages/overview.meta.json; holds citations/coverageNotes/relatedPages so page loads stay lazy" },
+          "sourcePaths": { "type": "array", "items": { "type": "string" } },
+          "wordCount": { "type": "integer", "description": "prose-only words; compare to generation.wordTarget" }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "pages": { "type": "integer" },
+        "required": { "type": "integer" },
+        "recommended": { "type": "integer" },
+        "optional": { "type": "integer" }
+      }
+    }
+  },
+  "definitions": {
+    "navNodeList": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "slug", "children"],
+        "properties": {
+          "title": { "type": "string" },
+          "slug": { "type": ["string", "null"], "description": "null => folder/group header (non-navigable), needs >= 2 children; string => leaf page link" },
+          "children": { "$ref": "#/definitions/navNodeList" }
+        }
+      }
+    }
+  }
+}

@@ -2,22 +2,33 @@ import SwiftUI
 
 /// Circular familiar avatar: remote image if available, else coloured initials.
 struct AvatarView: View {
+    @Environment(\.chrome) private var chrome
     let familiar: Familiar?
     var url: URL?
     var size: CGFloat = 44
+    /// Show a presence dot (online/idle/busy/offline) in the bottom-trailing
+    /// corner when the familiar reports a status. Opt-in so it only appears on
+    /// "who's around" surfaces (chat list, header), not every avatar.
+    var showStatus: Bool = false
+    /// Name used for the initials fallback when `familiar` is nil — e.g. the
+    /// human operator, who has no `Familiar` record. Ignored when `familiar`
+    /// is set.
+    var fallbackName: String? = nil
 
     var body: some View {
         let color = Theme.color(for: familiar)
         ZStack {
             Circle().fill(color.opacity(0.22))
             if let url {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        initials(color)
-                    }
+                CachedImageView(
+                    source: .remoteURL(url),
+                    targetSize: CGSize(width: size, height: size)
+                ) { image in
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    initials(color)
                 }
             } else {
                 initials(color)
@@ -26,10 +37,23 @@ struct AvatarView: View {
         .frame(width: size, height: size)
         .clipShape(Circle())
         .overlay(Circle().strokeBorder(color.opacity(0.35), lineWidth: 1))
+        .overlay(alignment: .bottomTrailing) { statusDot }
+    }
+
+    @ViewBuilder private var statusDot: some View {
+        if showStatus, let dot = Presence.color(for: familiar?.status) {
+            Circle()
+                .fill(dot)
+                // Ring in the surrounding background colour so the dot reads as
+                // separate from the avatar on the themed floor.
+                .overlay(Circle().strokeBorder(chrome.bgBase, lineWidth: max(1.5, size * 0.06)))
+                .frame(width: size * 0.32, height: size * 0.32)
+                .offset(x: size * 0.04, y: size * 0.04)
+        }
     }
 
     private func initials(_ color: Color) -> some View {
-        Text(Theme.initials(familiar?.displayName ?? "?"))
+        Text(Theme.initials(familiar?.displayName ?? fallbackName ?? "?"))
             .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
             .foregroundStyle(color)
     }
@@ -37,6 +61,7 @@ struct AvatarView: View {
 
 /// Overlapping cluster of avatars for group threads.
 struct AvatarClusterView: View {
+    @Environment(\.chrome) private var chrome
     let familiars: [Familiar]
     var size: CGFloat = 44
 
@@ -45,7 +70,7 @@ struct AvatarClusterView: View {
         ZStack {
             ForEach(Array(shown.enumerated()), id: \.element.id) { index, fam in
                 AvatarView(familiar: fam, size: size * 0.62)
-                    .overlay(Circle().strokeBorder(Color(.systemBackground), lineWidth: 1.5))
+                    .overlay(Circle().strokeBorder(chrome.bgBase, lineWidth: 1.5))
                     .offset(offset(index: index, count: shown.count))
             }
         }

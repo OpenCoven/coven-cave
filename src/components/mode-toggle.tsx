@@ -7,17 +7,19 @@
  * Caller is responsible for persistence + applying `data-mode` on <html>.
  */
 
-import { Icon, type IconName } from "@/lib/icon";
-import type { Mode } from "@/lib/theme-storage";
+import { Button } from "@/components/ui/button";
+import type { IconName } from "@/lib/icon";
+import type { ModePref } from "@/lib/theme-storage";
 
 interface ModeToggleProps {
-  value: Mode;
-  onChange: (next: Mode) => void;
+  value: ModePref;
+  onChange: (next: ModePref) => void;
 }
 
-const OPTIONS: { id: Mode; label: string; icon: IconName }[] = [
+const OPTIONS: { id: ModePref; label: string; icon: IconName }[] = [
   { id: "light", label: "Light", icon: "ph:sun" },
   { id: "dark", label: "Dark", icon: "ph:moon" },
+  { id: "system", label: "System", icon: "ph:circle-half-tilt" },
 ];
 
 export function ModeToggle({ value, onChange }: ModeToggleProps) {
@@ -25,25 +27,26 @@ export function ModeToggle({ value, onChange }: ModeToggleProps) {
     <div
       role="group"
       aria-label="Color mode"
-      className="inline-flex items-center gap-0.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5"
+      className="inline-flex items-center gap-0.5 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5"
     >
       {OPTIONS.map((opt) => {
         const active = value === opt.id;
         return (
-          <button
+          <Button
             key={opt.id}
-            type="button"
+            variant="ghost"
+            size="sm"
             aria-pressed={active}
             onClick={() => onChange(opt.id)}
-            className={`mode-toggle__option inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors ${
+            leadingIcon={opt.icon}
+            className={`mode-toggle__option gap-1.5 px-3 text-[length:var(--text-sm)] font-medium transition-colors ${
               active
                 ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             }`}
           >
-            <Icon name={opt.icon} width={14} />
             {opt.label}
-          </button>
+          </Button>
         );
       })}
     </div>

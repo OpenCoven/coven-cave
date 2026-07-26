@@ -31,6 +31,34 @@ export const SIDECAR_AUTH_BRIDGE = `
     window.history.replaceState(window.history.state, "", nextUrl);
   }
 
+  const NativeWebSocket = window.WebSocket;
+  window.WebSocket = function CovenCaveWebSocket(url, protocols) {
+    try {
+      const nextUrl = new URL(url.toString(), window.location.href);
+      // Compare hosts, not origins: the real PTY URL is ws(s)://<host>/api/pty-ws
+      // (see src/lib/pty-ws-bridge.ts), so its origin is ws(s)://… while
+      // window.location.origin is http(s)://… — an origin equality check would
+      // never match and the token would never be injected.
+      const sameHost = nextUrl.host === window.location.host;
+      const supportedProtocol =
+        nextUrl.protocol === "ws:" || nextUrl.protocol === "wss:" ||
+        nextUrl.protocol === "http:" || nextUrl.protocol === "https:";
+      if (sameHost && supportedProtocol && nextUrl.pathname === "/api/pty-ws") {
+        nextUrl.searchParams.set(tokenParam, token);
+        return new NativeWebSocket(nextUrl, protocols);
+      }
+    } catch {
+      // Fall back to the native WebSocket path below.
+    }
+    return new NativeWebSocket(url, protocols);
+  };
+  window.WebSocket.prototype = NativeWebSocket.prototype;
+  // Preserve the readyState statics (WebSocket.OPEN etc.): runtime checks like
+  // pty-ws-bridge's readyState === WebSocket.OPEN read them off the constructor.
+  for (const key of ["CONNECTING", "OPEN", "CLOSING", "CLOSED"]) {
+    window.WebSocket[key] = NativeWebSocket[key];
+  }
+
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input, init = {}) => {
     try {
@@ -69,6 +97,24 @@ export const SIDECAR_AUTH_BRIDGE = `
 })();
 `;
 
+function sidecarAuthRequired(): boolean {
+  return (
+    Boolean(process.env.COVEN_CAVE_AUTH_TOKEN) ||
+    process.env.COVEN_CAVE_BUNDLE === "1"
+  );
+}
+
 export function SidecarAuthBridge() {
-  return <script dangerouslySetInnerHTML={{ __html: SIDECAR_AUTH_BRIDGE }} />;
+  const authRequirementScript = `window.__COVEN_CAVE_SIDECAR_AUTH_REQUIRED__ = ${JSON.stringify(
+    sidecarAuthRequired(),
+  )};`;
+  // This must patch fetch from the initial document, before hydration and app code.
+  return (
+    <script
+      id="sidecar-auth-bridge"
+      dangerouslySetInnerHTML={{
+        __html: `${authRequirementScript}\n${SIDECAR_AUTH_BRIDGE}`,
+      }}
+    />
+  );
 }

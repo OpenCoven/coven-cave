@@ -9,6 +9,9 @@ import {
   useImperativeHandle,
 } from "react";
 import { Icon } from "@/lib/icon";
+import { SkeletonRows } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { nextVisibleIndex, parentIndexByDepth } from "@/lib/tree-keynav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -110,7 +113,10 @@ function fileIcon(name: string): FileIcon {
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 
-async function fetchChildren(dirPath: string, familiarId = ""): Promise<TreeEntry[]> {
+/** Fetch a directory's immediate children. Returns the (sorted) entries, or
+ *  null when the request fails — so callers can tell a load error apart from a
+ *  genuinely empty directory and offer a retry. */
+async function fetchChildren(dirPath: string, familiarId = ""): Promise<TreeEntry[] | null> {
   try {
     const params = new URLSearchParams({ root: dirPath, depth: "1", familiarId });
     const res = await fetch(
@@ -122,9 +128,9 @@ async function fetchChildren(dirPath: string, familiarId = ""): Promise<TreeEntr
       entries?: TreeEntry[];
     };
     if (json.ok && Array.isArray(json.entries)) return sortEntries(json.entries);
-    return [];
+    return null;
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -150,10 +156,15 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
     const [root, setRoot] = useState<string>("");
     const [entries, setEntries] = useState<TreeEntry[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [moveError, setMoveError] = useState<string | null>(null);
     const [refetchSignal, setRefetchSignal] = useState<RefetchSignal>({ dirs: new Set(), nonce: 0 });
     const [rootDrop, setRootDrop] = useState(false);
     const mountedRef = useRef(true);
+    // The (root, familiar) we last fetched. A re-fetch of the SAME key is a
+    // refresh: keep the existing tree mounted (TreeRows are keyed by path, so
+    // their expansion state survives) instead of blanking to skeletons.
+    const loadedKeyRef = useRef<string | null>(null);
 
     // Drag-and-drop move is enabled in browse mode (not folder-picker mode).
     const dndEnabled = onDirSelect == null;
@@ -164,17 +175,30 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
     }, []);
 
     const load = useCallback(async (explicitRoot?: string) => {
-      setLoading(true);
       const r = explicitRoot ?? rootProp;
+      const key = `${r} ${familiarId}`;
+      // Skeleton only on the first load or a project/familiar switch — a refresh
+      // of the same tree refetches in place so expanded folders don't collapse.
+      const isRefresh = loadedKeyRef.current === key;
+      if (!isRefresh) setLoading(true);
       if (r) {
         const tree = await fetchChildren(r, familiarId);
         if (!mountedRef.current) return;
         setRoot(r);
-        setEntries(tree);
+        if (tree === null) {
+          setLoadError(true);
+          if (!isRefresh) setEntries([]); // keep a stale tree on a failed refresh
+        } else {
+          setLoadError(false);
+          setEntries(tree);
+        }
+        loadedKeyRef.current = key;
         setLoading(false);
         return;
       }
       setEntries([]);
+      setLoadError(false);
+      loadedKeyRef.current = key;
       setLoading(false);
     }, [rootProp, familiarId]);
 
@@ -217,17 +241,34 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
 
     if (loading) {
       return (
-        <div className="flex items-center gap-1.5 py-3 pl-1 text-[11px] text-[var(--text-muted)]">
-          <Icon name="ph:arrow-clockwise" width={11} className="animate-spin shrink-0" />
-          Loading…
+        <div className="py-2 pl-1">
+          <SkeletonRows count={6} />
         </div>
+      );
+    }
+    if (entries.length === 0 && loadError) {
+      return (
+        <EmptyState
+          compact
+          icon="ph:warning-circle"
+          headline="Couldn't load files"
+          subtitle="The file tree failed to load."
+          actions={
+            <Button size="sm" variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+              Retry
+            </Button>
+          }
+        />
       );
     }
     if (entries.length === 0) {
       return (
-        <p className="py-3 pl-1 text-[11px] text-[var(--text-muted)]">
-          No files found.
-        </p>
+        <EmptyState
+          compact
+          icon="ph:folder-open"
+          headline="No files found"
+          subtitle="This project has no files, or they're all filtered out."
+        />
       );
     }
 
@@ -236,7 +277,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
         {moveError ? (
           <div
             role="alert"
-            className="mx-1 mb-1 flex items-center gap-1.5 rounded-md bg-[var(--color-danger,#b91c1c)]/12 px-2 py-1 text-[11px] text-[var(--color-danger,#b91c1c)]"
+            className="mx-1 mb-1 flex items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--color-danger)]/12 px-2 py-1 text-[length:var(--text-xs)] text-[var(--color-danger)]"
           >
             <Icon name="ph:warning" width={12} className="shrink-0" />
             <span className="truncate">{moveError}</span>
@@ -244,7 +285,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
         ) : null}
         <div
           role="tree"
-          className={`select-none rounded-md text-[12px] leading-none ${
+          className={`select-none rounded-[var(--radius-control)] text-[length:var(--text-sm)] leading-none ${
             rootDrop ? "outline-dashed outline-1 outline-[var(--accent-presence)]" : ""
           }`}
           tabIndex={0}
@@ -299,11 +340,13 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
             if (src && root) void handleMove(src, root);
           } : undefined}
         >
-          {entries.map((e) => (
+          {entries.map((e, i) => (
             <TreeRow
               key={e.path}
               entry={e}
               depth={0}
+              index={i}
+              siblingCount={entries.length}
               root={root}
               selectedPath={selectedPath}
               familiarId={familiarId}
@@ -326,6 +369,8 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
 function TreeRow({
   entry,
   depth,
+  index,
+  siblingCount,
   root,
   selectedPath,
   familiarId,
@@ -338,6 +383,10 @@ function TreeRow({
 }: {
   entry: TreeEntry;
   depth: number;
+  /** 0-based position among siblings — for aria-posinset. */
+  index: number;
+  /** Number of siblings at this level — for aria-setsize. */
+  siblingCount: number;
   root: string;
   selectedPath?: string | null;
   familiarId?: string;
@@ -356,6 +405,9 @@ function TreeRow({
     entry.children ? sortEntries(entry.children) : null,
   );
   const [fetching, setFetching] = useState(false);
+  // Set when a child fetch fails, so an expanded folder shows a retry instead
+  // of looking empty.
+  const [childError, setChildError] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [dropTarget, setDropTarget] = useState(false);
 
@@ -363,8 +415,17 @@ function TreeRow({
   const isHidden = HIDDEN_BY_DEFAULT.has(entry.name);
   const added = entry.isDir && (selectedDirs?.has(entry.path) ?? false);
 
-  // Indent: 8px base + 16px per depth level; chevron takes 16px, icon takes 16px
+  // Indent: 4px base + 16px per depth level; the chevron and icon take 16px each.
   const indentPx = 4 + depth * 16;
+
+  const loadChildren = useCallback(async () => {
+    setFetching(true);
+    const fetched = await fetchChildren(entry.path, familiarId);
+    setFetching(false);
+    if (fetched === null) { setChildError(true); return; }
+    setChildError(false);
+    setChildren(fetched);
+  }, [entry.path, familiarId]);
 
   const handleClick = useCallback(async () => {
     if (!entry.isDir) {
@@ -373,13 +434,8 @@ function TreeRow({
     }
     const next = !expanded;
     setExpanded(next);
-    if (next && children === null) {
-      setFetching(true);
-      const fetched = await fetchChildren(entry.path, familiarId);
-      setChildren(fetched);
-      setFetching(false);
-    }
-  }, [entry, expanded, children, onFileClick, familiarId]);
+    if (next && children === null) await loadChildren();
+  }, [entry.isDir, entry.path, expanded, children, onFileClick, loadChildren]);
 
   // Reveal-to-selection: when the selected (open) file lives somewhere under
   // this folder, auto-expand so the highlighted row becomes visible. This is
@@ -398,8 +454,10 @@ function TreeRow({
     setFetching(true);
     void fetchChildren(entry.path, familiarId).then((fetched) => {
       if (!alive) return;
-      setChildren(fetched);
       setFetching(false);
+      if (fetched === null) { setChildError(true); return; }
+      setChildError(false);
+      setChildren(fetched);
     });
     return () => { alive = false; };
   }, [selectedPath, entry.isDir, entry.path, children, familiarId]);
@@ -411,8 +469,10 @@ function TreeRow({
     setFetching(true);
     void fetchChildren(entry.path, familiarId).then((fetched) => {
       if (cancelled) return;
-      setChildren(fetched);
       setFetching(false);
+      if (fetched === null) { setChildError(true); return; }
+      setChildError(false);
+      setChildren(fetched);
     });
     return () => { cancelled = true; };
     // Re-run only when a new move signal arrives.
@@ -420,10 +480,18 @@ function TreeRow({
   }, [refetchSignal]);
 
   return (
-    <div role="treeitem" aria-expanded={entry.isDir ? expanded : undefined}>
+    <div
+      role="treeitem"
+      aria-expanded={entry.isDir ? expanded : undefined}
+      aria-selected={isSelected || undefined}
+      aria-level={depth + 1}
+      aria-posinset={index + 1}
+      aria-setsize={siblingCount}
+    >
       {/* Row */}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="xs"
         tabIndex={-1}
         data-tree-row=""
         data-tree-depth={depth}
@@ -458,16 +526,16 @@ function TreeRow({
           const src = e.dataTransfer.getData(DRAG_MIME) || e.dataTransfer.getData("text/plain");
           if (src && src !== entry.path) onMove(src, entry.path);
         } : undefined}
-        className={`focus-ring-inset group flex w-full items-center gap-0 rounded-[5px] py-[3px] text-left transition-colors ${
+        className={`focus-ring-inset group flex w-full items-center gap-0 rounded-[var(--radius-control)] py-[3px] text-left transition-colors ${
           isSelected
-            ? "bg-[var(--accent-presence)] text-white"
+            ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
             : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
         } ${dropTarget ? "outline-dashed outline-1 outline-[var(--accent-presence)] bg-[var(--accent-presence)]/10" : ""} ${dragging ? "opacity-40" : ""} ${isHidden ? "opacity-40" : ""}`}
         style={{ paddingLeft: indentPx, paddingRight: 8, marginLeft: 4, marginRight: 4, width: "calc(100% - 8px)" }}
       >
         {/* Disclosure triangle — rotates via CSS */}
         <span
-          className="flex h-[18px] w-[16px] shrink-0 items-center justify-center"
+          className="flex h-[18px] w-[var(--space-4)] shrink-0 items-center justify-center"
           aria-hidden="true"
         >
           {entry.isDir && (
@@ -494,8 +562,8 @@ function TreeRow({
 
         {/* Icon */}
         <span
-          className={`flex h-[18px] w-[16px] shrink-0 items-center justify-center ${
-            isSelected ? "text-white/80" : "text-[var(--text-muted)]"
+          className={`flex h-[18px] w-[var(--space-4)] shrink-0 items-center justify-center ${
+            isSelected ? "text-[var(--accent-presence-foreground)] opacity-80" : "text-[var(--text-muted)]"
           }`}
           aria-hidden="true"
         >
@@ -511,16 +579,12 @@ function TreeRow({
         </span>
 
         {/* Name */}
-        <span
-          className={`min-w-0 flex-1 truncate pl-1 ${
-            entry.isDir ? "" : ""
-          } ${isSelected ? "text-white" : ""}`}
-        >
+        <span className={`min-w-0 flex-1 truncate pl-1 ${isSelected ? "text-[var(--accent-presence-foreground)]" : ""}`}>
           {entry.name}
         </span>
 
         {/* Folder-picker affordance — pick this directory without leaving the
-            tree. Uses role=button (not <button>) to avoid nesting inside the row
+            tree. Uses role=button instead of another nested button inside the row
             button; stops propagation so it doesn't also toggle expand. */}
         {entry.isDir && onDirSelect ? (
           <span
@@ -535,24 +599,26 @@ function TreeRow({
                 onDirSelect(entry.path);
               }
             }}
-            className={`ml-auto mr-1 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium transition-opacity ${
+            className={`ml-auto mr-1 shrink-0 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[length:var(--text-2xs)] font-medium transition-opacity ${
               added
                 ? "text-[var(--accent-presence)]"
-                : "text-[var(--text-muted)] opacity-0 hover:bg-[var(--bg-base)] group-hover:opacity-100"
+                : "touch-always-visible text-[var(--text-muted)] opacity-0 hover:bg-[var(--bg-base)] group-hover:opacity-100 group-focus-within:opacity-100"
             }`}
           >
             {added ? "Added" : "Use"}
           </span>
         ) : null}
-      </button>
+      </Button>
 
       {/* Children — no extra wrapper div, rows flow inline */}
       {entry.isDir && expanded && children && children.length > 0 &&
-        children.map((c) => (
+        children.map((c, i) => (
           <TreeRow
             key={c.path}
             entry={c}
             depth={depth + 1}
+            index={i}
+            siblingCount={children.length}
             root={root}
             selectedPath={selectedPath}
             familiarId={familiarId}
@@ -565,6 +631,20 @@ function TreeRow({
           />
         ))
       }
+
+      {/* A child fetch failed — offer a retry instead of looking empty. */}
+      {entry.isDir && expanded && childError && (
+        <Button
+          variant="ghost"
+          size="xs"
+          leadingIcon="ph:arrow-clockwise"
+          onClick={(e) => { e.stopPropagation(); void loadChildren(); }}
+          className="py-[3px] text-[length:var(--text-xs)] text-[var(--color-danger)] hover:underline"
+          style={{ paddingLeft: 4 + (depth + 1) * 16 + 16 }}
+        >
+          Couldn&apos;t load — retry
+        </Button>
+      )}
     </div>
   );
 }

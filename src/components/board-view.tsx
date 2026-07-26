@@ -1,89 +1,243 @@
 "use client";
 
 import "@/styles/board.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { DEMO_BOARD_CARDS } from "@/lib/demo-seed";
-import { DEMO_MODE_EVENT, isDemoModeEnabled } from "@/lib/demo-mode";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
+import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
+import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
-import { type Card, type CardStatus } from "@/lib/cave-board-types";
+import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
+import { arrayContentEqual } from "@/lib/array-content-equal";
+import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
+import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { useMultiSelect } from "@/lib/use-multi-select";
+import { SelectionToolbar } from "@/components/ui/selection-toolbar";
+import { UndoToast } from "@/components/ui/undo-toast";
+import { useUndoDelete } from "@/lib/use-undo-delete";
+import { familiarInScope } from "@/lib/familiar-multiselect";
 import { BoardKanban } from "@/components/board-kanban";
 import { BoardGantt } from "@/components/board-gantt";
 import { BoardTable, type GroupBy } from "@/components/board-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { Tabs } from "@/components/ui/tabs";
+import { StandardSelect } from "@/components/ui/select";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { BoardCardStack } from "@/components/board-card-stack";
+import { BoardTokenSearch } from "@/components/board-token-search";
+import { BoardFilterMenu } from "@/components/board-filter-menu";
 import { BoardInspector } from "@/components/board-inspector";
+import { TaskWorkCockpit } from "@/components/task-work-cockpit";
 import { useIsMobile } from "@/lib/use-viewport";
 import { chatProjectById } from "@/lib/chat-projects";
 import { useProjects } from "@/lib/use-projects";
+import { HarnessFixActions } from "@/components/harness-fix-actions";
+import { parseHarnessFailure } from "@/lib/harness-failure";
+import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { BoardKanbanSkeleton } from "@/components/board-view-display";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
-type ViewMode = "kanban" | "table" | "gantt";
-
-function loadPref<T extends string>(key: string, fallback: T, valid: T[]): T {
-  if (typeof window === "undefined") return fallback;
-  const v = localStorage.getItem(key) as T | null;
-  return v !== null && valid.includes(v) ? v : fallback;
-}
 
 type Props = {
   familiars: Familiar[];
+  /** Work-queue merge (cave-oa1z): the queue rides the Tasks page as a tab.
+   *  The slot keeps BoardView ignorant of the queue's data plumbing (the
+   *  Schedules calendar-slot pattern), and `initialTab` lets the legacy
+   *  familiar-work-queue mode deep-link straight onto the tab. */
+  queueSlot?: ReactNode;
+  initialTab?: "tasks" | "queue";
   sessions: SessionRow[];
   activeFamiliarId: string | null;
+  /** Multiselect scope (empty = All). When ≥2 are selected the board filters to
+   *  the union; `activeFamiliarId` stays the single-primary for chrome. */
+  scopeFamiliarIds?: ReadonlySet<string>;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
+  daemonRunning: boolean;
+  onSessionsChanged: () => void;
+  onSessionsDeleted: (sessionIds: readonly string[]) => void;
+  onSlashFromChat?: (command: string, args: string) => boolean;
+  onOpenOnboarding?: () => void;
   onOpenUrl?: (url: string) => void;
 };
 
-export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSession, onOpenUrl }: Props) {
+export function BoardView({
+  familiars,
+  sessions,
+  activeFamiliarId,
+  scopeFamiliarIds,
+  onJumpToSession,
+  daemonRunning,
+  onSessionsChanged,
+  onSessionsDeleted,
+  onSlashFromChat,
+  onOpenOnboarding,
+  onOpenUrl,
+  queueSlot,
+  initialTab,
+}: Props) {
   const isMobile = useIsMobile();
+  const [storedActiveTab, setStoredActiveTab] = useSurfacePreference(surfacePreferenceSpecs.board.activeTab);
+  // Alias navigation is an explicit, one-visit destination. It wins over the
+  // saved tab without overwriting it; a subsequent user click resumes saving.
+  const [deepLinkTab, setDeepLinkTab] = useState<"tasks" | "queue" | null>(
+    initialTab === "queue" && queueSlot ? "queue" : null,
+  );
+  const activeTab = deepLinkTab ?? storedActiveTab;
+  const setActiveTab = useCallback((tab: "tasks" | "queue") => {
+    setDeepLinkTab(null);
+    setStoredActiveTab(tab);
+  }, [setStoredActiveTab]);
   const [cards, setCards] = useState<Card[]>([]);
+  // Deferred + undoable task deletion: cards hide immediately, the DELETEs fire
+  // only after the undo window, and Undo restores them (mirrors chat/projects).
+  const { pending: deletePending, scheduleDelete: scheduleCardDelete, undo: undoCardDelete, commit: commitCardDelete } = useUndoDelete<Card[]>();
   const [error, setError] = useState<string | null>(null);
+  // Quiet-poll degradation: ≥2 consecutive background refresh failures while
+  // last-good cards stay rendered (cave-x6k5). Non-blocking strip, not `error`.
+  const [stale, setStale] = useState(false);
+  const quietFailStreakRef = useRef(0);
   // Distinguish "still loading" from "loaded and empty" so the empty-state
   // CTA doesn't flash on every open before the first GET resolves.
   const [hasLoaded, setHasLoaded] = useState(false);
   // Transient feedback when an optimistic mutation fails and is reverted.
   const [actionError, setActionError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table", "gantt"]));
-  const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar", "project"]));
+  const [viewMode, setViewMode] = useSurfacePreference(surfacePreferenceSpecs.board.viewMode);
+  const [groupBy, setGroupBy] = useSurfacePreference(surfacePreferenceSpecs.board.groupBy);
+  // Per-status WIP limits (loaded after mount to avoid SSR localStorage access).
+  const [wipLimits, setWipLimits] = useState<WipLimits>({});
+  useEffect(() => { setWipLimits(readWipLimits()); }, []);
+  const setWipLimitFor = useCallback((status: CardStatus, limit: number | null) => {
+    setWipLimits((prev) => {
+      const next = setWipLimit(prev, status, limit);
+      writeWipLimits(next);
+      return next;
+    });
+  }, []);
+  // Gantt has its own grouping: by project (one bar per task) or by task (one
+  // bar per checklist step). Separate from the kanban/table groupBy above.
+  const [ganttGroup, setGanttGroup] = useSurfacePreference(surfacePreferenceSpecs.board.ganttGroup);
+  const [tableSortKey, setTableSortKey] = useSurfacePreference(surfacePreferenceSpecs.board.tableSortKey);
+  const [tableSortDir, setTableSortDir] = useSurfacePreference(surfacePreferenceSpecs.board.tableSortDir);
   const [searchQuery, setSearchQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  // Toolbar filter dropdown (redesign): status/project narrowing on top of the
+  // search + grouping. Modelled as EXCLUDED sets so newly-appearing statuses or
+  // projects default to visible; "Select all" clears the exclusions.
+  const [excludedStatus, setExcludedStatus] = useState<ReadonlySet<CardStatus>>(new Set());
+  const [excludedProject, setExcludedProject] = useState<ReadonlySet<string>>(new Set());
+  // Inline confirm for the toolbar's Delete-selected button (redesign).
+  const [toolbarDeleteConfirm, setToolbarDeleteConfirm] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [workCardId, setWorkCardId] = useState<string | null>(null);
+  const [pendingBridgeStart, setPendingBridgeStart] = useState<{
+    cardId: string;
+    sessionId: string;
+    initialPrompt: string;
+  } | null>(null);
+  const pendingWorkFocusIdRef = useRef<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
   const [chatLinkingId, setChatLinkingId] = useState<string | null>(null);
   const [chatLinkError, setChatLinkError] = useState<string | null>(null);
+  // The card whose chat start failed — the harness fix row needs it to know
+  // which familiar to rebind and which task chat to re-run.
+  const [chatLinkErrorCardId, setChatLinkErrorCardId] = useState<string | null>(null);
   const { projects } = useProjects();
+
+  // The OpenClaw bridge reserves its conversation id before the first streamed
+  // turn. Once the normal chat path persists that local conversation, stop
+  // treating this as a first-launch handoff so reopening the task never sends
+  // the task prompt twice.
+  useEffect(() => {
+    if (pendingBridgeStart && sessions.some((session) => session.id === pendingBridgeStart.sessionId)) {
+      setPendingBridgeStart(null);
+    }
+  }, [pendingBridgeStart, sessions]);
 
   // "Clear done" flow: an inline confirm gate, and a transient undo banner that
   // snapshots the cleared cards so they can be re-created via POST.
   const [clearConfirm, setClearConfirm] = useState(false);
   const [clearedBanner, setClearedBanner] = useState<{ snapshot: Card[] } | null>(null);
+  // Transient undo for a gantt drag/drop reschedule — snapshots the prior dates
+  // so an accidental drag is one click to revert.
+  // Async CRUD results are announced for AT: the visual toasts/banners are
+  // aria-silent, and only kanban's drag flow had an announcer before.
+  const { announce } = useAnnouncer();
+  const [rescheduleUndo, setRescheduleUndo] = useState<{ id: string; title: string; prev: Partial<Card> } | null>(null);
+  // Card that just moved to Done — drives the kanban's one-shot reward flare,
+  // then clears so a re-render can't replay it.
+  const [rewardCardId, setRewardCardId] = useState<string | null>(null);
+  const rewardClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (rewardClearRef.current) clearTimeout(rewardClearRef.current);
+  }, []);
 
-  const load = useCallback(async () => {
+  // `quiet` is for background polls: a transient poll failure must not blank
+  // the board (setCards([])) or flash an error — leave the last-good cards in
+  // place. Explicit loads (mount, focus, reload event) stay loud. Callers that
+  // pass an event (e.g. useRefreshOnFocus) read as not-quiet, which is correct.
+  //
+  // Sequence guard: load() fires from five overlapping sources (mount, focus
+  // refresh, the reload event, the 15s poll, and the failure-revert paths in
+  // patchCard/deleteCards/handleClearDone). Without this, whichever GET
+  // *resolves* last wins — which may be an *older* request, so a slow poll can
+  // land after an optimistic move (drag/table edit, neither of which pauses the
+  // poll) and clobber it back to the pre-move state until the next tick. Abort
+  // the prior in-flight load before each new one and drop a superseded (aborted)
+  // response, so only the latest load ever touches state (mirrors
+  // capabilities-view / marketplace-configure).
+  const loadCtlRef = useRef<AbortController | null>(null);
+  const load = useCallback(async (opts?: { quiet?: boolean; force?: boolean }) => {
+    const quiet = opts?.quiet === true;
+    loadCtlRef.current?.abort();
+    const ctl = new AbortController();
+    loadCtlRef.current = ctl;
     try {
-      const res = await fetch("/api/board", { cache: "no-store" });
-      const json = await res.json();
+      const { data: json } = await readSurfaceResource<{ ok?: boolean; cards?: Card[]; error?: string }>("board:cards", opts?.force === true);
+      if (ctl.signal.aborted) return; // superseded by a newer load — ignore
       if (json.ok) {
         const loaded = json.cards as Card[];
-        // Demo mode only seeds when the API actually returned ok+empty.
-        // On error, fall through so the user sees the failure.
-        setCards(isDemoModeEnabled() && loaded.length === 0 ? DEMO_BOARD_CARDS : loaded);
+        // Poll ticks rebuild an identical array most of the time; keep the
+        // previous reference when content is unchanged so an idle board
+        // doesn't re-render every card/row/bar for nothing (same convention
+        // as workspace.tsx's poll over this endpoint).
+        setCards((prev) => (arrayContentEqual(prev, loaded) ? prev : loaded));
         setError(null);
-      } else {
+        quietFailStreakRef.current = 0;
+        setStale(false);
+      } else if (!quiet) {
         setCards([]);
         setError(json.error ?? "load failed");
+      } else {
+        // Quiet polls used to swallow failures entirely — last-good cards
+        // stayed up with no freshness cue (cave-x6k5). Two consecutive
+        // failures flip a non-blocking "showing earlier data" strip.
+        quietFailStreakRef.current += 1;
+        if (quietFailStreakRef.current >= 2) setStale(true);
       }
     } catch (err) {
-      setCards([]);
-      setError(err instanceof Error ? err.message : "load failed");
+      if (ctl.signal.aborted) return; // aborted mid-flight — leave state to the newer load
+      if (!quiet) {
+        setCards([]);
+        setError(err instanceof Error ? err.message : "load failed");
+      } else {
+        quietFailStreakRef.current += 1;
+        if (quietFailStreakRef.current >= 2) setStale(true);
+      }
     } finally {
-      setHasLoaded(true);
+      if (!ctl.signal.aborted) setHasLoaded(true);
     }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  // Abort any in-flight load when the board unmounts.
+  useEffect(() => () => loadCtlRef.current?.abort(), []);
 
   // "/" jumps to the task search (GitHub-style) while the board is shown,
   // unless the user is already typing in a field or holding a modifier.
@@ -100,21 +254,49 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
+  // The command palette can switch the board view directly (e.g. "Tasks: Gantt
+  // timeline"); honor it live when the board is already mounted.
   useEffect(() => {
-    const onDemoModeChange = () => { void load(); };
-    window.addEventListener(DEMO_MODE_EVENT, onDemoModeChange);
-    return () => window.removeEventListener(DEMO_MODE_EVENT, onDemoModeChange);
-  }, [load]);
-  useEffect(() => { localStorage.setItem("cave:board:viewMode", viewMode); }, [viewMode]);
-  useEffect(() => { localStorage.setItem("cave:board:groupBy", groupBy); }, [groupBy]);
+    const onSetView = (e: Event) => {
+      const v = (e as CustomEvent<{ view?: string }>).detail?.view;
+      if (v === "kanban" || v === "table" || v === "gantt") setViewMode(v);
+    };
+    window.addEventListener("cave:board:set-view", onSetView);
+    return () => window.removeEventListener("cave:board:set-view", onSetView);
+  }, []);
 
   // External create paths dispatch `cave:board:reload` after POST so the board
   // picks up the new card without a full surface remount.
   useEffect(() => {
-    const onReload = () => { void load(); };
+  const onReload = () => { invalidateSurfaceResources("board:cards"); void load(); };
     window.addEventListener("cave:board:reload", onReload);
     return () => window.removeEventListener("cave:board:reload", onReload);
   }, [load]);
+
+  // Re-sync when the app regains focus, so a familiar finishing a task (or any
+  // change made while the window was in the background) doesn't sit stale until
+  // a manual reload — most visibly in the installed desktop app, where the OS
+  // window manager doesn't fire the web visibility events that browser tabs do.
+  useRefreshOnFocus(() => load({ force: true }));
+
+  // Light background poll so a card that flips status (e.g. a familiar moving a
+  // task running -> done) reflects without a manual reload while the board is
+  // open. Quiet (never blanks on a transient failure), suspended on hidden tabs
+  // and while typing, and paused whenever the user is mid-interaction — an open
+  // modal/inspector, a pending undo, or a confirm gate — so a reload can't
+  // clobber an optimistic edit or yank cards out from under a drag.
+  const interacting =
+    modalOpen ||
+    selectedCardId !== null ||
+    clearConfirm ||
+    clearedBanner !== null ||
+    rescheduleUndo !== null ||
+    (deletePending?.item?.length ?? 0) > 0;
+  usePausablePoll(
+    () => { void load({ quiet: true, force: true }); },
+    15_000,
+    { enabled: !interacting, pauseWhileInputActive: true },
+  );
 
   // Honour `#card-<id>` in the URL: workspace's `focus-card` palette intent
   // (e.g. the Task chip in chat-view) routes to /?…#card-<id>; we pick that
@@ -138,25 +320,70 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   }, [cards]);
 
   const familiarsById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
-  const filtered = useMemo(
-    () =>
-      cards.filter(
-        (c) =>
-          (activeFamiliarId === null || c.familiarId === activeFamiliarId) &&
-          cardMatchesBoardSearch(c, searchQuery, familiarsById),
-      ),
-    [cards, familiarsById, searchQuery, activeFamiliarId],
-  );
-
-  const stats = useMemo(() => ({
-    total: filtered.length,
-    running: filtered.filter((c) => c.status === "running").length,
-    blocked: filtered.filter((c) => c.status === "blocked" || c.needsHuman).length,
-  }), [filtered]);
+  // Stable project label for a card — the key the project filter/grouping keys
+  // on. Mirrors the board's project grouping: named project → its name, else a
+  // cwd basename, else the "No project" bucket.
+  const projectLabelOf = useCallback((c: Card): string => {
+    if (c.projectId) {
+      const p = chatProjectById(c.projectId, projects);
+      if (p?.name) return p.name;
+    }
+    if (c.cwd) return c.cwd.split("/").filter(Boolean).pop() ?? c.cwd;
+    return "No project";
+  }, [projects]);
+  const filtered = useMemo(() => {
+    // Hide cards whose delete is pending in the undo window (restored on Undo).
+    const hidden = new Set((deletePending?.item ?? []).map((c) => c.id));
+    return cards.filter(
+      (c) =>
+        !hidden.has(c.id) &&
+        (scopeFamiliarIds
+          ? familiarInScope(scopeFamiliarIds, c.familiarId)
+          : activeFamiliarId === null || c.familiarId === activeFamiliarId) &&
+        !excludedStatus.has(c.status) &&
+        !excludedProject.has(projectLabelOf(c)) &&
+        cardMatchesBoardSearch(c, searchQuery, familiarsById),
+    );
+  }, [cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending, excludedStatus, excludedProject, projectLabelOf]);
 
   // Done cards in the CURRENT scope (the filtered set the user is viewing) —
   // the exact set "Clear done" operates on.
   const doneCards = useMemo(() => filtered.filter((c) => c.status === "done"), [filtered]);
+
+  // ── Toolbar filter dropdown options ─────────────────────────────────────────
+  // The menu narrows by the dimension the board is grouped by (status by
+  // default, project when grouping by project). Project options are the distinct
+  // labels present in the current (familiar-scoped, pre-filter) card set.
+  const STATUS_TOOLBAR_LABELS: Record<CardStatus, string> = {
+    backlog: "Backlog", inbox: "Inbox", running: "Running",
+    review: "Review", blocked: "Blocked", done: "Done",
+  };
+  const scopedCards = useMemo(
+    () => cards.filter((c) =>
+      scopeFamiliarIds
+        ? familiarInScope(scopeFamiliarIds, c.familiarId)
+        : activeFamiliarId === null || c.familiarId === activeFamiliarId),
+    [cards, scopeFamiliarIds, activeFamiliarId],
+  );
+  const projectFilterLabels = useMemo(
+    () => [...new Set(scopedCards.map(projectLabelOf))].sort((a, b) =>
+      a === "No project" ? -1 : b === "No project" ? 1 : a.localeCompare(b)),
+    [scopedCards, projectLabelOf],
+  );
+  const toggleStatusFilter = useCallback((id: CardStatus) => {
+    setExcludedStatus((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+  const toggleProjectFilter = useCallback((id: string) => {
+    setExcludedProject((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
 
   // The undo banner is transient — auto-dismiss ~5s after a clear.
   useEffect(() => {
@@ -165,19 +392,74 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     return () => window.clearTimeout(t);
   }, [clearedBanner]);
 
+  // The reschedule-undo banner is transient too.
+  useEffect(() => {
+    if (!rescheduleUndo) return;
+    const t = window.setTimeout(() => setRescheduleUndo(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [rescheduleUndo]);
+
   // Familiar grouping is redundant once the board is scoped to a single
   // familiar — fall back to status there. Status and project grouping stay
   // meaningful regardless of the familiar scope.
   const effectiveGroupBy: GroupBy = activeFamiliarId !== null && groupBy === "familiar" ? "status" : groupBy;
+  // Familiar grouping is meaningless once the board is scoped to one familiar.
+  const effectiveGanttGroup = ganttGroup === "familiar" && activeFamiliarId !== null ? "project" : ganttGroup;
   // Grouping applies to both the kanban (swimlanes) and table views; hidden on
   // phones, where BoardCardStack replaces both surfaces.
   const showGroupToggle = !isMobile;
 
   const selectedCard = useMemo(() => cards.find((c) => c.id === selectedCardId) ?? null, [cards, selectedCardId]);
+  const workCard = useMemo(() => cards.find((c) => c.id === workCardId) ?? null, [cards, workCardId]);
+  const viewAreaRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (workCardId !== null) return;
+    const cardId = pendingWorkFocusIdRef.current;
+    if (!cardId) return;
+    pendingWorkFocusIdRef.current = null;
+    let attempts = 0;
+    let frame = requestAnimationFrame(function restore() {
+      const element = viewAreaRef.current?.querySelector<HTMLElement>(
+        `[data-card-id="${CSS.escape(cardId)}"]`,
+      );
+      if (element) {
+        element.focus();
+        return;
+      }
+      if (attempts++ === 0) frame = requestAnimationFrame(restore);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [workCardId]);
 
   useEffect(() => {
     if (selectedCardId && !cards.some((c) => c.id === selectedCardId)) setSelectedCardId(null);
   }, [cards, selectedCardId]);
+
+  // Selection survives a view-mode switch (state lives here, not in the
+  // views), but the freshly mounted view renders from scroll 0 — the
+  // still-selected card the open inspector describes can sit far off-screen.
+  // After the new view commits, bring it back into view. Scroll only, no
+  // focus steal — the user's focus belongs on the toggle they just clicked.
+  const prevViewModeRef = useRef(viewMode);
+  useEffect(() => {
+    const switched = prevViewModeRef.current !== viewMode;
+    prevViewModeRef.current = viewMode;
+    if (!switched || !selectedCardId) return;
+    // Two-frame retry: the mounted view may still be revealing the
+    // default-collapsed group / unscheduled tray that holds the selection
+    // (cave-iote), so a missing node gets exactly one more frame to appear.
+    let attempts = 0;
+    let frame = requestAnimationFrame(function locate() {
+      const el = viewAreaRef.current?.querySelector<HTMLElement>(`[data-card-id="${selectedCardId}"]`);
+      if (el) {
+        el.scrollIntoView({ block: "nearest", inline: "nearest" });
+        return;
+      }
+      if (attempts++ === 0) frame = requestAnimationFrame(locate);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [viewMode, selectedCardId]);
 
   const lifecycleForStatus = (status: CardStatus) => {
     if (status === "running") return "running" as const;
@@ -187,9 +469,47 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     return "queued" as const;
   };
 
-  const patchCard = async (id: string, patch: Partial<Card>) => {
+  // (cave-381s) In-flight PATCH counter + deferred-reconcile flag: a failed
+  // patch inside a parallel bulk batch must not reload the board out from
+  // under its still-in-flight siblings. See patchCard's finally block.
+  const inFlightPatchesRef = useRef(0);
+  const reloadWhenPatchesSettleRef = useRef(false);
+
+  const patchCard = async (id: string, patch: CardPatch, armUndo = true) => {
+    let saved = false;
     if ("cwd" in patch || "projectId" in patch) setChatLinkError(null);
-    setCards((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    // A date-only patch is a gantt reschedule — snapshot the prior dates so it
+    // can be undone in one click (skipped when the patch IS an undo).
+    const keys = Object.keys(patch).filter((k) => k !== "ops");
+    const isReschedule = armUndo && keys.length > 0 && keys.every((k) => k === "startDate" || k === "endDate");
+    if (isReschedule) {
+      const before = cards.find((c) => c.id === id);
+      if (before) {
+        // A second reschedule of the same card inside the 5s banner window must
+        // NOT overwrite the snapshot — Undo should restore the ORIGINAL dates,
+        // not the intermediate position.
+        setRescheduleUndo((pending) =>
+          pending && pending.id === id
+            ? pending
+            : {
+                id,
+                title: before.title,
+                prev: { startDate: before.startDate ?? null, endDate: before.endDate ?? null },
+              });
+        const range = [patch.startDate, patch.endDate].filter(Boolean).join(" to ");
+        announce(`Rescheduled '${before.title}'${range ? ` — ${range}` : ""}. Undo available.`);
+      }
+    }
+    setCards((prev) => prev.map((c) => {
+      if (c.id !== id) return c;
+      const { ops, ...plain } = patch;
+      // Same resolution the server runs under its lock — optimistic view and
+      // persisted result can't drift.
+      return hasCardOps(ops)
+        ? { ...c, ...plain, ...applyCardOps(c, ops, new Date().toISOString()) }
+        : { ...c, ...plain };
+    }));
+    inFlightPatchesRef.current += 1;
     try {
       const res = await fetch(`/api/board/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
       const json = await res.json();
@@ -197,33 +517,219 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         // Revert to the server copy and tell the user — an optimistic change
         // that silently snaps back reads as a glitch.
         setActionError(json.error ? `Couldn't save changes — ${json.error}` : "Couldn't save changes — reverted to the server copy.");
-        await load();
+        reloadWhenPatchesSettleRef.current = true;
       } else {
+        invalidateSurfaceResources("board:cards");
+        saved = true;
         setActionError(null);
+        if (json.card) setCards((prev) => prev.map((c) => (c.id === id ? (json.card as Card) : c)));
       }
     } catch {
       setActionError("Couldn't reach the server — your change was reverted.");
-      await load();
+      reloadWhenPatchesSettleRef.current = true;
+    } finally {
+      // (cave-381s) Bulk ops fire patchCard per id in parallel; a failure used
+      // to `await load()` IMMEDIATELY, which reverted the optimistic state of
+      // sibling patches still in flight (transient flicker as each settled and
+      // re-applied). The reconciling reload now waits for the whole batch:
+      // only the LAST settling patch runs it, once. A solo patch (count 1→0)
+      // still reloads right away — single-op behavior is unchanged.
+      inFlightPatchesRef.current -= 1;
+      if (inFlightPatchesRef.current === 0 && reloadWhenPatchesSettleRef.current) {
+        reloadWhenPatchesSettleRef.current = false;
+        await load({ force: true });
+      }
     }
+    return saved;
   };
 
   const moveCardToStatus = (id: string, status: CardStatus) => {
     const patch: Partial<Card> = { status, lifecycle: lifecycleForStatus(status), needsHuman: status === "blocked" };
     if (status === "running") (patch as Record<string, unknown>).runningSince = new Date().toISOString();
-    void patchCard(id, patch);
+    const title = cards.find((c) => c.id === id)?.title;
+    if (title) announce(`Moved '${title}' to ${status.charAt(0).toUpperCase()}${status.slice(1)}.`);
+    // One-shot completion flare on the card as it lands in Done (the announce
+    // above is the AT channel; this is purely visual). Gated on the
+    // celebrations pref; reduced-motion collapses the animation in CSS.
+    if (status === "done" && readCelebrationsEnabled()) {
+      setRewardCardId(id);
+      if (rewardClearRef.current) clearTimeout(rewardClearRef.current);
+      rewardClearRef.current = setTimeout(() => setRewardCardId(null), 900);
+    }
+    // Return the patch promise so bulkMove's Promise.all actually waits for
+    // the batch — bulkBusy used to clear while the PATCHes were still in
+    // flight (cave-381s). Fire-and-forget callers are unaffected.
+    return patchCard(id, patch);
   };
 
   const create = async (draft: NewCardDraft) => {
-    const res = await fetch("/api/board", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error ?? "create failed");
-    await load();
+    try {
+      const res = await fetch("/api/board", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) });
+      // Guard the parse: a 500/HTML error page is not JSON and would otherwise
+      // throw an opaque parse error into the caller (which quick-add `void`s,
+      // silently dropping the failure).
+      const json = await res.json().catch(() => ({ ok: false, error: "the server returned an unreadable response" }));
+      if (!json.ok) throw new Error(json.error ?? "create failed");
+      invalidateSurfaceResources("board:cards");
+      setActionError(null);
+      announce(`Created task '${draft.title.trim()}'.`);
+      await load();
+    } catch (err) {
+      // Surface to the board's inline error banner so a failed quick-add is
+      // never silent; rethrow so the New-card modal path can react too.
+      setActionError(
+        err instanceof Error ? `Couldn't create the task — ${err.message}` : "Couldn't create the task.",
+      );
+      throw err;
+    }
   };
 
+  // Inline quick-add from a kanban column: title-only card in that column's
+  // status, scoped to the swimlane it was dropped under (familiar/project) or
+  // the active familiar when ungrouped. Project lanes deliberately begin
+  // unassigned: the active familiar may use a different harness/runtime and
+  // lack that project's session-launch grant, so the dependent picker must
+  // choose an authorized familiar first.
+  const quickAdd = async (
+    status: CardStatus,
+    title: string,
+    lane: { familiarId?: string | null; projectId?: string | null },
+  ) => {
+    await create({
+      title: title.trim(),
+      notes: "",
+      status,
+      priority: "medium",
+      familiarId: lane.projectId ? null : (lane.familiarId !== undefined ? lane.familiarId : (activeFamiliarId ?? null)),
+      sessionId: null,
+      projectId: lane.projectId !== undefined ? lane.projectId : null,
+      cwd: null,
+      links: [],
+      labels: [],
+      startDate: null,
+      endDate: null,
+      template: null,
+    });
+  };
+
+  // Schedule a deferred, undoable delete of one or more cards. The cards hide at
+  // once (via the `filtered` exclusion), and the actual DELETEs fire only when
+  // the undo window lapses; Undo just drops the timer and the cards reappear.
+  const deleteCards = useCallback((toRemove: Card[]) => {
+    if (toRemove.length === 0) return;
+    const idSet = new Set(toRemove.map((c) => c.id));
+    if (selectedCardId && idSet.has(selectedCardId)) setSelectedCardId(null);
+    setClearedBanner(null); // one bottom undo affordance at a time
+    announce(`Deleted ${toRemove.length} task${toRemove.length === 1 ? "" : "s"}. Undo available.`);
+    scheduleCardDelete(
+      toRemove,
+      `${toRemove.length} task${toRemove.length === 1 ? "" : "s"}`,
+      async () => {
+        // Commit: drop from local state, then fire the DELETEs. Both the unhide
+        // (pending → null) and this removal batch, so the cards never flash back.
+        invalidateSurfaceResources("board:cards");
+        setCards((prev) => prev.filter((c) => !idSet.has(c.id)));
+        const results = await Promise.all(
+          toRemove.map(async (c) => {
+            try {
+              const res = await fetch(`/api/board/${c.id}`, { method: "DELETE" });
+              return (await res.json()).ok as boolean;
+            } catch { return false; }
+          }),
+        );
+        const failed = results.filter((ok) => !ok).length;
+        if (failed > 0) {
+          setActionError(`Couldn't delete ${failed} of ${toRemove.length} task${toRemove.length === 1 ? "" : "s"} — reverted those.`);
+          await load({ force: true });
+        } else {
+          setActionError(null);
+        }
+      },
+    );
+  }, [selectedCardId, scheduleCardDelete, load]);
+
   const removeCard = async (id: string) => {
-    const res = await fetch(`/api/board/${id}`, { method: "DELETE" });
-    const json = await res.json();
-    if (json.ok) { if (selectedCardId === id) setSelectedCardId(null); await load(); }
+    const card = cards.find((c) => c.id === id);
+    if (card) deleteCards([card]);
+  };
+
+  // ── Bulk select (kanban + table) ────────────────────────────────────────────
+  const cardSelect = useMultiSelect(filtered, (c) => c.id);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [labelDraft, setLabelDraft] = useState("");
+  const selectedCards = () => cardSelect.selectedFrom(filtered);
+  // Live selection count for the toolbar Select/Delete buttons (redesign).
+  const selectionCount = selectedCards().length;
+  const hasSelection = selectionCount > 0;
+  // Drop the delete-confirm popover whenever the selection empties or select
+  // mode exits, so it can't linger with nothing to act on.
+  useEffect(() => {
+    if (!hasSelection || !cardSelect.selectMode) setToolbarDeleteConfirm(false);
+  }, [hasSelection, cardSelect.selectMode]);
+  // Existing labels across the board → datalist autocomplete for the bulk
+  // add-label control (NOT a filter row — label filtering is search syntax).
+  const bulkLabelOptions = useMemo(
+    () => [...new Set(cards.flatMap((c) => c.labels))].sort(),
+    [cards],
+  );
+
+  const bulkMove = async (status: CardStatus) => {
+    const ids = selectedCards().map((c) => c.id);
+    if (ids.length === 0) { cardSelect.exit(); return; }
+    setBulkBusy(true);
+    await Promise.all(ids.map((id) => moveCardToStatus(id, status)));
+    setBulkBusy(false);
+    cardSelect.exit();
+  };
+
+  const bulkAssign = async (familiarId: string) => {
+    const ids = selectedCards().map((c) => c.id);
+    if (ids.length === 0) { cardSelect.exit(); return; }
+    setBulkBusy(true);
+    await Promise.all(ids.map((id) => patchCard(id, { familiarId })));
+    setBulkBusy(false);
+    cardSelect.exit();
+  };
+
+  const bulkSetPriority = async (priority: CardPriority) => {
+    const ids = selectedCards().map((c) => c.id);
+    if (ids.length === 0) { cardSelect.exit(); return; }
+    setBulkBusy(true);
+    await Promise.all(ids.map((id) => patchCard(id, { priority })));
+    setBulkBusy(false);
+    cardSelect.exit();
+  };
+
+  // Add one label to every selected card (skip cards that already have it).
+  const bulkAddLabel = async (raw: string) => {
+    const label = raw.trim();
+    const sel = selectedCards();
+    if (!label || sel.length === 0) { if (sel.length === 0) cardSelect.exit(); return; }
+    setBulkBusy(true);
+    await Promise.all(
+      sel
+        .filter((c) => !c.labels.includes(label))
+        .map((c) => patchCard(c.id, { labels: [...c.labels, label] })),
+    );
+    setBulkBusy(false);
+    setLabelDraft("");
+    cardSelect.exit();
+  };
+
+  const bulkDelete = () => {
+    const sel = selectedCards();
+    if (sel.length === 0) { cardSelect.exit(); return; }
+    cardSelect.exit();
+    // Deferred + undoable — no native confirm; the undo toast is the safety net.
+    deleteCards(sel);
+  };
+
+  const STATUS_LABELS: Record<CardStatus, string> = {
+    backlog: "Backlog", inbox: "Inbox", running: "Running",
+    review: "Review", blocked: "Blocked", done: "Done",
+  };
+  const PRIORITY_LABELS: Record<CardPriority, string> = {
+    urgent: "Urgent", high: "High", medium: "Medium", low: "Low",
   };
 
   const handleClearDone = async () => {
@@ -231,6 +737,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     setClearConfirm(false);
     if (snapshot.length === 0) return;
     const ids = new Set(snapshot.map((c) => c.id));
+    invalidateSurfaceResources("board:cards");
     // Optimistic remove + drop selection if it pointed at a cleared card.
     setCards((prev) => prev.filter((c) => !ids.has(c.id)));
     if (selectedCardId && ids.has(selectedCardId)) setSelectedCardId(null);
@@ -254,17 +761,21 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       setActionError(
         `Couldn't clear ${failed.length} of ${snapshot.length} done task${snapshot.length === 1 ? "" : "s"} — reverted those.`,
       );
-      await load();
+      await load({ force: true });
     } else {
       setActionError(null);
     }
-    if (cleared.length > 0) setClearedBanner({ snapshot: cleared });
+    if (cleared.length > 0) {
+      setClearedBanner({ snapshot: cleared });
+      announce(`Cleared ${cleared.length} done task${cleared.length === 1 ? "" : "s"}. Undo available.`);
+    }
   };
 
   const handleUndoClear = async () => {
     const banner = clearedBanner;
     if (!banner) return;
     setClearedBanner(null);
+    announce(`Restored ${banner.snapshot.length} cleared task${banner.snapshot.length === 1 ? "" : "s"}.`);
     try {
       await Promise.all(
         banner.snapshot.map((c) =>
@@ -277,6 +788,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
               status: c.status,
               priority: c.priority,
               familiarId: c.familiarId,
+              modelOverride: c.modelOverride,
+              modelOverrideHarness: c.modelOverrideHarness,
               sessionId: c.sessionId,
               cwd: c.cwd,
               projectId: c.projectId,
@@ -294,14 +807,43 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     } catch {
       setActionError("Couldn't restore all cleared tasks — reload to check.");
     }
-    await load();
+    invalidateSurfaceResources("board:cards");
+    await load({ force: true });
   };
 
-  const startTaskChat = async (id: string, projectRoot?: string) => {
+  // Revert a gantt reschedule to its snapshotted dates (without re-arming undo).
+  const handleUndoReschedule = () => {
+    const u = rescheduleUndo;
+    if (!u) return;
+    setRescheduleUndo(null);
+    announce(`Restored '${u.title}' to its previous dates.`);
+    void patchCard(u.id, u.prev, false);
+  };
+
+  const startTaskChat = async (
+    id: string,
+    projectRoot?: string,
+  ): Promise<{
+    sessionId: string;
+    familiarId: string | null;
+    initialPrompt?: string;
+    bridge?: string;
+  } | null> => {
     const card = cards.find((candidate) => candidate.id === id);
+    // Project-backed tasks must retain an explicit familiar chosen from the
+    // project's authorized roster. Falling back to the active/default
+    // familiar here would bypass the Project → Familiar picker and produce a
+    // late `project access denied` for installations whose active runtime is
+    // not granted this project.
+    if (card?.projectId && !card.familiarId) {
+      setChatLinkError("Choose an authorized familiar before starting work in this project.");
+      setChatLinkErrorCardId(id);
+      return null;
+    }
     const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
     setChatLinkingId(id);
     setChatLinkError(null);
+    setChatLinkErrorCardId(null);
     try {
       const res = await fetch(`/api/board/${id}/chat`, {
         method: "POST",
@@ -311,76 +853,223 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           ...(projectRoot ? { projectRoot } : {}),
         }),
       });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error ?? "failed to open task chat");
-      if (json.card) {
-        setCards((prev) => prev.map((candidate) => candidate.id === id ? json.card : candidate));
+      const json = await res.json() as {
+        ok?: boolean;
+        error?: string;
+        card?: Card;
+        sessionId?: string;
+        familiarId?: string | null;
+        initialPrompt?: string;
+        bridge?: string;
+      };
+      if (!res.ok || !json.ok || !json.sessionId) {
+        throw new Error(json.error ?? "failed to open task work");
       }
-      onJumpToSession?.(json.sessionId, json.familiarId);
+      const updatedCard = json.card;
+      if (updatedCard) {
+        setCards((prev) => prev.map((candidate) => candidate.id === id ? updatedCard : candidate));
+      }
+      onSessionsChanged();
+      return {
+        sessionId: json.sessionId,
+        familiarId: json.familiarId ?? null,
+        initialPrompt: json.initialPrompt,
+        bridge: json.bridge,
+      };
     } catch (err) {
-      setChatLinkError(err instanceof Error ? err.message : "failed to open task chat");
+      setChatLinkError(err instanceof Error ? err.message : "failed to open task work");
+      setChatLinkErrorCardId(id);
+      return null;
     } finally {
       setChatLinkingId(null);
     }
   };
 
-  const onOpenTaskChat = async (id: string) => {
+  const openTaskWork = async (id: string) => {
     const card = cards.find((candidate) => candidate.id === id);
-    if (card && !card.sessionId && !card.cwd) {
-      const project = card.projectId ? chatProjectById(card.projectId, projects) : null;
-      if (project) {
-        await startTaskChat(id, project.root);
+    if (!card) return;
+    // Project-backed sessions must still traverse the board-chat endpoint so
+    // a grant revoked after the session was created cannot be reopened from
+    // the Board without a fresh authorization check. Unscoped legacy cards
+    // have no project boundary to revalidate and can keep the direct path.
+    if (card.sessionId && !card.projectId) {
+      if (isMobile) {
+        const linkedSession = sessions.find((session) => session.id === card.sessionId);
+        onJumpToSession?.(card.sessionId, linkedSession?.familiarId ?? card.familiarId ?? null);
         return;
       }
-      setChatLinkError("Choose a project for this task before starting chat, or open Projects to create one.");
+      setSelectedCardId(null);
+      pendingWorkFocusIdRef.current = id;
+      setWorkCardId(id);
       return;
     }
-    await startTaskChat(id);
+
+    const project = card?.projectId ? chatProjectById(card.projectId, projects) : null;
+    if (!project && !card.cwd) {
+      setChatLinkError("Choose a project for this task before starting work, or open Projects to create one.");
+      return;
+    }
+
+    const started = await startTaskChat(id, project?.root);
+    if (!started) return;
+    if (started.bridge === "native-chat" && started.initialPrompt) {
+      setPendingBridgeStart({ cardId: id, sessionId: started.sessionId, initialPrompt: started.initialPrompt });
+    }
+    // Native Chat needs TaskWorkCockpit to hand the first prompt to ChatView.
+    // Jumping straight to the mobile session view would discard that one-shot
+    // handoff before a local conversation exists.
+    if (isMobile && started.bridge !== "native-chat") {
+      onJumpToSession?.(started.sessionId, started.familiarId);
+      return;
+    }
+    setSelectedCardId(null);
+    pendingWorkFocusIdRef.current = id;
+    setWorkCardId(id);
   };
+
+  // Recovery for a harness/runtime failure while starting a task chat: rebind
+  // the card's familiar to the chosen adapter via /api/config, then re-run the
+  // same task-chat start.
+  const useHarnessForTaskChat = async (runtime: string) => {
+    const id = chatLinkErrorCardId;
+    if (!id || chatLinkingId !== null) return;
+    const card = cards.find((candidate) => candidate.id === id);
+    const familiarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
+    if (!familiarId) return;
+    try {
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiars: { [familiarId]: { harness: runtime, model: defaultModelForRuntime(runtime) } },
+        }),
+      });
+      if (!res.ok) {
+        setChatLinkError(`Could not switch harness (${res.status}).`);
+        return;
+      }
+      // A task override names a model for the familiar's previous runtime.
+      // Keep recovery portable across Codex, OpenClaw, Hermes, and registry
+      // adapters by falling back to the newly selected harness's configured
+      // default instead of forwarding a potentially incompatible model id.
+      if (!(await patchCard(id, { modelOverride: null, modelOverrideHarness: null }))) {
+        setChatLinkError("Could not clear the prior task model after switching harness.");
+        return;
+      }
+      window.dispatchEvent(new Event("cave:familiars-refresh"));
+      await openTaskWork(id);
+    } catch {
+      setChatLinkError("Could not switch harness.");
+    }
+  };
+  const chatLinkFailure = chatLinkError ? parseHarnessFailure(chatLinkError) : null;
+  const workSession = workCard?.sessionId
+    ? sessions.find((session) => session.id === workCard.sessionId) ?? null
+    : null;
+  const workFamiliar = workCard
+    ? familiars.find((familiar) => familiar.id === (workSession?.familiarId ?? workCard.familiarId)) ?? null
+    : null;
+
+  if (workCard) {
+    return (
+      <TaskWorkCockpit
+        card={workCard}
+        familiar={workFamiliar}
+        sessions={sessions}
+        daemonRunning={daemonRunning}
+        onClose={() => setWorkCardId(null)}
+        onOpenDetails={() => {
+          pendingWorkFocusIdRef.current = null;
+          setWorkCardId(null);
+          setSelectedCardId(workCard.id);
+        }}
+        onRefreshSessions={onSessionsChanged}
+        onSessionsDeleted={onSessionsDeleted}
+        onSessionDeleted={() => {
+          setCards((previous) => previous.map((card) =>
+            card.id === workCard.id ? { ...card, sessionId: null } : card));
+          setWorkCardId(null);
+        }}
+        onUnlinkSession={() => patchCard(workCard.id, { sessionId: null })}
+        initialPrompt={
+          pendingBridgeStart?.cardId === workCard.id && pendingBridgeStart.sessionId === workCard.sessionId
+            ? pendingBridgeStart.initialPrompt
+            : null
+        }
+        onSlashCommand={onSlashFromChat}
+        onOpenOnboarding={onOpenOnboarding}
+        onOpenUrl={onOpenUrl}
+      />
+    );
+  }
 
   return (
     <section className="board-shell">
       {/* Header */}
       <header className="board-header">
         <span className="board-header-title">Tasks</span>
-        <div className="board-search-wrap">
-          <Icon name="ph:magnifying-glass" width={13} className="board-search-icon" />
-          <label className="sr-only" htmlFor="board-search">Search tasks</label>
-          <input
-            ref={searchRef}
-            id="board-search"
-            className="board-search-input"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && searchQuery) {
-                e.preventDefault();
-                setSearchQuery("");
-              }
-            }}
-            placeholder='Search tasks or type is:open cwd:coven-cave url:github'
+        {queueSlot ? (
+          <Tabs
+            className="board-header-tabs"
+            variant="segment"
+            size="sm"
+            ariaLabel="Tasks tabs"
+            idPrefix="tasks"
+            value={activeTab}
+            onChange={setActiveTab}
+            items={[
+              { id: "tasks" as const, label: "Tasks" },
+              { id: "queue" as const, label: "Queue" },
+            ]}
           />
-          {!searchQuery ? (
-            <kbd aria-hidden className="board-search-kbd">/</kbd>
-          ) : null}
-          {searchQuery ? (
-            <button
-              type="button"
-              className="board-search-clear"
-              onClick={() => setSearchQuery("")}
-              aria-label="Clear task search"
-            >
-              <Icon name="ph:x-bold" width={10} />
-            </button>
-          ) : null}
-        </div>
+        ) : null}
+        {activeTab === "tasks" ? (
+        <>
+        <BoardTokenSearch
+          value={searchQuery}
+          onChange={setSearchQuery}
+          familiars={familiars}
+          cards={cards}
+          inputRef={searchRef}
+        />
         <div className="board-header-controls">
           {/* Grouping drives status columns (kanban) / status rows (table) when
               "Status", and swimlanes / grouped rows when "Familiar" or
               "Project". The Familiar option is dropped while the board is
               already scoped to one familiar, where it would be redundant. */}
           {showGroupToggle ? (
-            <div className="board-group-toggle" role="group" aria-label="Group tasks by">
+            <div className="board-group-toggle" role="group" aria-label={viewMode === "gantt" ? "Group Gantt by" : "Group tasks by"}>
+            {viewMode === "gantt" ? (
+              <>
+                <button
+                  type="button"
+                  className={`board-group-toggle-btn${effectiveGanttGroup === "project" ? " board-group-toggle-btn--active" : ""}`}
+                  onClick={() => setGanttGroup("project")}
+                  aria-pressed={effectiveGanttGroup === "project"}
+                >
+                  Project
+                </button>
+                <button
+                  type="button"
+                  className={`board-group-toggle-btn${effectiveGanttGroup === "task" ? " board-group-toggle-btn--active" : ""}`}
+                  onClick={() => setGanttGroup("task")}
+                  aria-pressed={effectiveGanttGroup === "task"}
+                >
+                  Task
+                </button>
+                {activeFamiliarId === null ? (
+                  <button
+                    type="button"
+                    className={`board-group-toggle-btn${effectiveGanttGroup === "familiar" ? " board-group-toggle-btn--active" : ""}`}
+                    onClick={() => setGanttGroup("familiar")}
+                    aria-pressed={effectiveGanttGroup === "familiar"}
+                  >
+                    Familiar
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <>
             <button
               type="button"
               className={`board-group-toggle-btn${effectiveGroupBy === "status" ? " board-group-toggle-btn--active" : ""}`}
@@ -407,6 +1096,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             >
               Project
             </button>
+              </>
+            )}
             </div>
           ) : null}
 
@@ -430,6 +1121,46 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             </button>
           </div>
 
+          {/* Redesign: Select-multiple is a first-class toolbar verb (a
+              visible icon button), not an overflow item. It applies to the
+              kanban + table surfaces (the gantt has no row selection). */}
+          {!isMobile && (viewMode === "kanban" || viewMode === "table") ? (
+            <button
+              type="button"
+              className={`board-icon-btn${cardSelect.selectMode ? " board-icon-btn--active" : ""}`}
+              title="Select multiple"
+              aria-pressed={cardSelect.selectMode}
+              onClick={() => cardSelect.setSelectMode(!cardSelect.selectMode)}
+            >
+              <Icon name="ph:check-square" width={16} />
+              {cardSelect.selectMode && selectionCount > 0 ? (
+                <span className="board-icon-btn-count">{selectionCount}</span>
+              ) : null}
+            </button>
+          ) : null}
+
+          {/* Redesign: Filter dropdown narrows by the grouped dimension. */}
+          {showGroupToggle ? (
+            <BoardFilterMenu
+              dimension={effectiveGroupBy === "project" ? "project" : "status"}
+              statusOptions={STATUSES.map((st) => ({ id: st, label: STATUS_TOOLBAR_LABELS[st], checked: !excludedStatus.has(st) }))}
+              projectOptions={projectFilterLabels.map((p) => ({ id: p, label: p, checked: !excludedProject.has(p) }))}
+              onToggleStatus={toggleStatusFilter}
+              onToggleProject={toggleProjectFilter}
+              onSelectAll={() => { setExcludedStatus(new Set()); setExcludedProject(new Set()); }}
+              activeCount={effectiveGroupBy === "project"
+                ? projectFilterLabels.filter((p) => !excludedProject.has(p)).length
+                : STATUSES.length - excludedStatus.size}
+              totalCount={effectiveGroupBy === "project" ? projectFilterLabels.length : STATUSES.length}
+            />
+          ) : null}
+
+          {/* The trash button owns both destructive verbs: in select mode it
+              deletes the selection (inline confirm popover); otherwise it
+              clears the done tasks in view (the confirm group replaces it
+              while deciding). That keeps clear-done reachable on every
+              surface — table/gantt/phone included — without an overflow menu;
+              the kanban Done column also exposes it inline. */}
           {clearConfirm ? (
             <div className="board-clear-confirm" role="group" aria-label="Confirm clear done tasks">
               <button
@@ -449,16 +1180,36 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              className="board-toolbar-btn"
-              onClick={() => setClearConfirm(true)}
-              disabled={doneCards.length === 0}
-              title="Remove all done tasks in view"
-            >
-              <Icon name="ph:trash" width={13} />
-              Clear done
-            </button>
+            <div className="board-icon-wrap">
+              <button
+                type="button"
+                className={`board-icon-btn${hasSelection ? " board-icon-btn--danger" : ""}`}
+                title={cardSelect.selectMode ? "Delete selected" : "Clear done"}
+                disabled={cardSelect.selectMode ? !hasSelection : doneCards.length === 0}
+                onClick={() => {
+                  if (cardSelect.selectMode) {
+                    if (hasSelection) setToolbarDeleteConfirm(true);
+                  } else if (doneCards.length > 0) {
+                    setClearConfirm(true);
+                  }
+                }}
+              >
+                <Icon name="ph:trash" width={16} />
+              </button>
+              {toolbarDeleteConfirm && hasSelection ? (
+                <>
+                  <div className="board-confirm-scrim" onClick={() => setToolbarDeleteConfirm(false)} />
+                  <div className="board-confirm-pop" role="dialog" aria-label="Confirm delete tasks">
+                    <div className="board-confirm-title">Delete {selectionCount} {selectionCount === 1 ? "task" : "tasks"}?</div>
+                    <div className="board-confirm-desc">This removes them from the queue. Undo is available briefly.</div>
+                    <div className="board-confirm-actions">
+                      <button type="button" className="board-toolbar-btn" onClick={() => setToolbarDeleteConfirm(false)}>Cancel</button>
+                      <button type="button" className="board-confirm-delete" onClick={() => { bulkDelete(); setToolbarDeleteConfirm(false); }}>Delete</button>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
           )}
 
           <button
@@ -466,11 +1217,29 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             className="board-new-card-btn"
             onClick={() => { setModalDefaultStatus("backlog"); setModalOpen(true); }}
           >
-            + New task
+            <Icon name="ph:plus" width={15} />
+            New task
           </button>
         </div>
+        </>
+        ) : null}
       </header>
 
+      {activeTab === "queue" && queueSlot ? (
+        <div
+          role="tabpanel"
+          id="tasks-panel-queue"
+          aria-labelledby="tasks-tab-queue"
+          className="min-h-0 flex-1 overflow-hidden"
+        >
+          {queueSlot}
+        </div>
+      ) : null}
+
+      {/* The board body stays mounted while the queue tab shows (polls keep
+          state warm for the switch back); display:contents preserves the
+          shell's flex layout when visible. */}
+      <div style={{ display: activeTab === "queue" ? "none" : "contents" }}>
       {error && (
         <div
           role="alert"
@@ -480,23 +1249,39 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
             <span className="min-w-0 truncate">{error}</span>
           </span>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
-          >
-            <Icon name="ph:arrow-clockwise" width={12} aria-hidden />
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load({ force: true })}>
             Retry
-          </button>
+          </Button>
+        </div>
+      )}
+      {!error && stale && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 border-b border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-warning)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:clock-countdown" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">Refresh is failing — showing earlier data.</span>
+          </span>
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load({ force: true })}>
+            Retry
+          </Button>
         </div>
       )}
       {chatLinkError && (
         <div
           role="alert"
-          className="flex items-center gap-1.5 border-b border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-warning)]"
+          className="flex flex-wrap items-center gap-1.5 border-b border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-warning)]"
         >
           <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
-          <span className="min-w-0 truncate">{chatLinkError}</span>
+          <span className="min-w-0 flex-1 truncate">{chatLinkError}</span>
+          {chatLinkFailure && chatLinkErrorCardId ? (
+            <HarnessFixActions
+              failure={chatLinkFailure}
+              busy={chatLinkingId !== null}
+              onUseHarness={useHarnessForTaskChat}
+            />
+          ) : null}
         </div>
       )}
       {clearedBanner && (
@@ -510,14 +1295,25 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
               Cleared {clearedBanner.snapshot.length} done task{clearedBanner.snapshot.length === 1 ? "" : "s"}
             </span>
           </span>
-          <button
-            type="button"
-            onClick={() => void handleUndoClear()}
-            className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--text-muted)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
-          >
-            <Icon name="ph:arrow-counter-clockwise" width={12} aria-hidden />
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-counter-clockwise" onClick={() => void handleUndoClear()}>
             Undo
-          </button>
+          </Button>
+        </div>
+      )}
+      {rescheduleUndo && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 border-b border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--text-secondary)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:calendar-blank" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">
+              Rescheduled “{rescheduleUndo.title}”
+            </span>
+          </span>
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-counter-clockwise" onClick={handleUndoReschedule}>
+            Undo
+          </Button>
         </div>
       )}
       {actionError && (
@@ -541,10 +1337,104 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       )}
 
       {/* Content */}
-      <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div ref={viewAreaRef} className="[flex:1]! [min-height:0]! [overflow:hidden]! [display:flex]! [flex-direction:column]!">
+        {cardSelect.selectMode && (
+          <div className="px-5 pt-3">
+            <SelectionToolbar
+              allSelected={cardSelect.allSelected(filtered)}
+              count={cardSelect.selectedCount}
+              onToggleSelectAll={() => cardSelect.toggleSelectAll(filtered)}
+              onCancel={cardSelect.exit}
+            >
+              <label className="sr-only" htmlFor="board-bulk-move">Move selected tasks to status</label>
+              <StandardSelect<CardStatus | "">
+                id="board-bulk-move"
+                label="Move selected tasks to status"
+                disabled={bulkBusy || cardSelect.selectedCount === 0}
+                value=""
+                onChange={(next) => { if (next) void bulkMove(next); }}
+                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] disabled:opacity-50"
+                options={[
+                  { value: "", label: "Move to...", disabled: true },
+                  ...STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] })),
+                ]}
+                placeholder="Move to..."
+              />
+              <label className="sr-only" htmlFor="board-bulk-assign">Assign selected tasks to a familiar</label>
+              <StandardSelect
+                id="board-bulk-assign"
+                label="Assign selected tasks to a familiar"
+                disabled={bulkBusy || cardSelect.selectedCount === 0}
+                value=""
+                onChange={(next) => { if (next) void bulkAssign(next); }}
+                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] disabled:opacity-50"
+                options={[
+                  { value: "", label: "Assign to...", disabled: true },
+                  ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
+                ]}
+                placeholder="Assign to..."
+              />
+              <label className="sr-only" htmlFor="board-bulk-priority">Set priority of selected tasks</label>
+              <StandardSelect<CardPriority | "">
+                id="board-bulk-priority"
+                label="Set priority of selected tasks"
+                disabled={bulkBusy || cardSelect.selectedCount === 0}
+                value=""
+                onChange={(next) => { if (next) void bulkSetPriority(next); }}
+                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] disabled:opacity-50"
+                options={[
+                  { value: "", label: "Priority...", disabled: true },
+                  ...PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABELS[p] })),
+                ]}
+                placeholder="Priority..."
+              />
+              <form
+                className="inline-flex items-center gap-1"
+                onSubmit={(e) => { e.preventDefault(); void bulkAddLabel(labelDraft); }}
+              >
+                <input
+                  list="board-bulk-label-options"
+                  value={labelDraft}
+                  onChange={(e) => setLabelDraft(e.target.value)}
+                  placeholder="Add label…"
+                  aria-label="Add a label to selected tasks"
+                  disabled={bulkBusy || cardSelect.selectedCount === 0}
+                  className="focus-ring h-6 box-border w-24 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] disabled:opacity-50"
+                />
+                <datalist id="board-bulk-label-options">
+                  {bulkLabelOptions.map((l) => <option key={l} value={l} />)}
+                </datalist>
+                <button
+                  type="submit"
+                  disabled={bulkBusy || cardSelect.selectedCount === 0 || !labelDraft.trim()}
+                  title="Add this label to the selected tasks"
+                  className="focus-ring h-6 box-border inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                >
+                  <Icon name="ph:tag-bold" width={11} aria-hidden />
+                  Label
+                </button>
+              </form>
+              <button
+                type="button"
+                disabled={bulkBusy || cardSelect.selectedCount === 0}
+                onClick={() => void bulkDelete()}
+                className="focus-ring h-6 box-border inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 text-[length:var(--text-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+              >
+                <Icon name="ph:trash-bold" width={11} aria-hidden />
+                {bulkBusy ? "Working…" : `Delete${cardSelect.selectedCount ? ` ${cardSelect.selectedCount}` : ""}`}
+              </button>
+            </SelectionToolbar>
+          </div>
+        )}
         {!hasLoaded && !error ? (
-          <div className="flex h-full items-center justify-center p-6" role="status" aria-label="Loading tasks">
-            <Icon name="ph:circle-notch-bold" width={20} className="animate-spin text-[var(--text-muted)]" aria-hidden />
+          <div className="h-full min-h-0" role="status" aria-label="Loading tasks">
+            {viewMode === "kanban" ? (
+              <BoardKanbanSkeleton />
+            ) : (
+              <div className="p-4">
+                <SkeletonRows count={8} />
+              </div>
+            )}
           </div>
         ) : cards.length === 0 && !error ? (
           <div className="flex h-full items-center justify-center p-6">
@@ -552,14 +1442,14 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
               <span className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-muted)]">
                 <Icon name="ph:kanban" width={18} aria-hidden />
               </span>
-              <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Queue your first task</h2>
-              <p className="mt-2 text-[12px] leading-5 text-[var(--text-muted)]">
+              <h2 className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">Queue your first task</h2>
+              <p className="mt-2 text-[length:var(--text-sm)] leading-5 text-[var(--text-muted)]">
                 The board collects work in flight across your familiars. Add a task and assign it to whoever should pick it up &mdash; chat threads can link back to it later.
               </p>
               <button
                 type="button"
                 onClick={() => { setModalDefaultStatus("backlog"); setModalOpen(true); }}
-                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-white transition-opacity hover:opacity-85"
+                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[length:var(--text-sm)] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-85"
               >
                 <Icon name="ph:plus-bold" width={12} />
                 New task
@@ -605,49 +1495,81 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             onMoveStatus={moveCardToStatus}
             onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
             onJumpToSession={onJumpToSession}
-            onOpenTaskChat={onOpenTaskChat}
+            onOpenTaskChat={openTaskWork}
             chatLinkingId={chatLinkingId} />
         ) : viewMode === "kanban" ? (
           <BoardKanban cards={filtered} familiars={familiars} projects={projects} sessions={sessions}
             groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
+            selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}
             onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
-            onJumpToSession={onJumpToSession}
-            onOpenTaskChat={onOpenTaskChat}
+            rewardCardId={rewardCardId}
+            wipLimits={wipLimits} onSetWipLimit={setWipLimitFor}
+            onQuickAdd={quickAdd}
+            onJumpToSession={(sessionId, familiarId) => {
+              const task = cards.find((card) => card.sessionId === sessionId);
+              if (task) {
+                void openTaskWork(task.id);
+                return;
+              }
+              onJumpToSession?.(sessionId, familiarId);
+            }}
+            onOpenTaskChat={openTaskWork}
             chatLinkingId={chatLinkingId} />
         ) : viewMode === "gantt" ? (
           <BoardGantt cards={filtered} familiars={familiars} projects={projects}
             selectedCardId={selectedCardId}
             onSelect={setSelectedCardId}
-            onPatch={patchCard} />
+            onPatch={patchCard}
+            groupMode={effectiveGanttGroup} />
         ) : (
           <BoardTable cards={filtered} familiars={familiars} projects={projects}
             groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
+            sortKey={tableSortKey} sortDir={tableSortDir}
+            onSortChange={(key, direction) => { setTableSortKey(key); setTableSortDir(direction); }}
             onSelect={setSelectedCardId}
+            selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}
             onPatch={patchCard} />
         )}
       </div>
 
       {/* Inspector drawer */}
       {selectedCard && (
-        <BoardInspector card={selectedCard} familiars={familiars} sessions={sessions} projects={projects}
+        <BoardInspector
+          // Remount per card: the drawer's title/notes are uncontrolled
+          // (defaultValue + save-on-blur), so switching cards while open must
+          // reset them — otherwise a blur writes card A's text onto card B.
+          key={selectedCard.id}
+          card={selectedCard} familiars={familiars} sessions={sessions} projects={projects}
           onClose={() => setSelectedCardId(null)}
           onPatch={patchCard}
           onMoveStatus={moveCardToStatus}
           onDelete={removeCard}
           onCardReplaced={(next) => setCards((prev) => prev.map((c) => (c.id === next.id ? next : c)))}
-          onJumpToSession={onJumpToSession}
-          onOpenTaskChat={onOpenTaskChat}
+          onOpenTaskWork={openTaskWork}
           onOpenUrl={onOpenUrl}
           chatLinking={chatLinkingId === selectedCard.id}
           chatLinkError={chatLinkingId === null && !selectedCard.sessionId ? chatLinkError : null}
+          onUseHarnessFix={
+            chatLinkErrorCardId === selectedCard.id ? useHarnessForTaskChat : undefined
+          }
         />
       )}
 
       <NewCardModal open={modalOpen} onClose={() => setModalOpen(false)}
-        familiars={familiars} sessions={sessions} projects={projects}
+        familiars={familiars} sessions={sessions}
         defaultStatus={modalDefaultStatus} defaultFamiliarId={activeFamiliarId}
         onCreate={create} />
+      {deletePending ? (
+        <UndoToast
+          key={deletePending.id}
+          message={`Deleted ${deletePending.label}`}
+          undoAriaLabel="Undo delete"
+          onUndo={() => { announce(`Restored ${deletePending.label}.`); undoCardDelete(); }}
+          onDismiss={commitCardDelete}
+        />
+      ) : null}
+      </div>
     </section>
   );
 }

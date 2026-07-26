@@ -59,10 +59,22 @@ assert.match(route, /type SalemSearchContext/, "Salem API should accept structur
 assert.match(route, /formatSearchContextForPrompt\(context\)/, "Salem API should format top-bar search context into the hosted prompt");
 assert.match(route, /askChatApiContext\(messageForApi\)/, "Cave Salem should ask the hosted chat-api for retrieved docs context, not hosted synthesis");
 assert.match(route, /askLocalFamiliar\([\s\S]*?familiarId[\s\S]*?model/, "Cave Salem must synthesize through the local familiar so the user's connected model pays for the run");
+assert.match(route, /typeof json\.context === "string"/, "Cave Salem context mode must key off retrieved context, not upstream prompt authority");
+assert.match(route, /LOCAL_SALEM_SYSTEM_PROMPT/, "local Salem synthesis must use a fixed local system prompt");
+assert.match(route, /<retrieved_context>/, "hosted retrieval context must be quoted as untrusted data");
+assert.doesNotMatch(route, /const systemPrompt = typeof context\.systemPrompt/, "hosted systemPrompt must not be trusted as local prompt authority");
 assert.match(route, /modelOverride:\s*args\.model/, "local Salem synthesis must forward the exact selected model as a next-message override");
 assert.match(route, /modelOverrideScope:\s*"next-message"/, "Salem must not persist the one-off model override as a session default");
 assert.match(route, /askChatApiAnswer\(messageForApi\)/, "Salem must keep a hosted-answer fallback when the backend does not serve context mode, so it never regresses to weak local retrieval");
 assert.match(route, /localContextUsed/, "Salem API response should disclose whether local context was included");
+// Ask Salem section: prior turns ride the synthesis prompt as quoted data only.
+assert.match(route, /sanitizeHistory\(body\.history\)/, "Salem API must sanitize client-sent history through one capped choke point");
+assert.match(route, /HISTORY_TURN_CAP\s*=\s*8/, "history must cap turn count server-side regardless of client input");
+assert.match(route, /HISTORY_TURN_CHAR_CAP\s*=\s*600/, "history must cap per-turn length server-side");
+assert.match(route, /<prior_conversation>/, "history must be quoted as untrusted data, mirroring retrieved context");
+assert.match(route, /buildLocalSalemPrompt\(messageForApi, apiContext, history\)/, "history feeds local synthesis only");
+assert.match(route, /askChatApiContext\(messageForApi\)[\s\S]*sanitizeHistory|sanitizeHistory[\s\S]*askChatApiContext\(messageForApi\)/, "retrieval stays keyed on the question + local context");
+assert.doesNotMatch(route, /messageForApi\s*=[^;]*history/, "history must never pollute the retrieval query");
 assert.match(route, /familiar|familiar/, "must know about familiars");
 assert.match(route, /role|Role/, "must know about roles");
 assert.match(route, /plugin|Plugin/, "must know about plugins");
@@ -80,17 +92,14 @@ assert.doesNotMatch(widget, /salem-panel__preload/, "preload count pills stay re
 //    the right panel. The right edge-rail toggle was retired in favour of the
 //    shell's floating top-right panel toggle.
 const workspace = await readFile(path.join(root, "src/components/workspace.tsx"), "utf8");
-const companionRail = await readFile(path.join(root, "src/components/companion-rail.tsx"), "utf8");
-assert.match(workspace, /const openCompanionTab = useCallback/, "Salem opens through the shared companion tab opener");
-assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "the companion tab opener expands the right panel");
+// The right companion rail was removed; Salem was re-homed into the
+// drag-to-split pane. Its launcher event now opens Salem in the split.
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
-assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "Salem launcher must expand the right panel");
-assert.match(workspace, /setRailTab\("salem"\)/, "Salem launcher must select the Salem rail tab");
-assert.match(workspace, /import \{ SalemChatPanel \}/, "workspace should import only the Salem sidepanel surface");
+assert.match(workspace, /addSplitTarget\(\{ kind: "salem" \}\)/, "Salem launcher must open Salem in the drag-to-split pane");
+assert.match(workspace, /import \{[\s\S]*SalemChatPanel[\s\S]*\} from "@\/components\/lazy-surfaces"/, "workspace should lazy-load only the Salem sidepanel surface");
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
-assert.match(workspace, /salemSlot=\{[\s\S]*?<SalemChatPanel\s+familiarId=\{/, "workspace must render Salem in the companion rail with the local familiar id");
-assert.match(workspace, /salemSlot=\{[\s\S]*?<SalemChatPanel[\s\S]*?model=\{/, "workspace must render Salem in the companion rail with the local familiar's model");
-assert.match(companionRail, /"salem"/, "companion rail must expose a Salem tab");
+assert.match(workspace, /<SalemChatPanel\s+familiarId=\{/, "workspace must render Salem in the split with the local familiar id");
+assert.match(workspace, /<SalemChatPanel[\s\S]*?model=\{/, "workspace must render Salem in the split with the local familiar's model");
 
 // 7. CSS classes present
 const css = await readFile(path.join(root, "src/app/globals.css"), "utf8");

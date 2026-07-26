@@ -1,0 +1,247 @@
+import SwiftUI
+
+// MARK: - Wire types (`GET`/`PATCH /api/chat/model-state`)
+
+struct ChatModelOption: Codable, Hashable, Identifiable {
+    let id: String
+    let label: String
+}
+
+struct ChatModelState: Codable {
+    let familiarId: String
+    let harness: String
+    var runtime: String?
+    let effectiveModel: String
+    let source: String
+    var applicationState: String?
+    var reason: String?
+}
+
+struct ChatModelStateResponse: Codable {
+    let ok: Bool
+    let state: ChatModelState
+    var options: [ChatModelOption]?
+    var allowCustom: Bool?
+}
+
+/// A compact "which model is this chat using" chip above the composer, with a
+/// picker to change it. Shown for direct (non-group) chats whose runtime has a
+/// model menu; hidden when the runtime offers no choices (e.g. openclaw).
+struct ChatModelBar: View {
+    @Environment(AppModel.self) private var app
+    let thread: ChatThread
+    let familiarId: String
+
+    @State private var state: ChatModelState?
+    @State private var options: [ChatModelOption] = []
+    @State private var showPicker = false
+    @State private var busy = false
+
+    private var sessionId: String? {
+        let id = thread.sessionIds[familiarId]
+        return (id?.isEmpty == false) ? id : nil
+    }
+
+    private var label: String {
+        guard let model = state?.effectiveModel else { return "Model" }
+        return options.first(where: { $0.id == model })?.label ?? shortModel(model)
+    }
+
+    var body: some View {
+        // Always render a stable container (zero-height when there's nothing to
+        // show) so `.task` reliably runs the initial load.
+        chip
+            .task(id: sessionId) { await load() }
+            .sheet(isPresented: $showPicker) {
+                ModelPickerSheet(
+                    options: options,
+                    current: state?.effectiveModel ?? "",
+                    onSelect: { id in Task { await choose(id) } },
+                    application: sessionId == nil ? .familiarDefault : .chat
+                )
+            }
+    }
+
+    @ViewBuilder private var chip: some View {
+        if state != nil, !options.isEmpty {
+            Button { showPicker = true } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "cpu").font(.system(size: 11, weight: .medium))
+                    Text(label).font(.caption.weight(.medium)).lineLimit(1)
+                    if busy {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
+                    }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .foregroundStyle(.secondary)
+                .glassFill(.control, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Model: \(label). Tap to change.")
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 4)
+        } else {
+            Color.clear.frame(height: 0)
+        }
+    }
+
+    private func load() async {
+        guard let client = app.client else { return }
+        do {
+            let resp = try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
+            state = resp.state
+            options = resp.options ?? []
+        } catch {
+            // Non-fatal: the bar just stays hidden if the state can't be read.
+        }
+    }
+
+    private func choose(_ model: String) async {
+        guard let client = app.client, model != state?.effectiveModel else { return }
+        busy = true
+        defer { busy = false }
+        // Per-chat when the chat has a server session; otherwise change the
+        // familiar's default so the choice still sticks for the next message.
+        let scope = sessionId != nil ? "session" : "familiar-default"
+        do {
+            let resp = try await client.setChatModel(
+                familiarId: familiarId, sessionId: sessionId, model: model, scope: scope)
+            state = resp.state
+            if let opts = resp.options { options = opts }
+            Haptics.tap()
+        } catch {
+            // Leave the prior state in place on failure.
+        }
+    }
+
+    private func shortModel(_ id: String) -> String {
+        id.split(separator: "/").last.map(String.init) ?? id
+    }
+}
+
+enum ModelPickerApplication {
+    case chat
+    case familiarDefault
+
+    var footer: String {
+        switch self {
+        case .chat:
+            return "Applies to this chat. The familiar uses the chosen model for its next replies."
+        case .familiarDefault:
+            return "Sets this familiar’s default for new chats and chats without a model override."
+        }
+    }
+}
+
+struct ModelPickerSheet: View {
+    let options: [ChatModelOption]
+    let current: String
+    let onSelect: (String) -> Void
+    let application: ModelPickerApplication
+    /// Optional deeper-configuration hop: shown as a chevron row that hands
+    /// off to the familiar picker (the "agent" half of the model/agent pill).
+    let onSwitchFamiliar: (() -> Void)?
+
+    @Environment(\.dismiss) private var dismiss
+
+    init(
+        options: [ChatModelOption],
+        current: String,
+        onSelect: @escaping (String) -> Void,
+        application: ModelPickerApplication = .chat,
+        onSwitchFamiliar: (() -> Void)? = nil
+    ) {
+        self.options = options
+        self.current = current
+        self.onSelect = onSelect
+        self.application = application
+        self.onSwitchFamiliar = onSwitchFamiliar
+    }
+
+    private var currentOption: ChatModelOption? {
+        options.first(where: { $0.id == current }) ?? (current.isEmpty ? nil : ChatModelOption(id: current, label: current))
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                // The active choice leads the sheet so "what am I talking to"
+                // is answered before any option scanning.
+                if let currentOption {
+                    Section("Current") {
+                        HStack(spacing: 12) {
+                            Image(systemName: "cpu")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 32, height: 32)
+                                .background(Color.accentColor.opacity(0.14), in: Circle())
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(currentOption.label).font(.body.weight(.semibold))
+                                Text(currentOption.id).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Current model: \(currentOption.label)")
+                    }
+                }
+                Section {
+                    ForEach(options) { option in
+                        Button {
+                            onSelect(option.id)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(option.label).foregroundStyle(.primary)
+                                    Text(option.id).font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 8)
+                                if option.id == current {
+                                    Image(systemName: "checkmark").foregroundStyle(.tint)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    Text("Models")
+                } footer: {
+                    Text(application.footer)
+                }
+                if let onSwitchFamiliar {
+                    Section("Agent") {
+                        Button {
+                            dismiss()
+                            onSwitchFamiliar()
+                        } label: {
+                            HStack {
+                                Text("Chat with another familiar").foregroundStyle(.primary)
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens the familiar picker")
+                    }
+                }
+            }
+            .themedListBackground()
+            .navigationTitle("Model")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .themedSheetBackground()
+    }
+}

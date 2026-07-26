@@ -1,12 +1,31 @@
 import { NextResponse } from "next/server";
-import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
+import {
+  bindingFor,
+  enqueueOfflineTravelItem,
+  loadConfig,
+  recordSessionFamiliar,
+  setSessionTitle,
+} from "@/lib/cave-config";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
+import { copilotStreamSpec, type RuntimeEventProtocolSchema } from "@/lib/copilot-stream";
+import { isSshRuntime } from "@/lib/familiar-runtime";
+import { familiarWorkspace } from "@/lib/coven-paths";
+import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
+import {
+  copilotCapabilityFailureMessage,
+  probeCopilotCapability,
+} from "@/lib/server/copilot-capability-probe";
+import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
+import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
+import { realpath, stat } from "node:fs/promises";
+import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
 import { workflowRunBlockReason, type WorkflowSummary } from "@/lib/workflows";
+import { runWorkflowEngineAfterCopilotGate } from "./copilot-engine-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +52,75 @@ async function resolveWorkflow(body: RunBody): Promise<WorkflowSummary | null> {
   );
 }
 
+async function maybeQueueOfflineWorkflow(body: RunBody, workflow: WorkflowSummary | null): Promise<Response | null> {
+  const config = await loadConfig();
+  const travelStatus = await travelLocalQueueStatus(config);
+  if (!travelStatus) return null;
+
+  const workflowId = workflow?.id ?? body.id ?? body.path ?? "unknown";
+  const queued = await enqueueOfflineTravelItem({
+    kind: "workflow",
+    summary: workflow?.name ? `Workflow: ${workflow.name}` : `Workflow: ${workflowId}`,
+    payload: {
+      route: "/api/workflows/run",
+      body,
+      workflow: workflow
+        ? {
+            id: workflow.id,
+            name: workflow.name,
+            version: workflow.version,
+            path: workflow.path,
+          }
+        : null,
+    },
+  });
+  const run = await recordRun({
+    workflowId,
+    version: workflow?.version,
+    kind: "execution",
+    status: "queued",
+    startedAt: queued.createdAt,
+    steps: (workflow?.steps ?? []).map((step) => ({
+      id: step.id,
+      kind: step.kind,
+      status: "ready" as const,
+    })),
+    summary: `queued offline ${queued.id}`,
+    source: "cave",
+  });
+
+  return NextResponse.json({
+    ok: true,
+    queued: true,
+    queueItem: queued,
+    run,
+    executor: "travel-queue",
+    travel: { reason: travelStatus.reason },
+  });
+}
+
 /**
- * Execute a workflow. Two executors, daemon-first:
+ * The native daemon workflow engine is an alternate launch path. It must not
+ * bypass the local Copilot stream compatibility gate that protects session
+ * workflows and flows. Remote/Hub bindings remain owned by their host.
+ */
+async function usesLocalCopilotWorkflowRuntime(
+  body: RunBody,
+  workflow: WorkflowSummary | null,
+): Promise<boolean> {
+  const config = await loadConfig();
+  const familiarId = body.familiarId ?? workflow?.familiar ?? null;
+  const binding = familiarId
+    ? bindingFor(config, familiarId)
+    : { harness: config.defaults.harness, model: config.defaults.model };
+  const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
+  const hubAuthority = config.multiHost?.mode === "hub";
+  return binding.harness === "copilot" && !sshBound && !hubAuthority;
+}
+
+/**
+ * Execute a workflow. Travel-local clients queue work first; online execution
+ * still uses two executors, daemon-first:
  *
  *  1. The daemon's native workflow engine (`/api/v1/workflows/run`), if it ever
  *     lands. Forward-compatible — when present, we use it verbatim.
@@ -71,13 +157,38 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: blocked }, { status: 400 });
     }
   }
+  const offlineWorkflowResponse = await maybeQueueOfflineWorkflow(body, gateWorkflow);
+  if (offlineWorkflowResponse) return offlineWorkflowResponse;
+
+  // The daemon is a separate process with its own executable PATH. Do not use
+  // Cave's probe to authorize a different daemon-side Copilot binary: local
+  // Copilot workflows take the already-probed direct session path instead.
+  if (await usesLocalCopilotWorkflowRuntime(body, gateWorkflow)) {
+    return runViaSession(body);
+  }
 
   // 1. Native daemon engine first (forward-compatible).
-  const engine = await callDaemon<DaemonRunResponse>({
-    method: "POST",
-    path: "/api/v1/workflows/run",
-    body,
+  const engineAttempt = await runWorkflowEngineAfterCopilotGate({
+    localCopilot: false,
+    probe: probeCopilotCapability,
+    resolveCompatibility: () => resolveRuntimeCompatibility("copilot"),
+    selectSpec: (version, protocols) => copilotStreamSpec(
+      version,
+      Array.isArray(protocols) ? protocols as RuntimeEventProtocolSchema[] : undefined,
+    ),
+    runEngine: () => callDaemon<DaemonRunResponse>({
+      method: "POST",
+      path: "/api/v1/workflows/run",
+      body,
+    }),
   });
+  if (engineAttempt.blocked) {
+    return NextResponse.json(
+      { ok: false, error: "This Copilot CLI version is not compatible with Cave workflow execution. Update the Copilot runtime schema or CLI." },
+      { status: 409 },
+    );
+  }
+  const engine = engineAttempt.engine;
 
   if (engine.ok) {
     const data = engine.data ?? { ok: true };
@@ -109,6 +220,32 @@ export async function POST(req: Request) {
   );
 }
 
+/**
+ * The familiar's own workspace, trusted at the harness level (`--add-dir`) so a
+ * copilot one-shot can reach it for memory / self-report writes the workflow
+ * prompt directs there. The spawn cwd (projectRoot) is already trusted and must
+ * not be listed. Mirrors flow-executor's flowFamiliarAddDirs (cave-n1yc).
+ */
+async function workflowFamiliarAddDirs(
+  familiarId: string | null,
+  projectRoot: string,
+): Promise<string[]> {
+  if (!familiarId || !isValidFamiliarId(familiarId)) return [];
+  try {
+    const workspace = await realpath(await familiarWorkspace(familiarId));
+    if (!(await stat(workspace)).isDirectory()) return [];
+    let root = projectRoot;
+    try {
+      root = await realpath(projectRoot);
+    } catch {
+      /* keep the normalized form for comparison */
+    }
+    return workspace === root ? [] : [workspace];
+  } catch {
+    return [];
+  }
+}
+
 /** Spawn a real agent session that carries out the workflow plan. */
 async function runViaSession(body: RunBody) {
   const workflow = await resolveWorkflow(body);
@@ -123,7 +260,9 @@ async function runViaSession(body: RunBody) {
 
   const config = await loadConfig();
   const familiarId = body.familiarId ?? workflow.familiar ?? null;
-  const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
+  const binding = familiarId
+    ? bindingFor(config, familiarId)
+    : { harness: config.defaults.harness, model: config.defaults.model };
   if (!isAllowedHarness(binding.harness)) {
     return NextResponse.json(
       { ok: false, error: `harness '${binding.harness}' can't run as an agent session` },
@@ -132,6 +271,84 @@ async function runViaSession(body: RunBody) {
   }
 
   const prompt = buildWorkflowRunPrompt(workflow, body.inputs);
+
+  // Persist the started session onto a running workflow-run record and return —
+  // shared by the daemon and copilot-direct spawn paths. Session-executed
+  // workflow runs have no status reconcile loop: the record stays "running" and
+  // the chat surface opens the session's transcript, so both paths behave the
+  // same from the store's view.
+  const finishSession = async (sessionId: string) => {
+    await Promise.all([
+      familiarId ? recordSessionFamiliar(sessionId, familiarId) : Promise.resolve(),
+      setSessionTitle(sessionId, `Workflow: ${workflow.name ?? workflow.id}`),
+    ]);
+    const run = await recordRun({
+      workflowId: workflow.id,
+      version: workflow.version,
+      kind: "execution",
+      status: "running",
+      startedAt: new Date().toISOString(),
+      steps: (workflow.steps ?? []).map((step) => ({
+        id: step.id,
+        kind: step.kind,
+        status: "ready" as const,
+      })),
+      summary: `agent session ${sessionId.slice(0, 8)}`,
+      source: "cave",
+      sessionId,
+    });
+    return NextResponse.json({ ok: true, run, sessionId, executor: "session" });
+  };
+
+  // Copilot: spawn the CLI directly (cave-aikv). Its interactive daemon launch
+  // is an immortal, never-attached TUI that redraw-spams coven.sqlite3, and its
+  // nonInteractive daemon launch mangles multi-word prompts — so, exactly as
+  // flows do (flow-executor.ts, cave-yesg), a local copilot workflow runs as a
+  // non-interactive one-shot whose transcript persists as the Cave conversation
+  // the run's chat surface opens. SSH/hub copilot stays on the daemon (remote
+  // host / hub authority boundary).
+  const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
+  const hubAuthority = config.multiHost?.mode === "hub";
+  if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
+    const [capability, compatibility] = await Promise.all([
+      probeCopilotCapability(),
+      resolveRuntimeCompatibility("copilot"),
+    ]);
+    const capabilityFailure = copilotCapabilityFailureMessage(capability);
+    if (capabilityFailure) {
+      return NextResponse.json(
+        { ok: false, error: capabilityFailure },
+        { status: 409 },
+      );
+    }
+    const spec = copilotStreamSpec(
+      capability.version,
+      compatibility?.eventProtocols,
+      capability.launchCommand,
+    );
+    if (!spec) {
+      return NextResponse.json(
+        { ok: false, error: "This Copilot CLI version is not compatible with Cave workflow execution. Update the Copilot runtime schema or CLI." },
+        { status: 409 },
+      );
+    }
+    // No workflow run exists until the compatibility gate has selected a
+    // direct launch contract and the session has actually been started.
+    const { sessionId } = startCopilotFlowRun({
+      spec,
+      prompt,
+      projectRoot,
+      familiarId,
+      familiarName: "display_name" in binding ? binding.display_name : undefined,
+      familiarRole: "role" in binding ? binding.role : undefined,
+      addDirs: await workflowFamiliarAddDirs(familiarId, projectRoot),
+      // This route rejects non-local requests before building the workflow
+      // prompt, so it may use the reviewed local automation contract.
+      permissionMode: "unattended",
+    });
+    return finishSession(sessionId);
+  }
+
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",
@@ -139,7 +356,21 @@ async function runViaSession(body: RunBody) {
     // the source, not only in cave-state. The daemon keys on camelCase
     // `familiarId` on input (verified live) and renames it to `familiar_id` in
     // its response. recordSessionFamiliar below still mirrors it for Cave's UI.
-    body: { projectRoot, harness: binding.harness, prompt, ...(familiarId ? { familiarId } : {}) },
+    body: {
+      projectRoot,
+      harness: binding.harness,
+      model: binding.model,
+      prompt,
+      ...(familiarId ? { familiarId } : {}),
+      // Non-interactive launch: the daemon streams the orchestration prompt's
+      // assistant output instead of spawning a fullscreen, never-reaped harness
+      // TUI that nothing attaches to and that redraw-spams coven.sqlite3
+      // (cave-aikv, same fix as board task chat). Copilot is exempt — its
+      // nonInteractive launch mangles multi-word prompts (flow-executor.ts), and
+      // unlike board chat this path has no native bridge to route it to, so keep
+      // its historical interactive launch until it gets a direct-spawn.
+      ...(binding.harness === "copilot" ? {} : { launchMode: "nonInteractive" }),
+    },
     timeoutMs: 8000,
   });
 
@@ -154,26 +385,5 @@ async function runViaSession(body: RunBody) {
     );
   }
 
-  const sessionId = res.data.id;
-  await Promise.all([
-    familiarId ? recordSessionFamiliar(sessionId, familiarId) : Promise.resolve(),
-    setSessionTitle(sessionId, `Workflow: ${workflow.name ?? workflow.id}`),
-  ]);
-
-  const run = await recordRun({
-    workflowId: workflow.id,
-    version: workflow.version,
-    kind: "execution",
-    status: "running",
-    startedAt: new Date().toISOString(),
-    steps: (workflow.steps ?? []).map((step) => ({
-      id: step.id,
-      kind: step.kind,
-      status: "ready" as const,
-    })),
-    summary: `agent session ${sessionId.slice(0, 8)}`,
-    source: "cave",
-  });
-
-  return NextResponse.json({ ok: true, run, sessionId, executor: "session" });
+  return finishSession(res.data.id);
 }

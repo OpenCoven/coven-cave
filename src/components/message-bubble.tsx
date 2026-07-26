@@ -1,5 +1,12 @@
 "use client";
 
+// Only the shared markdown/code sheet: MarkdownBlock/SyntaxBlock render on
+// non-chat surfaces (settings memory tab, journal, github, command palette),
+// which must not pull the whole chat stylesheet (#3264). The bubble/turn
+// chrome (.cave-bubble-*) lives in cave-chat.css, imported by the chat
+// surfaces that render <MessageBubble> itself (chat-view, group-chat-view).
+import "@/styles/cave-md.css";
+
 /**
  * MessageBubble — full Markdown/HTML rendering for Cave chat turns.
  *
@@ -18,33 +25,37 @@
 
 import {
   useCallback,
+  useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { parse } from "@create-markdown/core";
 import type { Block } from "@create-markdown/core";
 import type { PreviewPlugin } from "@create-markdown/preview";
-import type { Highlighter } from "shiki";
-import moodCTheme from "@/styles/shiki/mood-c-dark.json";
+import { getShikiHighlighter } from "@/lib/shiki-highlighter";
 import { Icon } from "@/lib/icon";
+import { renderCitedBody } from "@/lib/citations";
+import { CitationSources } from "@/components/ui/citation";
+import { classifyDiffLines, parseFenceInfo } from "@/lib/message-code-fences";
+import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { SHIKI_LANGS, resolveShikiLang } from "@/lib/code-lang";
-import { parseFileRef } from "@/lib/file-ref";
-import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
-import { wireMermaidDiagrams } from "./mermaid-viewer";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-// The bundled grammar list lives in code-lang.ts alongside the
-// extension→grammar resolver, so the highlighter's loaded langs and the
-// resolution table can never drift apart.
-const LANGS = SHIKI_LANGS;
+import { resolveShikiLang, diffContentLang } from "@/lib/code-lang";
+import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
+import {
+  cacheRenderedMarkdown as renderCacheSet,
+  closeTrailingFence,
+  getRenderedMarkdown as renderCacheGet,
+  scanFenceFilenames,
+} from "@/lib/message-markdown-stream";
+import { FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
+export { FileLinkResolverContext } from "./message-dom-wiring";
+export type { FileLinkResolver } from "./message-dom-wiring";
 
 // ---------------------------------------------------------------------------
 // Timestamp formatting
@@ -63,37 +74,14 @@ export function fmtBubbleTime(iso?: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Shiki singleton — lazy, client-only
+// Shiki singleton — lazy, client-only (shared app-wide via lib/shiki-highlighter)
 // ---------------------------------------------------------------------------
 
-let highlighterPromise: Promise<Highlighter> | null = null;
-
-function getHighlighter(): Promise<Highlighter> {
-  if (!highlighterPromise) {
-    highlighterPromise = (async () => {
-      const { createHighlighter } = await import("shiki");
-      return createHighlighter({
-        themes: [moodCTheme as Parameters<typeof createHighlighter>[0]["themes"][number]],
-        langs: [...LANGS],
-      });
-    })();
-  }
-  return highlighterPromise;
-}
+const getHighlighter = getShikiHighlighter;
 
 // ---------------------------------------------------------------------------
 // Parse fence info → { lang, filename }
 // ---------------------------------------------------------------------------
-
-function parseFenceInfo(info: string): { lang: string; filename?: string } {
-  if (!info) return { lang: "text" };
-  // Support `lang:filename.ext` syntax
-  const colonIdx = info.indexOf(":");
-  if (colonIdx > 0) {
-    return { lang: info.slice(0, colonIdx).trim(), filename: info.slice(colonIdx + 1).trim() };
-  }
-  return { lang: info.trim() };
-}
 
 // ---------------------------------------------------------------------------
 // Render a single code block with Shiki + chrome
@@ -114,31 +102,48 @@ function plainTextFromHtmlLine(line: string): string {
   return doc.body.textContent ?? "";
 }
 
+// ── Language-aware diff rendering ────────────────────────────────────────────
+// A structured diff names its file in the `+++ b/<path>` header; when that
+// file has a real grammar we highlight the diff's CONTENT in that language
+// and re-attach the +/- markers as muted chrome, so an edit card or Review
+// modal reads like code with add/remove strips instead of a flat wall of
+// uniformly "inserted"-colored lines. Diffs whose target has no resolvable
+// grammar keep the bundled `diff` grammar (whole-line coloring) below.
+
 async function renderCodeBlock(
   code: string,
   info: string,
 ): Promise<string> {
   const { lang, filename } = parseFenceInfo(info);
+  const isDiff = lang === "diff";
+  const diffLang = isDiff ? diffContentLang(code) : "text";
+  let diffLines = isDiff && diffLang !== "text" ? classifyDiffLines(code) : null;
 
   let highlighted: string;
   try {
     const hl = await getHighlighter();
-    highlighted = hl.codeToHtml(code, {
+    // Language-aware diffs feed the grammar the diff's content with markers
+    // stripped and meta rows blanked — one line per original line, so the
+    // highlighted output stays index-aligned with the classification.
+    const doc = diffLines ? diffLines.map((l) => l.content).join("\n") : code;
+    highlighted = hl.codeToHtml(doc, {
       // resolveShikiLang maps both fence names (`typescript`) AND bare file
       // extensions (`ts`, `tsx`, `rs`) to a loadable grammar — without it the
       // Projects file preview, which passes raw extensions, fell back to the
       // unhighlighted "text" grammar for every file.
-      lang: resolveShikiLang(lang),
+      lang: diffLines ? diffLang : resolveShikiLang(lang),
       theme: "mood-c-dark",
     });
   } catch (err) {
     console.error("[renderCodeBlock] Shiki highlight failed", err);
+    // Fallback renders the ORIGINAL code (markers intact) — drop the
+    // language-aware line map so markers aren't re-attached twice.
     highlighted = `<pre><code>${escHtml(code)}</code></pre>`;
+    diffLines = null;
   }
 
   const lines = code.split("\n");
   const showLineNums = lines.length > 5;
-  const isDiff = lang === "diff";
 
   // Build line-numbered version by splitting Shiki's output into lines.
   // Shiki wraps each token in <span>; the outer <pre><code> contains one
@@ -153,12 +158,28 @@ async function renderCodeBlock(
         // Remove trailing empty line Shiki adds
         if (rawLines[rawLines.length - 1] === "") rawLines.pop();
         const wrappedLines = rawLines.map((line: string, i: number) => {
-          // CHAT-D8-03: `+++ b/file` / `--- a/file` headers are metadata, not
-          // additions/deletions — exclude them from the +/- gutter strips and
-          // mute `@@` hunk headers instead of leaving them content-colored.
-          const plainLine = plainTextFromHtmlLine(line);
-          const gutterClass = isDiff
-            ? /^@@/.test(plainLine)
+          let content = line;
+          let gutterClass = "";
+          const dl = diffLines?.[i];
+          if (dl) {
+            // Language-aware diff: meta/@@ rows were blanked for the grammar —
+            // restore the raw text as muted chrome. +/- markers come back as a
+            // dim leading span, so the DOM text (what Copy reads) stays
+            // byte-identical to the raw diff.
+            if (dl.kind === "meta" || dl.kind === "hunk") {
+              content = `<span>${escHtml(dl.raw)}</span>`;
+              gutterClass = " cave-diff-meta";
+            } else {
+              const marker = dl.marker ? `<span class="cave-diff-marker">${dl.marker}</span>` : "";
+              content = `${marker}${line}`;
+              gutterClass = dl.kind === "add" ? " cave-diff-add" : dl.kind === "del" ? " cave-diff-del" : "";
+            }
+          } else if (isDiff) {
+            // CHAT-D8-03: `+++ b/file` / `--- a/file` headers are metadata, not
+            // additions/deletions — exclude them from the +/- gutter strips and
+            // mute `@@` hunk headers instead of leaving them content-colored.
+            const plainLine = plainTextFromHtmlLine(line);
+            gutterClass = /^@@/.test(plainLine)
               ? " cave-diff-meta"
               : /^(\+\+\+ |--- )/.test(plainLine)
               ? ""
@@ -166,14 +187,14 @@ async function renderCodeBlock(
               ? " cave-diff-add"
               : /^-/.test(plainLine)
               ? " cave-diff-del"
-              : ""
-            : "";
+              : "";
+          }
           const lineNum = showLineNums
             ? `<span class="cave-ln" aria-hidden="true">${i + 1}</span>`
             : "";
           // data-line lets surfaces (e.g. the Projects search) scroll a code
           // block to a specific 1-based line. Harmless to chat code blocks.
-          return `<span class="cave-line${gutterClass}" data-line="${i + 1}">${lineNum}${line}</span>`;
+          return `<span class="cave-line${gutterClass}" data-line="${i + 1}">${lineNum}${content}</span>`;
         });
         return `${co}${wrappedLines.join("")}${cc}`;
       });
@@ -183,7 +204,7 @@ async function renderCodeBlock(
 
   const labelHtml = `<span class="cave-code-lang">${escHtml(lang)}</span>`;
   const filenameHtml = filename
-    ? `<span class="cave-code-filename">${escHtml(filename)}</span>`
+    ? `<span class="cave-code-filename" title="${escHtml(filename)}">${escHtml(filename)}</span>`
     : "";
   // Collapse toggle (chevron) folds the block down to just this header so a
   // long code dump can be tucked away; blocks render expanded by default. The
@@ -282,7 +303,7 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
 
   if (!html) {
     return (
-      <pre className={`whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
+      <pre className={`whitespace-pre-wrap break-words font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
         {text}
       </pre>
     );
@@ -291,13 +312,12 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
   return (
     <div
       ref={containerRef}
-      className={`cave-syntax-block text-[12px] ${className ?? ""}`}
+      className={`cave-syntax-block text-[length:var(--text-sm)] ${className ?? ""}`}
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
 }
-
 
 // ---------------------------------------------------------------------------
 // Public: MarkdownBlock — renders full markdown (prose + code) via @create-markdown/preview
@@ -318,7 +338,7 @@ export function MarkdownBlock({ text, className }: { text: string; className?: s
 
   if (!html) {
     return (
-      <pre className={`whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
+      <pre className={`whitespace-pre-wrap break-words font-mono text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
         {text}
       </pre>
     );
@@ -348,33 +368,6 @@ function escHtml(s: string): string {
 // Render markdown to HTML (async, Shiki per code block)
 // ---------------------------------------------------------------------------
 
-/**
- * renderCache LRU — keyed by the FULL markdown string. Capped (CHAT-D3-03):
- * an unbounded Map keyed by entire messages grows for the whole session.
- * Map iteration order is insertion order, so refreshing recency on get and
- * evicting the first key on overflow gives a small LRU for free.
- */
-const RENDER_CACHE_MAX = 200;
-const renderCache = new Map<string, string>();
-
-function renderCacheGet(key: string): string | undefined {
-  const value = renderCache.get(key);
-  if (value !== undefined) {
-    renderCache.delete(key);
-    renderCache.set(key, value);
-  }
-  return value;
-}
-
-function renderCacheSet(key: string, value: string) {
-  if (renderCache.has(key)) renderCache.delete(key);
-  renderCache.set(key, value);
-  if (renderCache.size > RENDER_CACHE_MAX) {
-    const oldest = renderCache.keys().next().value;
-    if (oldest !== undefined) renderCache.delete(oldest);
-  }
-}
-
 /** Streaming markdown re-renders at most once per this many ms (trailing). */
 const STREAM_RENDER_INTERVAL_MS = 200;
 
@@ -385,35 +378,6 @@ const STREAM_RENDER_INTERVAL_MS = 200;
  * block. Only applied to transient streaming snapshots — the final settled
  * render gets the text verbatim.
  */
-function closeTrailingFence(markdown: string): string {
-  let inFence = false;
-  for (const line of markdown.split("\n")) {
-    if (/^\s*```/.test(line)) inFence = !inFence;
-  }
-  return inFence ? `${markdown}\n\`\`\`` : markdown;
-}
-
-/**
- * Scan markdown for fence openers in order, returning the filename suffix for
- * each (or null when the fence had no `:filename`). Used to re-attach filename
- * labels after we strip them so @create-markdown/core can parse the fence.
- */
-function scanFenceFilenames(markdown: string): Array<string | null> {
-  const filenames: Array<string | null> = [];
-  let inFence = false;
-  for (const line of markdown.split("\n")) {
-    if (!/^\s*```/.test(line)) continue;
-    if (inFence) {
-      inFence = false;
-      continue;
-    }
-    const m = /^\s*```\s*[\w+.-]*(?::(\S+))?\s*$/.exec(line);
-    filenames.push(m?.[1] ?? null);
-    inFence = true;
-  }
-  return filenames;
-}
-
 function coalesceAdjacentNumberedLists(blocks: Block[]): Block[] {
   const coalesced: Block[] = [];
   for (const block of blocks) {
@@ -486,14 +450,94 @@ async function renderTableBlock(block: TableBlock, renderAsync: RenderAsyncFn): 
 // imported lazily and only when a message actually contains a mermaid fence. The
 // instance is a module singleton so init() (which loads mermaid) runs once.
 let mermaidPluginPromise: Promise<PreviewPlugin | null> | null = null;
+
+/** Resolve a CSS custom property to a HEX color for mermaid's theme
+ *  variables. Mermaid bakes colors into SVG attributes and derives shades via
+ *  khroma, which cannot parse the app's oklch()/color-mix() token values —
+ *  fed those raw it produces broken near-white fills. Painting the token onto
+ *  a 1×1 canvas lets the browser resolve ANY CSS color, then we read back
+ *  plain rgb and emit hex. Falls back when the token is missing/unpaintable. */
+function themeToken(name: string, fallback: string): string {
+  try {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    if (!value) return fallback;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return fallback;
+    // Composite over black first so semi-transparent tokens (the border
+    // scale is color-mix ...% transparent) resolve to their on-dark look
+    // instead of reading back a premultiplied near-white.
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, 1, 1);
+    ctx.fillStyle = value; // unparseable values leave the previous fillStyle
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+  } catch {
+    return fallback;
+  }
+}
+
 async function getMermaidPlugin(): Promise<PreviewPlugin | null> {
   if (!mermaidPluginPromise) {
     mermaidPluginPromise = import("@create-markdown/preview-mermaid")
       .then(async ({ mermaidPlugin }) => {
-        // theme "dark" matches the Cave UI; securityLevel "strict" overrides the
-        // plugin's default "loose" so diagrams from untrusted chat content can't
-        // smuggle scripts/click handlers (postProcess output bypasses our sanitizer).
-        const plugin = mermaidPlugin({ theme: "dark", config: { securityLevel: "strict" } });
+        // Base "dark" + the app's live theme tokens, so diagrams stop shipping
+        // stock mermaid purple and read as part of the surface: node fills sit
+        // on the raised layer, strokes on the hairline scale, and the accent
+        // appears only where mermaid marks emphasis. securityLevel "strict"
+        // overrides the plugin's default "loose" so diagrams from untrusted
+        // chat content can't smuggle scripts/click handlers (postProcess
+        // output bypasses our sanitizer).
+        const accent = themeToken("--accent-presence", "#9386d0");
+        const raised = themeToken("--bg-raised", "#242327");
+        const panel = themeToken("--bg-panel", "#1a1a1d");
+        const textPrimary = themeToken("--text-primary", "#e6e6f0");
+        const textSecondary = themeToken("--text-secondary", "#929198");
+        const hairline = themeToken("--border-strong", "#807f80");
+        const plugin = mermaidPlugin({
+          // "base" is the only mermaid theme that honors themeVariables;
+          // darkMode below keeps its derived shades on the dark ramp.
+          theme: "base",
+          config: {
+            securityLevel: "strict", suppressErrorRendering: true,
+            fontFamily:
+              'var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+            themeVariables: {
+              darkMode: true,
+              background: panel,
+              primaryColor: raised,
+              primaryTextColor: textPrimary,
+              primaryBorderColor: hairline,
+              secondaryColor: panel,
+              secondaryTextColor: textSecondary,
+              secondaryBorderColor: hairline,
+              tertiaryColor: panel,
+              tertiaryTextColor: textSecondary,
+              tertiaryBorderColor: hairline,
+              lineColor: textSecondary,
+              textColor: textPrimary,
+              mainBkg: raised,
+              nodeBorder: hairline,
+              clusterBkg: panel,
+              clusterBorder: hairline,
+              titleColor: textPrimary,
+              edgeLabelBackground: panel,
+              actorBkg: raised,
+              actorBorder: hairline,
+              actorTextColor: textPrimary,
+              activationBkgColor: raised,
+              labelBoxBkgColor: raised,
+              labelBoxBorderColor: hairline,
+              noteBkgColor: panel,
+              noteBorderColor: hairline,
+              noteTextColor: textSecondary,
+              pie1: accent,
+              cScale0: accent,
+            },
+          },
+        });
         await plugin.init?.();
         return plugin;
       })
@@ -588,178 +632,16 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
   if (mermaidPlugin?.postProcess) {
     sanitizedHtml = await mermaidPlugin.postProcess(sanitizedHtml);
   }
+  // Strip the renderer's cm-preview shell so blocks land as DIRECT children
+  // of .cave-md — its `> * + *` owl selector is the only block-rhythm rule,
+  // and with the shell in place a list rendered flush against the paragraph
+  // introducing it (no line break before bullets).
+  sanitizedHtml = unwrapPreviewShell(sanitizedHtml);
   // Transient (mid-stream) snapshots are never requested again once the
   // stream advances past them — caching one per throttle tick would churn
   // settled entries out of the LRU for no hit-rate gain.
   if (!opts?.transient) renderCacheSet(markdown, sanitizedHtml);
   return sanitizedHtml;
-}
-
-// ---------------------------------------------------------------------------
-// Post-render: wire copy + expand buttons in DOM
-// ---------------------------------------------------------------------------
-
-/**
- * Click-time code extraction (CHAT-D7-04). The block's full source used to be
- * duplicated into a `data-code` attribute on every Copy button — double the
- * memory and a giant DOM attribute for big tool outputs / file previews (the
- * SyntaxBlock path). Instead, read the text back out of the rendered block:
- * line rows are `.cave-line` spans with no newline text nodes between them,
- * so reconstruct with join("\n"); `.cave-ln` line-number spans are
- * presentation-only (aria-hidden, user-select: none) and must be excluded —
- * textContent WOULD include them, hence the clone-and-strip. Diff +/- line
- * prefixes are real token text and copy as-is, matching the old behavior of
- * copying the raw fence content. Byte-parity with the old data-code path was
- * verified for plain, line-numbered, diff, entity-heavy, empty-interior-line
- * and trailing-newline blocks.
- */
-function codeTextFromWrap(btn: HTMLElement): string {
-  const codeEl = btn.closest(".cave-code-wrap")?.querySelector("pre code");
-  if (!codeEl) return "";
-  const lineEls = Array.from(codeEl.querySelectorAll(".cave-line"));
-  // Shiki-failure fallback renders a plain <pre><code> without line rows.
-  if (lineEls.length === 0) return codeEl.textContent ?? "";
-  return lineEls
-    .map((line) => {
-      const clone = line.cloneNode(true) as HTMLElement;
-      for (const ln of Array.from(clone.querySelectorAll(".cave-ln"))) ln.remove();
-      return clone.textContent ?? "";
-    })
-    .join("\n");
-}
-
-function wireCopyButtons(container: HTMLElement) {
-  // Only the injected-HTML header buttons (.cave-copy-btn-mounted) need
-  // wiring — the React-rendered bubble copy/expand buttons carry their own
-  // onClick handlers and props.
-  for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-copy-btn-mounted"))) {
-    if ((btn as HTMLButtonElement & { _wired?: boolean })._wired) continue;
-    (btn as HTMLButtonElement & { _wired?: boolean })._wired = true;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    btn.addEventListener("click", () => {
-      void copyText(codeTextFromWrap(btn)).then((ok) => {
-        if (!ok) return;
-        btn.textContent = "Copied";
-        btn.classList.add("cave-copy-btn--confirmed");
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          btn.textContent = "Copy";
-          btn.classList.remove("cave-copy-btn--confirmed");
-        }, 2000);
-      });
-    });
-  }
-  // Collapse toggle: fold the whole block down to its header (and back).
-  for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-code-collapse-btn"))) {
-    if ((btn as HTMLButtonElement & { _wired?: boolean })._wired) continue;
-    (btn as HTMLButtonElement & { _wired?: boolean })._wired = true;
-    btn.addEventListener("click", () => {
-      const wrap = btn.closest(".cave-code-wrap");
-      if (!wrap) return;
-      toggleCodeBlockCollapse(wrap, btn);
-    });
-  }
-  // Show more / Show less footer on height-clamped blocks (CHAT-D7-03).
-  for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-code-expand-btn"))) {
-    if ((btn as HTMLButtonElement & { _wired?: boolean })._wired) continue;
-    (btn as HTMLButtonElement & { _wired?: boolean })._wired = true;
-    btn.addEventListener("click", () => {
-      const wrap = btn.closest(".cave-code-wrap");
-      if (!wrap) return;
-      const expanded = wrap.classList.toggle("cave-code-wrap--expanded");
-      btn.textContent = expanded ? "Show less" : "Show more";
-      // Collapsing from deep in a long block would otherwise leave the
-      // clamped viewport scrolled to an arbitrary middle.
-      if (!expanded) wrap.scrollTop = 0;
-    });
-  }
-}
-
-function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => void) {
-  if (!onOpenUrl) return;
-  for (const link of Array.from(container.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
-    if ((link as HTMLAnchorElement & { _caveLinkWired?: boolean })._caveLinkWired) continue;
-    const href = link.href;
-    let parsed: URL;
-    try {
-      parsed = new URL(href);
-    } catch {
-      continue;
-    }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
-    (link as HTMLAnchorElement & { _caveLinkWired?: boolean })._caveLinkWired = true;
-    link.addEventListener("click", (event) => {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-      event.preventDefault();
-      onOpenUrl(href);
-    });
-  }
-}
-
-// Inline file references in prose (e.g. `src/foo.ts` or `lib/bar.py:42`) become
-// clickable, opening the file in the Code workspace. Match logic lives in
-// @/lib/file-ref (pure + unit-tested); only inline code is considered.
-function wireFilePathLinks(container: HTMLElement) {
-  for (const code of Array.from(container.querySelectorAll<HTMLElement>("code"))) {
-    // Inline code only — never the highlighted lines inside a fenced block.
-    if (code.closest("pre") || code.closest(".cave-code-wrap")) continue;
-    const flagged = code as HTMLElement & { _caveFileLink?: boolean };
-    if (flagged._caveFileLink) continue;
-    const ref = parseFileRef(code.textContent ?? "");
-    if (!ref) continue;
-    flagged._caveFileLink = true;
-    const { path, line } = ref;
-    code.classList.add("cave-file-link");
-    code.setAttribute("role", "button");
-    code.setAttribute("tabindex", "0");
-    code.title = `Open ${path}${line ? `:${line}` : ""} in the Code workspace`;
-    const open = () =>
-      window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail: { path, line } }));
-    code.addEventListener("click", open);
-    code.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        open();
-      }
-    });
-  }
-}
-
-/**
- * Shared post-render hook: wires `.cave-copy-btn` clicks inside the container
- * whenever the injected HTML changes. Every component that injects
- * renderCodeBlock/mdToHtml output via dangerouslySetInnerHTML must attach the
- * returned ref, otherwise its Copy buttons render but silently do nothing
- * (wireCopyButtons is idempotent per button via the `_wired` flag).
- *
- * `linkifyPaths` opts inline file references in prose into clickable
- * Code-workspace links; only the chat prose path enables it.
- */
-function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void, linkifyPaths = false) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!html || !el) return;
-    const wireAll = () => {
-      wireCopyButtons(el);
-      wireMarkdownLinks(el, onOpenUrl);
-      wireMermaidDiagrams(el);
-      if (linkifyPaths) wireFilePathLinks(el);
-    };
-    wireAll();
-    // Re-wire when nodes are added after the first pass. Components that render
-    // once (e.g. the comux file/markdown preview's MarkdownBlock/SyntaxBlock,
-    // vs the chat's repeatedly-re-rendering MarkdownContent) could otherwise
-    // leave a code block's Copy/collapse/expand buttons unwired if the
-    // highlighter populated them after this effect ran. All wiring is
-    // idempotent (guarded per element), and the wiring itself only touches
-    // attributes/listeners — not childList — so it never re-triggers the
-    // observer into a loop.
-    const observer = new MutationObserver(() => wireAll());
-    observer.observe(el, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [html, onOpenUrl, linkifyPaths]);
-  return containerRef;
 }
 
 // ---------------------------------------------------------------------------
@@ -769,8 +651,11 @@ function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => vo
 
 function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?: boolean; onOpenUrl?: (url: string) => void }) {
   const [html, setHtml] = useState<string | null>(null);
-  // linkifyPaths=true: chat prose file references (`src/foo.ts:42`) open in Code.
-  const containerRef = useWireCopyButtons(html, onOpenUrl, true);
+  // Chat prose file references (`src/foo.ts:42`) open in Code — but only when
+  // the surface's resolver (FileLinkResolverContext) confirms the file exists
+  // under the session's project root. No resolver ⇒ refs stay plain text.
+  const fileLinkResolver = useContext(FileLinkResolverContext);
+  const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver);
   // Out-of-order guard: mdToHtml is async and during streaming several
   // renders can be in flight at once. Every render takes a monotonically
   // increasing stamp, and a result only commits if it is newer than the
@@ -844,10 +729,10 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
 
   if (!html) {
     return (
-      <span className="whitespace-pre-wrap break-words text-[14px] leading-relaxed">
+      <span className="whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed">
         {text}
         {pending && text ? (
-          <span className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
+          <span aria-hidden className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
         ) : null}
       </span>
     );
@@ -932,6 +817,12 @@ export type MessageBubbleProps = {
    *  caller gates it on settled (non-pending) turns with text. */
   onReply?: () => void;
   onOpenUrl?: (url: string) => void;
+  /** Stable id for this message — enables local thumbs-up/down persistence
+   *  (assistant role only). Without it the thumbs buttons are not rendered. */
+  messageId?: string;
+  /** Non-identifying context (e.g. the familiar id) stamped alongside a thumbs
+   *  vote when it's mirrored to the local analytics store. */
+  feedbackContext?: FeedbackContext;
   /** CHAT-D4-01: ordered segments — prose spans interleaved with tool blocks
    *  at their chronological position. Assistant role only; when present they
    *  replace the single MarkdownContent render. `content` must still carry
@@ -939,10 +830,26 @@ export type MessageBubbleProps = {
    *  text span streams (progressive markdown + ▌ cursor); earlier spans
    *  render settled. */
   segments?: MessageBubbleSegment[];
+  /** Branching: when a turn has siblings, render a compact ‹ index/total ›
+   *  switcher. Omitted (or total <= 1) hides it. */
+  branchNav?: {
+    index: number; // 0-based
+    total: number;
+    onPrev: () => void;
+    onNext: () => void;
+  };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, segments }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
+  const [vote, setVote] = useState<Feedback | null>(() => (messageId ? getFeedback(messageId) : null));
+  const applyVote = (v: Feedback) => {
+    if (!messageId) return;
+    setFeedback(messageId, v);
+    const next = getFeedback(messageId);
+    setVote(next);
+    recordFeedbackAnalytics(messageId, v, next === null, feedbackContext);
+  };
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {
@@ -957,6 +864,12 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }, []);
 
   const shouldShowTs = showTimestamp || tsVisible;
+
+  // Citations: lift standard markdown footnotes out of the body so the sources
+  // render as a rich footer below the message (never inside the sanitized HTML
+  // pipeline). Bodies without footnotes pass through unchanged. Mid-stream the
+  // definition block hasn't arrived, so this is a no-op until the turn settles.
+  const cited = useMemo(() => renderCitedBody(content), [content]);
 
   if (role === "system") {
     return (
@@ -1051,8 +964,9 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             ),
           )
         ) : (
-          <MarkdownContent text={content} pending={pending} onOpenUrl={onOpenUrl} />
+          <MarkdownContent text={cited.body} pending={pending} onOpenUrl={onOpenUrl} />
         )}
+        {cited.citations.length > 0 ? <CitationSources citations={cited.citations} /> : null}
       </div>
       {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
           actions are reachable by keyboard (Tab), screen readers, and touch. */}
@@ -1080,8 +994,55 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
               <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
             </button>
           ) : null}
+          {branchNav && branchNav.total > 1 ? (
+            <span className="cave-chat-branch-nav" role="group" aria-label="Switch response branch">
+              <button
+                type="button"
+                className="cave-chat-branch-nav__btn"
+                onClick={branchNav.onPrev}
+                disabled={branchNav.index <= 0}
+                aria-label="Previous response"
+              >
+                ‹
+              </button>
+              <span className="cave-chat-branch-nav__count" aria-live="polite">
+                {branchNav.index + 1}/{branchNav.total}
+              </span>
+              <button
+                type="button"
+                className="cave-chat-branch-nav__btn"
+                onClick={branchNav.onNext}
+                disabled={branchNav.index >= branchNav.total - 1}
+                aria-label="Next response"
+              >
+                ›
+              </button>
+            </span>
+          ) : null}
           <ExpandBubble text={content} label={label ?? "Familiar response"} />
           <CopyBubble text={content} />
+          {messageId ? (
+            <>
+              <button
+                type="button"
+                aria-label="Good response"
+                aria-pressed={vote === "up"}
+                onClick={() => applyVote("up")}
+                className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
+              >
+                <Icon name="ph:thumbs-up" width={13} aria-hidden />
+              </button>
+              <button
+                type="button"
+                aria-label="Bad response"
+                aria-pressed={vote === "down"}
+                onClick={() => applyVote("down")}
+                className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
+              >
+                <Icon name="ph:thumbs-down" width={13} aria-hidden />
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
       <div className={`cave-bubble-timestamp${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
@@ -1141,7 +1102,14 @@ function MarkdownExpandModal({
     copyTimer.current = setTimeout(() => setCopied(false), 2000);
   }, [text]);
 
-  return (
+  // Portal to <body>: the chat transcript lives under `.cave-mode-fade` (which
+  // sets `transform`) and `.cave-linear-turn` (`content-visibility: auto`), and
+  // both establish a containing block for `position: fixed`. Rendered inline the
+  // overlay is clamped to the message's turn box instead of the viewport, so the
+  // "Expand" reading view never actually goes full-screen (it sits in a small
+  // box with a huge empty area beside/below it). Portaling escapes those
+  // ancestors so `inset-0` resolves to the real viewport. See ui/modal.tsx.
+  return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
       onClick={onClose}
@@ -1149,39 +1117,43 @@ function MarkdownExpandModal({
     >
       <div
         ref={dialogRef}
-        className="relative flex h-[90vh] w-[92vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
+        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={`Expanded ${label}`}
         tabIndex={-1}
       >
-        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
-          <Icon name="ph:arrows-out-simple" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-          <span className="flex-1 truncate text-[12px] text-[var(--text-secondary)]">{label}</span>
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-5 py-3">
+          <Icon name="ph:book-open" width={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+          <span className="flex-1 truncate text-[length:var(--text-base)] font-medium text-[var(--text-secondary)]">{label}</span>
           <button
             type="button"
             onClick={() => void copy()}
-            className="flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
           >
-            <Icon name="ph:copy" width={11} aria-hidden />
+            <Icon name={copied ? "ph:check" : "ph:copy"} width={11} aria-hidden />
             {copied ? "Copied" : "Copy"}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="ml-1 flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
             aria-label="Close expanded view"
           >
             <Icon name="ph:x-bold" width={11} aria-hidden />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
-          <div className="mx-auto w-full max-w-[820px]">
-            <MarkdownBlock text={text} className="cave-md--expanded" />
+        {/* Reader body: a centered book measure with its own reading scale
+            (.cave-md--reader in cave-chat.css) — the transcript's dense 14px
+            is right in the stream, wrong for a full-screen reading surface. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-10 sm:px-12">
+          <div className="mx-auto w-full max-w-[72ch]">
+            <MarkdownBlock text={text} className="cave-md--expanded cave-md--reader" />
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

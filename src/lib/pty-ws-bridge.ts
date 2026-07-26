@@ -9,6 +9,22 @@ type CloseHandler = (code: number, reason: string) => void;
 // terminal pane (every keypress is silently dropped).
 const CONNECT_TIMEOUT_MS = 8000;
 
+// Registry of live WS bridges keyed by threadId, so an out-of-tree caller (the
+// comux tab-close handler) can reap a shell without holding the bridge ref —
+// the bridge is created and owned inside BottomTerminal.
+const activeBridges = new Map<string, PtyWsBridge>();
+
+/**
+ * Explicit tab-close: tell the server to reap the shell for this threadId NOW,
+ * instead of letting the socket close detach with a grace window (which leaks
+ * the shell for minutes on the WS transport). No-op when no WS bridge is
+ * registered for the threadId — e.g. the desktop native-IPC transport, which
+ * reaps via `pty_stop` — so callers can invoke it unconditionally.
+ */
+export function killPtyBridge(threadId: string): void {
+  activeBridges.get(threadId)?.kill();
+}
+
 export class PtyWsBridge {
   private ws: WebSocket | null = null;
   private dataHandlers: DataHandler[] = [];
@@ -60,6 +76,7 @@ export class PtyWsBridge {
   private open(): Promise<void> {
     const target = this.lastConnect;
     if (!target) return Promise.reject(new Error("no connect parameters"));
+    activeBridges.set(target.threadId, this);
     // Tear down any prior socket before re-dialing. After an iOS app resume the
     // previous socket can be a zombie — readyState still reads OPEN but the
     // connection is dead, so it never fires close and silently swallows writes.
@@ -175,7 +192,30 @@ export class PtyWsBridge {
     this.ws.send(frame);
   }
 
+  /**
+   * Explicit tab-close: send the server a kill frame (0x05) so it reaps the
+   * shell immediately rather than detaching with a grace window, then tear
+   * down. Distinct from dispose() — a transient unmount / navigation, which must
+   * leave the shell alive so a remount can reattach. Sent over the still-open
+   * socket; close() below flushes it during the closing handshake.
+   */
+  kill(): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(new Uint8Array([0x05]));
+      } catch {
+        // Socket went away mid-close — dispose() tears down below; the server's
+        // detach grace still reaps the shell as a fallback.
+      }
+    }
+    this.dispose();
+  }
+
   dispose(): void {
+    const threadId = this.lastConnect?.threadId;
+    if (threadId && activeBridges.get(threadId) === this) {
+      activeBridges.delete(threadId);
+    }
     this.dataHandlers = [];
     this.exitHandlers = [];
     this.closeHandlers = [];

@@ -25,6 +25,13 @@ const FAIL_CONCLUSIONS = new Set([
   "startup_failure",
 ]);
 
+/** True when a completed check-run's conclusion means a real, blocking failure.
+ *  Single source of truth shared by the rollup, the strip buckets, and any UI
+ *  glyph mapping (chat GitHub cards) so semantics can't drift. */
+export function isFailConclusion(conclusion: string | null | undefined): boolean {
+  return FAIL_CONCLUSIONS.has(conclusion ?? "");
+}
+
 /**
  * Roll up GitHub Actions check-runs (preferred) with the legacy combined
  * commit-status state as a fallback:
@@ -58,4 +65,25 @@ export function summarizeChecks(
     default:
       return null;
   }
+}
+
+/** Per-bucket counts for a compact checks strip (chat GitHub cards, W1b). */
+export type CheckCounts = { passed: number; failed: number; pending: number; total: number };
+
+/**
+ * Count check-runs into strip buckets using the same conclusion semantics as
+ * summarizeChecks: FAIL_CONCLUSIONS are failures; neutral/skipped/cancelled/
+ * stale/success completions count as passed (non-blocking); anything not yet
+ * completed is pending.
+ */
+export function countChecks(checkRuns: CheckRun[]): CheckCounts {
+  let passed = 0;
+  let failed = 0;
+  let pending = 0;
+  for (const run of checkRuns) {
+    if (run.status !== "completed") pending += 1;
+    else if (isFailConclusion(run.conclusion)) failed += 1;
+    else passed += 1;
+  }
+  return { passed, failed, pending, total: checkRuns.length };
 }

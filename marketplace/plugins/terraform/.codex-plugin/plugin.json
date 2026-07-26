@@ -1,0 +1,24 @@
+{
+  "name": "terraform",
+  "version": "0.1.0",
+  "description": "Generate accurate Terraform and automate HCP Terraform and Terraform Enterprise workflows.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Terraform",
+    "shortDescription": "Generate accurate Terraform and automate HCP Terraform and Terraform Enterprise workflows.",
+    "longDescription": "Use Terraform MCP for provider-accurate IaC authoring and read-first workspace inspection.",
+    "developerName": "OpenCoven",
+    "category": "Cloud & Infrastructure",
+    "capabilities": [
+      "terraform",
+      "iac",
+      "hashicorp",
+      "infrastructure",
+      "providers"
+    ],
+    "defaultPrompt": "Help me use Terraform safely."
+  }
+}

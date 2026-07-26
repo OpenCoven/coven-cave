@@ -4,17 +4,21 @@
 // but returns the assistant's plain text (no artifact extraction).
 
 import { parseSseFrame } from "@/lib/canvas-generate";
+import { extractNextPaths } from "@/lib/next-paths";
+import { DEFAULT_JOURNAL_PROMPT, renderJournalPrompt } from "@/lib/journal-prompt";
 
-/** Wrap the day's activity context into a request for a short first-person reflection. */
-export function buildReflectionPrompt(context: string): string {
-  return [
-    "Write a short, first-person reflective journal entry about my day, as if you are my familiar reflecting with me.",
-    "Two to four sentences. Warm and concrete, grounded in what actually happened. Plain prose or light markdown.",
-    "No heading, no preamble, no sign-off — return only the reflection text.",
-    "",
-    "Here is what happened today:",
+/** Wrap the day's activity context into a request for a short first-person
+ *  reflection. `template` (the editable Generation prompt) defaults to the
+ *  canonical one; `familiar`/`date` fill its placeholders. */
+export function buildReflectionPrompt(
+  context: string,
+  opts?: { template?: string | null; familiar?: string; date?: string },
+): string {
+  return renderJournalPrompt(opts?.template || DEFAULT_JOURNAL_PROMPT, {
+    familiar: opts?.familiar || "my familiar",
+    date: opts?.date || "today",
     context,
-  ].join("\n");
+  });
 }
 
 export type ReflectionResult = { text: string; error: string | null };
@@ -26,6 +30,12 @@ export type ReflectionResult = { text: string; error: string | null };
 export async function generateReflection(opts: {
   familiarId: string;
   context: string;
+  /** Custom Generation-prompt template (null/undefined = the default). */
+  promptTemplate?: string | null;
+  /** Display name for the template's `{familiar}` placeholder. */
+  familiarName?: string;
+  /** Human-readable day for the template's `{date}` placeholder. */
+  dateLabel?: string;
   signal?: AbortSignal;
   onText?: (fullText: string) => void;
 }): Promise<ReflectionResult> {
@@ -34,7 +44,17 @@ export async function generateReflection(opts: {
     res = await fetch("/api/chat/send", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ familiarId: opts.familiarId, prompt: buildReflectionPrompt(opts.context) }),
+      // origin:"journal" keeps these generated runs out of the chat lists
+      // (cave-buih, same provenance model as canvas-generate).
+      body: JSON.stringify({
+        familiarId: opts.familiarId,
+        prompt: buildReflectionPrompt(opts.context, {
+          template: opts.promptTemplate,
+          ...(opts.familiarName ? { familiar: opts.familiarName } : {}),
+          ...(opts.dateLabel ? { date: opts.dateLabel } : {}),
+        }),
+        origin: "journal",
+      }),
       signal: opts.signal,
     });
   } catch (err) {
@@ -50,32 +70,48 @@ export async function generateReflection(opts: {
   let text = "";
   let error: string | null = null;
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const frame = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      const ev = parseSseFrame(frame);
-      if (!ev) continue;
-      switch (ev.kind) {
-        case "assistant_chunk":
-          text += ev.text ?? "";
-          opts.onText?.(text);
-          break;
-        case "done":
-          if (ev.isError) error = error ?? "the familiar reported an error";
-          break;
-        case "error":
-          error = ev.message ?? "generation error";
-          break;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const ev = parseSseFrame(frame);
+        if (!ev) continue;
+        switch (ev.kind) {
+          case "assistant_chunk":
+            text += ev.text ?? "";
+            opts.onText?.(text);
+            break;
+          case "assistant_replace":
+            text = ev.text ?? "";
+            opts.onText?.(text);
+            break;
+          case "done":
+            if (ev.isError) error = error ?? "the familiar reported an error";
+            break;
+          case "error":
+            error = ev.message ?? "generation error";
+            break;
+        }
       }
+    }
+  } catch (err) {
+    if (opts.signal?.aborted) {
+      error = "cancelled";
+    } else {
+      error ??= (err as Error)?.message ?? "the connection dropped mid-generation";
     }
   }
 
-  const trimmed = text.trim();
+  // /api/chat/send appends the <coven:next-paths> suggestions directive to
+  // every prompt, and a compliant familiar echoes the block back. The journal
+  // has no chip row — strip it (terminated or truncated) so it never lands in
+  // the stored reflection.
+  const trimmed = extractNextPaths(text).visible.trim();
   if (!trimmed && !error) error = "The familiar didn't return a reflection. Try again.";
   return { text: trimmed, error };
 }

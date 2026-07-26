@@ -1,0 +1,24 @@
+{
+  "name": "unity",
+  "version": "0.1.0",
+  "description": "Bridge AI assistants to the Unity Editor \u2014 assets, scenes, scripts, and task automation.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Unity",
+    "shortDescription": "Bridge AI assistants to the Unity Editor \u2014 assets, scenes, scripts, and task automation.",
+    "longDescription": "Use the Unity MCP bridge to inspect and modify a running Unity project with explicit intent.",
+    "developerName": "OpenCoven",
+    "category": "Developer Tools",
+    "capabilities": [
+      "unity",
+      "game-dev",
+      "editor",
+      "assets",
+      "scenes"
+    ],
+    "defaultPrompt": "Help me use Unity safely."
+  }
+}

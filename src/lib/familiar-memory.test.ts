@@ -8,11 +8,8 @@ assert.match(source, /export function getActiveFamiliar\(\)/);
 assert.match(source, /export function setActiveFamiliar\(id: string \| null\)/);
 assert.match(source, /export function getLastSurface\(familiarId: string\)/);
 assert.match(source, /export function setLastSurface\(familiarId: string, surface: string\)/);
-assert.match(source, /export function getRailOpen\(familiarId: string\)/);
-assert.match(source, /export function setRailOpen\(familiarId: string, open: boolean\)/);
 assert.match(source, /cave:active-familiar/);
 assert.match(source, /cave:familiar:\$\{familiarId\}:last-surface/);
-assert.match(source, /cave:familiar:\$\{familiarId\}:rail\.open/);
 assert.match(
   source,
   /typeof window === "undefined"/,

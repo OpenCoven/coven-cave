@@ -3,21 +3,23 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const inbox = await readFile(new URL("./inbox-escalations-view.tsx", import.meta.url), "utf8");
-const calendar = await readFile(new URL("./calendar-view.tsx", import.meta.url), "utf8");
+const calendar = [
+  await readFile(new URL("./calendar-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./calendar-view-primitives.tsx", import.meta.url), "utf8"),
+].join("\n");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 // ───────── Automations wrapper ─────────
 
 assert.match(
   inbox,
-  /activeFamiliarId\?:\s*string \| null/,
-  "InboxEscalationsView keeps the old inbox prop contract for callers",
-);
-
-assert.match(
-  inbox,
-  /<AutomationsView[\s\S]*familiars=\{familiars \?\? \[\]\}[\s\S]*onNewReminder=\{onNewReminder \?\? \(\(\) => \{\}\)\}[\s\S]*onOpenSession=\{onOpenSession\}/,
+  /<AutomationsView[\s\S]*familiars=\{familiars \?\? \[\]\}[\s\S]*onNewReminder=\{onNewReminder \?\? \(\(\) => \{\}\)\}/,
   "InboxEscalationsView should render only the Schedules surface",
+);
+assert.doesNotMatch(
+  inbox,
+  /\bonOpenSource\b|\bactiveFamiliarId\b|\bonOpenSession\b|\bdefaultTab\b/,
+  "the wrapper should not retain ignored compatibility props",
 );
 
 assert.doesNotMatch(
@@ -34,10 +36,22 @@ assert.match(
   "CalendarView must accept an optional activeFamiliarId prop",
 );
 
+// The scope predicate honors the multiselect set (empty = All) and falls back
+// to the single activeFamiliarId; scopedItems filters every sub-view through it.
 assert.match(
   calendar,
-  /const scopedItems = useMemo[\s\S]*?it\.familiarId === activeFamiliarId[\s\S]*?\[items, activeFamiliarId\]/,
-  "Calendar must derive a scopedItems memo filtering on item.familiarId",
+  /scopeFamiliarIds\s*\?\s*familiarInScope\(scopeFamiliarIds, familiarId\)\s*:\s*activeFamiliarId == null \|\| familiarId === activeFamiliarId/,
+  "Calendar's scope predicate uses the multiselect set, falling back to activeFamiliarId",
+);
+assert.match(
+  calendar,
+  /const scopedItems = useMemo[\s\S]*?\.filter\(\(it\) => inScope\(it\.familiarId\)\)[\s\S]*?\[items, inScope\]/,
+  "Calendar must derive a scopedItems memo filtering by the scope predicate",
+);
+assert.match(
+  calendar,
+  /const scopedDeadlines = useMemo[\s\S]*?\.filter\(\(d\) => inScope\(d\.familiarId\)\)/,
+  "Calendar deadlines respect the same scope predicate",
 );
 
 for (const view of ["AgendaView", "DayView", "WeekView", "MonthView"]) {
@@ -58,14 +72,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /<InboxEscalationsView[\s\S]*?activeFamiliarId=\{activeId\}/,
-  "Workspace must pass activeId to InboxEscalationsView",
-);
-
-assert.match(
-  workspace,
-  /const calendarFamiliarId = activeId \?\? familiars\[0\]\?\.id \?\? null/,
-  "Workspace calendar mode should default All familiars to one familiar",
+  /const calendarFamiliarId = activeId \?\? visibleFamiliars\[0\]\?\.id \?\? null/,
+  "Workspace calendar mode should default All familiars to the first loaded non-archived familiar",
 );
 
 assert.match(

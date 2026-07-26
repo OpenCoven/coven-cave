@@ -7,7 +7,7 @@
 .dash-cta__row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
   min-width: 0;
 }
 .dash-cta__text { min-width: 0; }
@@ -23,8 +23,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 16px;
-  border-radius: 12px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
   font-size: 0.86rem;
   color: var(--color-success);
   background: color-mix(in srgb, var(--color-success) 9%, transparent);
@@ -43,6 +43,24 @@
 }
 
 .dash-inbox__row { align-items: center; }
+.dash-inbox__row--selected { background: color-mix(in oklch, var(--accent-presence) 10%, transparent); }
+.dash-inbox__row[role="checkbox"] { cursor: pointer; }
+
+/* bulk triage: select toggle + bar + row checkbox */
+.dash-inbox__select-toggle { margin-left: auto; }
+.dash-inbox__bulkbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: var(--space-1) 0 var(--space-2); padding: 6px 8px; border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
+}
+.dash-inbox__bulkbar-left, .dash-inbox__bulkbar-right { display: flex; align-items: center; gap: 6px; }
+.dash-inbox__bulkbar-count { font-size: 12px; color: var(--text-muted); }
+.dash-inbox__check {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; flex: 0 0 auto;
+  border: 1px solid var(--border-strong); border-radius: 5px; color: transparent;
+}
+.dash-inbox__check[data-checked="true"] { border-color: var(--accent-presence); background: var(--accent-presence); color: var(--accent-presence-foreground); }
+.dash-inbox__check svg { width: 11px; height: 11px; }
 
 .dash-inbox__actions {
   display: flex;
@@ -51,75 +69,15 @@
   flex: 0 0 auto;
 }
 
-.dash-act {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 11px;
-  border-radius: 8px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--text-primary);
-  background: var(--bg-base);
-  border: 1px solid var(--border-strong);
-  cursor: pointer;
-  text-decoration: none;
-  white-space: nowrap;
+/* Open items beyond the visible cap drill through to the Rituals surface. */
+.dash-inbox__more {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: var(--space-2); padding: 7px 10px; border-radius: 8px;
+  font-size: 0.8rem; font-weight: 600; color: var(--text-muted);
+  text-decoration: none; border: 1px dashed var(--border-hairline);
 }
-.dash-act:hover { border-color: var(--accent-presence); }
-.dash-act--primary {
-  color: var(--bg-base);
-  background: var(--accent-presence);
-  border-color: var(--accent-presence);
-}
-.dash-act--ghost { padding: 5px 8px; color: var(--text-muted); }
-.dash-act--ghost svg { width: 15px; height: 15px; }
-
-/* Snooze split: button opens a small duration menu. */
-.dash-snooze { position: relative; display: inline-flex; }
-.dash-snooze .dash-act svg { width: 12px; height: 12px; opacity: 0.7; }
-.dash-snooze__backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  background: transparent;
-  border: none;
-  cursor: default;
-}
-.dash-snooze__menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 31;
-  display: flex;
-  flex-direction: column;
-  min-width: 150px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--bg-panel, var(--bg-base));
-  border: 1px solid var(--border-strong);
-  box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.45);
-}
-.dash-snooze__opt {
-  display: flex;
-  align-items: center;
-  padding: 7px 10px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--text-primary);
-  font-size: 0.8rem;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-.dash-snooze__opt:hover { background: var(--bg-hover, color-mix(in oklch, var(--foreground) 8%, transparent)); }
-.dash-snooze__opt:focus-visible {
-  background: var(--bg-hover, color-mix(in oklch, var(--foreground) 8%, transparent));
-  outline: 2px solid var(--accent-presence);
-  outline-offset: -2px;
-}
+.dash-inbox__more:hover { color: var(--text-primary); border-color: var(--accent-presence); }
+.dash-inbox__more svg { width: 13px; height: 13px; flex: 0 0 auto; }
 
 /* Compact launcher (busy state): single dense row, hide subtitles. */
 .dr-quicklinks.dash-launcher--compact {
@@ -132,13 +90,300 @@
   .dr-quicklinks.dash-launcher--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* Settings shell: desktop-native control surface for /settings. */
+.settings-shell {
+  background:
+    linear-gradient(135deg, color-mix(in oklch, var(--accent-presence) 9%, transparent), transparent 32%),
+    var(--bg-base);
+}
+
+.settings-shell__header {
+  /* Subtle titlebar glass, matching the workspace shell's native band: a
+     translucent panel-to-base wash with blur+saturate instead of the old
+     opaque gradient, so the header reads as window chrome floating over the
+     settings canvas. Fallbacks below restore the opaque wash. */
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--bg-panel) 62%, transparent),
+      color-mix(in oklch, var(--bg-base) 44%, transparent)
+    );
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-app-region: drag;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .settings-shell__header {
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
+  }
+  .spark-tip {
+    background: var(--bg-elevated);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .settings-shell__header {
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
+    backdrop-filter: none;
+  }
+  .spark-tip {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+  }
+}
+
+.settings-shell__header :is(button, a, input, select, textarea) {
+  -webkit-app-region: no-drag;
+}
+
+.settings-shell__native-badge {
+  background: color-mix(in oklch, var(--bg-raised) 82%, transparent);
+}
+
+.settings-shell__sidebar {
+  width: 248px;
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 96%, transparent), color-mix(in oklch, var(--bg-base) 96%, transparent));
+}
+
+.settings-shell__sidebar-head {
+  margin-bottom: 10px;
+}
+
+.settings-shell__content {
+  scroll-padding-top: 18px;
+}
+
+.settings-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: var(--space-6);
+  padding: 18px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  background:
+    radial-gradient(circle at top right, color-mix(in oklch, var(--accent-presence) 15%, transparent), transparent 34%),
+    color-mix(in oklch, var(--bg-raised) 88%, transparent);
+}
+
+.settings-overview__title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.settings-overview__mark {
+  /* Fixed near-black glyph ink: the tile behind it is accent-tinted inline
+     (meta.accent) and light enough for this ink in both modes. */
+  --mark-ink: #111;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: var(--radius-card);
+  color: var(--mark-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 38%, transparent);
+}
+
+.settings-overview__kicker {
+  margin: 0 0 1px;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.settings-overview__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 22px;
+  font-weight: 680;
+  line-height: 1.15;
+}
+
+.settings-overview__description {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: 1.45;
+}
+
+.settings-overview-strip {
+  display: flex;
+  flex: 1 1 360px;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: 0;
+}
+
+.settings-overview-strip__item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 190px;
+  padding: var(--space-2) 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-base) 68%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.25;
+}
+
+.settings-overview-strip__item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-overview-strip__icon {
+  flex-shrink: 0;
+  color: var(--accent-presence);
+}
+
+.settings-touch-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.settings-tool-action {
+  height: 28px;
+  min-height: 28px;
+  line-height: 1;
+}
+
+/* Touch widths keep the WCAG floor; on desktop the shared action stays as
+   compact as the neighboring xs/tool-action buttons. Placed after
+   .settings-tool-action so the floor wins when both classes are present. */
+@media (max-width: 767px) {
+  .settings-touch-action {
+    min-height: var(--touch-target);
+  }
+}
+
+.settings-tool-action--primary {
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 72%, white 18%);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--accent-presence) 24%, transparent) inset,
+    0 8px 18px color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  transition: background 0.14s, border-color 0.14s, box-shadow 0.14s, transform 0.14s;
+}
+
+.settings-tool-action--primary:hover {
+  background: var(--accent-presence-hover);
+  border-color: color-mix(in oklch, var(--accent-presence) 82%, white 18%);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--accent-presence) 32%, transparent) inset,
+    0 10px 22px color-mix(in oklch, var(--accent-presence) 24%, transparent);
+}
+
+.settings-mobile-switch {
+  min-width: 64px;
+  min-height: var(--touch-target);
+}
+
+/* Minimal track/knob switch (News headlines) — user-requested slim replacement
+   for the 64px On/Off rectangle. The row label carries the meaning; an inset
+   negative-hit-area keeps the small control comfortably tappable. */
+.settings-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.settings-switch::after {
+  content: "";
+  position: absolute;
+  inset: -12px;
+}
+.settings-switch__knob {
+  position: absolute;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+  transition: transform 140ms var(--ease-standard, ease), background 140ms ease;
+}
+.settings-switch.is-on {
+  border-color: color-mix(in oklch, var(--accent-presence) 60%, var(--border-hairline));
+  background: var(--accent-presence);
+}
+.settings-switch.is-on .settings-switch__knob {
+  transform: translateX(14px);
+  background: var(--accent-presence-foreground);
+}
+
+@media (max-width: 767px) {
+  .settings-shell__sidebar {
+    width: 100%;
+    background: var(--bg-base);
+  }
+
+  .settings-shell__sidebar-head {
+    margin-bottom: var(--space-3);
+  }
+
+  .settings-overview {
+    display: block;
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .settings-overview__title-row {
+    align-items: flex-start;
+  }
+
+  .settings-overview__mark {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
+  .settings-overview__title {
+    font-size: 19px;
+  }
+
+  .settings-overview-strip {
+    flex-direction: column;
+    margin-top: var(--space-4);
+  }
+
+  .settings-overview-strip__item span {
+    white-space: normal;
+  }
+}
+
 /* ── Unified dashboard: today's daily summary, folded inline ───────────────
    The narrative panel sits beside its generated illustration on wide screens
    and stacks on narrow ones. Reuses the shared .dr-panel / .dr-cardimg look. */
 .dash-today__grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: var(--space-4);
   align-items: start;
 }
 @media (min-width: 720px) {
@@ -160,7 +405,7 @@
 .dash-today__sessions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   padding-top: 14px;
   border-top: 1px solid var(--border-hairline);
 }
@@ -178,131 +423,37 @@
 .dash-today__chip {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
-  border-radius: 999px;
+  padding: var(--space-1) 10px;
+  border-radius: var(--radius-pill);
   font-size: 0.78rem;
   color: var(--text-secondary);
   background: var(--bg-base);
   border: 1px solid var(--border-hairline);
 }
+.dash-today__chip--link {
+  text-decoration: none;
+  color: var(--color-info);
+  border-color: color-mix(in oklch, var(--color-info) 38%, transparent);
+  background: color-mix(in oklch, var(--color-info) 9%, transparent);
+}
+.dash-today__chip--link:hover {
+  border-color: color-mix(in oklch, var(--color-info) 55%, transparent);
+  background: color-mix(in oklch, var(--color-info) 15%, transparent);
+}
 
 /* Greeting eyebrow icon — replaces the old presence dot with a sun/moon. */
 .dr-eyebrow__icon { font-size: 0.85rem; color: var(--accent-presence); }
 
-/* ════════════════════════════════════════════════════════════════════════════
-   Power cockpit — dense, multi-panel dashboard
-   ════════════════════════════════════════════════════════════════════════════ */
-.cockpit { display: flex; flex-direction: column; gap: 18px; max-width: 1280px; margin: 0 auto; width: 100%; }
 
-/* Header */
-.cockpit-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.cockpit-eyebrow { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); margin: 0 0 4px; }
-.cockpit-eyebrow svg { color: var(--accent-presence); }
-.cockpit-title { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 0; color: var(--text-primary); }
-.cockpit-head__meta { display: flex; gap: 8px; }
-.cockpit-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-muted);
-  border: 1px solid var(--border-hairline); border-radius: 999px; padding: 4px 10px; background: var(--bg-raised); }
-
-/* KPI rail */
-.cockpit-kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
-@media (max-width: 1000px) { .cockpit-kpis { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 560px)  { .cockpit-kpis { grid-template-columns: repeat(2, 1fr); } }
-.cockpit-kpi { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 12px;
-  border: 1px solid var(--border-hairline); background: var(--bg-raised); text-decoration: none; transition: border-color .15s, transform .15s; }
-a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(-1px); }
-.cockpit-kpi__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-.cockpit-kpi__icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px;
-  color: var(--kpi, var(--accent-presence)); background: color-mix(in oklch, var(--kpi, var(--accent-presence)) 15%, transparent); }
-.cockpit-kpi__delta { font-size: 10px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
-.cockpit-kpi__value { font-size: 24px; font-weight: 700; line-height: 1.1; color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.cockpit-kpi__label { font-size: 11.5px; color: var(--text-secondary); }
-/* 7-day trend sparkline */
-.cockpit-spark { display: block; width: 100%; height: 22px; margin-top: 7px; overflow: visible; }
-.cockpit-spark--flat { display: block; width: 100%; height: 22px; margin-top: 7px;
-  border-bottom: 1px dashed var(--border-hairline); opacity: 0.6; }
-
-/* Main grid */
-.cockpit-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-@media (max-width: 980px) { .cockpit-grid { grid-template-columns: 1fr; } }
-.cockpit-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-
-/* Panel */
-.cockpit-panel { border: 1px solid var(--border-hairline); border-radius: 14px; background: var(--bg-raised); overflow: hidden; }
-.cockpit-panel__head { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--border-hairline); }
-.cockpit-panel__title { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 650; color: var(--text-primary); }
-.cockpit-panel__icon { color: var(--accent-presence); }
-.cockpit-panel__count { min-width: 18px; height: 17px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center;
-  font-size: 10.5px; font-weight: 700; border-radius: 999px; background: var(--bg-elevated); color: var(--text-secondary); }
-.cockpit-panel__hint { font-size: 10.5px; color: var(--text-muted); }
-.cockpit-panel__more { margin-left: auto; color: var(--text-muted); display: inline-flex; padding: 2px; border-radius: 6px; }
-.cockpit-panel__more:hover { color: var(--accent-presence); background: var(--bg-hover); }
-.cockpit-panel__body { padding: 12px 14px; }
-.cockpit-panel .dash-inbox, .cockpit-panel .dr-list { margin: 0; }
-
-/* Board snapshot */
-.cockpit-bar { display: flex; height: 9px; border-radius: 999px; overflow: hidden; background: var(--bg-elevated); }
-.cockpit-bar__seg { min-width: 4px; }
-.cockpit-bar__legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 2px; }
-.cockpit-legend { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); }
-.cockpit-legend b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.cockpit-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
-.cockpit-cards { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.cockpit-cardrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; text-decoration: none; color: var(--text-primary); }
-.cockpit-cardrow:hover { background: var(--bg-hover); }
-.cockpit-cardrow__title { flex: 1; min-width: 0; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cockpit-cardrow__who { font-size: 10.5px; color: var(--text-muted); flex: 0 0 auto; }
-.cockpit-muted { font-size: 12px; color: var(--text-muted); margin: 10px 0 0; }
-
-/* Agents */
-.cockpit-agents { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.cockpit-agent { display: flex; align-items: center; gap: 10px; padding: 6px 4px; }
-.cockpit-agent__avatar { position: relative; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
-  font-size: 12px; font-weight: 700; color: #fff; flex: 0 0 auto; }
-.cockpit-agent__on { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%;
-  background: var(--color-success); border: 2px solid var(--bg-raised); }
-.cockpit-agent__body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.cockpit-agent__name { font-size: 12.5px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cockpit-agent__role { font-size: 10.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cockpit-agent__busy { font-size: 10px; color: var(--color-success); flex: 0 0 auto; }
-
-/* GitHub */
-.cockpit-gh, .cockpit-agenda, .cockpit-reading { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.cockpit-ghrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; text-decoration: none; color: var(--text-primary); }
-.cockpit-ghrow:hover { background: var(--bg-hover); }
-.cockpit-ghrow__icon { color: var(--text-muted); flex: 0 0 auto; }
-.cockpit-ghrow__title { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cockpit-ghrow__meta { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-.cockpit-ghrow__repo { font-size: 10.5px; color: var(--text-muted); }
-
-/* Agenda */
-.cockpit-agendarow { display: flex; align-items: baseline; gap: 10px; padding: 6px 4px; }
-.cockpit-agendarow__when { font-size: 10.5px; font-weight: 600; color: var(--accent-presence); flex: 0 0 auto; min-width: 64px; }
-.cockpit-agendarow__title { font-size: 12.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Reading */
-.cockpit-readrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; text-decoration: none; color: var(--text-primary); }
-.cockpit-readrow:hover { background: var(--bg-hover); }
-.cockpit-readrow__title { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cockpit-readrow__host { font-size: 10.5px; color: var(--text-muted); flex: 0 0 auto; }
-
-/* Quick launch + skeleton */
-.cockpit-launch { display: flex; flex-direction: column; gap: 10px; }
-.cockpit-quicklinks { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-@media (max-width: 720px) { .cockpit-quicklinks { grid-template-columns: repeat(2, 1fr); } }
-.cockpit-skel { display: flex; flex-direction: column; gap: 8px; }
-.cockpit-skel__row { height: 14px; border-radius: 6px; background: linear-gradient(90deg, var(--bg-elevated), var(--bg-hover), var(--bg-elevated));
-  background-size: 200% 100%; animation: cockpit-shimmer 1.3s ease-in-out infinite; }
-@keyframes cockpit-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-
-/* Draggable panels */
-.cockpit-sortable { position: relative; }
-.cockpit-sortable.is-dragging { box-shadow: 0 16px 48px rgb(0 0 0 / 0.45); border-radius: 14px; }
-.cockpit-grip {
-  position: absolute; top: 9px; right: 9px; z-index: 4;
-  width: 22px; height: 22px; display: grid; place-items: center;
-  border: 0; border-radius: 6px; background: transparent; color: var(--text-muted);
-  cursor: grab; opacity: 0; transition: opacity .12s, background .12s; touch-action: none;
-}
-.cockpit-sortable:hover .cockpit-grip, .cockpit-grip:focus-visible { opacity: 1; }
-.cockpit-grip:hover { background: var(--bg-hover); color: var(--text-secondary); }
-.cockpit-grip:active { cursor: grabbing; }
+/* Shared hover-able trend sparkline (report metric cards, analytics, profile) */
+.spark { position: relative; display: block; width: 100%; overflow: visible; }
+.spark svg { display: block; width: 100%; height: 100%; }
+.spark--flat { width: 100%; border-bottom: 1px dashed var(--border-hairline); opacity: 0.6; }
+.spark-tip { position: absolute; top: -7px; transform: translate(-50%, -100%);
+  white-space: nowrap; pointer-events: none; z-index: 4;
+  padding: 3px 7px; border-radius: 6px; font-size: 10.5px; line-height: 1.2;
+  color: var(--text-primary); background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--border-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  font-variant-numeric: tabular-nums; }
+.spark-tip b { font-weight: 700; }

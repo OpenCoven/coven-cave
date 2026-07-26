@@ -1,0 +1,24 @@
+{
+  "name": "markitdown",
+  "version": "0.1.0",
+  "description": "Convert PDF, Office, image, and audio files to Markdown for agent ingestion.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Markitdown",
+    "shortDescription": "Convert PDF, Office, image, and audio files to Markdown for agent ingestion.",
+    "longDescription": "Use Markitdown to turn binary documents into clean Markdown before reasoning over them.",
+    "developerName": "OpenCoven",
+    "category": "Agents & Harnesses",
+    "capabilities": [
+      "markdown",
+      "documents",
+      "pdf",
+      "office",
+      "ingestion"
+    ],
+    "defaultPrompt": "Help me use Markitdown safely."
+  }
+}

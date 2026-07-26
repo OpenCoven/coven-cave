@@ -3,7 +3,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const styles = [
+  "../styles/cave-md/prose.css",
+  "../styles/cave-composer.css",
+  "../styles/chat-list.css",
+  "../styles/calendar.css",
+  "../styles/cave-chat/activity.css",
+  "../styles/cave-chat/transcript.css",
+]
+  .map((sheet) => readFileSync(new URL(sheet, import.meta.url), "utf8"))
+  .join("\n");
 
 assert.match(
   source,
@@ -31,7 +40,7 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear-header\s*\{[\s\S]*position\s*:\s*sticky[\s\S]*top\s*:\s*0[\s\S]*padding\s*:\s*8px 12px 9px/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear-header\s*\{[\s\S]*position\s*:\s*sticky[\s\S]*top\s*:\s*0[\s\S]*padding\s*:\s*var\(--space-2\) var\(--space-3\) 9px/,
   "Mobile chat header should stay compact under the shell-owned safe area",
 );
 
@@ -67,8 +76,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-bubble-user\s*\{[\s\S]*max-width\s*:\s*min\(92%, 520px\)/,
-  "Mobile user bubbles should use phone-friendly line length instead of desktop width",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-linear-turn-content--with-avatar\s*\{[\s\S]*grid-template-columns\s*:\s*38px minmax\(0, 1fr\)[\s\S]*\.cave-chat-linear \.cave-bubble-user\s*\{[\s\S]*max-width\s*:\s*100%/,
+  "Mobile avatar rows should keep user content inside the phone-width transcript column",
 );
 
 assert.match(
@@ -85,8 +94,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-panel\s*\{[\s\S]*display\s*:\s*flex[\s\S]*flex-direction\s*:\s*column[\s\S]*\.cave-composer-controls\s*\{[\s\S]*position\s*:\s*static[\s\S]*min-height\s*:\s*100px/,
-  "Mobile composer controls should sit in a two-row footer so they never cover multiline text",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-panel\s*\{[\s\S]*display\s*:\s*flex[\s\S]*flex-direction\s*:\s*column[\s\S]*\.cave-composer-controls\s*\{[\s\S]*position\s*:\s*static[\s\S]*\.cave-composer-control-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto/,
+  "Mobile composer footer stays a single utility|submit row (controls collapsed into the Options menu)",
 );
 
 assert.match(
@@ -121,8 +130,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
-  "Mobile scroll-to-bottom FAB should hug just above the composer dock",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*action strip[\s\S]*84px textarea[\s\S]*one compact action footer[\s\S]*214px[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
+  "Mobile scroll-to-bottom FAB should clear the retained composer stack (action strip + textarea + footer + dock padding)",
 );
 
 // The FAB must NOT use `float` — float removes it from flow and breaks
@@ -171,6 +180,11 @@ assert.match(
   styles,
   /\.cave-mobile-header-identity,\s*\.cave-mobile-header-task,/,
   "Linked-task chip should be hidden on desktop alongside the other mobile-only header elements",
+);
+assert.doesNotMatch(
+  styles,
+  /\.cave-mobile-header-identity,\s*\.cave-chat-linked-context,\s*\.cave-mobile-header-task,/,
+  "Desktop hide rules should no longer carry the removed linked-context strip",
 );
 
 console.log("chat-view-mobile-command-center.test.ts: ok");

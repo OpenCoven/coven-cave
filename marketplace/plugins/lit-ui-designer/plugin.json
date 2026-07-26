@@ -1,0 +1,40 @@
+{
+  "name": "lit-ui-designer",
+  "version": "0.1.0",
+  "description": "Design, build, review, and polish production-grade Lit/LitElement web component UIs with idiomatic shadow DOM styling, design tokens, and WCAG 2.2 AA accessibility.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "lit",
+    "web-components",
+    "accessibility",
+    "shadow-dom",
+    "design-system"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/lit-ui-designer",
+  "x-coven": {
+    "displayName": "Lit UI Designer",
+    "category": "Design",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/lit-ui-designer"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

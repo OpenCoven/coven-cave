@@ -5,7 +5,7 @@
 #   1. Files matching dangerous path patterns (env files, private keys,
 #      certificates, signing material, agent scratch state).
 #   2. Inline secret-shaped strings in staged diffs (AWS, Stripe, Slack,
-#      GitHub PAT, OpenAI, Anthropic, Telegram bot tokens, generic
+#      GitHub PAT, OpenRouter, OpenAI, Anthropic, Telegram bot tokens, generic
 #      Bearer tokens, password assignments, PEM private-key blocks).
 #
 # Bypass for genuine false positives:
@@ -79,6 +79,7 @@ scan() {
 
 # Patterns intentionally aligned with src/lib/redact.ts so contributors get
 # the same coverage at commit time as users get at render time.
+scan "OpenRouter API key"    'sk-or-v1-[A-Za-z0-9_-]{32,}'
 scan "AWS access key"        'AKIA[0-9A-Z]{16}'
 scan "AWS secret access key" 'aws_secret_access_key[[:space:]]*[:=][[:space:]]*["'\'']?[A-Za-z0-9/+=]{30,}'
 scan "GitHub PAT"            'gh[pousr]_[A-Za-z0-9]{30,}'

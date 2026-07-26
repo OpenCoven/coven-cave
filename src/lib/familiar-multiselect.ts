@@ -29,6 +29,20 @@ export function isAllSelected(selected: ReadonlySet<string>): boolean {
 }
 
 /**
+ * Does a single item (a card/event/etc. owned by `familiarId`) pass a scope
+ * selection? Empty scope → everything. A `null`/`undefined` owner only passes
+ * the "All" scope. Mirrors {@link automationMatchesFilter} for single-owner
+ * surfaces (board, calendar, inbox).
+ */
+export function familiarInScope(
+  scope: ReadonlySet<string>,
+  familiarId: string | null | undefined,
+): boolean {
+  if (scope.size === 0) return true;
+  return familiarId != null && scope.has(familiarId);
+}
+
+/**
  * Does an automation pass the filter? Empty filter → everything. Otherwise the
  * automation must be scoped to at least one selected familiar.
  */

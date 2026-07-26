@@ -1,140 +1,152 @@
 <!doctype html>
-<!--
-  Reading typography demo — open this file directly in a browser.
-
-  WHAT: a live, interactive demo of the reading-typography controls
-  (Settings → Appearance → Typography), shipped in v0.0.77. Use the control
-  bar to change each setting and watch it apply to the two prose surfaces.
-
-  HOW IT STAYS HONEST: it <link>s the REAL stylesheets from this repo
-  (../src/styles/cave-chat.css for the shared .cave-md surface, and
-  ../src/styles/library.css for the library overrides), so it never drifts
-  from production CSS. Keep it at docs/ (the relative paths assume it sits
-  one level above src/). The :root block below only supplies the handful of
-  theme color vars that normally come from globals.css — it sets no
-  typography values, so what you see is the real cascade.
-
-  The control bar mirrors src/lib/reading-*.ts: each control writes a
-  CSS var (or the data-reading-dropcap attribute) onto <html>, exactly as
-  applyReading*() does at runtime.
-
-  SCOPE NOTES:
-    • Drop cap is library-only by design (it targets
-      .library-preview-md.cave-md p:first-of-type::first-letter).
-    • The full library reader (.library-reader-body) is a separate,
-      intentionally-independent experience (Lora serif + its own A−/A+
-      size control); it does not follow these controls and isn't shown here.
--->
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CovenCave — Reading typography demo</title>
-<link rel="stylesheet" href="../src/styles/cave-chat.css">
-<link rel="stylesheet" href="../src/styles/library.css">
-<style>
-  /* Theme color vars normally provided by globals.css. No typography here. */
-  :root {
-    --foreground: #1b1726; --muted-foreground: #5d566f;
-    --text-primary: var(--foreground); --text-secondary: var(--muted-foreground);
-    --text-muted: #8a82a0; --bg-base: #faf8ff; --background: #faf8ff;
-    --border: #e3dcf0; --border-hairline: var(--border); --accent-presence: #6F62A8;
-  }
-  html, body { margin: 0; background: var(--background); }
-  .controls {
-    position: sticky; top: 0; z-index: 9; display: flex; flex-wrap: wrap; gap: 12px;
-    padding: 12px 44px; background: #fff; border-bottom: 1px solid var(--border);
-    font: 13px/1.2 system-ui, sans-serif; color: var(--text-secondary);
-  }
-  .controls label { display: flex; gap: 5px; align-items: center; }
-  .controls select { font: inherit; padding: 2px 4px; }
-  .controls button { font: inherit; padding: 3px 10px; cursor: pointer; }
-  .stage { padding: 32px 44px 64px; }
-  .surface-label {
-    font: 600 12px/1 system-ui, sans-serif; color: var(--accent-presence);
-    margin: 0 0 8px; text-transform: uppercase; letter-spacing: .08em;
-  }
-  .surface + .surface { margin-top: 40px; }
-</style>
-</head>
-<body>
-<div class="controls" id="controls"></div>
-<div class="stage">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenCoven Typography — Coven Canon</title>
+    <style>
+      /* Coven canonical fonts. Free / open-source on Google Fonts.
+         DESIGN.md §4: EB Garamond (display) · Inter (sans/UI) · JetBrains Mono (mono/code). */
+      @import url("https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&family=Inter:wght@100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap");
 
-  <section class="surface">
-    <p class="surface-label">Library reader — .library-preview-md.cave-md</p>
-    <div class="library-preview library-preview--full-canvas">
-      <article class="library-preview-md cave-md demo-prose"></article>
-    </div>
-  </section>
+      :root {
+        --oc-serif: "EB Garamond", "Iowan Old Style", Georgia, "Times New Roman", serif;
+        --oc-sans:  Inter, "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        --oc-mono:  "JetBrains Mono", "SF Mono", SFMono-Regular, ui-monospace, Menlo, monospace;
+        --oc-bg: #0F0A14;
+        --oc-fg: #E8E4F5;
+        --oc-fg-2: #C5BDED;
+        --oc-fg-3: #7A6DAA;
+        --oc-violet: #9A8ECD;
+        --oc-violet-bright: #D4B5FF;
+        --oc-rule: rgba(154, 142, 205, 0.18);
+      }
 
-  <section class="surface">
-    <p class="surface-label">General reading surface — .cave-md (chat / memory)</p>
-    <article class="cave-md demo-prose"></article>
-  </section>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: var(--oc-bg); color: var(--oc-fg); }
+      body { font-family: var(--oc-sans); font-size: 16px; line-height: 1.55; }
+      main { max-width: 760px; margin: 0 auto; padding: 88px 32px 128px; }
 
-</div>
+      /* — Display / brand — */
+      .display, h1, h2, h3 {
+        font-family: var(--oc-serif);
+        letter-spacing: -0.005em;
+        font-weight: 500;
+      }
+      h1 { font-size: clamp(48px, 6vw, 88px); line-height: 1.02; margin: 0 0 8px; color: var(--oc-violet); }
+      .kicker {
+        font-family: var(--oc-serif); font-style: italic; font-weight: 400;
+        font-size: 22px; line-height: 1.3; color: var(--oc-fg-2);
+        margin: 0 0 48px;
+      }
+      h2 { font-size: 36px; line-height: 1.1; margin: 64px 0 12px; color: var(--oc-fg); font-weight: 600; }
+      h3 { font-size: 22px; line-height: 1.2; margin: 32px 0 6px; color: var(--oc-fg); font-weight: 600; }
 
-<template id="prose">
-  <h1>The Cartographer's Confession</h1>
-  <p>Magnificently, and almost incomprehensibly, the old cartographer had spent
-  his entire life convinced that the territory could be flattened onto paper
-  without consequence. He believed, with an antidisestablishmentarian
-  stubbornness, that representation and reality were interchangeable — that a
-  sufficiently detailed map would eventually become indistinguishable from the
-  world it described.</p>
-  <p>But longitude is a liar and latitude keeps no promises. Each projection
-  distorts something — area, angle, distance, direction — and the cartographer,
-  who had internalized this mathematically unavoidable compromise, nonetheless
-  refused to acknowledge it aloud.</p>
-  <blockquote>All maps are arguments about what matters. The cartographer simply
-  forgot he was arguing.</blockquote>
-  <h2>What the margins recorded</h2>
-  <ul>
-    <li>Coastlines that rearranged themselves between surveys.</li>
-    <li>A peninsula that appeared only after particularly long, sleepless nights.</li>
-  </ul>
-  <p>This final paragraph should make every control plainly legible: leading,
-  tracking, alignment, weight, measure width, discretionary hyphenation of
-  <em>extraordinarily</em> long words, and — in the library reader alone — the
-  decorative drop capital that opens the very first paragraph above.</p>
-</template>
+      /* — UI / body — */
+      p { margin: 0 0 16px; max-width: 62ch; color: var(--oc-fg); }
+      p.lead { font-size: 18px; line-height: 1.6; color: var(--oc-fg-2); }
+      .eyebrow {
+        font-family: var(--oc-mono);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: var(--oc-violet);
+        margin: 0 0 12px;
+      }
 
-<script>
-  // Fill both prose surfaces from the shared template.
-  const tpl = document.getElementById("prose").content;
-  document.querySelectorAll(".demo-prose").forEach((el) => el.append(tpl.cloneNode(true)));
+      /* — Mono / code — */
+      code, pre, kbd, .mono {
+        font-family: var(--oc-mono);
+        font-feature-settings: "liga" 1, "calt" 1;
+      }
+      pre { background: rgba(255, 255, 255, 0.03); border: 1px solid var(--oc-rule); border-radius: 6px; padding: 16px; overflow-x: auto; margin: 0 0 24px; font-size: 13px; line-height: 1.55; }
+      code { color: var(--oc-fg-2); }
 
-  // Control bar — mirrors src/lib/reading-*.ts (var name + option→value map).
-  const r = document.documentElement;
-  const CONTROLS = [
-    ["leading",  "--cave-reading-leading",  [["normal","1.7"],["compact","1.45"],["relaxed","2"]]],
-    ["tracking", "--cave-reading-tracking", [["normal","0"],["wide","0.02em"],["wider","0.04em"]]],
-    ["weight",   "--cave-reading-weight",   [["normal","400"],["light","300"],["medium","500"]]],
-    ["width",    "--cave-reading-width",    [["full","none"],["medium","680px"],["narrow","560px"]]],
-    ["align",    "--cave-reading-align",    [["left","left"],["justify","justify"]]],
-    ["hyphens",  "--cave-reading-hyphens",  [["off","manual"],["on","auto"]]],
-    ["drop cap", "data-reading-dropcap",    [["off",""],["on","on"]], true],
-  ];
-  const bar = document.getElementById("controls");
-  for (const [name, prop, opts, isAttr] of CONTROLS) {
-    const sel = document.createElement("select");
-    for (const [text, val] of opts) {
-      const o = document.createElement("option"); o.textContent = text; o.value = val; sel.append(o);
-    }
-    sel.onchange = () => {
-      if (isAttr) sel.value ? r.setAttribute(prop, sel.value) : r.removeAttribute(prop);
-      else r.style.setProperty(prop, sel.value);
-    };
-    const lab = document.createElement("label"); lab.append(name + ": ", sel); bar.append(lab);
-  }
-  const reset = document.createElement("button");
-  reset.textContent = "Reset";
-  reset.onclick = () => {
-    CONTROLS.forEach(([, prop, , isAttr]) => isAttr ? r.removeAttribute(prop) : r.style.removeProperty(prop));
-    bar.querySelectorAll("select").forEach((s) => (s.selectedIndex = 0));
-  };
-  bar.append(reset);
-</script>
-</body>
+      hr { border: 0; border-top: 1px solid var(--oc-rule); margin: 48px 0; }
+
+      .specimen {
+        border: 1px solid var(--oc-rule);
+        border-radius: 8px;
+        padding: 24px;
+        margin: 24px 0;
+        background: rgba(255, 255, 255, 0.015);
+      }
+      .specimen .label { color: var(--oc-fg-3); font-size: 12px; text-transform: uppercase; letter-spacing: 0.14em; font-family: var(--oc-mono); margin: 0 0 12px; }
+      .specimen .sample { margin: 0; }
+      .specimen.serif .sample { font-family: var(--oc-serif); font-size: 34px; line-height: 1.2; letter-spacing: -0.005em; }
+      .specimen.serif .sample em { color: var(--oc-violet); }
+      .specimen.sans .sample { font-family: var(--oc-sans); font-size: 20px; line-height: 1.55; }
+      .specimen.mono .sample { font-family: var(--oc-mono); font-size: 14px; line-height: 1.6; }
+
+      .badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-family: var(--oc-mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        background: rgba(154, 142, 205, 0.14);
+        color: var(--oc-violet);
+        border: 1px solid var(--oc-rule);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">OpenCoven · DESIGN.md §4</p>
+      <h1>The Coven remembers.</h1>
+      <p class="kicker"><em>A three-face system for the grimoire — one for identity, one for reading, one for inspecting.</em></p>
+
+      <p class="lead">This is Inter. It carries every paragraph, form field, control, table cell, chat bubble, docs page, and inline prose in the Coven. It's the sans you read.</p>
+      <p>Body copy should feel calm and dense enough to hold real information but never austere. Inter's optical adjustments make it work at 11px labels and 20px lead paragraphs alike.</p>
+
+      <hr />
+
+      <h2>Display / brand — EB Garamond</h2>
+      <p>Headlines, hero copy, ceremonial spreads. Never body. Its italics carry the charm — use them for pull-quotes, kickers, and named entities in lore copy.</p>
+
+      <div class="specimen serif">
+        <p class="label">Serif · Display</p>
+        <p class="sample">The <em>coven</em> is not a chatbox. It is a workspace of familiars that remember, coordinate, and belong to you.</p>
+      </div>
+
+      <h2>UI / body — Inter</h2>
+      <p>Everything you read. Body copy, controls, tables, chat, docs prose, forms, chrome. Do not use serif here.</p>
+
+      <div class="specimen sans">
+        <p class="label">Sans · Interface</p>
+        <p class="sample">The quick brown fox jumps over the lazy dog. 0123456789 — @OpenCvn · mind.opencoven.ai</p>
+      </div>
+
+      <h2>Mono / code — JetBrains Mono</h2>
+      <p>Everything you inspect. Code, terminal output, session IDs, hashes, paths, API payloads, event streams, diffs, and every uppercase label / badge.</p>
+
+      <div class="specimen mono">
+        <p class="label">Mono · Terminal</p>
+        <pre class="sample">$ cave run familiar=charm
+[10:04:12] session=2051b5cf-f653 model=claude-opus-4.7
+[10:04:13] ↳ typography canon → EB Garamond · Inter · JetBrains Mono
+[10:04:13] ↳ retired: Fredoka (chrome), Satoshi/Neue Montreal (display)
+✔ sha256: 1e8b3d29…9ce32</pre>
+      </div>
+
+      <hr />
+
+      <h2>Rules</h2>
+      <ul>
+        <li>Serif is <strong>identity only</strong> — headlines, hero, ceremonial. Never body, never labels, never dense UI.</li>
+        <li>Sans is <strong>everything you read</strong> — body, chat, prose, controls, tables, docs, forms.</li>
+        <li>Mono is <strong>everything you inspect</strong> — code, terminal, identifiers, uppercase labels, badges, metadata.</li>
+        <li>Real italics matter — EB Garamond has a distinctive italic. Do not synthesize italics on fonts that don't ship one.</li>
+        <li>No playful fonts. No rounded display. No cursive. No novelty.</li>
+        <li>Weights: 400 body · 500 medium · 600 semi-bold section headers · 700 bold headlines.</li>
+        <li>Line heights: 1.4 sans body · 1.55 serif prose · 1.2 headings.</li>
+      </ul>
+
+      <p style="margin-top: 64px;"><span class="badge">v1.2.0 · 2026-07-09</span></p>
+    </main>
+  </body>
 </html>

@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+const source = [
+  await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./familiars-memory-files.tsx", import.meta.url), "utf8"),
+].join("\n");
 
 // The memory list scroll collapses the masthead (title + description + stats) so
 // the list gets more vertical room while the search + group/sort controls stay

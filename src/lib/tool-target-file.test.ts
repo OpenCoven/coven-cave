@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const { toolTargetFile } = await import("./tool-input-diff.ts");
+const { toolTargetFile, toolTargetPath } = await import("./tool-input-diff.ts");
 
 // ── toolTargetFile: openable absolute path for file tools, else null ─────────
 {
@@ -19,6 +19,11 @@ const { toolTargetFile } = await import("./tool-input-diff.ts");
   );
   // Case-insensitive tool name.
   assert.equal(toolTargetFile("edit", JSON.stringify({ path: "/repo/d.ts" })), "/repo/d.ts");
+  assert.equal(
+    toolTargetPath("Edit", JSON.stringify({ file_path: "src/rel.ts", old_string: "x", new_string: "y" })),
+    "src/rel.ts",
+    "relative mutation paths remain displayable in chat even though they are not openable",
+  );
 
   // Non-file tools → null.
   assert.equal(toolTargetFile("Bash", JSON.stringify({ command: "ls" })), null);
@@ -33,10 +38,10 @@ const { toolTargetFile } = await import("./tool-input-diff.ts");
   assert.equal(toolTargetFile("Edit", null), null);
 }
 
-// ── wiring: chat dispatches, comux handles, workspace falls back ─────────────
+// ── wiring: chat dispatches, code rail handles, workspace bridges ────────────
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
-const comux = await readFile(new URL("../components/comux-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("../components/workspace.tsx", import.meta.url), "utf8");
+const railController = await readFile(new URL("./use-workspace-rail-controller.ts", import.meta.url), "utf8");
 
 assert.match(
   chatView,
@@ -51,21 +56,18 @@ assert.match(
 // Click must not also toggle the <details> open/closed.
 assert.match(chatView, /openTargetFile = \(e: ReactMouseEvent\) => \{[\s\S]*?stopPropagation\(\)/, "open handler stops propagation");
 
-assert.match(
-  comux,
-  /addEventListener\("cave:open-project-file"/,
-  "comux listens for cave:open-project-file",
-);
-assert.match(
-  comux,
-  /if \(!active\) return;[\s\S]*?setRightView\("files"\);[\s\S]*?openFilePreview\(path/,
-  "the active comux opens the file in the Files preview (path resolved from the event detail)",
-);
-
+// (ComuxView's cave:open-project-file listener left with the component,
+// cave-c3yt — the workspace bridge into the Code room is the live
+// consumer, cave-ohcj/cave-cc5r.)
 assert.match(
   workspace,
-  /if \(m === "code" \|\| m === "terminal"\) return;[\s\S]*?setMode\("code"\)[\s\S]*?dispatchEvent\(new CustomEvent\("cave:open-project-file"/,
-  "workspace switches to Code mode and re-emits when no comux is showing",
+  /File\/diff links land on the Code room[\s\S]*?enqueuePendingCodeOpen\([\s\S]*?setMode\("code"\)/,
+  "workspace preserves file-open event detail while switching into code",
+);
+assert.doesNotMatch(
+  railController,
+  /addEventListener\("cave:open-project-file"|addEventListener\("cave:open-file-diff"/,
+  "the chat rail controller no longer consumes global file/diff open events (cave-ohcj)",
 );
 
 console.log("tool-target-file.test.ts: ok");

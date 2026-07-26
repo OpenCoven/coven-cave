@@ -1,0 +1,109 @@
+/**
+ * split-snap — pure geometry for the drag-to-split secondary pane.
+ *
+ * The detail area can host a second "page" beside the primary surface. The
+ * secondary pane resizes freely, with a single *magnetic* detent at the even
+ * split (½) so a balanced layout is effortless to find without cluttering the
+ * chrome with discrete ratio buttons. Dragging past *either* edge collapses the
+ * pane on that side: past the near edge closes the secondary (the primary
+ * fills), and past the far edge collapses the primary (the secondary fills).
+ * All sizes are expressed as the **secondary pane's** fraction of the split
+ * group (0..1), independent of which side it sits on.
+ */
+
+export type SnapPoint = {
+  /** Secondary-pane fraction of the group (0..1). */
+  ratio: number;
+  /** Short glyph shown on the snap guide. */
+  label: string;
+};
+
+/**
+ * The single magnetic detent: an even split. Free-dragging everywhere else,
+ * with a gentle pull toward ½ so a balanced layout falls into place on its own.
+ * (Replaces the old ⅓ · ½ · ⅔ button row — the divider itself is the control.)
+ */
+export const SPLIT_SNAP_POINTS: readonly SnapPoint[] = [{ ratio: 1 / 2, label: "Even" }];
+
+/** The ratio the secondary opens at when a page is first dropped in. */
+export const SPLIT_DEFAULT_RATIO = 1 / 2;
+
+/** Below this secondary fraction, releasing the drag closes the split. */
+export const SPLIT_CLOSE_RATIO = 0.16;
+
+/**
+ * Above this secondary fraction, releasing the drag collapses the *primary* and
+ * promotes the secondary to fill the surface — the mirror image of
+ * SPLIT_CLOSE_RATIO on the far edge (same 0.06 past-the-edge margin).
+ */
+export const SPLIT_COLLAPSE_RATIO = 0.84;
+
+/**
+ * Secondary cannot grow beyond this while resizing. It sits past
+ * SPLIT_COLLAPSE_RATIO so the divider can enter the collapse zone (mirroring
+ * how the 10% panel min lets it enter the close zone below SPLIT_CLOSE_RATIO).
+ */
+export const SPLIT_MAX_RATIO = 0.9;
+
+/**
+ * Snap engages within this fraction of the even-split detent. A touch wider
+ * than a hairline so ½ feels magnetic — but narrow enough that off-center
+ * ratios still feel free.
+ */
+export const SPLIT_SNAP_THRESHOLD = 0.06;
+
+/** Clamp a secondary fraction into the open/usable range. */
+export function clampSplitRatio(ratio: number): number {
+  if (!Number.isFinite(ratio)) return SPLIT_DEFAULT_RATIO;
+  return Math.min(SPLIT_MAX_RATIO, Math.max(SPLIT_CLOSE_RATIO, ratio));
+}
+
+/**
+ * The snap point nearest `ratio` within `threshold`, or null when the divider
+ * is in free space between snap points.
+ */
+export function nearestSnap(
+  ratio: number,
+  threshold: number = SPLIT_SNAP_THRESHOLD,
+): SnapPoint | null {
+  let best: SnapPoint | null = null;
+  let bestDist = threshold;
+  for (const point of SPLIT_SNAP_POINTS) {
+    const dist = Math.abs(point.ratio - ratio);
+    if (dist <= bestDist) {
+      best = point;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+export type SplitRelease =
+  | { action: "close" }
+  | { action: "collapse" }
+  | { action: "snap"; ratio: number; label: string }
+  | { action: "keep"; ratio: number };
+
+/**
+ * Resolve what should happen when the user *releases* the divider at `ratio`:
+ * close the split if it was dragged past the near edge, collapse the primary
+ * (promote the secondary to full) if dragged past the far edge, snap to the
+ * nearest clean ratio if within the threshold, otherwise keep the freely-chosen
+ * size.
+ */
+export function resolveSplitRelease(ratio: number): SplitRelease {
+  if (ratio < SPLIT_CLOSE_RATIO) return { action: "close" };
+  if (ratio > SPLIT_COLLAPSE_RATIO) return { action: "collapse" };
+  const snap = nearestSnap(ratio);
+  if (snap) return { action: "snap", ratio: snap.ratio, label: snap.label };
+  return { action: "keep", ratio: clampSplitRatio(ratio) };
+}
+
+/**
+ * Where to draw the live snap guide while dragging, as a left-offset fraction
+ * of the group (0..1). The divider sits at the boundary between the two panes;
+ * `side` is the side the *secondary* pane occupies.
+ */
+export function dividerOffset(ratio: number, side: "left" | "right"): number {
+  return side === "right" ? 1 - ratio : ratio;
+}

@@ -1,0 +1,47 @@
+{
+  "name": "worldbuilding",
+  "version": "0.1.0",
+  "description": "A living encyclopedia of your story world \u2014 characters, settings, themes, factions, and lore, linked into one graph an agent grows and guards as you write.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "MIT",
+  "keywords": [
+    "worldbuilding",
+    "writing",
+    "knowledge",
+    "wiki",
+    "canon"
+  ],
+  "capabilities": [
+    "knowledge",
+    "skills",
+    "prompts"
+  ],
+  "marketplaceId": "opencoven/worldbuilding",
+  "x-coven": {
+    "displayName": "Worldbuilding",
+    "category": "Knowledge Packs",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://openknowledge.ai/docs/workflows/worldbuilding"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  },
+  "prompts": [
+    "update-world-encyclopedia",
+    "thread-world-graph",
+    "pre-reveal-continuity-audit",
+    "world-dead-link-audit"
+  ],
+  "kind": "knowledge-pack"
+}

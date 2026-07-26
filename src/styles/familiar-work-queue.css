@@ -1,0 +1,1110 @@
+/* Familiar Work Queue (cave-hlv.4) — the beads + PR control tower surface.
+   Redesigned to the "Tasks list redesign refresh" handoff (Queue.dc.html):
+   a meta row, an All/Unassigned scope segment, a segmented triage toolbar, and
+   full-width grouped rows with a priority/lane accent rail, an inline markdown
+   note composer, and a forward-to-familiar menu. All colour comes from semantic
+   tokens so the surface tracks every theme. */
+
+.fwq {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-base, var(--background));
+  color: var(--text-primary, var(--foreground));
+  container-type: inline-size; /* enables the narrow-surface @container rule */
+}
+
+/* ── Meta row: live summary + Refresh ─────────────────────────────────────── */
+.fwq-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.fwq-meta-title {
+  margin: 0;
+  font-size: var(--text-lg, 21px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.fwq-meta-summary {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  letter-spacing: 0.005em;
+}
+.fwq-meta-strong {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.fwq-meta-count {
+  font-family: var(--font-mono), monospace;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.fwq-meta-sep {
+  color: var(--text-muted);
+  margin: 0 6px;
+}
+.fwq-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 6px var(--space-2);
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.fwq-refresh:hover {
+  color: var(--text-primary);
+}
+.fwq-refresh-icon {
+  transition: transform 0.5s ease;
+}
+.fwq-refresh:hover .fwq-refresh-icon {
+  transform: rotate(180deg);
+}
+
+/* ── Segmented controls (scope · priority) ────────────────────────────────── */
+.fwq-scope-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 18px var(--space-6) 0;
+}
+.fwq-seg {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 6px);
+  overflow: hidden;
+}
+.fwq-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 15px;
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: 1;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 0.12s, color 0.12s;
+}
+.fwq-seg-btn + .fwq-seg-btn {
+  border-left: 1px solid var(--border-hairline);
+}
+.fwq-seg-btn:hover {
+  color: var(--text-primary);
+}
+.fwq-seg-btn.is-active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.fwq-seg-btn--sm {
+  padding: 6px var(--space-3);
+  font-size: var(--text-sm);
+}
+.fwq-seg-count {
+  font-family: var(--font-mono), monospace;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.fwq-seg-btn.is-active .fwq-seg-count {
+  color: var(--accent-presence);
+}
+
+/* Per-familiar rollup: filter chips, roving via native buttons. */
+.fwq-familiars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 14px var(--space-6) 0;
+}
+
+/* Triage toolbar (cave-u2p1): search field + priority bands + sort toggle. */
+.fwq-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 18px var(--space-6) 22px;
+}
+.fwq-toolbar-search {
+  flex: 1 1 240px;
+  min-width: 180px;
+}
+.fwq-toolbar-search .ui-search-input {
+  height: 40px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 6px);
+}
+.fwq-toolbar-search .ui-search-input:focus-within {
+  border-color: var(--accent-presence);
+}
+.fwq-toolbar .fwq-seg {
+  height: 40px;
+}
+.fwq-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 40px;
+  padding: 0 13px;
+  margin-left: auto;
+  background: var(--card);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 6px);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.fwq-sort:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Shared focus ring for the redesigned native controls. */
+.fwq-refresh:focus-visible,
+.fwq-seg-btn:focus-visible,
+.fwq-sort:focus-visible,
+.fwq-act:focus-visible,
+.fwq-forward-trigger:focus-visible,
+.fwq-forward-item:focus-visible,
+.fwq-note-tab:focus-visible,
+.fwq-note-tool:focus-visible,
+.fwq-note-cancel:focus-visible,
+.fwq-note-save:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+/* Bead titles that open the inspector read as links, not decorations. */
+.fwq-row-name--link {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: 450;
+  letter-spacing: -0.005em;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fwq-row-name--link:hover {
+  color: var(--accent-presence);
+  text-decoration: underline;
+}
+
+/* Bead inspector body (rides the shared Modal chrome). */
+.fwq-detail { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.fwq-detail-title { margin: 0; font-size: var(--text-lg); line-height: 1.3; }
+.fwq-detail-desc {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.fwq-detail-empty, .fwq-detail-deps { margin: 0; color: var(--text-muted); font-size: var(--text-xs); }
+.fwq-detail-error { margin: 0; color: var(--color-danger); font-size: var(--text-sm); }
+.fwq-detail-actions { display: flex; gap: var(--space-2); }
+
+.fwq-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast, 120ms) var(--ease-standard, ease),
+    border-color var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+
+.fwq-chip:hover {
+  background: var(--bg-hover);
+}
+
+.fwq-chip.is-active {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.fwq-chip:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.fwq-chip-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.fwq-chip.is-active .fwq-chip-count {
+  color: var(--accent-presence);
+}
+
+/* ── Attention strip (unlinked / stale PRs — repo hygiene) ───────────────── */
+.fwq-attention {
+  margin: var(--space-3) var(--space-6) 0;
+  border: 1px solid color-mix(in oklch, var(--color-warning) 34%, transparent);
+  border-radius: var(--radius-panel, 12px);
+  background: color-mix(in oklch, var(--color-warning) 7%, transparent);
+  overflow: hidden;
+}
+
+.fwq-attention-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-warning);
+  border-bottom: 1px solid color-mix(in oklch, var(--color-warning) 20%, transparent);
+}
+
+.fwq-attention-title {
+  flex-shrink: 0;
+}
+
+.fwq-attention-summary {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.fwq-attention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fwq-attention-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px var(--space-3);
+  border-bottom: 1px solid color-mix(in oklch, var(--color-warning) 12%, transparent);
+}
+
+.fwq-attention-item:last-child {
+  border-bottom: 0;
+}
+
+.fwq-attention-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.fwq-attention-name {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fwq-attention-tags {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+/* Asana source strip — assigned tasks pulled into the Queue when Asana is
+   connected. Presence-toned so it reads as informational, visually distinct
+   from the warning-toned "needs attention" strip above it. */
+.fwq-asana {
+  margin: var(--space-3) var(--space-6) 0;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  border-radius: var(--radius-panel, 12px);
+  background: color-mix(in oklch, var(--accent-presence) 6%, transparent);
+  overflow: hidden;
+}
+
+.fwq-asana-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--accent-presence);
+  border-bottom: 1px solid color-mix(in oklch, var(--accent-presence) 18%, transparent);
+}
+
+.fwq-asana-title {
+  flex-shrink: 0;
+}
+
+.fwq-asana-summary {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.fwq-asana-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fwq-asana-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px var(--space-3);
+  border-bottom: 1px solid color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+.fwq-asana-item:last-child {
+  border-bottom: 0;
+}
+
+.fwq-asana-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.fwq-asana-name {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fwq-asana-tags {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+/* Unlinked (no bead) reads as informational, distinct from the warning stale. */
+.fwq-tag--unlinked {
+  color: var(--text-secondary);
+  border-color: var(--border-strong, var(--border-hairline));
+}
+
+@container (max-width: 560px) {
+  .fwq-attention-item {
+    flex-wrap: wrap;
+  }
+}
+
+/* ── Truthful-degradation banners (refresh failed / beads adapter down) ──── */
+.fwq-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) var(--space-6) 0;
+  padding: 7px var(--space-3);
+  border-radius: var(--radius-panel, 12px);
+  font-size: var(--text-sm);
+}
+
+.fwq-banner--danger {
+  border: 1px solid color-mix(in oklch, var(--color-danger) 34%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 7%, transparent);
+  color: var(--color-danger);
+}
+
+.fwq-banner--warn {
+  border: 1px solid color-mix(in oklch, var(--color-warning) 34%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 7%, transparent);
+  color: var(--color-warning);
+}
+
+.fwq-banner-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+}
+
+.fwq-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px var(--space-6) var(--space-10);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* ── Groups (lanes) ───────────────────────────────────────────────────────── */
+.fwq-lane {
+  --fwq-accent: var(--border-strong);
+}
+.fwq-lane--urgent { --fwq-accent: var(--color-warning); }
+.fwq-lane--ready { --fwq-accent: var(--color-success); }
+.fwq-lane--neutral { --fwq-accent: var(--accent-presence); }
+.fwq-lane--quiet { --fwq-accent: var(--border-strong); }
+
+.fwq-lane-head {
+  display: block;
+}
+
+/* The whole head row is the disclosure control (cave-19jy). */
+.fwq-lane-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 11px;
+  padding: var(--space-3) var(--space-3) var(--space-3) 14px;
+  border: 0;
+  border-top: 1px solid var(--border-hairline);
+  border-bottom: 1px solid var(--border-hairline);
+  border-left: 2px solid var(--fwq-accent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: var(--bg-elevated);
+  transition: background 0.12s;
+}
+.fwq-lane-toggle:hover { background: var(--bg-hover); }
+.fwq-lane-caret {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform var(--duration-fast, 120ms) ease;
+}
+.fwq-lane-caret.is-open { transform: rotate(90deg); }
+.fwq-lane-icon {
+  flex-shrink: 0;
+  color: var(--fwq-accent);
+}
+.fwq-lane--quiet .fwq-lane-icon { color: var(--text-secondary); }
+
+.fwq-lane-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.fwq-lane-count {
+  flex-shrink: 0;
+  font-family: var(--font-mono), monospace;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  padding: 3px 9px;
+  border-radius: var(--radius-control, 6px);
+  background: var(--bg-sunken);
+}
+
+/* Show all N / Show top N — quiet full-width foot row on capped lanes. */
+.fwq-lane-more {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  background: transparent;
+}
+.fwq-lane-more:hover { color: var(--accent-presence); background: var(--bg-hover); }
+
+.fwq-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Rows ─────────────────────────────────────────────────────────────────── */
+.fwq-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-5);
+  padding: 13px var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+  box-shadow: inset 3px 0 0 var(--fwq-rail, transparent);
+  transition: background 0.12s, box-shadow 0.12s;
+}
+/* Rail tone (set by railClass()): priority for bead rows, lane for PR rows. */
+.fwq-row--rail-danger { --fwq-rail: var(--color-danger); }
+.fwq-row--rail-warning { --fwq-rail: var(--color-warning); }
+.fwq-row--rail-success { --fwq-rail: var(--color-success); }
+.fwq-row--rail-neutral { --fwq-rail: color-mix(in oklch, var(--accent-presence) 42%, transparent); }
+.fwq-row--rail-waiting { --fwq-rail: color-mix(in oklch, var(--color-warning) 55%, transparent); }
+.fwq-row:hover {
+  background: var(--bg-hover);
+}
+.fwq-row.is-stale {
+  background: color-mix(in oklch, var(--color-warning) 5%, transparent);
+}
+
+.fwq-row-main {
+  min-width: 0;
+}
+
+.fwq-row-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.fwq-pr-num {
+  font: 600 12.5px/1 var(--font-mono);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.fwq-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-md);
+  font-weight: 450;
+  letter-spacing: -0.005em;
+  line-height: 1.3;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fwq-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+
+/* Assignment pill + sigil. Unassigned reads in presence tint (act on it);
+   an owned bead reads in success (already taken). */
+.fwq-assign {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 26%, transparent);
+}
+.fwq-assign--claimed {
+  color: var(--color-success);
+  background: color-mix(in oklch, var(--color-success) 14%, transparent);
+  border-color: color-mix(in oklch, var(--color-success) 32%, transparent);
+}
+.fwq-sigil {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.fwq-sigil--filled {
+  border: 0;
+  background: currentColor;
+}
+
+.fwq-bead {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  font-family: var(--font-mono), monospace;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 6px);
+  white-space: nowrap;
+}
+
+/* PR check state as a dot-pill (design's "checks pending"). */
+.fwq-checks {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.fwq-checks-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.fwq-checks--pending {
+  color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 13%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-warning) 32%, transparent);
+}
+.fwq-checks--failing {
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 13%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-danger) 32%, transparent);
+}
+.fwq-checks--passing {
+  color: var(--color-success);
+  background: color-mix(in oklch, var(--color-success) 13%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-success) 32%, transparent);
+}
+.fwq-checks--unknown {
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-hairline);
+}
+
+.fwq-row-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.fwq-pri-text {
+  font-family: var(--font-mono), monospace;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+.fwq-pri-text--p0 { color: var(--color-danger); }
+.fwq-pri-text--p1 { color: var(--color-warning); }
+.fwq-dot-sep { opacity: 0.55; }
+.fwq-updated {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Tag recipe (§ design language): 6–18% fill, 30–45% border, solid text.
+   Kept for the row's review-decision / merge-eligible / stale pills and the
+   bead inspector's status chips. */
+.fwq-tag {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.fwq-tag--familiar {
+  border-color: color-mix(in oklch, var(--accent-presence) 32%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--accent-presence);
+}
+.fwq-tag--bead { font-family: var(--font-mono); }
+.fwq-tag--p0,
+.fwq-tag--p1 {
+  color: var(--color-warning);
+  border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+}
+.fwq-tag--p0 {
+  color: var(--color-danger);
+  border-color: color-mix(in oklch, var(--color-danger) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-danger) 10%, transparent);
+}
+.fwq-tag--ready {
+  color: var(--color-success);
+  border-color: color-mix(in oklch, var(--color-success) 34%, transparent);
+  background: color-mix(in oklch, var(--color-success) 8%, transparent);
+}
+.fwq-tag--stale {
+  color: var(--color-warning);
+  border-color: color-mix(in oklch, var(--color-warning) 40%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+}
+
+/* The bead inspector reuses these meta/time classes. */
+.fwq-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.fwq-card-time {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Row actions ──────────────────────────────────────────────────────────── */
+.fwq-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.fwq-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 var(--space-3);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--card);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 6px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.fwq-act:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.fwq-act.is-active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.fwq-act:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.fwq-act--claim {
+  color: var(--text-primary);
+}
+.fwq-act--claim:hover:not(:disabled) {
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 42%, transparent);
+}
+
+/* ── Forward-to-familiar menu (claim on a familiar's behalf) ──────────────── */
+.fwq-forward {
+  position: relative;
+}
+.fwq-forward-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: default;
+}
+.fwq-forward-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: var(--card);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 6px);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.fwq-forward-trigger:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.fwq-forward-trigger.is-open {
+  position: relative;
+  z-index: 31;
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.fwq-forward-trigger:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.fwq-forward-caret {
+  transition: transform 0.15s;
+}
+.fwq-forward-trigger.is-open .fwq-forward-caret {
+  transform: rotate(180deg);
+}
+.fwq-forward-menu {
+  position: absolute;
+  top: 37px;
+  right: 0;
+  z-index: 30;
+  min-width: 180px;
+  padding: 5px;
+  background: var(--popover);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel, 8px);
+  box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.55);
+}
+.fwq-forward-menu-head {
+  margin: 0;
+  padding: 6px var(--space-2) 5px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fwq-forward-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control, 6px);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  transition: background 0.12s, color 0.12s;
+}
+.fwq-forward-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.fwq-forward-avatar {
+  width: 19px;
+  height: 19px;
+  border-radius: var(--radius-control, 6px);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+}
+.fwq-forward-name {
+  flex: 1;
+  text-align: left;
+}
+
+/* ── Inline markdown note composer ────────────────────────────────────────── */
+.fwq-row-hint {
+  grid-column: 1 / -1;
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.fwq-note {
+  grid-column: 1 / -1;
+  margin-top: 14px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel, 8px);
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+.fwq-note-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--space-2) 10px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.fwq-note-tabs {
+  display: inline-flex;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 6px);
+  overflow: hidden;
+}
+.fwq-note-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 var(--space-3);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border: 0;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 0.12s, color 0.12s;
+}
+.fwq-note-tab + .fwq-note-tab {
+  border-left: 1px solid var(--border-hairline);
+}
+.fwq-note-tab.is-active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.fwq-note-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: var(--space-1);
+  border-left: 1px solid var(--border-hairline);
+}
+.fwq-note-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 6px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control, 6px);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.fwq-note-tool:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.fwq-note-tool--b { font-weight: 700; }
+.fwq-note-tool--i { font-style: italic; }
+.fwq-note-tool--h { font-weight: 700; }
+.fwq-note-lang {
+  margin-left: auto;
+  font-family: var(--font-mono), monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.fwq-note-body {
+  padding: var(--space-3) 14px;
+}
+.fwq-note-input {
+  display: block;
+  width: 100%;
+  min-height: 130px;
+  resize: vertical;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono), monospace;
+  font-size: var(--text-base);
+  line-height: 1.65;
+}
+.fwq-note-preview {
+  min-height: 130px;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+.fwq-note-preview a { color: var(--accent-presence); }
+.fwq-note-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: 9px var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+}
+.fwq-note-cancel {
+  height: 30px;
+  padding: 0 13px;
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 6px);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.fwq-note-cancel:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.fwq-note-save {
+  height: 30px;
+  padding: 0 15px;
+  background: var(--primary);
+  border: 0;
+  border-radius: var(--radius-control, 6px);
+  color: var(--primary-foreground);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+.fwq-note-save:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.fwq-note-save:disabled,
+.fwq-note-cancel:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Narrow surface (split tile / mobile): stack row body over actions. */
+@container (max-width: 560px) {
+  .fwq-row {
+    grid-template-columns: 1fr;
+    row-gap: var(--space-3);
+  }
+  .fwq-row-actions {
+    justify-content: flex-end;
+  }
+}

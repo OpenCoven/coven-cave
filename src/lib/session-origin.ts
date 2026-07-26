@@ -8,6 +8,9 @@ export const SESSION_ORIGINS: readonly SessionOrigin[] = [
   "cron",
   "heartbeat",
   "call",
+  "canvas",
+  "journal",
+  "enhance",
 ] as const;
 
 export const ORIGIN_LABEL: Record<SessionOrigin, string> = {
@@ -17,6 +20,9 @@ export const ORIGIN_LABEL: Record<SessionOrigin, string> = {
   cron: "cron",
   heartbeat: "heartbeat",
   call: "call",
+  canvas: "canvas",
+  journal: "journal",
+  enhance: "enhance",
 };
 
 export const ORIGIN_ICON: Record<SessionOrigin, IconName> = {
@@ -26,6 +32,9 @@ export const ORIGIN_ICON: Record<SessionOrigin, IconName> = {
   cron: "ph:alarm-fill",
   heartbeat: "ph:heartbeat",
   call: "ph:magic-wand-fill",
+  canvas: "ph:paint-brush",
+  journal: "ph:book-open",
+  enhance: "ph:sparkle",
 };
 
 /**

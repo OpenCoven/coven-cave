@@ -2,7 +2,21 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const source = readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8");
+const source = [
+  readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/status-icon.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/cron-detail-primitives.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/cron-detail-panel.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/reminder-detail-panel.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/schedule-list.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/inbox-feed-list.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./automations/ritual-overview.tsx", import.meta.url), "utf8"),
+].join("\n");
+const codexDetailPanel = readFileSync(new URL("./automations/cron-detail-panel.tsx", import.meta.url), "utf8");
+const reminderDetailPanel = readFileSync(new URL("./automations/reminder-detail-panel.tsx", import.meta.url), "utf8");
+const detailPanelControls = reminderDetailPanel.slice(reminderDetailPanel.indexOf("export function DetailPanel"));
+
+assert.match(source, /from "@\/components\/automations\/ritual-overview"/, "Ritual overview rows and calendar helpers are owned by a dedicated module");
 
 // Save is gated on a valid, changed form: not busy, dirty, named, and a valid
 // schedule (weekly needs ≥1 day).
@@ -39,8 +53,284 @@ assert.match(
   "the Save button stays disabled while canSave is false",
 );
 
+// Crons detail UX: the panel should read like an operational editor instead of
+// a long undifferentiated form. Key facts are summarized first, editing is
+// grouped into named zones, and primary/destructive actions are separated.
+assert.match(codexDetailPanel, />\s*Cron details\s*</, "cron detail panel uses Cron-specific title copy");
+assert.match(codexDetailPanel, /cron-detail-summary-grid/, "cron detail panel renders an at-a-glance summary grid");
+assert.match(codexDetailPanel, /<CronDetailSection title="Identity"/, "cron detail groups identity fields");
+assert.match(codexDetailPanel, /<CronDetailSection title="Instructions"/, "cron detail groups prompt fields");
+assert.match(codexDetailPanel, /<CronDetailSection title="Schedule"/, "cron detail groups schedule fields");
+assert.match(codexDetailPanel, /<CronDetailSection title="Runtime"/, "cron detail groups runtime fields");
+assert.match(codexDetailPanel, /className="[^"]*cron-detail-actions/, "cron detail actions live in a dedicated action rail");
+assert.match(codexDetailPanel, /Save changes[\s\S]*Run now[\s\S]*Delete/, "cron detail actions prioritize save, then run, with delete last");
+assert.match(codexDetailPanel, /leadingIcon="ph:floppy-disk-bold"/, "save action uses a recognizable icon");
+assert.match(codexDetailPanel, /variant="danger-ghost"[\s\S]*Delete/, "delete remains visually separated as a destructive action");
+assert.match(source, /const detailOpen = Boolean\(selectedItem \|\| selectedCodex\)/, "Schedules tracks whether a detail panel is open");
+assert.match(source, /detailOpen \? \(cronDetailExpanded \? "hidden" : "hidden md:flex"\) : "flex"/, "Schedules hides the list on narrow screens while a detail panel is open, and entirely while the cron detail is expanded");
+assert.match(source, /w-full[\s\S]*md:w-\[380px\][\s\S]*md:max-w-\[42vw\]/, "detail panel becomes full-width on narrow screens and a side rail on desktop");
+
+// Cron detail expansion (cave-4p6k): the rail can grow into the full page
+// width — toggle in the panel header, side-rail classes swap for flex-1, the
+// summary tiles go 4-up and the sections reflow into a two-column canvas.
+assert.match(
+  source,
+  /const cronDetailExpanded = detailExpanded && Boolean\(selectedCodex\)/,
+  "expansion only applies while a cron (not a reminder) detail is open",
+);
+assert.match(
+  source,
+  /cronDetailExpanded\s*\n?\s*\? "w-full min-w-0 flex-1 overflow-hidden"/,
+  "the expanded detail wrapper fills the full page width",
+);
+assert.match(
+  codexDetailPanel,
+  /aria-label=\{expanded \? "Collapse to side panel" : "Expand to full width"\}/,
+  "the header toggle names both directions for AT",
+);
+assert.match(
+  codexDetailPanel,
+  /aria-pressed=\{expanded\}/,
+  "the expand control is a proper toggle",
+);
+assert.match(
+  codexDetailPanel,
+  /leadingIcon=\{expanded \? "ph:arrows-in-simple" : "ph:arrows-out-simple"\}/,
+  "the expand control's icon mirrors its direction",
+);
+assert.match(
+  codexDetailPanel,
+  /cron-detail-summary-grid grid grid-cols-2 gap-2\$\{expanded \? " @min-\[900px\]:grid-cols-4" : ""\}/,
+  "summary tiles go 4-up on the expanded canvas — container-keyed so a split pane never gets viewport columns (cave-hivd)",
+);
+assert.match(
+  codexDetailPanel,
+  /expanded \? \(\s*\n?\s*<div className="grid items-start gap-5 lg:grid-cols-2">/,
+  "sections reflow into a two-column canvas when expanded",
+);
+assert.match(
+  codexDetailPanel,
+  /\{identitySection\}\s*\{scheduleSection\}[\s\S]*\{instructionsSection\}\s*\{runtimeSection\}/,
+  "the expanded canvas pairs sections into two independent column stacks so a short section never leaves a row-aligned hole beside a tall one",
+);
+assert.match(
+  codexDetailPanel,
+  /<div className="space-y-5">\s*\{identitySection\}\s*\{instructionsSection\}\s*\{scheduleSection\}\s*\{runtimeSection\}\s*\{runsSection\}/,
+  "the side rail keeps the priority stack: identity, instructions, schedule, runtime, runs",
+);
+assert.match(
+  source,
+  /onClose=\{\(\) => \{ setSelectedCodex\(null\); setDetailExpanded\(false\); \}\}/,
+  "closing the cron detail also resets the expansion so the next open starts as a rail",
+);
+
+// Beginner-friendly schedule copy: the cryptic RRULE string only surfaces in
+// Advanced mode or when the schedule is invalid.
+assert.match(
+  codexDetailPanel,
+  /scheduleMode !== "raw" && !invalidSchedule \?[\s\S]{0,320}?Runs every day at[\s\S]{0,220}?Runs weekly on/,
+  "preset modes echo the cadence in plain language instead of an RRULE",
+);
+assert.match(
+  codexDetailPanel,
+  /\{nextRrule \|\| "RRULE required"\}/,
+  "the RRULE line still renders for Advanced mode and invalid schedules",
+);
+
 // List rows + detail-panel close buttons show a visible keyboard focus ring.
 assert.ok(source.includes("focus-ring-inset automation-list-row"), "list rows have a focus ring");
-assert.ok(source.includes("focus-ring rounded p-1 transition-colors hover:bg-white/5"), "panel close buttons have a focus ring");
+assert.match(detailPanelControls, /aria-label="Close"[\s\S]{0,220}rounded-\[var\(--radius-control\)\]/, "panel close buttons have a tokenized focusable hit target");
+assert.match(detailPanelControls, /<Button/, "detail panel actions should use the shared Button primitive");
+assert.doesNotMatch(detailPanelControls, /<button\b/, "detail panel actions should not hand-roll button controls");
+assert.doesNotMatch(
+  detailPanelControls,
+  /rounded-full|rounded-md|rounded-lg|rounded(?=\s|")/,
+  "detail panel actions should use radius tokens instead of hard-coded radii",
+);
+
+// The active Rituals surface defaults to the handoff's unified overview. Full
+// Calendar and Crons remain secondary destinations; bulk selection belongs to
+// the overview's management mode.
+assert.match(source, /type AutomationTab = "overview" \| "calendar" \| "crons"/, "Rituals exposes Overview, Calendar and Crons modes");
+assert.doesNotMatch(source, /bulkPatchReminders|bulkDeleteReminders|ReminderTaskList|reminderSelect/, "the orphaned reminder bulk-select machinery stays deleted");
+assert.match(source, /const \[deepLinkTab, setDeepLinkTab\] = useState<AutomationTab \| null>/, "Calendar and Crons deep links override the saved tab for one visit");
+assert.match(source, /aria-label="Toggle events ribbon"/, "the overview includes a collapsible week ribbon");
+assert.match(source, /Needs you · \{inboxFeed\.needsYou\.length\}/, "the only raised work queue is the Needs-you tier");
+assert.match(source, /aria-label="Show ritual log"/, "the overview exposes the activity log");
+assert.match(source, /aria-label="Show agenda thread"/, "the overview exposes the agenda thread");
+assert.match(source, /overviewSwipeStartRef/, "Log and Agenda support a manual swipe gesture");
+assert.doesNotMatch(source, /setInterval\([\s\S]{0,100}setOverviewPane/, "the overview never auto-rotates between Log and Agenda");
+
+// ── Inbox grouping + collective actions (cave-fcy8) ─────────────────────────
+// Group-by control re-shapes the feed; selection acts on the visible
+// (search-filtered) universe; whole groups toggle from their headers; bulk
+// actions ride ONE POST /api/inbox/bulk; delete keeps the undo window.
+assert.match(source, /buildInboxGroups\(inboxVisible, inboxGroupBy, familiarLabel\)/, "groups derive from the pure lib over the filtered feed");
+assert.match(source, /INBOX_GROUP_BY_OPTIONS/, "the group-by control offers the lib's dimensions");
+// Grouping is deliberately behind the overflow menu in the minimalist shell.
+assert.match(source, /INBOX_GROUP_BY_OPTIONS\.map\(\(option\) => \([\s\S]{0,420}Group selection by \{option\.label\.toLowerCase\(\)\}/, "group-by remains reachable from the overview options menu");
+assert.doesNotMatch(source, /<StandardSelect[\s\S]{0,120}label="Group inbox by"/, "the group-by dropdown is gone");
+assert.match(source, /useSurfacePreference\(surfacePreferenceSpecs\.schedules\.groupBy\)/, "the group-by choice persists through the shared workspace preference registry");
+assert.match(source, /const inboxSelect = useMultiSelect\(inboxVisible, \(it\) => it\.id\)/, "selection universe = the visible matches");
+assert.match(source, /<SelectionToolbar/, "inbox select mode uses the shared bulk toolbar");
+assert.match(
+  source,
+  /`Select all \$\{inboxVisible\.length\} match\$\{inboxVisible\.length === 1 \? "" : "es"\}`/,
+  "an active search relabels select-all as 'all N matches'",
+);
+assert.match(source, /fetch\("\/api\/inbox\/bulk"/, "collective actions post once to the bulk endpoint");
+assert.match(source, /\.filter\(\(id\) => !id\.startsWith\("eph:"\)\)/, "ephemeral client-only items never reach the bulk endpoint");
+assert.match(source, /inboxBulkAct\("read", "Marked read"\)/, "bulk read is offered");
+assert.match(source, /inboxBulkAct\("done", "Marked done"\)/, "bulk done is offered");
+assert.match(source, /inboxBulkAct\("dismiss", "Dismissed"\)/, "bulk dismiss is offered");
+assert.match(source, /scheduleDelete\(ids, `\$\{ids\.length\} inbox item/, "bulk delete rides the undo toast");
+assert.match(source, /groupChecked=\{groupSelected\(group\)\}/, "each group header reflects its selection state");
+assert.match(source, /aria-label=\{`Select every item in \$\{group\.title\}`\}/, "the group checkbox names its group");
+assert.match(source, /role=\{selectMode \? "checkbox" : undefined\}/, "rows become checkboxes in select mode");
+assert.match(source, /inboxSelect\.exit\(\); \/\/ selection is an inbox-tab mode, never carried across/, "switching tabs drops the selection");
+
+// ── Polling pauses while hidden + async fetch guards ────────────────────────
+// The 15s list poll + 2.5s in-flight run poll otherwise keep firing in a
+// backgrounded tab; a refetch on return brings the surface current.
+// (Hidden-tab pause + refetch-on-return now come from the shared
+// usePausablePoll hook — the hand-rolled tick/visibilitychange pair is gone.)
+assert.doesNotMatch(source, /addEventListener\("visibilitychange"/, "no hand-rolled visibility handling remains for the list poll");
+assert.match(source, /if \(document\.hidden\) return;.*don't poll a backgrounded tab/, "the in-flight run poll skips a hidden tab");
+// All loaders guard against setState after unmount; refreshRuns also drops stale responses.
+assert.match(source, /const mountedRef = useRef\(true\)/, "tracks mounted state for async guards");
+assert.match(source, /const runsReqRef = useRef\(0\)/, "refreshRuns tracks a request id");
+assert.match(source, /if \(reqId !== runsReqRef\.current \|\| !mountedRef\.current\) return/, "a stale/late runs fetch is dropped");
+// load() is sequence-guarded the same way: it runs from mount, the 15s poll,
+// and after every mutation (toggle/save/delete all await load()), so a stale
+// in-flight poll must not reapply pre-mutation data over a fresher reload.
+assert.match(source, /const loadReqRef = useRef\(0\)/, "load() tracks its own request id");
+assert.match(source, /const reqId = \+\+loadReqRef\.current;/, "each load() bumps the request id");
+assert.match(source, /const live = \(\) => reqId === loadReqRef\.current && mountedRef\.current/, "load() writes only while it's the newest load and still mounted");
+assert.match(source, /if \(!live\(\)\) return;/, "a superseded load() drops its writes");
+assert.match(
+  source,
+  /const reloadAfterMutation = useCallback\(async \(\) => \{\s*invalidateSurfaceResources\("schedules:inbox", "schedules:automations"\);\s*await load\(true\);/,
+  "a completed Schedules mutation invalidates both shared landing resources before it reloads",
+);
+
+// ── Per-row quick actions (run-now + pause/resume), always visible ──
+assert.match(source, /const ScheduleActionsContext = createContext/, "row actions are provided via context (no prop threading)");
+assert.match(source, /<ScheduleActionsContext\.Provider/, "AutomationsView provides the row actions");
+assert.match(source, /runAutomation: runCodexNow/, "automation run-now is wired");
+assert.match(source, /togglePauseAutomation: toggleCodex/, "automation pause/resume is wired");
+// Actions are labeled, always-visible siblings of the row button (never a
+// hover-revealed overlay, and never nested inside the row's own button).
+assert.doesNotMatch(source, /group-hover\/srow/, "row actions are always visible — no hover reveal remains");
+assert.match(source, /text=\{isActive \? "Pause" : "Resume"\}/, "the cron row's pause action is a labeled button");
+assert.match(source, /actions\.runAutomation\(auto\)/, "the automation row exposes run-now");
+// Inbox feed rows expose done/snooze/dismiss/unwatch instead (run/pause live
+// in the reminder detail panel) — and never while picking rows in select mode.
+assert.match(source, /\{!selectMode && !resolved && \(onDone \|\| onSnooze \|\| onDismiss \|\| onUnwatch\)/, "inbox row actions hide in select mode");
+// cave-4op: every Schedules row action (Run / Pause / Open) routes through the
+// shared RowActionButton (a ghost Button primitive), which supports a
+// disabled/busy state.
+assert.match(
+  source,
+  /function RowActionButton\(\{ icon, label, text, onClick, disabled \}/,
+  "RowActionButton accepts a disabled/busy state",
+);
+assert.doesNotMatch(
+  source,
+  /<button[\s\S]{0,220}aria-label=\{`Run \$\{(entry\.name|name)\} now`\}/,
+  "no hand-rolled Run row-action buttons remain — they use RowActionButton",
+);
 
 console.log("automations-view.test.ts: ok");
+
+// ── 2026-07-03 audit fixes ────────────────────────────────────────────────────
+// Poll guards: unchanged responses keep previous references so the open detail
+// panel's form-reset effect doesn't wipe in-progress edits every 15s, and the
+// per-cron runs fan-out doesn't re-fire.
+assert.match(source, /setItems\(\(prev\) => \(arrayContentEqual\(prev, nextItems\) \? prev : nextItems\)\)/, "inbox poll is content-guarded");
+assert.match(source, /setCodexAutos\(\(prev\) => \(arrayContentEqual\(prev, nextAutos\) \? prev : nextAutos\)\)/, "codex poll is content-guarded");
+assert.doesNotMatch(source, /setFlows\(|listFlows\(/, "Schedules no longer polls Flow docs");
+assert.match(source, /usePausablePoll\(\(\) => \{ void load\(true\); \}, 15_000/, "the 15s poll uses the shared pausable-poll hook and bypasses a warm cache");
+assert.match(source, /const onSchedulesReload = \(\) => \{ void reloadAfterMutation\(\); \};[\s\S]{0,220}addEventListener\("cave:schedules:reload", onSchedulesReload\)/, "workspace inbox writes force a mounted Schedules surface to replace an invalidated warm read");
+assert.match(source, /onClick=\{\(\) => void load\(true\)\}[\s\S]{0,180}>\s*Retry/, "the error retry bypasses a fresh warm cache");
+// Selected-detail syncs only adopt content changes — a new-but-identical
+// reference would re-fire the form reset (cron) or is pointless churn (reminder).
+assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedCodex\)\) setSelectedCodex\(fresh\)/, "cron detail sync is content-guarded");
+assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedItem\)\) setSelectedItem\(fresh\)/, "reminder detail panel re-syncs after polls");
+
+// ── 2026-07-03 a11y batch ─────────────────────────────────────────────────────
+assert.match(source, /const \{ announce \} = useAnnouncer\(\)/, "AutomationsView consumes the shared announcer");
+assert.match(source, /announce\(`\$\{newStatus === "PAUSED" \? "Paused" : "Resumed"\} '\$\{auto\.name\}'\.`\)/, "cron pause/resume announces");
+assert.match(source, /announce\(`Run started for '\$\{auto\.name\}'\.`\)/, "run-now announces");
+assert.match(source, /announce\(`Created cron '\$\{input\.name\}'\.`\)/, "create announces");
+assert.match(source, /role="img" aria-label="Paused"/, "status dots carry accessible names");
+assert.match(source, /<section aria-labelledby=\{headingId\}/, "list sections are labelled landmarks with real headings");
+assert.match(source, /<div[\s\S]{0,120}role="tabpanel"[\s\S]{0,120}id=\{`automations-panel-\$\{activeTab\}`\}[\s\S]{0,120}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}[\s\S]{0,180}aria-label=\{activeTab === "overview" \? "Rituals overview" : activeTab === "calendar" \? "Rituals calendar" : "Rituals crons"\}/, "the active Rituals panel is a tabpanel with the destination-specific label");
+assert.match(source, /onClose=\{\(\) => setCreateOpen\(false\)\}/, "the create dialog closes through one reset path");
+assert.match(source, /window\.setTimeout\(\(\) => \(newBtnRef\.current \?\? newCronBtnRef\.current\)\?\.focus\(\), 0\)/, "deletes hand focus to whichever header action is mounted instead of dropping it on <body>");
+assert.match(source, /const deleteCodex = useCallback\(\(auto: CodexAutomation\) => \{\s*setSelectedCodex\(null\);\s*focusHeaderAction\(\)/, "cron deletes restore focus via the shared helper (newBtnRef is unmounted on the crons tab)");
+assert.match(source, /ref=\{newCronBtnRef\}/, "the crons-tab New button carries the focus-restore ref");
+
+// ── 2026-07-03 audit batch C ──────────────────────────────────────────────────
+// The Activity tab opens this panel for agent/response items too — those are
+// records, not schedules, so the run/pause/edit mutations are reminder-only.
+assert.match(source, /const isReminder = item\.kind === "reminder"/, "the detail panel derives the selected item's kind");
+assert.match(source, /isReminder \? "Reminder details" : "Activity details"/, "non-reminder activity gets an honest panel heading");
+assert.match(source, /\{onEdit && isReminder && \(/, "Edit only renders for reminders");
+assert.match(source, /\{isRecurring && isReminder && \(/, "Stop-repeating only renders for reminders");
+assert.doesNotMatch(source, /\{onEdit && !isDailySummary && \(/, "the old summary-only action gate is gone");
+// Reminder run-now confirms like crons; the older Flow/All dispatch surface is
+// intentionally absent from this narrowed schedule page.
+assert.match(source, /This fires the reminder immediately\./, "reminder run-now is confirm-gated");
+assert.doesNotMatch(source, /const toggleFlowActive = useCallback|saveFlow\(setFlowActive|setFlows\(/, "Flow pause/poll mutations are absent");
+assert.match(source, /runAutomation: runCodexNow/, "cron run-now remains wired");
+assert.match(source, /togglePauseAutomation: toggleCodex/, "cron pause/resume remains wired");
+
+// ── Run-log stale-response guard (cave-s1i6) ─────────────────────────────────
+// Rapid run switches must not render run A's log under run B's header: only
+// the latest request may write state, and closing invalidates in-flight reads.
+assert.match(source, /const req = \+\+runLogReqRef\.current;/, "each log fetch takes a request token");
+assert.match(source, /if \(req !== runLogReqRef\.current\) return;/, "stale log responses are dropped");
+assert.match(source, /runLogReqRef\.current \+= 1;\s*\n\s*setOpenRunId\(null\);/, "closing the log invalidates the in-flight fetch");
+
+// ── Detail panels are dialogs (cave-qfdv) ────────────────────────────────────
+// Both the reminder DetailPanel and the cron CodexDetailPanel trap focus, close
+// on Escape, and restore focus to the opening row (useFocusTrap does return-focus).
+// role="dialog" + aria-labelledby name them; aria-modal is deliberately omitted
+// (desktop keeps the list as an interactive sibling; mobile hides it via display:none).
+assert.match(source, /import \{ useFocusTrap \} from "@\/lib\/use-focus-trap"/, "the surface uses the shared focus-trap hook");
+assert.equal(
+  (source.match(/useFocusTrap\(true, panelRef, \{ onEscape: onClose \}\)/g) ?? []).length,
+  2,
+  "both detail panels trap focus and close on Escape",
+);
+assert.equal(
+  (source.match(/role="dialog" aria-labelledby=\{titleId\} tabIndex=\{-1\}/g) ?? []).length,
+  2,
+  "both detail panels are role=dialog, labelled by their title, focusable as a fallback",
+);
+assert.doesNotMatch(source, /aria-modal=/, "aria-modal is omitted — it would be a lie on the desktop split-pane");
+
+// ── In-flight run-poll stability (cave-1e6k) ─────────────────────────────────
+// The poll effect depends on a derived boolean, not the runs array — an
+// unchanged 2.5s tick must not tear down and recreate the interval. The runs
+// write is content-guarded for the same reason, and the poll no longer fans
+// out one request per automation: refreshRuns' own response maintains the
+// selected automation's last-run badge.
+assert.match(source, /const hasRunningRun = automationRuns\.some\(\(r\) => r\.status === "running"\)/, "poll gate is a derived boolean");
+assert.match(source, /\}, \[selectedCodex\?\.id, hasRunningRun, refreshRuns\]\);/, "the poll effect does not depend on the runs array identity");
+assert.match(source, /setAutomationRuns\(\(prev\) => \(arrayContentEqual\(prev, runs\) \? prev : runs\)\)/, "unchanged run polls keep the array identity");
+assert.doesNotMatch(source, /void refreshRuns\(id\);\s*\n\s*void refreshLastRuns\(\);/, "the hot poll loop no longer fans out per-automation requests");
+
+// ── Rituals UI/UX debug pass (cave-v1x6) ─────────────────────────────────────
+// Overview search must never dead-end: the input renders whenever search is
+// open (items.length gating made both the input AND the toggle icon vanish
+// when the list was empty), and the Log pane shows activity time (firedAt ??
+// updatedAt), not a future fireAt, so its timestamps read monotonically.
+assert.match(source, /activeTab === "overview" && searchOpen && initialLoadDone \? \(/, "overview search input is not gated on items.length");
+assert.match(source, /timeMode="log"/, "the Log pane renders rows in log time mode");
+assert.match(source, /timeMode = "agenda"/, "RitualItemRow defaults to agenda time");
+assert.match(source, /item\.firedAt \?\? item\.updatedAt \?\? item\.createdAt\s*:/, "log mode shows last-activity time (same key ritualLogItems sorts by)");
+
+// Status dots + schedule-mode toggle derive from theme tokens, not hardcoded
+// white — rgba(255,255,255,…) was invisible-on-light-themes.
+assert.doesNotMatch(source, /rgba\(255,\s*255,\s*255/, "no hardcoded white rgba left in the Rituals surface");

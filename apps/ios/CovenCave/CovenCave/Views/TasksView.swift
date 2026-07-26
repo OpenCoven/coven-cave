@@ -1,57 +1,251 @@
 import SwiftUI
 
+/// Cached ISO-8601 parsers. `ISO8601DateFormatter` is relatively expensive to
+/// allocate, and `caveParseISO` is called per-item inside sort/filter/map
+/// across the task, calendar, reminder and thread lists — so allocating a pair
+/// on every call showed up as list churn. Reuse two shared instances instead.
+/// `ISO8601DateFormatter` is thread-safe for reads.
+private let caveISOWithFractional: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+private let caveISOPlain: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()
+
 /// Parse an ISO-8601 timestamp (with or without fractional seconds).
 func caveParseISO(_ iso: String?) -> Date? {
     guard let iso, !iso.isEmpty else { return nil }
-    let withFrac = ISO8601DateFormatter()
-    withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let d = withFrac.date(from: iso) { return d }
-    let plain = ISO8601DateFormatter()
-    plain.formatOptions = [.withInternetDateTime]
-    return plain.date(from: iso)
+    if let d = caveISOWithFractional.date(from: iso) { return d }
+    return caveISOPlain.date(from: iso)
 }
 
 struct TasksView: View {
     @Environment(AppModel.self) private var app
-    @State private var scope: Scope = .active
+    @AppStorage("cave.tasks.groupBy") private var groupByRaw = GroupBy.familiar.rawValue
+    @AppStorage("cave.tasks.sortBy") private var sortByRaw = SortBy.priority.rawValue
+    @AppStorage("cave.tasks.viewMode") private var viewModeRaw = ViewMode.list.rawValue
     @State private var query = ""
-    @State private var path: [BoardCard] = []
+    /// Filters (session-scoped). Empty set = no filter on that dimension.
+    @State private var statusFilter: Set<CardStatus> = []
+    @State private var priorityFilter: Set<CardPriority> = []
+    @State private var familiarFilter: Set<String> = []
+    /// Board (kanban) card taps open the detail in a sheet — the List path uses
+    /// the split-view selection, which only a `List(selection:)` can drive.
+    @State private var boardDetail: BoardCard?
+    /// The task shown in the detail column. On iPad this fills the detail pane
+    /// beside the list; on iPhone `NavigationSplitView` collapses and selecting a
+    /// row pushes the detail, so the single-column behaviour is unchanged.
+    @State private var selection: BoardCard?
+    /// A task awaiting delete confirmation (swipe or context menu).
+    @State private var pendingDelete: BoardCard?
+    @State private var showReminders = false
+    @State private var collapsedSections: Set<String> = []
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    enum Scope: String, CaseIterable, Identifiable {
-        case active = "Active", all = "All", done = "Done"
+    /// How the task list is partitioned into sections.
+    enum GroupBy: String, CaseIterable, Identifiable {
+        case status = "Status", project = "Project", familiar = "Familiar", priority = "Priority"
         var id: String { rawValue }
     }
 
-    var body: some View {
-        NavigationStack(path: $path) {
-            content
-                .navigationTitle("Tasks")
-                .navigationDestination(for: BoardCard.self) { TaskDetailView(card: $0) }
-                .searchable(text: $query, prompt: "Search tasks")
-                .refreshable { await app.loadTasks() }
-                .task { if !app.tasksLoaded { await app.loadTasks() } }
-                .safeAreaInset(edge: .top) { scopeBar }
-                .onAppear(perform: openRequestedCard)
-                // A chat asked to open one of its linked tasks.
-                .onChange(of: app.cardToOpen) { _, card in openRequestedCard() }
+    /// How the cards within each section are ordered.
+    enum SortBy: String, CaseIterable, Identifiable {
+        case priority = "Priority", recent = "Recent", title = "Title"
+        var id: String { rawValue }
+        var systemImage: String {
+            switch self {
+            case .priority: return "flag"
+            case .recent: return "clock"
+            case .title: return "textformat"
+            }
         }
     }
 
-    /// Consume a cross-tab "open this task" intent set by `requestOpenTask`.
+    /// List (sections) vs Board (horizontal kanban columns). Both honor the
+    /// group-by, sort, search, and filters.
+    enum ViewMode: String, CaseIterable, Identifiable {
+        case list = "List", board = "Board"
+        var id: String { rawValue }
+        var systemImage: String { self == .list ? "list.bullet" : "rectangle.split.3x1" }
+    }
+
+    private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .familiar }
+    private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .priority }
+    private var viewMode: ViewMode { ViewMode(rawValue: viewModeRaw) ?? .list }
+    private var anyFilterActive: Bool {
+        !statusFilter.isEmpty || !priorityFilter.isEmpty || !familiarFilter.isEmpty
+    }
+
+    var body: some View {
+        NavigationSplitView {
+            content
+                .navigationTitle("Tasks")
+                .navigationBarTitleDisplayMode(.inline)
+                .searchable(text: $query, prompt: "Search tasks")
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { app.navigationDrawerOpen = true } label: {
+                            Image(systemName: "line.3.horizontal")
+                        }
+                        .accessibilityLabel("Open navigation")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) { filterMenu }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            Picker("View", selection: $viewModeRaw) {
+                                ForEach(ViewMode.allCases) { m in
+                                    Label(m.rawValue, systemImage: m.systemImage).tag(m.rawValue)
+                                }
+                            }
+                            Picker("Sort by", selection: $sortByRaw) {
+                                ForEach(SortBy.allCases) { s in
+                                    Label(s.rawValue, systemImage: s.systemImage).tag(s.rawValue)
+                                }
+                            }
+                        } label: {
+                            Label("View options", systemImage: "ellipsis.circle")
+                        }
+                    }
+                }
+                .refreshable { await app.loadTasks() }
+                .task {
+                    if !app.tasksLoaded { await app.loadTasks() }
+                    if !app.projectsLoaded { await app.loadProjects() }
+                }
+                .safeAreaInset(edge: .top) { groupBar }
+                .onAppear(perform: openRequestedCard)
+                // A chat asked to open one of its linked tasks.
+                .onChange(of: app.cardToOpen) { _, card in openRequestedCard() }
+                .confirmationDialog("Delete this task?",
+                                    isPresented: deleteDialogBinding,
+                                    titleVisibility: .visible,
+                                    presenting: pendingDelete) { card in
+                    Button("Delete", role: .destructive) { Task { await app.deleteTask(card) } }
+                    Button("Cancel", role: .cancel) {}
+                } message: { card in Text(card.title) }
+                .sheet(item: $boardDetail) { card in
+                    NavigationStack { TaskDetailView(card: card) }
+                }
+                .sidebarColumn()
+        } detail: {
+            if let selection {
+                NavigationStack { TaskDetailView(card: selection) }
+            } else {
+                ContentUnavailableView {
+                    Label("Select a task", systemImage: "checklist")
+                } description: {
+                    Text("Pick a task to see its details and steps.")
+                }
+            }
+        }
+        // Keep the task list visible beside the detail on iPad rather than letting
+        // the detail take over; on iPhone the split view still collapses to a stack.
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
+    }
+
+    /// Status / priority / delete actions, shared by the row context menu and
+    /// the detail-view toolbar menu.
+    @ViewBuilder private func taskMenu(_ card: BoardCard) -> some View {
+        Menu {
+            ForEach(CardStatus.allCases, id: \.self) { status in
+                Button {
+                    Task { await app.setTaskStatus(card, status) }
+                } label: {
+                    Label(status.label, systemImage: card.status == status ? "checkmark" : status.systemImage)
+                }
+            }
+        } label: { Label("Status", systemImage: "circle.dashed") }
+
+        Menu {
+            ForEach(CardPriority.allCases, id: \.self) { priority in
+                Button {
+                    Task { await app.setTaskPriority(card, priority) }
+                } label: {
+                    Label(priority.label, systemImage: card.priority == priority ? "checkmark" : "flag")
+                }
+            }
+        } label: { Label("Priority", systemImage: "flag") }
+
+        Divider()
+        Button(role: .destructive) { pendingDelete = card } label: {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+
+    /// Status / priority / familiar filters, applied to both List and Board.
+    @ViewBuilder private var filterMenu: some View {
+        Menu {
+            if anyFilterActive {
+                Button(role: .destructive) { clearFilters() } label: {
+                    Label("Clear filters", systemImage: "xmark.circle")
+                }
+                Divider()
+            }
+            Menu {
+                ForEach(CardStatus.allCases, id: \.self) { s in
+                    Button { toggleStatus(s) } label: {
+                        Label(s.label, systemImage: statusFilter.contains(s) ? "checkmark" : s.systemImage)
+                    }
+                }
+            } label: { Label(statusFilter.isEmpty ? "Status" : "Status (\(statusFilter.count))", systemImage: "circle.dashed") }
+            Menu {
+                ForEach(CardPriority.allCases, id: \.self) { p in
+                    Button { togglePriority(p) } label: {
+                        Label(p.label, systemImage: priorityFilter.contains(p) ? "checkmark" : "flag")
+                    }
+                }
+            } label: { Label(priorityFilter.isEmpty ? "Priority" : "Priority (\(priorityFilter.count))", systemImage: "flag") }
+            if !app.familiars.isEmpty {
+                Menu {
+                    ForEach(app.familiars) { f in
+                        Button { toggleFamiliar(f.id) } label: {
+                            Label(f.displayName, systemImage: familiarFilter.contains(f.id) ? "checkmark" : "person")
+                        }
+                    }
+                } label: { Label(familiarFilter.isEmpty ? "Familiar" : "Familiar (\(familiarFilter.count))", systemImage: "person.circle") }
+            }
+        } label: {
+            Label("Filter", systemImage: anyFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+        }
+    }
+
+    private func toggleStatus(_ s: CardStatus) {
+        if statusFilter.contains(s) { statusFilter.remove(s) } else { statusFilter.insert(s) }
+    }
+    private func togglePriority(_ p: CardPriority) {
+        if priorityFilter.contains(p) { priorityFilter.remove(p) } else { priorityFilter.insert(p) }
+    }
+    private func toggleFamiliar(_ id: String) {
+        if familiarFilter.contains(id) { familiarFilter.remove(id) } else { familiarFilter.insert(id) }
+    }
+    private func clearFilters() {
+        statusFilter = []; priorityFilter = []; familiarFilter = []
+    }
+
+    /// Consume a cross-destination "open this task" intent set by `requestOpenTask`.
     private func openRequestedCard() {
         guard let card = app.cardToOpen else { return }
-        if path.last?.id != card.id { path.append(card) }
+        if selection?.id != card.id { selection = card }
         app.cardToOpen = nil
     }
 
-    private var scopeBar: some View {
-        Picker("Scope", selection: $scope) {
-            ForEach(Scope.allCases) { s in Text(s.rawValue).tag(s) }
+
+    private var groupBar: some View {
+        Picker("Group by", selection: $groupByRaw) {
+            ForEach(GroupBy.allCases) { g in Text(g.rawValue).tag(g.rawValue) }
         }
         .pickerStyle(.segmented)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(.bar)
+        .glassBar()
     }
 
     @ViewBuilder private var content: some View {
@@ -66,74 +260,256 @@ struct TasksView: View {
             }
         } else if sections.isEmpty {
             emptyState
+        } else if viewMode == .board {
+            kanbanBoard
         } else {
             taskList
         }
     }
 
-    private var taskList: some View {
-        List {
-            ForEach(sections, id: \.status) { section in
-                Section {
+    // MARK: - Board (kanban)
+
+    /// Horizontally-scrolling columns, one per current group (status by default),
+    /// reusing the same `sections` as the list — so group-by, sort, search, and
+    /// filters all apply. Tap a card for its detail; long-press for the actions.
+    private var kanbanBoard: some View {
+        GeometryReader { geo in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(sections) { section in
+                        kanbanColumn(section, width: kanbanColumnWidth(available: geo.size.width))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+        }
+    }
+
+    /// Fit as many 280pt-minimum columns as the pane allows (capped at the
+    /// section count), then stretch them to consume the leftover width — no
+    /// dead right margin on iPad/Mac.
+    private func kanbanColumnWidth(available: CGFloat) -> CGFloat {
+        let inset: CGFloat = 32, spacing: CGFloat = 12, minWidth: CGFloat = 280
+        let usable = max(minWidth, available - inset)
+        let fit = max(1, min(CGFloat(sections.count), ((usable + spacing) / (minWidth + spacing)).rounded(.down)))
+        return max(minWidth, (usable - spacing * (fit - 1)) / fit)
+    }
+
+    @ViewBuilder private func kanbanColumn(_ section: TaskSection, width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                if let image = section.systemImage { Image(systemName: image).accessibilityHidden(true) }
+                Text(section.title)
+                Spacer()
+                Text("\(section.cards.count)").monospacedDigit()
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(section.tint ?? .secondary)
+            .padding(.horizontal, 4)
+            .accessibilityElement(children: .combine)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 8) {
                     ForEach(section.cards) { card in
-                        Button { path.append(card) } label: { TaskRow(card: card) }
-                            .buttonStyle(.plain)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 12))
+                        Button {
+                            // Regular width has a live detail column — use it,
+                            // matching the List path; compact keeps the sheet.
+                            if horizontalSizeClass == .regular { selection = card }
+                            else { boardDetail = card }
+                        } label: {
+                            TaskRow(card: card)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .glass(.raised, cornerRadius: 12)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu { taskMenu(card) }
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+        }
+        .frame(width: width)
+    }
+
+    private var taskList: some View {
+        List(selection: $selection) {
+            ForEach(sections) { section in
+                Section {
+                    if !collapsedSections.contains(section.id) {
+                        ForEach(section.cards) { card in
+                            TaskRow(card: card)
+                                .tag(card)
+                                .padding(12)
+                                .glass(.raised, cornerRadius: 14)
+                                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                                .listRowBackground(Color.clear)
+                                .contextMenu { taskMenu(card) }
+                            // Trailing = destructive (delete); leading = the
+                            // positive quick-action (done/reopen), full-swipe to
+                            // complete — matching standard iOS selection behavior.
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) { pendingDelete = card } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                Button { Task { await app.setTaskStatus(card, card.status == .done ? .running : .done) } } label: {
+                                    Label(card.status == .done ? "Reopen" : "Done",
+                                          systemImage: card.status == .done ? "arrow.uturn.backward" : "checkmark")
+                                }
+                                .tint(card.status == .done ? .orange : .green)
+                            }
+                        }
                     }
                 } header: {
-                    HStack(spacing: 6) {
-                        Image(systemName: section.status.systemImage)
-                        Text(section.status.label)
-                        Spacer()
-                        Text("\(section.cards.count)").monospacedDigit()
+                    Button {
+                        Haptics.tap()
+                        if collapsedSections.contains(section.id) {
+                            collapsedSections.remove(section.id)
+                        } else {
+                            collapsedSections.insert(section.id)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: collapsedSections.contains(section.id) ? "chevron.right" : "chevron.down")
+                                .font(.caption.weight(.bold))
+                            Circle().fill(section.tint ?? .secondary).frame(width: 8, height: 8)
+                            Text(section.title)
+                            Spacer()
+                            Text("\(section.cards.count)")
+                                .font(.caption.weight(.semibold).monospacedDigit())
+                                .padding(.horizontal, 7).padding(.vertical, 2)
+                                .background(Color.secondary.opacity(0.14), in: Capsule())
+                        }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.color(for: section.status))
+                    .foregroundStyle(section.tint ?? .secondary)
+                    .accessibilityLabel("\(section.title), \(section.cards.count) tasks")
+                    .accessibilityValue(collapsedSections.contains(section.id) ? "Collapsed" : "Expanded")
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .themedListBackground()
     }
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label(query.isEmpty ? "No \(scope.rawValue.lowercased()) tasks" : "No matches",
-                  systemImage: "checkmark.circle")
+        let unfiltered = query.isEmpty && !anyFilterActive
+        return ContentUnavailableView {
+            Label(unfiltered ? "No tasks" : "No matches", systemImage: "checkmark.circle")
         } description: {
-            Text(query.isEmpty ? "Tasks from your board appear here." : "Try a different search.")
+            Text(unfiltered ? "Tasks from your board appear here." : "Try different search or filters.")
+        } actions: {
+            if !unfiltered && anyFilterActive {
+                Button("Clear filters") { clearFilters() }
+            }
         }
     }
 
     // MARK: - Grouping
 
-    struct StatusSection { let status: CardStatus; let cards: [BoardCard] }
+    /// A list section: a stable id, a header (title + optional icon/tint), a
+    /// sort key, and its cards.
+    struct TaskSection: Identifiable {
+        let id: String
+        let title: String
+        let systemImage: String?
+        let tint: Color?
+        let order: Int
+        let cards: [BoardCard]
+    }
 
     private var filtered: [BoardCard] {
+        var cards = app.tasks
+        if !statusFilter.isEmpty { cards = cards.filter { statusFilter.contains($0.status) } }
+        if !priorityFilter.isEmpty { cards = cards.filter { priorityFilter.contains($0.priority) } }
+        if !familiarFilter.isEmpty { cards = cards.filter { familiarFilter.contains($0.familiarId ?? "") } }
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return app.tasks.filter { card in
-            switch scope {
-            case .active: if !card.status.isActive { return false }
-            case .done: if card.status != .done { return false }
-            case .all: break
+        if !q.isEmpty {
+            cards = cards.filter { card in
+                card.title.lowercased().contains(q)
+                    || card.labelList.contains { $0.lowercased().contains(q) }
             }
-            guard !q.isEmpty else { return true }
-            if card.title.lowercased().contains(q) { return true }
-            return card.labelList.contains { $0.lowercased().contains(q) }
+        }
+        return cards
+    }
+
+    private var sections: [TaskSection] {
+        switch groupBy {
+        case .status: return statusSections
+        case .project: return projectSections
+        case .familiar: return familiarSections
+        case .priority: return prioritySections
         }
     }
 
-    private var sections: [StatusSection] {
-        Dictionary(grouping: filtered, by: \.status)
-            .map { StatusSection(status: $0.key, cards: sortCards($0.value)) }
-            .sorted { $0.status.sectionOrder < $1.status.sectionOrder }
+    private var statusSections: [TaskSection] {
+        Dictionary(grouping: filtered, by: \.status).map { status, cards in
+            TaskSection(id: "status:\(status.rawValue)", title: status.label,
+                        systemImage: status.systemImage, tint: Theme.color(for: status),
+                        order: status.sectionOrder, cards: sortCards(cards))
+        }
+        .sorted { $0.order < $1.order }
+    }
+
+    private var prioritySections: [TaskSection] {
+        Dictionary(grouping: filtered, by: \.priority).map { priority, cards in
+            TaskSection(id: "priority:\(priority.rawValue)", title: priority.label,
+                        systemImage: "flag.fill", tint: Theme.color(for: priority),
+                        order: priority.rank, cards: sortCards(cards))
+        }
+        .sorted { $0.order < $1.order }
+    }
+
+    private var projectSections: [TaskSection] {
+        // Keyed by projectId; unassigned cards collect under a trailing bucket.
+        Dictionary(grouping: filtered, by: { $0.projectId ?? "" }).map { id, cards in
+            let unassigned = id.isEmpty
+            let name = unassigned ? "No project" : (app.project(id)?.name ?? "No project")
+            return TaskSection(id: "project:\(unassigned ? "__none__" : id)", title: name,
+                               systemImage: "folder", tint: .secondary,
+                               order: unassigned ? 1 : 0, cards: sortCards(cards))
+        }
+        .sorted { a, b in
+            if a.order != b.order { return a.order < b.order }
+            return a.title.lowercased() < b.title.lowercased()
+        }
+    }
+
+    private var familiarSections: [TaskSection] {
+        Dictionary(grouping: filtered, by: { $0.familiarId ?? "" }).map { id, cards in
+            let unassigned = id.isEmpty
+            let name = unassigned ? "Unassigned" : (app.familiar(id)?.displayName ?? "Unassigned")
+            return TaskSection(id: "familiar:\(unassigned ? "__none__" : id)", title: name,
+                               systemImage: "person.circle", tint: .secondary,
+                               order: unassigned ? 1 : 0, cards: sortCards(cards))
+        }
+        .sorted { a, b in
+            if a.order != b.order { return a.order < b.order }
+            return a.title.lowercased() < b.title.lowercased()
+        }
     }
 
     private func sortCards(_ cards: [BoardCard]) -> [BoardCard] {
-        cards.sorted { a, b in
-            if a.priority.rank != b.priority.rank { return a.priority.rank < b.priority.rank }
-            let da = caveParseISO(a.updatedAt) ?? .distantPast
-            let db = caveParseISO(b.updatedAt) ?? .distantPast
-            return da > db
+        switch sortBy {
+        case .priority:
+            // Highest priority first, ties broken by most-recently updated.
+            return cards.sorted { a, b in
+                if a.priority.rank != b.priority.rank { return a.priority.rank < b.priority.rank }
+                let da = caveParseISO(a.updatedAt) ?? .distantPast
+                let db = caveParseISO(b.updatedAt) ?? .distantPast
+                return da > db
+            }
+        case .recent:
+            return cards.sorted {
+                (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast)
+            }
+        case .title:
+            return cards.sorted { $0.title.lowercased() < $1.title.lowercased() }
         }
     }
 }
@@ -145,58 +521,41 @@ struct TaskRow: View {
     let card: BoardCard
 
     private var familiar: Familiar? { card.familiarId.flatMap(app.familiar) }
+    private var project: ProjectInfo? { card.projectId.flatMap(app.project) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Capsule()
-                .fill(Theme.color(for: card.status))
-                .frame(width: 3)
-                .frame(maxHeight: .infinity)
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    if card.priority == .urgent || card.priority == .high {
-                        Image(systemName: "flag.fill")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.color(for: card.priority))
-                    }
-                    Text(card.title)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
+        VStack(alignment: .leading, spacing: 10) {
+            Text(card.title)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            HStack(spacing: 7) {
+                TaskMetadataPill(text: card.priority.label, color: Theme.color(for: card.priority))
+                if let project {
+                    TaskMetadataPill(text: project.name, color: .secondary)
                 }
-
-                HStack(spacing: 8) {
-                    if card.needsHuman == true { NeedsYouBadge() }
-                    if card.hasSteps {
-                        Label("\(card.doneStepCount)/\(card.stepCount)", systemImage: "checklist")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    if app.hasLinkedChat(card) {
-                        Image(systemName: "bubble.left.and.bubble.right.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.tint)
-                            .accessibilityLabel("Has linked chat")
-                    }
-                    ForEach(card.labelList.prefix(2), id: \.self) { LabelChip(text: $0) }
-                    if let updated = caveParseISO(card.updatedAt) {
-                        Text(updated, format: .relative(presentation: .numeric))
-                            .font(.caption2).foregroundStyle(.tertiary)
-                    }
+                if let familiar {
+                    TaskMetadataPill(text: familiar.displayName, color: .secondary)
                 }
-            }
-
-            Spacer(minLength: 0)
-
-            if let familiar {
-                AvatarView(familiar: familiar,
-                           url: app.client?.avatarURL(for: familiar),
-                           size: 30)
+                Spacer(minLength: 0)
             }
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
+    }
+}
+
+private struct TaskMetadataPill: View {
+    let text: String
+    let color: Color
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(color.opacity(0.14), in: Capsule())
+            .overlay(Capsule().stroke(color.opacity(0.38), lineWidth: 1))
+            .foregroundStyle(color)
     }
 }
 

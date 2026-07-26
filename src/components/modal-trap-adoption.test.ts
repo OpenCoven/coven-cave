@@ -5,12 +5,11 @@ import { readFileSync } from "node:fs";
 const FILES = [
   "command-palette.tsx",
   "board-inspector.tsx",
-  "library-doc-preview.tsx",
-  "library-github-list.tsx",
   "onboarding-overlay.tsx",
-  "workflows/workflow-create-dialog.tsx",
   "github-view.tsx",
+  "github-action-popover.tsx",
   "new-reminder-modal.tsx",
+  "notification-bell.tsx",
 ];
 
 for (const file of FILES) {

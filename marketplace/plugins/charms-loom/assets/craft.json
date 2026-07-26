@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "opencoven.craft.v1",
+  "components": {
+    "required": [
+      "filesystem",
+      "git"
+    ],
+    "optional": [
+      "vercel",
+      "memory"
+    ]
+  },
+  "bundled": {
+    "skills": [
+      {
+        "id": "slidev-deck-pipeline",
+        "sourcePath": "craft-sources/charms-loom/slidev-deck-pipeline/SKILL.md",
+        "upstreamPath": "skills/slidev-deck-pipeline/SKILL.md",
+        "contentHash": "sha256:b9f3b5fc0166dfd1f5a155ebe9c7a93ca7c7a757941a46116a7febf9c56a5136",
+        "modifications": [
+          "Authored by Charm from the live open-coven-weekly Slidev pipeline.",
+          "Audited for local capability boundaries, deterministic scripts, and reviewable deploy workflow."
+        ]
+      }
+    ]
+  },
+  "requiredCapabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "recommendedRoles": [
+    "Communicator",
+    "Presenter"
+  ],
+  "provenance": {
+    "upstream": "OpenCoven open-coven-weekly Slidev system",
+    "commit": "38b5c200ca6d0c736d2c2efbb888047032f0fc09",
+    "license": "MIT",
+    "modifications": [
+      "Extracted the deterministic deck author/verify/deploy loop into a portable Craft bundle."
+    ],
+    "source": "https://github.com/OpenCoven/open-coven-weekly",
+    "licensePath": "craft-sources/charms-loom/LICENSE"
+  }
+}

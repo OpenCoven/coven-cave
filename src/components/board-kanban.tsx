@@ -1,17 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
+import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { CaveProject } from "@/lib/cave-projects";
+import { ProjectAvatar } from "@/components/project-avatar";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 import type { GroupBy } from "@/components/board-table";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { Popover } from "@/components/ui/popover";
+import { type WipLimits, wipState } from "@/lib/board-wip";
+import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
 
 const COLUMNS: { id: CardStatus; label: string; hint: string }[] = [
   { id: "backlog",  label: "Backlog",  hint: "Ideas and work not ready to dispatch." },
@@ -38,10 +44,28 @@ type Props = {
   selectedCardId: string | null;
   onSelect: (id: string) => void;
   onMoveStatus: (id: string, status: CardStatus) => void;
+  /** Bulk-select mode: cards become checkboxes instead of openers. */
+  selectMode?: boolean;
+  isSelected?: (id: string) => boolean;
+  onToggleSelect?: (id: string) => void;
   onNewCard: (status: CardStatus) => void;
+  /** Per-status WIP limits + setter. Shown/edited in status-grouping mode,
+      where a column's count is the unambiguous total for that status. */
+  wipLimits?: WipLimits;
+  onSetWipLimit?: (status: CardStatus, limit: number | null) => void;
+  /** Inline quick-add: create a card from just a title in the given column
+      (status), scoped to the swimlane it was added under (familiar/project). */
+  onQuickAdd?: (
+    status: CardStatus,
+    title: string,
+    lane: { familiarId?: string | null; projectId?: string | null },
+  ) => Promise<void> | void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenTaskChat?: (id: string) => Promise<void>;
   chatLinkingId?: string | null;
+  /** Card that just completed — plays the one-shot reward flare (celebrations
+      on; reduced-motion collapses it in CSS). Cleared by the owner. */
+  rewardCardId?: string | null;
 };
 
 const NO_PROJECT_KEY = "__noproject__";
@@ -74,11 +98,84 @@ function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[], projects: 
   return entries;
 }
 
-export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, onNewCard, onJumpToSession, onOpenTaskChat, chatLinkingId }: Props) {
+// The column-count badge. In status mode it doubles as a WIP-limit control:
+// click to set/clear a limit; the badge shows "count/limit" and turns danger
+// when the column is over its limit.
+function WipBadge({
+  status,
+  count,
+  limit,
+  onSet,
+}: {
+  status: CardStatus;
+  count: number;
+  limit: number | undefined;
+  onSet: (status: CardStatus, limit: number | null) => void;
+}) {
+  const anchorRef = useRef<HTMLButtonElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(limit != null ? String(limit) : "");
+  useEffect(() => { setDraft(limit != null ? String(limit) : ""); }, [limit, open]);
+  const state = wipState(count, limit);
+  const commit = () => {
+    const n = parseInt(draft, 10);
+    onSet(status, Number.isFinite(n) && n > 0 ? n : null);
+    setOpen(false);
+  };
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`board-kanban-column-count board-kanban-column-count--btn${
+          state === "over" ? " board-kanban-column-count--over" : state === "ok" ? " board-kanban-column-count--wip" : ""
+        }`}
+        title={limit != null ? `${count} of ${limit} — WIP limit (click to change)` : `${count} — set a WIP limit`}
+        aria-label={limit != null ? `${count} of ${limit}, WIP limit. Edit limit.` : `${count} cards. Set a WIP limit.`}
+      >
+        {limit != null ? `${count}/${limit}` : count}
+      </button>
+      <Popover open={open} onOpenChange={setOpen} anchorRef={anchorRef} placement="bottom-end" minWidth={150} ariaLabel={`WIP limit for ${status}`}>
+        <form
+          className="board-wip-form"
+          onSubmit={(e) => { e.preventDefault(); commit(); }}
+        >
+          <label className="board-wip-label">WIP limit</label>
+          <input
+            type="number"
+            min={1}
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } }}
+            placeholder="None"
+            className="board-wip-input"
+            aria-label="Maximum cards"
+          />
+          <div className="board-wip-actions">
+            <button type="submit" className="board-wip-set">Set</button>
+            {limit != null && (
+              <button type="button" className="board-wip-clear" onClick={() => { onSet(status, null); setOpen(false); }}>
+                Clear
+              </button>
+            )}
+          </div>
+        </form>
+      </Popover>
+    </>
+  );
+}
+
+export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, selectMode = false, isSelected, onToggleSelect, onNewCard, wipLimits, onSetWipLimit, onQuickAdd, onJumpToSession, onOpenTaskChat, chatLinkingId, rewardCardId }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [grabbedCardId, setGrabbedCardId] = useState<string | null>(null);
+  // Inline quick-add: which column's composer is open (`${laneKey}:${colId}`)
+  // and its draft text.
+  const [composerKey, setComposerKey] = useState<string | null>(null);
+  const [composerText, setComposerText] = useState("");
   // Resolved after mount so schedule-urgency colors never trip a hydration
   // mismatch (the server has no "now").
   const [todayMs, setTodayMs] = useState<number | null>(null);
@@ -88,6 +185,10 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   const { announce } = useAnnouncer();
   const draggingIdRef = useRef<string | null>(null);
   const railRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Scopes the grab-and-move keydown handling to this board (the listener is
+  // on window; without containment a grab session captured Space/Escape/Arrows
+  // app-wide, even with focus in the sidebar or another surface).
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const columnIndex = useCallback(
     (id: string) => COLUMNS.findIndex((c) => c.id === id),
@@ -97,6 +198,17 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = document.activeElement as HTMLElement | null;
+      const inBoard = Boolean(target && rootRef.current?.contains(target));
+      // A grab is a focus-coupled mode: if focus leaves the board (Tab to the
+      // sidebar, a dialog opens), release it and let the key act normally
+      // instead of consuming Space/Escape/Arrows app-wide.
+      if (grabbedCardId && !inBoard) {
+        const card = cards.find((c) => c.id === grabbedCardId);
+        setGrabbedCardId(null);
+        announce(card ? `Cancelled moving '${card.title}'.` : "Cancelled.");
+        return;
+      }
+      if (!inBoard) return;
       const focusedCardId = target?.dataset?.cardId ?? null;
 
       // Toggle grab on Space.
@@ -108,11 +220,16 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
               ?.dataset?.kanbanColumn as CardStatus | undefined;
           const card = cards.find((c) => c.id === grabbedCardId);
           if (card && dropTargetStatus && card.status !== dropTargetStatus) {
-            const col = COLUMNS.find((c) => c.id === dropTargetStatus);
+            // The final "Moved …" announcement comes from BoardView's
+            // moveCardToStatus so every view (kanban/table/stack/inspector)
+            // announces identically and drops never announce twice.
             onMoveStatus(grabbedCardId, dropTargetStatus);
-            announce(
-              `Moved '${card.title}' to ${col?.label ?? dropTargetStatus}.`,
-            );
+            // The card re-renders under its new column; without this, focus
+            // falls to <body> and the keyboard user is lost.
+            const movedId = grabbedCardId;
+            window.setTimeout(() => {
+              document.querySelector<HTMLElement>(`[data-card-id="${movedId}"]`)?.focus();
+            }, 0);
           } else if (card) {
             announce("Drop cancelled — same column.");
           }
@@ -185,7 +302,10 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
 
   const groups = useMemo(() => getGroups(cards, groupBy, familiars, projects), [cards, groupBy, familiars, projects]);
   // O(1) per-card lookups — replaces familiars.find()/sessions.find() inside every KanbanCard.
-  const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
+  // Resolution (overrides/images/glyphs — 5 hook subscriptions) runs ONCE here,
+  // not once per card: same pattern as board-table's resolvedByIdMap.
+  const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
+  const familiarById = useMemo(() => new Map(resolvedFamiliars.map((f) => [f.id, f])), [resolvedFamiliars]);
   const sessionById = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions]);
   const showSwimlanes = true;
 
@@ -221,7 +341,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   const scroll = (key: string, dir: -1 | 1) => {
     const rail = railRefs.current.get(key);
     if (!rail) return;
-    rail.scrollBy({ left: Math.max(rail.clientWidth * 0.72, 280) * dir, behavior: "smooth" });
+    rail.scrollBy({ left: Math.max(rail.clientWidth * 0.72, 280) * dir, behavior: smoothScrollBehavior() });
   };
 
   // Click-and-drag horizontal scroll ("grabber") for the rail.
@@ -342,9 +462,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
       setTouchDragId(null);
       setGhost(null);
       if (target && card.status !== target) {
-        const col = COLUMNS.find((c) => c.id === target);
-        onMoveStatus(card.id, target);
-        announce(`Moved '${card.title}' to ${col?.label ?? target}.`);
+        onMoveStatus(card.id, target); // BoardView announces the move
       } else {
         announce("Drop cancelled.");
       }
@@ -368,10 +486,16 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
     setCollapsedGroups((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflowY: showSwimlanes ? "auto" : "hidden" }}>
+    <div ref={rootRef} style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflowY: showSwimlanes ? "auto" : "hidden" }}>
       {groups.map(({ key, label, cards: gc }) => {
         const isCollapsed = collapsedGroups.has(key);
         const grpGrouped = grouped(gc);
+        // Project lanes lead with the project's identity tile (image/monogram);
+        // the "No project" lane and familiar/status grouping stay text-only.
+        const laneProject =
+          groupBy === "project" && key !== NO_PROJECT_KEY
+            ? projects.find((p) => p.id === key)
+            : undefined;
         const isStatusGroup = groupBy === "status"; // single-group, full-height
         const isMultiSwimlane = showSwimlanes && !isStatusGroup;
         return (
@@ -385,6 +509,14 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                   aria-expanded={!isCollapsed}
                 >
                   <Icon name={isCollapsed ? "ph:caret-right" : "ph:caret-down"} width={10} />
+                  {laneProject ? (
+                    <ProjectAvatar
+                      name={laneProject.name}
+                      root={laneProject.root}
+                      color={laneProject.color}
+                      size="sm"
+                    />
+                  ) : null}
                   {label}
                   <span className="board-swimlane-badge">{gc.length}</span>
                 </button>
@@ -420,6 +552,11 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                   {COLUMNS.map((col) => {
                     const rows = grpGrouped.get(col.id) ?? [];
                     const isDrop = dropTarget === col.id;
+                    // WIP limits only apply in status mode, where rows.length is
+                    // the total for that status (not a per-swimlane slice).
+                    const wipEnabled = groupBy === "status" && !!onSetWipLimit;
+                    const wipLimit = wipEnabled ? wipLimits?.[col.id] : undefined;
+                    const wipOver = wipLimit != null && rows.length > wipLimit;
                     return (
                       <div key={col.id}
                         data-kanban-column={col.id}
@@ -428,11 +565,15 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                         onDragOver={(e) => handleDragOver(e, col.id)}
                         onDragLeave={(e) => handleDragLeave(e, col.id)}
                         onDrop={(e) => handleDrop(e, col.id)}
-                        className={`board-kanban-column${isDrop ? " board-kanban-column--drop" : ""}`}>
+                        className={`board-kanban-column${isDrop ? " board-kanban-column--drop" : ""}${wipOver ? " board-kanban-column--wip-over" : ""}`}>
                         <div className="board-kanban-column-header">
                           <span className={`board-kanban-column-dot board-kanban-column-dot--${col.id}`} aria-hidden />
                           <span className="board-kanban-column-label" title={col.hint}>{col.label}</span>
-                          <span className="board-kanban-column-count">{rows.length}</span>
+                          {wipEnabled ? (
+                            <WipBadge status={col.id} count={rows.length} limit={wipLimit} onSet={onSetWipLimit!} />
+                          ) : (
+                            <span className="board-kanban-column-count">{rows.length}</span>
+                          )}
                           <button
                             type="button"
                             onClick={() => onNewCard(col.id)}
@@ -459,16 +600,84 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                           {rows.map((card) => (
                             <KanbanCard key={card.id} card={card} familiarById={familiarById} sessionById={sessionById} todayMs={todayMs}
                               isDragging={draggingId === card.id || touchDragId === card.id}
-                              isSelected={selectedCardId === card.id}
+                              isSelected={selectMode ? !!isSelected?.(card.id) : selectedCardId === card.id}
                               isGrabbed={grabbedCardId === card.id || touchDragId === card.id}
-                              onSelect={() => onSelect(card.id)}
+                              selectMode={selectMode}
+                              onSelect={() => (selectMode ? onToggleSelect?.(card.id) : onSelect(card.id))}
                               onDragStart={(e) => handleDragStart(e, card.id)}
                               onDragEnd={handleDragEnd}
                               onPointerDownTouch={(e) => handleCardPointerDown(e, card)}
                               onJumpToSession={onJumpToSession}
                               onOpenTaskChat={onOpenTaskChat}
-                              chatLinking={chatLinkingId === card.id} />
+                              chatLinking={chatLinkingId === card.id}
+                              hasReward={rewardCardId === card.id}
+                              inStatusColumn={groupBy === "status"} />
                           ))}
+                          {onQuickAdd && !selectMode && (
+                            <li className="board-kanban-quickadd">
+                              {composerKey === `${key}:${col.id}` ? (
+                                <form
+                                  className="board-kanban-quickadd-form"
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    const title = composerText.trim();
+                                    if (!title) return;
+                                    const lane =
+                                      groupBy === "familiar"
+                                        ? { familiarId: key === "__unassigned__" ? null : key }
+                                        : groupBy === "project"
+                                        ? { projectId: key === NO_PROJECT_KEY ? null : key }
+                                        : {};
+                                    void onQuickAdd(col.id, title, lane);
+                                    setComposerText("");
+                                  }}
+                                >
+                                  <textarea
+                                    autoFocus
+                                    rows={2}
+                                    value={composerText}
+                                    onChange={(e) => setComposerText(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" && !e.shiftKey) {
+                                        e.preventDefault();
+                                        e.currentTarget.form?.requestSubmit();
+                                      } else if (e.key === "Escape") {
+                                        e.preventDefault();
+                                        setComposerKey(null);
+                                        setComposerText("");
+                                      }
+                                    }}
+                                    onBlur={() => { if (!composerText.trim()) setComposerKey(null); }}
+                                    placeholder={`Add to ${col.label}…`}
+                                    aria-label={`New task in ${col.label}`}
+                                    className="board-kanban-quickadd-input"
+                                  />
+                                  <div className="board-kanban-quickadd-actions">
+                                    <button type="submit" className="board-kanban-quickadd-add" disabled={!composerText.trim()}>
+                                      Add
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="board-kanban-quickadd-cancel"
+                                      onMouseDown={(e) => e.preventDefault()}
+                                      onClick={() => { setComposerKey(null); setComposerText(""); }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="board-kanban-quickadd-trigger focus-ring"
+                                  onClick={() => { setComposerKey(`${key}:${col.id}`); setComposerText(""); }}
+                                >
+                                  <Icon name="ph:plus" width={11} />
+                                  Add a card
+                                </button>
+                              )}
+                            </li>
+                          )}
                         </ul>
                       </div>
                     );
@@ -479,32 +688,42 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
           </div>
         );
       })}
-      {ghost && (
-        <div
-          className="board-kanban-touch-ghost"
-          style={{ left: ghost.x, top: ghost.y }}
-          aria-hidden
-        >
-          {ghost.title}
-        </div>
-      )}
+      {/* Portaled like the task drawer (#537): .board-shell is a size query
+          container, whose layout containment would otherwise trap this
+          fixed-position clone inside the pane (wrong origin + clipped by the
+          shell's overflow:hidden). Ghost coords are viewport-based. */}
+      {ghost &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="board-kanban-touch-ghost"
+            style={{ left: ghost.x, top: ghost.y }}
+            aria-hidden
+          >
+            {ghost.title}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
 
-function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSelected, isGrabbed, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
-  card: Card; familiarById: Map<string, Familiar>; sessionById: Map<string, SessionRow>; todayMs: number | null;
-  isDragging: boolean; isSelected: boolean; isGrabbed: boolean;
+function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSelected, isGrabbed, selectMode = false, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false, hasReward = false, inStatusColumn = false }: {
+  card: Card; familiarById: Map<string, ResolvedFamiliar>; sessionById: Map<string, SessionRow>; todayMs: number | null;
+  isDragging: boolean; isSelected: boolean; isGrabbed: boolean; selectMode?: boolean;
   onSelect: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
   onPointerDownTouch?: (e: React.PointerEvent) => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenTaskChat?: (id: string) => Promise<void>;
   chatLinking?: boolean;
+  /** One-shot completion flare (see BoardKanban.rewardCardId). */
+  hasReward?: boolean;
+  /** True when the card sits in a column named after its status (groupBy
+   *  "status") — a lifecycle badge that merely restates the column is noise. */
+  inStatusColumn?: boolean;
 }) {
   const draggedRef = useRef(false);
-  const rawFamiliar = card.familiarId ? familiarById.get(card.familiarId) ?? null : null;
-  const resolvedFamiliars = useResolvedFamiliars(rawFamiliar ? [rawFamiliar] : [], { includeArchived: true });
-  const resolvedFamiliar = resolvedFamiliars[0] ?? null;
+  const resolvedFamiliar = card.familiarId ? familiarById.get(card.familiarId) ?? null : null;
   const session = card.sessionId ? sessionById.get(card.sessionId) ?? null : null;
   // Fallback rather than a non-null assertion: an unexpected priority value
   // must not crash the whole board render.
@@ -512,41 +731,111 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
   const statusLabel = COLUMNS.find((c) => c.id === card.status)?.label ?? card.status;
   const schedule = scheduleLabel(card.startDate, card.endDate);
   const urgency = scheduleUrgency(card.endDate, card.status, todayMs);
-  const hasChips = !!schedule || !!card.cwd || card.links.length > 0 || card.labels.length > 0 || !!session;
+  const attachmentCount = card.attachments?.length ?? 0;
+  const hasChips = !!schedule || !!card.cwd || card.links.length > 0 || card.labels.length > 0 || attachmentCount > 0 || !!session;
+  // A lifecycle badge that just restates the column it sits in ("queued" in
+  // Backlog, "running" in Running…) is chip noise; only divergent states —
+  // dispatched, failed-vs-cancelled in Blocked, needs-human — earn the badge.
+  const lifecycleRedundant =
+    inStatusColumn &&
+    !card.needsHuman &&
+    (((card.status === "backlog" || card.status === "inbox") && card.lifecycle === "queued") ||
+      (card.status === "running" && card.lifecycle === "running") ||
+      (card.status === "review" && card.lifecycle === "review") ||
+      (card.status === "done" && card.lifecycle === "completed"));
+  // A card with neither a project nor a cwd can't root its task work — new
+  // sessions are refused and linked sessions can't inherit a project. Nudge.
+  const missingProject = !card.projectId && !card.cwd;
+  // The metadata chips below are visual-only (title-attribute spans); fold the
+  // same state into the card's accessible name so AT users hear it.
+  const ariaMeta = [
+    schedule
+      ? urgency === "overdue"
+        ? `overdue, was due ${schedule}`
+        : urgency === "due-soon"
+        ? `due soon, ${schedule}`
+        : `scheduled ${schedule}`
+      : null,
+    session ? "linked work session" : null,
+    missingProject ? "no project set" : null,
+    attachmentCount > 0 ? `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}` : null,
+    card.labels.length > 0 ? `labels ${card.labels.join(", ")}` : null,
+  ].filter(Boolean).join(", ");
 
   return (
-    <li draggable
+    <li draggable={!selectMode}
       data-card-id={card.id}
-      role="button"
-      aria-label={`${card.title} — ${pri.label} priority, ${statusLabel}${isSelected ? ", selected" : ""}${isGrabbed ? ", grabbed" : ""}. Enter to open; Space to move.`}
-      aria-keyshortcuts="Enter Space"
-      onDragStart={(e) => { draggedRef.current = true; onDragStart(e); }}
+      role={selectMode ? "checkbox" : "button"}
+      aria-checked={selectMode ? isSelected : undefined}
+      aria-label={`${card.title} — ${pri.label} priority, ${statusLabel}${ariaMeta ? `, ${ariaMeta}` : ""}${isSelected ? ", selected" : ""}${isGrabbed ? ", grabbed" : ""}.${selectMode ? " Space to toggle selection." : " Enter to open; Space to move."}`}
+      aria-keyshortcuts={selectMode ? undefined : "Enter Space"}
+      onDragStart={(e) => { if (selectMode) { e.preventDefault(); return; } draggedRef.current = true; onDragStart(e); }}
       onDragEnd={() => { setTimeout(() => { draggedRef.current = false; }, 0); onDragEnd(); }}
-      onPointerDown={onPointerDownTouch}
+      onPointerDown={selectMode ? undefined : onPointerDownTouch}
       onClick={() => { if (draggedRef.current) return; onSelect(); }}
-      onKeyDown={(e) => { if (e.key !== "Enter") return; e.preventDefault(); onSelect(); }}
+      onKeyDown={(e) => {
+        if (selectMode) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); } return; }
+        if (e.key !== "Enter") return; e.preventDefault(); onSelect();
+      }}
       tabIndex={0}
       className={`board-kanban-card board-kanban-card--priority-${card.priority}${
+        urgency === "overdue" ? " board-kanban-card--overdue" : urgency === "due-soon" ? " board-kanban-card--due-soon" : ""
+      }${
         isSelected ? " board-kanban-card--selected" : ""
       }${isDragging ? " board-kanban-card--dragging" : ""}${
         isGrabbed ? " board-kanban-card--grabbed" : ""
-      }`}
+      }${hasReward ? " board-kanban-card--reward" : ""}`}
     >
+      {selectMode && (
+        <span
+          aria-hidden
+          className="board-kanban-card-check"
+          style={{
+            position: "absolute", top: 8, right: 8,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            height: 18, width: 18, borderRadius: 5,
+            border: `1px solid ${isSelected ? "var(--accent-presence)" : "var(--border-strong)"}`,
+            background: isSelected ? "var(--accent-presence)" : "transparent",
+          }}
+        >
+          {isSelected && <Icon name="ph:check-bold" width={12} className="text-[var(--accent-presence-foreground)]" />}
+        </span>
+      )}
       <div className="board-kanban-card-top">
-        <span className={`board-kanban-priority-pill board-kanban-priority-pill--${card.priority}`}>{pri.label}</span>
-        <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
+        {/* Priority reads from the card's left color bar; the marker is a
+            tiny matching glyph, not a shouting all-caps pill. The card's
+            aria-label already carries "<priority> priority". */}
+        <span
+          className={`board-kanban-priority-pill board-kanban-priority-pill--glyph board-kanban-priority-pill--${card.priority}`}
+          title={`${pri.label} priority`}
+          aria-hidden
+        >
+          <Icon name={card.priority === "urgent" ? "ph:flag-fill" : "ph:flag"} width={10} />
+        </span>
+        {!lifecycleRedundant && <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />}
+        {missingProject && (
+          <span
+            className="board-kanban-card-chip board-kanban-card-chip--no-project"
+            title="No project set — pick one in the card's Project field so task work opens in the right place"
+          >
+            <Icon name="ph:folder" width={9} aria-hidden /> No project
+          </span>
+        )}
       </div>
       <div className="board-kanban-card-title">{card.title}</div>
       {card.notes && <p className="board-kanban-card-notes">{card.notes}</p>}
       {hasChips && (
         <div className="board-kanban-card-chips">
           {session && (
+            // cave-32ks: the chip carries the linked session's LIVE state
+            // (status-dot + word) so "is my familiar on it?" reads from the
+            // board without opening the chat.
             <span
-              className="board-kanban-card-chip board-kanban-card-chip--chat"
-              title={`Linked chat: ${session.title || "(untitled)"}`}
+              className={`board-kanban-card-chip board-kanban-card-chip--chat board-kanban-card-chip--chat-${sessionStatusTone(session.status)}`}
+              title={`Linked work (${sessionStatusWord(session.status)}): ${session.title || "(untitled)"}`}
             >
-              <Icon name="ph:chat-circle-dots" width={9} />
-              Chat
+              <span className="board-kanban-card-chip-dot" aria-hidden />
+              Work · {sessionStatusWord(session.status)}
             </span>
           )}
           {schedule && (
@@ -582,6 +871,12 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
               {card.links.length}
             </span>
           )}
+          {attachmentCount > 0 && (
+            <span className="board-kanban-card-chip" title={`${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`}>
+              <Icon name="ph:paperclip" width={9} />
+              {attachmentCount}
+            </span>
+          )}
           {card.labels.slice(0, 2).map((l) => (
             <span key={l} className="board-kanban-card-chip">{l}</span>
           ))}
@@ -610,7 +905,7 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
           <button
             type="button"
             disabled={chatLinking}
-            title="Start chat"
+            title="Start work"
             onClick={(e) => { e.stopPropagation(); void onOpenTaskChat?.(card.id); }}
             className="board-kanban-card-action board-kanban-card-action--chat"
           >

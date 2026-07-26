@@ -6,11 +6,34 @@
 
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { covenSpawnEnv } from "./coven-bin";
+import {
+  covenLaunchCommandForBinary,
+  covenSpawnEnv,
+  type CovenLaunchCommand,
+} from "./coven-bin";
+import {
+  allowedHarnessEnvKeys,
+  restoreAllowedGitHubTokenEnv,
+  restoreGrantedVaultGitHubTokenEnv,
+} from "./harness-spawn-env";
+import { GITHUB_HARNESS_TOKEN_ENV_KEYS } from "./github-token-env";
+import { isVaultKeyGrantedTo, loadVaultMap } from "./vault";
 
 let cachedBin: string | null = null;
 
-const FORBIDDEN_SPAWN_ENV_KEYS = ["GITHUB_PAT"] as const;
+const FORBIDDEN_SPAWN_ENV_KEYS = new Set(["GITHUB_PAT"]);
+const FORBIDDEN_SPAWN_ENV_RE =
+  /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|PASS|PAT|CREDENTIALS?|COOKIE|SESSION)(?:_|$)/i;
+
+function allowedOpenClawEnvKeys(): Set<string> {
+  return new Set([
+    ...allowedHarnessEnvKeys(),
+    ...(process.env.OPENCLAW_ALLOW_ENV_KEYS ?? "")
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean),
+  ]);
+}
 
 function dedupe(values: string[]): string[] {
   const seen = new Set<string>();
@@ -26,9 +49,9 @@ function dedupe(values: string[]): string[] {
 function windowsNpmBinDirs(): string[] {
   if (process.platform !== "win32") return [];
   return [
-    process.env.APPDATA ? path.join(process.env.APPDATA, "npm") : null,
+    process.env.APPDATA ? path.join(/* turbopackIgnore: true */ process.env.APPDATA, "npm") : null,
     process.env.npm_config_prefix ?? null,
-  ].filter((dir): dir is string => !!dir && existsSync(dir));
+  ].filter((dir): dir is string => !!dir && existsSync(/* turbopackIgnore: true */ dir));
 }
 
 function candidateDirs(): string[] {
@@ -36,7 +59,7 @@ function candidateDirs(): string[] {
   return dedupe([
     ...windowsNpmBinDirs(),
     ...(env.PATH ? env.PATH.split(path.delimiter) : []),
-  ]).filter((dir) => existsSync(dir));
+  ]).filter((dir) => existsSync(/* turbopackIgnore: true */ dir));
 }
 
 function candidateBinNames(): string[] {
@@ -49,7 +72,7 @@ export function openClawBin(): string {
   const envBin = process.env.OPENCLAW_BIN;
   if (envBin) {
     try {
-      const st = statSync(envBin);
+      const st = statSync(/* turbopackIgnore: true */ envBin);
       if (st.isFile() || st.isSymbolicLink()) {
         cachedBin = envBin;
         return cachedBin;
@@ -61,9 +84,9 @@ export function openClawBin(): string {
 
   for (const dir of candidateDirs()) {
     for (const name of candidateBinNames()) {
-      const candidate = path.join(dir, name);
+      const candidate = path.join(/* turbopackIgnore: true */ dir, name);
       try {
-        const st = statSync(candidate);
+        const st = statSync(/* turbopackIgnore: true */ candidate);
         if (st.isFile() || st.isSymbolicLink()) {
           cachedBin = candidate;
           return cachedBin;
@@ -78,8 +101,27 @@ export function openClawBin(): string {
   return cachedBin;
 }
 
-export function openClawNeedsShell(): boolean {
-  return process.platform === "win32";
+export function openClawNeedsShell(bin = openClawBin()): boolean {
+  return process.platform === "win32" && bin.toLowerCase().endsWith(".cmd");
+}
+
+export function openClawSupportsUntrustedArgs(bin = openClawBin()): boolean {
+  return !openClawNeedsShell(bin);
+}
+
+/**
+ * Start OpenClaw without routing a chat prompt through cmd.exe. npm's Windows
+ * shims are batch files, but their final target is a JavaScript entry point;
+ * resolve that target and execute it with the running Node binary instead.
+ */
+export function openClawLaunchCommandForBinary(binary: string): CovenLaunchCommand {
+  const shimPlatform = /\.(cmd|bat)$/i.test(binary) ? "win32" : process.platform;
+  return covenLaunchCommandForBinary(binary, shimPlatform);
+}
+
+/** A spawn-safe OpenClaw command for either a native executable or npm shim. */
+export function openClawLaunchCommand(): CovenLaunchCommand {
+  return openClawLaunchCommandForBinary(openClawBin());
 }
 
 const WINDOWS_SHELL_META_RE = /[\s"&|<>()^%!]/;
@@ -111,14 +153,37 @@ function quoteWindowsShellArg(arg: string): string {
   return `"${escaped}"`;
 }
 
-export function openClawSpawnArgs(argv: string[]): string[] {
-  return openClawNeedsShell() ? argv.map(quoteWindowsShellArg) : argv;
+export function openClawSpawnArgs(argv: string[], bin = openClawBin()): string[] {
+  return openClawNeedsShell(bin) ? argv.map(quoteWindowsShellArg) : argv;
 }
 
 export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...covenSpawnEnv() };
-  for (const key of FORBIDDEN_SPAWN_ENV_KEYS) {
-    delete env[key];
+  const allowed = allowedOpenClawEnvKeys();
+  const map = loadVaultMap(true);
+  const grantedVaultTokenKeys = new Set<string>(
+    GITHUB_HARNESS_TOKEN_ENV_KEYS.filter((key) => isVaultKeyGrantedTo(map[key])),
+  );
+
+  // Direct OpenClaw sessions have no familiar id, so they receive shared
+  // Vault aliases just like other context-free harness launches. Scoped
+  // aliases remain unavailable without a granted familiar. The shared
+  // harness opt-in covers launcher credentials for any supported runtime,
+  // while the OpenClaw-specific setting remains available for existing
+  // installations. Cave-managed GITHUB_PAT follows the same Vault scope
+  // policy; an unmanaged launcher GITHUB_PAT still requires an explicit
+  // opt-in and is never restored when Cave has local storage for that key.
+  restoreGrantedVaultGitHubTokenEnv(env, map);
+  restoreAllowedGitHubTokenEnv(env, allowed, new Set(Object.keys(map)));
+
+  for (const key of Object.keys(env)) {
+    if (
+      (FORBIDDEN_SPAWN_ENV_KEYS.has(key) || FORBIDDEN_SPAWN_ENV_RE.test(key)) &&
+      !allowed.has(key) &&
+      !grantedVaultTokenKeys.has(key)
+    ) {
+      delete env[key];
+    }
   }
   return env;
 }

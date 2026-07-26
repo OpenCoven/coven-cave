@@ -1,4 +1,167 @@
 import SwiftUI
+import UIKit
+
+// MARK: - App-chrome palette
+
+/// The desktop's active appearance, resolved from the colour tokens it publishes
+/// at `GET /api/theme`. Every colour defaults to the value the app shipped with,
+/// so a missing or partial payload (the desktop hasn't published a theme yet, or
+/// only sent some tokens) never produces an unreadable screen — and `.fallback`
+/// is exactly the pre-theme look, so nothing changes until a theme arrives.
+struct ChromePalette: Equatable {
+    var bgBase: Color = Color(uiColor: .systemBackground)
+    var bgRaised: Color = Color(uiColor: .secondarySystemBackground)
+    var bgElevated: Color = Color(uiColor: .tertiarySystemBackground)
+    var textPrimary: Color = .primary
+    var textSecondary: Color = .secondary
+    var textMuted: Color = Color(uiColor: .tertiaryLabel)
+    var border: Color = Color(uiColor: .separator)
+    /// `accent` mirrors the asset-catalog accent, so `.tint(accent)` is a no-op
+    /// until the desktop publishes `--accent-presence`.
+    var accent: Color = .accentColor
+    /// The raw `--accent-presence` hex, kept alongside `accent` so it can be
+    /// handed to the markdown WebView (which colours inline code / links off a
+    /// CSS `--accent`). `nil` until the desktop publishes a theme, so the chat
+    /// bubble keeps its built-in lavender accent when disconnected.
+    var accentHex: String? = nil
+    /// Drives `preferredColorScheme` so the whole app flips light/dark with the
+    /// desktop. Defaults to dark — the app's original fixed scheme.
+    var colorScheme: ColorScheme = .dark
+
+    /// The built-in look used before (and as a backstop after) a theme loads.
+    static let fallback = ChromePalette()
+}
+
+extension ChromePalette {
+    /// Build a palette from a published theme, keeping the fallback colour for
+    /// any token the desktop didn't send.
+    init(snapshot: ThemeSnapshot) {
+        self.init()
+        let t = snapshot.tokens
+        if let c = Color(hex: t["--bg-base"]) { bgBase = c }
+        if let c = Color(hex: t["--bg-raised"]) { bgRaised = c }
+        if let c = Color(hex: t["--bg-elevated"]) { bgElevated = c }
+        if let c = Color(hex: t["--text-primary"]) { textPrimary = c }
+        if let c = Color(hex: t["--text-secondary"]) { textSecondary = c }
+        if let c = Color(hex: t["--text-muted"]) { textMuted = c }
+        if let c = Color(hex: t["--border-hairline"]) { border = c }
+        if let c = Color(hex: t["--accent-presence"]) { accent = c; accentHex = t["--accent-presence"] }
+        colorScheme = snapshot.mode.lowercased() == "light" ? .light : .dark
+    }
+
+    /// Readable text/icon colour on an accent-filled surface — the iOS mirror
+    /// of the desktop's `--accent-presence-foreground` token. Light accents
+    /// (a pale lavender, a lemon) get near-black text; everything else keeps
+    /// white. Falls back to white when the accent can't be resolved, which is
+    /// exactly the pre-theme behaviour.
+    var accentForeground: Color {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard UIColor(accent).getRed(&r, green: &g, blue: &b, alpha: &a) else { return .white }
+        // Perceived brightness (YIQ): light accents need dark text.
+        let brightness = 0.299 * r + 0.587 * g + 0.114 * b
+        return brightness > 0.62 ? Color(white: 0.08) : .white
+    }
+
+    /// A soft vertical wash of the accent for filled "presence" surfaces (the
+    /// user's chat bubble): slightly brighter at the top, the pure accent at
+    /// the bottom — the same treatment the system Messages bubble uses instead
+    /// of a flat fill.
+    var accentGradient: LinearGradient {
+        LinearGradient(colors: [accent.toned(lighter: 0.10), accent],
+                       startPoint: .top, endPoint: .bottom)
+    }
+}
+
+extension Color {
+    /// Blend a colour toward white by `lighter` (0–1). Returns self unchanged
+    /// when the colour can't be resolved to RGBA (e.g. some dynamic colours),
+    /// so callers degrade to the flat original rather than misrendering.
+    func toned(lighter amount: Double) -> Color {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard UIColor(self).getRed(&r, green: &g, blue: &b, alpha: &a) else { return self }
+        let t = CGFloat(max(0, min(1, amount)))
+        return Color(.sRGB,
+                     red: Double(r + (1 - r) * t),
+                     green: Double(g + (1 - g) * t),
+                     blue: Double(b + (1 - b) * t),
+                     opacity: Double(a))
+    }
+}
+
+/// Reach the desktop palette from any view (`@Environment(\.chrome)`); defaults
+/// to the built-in look so previews and disconnected screens still render.
+private struct ChromePaletteKey: EnvironmentKey {
+    static let defaultValue: ChromePalette = .fallback
+}
+
+extension EnvironmentValues {
+    var chrome: ChromePalette {
+        get { self[ChromePaletteKey.self] }
+        set { self[ChromePaletteKey.self] = newValue }
+    }
+}
+
+private struct ThemedListBackground: ViewModifier {
+    @Environment(\.chrome) private var chrome
+    func body(content: Content) -> some View {
+        content
+            // Hide the List's opaque system fill and paint the desktop theme's
+            // base colour instead; clear row backgrounds so that fill shows
+            // through each cell rather than the default system cell colour.
+            .scrollContentBackground(.hidden)
+            .background(chrome.bgBase)
+    }
+}
+
+private struct ThemedSheetBackground: ViewModifier {
+    @Environment(\.chrome) private var chrome
+    func body(content: Content) -> some View {
+        // Theme the sheet's own presentation surface so the area around the
+        // List (nav bar, search field, insets) matches the desktop background
+        // rather than the system sheet material.
+        content.presentationBackground(chrome.bgBase)
+    }
+}
+
+extension View {
+    /// Reveal the desktop theme's `bgBase` behind a `List` instead of the opaque
+    /// system background. Apply after `.listStyle(…)`. Works for both `.plain`
+    /// and `.insetGrouped` — the inset cards keep their adaptive system surface
+    /// (which reads as themed cards floating on the `bgBase` floor and preserves
+    /// row contrast), only the floor behind/around them becomes `bgBase`.
+    func themedListBackground() -> some View { modifier(ThemedListBackground()) }
+
+    /// Theme a modal sheet's presentation background to the desktop `bgBase`.
+    /// Apply to the sheet's root (e.g. its `NavigationStack`); pair with
+    /// `.themedListBackground()` on the list inside.
+    func themedSheetBackground() -> some View { modifier(ThemedSheetBackground()) }
+}
+
+/// A familiar's live presence, mirroring the desktop `statusMeta()` mapping so
+/// the iOS dots match the colours the daemon publishes.
+enum Presence {
+    /// Dot colour for a daemon status string, or nil when there's nothing
+    /// meaningful to show (no status reported).
+    static func color(for status: String?) -> Color? {
+        switch status?.lowercased() {
+        case "active", "online": return Color(hex: "#4ade80")   // green
+        case "idle": return Color(hex: "#60a5fa")               // blue
+        case "busy", "running": return Color(hex: "#fbbf24")    // amber
+        case "offline": return Color(hex: "#8a8a8e")            // gray
+        case .some(let s) where !s.isEmpty: return Color(hex: "#8a8a8e")
+        default: return nil
+        }
+    }
+
+    /// Whether the status reads as "actively doing something" (drives a subtle
+    /// pulse), matching the desktop's `pulse` flag.
+    static func isActive(_ status: String?) -> Bool {
+        switch status?.lowercased() {
+        case "active", "online", "busy", "running": return true
+        default: return false
+        }
+    }
+}
 
 extension Color {
     /// Parse a `#RRGGBB` / `#RRGGBBAA` hex string. Returns nil if unparseable.

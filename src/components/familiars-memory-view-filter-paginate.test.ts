@@ -2,14 +2,28 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+const source = [
+  await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8"),
+  await readFile(new URL("./familiars-memory-files.tsx", import.meta.url), "utf8"),
+].join("\n");
 
 // ───────── Source-kind filter chips ─────────
 
 assert.match(
   source,
-  /const \[sourceFilter, setSourceFilter\] = useState<"all" \| FileMemoryEntry\["sourceKind"\]>\("all"\);/,
-  "FamiliarsMemoryView must track a source-kind filter",
+  /const \[sourceFilter, setSourceFilter\] = useSurfacePreference\(surfacePreferenceSpecs\.familiarMemory\.source\);/,
+  "FamiliarsMemoryView must persist its source-kind filter through the Workspace registry",
+);
+
+assert.match(
+  source,
+  /storedFamiliarFilter &&\s*familiarIds\.has\(storedFamiliarFilter\)[\s\S]{0,240}return;/,
+  "a valid restored familiar filter must not be overwritten by the active workspace familiar",
+);
+assert.match(
+  source,
+  /const next = activeFamiliar\?\.id && familiarIds\.has\(activeFamiliar\.id\)/,
+  "the active familiar remains a fallback when no valid Memory preference exists",
 );
 
 assert.match(

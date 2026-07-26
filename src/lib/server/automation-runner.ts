@@ -3,6 +3,7 @@ import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { covenHome } from "@/lib/coven-paths";
+import { harnessSpawnEnv } from "../harness-spawn-env.ts";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
 import {
   recordRun,
@@ -27,7 +28,7 @@ export function buildCodexExecInvocation(auto: CodexAutomation): CodexExecInvoca
 }
 
 function logDir(): string {
-  return path.join(covenHome(), "automation-run-logs");
+  return path.join(/* turbopackIgnore: true */ covenHome(), "automation-run-logs");
 }
 
 /**
@@ -41,7 +42,7 @@ export async function startAutomationRun(auto: CodexAutomation): Promise<Automat
   if (await hasRunningRun(auto.id)) {
     throw new Error("a run is already in progress for this automation");
   }
-  await mkdir(logDir(), { recursive: true });
+  await mkdir(/* turbopackIgnore: true */ logDir(), { recursive: true });
   const startedAt = new Date().toISOString();
   const inv = buildCodexExecInvocation(auto);
   const run = await recordRun({
@@ -50,16 +51,25 @@ export async function startAutomationRun(auto: CodexAutomation): Promise<Automat
     startedAt,
     status: "running",
   });
-  const logPath = path.join(logDir(), `${run.id}.log`);
+  const logPath = path.join(/* turbopackIgnore: true */ logDir(), `${run.id}.log`);
   await updateRun(run.id, { logPath });
 
   try {
-    const out = createWriteStream(logPath, { flags: "a" });
-    const child = spawn(inv.command, inv.args, { cwd: inv.cwd, stdio: ["pipe", "pipe", "pipe"] });
-    child.stdout.pipe(out);
-    child.stderr.pipe(out);
-    child.stdin.write(inv.stdinPrompt);
-    child.stdin.end();
+    const out = createWriteStream(/* turbopackIgnore: true */ logPath, { flags: "a" });
+    // No familiar context: automations get shared vault keys only, and the
+    // explicit env replaces the previous implicit full-process.env inheritance.
+    // Command and cwd are runtime configuration, not repository-relative
+    // bundle inputs. Reflect keeps Turbopack's child-process tracer from
+    // expanding them while preserving Node's spawn contract.
+    const child = Reflect.apply(spawn, undefined, [inv.command, inv.args, {
+      cwd: inv.cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: harnessSpawnEnv(),
+    }]);
+    child.stdout?.pipe(out);
+    child.stderr?.pipe(out);
+    child.stdin?.write(inv.stdinPrompt);
+    child.stdin?.end();
     child.on("error", (err) => {
       void updateRun(run.id, {
         status: "failed",

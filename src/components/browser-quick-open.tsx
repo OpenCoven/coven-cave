@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { BrowserTab } from "@/components/browser-pane";
 
 // ── BrowserQuickOpen ──────────────────────────────────────────────────────────
@@ -10,7 +11,7 @@ import type { BrowserTab } from "@/components/browser-pane";
 // minimal, keyboard-first, no chrome.
 //
 // Props:
-//   tabs        — all tabs from BrowserPane (pinned + localhost)
+//   tabs        — all pinned tabs from BrowserPane
 //   activeId    — currently active tab id (shown with a dot indicator)
 //   onSelect    — called with the chosen tab id
 //   onClose     — called when the palette should close (Escape / outside click)
@@ -33,7 +34,6 @@ function tabHint(tab: BrowserTab): string {
 }
 
 function favicon(tab: BrowserTab): string {
-  if (tab.kind === "localhost") return "/window.svg";
   try {
     const u = new URL(tab.url);
     return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=16`;
@@ -47,6 +47,10 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
   const [highlightIdx, setHighlightIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Trap focus + Escape + restore focus to the trigger on close (the palette is
+  // a modal overlay but previously leaked Tab to the page behind it).
+  useFocusTrap(true, cardRef, { onEscape: onClose, focusFirst: false });
 
   // Focus input on mount
   useEffect(() => {
@@ -102,6 +106,11 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
       onClick={onClose}
     >
       <div
+        ref={cardRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Jump to tab"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className="w-[420px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl"
       >
@@ -184,14 +193,14 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
                       >
                         {tab.title || tabHint(tab)}
                       </span>
-                      <span className="block truncate text-[11px] text-[var(--text-muted)]">
+                      <span className="block truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
                         {tabHint(tab)}
                       </span>
                     </span>
 
                     {/* Active indicator */}
                     {isActive && (
-                      <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
+                      <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
                         current
                       </span>
                     )}
@@ -209,9 +218,9 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
 
         {/* Footer hint */}
         <div className="flex items-center gap-3 border-t border-[var(--border-hairline)] px-4 py-2 text-[var(--text-muted)]">
-          <span className="text-[10px]">↑↓ navigate</span>
-          <span className="text-[10px]">↵ open</span>
-          <span className="text-[10px]">esc close</span>
+          <span className="text-[length:var(--text-2xs)]">↑↓ navigate</span>
+          <span className="text-[length:var(--text-2xs)]">↵ open</span>
+          <span className="text-[length:var(--text-2xs)]">esc close</span>
         </div>
       </div>
     </div>

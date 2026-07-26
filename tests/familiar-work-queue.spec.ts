@@ -1,0 +1,647 @@
+import { expect, test, type Page } from "@playwright/test";
+
+// Familiar Work Queue (cave-hlv.4) — the beads + PR control tower surface.
+// Drives the mode entirely off mocked /api/beads (ready beads) and
+// /api/beads/prs (the bridge's classified open + merged PRs). The surface owns
+// no PR truth of its own, so mocking those two endpoints fully determines the
+// lanes. Daemon-less (COVEN_CAVE_E2E=1); navigation is via the cave:navigate-mode
+// event since Work Queue is a quiet, shortcut-less destination.
+
+const READY_BEADS = [
+  { id: "cave-aa1", title: "Harden the sync path", priority: 1, status: "open", issue_type: "feature", labels: ["familiar:kitty", "surface:github"], updated_at: null, comment_count: 0 },
+  { id: "cave-bb2", title: "iOS profile avatar", priority: 2, status: "open", issue_type: "feature", labels: ["familiar:nova", "surface:ios"], updated_at: null, comment_count: 0 },
+  // cave-open is the post-merge-cleanup bead (merged PR #90). comment_count: 0
+  // means no recorded verification yet → Close is gated until a handoff note.
+  { id: "cave-open", title: "Merged but unclosed", priority: 2, status: "open", issue_type: "feature", labels: ["familiar:kitty"], updated_at: null, comment_count: 0 },
+  { id: "cave-epic", title: "An epic container", priority: 1, status: "open", issue_type: "epic", labels: ["familiar:nova"], updated_at: null, comment_count: 0 },
+];
+
+const NOW = Date.now();
+const iso = (hoursAgo: number) => new Date(NOW - hoursAgo * 3_600_000).toISOString();
+
+// These are already-classified bridge summaries (the endpoint runs the classifier).
+const OPEN_PRS = [
+  { number: 101, title: "Fix the flaky sync", url: "https://gh/pull/101", lane: "checks-failing", beadIds: ["cave-aa1"], checkStatus: "failing", reviewDecision: "UNKNOWN", mergeStateStatus: "BLOCKED", headRefName: "fix/cave-aa1", updatedAt: iso(40) },
+  { number: 102, title: "Ship the widget", url: "https://gh/pull/102", lane: "ready-to-merge", beadIds: ["cave-cc9"], checkStatus: "passing", reviewDecision: "APPROVED", mergeStateStatus: "CLEAN", headRefName: "feat/cave-cc9", updatedAt: iso(2) },
+  { number: 103, title: "Unlinked spike", url: "https://gh/pull/103", lane: "needs-review", beadIds: [], checkStatus: "passing", reviewDecision: "UNKNOWN", mergeStateStatus: "CLEAN", headRefName: "spike/x", updatedAt: iso(3) },
+];
+
+const MERGED_PRS = [
+  { number: 90, title: "Landed change", url: "https://gh/pull/90", beadIds: ["cave-open"], mergedAt: iso(1) },
+];
+const QUEUE_PROJECT = { id: "queue-test-project", name: "Queue test project", root: "/tmp/coven-cave-queue-test-project" };
+const QUEUE_PROJECT_B = { id: "queue-test-project-b", name: "Queue test project B", root: "/tmp/coven-cave-queue-test-project-b" };
+const QUEUE_READINESS = { ok: true, message: "Queue project is ready.", canGenerate: false, project: QUEUE_PROJECT };
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/queue/readiness", (route) =>
+    route.fulfill({ json: { ok: true, readiness: QUEUE_READINESS } }),
+  );
+  await page.route("**/api/onboarding/status**", (route) =>
+    route.fulfill({ json: { ok: true, complete: true, steps: {}, tools: [] } }),
+  );
+});
+
+async function gotoWorkQueue(page: Page, onQueueRequest?: (request: import("@playwright/test").Request) => void) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    window.localStorage.setItem("cave:active-familiar", "kitty");
+  });
+  await page.route("**/api/familiars**", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        familiars: [
+          { id: "kitty", display_name: "Kitty", role: "Builder", status: "active", icon: "ph:sparkle-fill" },
+          { id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+  // Regex matchers (not globs): glob `?` matches any char, so `/api/beads?…`
+  // would also catch `/api/beads/prs`. These are unambiguous — /prs vs the
+  // ?-queried ready list.
+  await page.route(/\/api\/beads\/prs/, (route) => {
+    onQueueRequest?.(route.request());
+    return route.fulfill({ json: { ok: true, open: OPEN_PRS, merged: MERGED_PRS } });
+  });
+  await page.route(/\/api\/beads\?/, (route) => {
+    const request = route.request();
+    onQueueRequest?.(request);
+    if (new URL(request.url()).searchParams.get("mode") !== "ready") return route.fallback();
+    return route.fulfill({ json: { ok: true, data: READY_BEADS } });
+  });
+
+  await page.goto("/");
+  // The shell must be mounted before the mode-switch listener exists; dispatch
+  // once the nav is present, then re-fire until the surface appears so a slow
+  // hydration (cold `next dev` compile) can't lose the event to a race.
+  await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
+  await expect(async () => {
+    await page.evaluate(() =>
+      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })),
+    );
+    await expect(page.locator(".fwq")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
+test.describe("familiar work queue (PR control tower)", () => {
+  test("renders lanes from the beads + PR bridge and exposes cleanup/claim actions", async ({ page }) => {
+    await gotoWorkQueue(page);
+    const fwq = page.locator(".fwq");
+
+    // Header actionable count: 101(fail) + 102(ready) + 103(review) + cave-bb2(no-PR) + 90(cleanup) = 5 actionable.
+    await expect(fwq.getByText(/5 actionable/)).toBeVisible();
+    // Freshness readout is truthful from the first load.
+    await expect(fwq.getByText(/updated just now/)).toBeVisible();
+
+    // Every acceptance lane the mock populates renders, in fix→land→review→bead order.
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
+    await expect(fwq.getByRole("region", { name: "Needs review" })).toBeVisible();
+    await expect(fwq.getByRole("region", { name: "Ready to merge" })).toBeVisible();
+    await expect(fwq.getByRole("region", { name: "No open PR" })).toBeVisible();
+    await expect(fwq.getByRole("region", { name: "Post-merge cleanup" })).toBeVisible();
+
+    // PR + bead identity surfaces truthfully. Scope #101 to its lane: a stale PR
+    // also appears in the "Needs attention" strip, so a bare getByText matches
+    // two elements and trips Playwright's strict mode.
+    await expect(
+      fwq.getByRole("region", { name: "Checks failing" }).getByText("#101"),
+    ).toBeVisible();
+    await expect(fwq.getByText("cave-aa1", { exact: true })).toBeVisible();
+    // Stale PR (40h) is flagged.
+    await expect(fwq.getByText("stale", { exact: true }).first()).toBeVisible();
+
+    // The epic is excluded from the queue (containers aren't work).
+    await expect(fwq.getByText("An epic container")).toHaveCount(0);
+
+    // Familiar rollup chips (label-derived) act as filters.
+    const kittyChip = fwq.getByRole("button", { name: /Kitty/ });
+    await expect(kittyChip).toBeVisible();
+    await expect(fwq.getByRole("button", { name: /Nova/ })).toBeVisible();
+
+    // Cleanup lane offers "Close bead"; no-open-PR lane offers "Claim".
+    const cleanup = fwq.getByRole("region", { name: "Post-merge cleanup" });
+    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeVisible();
+    const noPr = fwq.getByRole("region", { name: "No open PR" });
+    await expect(noPr.getByRole("button", { name: "Claim", exact: true })).toBeVisible();
+
+    // Filtering by Nova drops Kitty-owned lanes (checks-failing was Kitty's).
+    await page.getByRole("button", { name: /Nova/ }).click();
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toHaveCount(0);
+    await expect(fwq.getByRole("region", { name: "No open PR" })).toBeVisible(); // cave-bb2 is Nova's
+  });
+
+  test("claiming a no-open-PR bead posts to the beads adapter", async ({ page }) => {
+    let claimBody: unknown = null;
+    await page.route("**/api/beads", async (route) => {
+      // POST claim/close land here (the GET ready list uses the ?-suffixed matcher).
+      if (route.request().method() === "POST") {
+        claimBody = route.request().postDataJSON();
+        await route.fulfill({ json: { ok: true, data: { id: "cave-bb2", status: "in_progress" } } });
+        return;
+      }
+      await route.fulfill({ json: { ok: true, data: READY_BEADS } });
+    });
+    await gotoWorkQueue(page);
+
+    const noPr = page.locator(".fwq").getByRole("region", { name: "No open PR" });
+    await noPr.getByRole("button", { name: "Claim", exact: true }).click();
+    await expect.poll(() => claimBody).toEqual({ action: "claim", id: "cave-bb2", projectRoot: QUEUE_PROJECT.root });
+  });
+
+  test("selected Queue root scopes both list reads and detail", async ({ page }) => {
+    const readUrls: string[] = [];
+    await gotoWorkQueue(page, (request) => readUrls.push(request.url()));
+
+    await expect.poll(() => readUrls.filter((url) => url.includes("/api/beads") || url.includes("/api/beads/prs")).length).toBeGreaterThanOrEqual(2);
+    for (const url of readUrls.filter((url) => url.includes("/api/beads") || url.includes("/api/beads/prs"))) {
+      expect(new URL(url).searchParams.get("projectRoot")).toBe(QUEUE_PROJECT.root);
+    }
+
+    const fwq = page.locator(".fwq");
+    await fwq.getByRole("region", { name: "No open PR" }).getByRole("button", { name: "iOS profile avatar" }).click();
+    await expect(page.getByRole("dialog", { name: "Queue cave-bb2" })).toBeVisible();
+    await expect.poll(() => readUrls.some((url) => new URL(url).searchParams.get("mode") === "show")).toBe(true);
+    const detailUrl = readUrls.find((url) => new URL(url).searchParams.get("mode") === "show");
+    expect(detailUrl).toBeDefined();
+    expect(new URL(detailUrl!).searchParams.get("projectRoot")).toBe(QUEUE_PROJECT.root);
+  });
+
+  test("clears A before a newly selected project's readiness check fails", async ({ page }) => {
+    let failNextReadiness = false;
+    let aRootMutation = false;
+    await page.route("**/api/queue/readiness", (route) => {
+      if (failNextReadiness) return route.fulfill({ status: 503, json: { ok: false, error: "Queue readiness temporarily unavailable" } });
+      return route.fulfill({ json: { ok: true, readiness: QUEUE_READINESS } });
+    });
+    await page.route("**/api/beads", (route) => {
+      if (route.request().method() === "POST" && route.request().postDataJSON()?.projectRoot === QUEUE_PROJECT.root) aRootMutation = true;
+      return route.fallback();
+    });
+    await gotoWorkQueue(page);
+
+    const fwq = page.locator(".fwq");
+    await expect(fwq.getByText("iOS profile avatar")).toBeVisible();
+    failNextReadiness = true;
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:queue-project-selected", {
+      detail: { project: { id: "queue-project-b", name: "Queue project B", root: "/tmp/coven-cave-queue-test-project-b" } },
+    })));
+
+    await expect(fwq.getByText("Queue check unavailable")).toBeVisible();
+    await expect(fwq.getByText("iOS profile avatar")).toHaveCount(0);
+    await expect(fwq.getByRole("button", { name: "Claim", exact: true })).toHaveCount(0);
+    expect(aRootMutation).toBe(false);
+  });
+
+  test("announces a project-switch reload and keeps Queue focus stable", async ({ page }) => {
+    let selectedProject = QUEUE_PROJECT;
+    let releaseBReadiness!: () => void;
+    const bReadiness = new Promise<void>((resolve) => { releaseBReadiness = resolve; });
+    await page.route("**/api/queue/readiness", async (route) => {
+      if (selectedProject.id === QUEUE_PROJECT_B.id) await bReadiness;
+      return route.fulfill({ json: { ok: true, readiness: { ...QUEUE_READINESS, project: selectedProject } } });
+    });
+    await gotoWorkQueue(page);
+
+    const fwq = page.locator(".fwq");
+    const claim = fwq.getByRole("region", { name: "No open PR" }).getByRole("button", { name: "Claim", exact: true });
+    await claim.focus();
+    selectedProject = QUEUE_PROJECT_B;
+    await page.evaluate((project) => window.dispatchEvent(new CustomEvent("cave:queue-project-selected", { detail: { project } })), QUEUE_PROJECT_B);
+
+    await expect(fwq.getByRole("status")).toHaveText("Loading the selected Queue project…");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
+    releaseBReadiness();
+    await expect(fwq.getByRole("region", { name: "No open PR" })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.activeElement?.className)).toContain("fwq");
+  });
+
+  test("a Generate conflict adopts the other window's selected project before retrying", async ({ page }) => {
+    let selectedProject = QUEUE_PROJECT;
+    const generateBodies: Array<{ projectId?: string }> = [];
+    const needsBeads = (project: typeof QUEUE_PROJECT) => ({
+      ok: false,
+      code: "needs-beads",
+      message: `Generate Queue for ${project.name}.`,
+      canGenerate: true,
+      project,
+    });
+    await page.route("**/api/queue/readiness", async (route) => {
+      if (route.request().method() === "GET") {
+        return route.fulfill({ json: { ok: true, readiness: needsBeads(selectedProject) } });
+      }
+      const body = route.request().postDataJSON();
+      if (body.action !== "generate") return route.fallback();
+      generateBodies.push(body);
+      if (generateBodies.length === 1) {
+        selectedProject = QUEUE_PROJECT_B;
+        return route.fulfill({
+          status: 409,
+          json: { ok: false, error: "Queue project changed in another Cave window.", readiness: needsBeads(QUEUE_PROJECT_B) },
+        });
+      }
+      return route.fulfill({ json: { ok: true, readiness: { ...needsBeads(QUEUE_PROJECT_B), ok: true, code: "ready", canGenerate: false } } });
+    });
+    await gotoWorkQueue(page);
+
+    const fwq = page.locator(".fwq");
+    await fwq.getByRole("button", { name: "Generate" }).click();
+    await expect.poll(() => generateBodies).toHaveLength(1);
+    await expect(fwq).toContainText(QUEUE_PROJECT_B.name);
+    await fwq.getByRole("button", { name: "Generate" }).click();
+    await expect.poll(() => generateBodies).toHaveLength(2);
+    expect(generateBodies.map((body) => body.projectId)).toEqual([QUEUE_PROJECT.id, QUEUE_PROJECT_B.id]);
+  });
+
+  test("a Queue project selection broadcasts to another mounted Cave window", async ({ browser }) => {
+    const context = await browser.newContext();
+    const pageA = await context.newPage();
+    const pageB = await context.newPage();
+    let selectedProject = QUEUE_PROJECT;
+    let releaseBReadiness!: () => void;
+    const bReadiness = new Promise<void>((resolve) => { releaseBReadiness = resolve; });
+    try {
+      for (const page of [pageA, pageB]) {
+        await page.route("**/api/queue/readiness", async (route) => {
+          if (selectedProject.id === QUEUE_PROJECT_B.id) await bReadiness;
+          return route.fulfill({ json: { ok: true, readiness: { ...QUEUE_READINESS, project: selectedProject } } });
+        });
+        await page.route("**/api/onboarding/status**", (route) =>
+          route.fulfill({ json: { ok: true, complete: true, steps: {}, tools: [] } }),
+        );
+      }
+      // These pages belong to an explicitly created BrowserContext, so the
+      // page-fixture beforeEach routes do not apply. Install their readiness
+      // routes before navigation to keep the initial A load deterministic.
+      await gotoWorkQueue(pageA);
+      await gotoWorkQueue(pageB);
+      await pageB.route(/\/api\/beads\?/, (route) => {
+        if (new URL(route.request().url()).searchParams.get("projectRoot") !== QUEUE_PROJECT_B.root) return route.fallback();
+        return route.fulfill({
+          json: {
+            ok: true,
+            data: [{ id: "cave-project-b", title: "Only project B", priority: 1, status: "open", issue_type: "task", labels: [], updated_at: null, comment_count: 0 }],
+          },
+        });
+      });
+
+      const queueB = pageB.locator(".fwq");
+      await expect(queueB.getByText("iOS profile avatar")).toBeVisible();
+      selectedProject = QUEUE_PROJECT_B;
+      await pageA.evaluate((project) => {
+        new BroadcastChannel("cave:queue-project-selection").postMessage({ type: "queue-project-selected", project });
+      }, QUEUE_PROJECT_B);
+
+      await expect(queueB.getByRole("status")).toHaveText("Loading the selected Queue project…");
+      await expect(queueB.getByText("iOS profile avatar")).toHaveCount(0);
+      releaseBReadiness();
+      await expect(queueB.getByText("Only project B")).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("an unselected Queue offers inline project setup on the tab itself", async ({ page }) => {
+    // No project selected yet: readiness reports no-project until the picker
+    // POSTs a selection, then flips to ready for the chosen repository. The
+    // onboarding wizard is never part of this flow.
+    const selectBodies: Array<{ action?: string; projectId?: string }> = [];
+    let selectedProject: typeof QUEUE_PROJECT | null = null;
+    const readinessFor = (project: typeof QUEUE_PROJECT) => ({
+      ok: true,
+      code: "ready",
+      message: "Queue project is ready.",
+      canGenerate: false,
+      project,
+    });
+    await page.route("**/api/projects", (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      return route.fulfill({ json: { ok: true, projects: [QUEUE_PROJECT, QUEUE_PROJECT_B] } });
+    });
+    await page.route("**/api/queue/readiness", (route) => {
+      const request = route.request();
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as { action?: string; projectId?: string };
+        selectBodies.push(body);
+        selectedProject = [QUEUE_PROJECT, QUEUE_PROJECT_B].find((p) => p.id === body.projectId) ?? null;
+        return route.fulfill({ json: { ok: true, readiness: readinessFor(selectedProject ?? QUEUE_PROJECT) } });
+      }
+      if (!selectedProject) {
+        return route.fulfill({
+          json: {
+            ok: true,
+            readiness: { ok: false, code: "no-project", message: "Choose a Queue project to load work.", canGenerate: false, project: null },
+          },
+        });
+      }
+      return route.fulfill({ json: { ok: true, readiness: readinessFor(selectedProject) } });
+    });
+    await gotoWorkQueue(page);
+
+    const fwq = page.locator(".fwq");
+    await expect(fwq.getByText("Queue needs a project")).toBeVisible();
+
+    // The picker is inline — selection must not bounce through the wizard.
+    await fwq.getByRole("button", { name: "Choose Queue project" }).click();
+    await expect(page.getByRole("dialog", { name: "Onboarding" })).toHaveCount(0);
+    await page
+      .getByRole("dialog", { name: "Choose Queue project" })
+      .getByRole("menuitemradio", { name: /Queue test project B/ })
+      .click();
+
+    await expect.poll(() => selectBodies).toEqual([{ action: "select", projectId: QUEUE_PROJECT_B.id }]);
+    // The published selection reloads the view for the chosen repository.
+    await expect(fwq.getByText(/5 actionable/)).toBeVisible();
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
+    await expect(fwq.getByText("Queue needs a project")).toHaveCount(0);
+  });
+
+  test("claiming for a familiar posts the selected assignee", async ({ page }) => {
+    let claimBody: unknown = null;
+    await page.route("**/api/beads", async (route) => {
+      if (route.request().method() === "POST") {
+        claimBody = route.request().postDataJSON();
+        await route.fulfill({ json: { ok: true, data: { id: "cave-bb2", status: "in_progress" } } });
+        return;
+      }
+      await route.fulfill({ json: { ok: true, data: READY_BEADS } });
+    });
+    await gotoWorkQueue(page);
+
+    const noPr = page.locator(".fwq").getByRole("region", { name: "No open PR" });
+    await noPr.getByRole("button", { name: "Claim for familiar…" }).click();
+    await page.getByRole("menuitemradio", { name: "Kitty" }).click();
+    await expect.poll(() => claimBody).toEqual({ action: "claim", id: "cave-bb2", assignee: "kitty", projectRoot: QUEUE_PROJECT.root });
+  });
+
+  test("cleanup Close is gated on a handoff note; adding one posts a comment and unlocks it", async ({ page }) => {
+    let commentBody: unknown = null;
+    await page.route("**/api/beads", async (route) => {
+      if (route.request().method() === "POST") {
+        commentBody = route.request().postDataJSON();
+        await route.fulfill({ json: { ok: true, data: { id: "cave-open" } } });
+        return;
+      }
+      await route.fulfill({ json: { ok: true, data: READY_BEADS } });
+    });
+    await gotoWorkQueue(page);
+
+    const cleanup = page.locator(".fwq").getByRole("region", { name: "Post-merge cleanup" });
+    // No evidence yet → Close is disabled and the reason is spelled out.
+    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeDisabled();
+    await expect(cleanup.getByText(/Add a handoff note to record verification/)).toBeVisible();
+
+    // Record a handoff note through the inline composer. Focus lands in the
+    // textarea on open; Escape closes and hands focus back to the toggle
+    // (keeping the draft); submit does the same once the note posts.
+    const noteToggle = cleanup.getByRole("button", { name: /Add a handoff note to cave-open/ });
+    await noteToggle.click();
+    const noteBox = cleanup.getByRole("textbox", { name: /Handoff note for cave-open/ });
+    await expect(noteBox).toBeFocused();
+    await noteBox.press("Escape");
+    await expect(noteBox).toHaveCount(0);
+    await expect(noteToggle).toBeFocused();
+    await noteToggle.click();
+    await cleanup.getByRole("textbox", { name: /Handoff note for cave-open/ }).fill("Verified: lanes render, close gated.");
+    await cleanup.getByRole("button", { name: "Save note" }).click();
+    await expect(noteToggle).toBeFocused();
+
+    // The note posts as a comment on the bead…
+    await expect.poll(() => commentBody).toEqual({
+      action: "comment",
+      id: "cave-open",
+      comment: "Verified: lanes render, close gated.",
+      projectRoot: QUEUE_PROJECT.root,
+    });
+    // …and Close unlocks (optimistic, without waiting for a re-read).
+    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeEnabled();
+  });
+
+  test("a delayed A handoff cannot unlock an equal bead id after switching to B", async ({ page }) => {
+    let selectedProject = QUEUE_PROJECT;
+    let releaseComment!: () => void;
+    const commentReleased = new Promise<void>((resolve) => { releaseComment = resolve; });
+    let commentStarted!: () => void;
+    const commentPending = new Promise<void>((resolve) => { commentStarted = resolve; });
+    const readUrls: string[] = [];
+    await page.route("**/api/queue/readiness", (route) =>
+      route.fulfill({ json: { ok: true, readiness: { ...QUEUE_READINESS, project: selectedProject } } }),
+    );
+    await page.route("**/api/beads", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON();
+      if (body.action === "comment") {
+        commentStarted();
+        await commentReleased;
+        return route.fulfill({ json: { ok: true, data: { id: "cave-open" } } });
+      }
+      return route.fallback();
+    });
+    await gotoWorkQueue(page, (request) => readUrls.push(request.url()));
+
+    const cleanup = page.locator(".fwq").getByRole("region", { name: "Post-merge cleanup" });
+    await cleanup.getByRole("button", { name: /Add a handoff note to cave-open/ }).click();
+    await cleanup.getByRole("textbox", { name: /Handoff note for cave-open/ }).fill("Verified in project A.");
+    await cleanup.getByRole("button", { name: "Save note" }).click();
+    await commentPending;
+
+    selectedProject = QUEUE_PROJECT_B;
+    await page.evaluate((project) => window.dispatchEvent(new CustomEvent("cave:queue-project-selected", { detail: { project } })), QUEUE_PROJECT_B);
+    await expect.poll(() => readUrls.some((url) => new URL(url).searchParams.get("projectRoot") === QUEUE_PROJECT_B.root)).toBe(true);
+    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeDisabled();
+
+    releaseComment();
+    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeDisabled();
+  });
+
+  test("PR and Asana bead creation use B after a Queue project switch", async ({ page }) => {
+    let selectedProject = QUEUE_PROJECT;
+    const createBodies: Array<{ projectRoot?: string; labels?: string[] }> = [];
+    const readUrls: string[] = [];
+    await page.route("**/api/queue/readiness", (route) =>
+      route.fulfill({ json: { ok: true, readiness: { ...QUEUE_READINESS, project: selectedProject } } }),
+    );
+    await page.route("**/api/asana/assigned**", (route) =>
+      route.fulfill({
+        json: {
+          ok: true,
+          configured: true,
+          assigned: true,
+          items: [{ gid: "asana-123", title: "Asana queue task", url: "https://app.asana.com/0/123", projectName: "Queue" }],
+        },
+      }),
+    );
+    await page.route("**/api/beads", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON();
+      if (body.action === "create") {
+        createBodies.push(body);
+        return route.fulfill({ json: { ok: true, data: { id: `cave-created-${createBodies.length}` } } });
+      }
+      return route.fallback();
+    });
+    await gotoWorkQueue(page, (request) => readUrls.push(request.url()));
+
+    selectedProject = QUEUE_PROJECT_B;
+    await page.evaluate((project) => window.dispatchEvent(new CustomEvent("cave:queue-project-selected", { detail: { project } })), QUEUE_PROJECT_B);
+    await expect.poll(() => readUrls.filter((url) => new URL(url).searchParams.get("projectRoot") === QUEUE_PROJECT_B.root).length).toBeGreaterThanOrEqual(2);
+
+    const fwq = page.locator(".fwq");
+    const attention = fwq.getByRole("region", { name: "PRs needing attention" });
+    await attention.locator(".fwq-attention-item", { hasText: "#103" }).getByRole("button", { name: "File bead" }).click();
+    await expect.poll(() => createBodies.length).toBe(1);
+    const asana = fwq.getByRole("region", { name: "Asana tasks assigned to you" });
+    await expect(asana).toBeVisible();
+    await asana.getByRole("button", { name: "File bead" }).click();
+    await expect.poll(() => createBodies.length).toBe(2);
+    expect(createBodies.map((body) => body.projectRoot)).toEqual([QUEUE_PROJECT_B.root, QUEUE_PROJECT_B.root]);
+    expect(createBodies.map((body) => body.labels)).toEqual([["from-pr"], ["asana"]]);
+  });
+
+  test("Attention strip surfaces stale and unlinked open PRs", async ({ page }) => {
+    await gotoWorkQueue(page);
+    const strip = page.locator(".fwq").getByRole("region", { name: "PRs needing attention" });
+    await expect(strip).toBeVisible();
+
+    // #101 is 40h old (stale, linked); #103 has no bead (unlinked, fresh).
+    const stale = strip.locator(".fwq-attention-item", { hasText: "#101" });
+    await expect(stale.getByText("stale", { exact: true })).toBeVisible();
+    const unlinked = strip.locator(".fwq-attention-item", { hasText: "#103" });
+    await expect(unlinked.getByText("no bead", { exact: true })).toBeVisible();
+
+    // A clean, linked, fresh PR (#102) is NOT flagged.
+    await expect(strip.locator(".fwq-attention-item", { hasText: "#102" })).toHaveCount(0);
+    // Each row can jump to the PR.
+    await expect(stale.getByRole("button", { name: "Open PR" })).toBeVisible();
+  });
+
+  test("beads adapter failure degrades to PRs-only with a visible notice", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
+      window.localStorage.setItem("cave:active-familiar", "kitty");
+    });
+    await page.route("**/api/familiars**", (r) =>
+      r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
+    );
+    await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
+    await page.route(/\/api\/beads\/prs/, (r) => r.fulfill({ json: { ok: true, open: OPEN_PRS, merged: MERGED_PRS } }));
+    // The beads adapter is down (bd missing / not a beads workspace).
+    await page.route(/\/api\/beads\?/, (r) => r.fulfill({ status: 500, json: { ok: false, error: "bd unavailable" } }));
+
+    await page.goto("/");
+    await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
+    await expect(async () => {
+      await page.evaluate(() =>
+        window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })),
+      );
+      await expect(page.locator(".fwq")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+
+    const fwq = page.locator(".fwq");
+    // The degradation is SAID, not silent.
+    await expect(fwq.getByText(/Beads adapter unavailable/)).toBeVisible();
+    // PR lanes still render from the bridge…
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
+    await expect(fwq.getByRole("region", { name: "Needs review" })).toBeVisible();
+    // …but the bead-driven lanes are gone (no ready set to derive them from).
+    await expect(fwq.getByRole("region", { name: "No open PR" })).toHaveCount(0);
+    await expect(fwq.getByRole("region", { name: "Post-merge cleanup" })).toHaveCount(0);
+  });
+
+  test("failed refresh keeps earlier data and shows an inline retry banner", async ({ page }) => {
+    // Flip-switch rather than a call counter: dev-mode StrictMode double-mount
+    // (and focus refreshes) make the number of initial loads unpredictable.
+    let failPrs = false;
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
+      window.localStorage.setItem("cave:active-familiar", "kitty");
+    });
+    await page.route("**/api/familiars**", (r) =>
+      r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
+    );
+    await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
+    await page.route(/\/api\/beads\/prs/, (r) => {
+      if (failPrs) return r.fulfill({ status: 502, json: { ok: false, error: "gh exploded" } });
+      return r.fulfill({ json: { ok: true, open: OPEN_PRS, merged: MERGED_PRS } });
+    });
+    await page.route(/\/api\/beads\?/, (r) => r.fulfill({ json: { ok: true, data: READY_BEADS } }));
+
+    await page.goto("/");
+    await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
+    await expect(async () => {
+      await page.evaluate(() =>
+        window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })),
+      );
+      await expect(page.locator(".fwq")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+
+    const fwq = page.locator(".fwq");
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
+
+    failPrs = true;
+    await fwq.getByRole("button", { name: "Refresh queue" }).click();
+    const banner = fwq.getByRole("alert");
+    await expect(banner).toContainText("Couldn't refresh the queue");
+    await expect(banner.getByRole("button", { name: "Retry" })).toBeVisible();
+    // Earlier data stays on screen — the failure does not blank the queue.
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
+    await expect(fwq.getByRole("region", { name: "Post-merge cleanup" })).toBeVisible();
+  });
+
+  test("PR bridge down at first load degrades to beads-only instead of a dead surface", async ({ page }) => {
+    // gh missing/unauthenticated on a fresh open: the queue must still load
+    // from the beads adapter (user-reported "ensure it loads").
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
+      window.localStorage.setItem("cave:active-familiar", "kitty");
+    });
+    await page.route("**/api/familiars**", (r) =>
+      r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
+    );
+    await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
+    await page.route(/\/api\/beads\/prs/, (r) => r.fulfill({ status: 500, json: { ok: false, error: "gh unavailable" } }));
+    await page.route(/\/api\/beads\?/, (r) => r.fulfill({ json: { ok: true, data: READY_BEADS } }));
+
+    await page.goto("/");
+    await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
+    await expect(async () => {
+      await page.evaluate(() =>
+        window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })),
+      );
+      await expect(page.locator(".fwq")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+
+    const fwq = page.locator(".fwq");
+    // The degradation is SAID, not silent — and it is not the dead retry state.
+    await expect(fwq.getByText(/GitHub PR bridge unavailable/)).toBeVisible();
+    await expect(fwq.getByText("Couldn't load the queue")).toHaveCount(0);
+    // Bead-driven lane renders from the ready set alone.
+    await expect(fwq.getByRole("region", { name: "No open PR" })).toBeVisible();
+    // PR-truth lanes are honestly absent.
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toHaveCount(0);
+  });
+
+  test("Attention strip is absent when no PR is stale or unlinked", async ({ page }) => {
+    // Every open PR is fresh and linked → nothing to flag.
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
+      window.localStorage.setItem("cave:active-familiar", "kitty");
+    });
+    await page.route("**/api/familiars**", (r) =>
+      r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
+    );
+    await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
+    const freshPr = { number: 201, title: "All good", url: "https://gh/pull/201", lane: "ready-to-merge", beadIds: ["cave-aa1"], checkStatus: "passing", reviewDecision: "APPROVED", mergeStateStatus: "CLEAN", headRefName: "feat/cave-aa1", updatedAt: new Date().toISOString() };
+    await page.route(/\/api\/beads\/prs/, (r) => r.fulfill({ json: { ok: true, open: [freshPr], merged: [] } }));
+    await page.route(/\/api\/beads\?/, (r) =>
+      r.fulfill({ json: { ok: true, data: [{ id: "cave-aa1", title: "T", priority: 1, status: "open", issue_type: "feature", labels: ["familiar:kitty"] }] } }),
+    );
+    await page.goto("/");
+    await page.waitForTimeout(500);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })));
+    await page.waitForSelector(".fwq-lane", { timeout: 45_000 });
+    await expect(page.locator(".fwq-attention")).toHaveCount(0);
+  });
+});

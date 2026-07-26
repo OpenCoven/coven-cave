@@ -5,6 +5,7 @@ const SECRET_KEY_PATTERN =
 
 const WHOLE_SECRET_PATTERNS: RegExp[] = [
   /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b/gi,
+  /\bsk-or-v1-[A-Za-z0-9_-]{32,}\b/g,
   /\b(?:sk|rk)-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g,
   /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g,
   /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}\b/g,

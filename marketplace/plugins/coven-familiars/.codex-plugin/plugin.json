@@ -1,0 +1,24 @@
+{
+  "name": "coven-familiars",
+  "version": "0.1.0",
+  "description": "Spawn, configure, and roster-manage Coven familiars \u2014 identities, roles, glyphs, and lifecycle.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Coven Familiars",
+    "shortDescription": "Spawn, configure, and roster-manage Coven familiars \u2014 identities, roles, glyphs, and lifecycle.",
+    "longDescription": "Create and tend familiars from inside Coven Cave without overwriting other familiars' config.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "coven",
+      "familiars",
+      "agents",
+      "roster",
+      "identity"
+    ],
+    "defaultPrompt": "Help me use Coven Familiars safely."
+  }
+}

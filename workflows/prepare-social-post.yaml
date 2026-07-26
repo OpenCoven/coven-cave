@@ -2,7 +2,7 @@ id: prepare-social-post
 version: 0.1.0
 name: Prepare Social Post
 summary: Draft native short-form posts, check claims, adapt tone, and post only after explicit approval.
-familiar: charm
+familiar: comms
 pattern: sequential
 tags:
   - social
@@ -25,22 +25,22 @@ steps:
   - id: brief
     kind: agent
     name: Social brief
-    uses: charm
+    uses: comms
     summary: Identify platform, audience, target action, constraints, and source truth.
     requires:
       - input
   - id: draft-posts
     kind: agent
     name: Draft posts
-    uses: charm
+    uses: comms
     summary: Produce short platform-native variants without overstating status or metrics.
     requires:
       - brief
   - id: check-claims
     kind: agent
     name: Check claims
-    uses: charm
-    summary: Verify claims, links, product status, and whether anything needs Sage or Cody.
+    uses: comms
+    summary: Verify claims, links, product status, and whether anything needs the research or code lane.
     requires:
       - draft-posts
   - id: approval-gate

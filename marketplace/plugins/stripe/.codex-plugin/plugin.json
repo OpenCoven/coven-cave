@@ -1,0 +1,24 @@
+{
+  "name": "stripe",
+  "version": "0.1.0",
+  "description": "Work with Stripe customers, products, payments, and billing through the official MCP server.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Stripe",
+    "shortDescription": "Work with Stripe customers, products, payments, and billing through the official MCP server.",
+    "longDescription": "Use Stripe MCP for read-first billing inspection; treat money-moving actions as approval-gated.",
+    "developerName": "OpenCoven",
+    "category": "Commerce",
+    "capabilities": [
+      "stripe",
+      "payments",
+      "billing",
+      "customers",
+      "subscriptions"
+    ],
+    "defaultPrompt": "Help me use Stripe safely."
+  }
+}

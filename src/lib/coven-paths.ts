@@ -2,10 +2,21 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-export const DEFAULT_FAMILIAR_IDS = ["sage", "echo", "charm", "astra", "cody", "kitty", "nova"];
-
 export function covenHome(): string {
   return process.env.COVEN_HOME || path.join(homedir(), ".coven");
+}
+
+/**
+ * Dedicated home for Coven Cave's own state: `<covenHome>/cave/`.
+ *
+ * All cave-owned files live here with standardized names (config.json,
+ * state.json, board.json, conversations/, …) instead of the legacy scattered
+ * `~/.coven/cave-*.json` top-level files. Legacy files are moved in at startup
+ * by `migrateCaveHome()` (src/lib/server/cave-home-migration.ts). Bundle-mode
+ * writables (.env.local, vault.yaml, workflows/) already lived here.
+ */
+export function caveHome(): string {
+  return process.env.COVEN_CAVE_HOME || path.join(covenHome(), "cave");
 }
 
 export function covenWorkspacesRoot(): string {
@@ -52,7 +63,7 @@ export function parseFamiliarWorkspaces(raw: string): Map<string, string> {
 
 export async function readFamiliarWorkspaces(): Promise<Map<string, string>> {
   try {
-    const raw = await readFile(path.join(covenHome(), "familiars.toml"), "utf8");
+    const raw = await readFile(path.join(/* turbopackIgnore: true */ covenHome(), "familiars.toml"), "utf8");
     return parseFamiliarWorkspaces(raw);
   } catch {
     return new Map();
@@ -61,10 +72,10 @@ export async function readFamiliarWorkspaces(): Promise<Map<string, string>> {
 
 export async function familiarWorkspace(familiarId: string): Promise<string> {
   const declared = await readFamiliarWorkspaces();
-  return declared.get(familiarId) ?? path.join(familiarWorkspacesRoot(), familiarId);
+  return declared.get(familiarId) ?? path.join(/* turbopackIgnore: true */ familiarWorkspacesRoot(), familiarId);
 }
 
 export async function familiarIds(): Promise<string[]> {
   const declared = await readFamiliarWorkspaces();
-  return Array.from(new Set([...DEFAULT_FAMILIAR_IDS, ...declared.keys()]));
+  return Array.from(declared.keys());
 }

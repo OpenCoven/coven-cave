@@ -1,11 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import "@xterm/xterm/css/xterm.css";
+
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { TerminalKeyBar } from "@/components/terminal-key-bar";
 import { PtyWsBridge } from "@/lib/pty-ws-bridge";
 import { Icon } from "@/lib/icon";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 // Bottom terminal pane — xterm.js in the browser, hooked up to a
 // portable-pty session on the Rust side (see src-tauri/src/pty.rs).
@@ -21,6 +25,21 @@ import { Icon } from "@/lib/icon";
 // (e.g. `cargo build`) don't flood SR or thrash React.
 const MIRROR_LINES = 50;
 const MIRROR_DEBOUNCE_MS = 250;
+// While the pane is hidden (keepalive) the mirror isn't re-rendered; cap the
+// buffered text so a busy background stream can't grow it without bound before
+// the pane is next shown (the flush trims to MIRROR_LINES anyway).
+const MIRROR_PENDING_CAP = 16384;
+// ResizeObserver fires every frame during a divider drag / window resize, and
+// each callback used to push pty_resize immediately — a SIGWINCH storm to the
+// shell (and to every hidden keepalive pane, which keeps full size at inset:0).
+// The local xterm refit stays per-callback for smooth visuals; only the PTY
+// push is throttled to this window, and skipped when the size didn't change.
+const RESIZE_PUSH_DEBOUNCE_MS = 150;
+// The xterm lazy-import + PTY handshake is "a few seconds"; well past that with
+// no connection means startup hung (a wedged native command, a transport await
+// that never settled, or `platform` never resolving off "unknown"). Surface a
+// Retry rather than spinning forever.
+const START_WATCHDOG_MS = 15_000;
 
 function stripAnsi(text: string): string {
   return text
@@ -51,36 +70,156 @@ async function loadTauri(): Promise<TauriBridge | null> {
   return { invoke, listen };
 }
 
+function themeColorToken(name: string): string {
+  if (typeof window === "undefined") return `var(${name})`;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || `var(${name})`;
+}
+
+function searchDecorations() {
+  const warning = themeColorToken("--color-warning");
+  const accent = themeColorToken("--accent-presence");
+  return {
+    matchBackground: warning,
+    activeMatchBackground: accent,
+    matchOverviewRuler: warning,
+    activeMatchColorOverviewRuler: accent,
+  } as const;
+}
+
+type XtermBundle = {
+  term: import("@xterm/xterm").Terminal;
+  fit: import("@xterm/addon-fit").FitAddon;
+  search: import("@xterm/addon-search").SearchAddon;
+};
+
+// Shared resize handling for both transports: refit the local xterm on every
+// observer callback (cheap; keeps the canvas crisp during divider drags), but
+// throttle the PTY push (SIGWINCH to the shell) to RESIZE_PUSH_DEBOUNCE_MS and
+// skip it for hidden panes and unchanged cols/rows. Hidden keepalive panes sit
+// at inset:0 so they'd otherwise mirror every window resize straight to N
+// background shells.
+function makeResizer(
+  term: import("@xterm/xterm").Terminal,
+  fit: import("@xterm/addon-fit").FitAddon,
+  isVisible: () => boolean,
+  push: (cols: number, rows: number) => void,
+) {
+  let last = { cols: -1, rows: -1 };
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const fire = () => {
+    timer = null;
+    // Hidden pane: local fit already happened (so reveal is crisp); the PTY
+    // learns the size on the next visible resize instead.
+    if (!isVisible()) return;
+    const { cols, rows } = term;
+    if (cols === last.cols && rows === last.rows) return;
+    last = { cols, rows };
+    push(cols, rows);
+  };
+  const doResize = () => {
+    try {
+      fit.fit();
+    } catch { /* harmless mid-tear-down */ }
+    if (timer == null) timer = setTimeout(fire, RESIZE_PUSH_DEBOUNCE_MS);
+  };
+  const dispose = () => {
+    if (timer != null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+  return { doResize, dispose };
+}
+
+// Build the xterm instance + addons shared by both transports (Tauri IPC and the
+// WebSocket bridge). The two effects differ only in how bytes flow to/from the
+// PTY; the terminal, fit/links/search addons, result reporting, and the ⌘F
+// find-bar key handler are identical, so they live here once. JSX-free.
+async function createXterm(
+  wrap: HTMLDivElement,
+  handlers: {
+    /** SearchAddon result count changed — drives the n/N counter. */
+    onResults: (index: number, count: number) => void;
+    /** ⌘F / Ctrl+F pressed inside the terminal — open the find bar. */
+    onRequestFind: () => void;
+    /** prefers-reduced-motion at creation time — disables cursor blink. */
+    reducedMotion?: boolean;
+  },
+): Promise<XtermBundle> {
+  const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
+    import("@xterm/xterm"),
+    import("@xterm/addon-fit"),
+    import("@xterm/addon-web-links"),
+    import("@xterm/addon-search"),
+  ]);
+
+  const term = new Terminal({
+    fontFamily:
+      'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+    fontSize: 12,
+    lineHeight: 1.2,
+    // A permanently blinking cursor is exactly the kind of continuous motion
+    // prefers-reduced-motion opts out of; kept in sync after creation too.
+    cursorBlink: !handlers.reducedMotion,
+    // Required for the search addon's match decorations (highlights + count).
+    allowProposedApi: true,
+    theme: {
+      background: "oklch(0.22 0.006 291)",
+      foreground: "#e6e6f0",
+      cursor: "#9386d0",
+      selectionBackground: "rgba(147,134,208,0.35)",
+    },
+  });
+  const fit = new FitAddon();
+  term.loadAddon(fit);
+  term.loadAddon(new WebLinksAddon());
+  const search = new SearchAddon();
+  term.loadAddon(search);
+  search.onDidChangeResults((e) => {
+    handlers.onResults(e.resultIndex >= 0 ? e.resultIndex + 1 : 0, e.resultCount);
+  });
+  // ⌘F / Ctrl+F opens the in-buffer find bar instead of the browser's.
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      handlers.onRequestFind();
+      return false;
+    }
+    return true;
+  });
+  term.open(wrap);
+  try {
+    fit.fit();
+  } catch {
+    /* DOM not ready yet — first resize event will recover */
+  }
+  return { term, fit, search };
+}
+
 export function BottomTerminal({
   threadId,
   active = true,
+  visible = active,
   projectRoot,
-  paneId,
-  registerWriter,
-  onUserInput,
+  label,
 }: {
   threadId: string;
+  /** This pane has keyboard focus (drives refit + refocus on activation). */
   active?: boolean;
+  /** This pane is rendered on-screen. True for EVERY pane of a visible split
+   *  (not just the focused one) so the screen-reader mirror keeps flowing for
+   *  visible-but-unfocused panes; false only for hidden keepalive mounts.
+   *  Defaults to `active` for single-pane hosts. */
+  visible?: boolean;
   projectRoot?: string;
-  /** Stable id for comux's broadcast registry (defaults to threadId). */
-  paneId?: string;
-  /** Register/unregister this pane's PTY writer so broadcast can fan input in. */
-  registerWriter?: (paneId: string, write: ((data: string) => void) | null) => void;
-  /** Called with every keystroke (post Ctrl-transform) so comux can mirror it
-   *  to sibling panes when broadcast mode is on. */
-  onUserInput?: (paneId: string, data: string) => void;
+  /** Human-readable pane name so AT can tell split
+   *  panes apart — names the terminal region and its screen-reader mirror. */
+  label?: string;
 }) {
-  const broadcastPaneId = paneId ?? threadId;
-  // Writer set by whichever transport (Tauri / WS) is live; the registered
-  // wrapper reads this ref at call time so registration can precede attach.
-  const writerRef = useRef<((data: string) => void) | null>(null);
-  const onUserInputRef = useRef(onUserInput);
-  onUserInputRef.current = onUserInput;
-  useEffect(() => {
-    if (!registerWriter) return;
-    registerWriter(broadcastPaneId, (data: string) => writerRef.current?.(data));
-    return () => registerWriter(broadcastPaneId, null);
-  }, [registerWriter, broadcastPaneId]);
+  // Connection transitions are written into the terminal (and its polite
+  // mirror) as dim ANSI, where a disconnect can be buried under output — mirror
+  // them to the shared assertive live region so AT interrupts with the status.
+  const { announce: srAnnounce } = useAnnouncer();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
@@ -91,12 +230,24 @@ export function BottomTerminal({
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [findInfo, setFindInfo] = useState<{ index: number; count: number }>({ index: 0, count: 0 });
+  // Ties the (non-live) match counter to the find input via aria-describedby.
+  const findCountId = useId();
   // Touch accessory key bar: soft keyboards lack Esc/Tab/Ctrl/arrows. Only shown
   // on coarse pointers. Ctrl is sticky — the toggle flips ctrlStickyRef, and the
   // onData handler (set up once at mount) reads the ref to transform the next
   // typed character into its control code. clearCtrlRef lets that handler reset
   // the visual state from inside its stable closure.
   const isCoarse = useIsCoarsePointer();
+  // Reactive: flipping the OS setting stops/starts the blink without a
+  // remount (xterm applies option changes live). The ref feeds the async
+  // createXterm calls so the initial value is right without re-running them.
+  const reducedMotion = usePrefersReducedMotion();
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
+  useEffect(() => {
+    const term = termRef.current;
+    if (term) term.options.cursorBlink = !reducedMotion;
+  }, [reducedMotion]);
   const [ctrlActive, setCtrlActive] = useState(false);
   const ctrlStickyRef = useRef(false);
   const clearCtrlRef = useRef<() => void>(() => {});
@@ -118,13 +269,6 @@ export function BottomTerminal({
     });
     termRef.current?.focus();
   }, []);
-  // Highlight every match plus the active one; colors echo the terminal theme.
-  const SEARCH_DECORATIONS = {
-    matchBackground: "#5b4b8a",
-    activeMatchBackground: "#9a8ecd",
-    matchOverviewRuler: "#5b4b8a",
-    activeMatchColorOverviewRuler: "#cdbff5",
-  } as const;
   const runFind = useCallback((direction: 1 | -1, term?: string) => {
     const q = term ?? findInputRef.current?.value ?? "";
     if (!q) {
@@ -132,9 +276,15 @@ export function BottomTerminal({
       setFindInfo({ index: 0, count: 0 });
       return;
     }
-    const opts = { decorations: SEARCH_DECORATIONS };
+    const opts = { decorations: searchDecorations() };
     if (direction === 1) searchRef.current?.findNext(q, opts);
     else searchRef.current?.findPrevious(q, opts);
+  }, []);
+  // Open the find bar and select its input. Shared by the ⌘F key handler and
+  // the touch Find button (soft keyboards can't produce the ⌘F chord).
+  const openFind = useCallback(() => {
+    setFindOpen(true);
+    requestAnimationFrame(() => findInputRef.current?.select());
   }, []);
   const closeFind = useCallback(() => {
     setFindOpen(false);
@@ -152,6 +302,12 @@ export function BottomTerminal({
   // Until then the pane shows a "Starting terminal…" overlay instead of looking
   // blank during the lazy xterm import + WebSocket handshake (~a few seconds).
   const [ready, setReady] = useState(false);
+  // Startup never resolved — a thrown/hung transport await, or `platform` stuck
+  // at "unknown" so neither transport effect ran. Surfaced (with Retry) instead
+  // of an indefinite "Starting terminal…" spinner. `retryNonce` re-runs the
+  // transport effects when the user retries.
+  const [startError, setStartError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   // useTauriPlatform() resolves async and starts at "unknown". Desktop uses
   // Tauri IPC; browser dev/prod AND Tauri-mobile use the WebSocket PTY
   // bridge — the mobile webview is served by a remote Cave server, and the
@@ -165,6 +321,12 @@ export function BottomTerminal({
   if (!decoderRef.current) {
     decoderRef.current = new TextDecoder("utf-8", { fatal: false });
   }
+  // Mirror `visible` into a ref so the byte handlers and resize observers
+  // (registered once per mount) can read the current value without
+  // re-subscribing. `active` (focus) deliberately does NOT gate the mirror:
+  // a visible-but-unfocused split pane must keep announcing output.
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   const flushMirror = useCallback(() => {
     flushTimerRef.current = null;
@@ -180,11 +342,22 @@ export function BottomTerminal({
   const pushToMirror = useCallback(
     (bytes: Uint8Array) => {
       if (!decoderRef.current) return;
+      // Keep decoding even while hidden so the streaming decoder state stays
+      // consistent — but don't re-render the (sr-only, aria-live=polite) mirror
+      // off-screen: a busy background stream otherwise re-rendered the 50-line
+      // mirror every 250ms while the terminal wasn't even visible. Buffer
+      // (bounded) and drain when the pane is next shown.
       const text = stripAnsi(
         decoderRef.current.decode(bytes, { stream: true }),
       );
       if (!text) return;
       pendingMirrorRef.current += text;
+      if (!visibleRef.current) {
+        if (pendingMirrorRef.current.length > MIRROR_PENDING_CAP) {
+          pendingMirrorRef.current = pendingMirrorRef.current.slice(-MIRROR_PENDING_CAP);
+        }
+        return;
+      }
       if (flushTimerRef.current == null) {
         flushTimerRef.current = setTimeout(flushMirror, MIRROR_DEBOUNCE_MS);
       }
@@ -214,7 +387,13 @@ export function BottomTerminal({
   // Also forward every BottomTerminal log line back to Rust so we can read
   // them in the tauri-dev stderr without needing WebView devtools.
 
-  // Re-fit + refocus whenever this terminal becomes the active tab.
+  // Drain output buffered while the pane was hidden as soon as it's shown —
+  // independent of focus, so every pane of a revealed split resumes announcing.
+  useEffect(() => {
+    if (visible) flushMirror();
+  }, [visible, flushMirror]);
+
+  // Re-fit + refocus whenever this terminal becomes the active (focused) pane.
   useEffect(() => {
     if (active) {
       const id = requestAnimationFrame(() => {
@@ -224,6 +403,29 @@ export function BottomTerminal({
       return () => cancelAnimationFrame(id);
     }
   }, [active]);
+
+  // Startup watchdog: covers every way the terminal can stall before `ready` —
+  // a native pty_* command that never returns, a transport await that throws/
+  // hangs, or `platform` stuck at "unknown" so neither transport effect runs.
+  // Without this the user just stares at "Starting terminal…" forever.
+  useEffect(() => {
+    if (ready || unavailable || startError) return;
+    const id = setTimeout(() => {
+      setStartError("The terminal didn't finish starting — the shell backend isn't responding.");
+      log("startup watchdog fired", { platform, retryNonce });
+    }, START_WATCHDOG_MS);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, unavailable, startError, platform, retryNonce]);
+
+  // Re-run the transport effects (retryNonce is in their deps) and reset the
+  // overlay state so the watchdog re-arms.
+  const retryStart = useCallback(() => {
+    setStartError(null);
+    setUnavailable(false);
+    setReady(false);
+    setRetryNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -237,6 +439,7 @@ export function BottomTerminal({
     let cleanup: (() => void) | null = null;
 
     void (async () => {
+     try {
       // Skip all logs in browser dev — only log when Tauri is actually present
       const inTauri = typeof window !== "undefined" && !!(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
       if (inTauri) log("mount: loading tauri bridge");
@@ -248,56 +451,15 @@ export function BottomTerminal({
       }
       log("mount: tauri bridge ready");
 
-      // Lazy-load xterm only on the client + only inside Tauri so SSR and
-      // the in-browser dev path don't try to pull it in.
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
-        import("@xterm/xterm"),
-        import("@xterm/addon-fit"),
-        import("@xterm/addon-web-links"),
-        import("@xterm/addon-search"),
-      ]);
-
-      const term = new Terminal({
-        fontFamily:
-          'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-        fontSize: 12,
-        lineHeight: 1.2,
-        cursorBlink: true,
-        // Required for the search addon's match decorations (highlights + count).
-        allowProposedApi: true,
-        theme: {
-          background: "oklch(0.11 0.022 293)",
-          foreground: "#e6e6f0",
-          cursor: "#9a8ecd",
-          selectionBackground: "rgba(154,142,205,0.35)",
-        },
+      // Lazy-load + build xterm (only on the client + inside Tauri so SSR and
+      // the in-browser dev path don't pull it in). Shared with the WS path.
+      const { term, fit, search } = await createXterm(wrap, {
+        onResults: (index, count) => setFindInfo({ index, count }),
+        onRequestFind: openFind,
+        reducedMotion: reducedMotionRef.current,
       });
       termRef.current = term;
-      const fit = new FitAddon();
-      term.loadAddon(fit);
-      term.loadAddon(new WebLinksAddon());
-      const search = new SearchAddon();
-      term.loadAddon(search);
       searchRef.current = search;
-      search.onDidChangeResults((e) => {
-        setFindInfo({ index: e.resultIndex >= 0 ? e.resultIndex + 1 : 0, count: e.resultCount });
-      });
-      // ⌘F / Ctrl+F opens the in-buffer find bar instead of the browser's.
-      term.attachCustomKeyEventHandler((e) => {
-        if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "f") {
-          e.preventDefault();
-          setFindOpen(true);
-          requestAnimationFrame(() => findInputRef.current?.select());
-          return false;
-        }
-        return true;
-      });
-      term.open(wrap);
-      try {
-        fit.fit();
-      } catch {
-        /* DOM not ready yet — first resize event will recover */
-      }
       log("xterm opened", { cols: term.cols, rows: term.rows });
 
       let stopped = false;
@@ -364,13 +526,7 @@ export function BottomTerminal({
           threadId: threadId,
           bytes: Array.from(new TextEncoder().encode(out)),
         }).catch((err) => log("pty_write FAILED", err));
-        onUserInputRef.current?.(broadcastPaneId, out);
       });
-      writerRef.current = (d) =>
-        void bridge.invoke("pty_write", {
-          threadId: threadId,
-          bytes: Array.from(new TextEncoder().encode(d)),
-        }).catch((err) => log("pty_write FAILED", err));
 
       if (!attachToRunning) {
         log("pty_start: invoking with projectRoot=", projectRootRef.current);
@@ -401,16 +557,14 @@ export function BottomTerminal({
       if (!disposed) setReady(true);
       term.focus();
 
-      const doResize = () => {
-        try {
-          fit.fit();
-          void bridge.invoke("pty_resize", {
-            threadId: threadId,
-            cols: term.cols,
-            rows: term.rows,
-          });
-        } catch { /* harmless mid-tear-down */ }
-      };
+      const resizer = makeResizer(term, fit, () => visibleRef.current, (cols, rows) => {
+        void bridge.invoke("pty_resize", {
+          threadId: threadId,
+          cols,
+          rows,
+        }).catch(() => { /* harmless mid-tear-down */ });
+      });
+      const doResize = resizer.doResize;
 
       // Refit on container size changes.
       const ro = new ResizeObserver(doResize);
@@ -424,6 +578,7 @@ export function BottomTerminal({
 
       cleanup = () => {
         ro.disconnect();
+        resizer.dispose();
         onDataDispose.dispose();
         unlistenData();
         unlistenExit();
@@ -438,18 +593,28 @@ export function BottomTerminal({
         // (keepalive reparenting), and the fire-and-forget stop raced the
         // next mount's pty_list — losing the race attached the new terminal
         // to a shell that was about to be SIGHUPed, a dead pane that ate
-        // keystrokes. The shell is killed exactly once, when the user closes
-        // the tab (ComuxView.removeSession).
+        // keystrokes. The shell is killed exactly once, by the OWNER of the
+        // thread id — the chat code rail stops `cave.rail.<id>` shells on
+        // session switch (chat-surface.tsx, cave-c3yt).
       };
 
       if (disposed) cleanup();
+     } catch (err) {
+       // A thrown/rejected await (loadTauri, createXterm, listen, a native
+       // command) must not leave the pane stuck on "Starting terminal…" — surface
+       // it (with Retry) instead of hanging silently.
+       if (!disposed) {
+         log("desktop terminal startup FAILED", err);
+         setStartError(`Terminal failed to start: ${String(err)}`);
+       }
+     }
     })();
 
     return () => {
       disposed = true;
       cleanup?.();
     };
-  }, [threadId, platform]);
+  }, [threadId, platform, openFind, retryNonce]);
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -463,54 +628,14 @@ export function BottomTerminal({
     let cleanup: (() => void) | null = null;
 
     void (async () => {
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
-        import("@xterm/xterm"),
-        import("@xterm/addon-fit"),
-        import("@xterm/addon-web-links"),
-        import("@xterm/addon-search"),
-      ]);
-
-      const term = new Terminal({
-        fontFamily:
-          'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-        fontSize: 12,
-        lineHeight: 1.2,
-        cursorBlink: true,
-        // Required for the search addon's match decorations (highlights + count).
-        allowProposedApi: true,
-        theme: {
-          background: "oklch(0.11 0.022 293)",
-          foreground: "#e6e6f0",
-          cursor: "#9a8ecd",
-          selectionBackground: "rgba(154,142,205,0.35)",
-        },
+     try {
+      const { term, fit, search } = await createXterm(wrap, {
+        onResults: (index, count) => setFindInfo({ index, count }),
+        onRequestFind: openFind,
+        reducedMotion: reducedMotionRef.current,
       });
       termRef.current = term;
-      const fit = new FitAddon();
-      term.loadAddon(fit);
-      term.loadAddon(new WebLinksAddon());
-      const search = new SearchAddon();
-      term.loadAddon(search);
       searchRef.current = search;
-      search.onDidChangeResults((e) => {
-        setFindInfo({ index: e.resultIndex >= 0 ? e.resultIndex + 1 : 0, count: e.resultCount });
-      });
-      // ⌘F / Ctrl+F opens the in-buffer find bar instead of the browser's.
-      term.attachCustomKeyEventHandler((e) => {
-        if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "f") {
-          e.preventDefault();
-          setFindOpen(true);
-          requestAnimationFrame(() => findInputRef.current?.select());
-          return false;
-        }
-        return true;
-      });
-      term.open(wrap);
-      try {
-        fit.fit();
-      } catch {
-        /* DOM not ready yet — first resize event will recover */
-      }
 
       const bridge = new PtyWsBridge();
       wsBridgeRef.current = bridge;
@@ -552,6 +677,10 @@ export function BottomTerminal({
               // first so the replay paints a clean screen instead of
               // appending a duplicate of what's already visible.
               term.reset();
+              // Reset the streaming decoder (+ pending buffer) too: a mid-char
+              // socket drop left partial bytes that would corrupt the mirror.
+              decoderRef.current = new TextDecoder("utf-8", { fatal: false });
+              pendingMirrorRef.current = "";
               await bridge.reconnect();
               bridge.resize(term.cols, term.rows);
               return;
@@ -562,6 +691,7 @@ export function BottomTerminal({
           announce(
             "\r\n\x1b[2m[terminal reconnect failed — press any key to retry]\x1b[0m\r\n",
           );
+          srAnnounce("Terminal reconnect failed; press any key to retry", "assertive");
         } finally {
           reconnecting = false;
         }
@@ -573,6 +703,7 @@ export function BottomTerminal({
           announce(
             "\r\n\x1b[2m[this terminal was opened in another window — view detached]\x1b[0m\r\n",
           );
+          srAnnounce("This terminal was opened in another window; this view is detached", "assertive");
           return;
         }
         if (reason === "pty exit") {
@@ -580,6 +711,7 @@ export function BottomTerminal({
           return;
         }
         announce("\r\n\x1b[2m[terminal disconnected — reconnecting…]\x1b[0m\r\n");
+        srAnnounce("Terminal disconnected, reconnecting", "assertive");
         void attemptReconnect();
       });
 
@@ -608,18 +740,14 @@ export function BottomTerminal({
           return;
         }
         bridge.write(new TextEncoder().encode(data));
-        onUserInputRef.current?.(broadcastPaneId, data);
       });
-      writerRef.current = (d) => bridge.write(new TextEncoder().encode(d));
 
-      const doResize = () => {
+      const resizer = makeResizer(term, fit, () => visibleRef.current, (cols, rows) => {
         try {
-          fit.fit();
-          bridge.resize(term.cols, term.rows);
-        } catch {
-          /* harmless mid-tear-down */
-        }
-      };
+          bridge.resize(cols, rows);
+        } catch { /* harmless mid-tear-down */ }
+      });
+      const doResize = resizer.doResize;
 
       const ro = new ResizeObserver(doResize);
       ro.observe(wrap);
@@ -657,6 +785,7 @@ export function BottomTerminal({
 
       cleanup = () => {
         ro.disconnect();
+        resizer.dispose();
         onDataDispose.dispose();
         if (typeof document !== "undefined") {
           document.removeEventListener("visibilitychange", onForeground);
@@ -675,17 +804,23 @@ export function BottomTerminal({
       };
 
       if (disposed) cleanup();
+     } catch (err) {
+       if (!disposed) {
+         log("ws terminal startup FAILED", err);
+         setStartError(`Terminal failed to start: ${String(err)}`);
+       }
+     }
     })();
 
     return () => {
       disposed = true;
       cleanup?.();
     };
-  }, [threadId, platform, pushToMirror]);
+  }, [threadId, platform, pushToMirror, openFind, retryNonce]);
 
   if (unavailable) {
     return (
-      <div className="flex h-full items-center justify-center text-[11px] text-[var(--text-muted)]">
+      <div className="flex h-full items-center justify-center text-[length:var(--text-xs)] text-[var(--text-muted)]">
         Terminal is not available on this device.
       </div>
     );
@@ -695,8 +830,12 @@ export function BottomTerminal({
     <div className="relative flex h-full w-full flex-col overflow-hidden">
       <div
         ref={wrapRef}
-        className="min-h-0 w-full flex-1 overflow-hidden"
-        style={{ background: "oklch(0.11 0.022 293)", padding: "6px 8px" }}
+        className="min-h-0 w-full flex-1 overflow-hidden [background:oklch(0.11_0.022_293)]! [padding:6px_var(--space-2)]!"
+        // xterm renders into an opaque <canvas>; label the region so AT can name
+        // it (live output is exposed via the screen-reader mirror below). The
+        // pane label keeps split panes distinguishable.
+        role="group"
+        aria-label={label ? `Terminal: ${label}` : "Terminal"}
         // Clicking anywhere in the terminal area refocuses xterm so keyboard
         // input is routed correctly without the user having to click exactly
         // on the cursor.
@@ -722,9 +861,18 @@ export function BottomTerminal({
             }}
             placeholder="Find in terminal…"
             aria-label="Find in terminal"
-            className="focus-ring-inset w-44 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            aria-describedby={findCountId}
+            className="focus-ring-inset w-44 bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
-          <span className="min-w-[34px] text-right text-[10px] tabular-nums text-[var(--text-muted)]" aria-live="polite">
+          {/* Match counter is deliberately NOT a live region: the SR mirror
+              region below is already aria-live=polite, and a second polite
+              region updating on every keystroke produced double/overlapping
+              announcements. aria-describedby on the input keeps the count
+              discoverable to AT without competing announcements. */}
+          <span
+            id={findCountId}
+            className="min-w-[34px] text-right text-[length:var(--text-2xs)] tabular-nums text-[var(--text-muted)]"
+          >
             {findInfo.count > 0 ? `${findInfo.index}/${findInfo.count}` : findQuery ? "0/0" : ""}
           </span>
           <button type="button" onClick={() => runFind(-1)} title="Previous match (⇧⏎)" aria-label="Previous match"
@@ -742,11 +890,26 @@ export function BottomTerminal({
         </div>
       ) : null}
       {/* Overlay while the xterm lazy-loads and the PTY (native or WebSocket)
-          connects — without it the pane reads as blank for a few seconds. */}
-      {!ready ? (
+          connects — without it the pane reads as blank for a few seconds. If
+          startup stalls or throws, it flips to a visible error + Retry instead
+          of spinning forever. */}
+      {!ready && startError ? (
         <div
-          className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-[11px] text-[var(--text-muted)]"
-          style={{ background: "oklch(0.11 0.022 293)" }}
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center text-[length:var(--text-xs)] text-[var(--text-muted)] [background:oklch(0.11_0.022_293)]!"
+          role="alert"
+        >
+          <span className="max-w-[42ch] text-[var(--text-secondary)]">{startError}</span>
+          <button
+            type="button"
+            onClick={retryStart}
+            className="focus-ring rounded-md border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-3 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
+          >
+            Retry
+          </button>
+        </div>
+      ) : !ready ? (
+        <div
+          className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-[length:var(--text-xs)] text-[var(--text-muted)] [background:oklch(0.11_0.022_293)]!"
           role="status"
           aria-live="polite"
         >
@@ -760,7 +923,7 @@ export function BottomTerminal({
       {/* Touch accessory bar — only on coarse pointers (phones/tablets), where
           the soft keyboard can't produce Esc/Tab/Ctrl/arrows. */}
       {isCoarse ? (
-        <TerminalKeyBar onKey={sendKey} ctrlActive={ctrlActive} onToggleCtrl={toggleCtrl} />
+        <TerminalKeyBar onKey={sendKey} ctrlActive={ctrlActive} onToggleCtrl={toggleCtrl} onFind={openFind} />
       ) : null}
       {/* Offscreen text mirror of PTY output for screen readers. */}
       <div
@@ -768,7 +931,7 @@ export function BottomTerminal({
         role="region"
         aria-live="polite"
         aria-atomic="false"
-        aria-label="Terminal output"
+        aria-label={label ? `Terminal output: ${label}` : "Terminal output"}
       >
         {mirrorLines.map((line, i) => (
           <div key={i}>{line}</div>

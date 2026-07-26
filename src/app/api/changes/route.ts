@@ -7,6 +7,9 @@ import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
 import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
+import { isSafeBranchName } from "@/lib/issue-worktree";
+import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +23,13 @@ const DEV_NULL = os.devNull;
  * GET  ?projectRoot=<abs>&path=<rel>       → unified diff for one file (capped)
  * GET  ?projectRoot=<abs>&checkpoints=1    → list saved checkpoints
  * GET  ?projectRoot=<abs>&checkpoint=<name>→ one checkpoint's patch text (capped)
+ * GET  ?projectRoot=<abs>&branches=1       → local branches (current/worktree marked)
  * POST { projectRoot, path, confirmUntracked? } → revert ONE file (auto-checkpoints first)
  * POST { projectRoot, action: "checkpoint" } → save a patch snapshot
  * POST { projectRoot, action: "restore-checkpoint", checkpoint } → git apply a snapshot
  * POST { projectRoot, action: "delete-checkpoint", checkpoint } → remove a snapshot
+ * POST { projectRoot, action: "switch-branch", branch } → git switch (chat's branch menu)
+ * POST { projectRoot, action: "create-worktree", branch, baseRef? } → .worktrees/<branch>
  *
  * Security posture: every git invocation goes through execFile with an
  * argument array — no shell, so paths are never string-interpolated into a
@@ -57,6 +63,143 @@ function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: str
 /** Run `git diff` without repository-configured command hooks. */
 function gitDiff(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return git(cwd, ["diff", "--no-ext-diff", "--no-textconv", ...args]);
+}
+
+/** Run `git status` without repository-configured fsmonitor commands. */
+function gitStatus(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return git(cwd, ["-c", "core.fsmonitor=false", "status", ...args]);
+}
+
+/** Network git (push) and `gh` can take longer than the read-only 10s budget. */
+const NET_TIMEOUT_MS = 60_000;
+function gitLong(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync("git", args, { cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER });
+}
+/** Run the GitHub CLI (argument array, no shell) for PR creation. */
+function ghCli(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync("gh", args, { cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER });
+}
+
+const PR_URL_RE = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/;
+
+/** Current branch name, or "HEAD" when detached. */
+async function currentBranch(repoRoot: string): Promise<string> {
+  const { stdout } = await git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  return stdout.trim();
+}
+
+/** Linked-worktree name (the checkout dir's basename) when repoRoot is a
+ *  `git worktree` checkout rather than the primary clone, else null. A linked
+ *  worktree's --git-dir (.git/worktrees/<name>) differs from its
+ *  --git-common-dir (the primary clone's .git). */
+async function worktreeName(repoRoot: string): Promise<string | null> {
+  try {
+    const { stdout } = await git(repoRoot, ["rev-parse", "--git-dir", "--git-common-dir"]);
+    const [gitDir, commonDir] = stdout.trim().split("\n");
+    if (!gitDir || !commonDir) return null;
+    if (path.resolve(repoRoot, gitDir) === path.resolve(repoRoot, commonDir)) return null;
+    return path.basename(repoRoot);
+  } catch {
+    return null;
+  }
+}
+
+/** The repo's default branch: origin/HEAD when known, else main/master, else main. */
+async function defaultBranch(repoRoot: string): Promise<string> {
+  try {
+    const { stdout } = await git(repoRoot, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
+    const m = stdout.trim().match(/refs\/remotes\/origin\/(.+)$/);
+    if (m) return m[1];
+  } catch { /* no origin/HEAD ref */ }
+  for (const b of ["main", "master"]) {
+    try {
+      await git(repoRoot, ["rev-parse", "--verify", "--quiet", b]);
+      return b;
+    } catch { /* not present */ }
+  }
+  return "main";
+}
+
+/** True when `ref` resolves to a commit in this repo. */
+async function refExists(repoRoot: string, ref: string): Promise<boolean> {
+  try {
+    await git(repoRoot, ["rev-parse", "--verify", "--quiet", ref]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+type BranchRow = {
+  name: string;
+  /** This checkout's current branch. */
+  current: boolean;
+  /** Checkout dir basename when some worktree has the branch checked out. */
+  worktree: string | null;
+  /** Absolute path of that worktree — lets the client open a chat there. */
+  worktreePath: string | null;
+};
+
+/** Branch-menu payload cap: enough for real repos, bounded for pathological ones. */
+const MAX_BRANCH_ROWS = 40;
+
+/** Local branches (newest commit first, current branch pinned to the top)
+ *  plus which worktree, if any, has each one checked out — powers the chat
+ *  composer's branch menu. */
+async function listBranches(repoRoot: string) {
+  const [{ stdout: refsOut }, { stdout: wtOut }, current] = await Promise.all([
+    git(repoRoot, ["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)"]),
+    git(repoRoot, ["worktree", "list", "--porcelain"]),
+    currentBranch(repoRoot),
+  ]);
+  const checkedOut = new Map<string, string>();
+  let dir: string | null = null;
+  for (const line of wtOut.split("\n")) {
+    if (line.startsWith("worktree ")) dir = line.slice("worktree ".length).trim();
+    else if (line.startsWith("branch refs/heads/") && dir) {
+      checkedOut.set(line.slice("branch refs/heads/".length).trim(), dir);
+    }
+  }
+  const branches: BranchRow[] = [];
+  for (const raw of refsOut.split("\n")) {
+    const name = raw.trim();
+    if (!name) continue;
+    // Tool-internal refs (e.g. beads' __dolt_remote_info__) aren't human
+    // switch targets — keep them out of the menu.
+    if (/^__.*__$/.test(name)) continue;
+    const worktreeDir = checkedOut.get(name) ?? null;
+    branches.push({
+      name,
+      current: name === current,
+      worktree: worktreeDir ? path.basename(worktreeDir) : null,
+      worktreePath: worktreeDir,
+    });
+    if (branches.length >= MAX_BRANCH_ROWS) break;
+  }
+  // Stable sort: current branch first, recency order preserved within the rest.
+  branches.sort((a, b) => Number(b.current) - Number(a.current));
+  return NextResponse.json({ ok: true, branches });
+}
+
+/** Server-generated, shell-safe feature branch name derived from the commit
+ *  message. `cave/<slug>-<base36-stamp>` — never client-controlled. */
+function featureBranchName(message: string, nowMs: number): string {
+  const slug = message
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    // Trim leading/trailing dashes with anchored single-char replaces.
+    // The collapse above already reduces any run of separators to a single
+    // "-", so a linear-time trim suffices and avoids the polynomial-ReDoS
+    // backtracking of `/^-+|-+$/g` on attacker-influenced input.
+    .replace(/^-/, "")
+    .replace(/-$/, "")
+    .slice(0, 32) || "changes";
+  return `cave/${slug}-${nowMs.toString(36)}`;
+}
+
+function stderrOf(err: unknown): string {
+  const e = err as { stderr?: unknown; stdout?: unknown; message?: unknown };
+  return String(e?.stderr || e?.stdout || e?.message || err).trim();
 }
 
 type RootResolution =
@@ -162,10 +305,19 @@ async function existsInHead(repoRoot: string, relPath: string): Promise<boolean>
   }
 }
 
+async function changedFilePaths(repoRoot: string): Promise<Set<string>> {
+  const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
+  return new Set(parsePorcelainZ(stdout).map((file) => file.path));
+}
+
+async function isChangedFile(repoRoot: string, relPath: string): Promise<boolean> {
+  return (await changedFilePaths(repoRoot)).has(relPath);
+}
+
 // ── GET: change list / single-file diff ───────────────────────────────────────
 
 async function listChanges(repoRoot: string): Promise<NextResponse> {
-  const { stdout } = await git(repoRoot, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
   const files = parsePorcelainZ(stdout);
 
   // Best-effort ins/del counts vs HEAD (covers staged + unstaged). Repos
@@ -184,7 +336,58 @@ async function listChanges(repoRoot: string): Promise<NextResponse> {
     /* no HEAD yet — list without counts */
   }
 
-  return NextResponse.json({ ok: true, repo: true, repoRoot, files });
+  // Current branch rides along so callers (the Projects hub's Git section)
+  // don't need a second git endpoint. Unborn repos have no HEAD — omit.
+  let branch: string | null = null;
+  try {
+    branch = await currentBranch(repoRoot);
+  } catch {
+    /* no HEAD yet */
+  }
+
+  // Linked-worktree name rides along too (composer git chip) — null in the
+  // primary checkout, the checkout dir's basename in a `git worktree`.
+  const worktree = await worktreeName(repoRoot);
+
+  return NextResponse.json({ ok: true, repo: true, repoRoot, branch, worktree, files });
+}
+
+/** PR context for the current branch (composer git chip): the open/merged pull
+ *  request heading this branch, via `gh pr view` — null when there is no PR,
+ *  no branch (detached/unborn HEAD), or `gh` is unavailable/unauthenticated.
+ *  Read-only and network-bound, so it's a separate `?pr=1` query the client
+ *  fetches once per branch instead of riding the 5s status poll. */
+async function branchPr(repoRoot: string): Promise<NextResponse> {
+  let branch: string | null = null;
+  try {
+    branch = await currentBranch(repoRoot);
+  } catch {
+    /* no HEAD yet */
+  }
+  if (!branch || branch === "HEAD") return NextResponse.json({ ok: true, branch, pr: null });
+  try {
+    const { stdout } = await ghCli(repoRoot, [
+      "pr", "view", branch, "--json", "number,url,state,isDraft",
+    ]);
+    const parsed = JSON.parse(stdout) as {
+      number?: number; url?: string; state?: string; isDraft?: boolean;
+    };
+    if (typeof parsed.number === "number" && typeof parsed.url === "string" && PR_URL_RE.test(parsed.url)) {
+      return NextResponse.json({
+        ok: true,
+        branch,
+        pr: {
+          number: parsed.number,
+          url: parsed.url,
+          state: typeof parsed.state === "string" ? parsed.state : "OPEN",
+          isDraft: parsed.isDraft === true,
+        },
+      });
+    }
+  } catch {
+    /* no PR for this branch, or gh missing/unauthenticated — a clean null */
+  }
+  return NextResponse.json({ ok: true, branch, pr: null });
 }
 
 async function diffFile(repoRoot: string, relPath: string, absPath: string): Promise<NextResponse> {
@@ -222,6 +425,9 @@ export async function GET(req: NextRequest) {
   const filePath = req.nextUrl.searchParams.get("path");
   const wantCheckpoints = req.nextUrl.searchParams.get("checkpoints");
   const checkpointName = req.nextUrl.searchParams.get("checkpoint");
+  const wantPr = req.nextUrl.searchParams.get("pr");
+  const wantBranches = req.nextUrl.searchParams.get("branches");
+  const wantRemote = req.nextUrl.searchParams.get("remote");
   if (!projectRoot) {
     return NextResponse.json({ ok: false, error: "missing projectRoot param" }, { status: 400 });
   }
@@ -255,13 +461,33 @@ export async function GET(req: NextRequest) {
         truncated,
       });
     }
+    if (wantPr !== null) return await branchPr(root.repoRoot);
+    if (wantRemote !== null) return await originRemoteUrl(root.repoRoot);
+    if (wantBranches !== null) return await listBranches(root.repoRoot);
     if (filePath === null) return await listChanges(root.repoRoot);
     const abs = resolveContainedFile(root.repoRoot, filePath);
     if (!abs) return pathNotAllowed();
+    if (!(await isChangedFile(root.repoRoot, filePath))) return pathNotAllowed();
     return await diffFile(root.repoRoot, filePath, abs);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+/** Origin remote URL for the repo, normalized to a canonical GitHub HTTPS URL
+ *  or null — read-only probe behind the project-setup modal's GitHub prefill.
+ *  Credential-bearing remotes (https://token@github.com/…) and non-GitHub
+ *  remotes are stripped to null so secrets never reach the client. */
+async function originRemoteUrl(repoRoot: string): Promise<NextResponse> {
+  try {
+    const { stdout } = await git(repoRoot, ["config", "--get", "remote.origin.url"]);
+    const remoteUrl = stdout.trim();
+    return NextResponse.json({ ok: true, remoteUrl: normalizeGitHubRepoUrl(remoteUrl) });
+  } catch {
+    // `git config --get` exits 1 when the key is absent — a repo with no
+    // origin remote is a normal state, not an error.
+    return NextResponse.json({ ok: true, remoteUrl: null });
   }
 }
 
@@ -367,8 +593,13 @@ export async function POST(req: NextRequest) {
     projectRoot?: string;
     path?: string;
     confirmUntracked?: boolean;
-    action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint";
+    action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint" | "commit" | "create-pr" | "switch-branch" | "create-worktree";
     checkpoint?: string;
+    message?: string;
+    title?: string;
+    prBody?: string;
+    branch?: string;
+    baseRef?: string;
   };
   try {
     body = await req.json();
@@ -395,6 +626,146 @@ export async function POST(req: NextRequest) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ ok: false, error: message }, { status: 500 });
     }
+  }
+  // Stage all working-tree changes and commit them. To keep the default branch
+  // clean (and set up the PR flow), a commit made while on the default branch
+  // (or a detached HEAD) first spins up a fresh `cave/<slug>` feature branch.
+  // The commit is signed (-S) to match the repo norm; a signing failure is
+  // surfaced rather than silently dropped.
+  if (action === "commit") {
+    const message = typeof body.message === "string" ? body.message.trim() : "";
+    if (!message) {
+      return NextResponse.json({ ok: false, error: "commit message is required" }, { status: 400 });
+    }
+    try {
+      const { stdout: statusOut } = await git(root.repoRoot, ["status", "--porcelain"]);
+      if (!statusOut.trim()) {
+        return NextResponse.json({ ok: false, error: "nothing to commit — the working tree is clean" }, { status: 400 });
+      }
+      const cur = await currentBranch(root.repoRoot);
+      const def = await defaultBranch(root.repoRoot);
+      let branch = cur;
+      let branchCreated = false;
+      if (cur === def || cur === "HEAD") {
+        branch = featureBranchName(message, Date.now());
+        await git(root.repoRoot, ["checkout", "-b", branch]);
+        branchCreated = true;
+      }
+      await git(root.repoRoot, ["add", "-A"]);
+      try {
+        await gitLong(root.repoRoot, ["commit", "-S", "-m", message]);
+      } catch (err) {
+        // Roll back the just-created branch so a failed commit doesn't strand it.
+        if (branchCreated) await git(root.repoRoot, ["checkout", cur]).catch(() => {});
+        const detail = stderrOf(err);
+        const signing = /gpg|signing|ssh|secret key|sign/i.test(detail);
+        return NextResponse.json(
+          { ok: false, error: signing ? `commit signing failed: ${detail}` : `commit failed: ${detail}` },
+          { status: 500 },
+        );
+      }
+      const { stdout: sha } = await git(root.repoRoot, ["rev-parse", "--short", "HEAD"]);
+      return NextResponse.json({
+        ok: true,
+        sha: sha.trim(),
+        branch,
+        branchCreated,
+        onDefaultBranch: branch === def,
+        defaultBranch: def,
+      });
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 500 });
+    }
+  }
+  // Push the current feature branch and open a GitHub pull request via `gh`.
+  // Refuses to run from the default branch (there'd be nothing to PR and the
+  // push would be rejected by branch protection). If a PR already exists for
+  // the branch, gh's message carries its URL — surfaced as a success.
+  if (action === "create-pr") {
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title) {
+      return NextResponse.json({ ok: false, error: "PR title is required" }, { status: 400 });
+    }
+    const prBody = typeof body.prBody === "string" ? body.prBody : "";
+    try {
+      const branch = await currentBranch(root.repoRoot);
+      const def = await defaultBranch(root.repoRoot);
+      if (branch === def || branch === "HEAD") {
+        return NextResponse.json(
+          { ok: false, error: `you're on ${branch} — commit to a feature branch first, then open a PR` },
+          { status: 400 },
+        );
+      }
+      try {
+        await gitLong(root.repoRoot, ["push", "-u", "origin", branch]);
+      } catch (err) {
+        return NextResponse.json({ ok: false, error: `git push failed: ${stderrOf(err)}` }, { status: 502 });
+      }
+      try {
+        const { stdout } = await ghCli(root.repoRoot, [
+          "pr", "create", "--base", def, "--head", branch, "--title", title, "--body", prBody,
+        ]);
+        const url = stdout.match(PR_URL_RE)?.[0] ?? stdout.trim();
+        return NextResponse.json({ ok: true, url, branch, base: def });
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException & { stderr?: string };
+        if (e.code === "ENOENT") {
+          return NextResponse.json({ ok: false, error: "GitHub CLI (gh) not found — install it to open PRs" }, { status: 500 });
+        }
+        const detail = stderrOf(err);
+        // gh exits non-zero when a PR already exists; its message includes the URL.
+        const existing = detail.match(PR_URL_RE);
+        if (existing) return NextResponse.json({ ok: true, url: existing[0], branch, base: def, existed: true });
+        return NextResponse.json({ ok: false, error: `gh pr create failed: ${detail}` }, { status: 502 });
+      }
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 500 });
+    }
+  }
+  // Switch the checkout's branch — the chat composer's branch menu. `git
+  // switch` carries clean local edits along and refuses (with a precise
+  // stderr) when they'd be clobbered or the branch is checked out in another
+  // worktree; that refusal is surfaced verbatim rather than forced with -f.
+  if (action === "switch-branch") {
+    const branch = typeof body.branch === "string" ? body.branch.trim() : "";
+    if (!isSafeBranchName(branch)) {
+      return NextResponse.json({ ok: false, error: "invalid branch name" }, { status: 400 });
+    }
+    const isLocal = await refExists(root.repoRoot, `refs/heads/${branch}`);
+    if (!isLocal && !(await refExists(root.repoRoot, `refs/remotes/origin/${branch}`))) {
+      return NextResponse.json({ ok: false, error: "branch not found" }, { status: 404 });
+    }
+    try {
+      await git(root.repoRoot, ["switch", branch]);
+      return NextResponse.json({ ok: true, branch: await currentBranch(root.repoRoot) });
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 409 });
+    }
+  }
+  // Provision a `.worktrees/<branch>` checkout for a user-named branch (the
+  // chat composer's "New worktree…" flow) — idempotent; new branches start
+  // from origin/main when available. Naming + validation live in
+  // @/lib/issue-worktree; the git work in @/lib/server/issue-worktree-provision.
+  if (action === "create-worktree") {
+    const branch = typeof body.branch === "string" ? body.branch.trim() : "";
+    if (!isSafeBranchName(branch)) {
+      return NextResponse.json({ ok: false, error: "invalid branch name" }, { status: 400 });
+    }
+    const result = await provisionBranchWorktree(
+      root.repoRoot,
+      branch,
+      typeof body.baseRef === "string" ? body.baseRef : null,
+    );
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
+    }
+    return NextResponse.json({
+      ok: true,
+      worktree: result.worktree,
+      branch: result.branch,
+      created: result.created,
+      baseRef: result.baseRef,
+    });
   }
   if (action === "restore-checkpoint" || action === "delete-checkpoint") {
     if (typeof body.checkpoint !== "string") {
@@ -424,6 +795,7 @@ export async function POST(req: NextRequest) {
   }
   const abs = resolveContainedFile(root.repoRoot, body.path);
   if (!abs) return pathNotAllowed();
+  if (!(await isChangedFile(root.repoRoot, body.path))) return pathNotAllowed();
 
   try {
     // Decide how to revert based on whether the file exists at HEAD. Reverting

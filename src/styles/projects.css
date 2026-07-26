@@ -1,0 +1,461 @@
+/*
+ * projects.css — the Chat → Projects "Project access" surface.
+ *
+ * One familiar's access map: compact serif header, a quiet toolbar (familiar
+ * picker, search, grouping toggle, tally, reset), then project sections —
+ * grouped into WORKSPACES / REPOSITORIES or one flat ALL PROJECTS list —
+ * whose rows carry a tri-state pill — No access · Read · Full — that cycles
+ * on click. Secondary controls (per-section Set all, the row gear) stay
+ * invisible until hover or keyboard focus reaches them, keeping the resting
+ * page minimal. Every color routes through theme tokens so the page holds up
+ * in light mode and custom accents; the filled "Full" pill pairs
+ * --accent-presence with --accent-presence-foreground for contrast.
+ */
+
+.projects-access {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-base);
+}
+
+.projects-access-inner {
+  /* Full-width (2026-07-23): the access map spans the pane (was 920px). */
+  padding: clamp(16px, 3vh, 32px) clamp(16px, 4vw, 40px) calc(var(--space-8) * 2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+
+.projects-access-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.projects-access-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent-presence);
+}
+
+.projects-access-title {
+  margin: 0;
+  font-family: var(--font-serif, ui-serif, serif);
+  /* Compact header (minimal pass): one type-scale step, not a display hero. */
+  font-size: var(--text-xl);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+
+.projects-access-subtitle {
+  margin: 0;
+  max-width: 56ch;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ── Toolbar ────────────────────────────────────────────────────────── */
+
+.projects-access-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.projects-access-familiar {
+  flex: 0 0 auto;
+}
+
+.projects-access-search {
+  flex: 1 1 220px;
+  min-width: 160px;
+  max-width: 340px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  height: 30px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  transition: border-color 120ms ease;
+}
+
+.projects-access-search:focus-within {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
+}
+
+.projects-access-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+
+.projects-access-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.projects-access-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+/* Shared status dot — tinted by the enclosing .is-* state class. */
+.projects-access-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: currentcolor;
+  flex: 0 0 auto;
+}
+
+.projects-access-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.projects-access-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.projects-access-count.is-none {
+  color: var(--text-muted);
+}
+
+.projects-access-count.is-read {
+  color: var(--accent-presence-soft, var(--accent-presence));
+}
+
+.projects-access-count.is-write {
+  color: var(--accent-presence);
+}
+
+.projects-access-grouping {
+  flex: 0 0 auto;
+}
+
+.projects-access-reset {
+  flex: 0 0 auto;
+}
+
+.projects-access-new {
+  flex: 0 0 auto;
+}
+
+/* ── Notes / errors ─────────────────────────────────────────────────── */
+
+.projects-access-supreme {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.projects-access-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--destructive) 40%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--destructive) 10%, transparent);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.projects-access-nomatch {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-base);
+  color: var(--text-muted);
+}
+
+/* ── Sections ───────────────────────────────────────────────────────── */
+
+.projects-access-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.projects-access-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 24px;
+}
+
+.projects-access-section-title {
+  margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.projects-access-section-count {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.projects-access-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--border-hairline);
+}
+
+.projects-access-setall {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-xs);
+  /* Quiet chrome: invisible until the section head is hovered or a Set-all
+     button holds keyboard focus (opacity-only — reduced-motion safe). */
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.projects-access-section-head:hover .projects-access-setall,
+.projects-access-section-head:focus-within .projects-access-setall {
+  opacity: 1;
+}
+
+/* No hover on touch — keep the controls always visible there. */
+@media (hover: none) {
+  .projects-access-setall {
+    opacity: 1;
+  }
+}
+
+.projects-access-setall-label {
+  margin-right: var(--space-1);
+  color: var(--text-muted);
+}
+
+.projects-access-setall-btn {
+  border: 0;
+  background: transparent;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.projects-access-setall-btn:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--text-primary);
+}
+
+.projects-access-setall-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Rows ───────────────────────────────────────────────────────────── */
+
+.projects-access-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Access button + per-project settings trigger, side by side. */
+.projects-access-rowwrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.projects-access-rowwrap > .projects-access-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.projects-access-row-settings {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  /* Quiet chrome: revealed by row hover or its own keyboard focus. */
+  opacity: 0;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+
+.projects-access-rowwrap:hover .projects-access-row-settings,
+.projects-access-rowwrap:focus-within .projects-access-row-settings {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .projects-access-row-settings {
+    opacity: 1;
+  }
+}
+
+.projects-access-row-settings:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  border-color: var(--border-hairline);
+  color: var(--text-primary);
+}
+
+.projects-access-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.projects-access-row:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.projects-access-row:disabled {
+  cursor: default;
+}
+
+.projects-access-row.is-pending {
+  opacity: 0.55;
+}
+
+/* Rows holding any access sit slightly raised off the page. */
+.projects-access-row.is-read,
+.projects-access-row.is-write {
+  background: var(--bg-raised);
+  border-color: var(--border-hairline);
+}
+
+.projects-access-row.is-read:hover:not(:disabled),
+.projects-access-row.is-write:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 4%, var(--bg-raised));
+}
+
+.projects-access-row.is-flash {
+  border-color: color-mix(in oklch, var(--accent-presence) 70%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+.projects-access-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projects-access-row-group {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+/* GitHub-linked indicator inside the access row. */
+.projects-access-row-repo {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+/* ── Pills ──────────────────────────────────────────────────────────── */
+
+.projects-access-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-hairline);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.projects-access-pill.is-none {
+  /* Quietest state: plain muted text, no chip chrome. */
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+.projects-access-pill.is-read {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--accent-presence);
+}
+
+.projects-access-pill.is-write {
+  border-color: transparent;
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+}
+
+/* ── States ─────────────────────────────────────────────────────────── */
+
+.projects-access-skeleton {
+  margin-top: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .projects-access-counts {
+    margin-left: 0;
+    order: 4;
+  }
+
+  .projects-access-search {
+    max-width: none;
+  }
+}

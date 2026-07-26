@@ -10,8 +10,8 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /checkBinding\(familiarsAvailable: boolean, daemonOk: boolean\)/,
-  "checkBinding receives daemon health so it can attribute the blocker correctly",
+  /checkBinding\(\s*familiarsAvailable: boolean,\s*daemonOk: boolean,\s*reports: AdapterReport\[\],\s*openclawAgentCount: number,\s*\)/,
+  "checkBinding receives daemon health and live runtime detection so it can attribute the blocker correctly",
 );
 
 assert.match(
@@ -22,8 +22,28 @@ assert.match(
 
 assert.match(
   source,
-  /checkBinding\(familiarsRes\.count > 0, daemon\.ok\)/,
-  "GET passes the daemon step result into checkBinding",
+  /checkBinding\(\s*familiarsRes\.count > 0,\s*daemon\.ok,\s*adapters\.reports,\s*openclawAgentCount,\s*\)/,
+  "GET passes the daemon step result and live adapter reports into checkBinding",
+);
+
+// A stale default harness (e.g. "openclaw") must not advertise a confident
+// binding when neither its runtime nor any agent actually exists.
+assert.match(
+  source,
+  /function defaultHarnessAvailable\(/,
+  "binding validates the configured default against installed runtimes / OpenClaw agents",
+);
+
+assert.match(
+  source,
+  /harness === "openclaw" && openclawAgentCount > 0/,
+  "OpenClaw counts as available only when a discoverable agent exists",
+);
+
+assert.match(
+  source,
+  /has no installed runtime or OpenClaw agent/,
+  "binding hint is honest when the default harness has no live backing",
 );
 
 assert.match(
@@ -32,29 +52,90 @@ assert.match(
   "onboarding status should return the npm-published Coven CLI install command",
 );
 
+assert.match(
+  source,
+  /openCovenToolReadinessStatuses/,
+  "onboarding status uses the local-only OpenCoven readiness detector",
+);
+
+assert.match(
+  source,
+  /checkCovenCli\(tool: OpenCovenToolReadinessStatus \| undefined\)/,
+  "Coven CLI readiness is derived from installed/current local facts",
+);
+
+assert.match(
+  source,
+  /if \(!tool\.compatible\)[\s\S]{0,320}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_COMMAND/,
+  "startup requires a locally compatible Coven CLI without waiting for npm latest",
+);
+
 assert.doesNotMatch(
   source,
-  /Install the coven CLI from OpenCoven\/coven/,
+  /openCovenToolStatuses|checkNpmLatestVersion|npm view/,
+  "the frequently-polled status route never invokes package-registry discovery",
+);
+
+assert.doesNotMatch(
+  source,
+  /cachedQueueProjectReadiness|checkQueueProject/,
+  "the onboarding heartbeat no longer probes Queue readiness — Queue setup lives on the Tasks page's Queue tab",
+);
+
+assert.match(
+  source,
+  /openCovenTools\.find\(\(tool\) => tool\.id === "coven-cli"\)/,
+  "startup identifies the Coven CLI by the shared tool id",
+);
+
+assert.match(
+  source,
+  /steps, tools: openCovenTools/,
+  "startup returns OpenCoven tool statuses for the install screen",
+);
+
+assert.doesNotMatch(
+  source,
+  /Install the Coven CLI from OpenCoven\/coven/,
   "onboarding status should not return stale repo-source CLI install guidance",
 );
 
-// Dependency coverage: machines without git still complete onboarding, but
-// the checklist must surface git as a recommended install with a hint.
+// Queue project selection is a Git-repository boundary, so missing Git blocks
+// onboarding with an actionable installation hint.
 assert.match(source, /async function checkGit\(\): Promise<Step>/, "preflight checks for git");
 assert.match(
   source,
-  /optional: true/,
-  "git is an advisory step — its absence must not gate onboarding",
+  /Git is required to select and use a Queue project/,
+  "git failure explains the required Queue prerequisite",
+);
+assert.doesNotMatch(
+  source,
+  /if \(found\) return \{ ok: true, optional: true, detail: found \}/,
+  "git is not marked optional when Queue project selection is required",
+);
+
+// Familiar creation lives in the in-app Summoning Circle now: the familiars
+// and binding checks stay in the payload for diagnostics and Salem context,
+// but they are advisory — `complete` means the infrastructure is ready.
+assert.match(
+  source,
+  /Summon your first familiar inside Cave/,
+  "the familiars hint points at the in-app summoning circle",
 );
 assert.match(
   source,
-  /s\.ok \|\| s\.optional/,
-  "complete treats optional steps as non-blocking",
+  /binding: \{ \.\.\.binding, optional: true \}/,
+  "the binding step is advisory — it must never gate completion",
 );
 assert.match(
   source,
-  /changes panel, project files, and checkpoints need Git/,
-  "git hint names the features that need it",
+  /async function checkFamiliars[\s\S]{0,700}optional: true[\s\S]{0,700}optional: true/,
+  "the familiars step is advisory on both its ok and not-ok branches",
+);
+assert.match(
+  source,
+  /Git is required to select and use a Queue project/,
+  "git hint names the required Queue feature",
 );
 assert.match(
   source,
@@ -66,8 +147,27 @@ const overlay = readFileSync(
   new URL("../../../../components/onboarding-overlay.tsx", import.meta.url),
   "utf8",
 );
-assert.match(overlay, /git\?: Step/, "overlay accepts the git step");
-assert.match(overlay, /Find Git \(recommended\)/, "overlay renders the git checklist row");
+const onboardingModel = readFileSync(
+  new URL("../../../../components/onboarding-model.ts", import.meta.url),
+  "utf8",
+);
+assert.match(onboardingModel, /git\?: Step/, "onboarding model accepts the git step");
+assert.doesNotMatch(
+  onboardingModel,
+  /project: Step/,
+  "the Queue project is not an onboarding step — selection lives on the Tasks page's Queue tab",
+);
+assert.match(overlay, /title: "Find Git"/, "overlay renders the required git checklist row");
+assert.doesNotMatch(
+  overlay,
+  /key: "project"|Choose your Queue project/,
+  "the wizard no longer hosts Queue project selection",
+);
+assert.match(
+  overlay,
+  /Git is required before choosing a Queue project on\s+the Tasks page/,
+  "the Git pane points at the Tasks-page Queue setup rather than calling Git optional",
+);
 
 const projectFiles = readFileSync(
   new URL("../../project/files/route.ts", import.meta.url),

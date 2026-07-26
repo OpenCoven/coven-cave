@@ -11,16 +11,16 @@ import {
  * Applies the saved reading text-alignment on load and keeps it in sync across
  * tabs. Mounted in the root layout (mirrors ReadingTrackingController) so the
  * `--cave-reading-align` var is set on cold load — reading surfaces (chat,
- * library, memory) render outside Settings, so the picker's own mount effect
+ * memory) render outside Settings, so the picker's own mount effect
  * isn't enough.
  */
 export function ReadingAlignController() {
   useEffect(() => {
-    applyReadingAlign(readReadingAlign());
+    applyReadingAlign(readReadingAlign(), { persist: false });
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== READING_ALIGN_KEY) return;
-      applyReadingAlign(readReadingAlign());
+      applyReadingAlign(readReadingAlign(), { persist: false });
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);

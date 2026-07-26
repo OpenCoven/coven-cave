@@ -1,0 +1,24 @@
+{
+  "name": "tauri-apple-release",
+  "version": "0.1.0",
+  "description": "Standardize, debug, and execute Tauri iOS TestFlight and macOS Apple release pipelines: App Store Connect upload auth, Distribution signing, provisioning profiles, and notarization.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Tauri Apple Release",
+    "shortDescription": "Standardize, debug, and execute Tauri iOS TestFlight and macOS Apple release pipelines: App Store Connect upload auth, Distribution signing, provisioning profiles, and notarization.",
+    "longDescription": "Triage which release gate failed, gather one complete credential packet, and validate signing and export before uploading to TestFlight or notarizing for macOS.",
+    "developerName": "OpenCoven",
+    "category": "Developer Tools",
+    "capabilities": [
+      "tauri",
+      "apple",
+      "testflight",
+      "notarization",
+      "signing"
+    ],
+    "defaultPrompt": "Help me use Tauri Apple Release safely."
+  }
+}

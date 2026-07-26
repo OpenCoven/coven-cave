@@ -1,4 +1,4 @@
-export type VoiceProviderId = "openai" | "gemini";
+export type VoiceProviderId = "openai" | "gemini" | "local" | "familiar" | "elevenlabs";
 
 export type VoiceSessionRequest = {
   familiarId: string;
@@ -6,6 +6,9 @@ export type VoiceSessionRequest = {
   voice: string;
   instructions: string;
   conversationSeed?: Array<{ role: "user" | "assistant"; content: string }>;
+  /** The chat session a call attaches to. Required by the familiar-brain
+   *  provider, whose turns ARE chat turns on this session. */
+  sessionId?: string;
 };
 
 export type VoiceSessionGrant = {
@@ -22,6 +25,10 @@ export interface VoiceProvider {
   id: VoiceProviderId;
   label: string;
   mintSession(apiKey: string, req: VoiceSessionRequest): Promise<VoiceSessionGrant>;
+  /** True when the provider's turns already persist as conversation history
+   *  (the familiar-brain provider runs real chat turns), so the overlay must
+   *  not append voice-origin transcript duplicates. */
+  persistsTranscripts?: boolean;
   clientAdapter: VoiceClientAdapter;
 }
 
@@ -45,4 +52,56 @@ export interface LiveSession {
   inboundAudio: MediaStream;
   setMuted(muted: boolean): void;
   close(): Promise<void>;
+  /** Which recognition engine this call's ears run on, for loop-based
+   *  providers (cave-vpe1). Cloud realtime sessions (their model IS the
+   *  ears) leave it unset. */
+  earsEngine?: VoiceEarsEngine;
+  /** Which synthesis engine this call's mouth speaks through, for loop-based
+   *  providers (cave-vony). Cloud realtime sessions (their model IS the
+   *  mouth) leave it unset. */
+  mouthEngine?: VoiceMouthEngine;
+}
+
+/** Recognition engine behind a speech-loop call's ears:
+ *  - "native-on-device": macOS SFSpeechRecognizer, dictation model on this
+ *    Mac, audio never leaves the device.
+ *  - "native-dictation": macOS SFSpeechRecognizer via Apple's dictation
+ *    service (no local model for the language).
+ *  - "web-speech": the browser's SpeechRecognition (Chromium's is a cloud
+ *    service).
+ *  - "sidecar-whisper": a downloaded whisper.cpp model running in Cave's
+ *    local sidecar; audio never leaves this device. */
+export type VoiceEarsEngine =
+  | "sidecar-whisper"
+  | "native-on-device"
+  | "native-dictation"
+  | "web-speech";
+
+/** Synthesis engine behind a speech-loop call's mouth (cave-vony):
+ *  - "sidecar-piper": a downloaded Piper voice rendered by Cave's local
+ *    sidecar; audio never leaves this device.
+ *  - "elevenlabs": ElevenLabs cloud TTS.
+ *  - "system-synth": the platform's speechSynthesis voices. */
+export type VoiceMouthEngine =
+  | "sidecar-piper"
+  | "elevenlabs"
+  | "system-synth";
+
+/**
+ * Connection-phase error: `message` stays a stable machine code (e.g.
+ * `sdp_exchange_failed_400`) while `hint` carries the human-readable detail
+ * the provider returned, so the overlay can show both. (cave-8c9c)
+ */
+export class VoiceConnectError extends Error {
+  hint?: string;
+  constructor(code: string, hint?: string) {
+    super(code);
+    this.name = "VoiceConnectError";
+    this.hint = hint;
+  }
+}
+
+/** Extract the provider detail from an unknown error, if it carries one. */
+export function voiceErrorHint(err: unknown): string | undefined {
+  return err instanceof VoiceConnectError ? err.hint : undefined;
 }

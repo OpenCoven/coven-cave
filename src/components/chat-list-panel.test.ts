@@ -35,6 +35,18 @@ assert.match(
 
 assert.match(
   source,
+  /import \{ EmptyState \} from "@\/components\/ui\/empty-state"/,
+  "ChatList should use the shared EmptyState primitive",
+);
+
+assert.match(
+  source,
+  /<EmptyState[\s\S]*headline="Ready for a new thread"/,
+  "ChatList empty state should render through the shared EmptyState primitive",
+);
+
+assert.match(
+  source,
   /Ready for a new thread/,
   "ChatList empty state should frame the agent as ready instead of only saying no chats exist",
 );

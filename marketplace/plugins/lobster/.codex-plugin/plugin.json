@@ -1,0 +1,25 @@
+{
+  "name": "lobster",
+  "version": "0.1.0",
+  "description": "Run deterministic typed pipelines, workflow files, and approval-gated automations via the Lobster CLI, replacing multi-step LLM re-planning with one-shot stateful pipeline calls.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Lobster \u2014 Workflow Shell",
+    "shortDescription": "Run deterministic typed pipelines, workflow files, and approval-gated automations via the Lobster CLI, replacing multi-step LLM re-planning with one-shot stateful pipeline calls.",
+    "longDescription": "Compose piped Lobster commands or .lobster workflow files to run deterministic multi-step automations with approval gates and persistent state.",
+    "developerName": "OpenCoven",
+    "category": "Automation",
+    "capabilities": [
+      "workflow",
+      "pipeline",
+      "automation",
+      "approval-gate",
+      "deterministic",
+      "stateful"
+    ],
+    "defaultPrompt": "Help me use Lobster \u2014 Workflow Shell safely."
+  }
+}

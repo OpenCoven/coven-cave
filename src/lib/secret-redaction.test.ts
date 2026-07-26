@@ -16,6 +16,7 @@ const raw = {
   },
   rows: [
     "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
+    `OPENROUTER_API_KEY=${"sk-" + "or-v1-" + "a".repeat(64)}`,
     "nothing private here",
   ],
 };
@@ -24,7 +25,11 @@ const redacted = redactSecretsDeep(raw);
 const serialized = JSON.stringify(redacted);
 
 assert.equal(redacted.authToken, REDACTED_SECRET, "suspicious object keys are replaced wholesale");
-assert.doesNotMatch(serialized, /ghp_|sk-ant-api03|sk-proj-|supersecret/, "known secret forms are removed");
+assert.doesNotMatch(
+  serialized,
+  /ghp_|sk-ant-api03|sk-proj-|sk-or-v1-|supersecret/,
+  "known secret forms are removed",
+);
 assert.match(serialized, /metric_before stayed visible/, "ordinary eval metadata remains readable");
 assert.match(serialized, /nothing private here/, "safe strings survive redaction");
 assert.match(

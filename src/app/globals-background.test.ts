@@ -4,11 +4,17 @@ import { readFile } from "node:fs/promises";
 
 const globals = await readFile(new URL("./globals.css", import.meta.url), "utf8");
 
-assert.match(
-  globals,
-  /:root \{[\s\S]*?--background:\s*oklch\(0\.13 0\.022 293\);/,
-  "Default Coven Cave background should stay on the dark lavender-inked oklch foundation",
-);
+const covenRoot = globals.match(/:root\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+
+assert.match(covenRoot, /--background:\s*oklch\(0\.225 0\.004 291\);/);
+assert.match(covenRoot, /--card:\s*oklch\(0\.245 0\.005 291\);/);
+assert.match(covenRoot, /--popover:\s*oklch\(0\.245 0\.005 291\);/);
+assert.match(covenRoot, /--secondary:\s*oklch\(0\.275 0\.006 291\);/);
+assert.match(covenRoot, /--muted:\s*oklch\(0\.275 0\.006 291\);/);
+assert.match(covenRoot, /--accent:\s*oklch\(0\.275 0\.006 291\);/);
+assert.match(covenRoot, /--bg-panel:\s*oklch\(0\.205 0\.004 291\);/);
+assert.match(covenRoot, /--bg-elevated:\s*oklch\(0\.275 0\.006 291\);/);
+assert.match(covenRoot, /--bg-hover:\s*oklch\(0\.305 0\.007 291\);/);
 
 assert.match(
   globals,

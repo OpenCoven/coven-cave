@@ -1,3 +1,5 @@
+import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";
+
 export const SCREEN_SCALE_KEY = "cave:screen-scale";
 
 export const SCREEN_SCALE_OPTIONS = [100, 110, 125, 150] as const;
@@ -16,6 +18,8 @@ export function normalizeScreenScale(value: unknown): ScreenScale {
 }
 
 export function readScreenScale(): ScreenScale {
+  const central = normalizeScreenScale(readAppPreferences().appearance.screenScale);
+  if (central !== DEFAULT_SCREEN_SCALE || readAppPreferences().initialized) return central;
   if (typeof window === "undefined") return DEFAULT_SCREEN_SCALE;
   try {
     return normalizeScreenScale(window.localStorage.getItem(SCREEN_SCALE_KEY));
@@ -24,10 +28,13 @@ export function readScreenScale(): ScreenScale {
   }
 }
 
-export function applyScreenScale(scale: ScreenScale) {
+export function applyScreenScale(scale: ScreenScale, options: { persist?: boolean } = {}) {
   if (typeof document === "undefined") return;
   const normalized = normalizeScreenScale(scale);
   document.documentElement.setAttribute("data-screen-scale", String(normalized));
+  if (options.persist !== false) {
+    updateAppPreferences({ appearance: { screenScale: normalized } });
+  }
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(SCREEN_SCALE_KEY, String(normalized));

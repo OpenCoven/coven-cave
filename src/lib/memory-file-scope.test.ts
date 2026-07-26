@@ -7,7 +7,7 @@ import {
 
 const entry = (id, familiarId) => ({ id, familiarId });
 
-// ── The core guarantee: a chat with one familiar never surfaces another's memory.
+// ── The core guarantee: a familiar's view shows ONLY that familiar's memory.
 {
   const entries = [
     entry("echo-1", "echo"),
@@ -18,11 +18,12 @@ const entry = (id, familiarId) => ({ id, familiarId });
   ];
   const res = scopeMemoryFilesToFamiliar(entries, "echo");
   const ids = res.visible.map((e) => e.id);
-  assert.deepEqual(ids, ["echo-1", "echo-2", "global-1"], "owned first, then shared; foreign dropped");
+  assert.deepEqual(ids, ["echo-1", "echo-2"], "only owned entries visible; shared + foreign hidden");
   assert.ok(!ids.includes("sage-1"), "another familiar's memory is excluded");
   assert.ok(!ids.includes("nova-1"), "another familiar's memory is excluded");
+  assert.ok(!ids.includes("global-1"), "ownerless shared-pool entry is hidden for a selected familiar");
   assert.equal(res.ownedCount, 2);
-  assert.equal(res.sharedCount, 1);
+  assert.equal(res.sharedCount, 1, "the hidden shared entry is counted");
   assert.equal(res.hiddenForeignCount, 2, "both foreign entries counted as hidden");
 }
 
@@ -34,18 +35,18 @@ const entry = (id, familiarId) => ({ id, familiarId });
   );
   assert.deepEqual(
     res.visible.map((e) => [e.id, e.ownership]),
-    [["a", "owned"], ["b", "shared"]],
-    "owned for the active familiar, shared for ownerless; foreign absent",
+    [["a", "owned"]],
+    "only the active familiar's entries visible, labelled owned",
   );
 }
 
-// ── Ordering: every owned entry precedes every shared entry, input order kept.
+// ── Ordering: input order kept among owned entries; shared entries hidden.
 {
   const res = scopeMemoryFilesToFamiliar(
     [entry("g1", null), entry("o1", "echo"), entry("g2", null), entry("o2", "echo")],
     "echo",
   );
-  assert.deepEqual(res.visible.map((e) => e.id), ["o1", "o2", "g1", "g2"]);
+  assert.deepEqual(res.visible.map((e) => e.id), ["o1", "o2"]);
 }
 
 // ── No active familiar → no scoping, everything visible as "shared", nothing hidden.
@@ -62,7 +63,8 @@ for (const none of [null, undefined, "", "   "]) {
     [entry("a", " echo "), entry("b", "echo"), entry("c", undefined), entry("d", "")],
     "echo",
   );
-  assert.deepEqual(res.visible.map((e) => e.id), ["a", "b", "c", "d"], "trimmed owner matches; empty/undefined owner ⇒ shared");
+  assert.deepEqual(res.visible.map((e) => e.id), ["a", "b"], "trimmed owner matches; empty/undefined owner ⇒ hidden shared");
+  assert.equal(res.sharedCount, 2, "ownerless entries counted as hidden shared");
   assert.equal(res.hiddenForeignCount, 0);
 }
 

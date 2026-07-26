@@ -19,3 +19,27 @@ export function parseFileRef(text: string): FileRef | null {
   if (!match) return null;
   return { path: match[1], line: match[2] ? Number(match[2]) : undefined };
 }
+
+/**
+ * Resolve a parsed ref against a project root + its file index (repo-relative
+ * paths, as served by /api/project/files). Returns the repo-relative path when
+ * the ref names a real file the Code rail can open, else null — the caller
+ * only linkifies refs that resolve, so a rendered file link is a promise the
+ * click will actually open the file (no root, wrong repo, or a hallucinated
+ * path ⇒ plain text).
+ */
+export function resolveFileRefTarget(
+  ref: FileRef,
+  root: string | null | undefined,
+  files: ReadonlySet<string> | null | undefined,
+): string | null {
+  if (!root || !files) return null;
+  const clean = ref.path.replace(/^\.\//, "");
+  if (clean.startsWith("/")) {
+    const base = root.replace(/\/$/, "");
+    if (!clean.startsWith(`${base}/`)) return null;
+    const rel = clean.slice(base.length + 1);
+    return files.has(rel) ? rel : null;
+  }
+  return files.has(clean) ? clean : null;
+}

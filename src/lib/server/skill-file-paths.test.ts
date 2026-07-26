@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { isAllowedSkillFilePath, MAX_SKILL_FILE_PREVIEW_BYTES } from "./skill-file-paths.ts";
+import {
+  isAllowedSkillFilePath,
+  isBrowsableSkillAuxName,
+  isRemovableSkillDir,
+  MAX_SKILL_FILE_PREVIEW_BYTES,
+  resolveBrowsableSkillDir,
+} from "./skill-file-paths.ts";
 
 const home = await mkdtemp(path.join(tmpdir(), "coven-skill-paths-"));
+const projectRoot = await mkdtemp(path.join(tmpdir(), "coven-skill-project-"));
+const originalCwd = process.cwd();
+process.chdir(projectRoot);
 
 async function touch(relativePath: string, contents = "# preview\n") {
   const fullPath = path.join(home, relativePath);
@@ -13,10 +22,19 @@ async function touch(relativePath: string, contents = "# preview\n") {
   return fullPath;
 }
 
+async function touchProject(relativePath: string, contents = "# preview\n") {
+  const fullPath = path.join(projectRoot, relativePath);
+  await mkdir(path.dirname(fullPath), { recursive: true });
+  await writeFile(fullPath, contents);
+  return fullPath;
+}
+
 const claudeSkill = await touch(path.join(".claude", "skills", "deep-research", "SKILL.md"));
 const covenSkill = await touch(path.join(".coven", "skills", "foo", "SKILL.md"));
+const codexSkill = await touch(path.join(".codex", "skills", "review", "SKILL.md"));
 const codexAutomation = await touch(path.join(".codex", "automations", "daily-check", "automation.toml"), "id = \"daily-check\"\n");
-await touch(path.join(".agents", "skills", "brainstorming", "SKILL.md"));
+const agentsUserSkill = await touch(path.join(".agents", "skills", "brainstorming", "SKILL.md"));
+const agentsProjectSkill = await touchProject(path.join(".agents", "skills", "tdd", "SKILL.md"));
 const claudeSkillSymlink = path.join(home, ".claude", "skills", "brainstorming");
 await symlink(path.join(home, ".agents", "skills", "brainstorming"), claudeSkillSymlink);
 const claudeInstructions = await touch(path.join(".claude", "CLAUDE.md"));
@@ -41,6 +59,21 @@ assert.equal(
   await isAllowedSkillFilePath(covenSkill, home),
   true,
   "a SKILL.md under ~/.coven/skills is allowed",
+);
+assert.equal(
+  await isAllowedSkillFilePath(codexSkill, home),
+  true,
+  "a SKILL.md under ~/.codex/skills is allowed",
+);
+assert.equal(
+  await isAllowedSkillFilePath(agentsUserSkill, home),
+  true,
+  "a SKILL.md under ~/.agents/skills is allowed",
+);
+assert.equal(
+  await isAllowedSkillFilePath(agentsProjectSkill, home),
+  true,
+  "a SKILL.md under project .agents/skills is allowed",
 );
 assert.equal(
   await isAllowedSkillFilePath(codexAutomation, home),
@@ -118,4 +151,102 @@ assert.equal(
 
 assert.equal(MAX_SKILL_FILE_PREVIEW_BYTES, 512 * 1024, "skill previews have a bounded size");
 
+// ── isRemovableSkillDir (DELETE guard) ──────────────────────────────────────
+// The guard only clears an IMMEDIATE child directory of a scan root. Exercise
+// the ~/.claude/skills root (the coven root is env-derived and not the tmp home).
+const removableSkillDir = path.join(home, ".claude", "skills", "deep-research");
+const skillsRoot = path.join(home, ".claude", "skills");
+await mkdir(path.join(removableSkillDir, "nested"), { recursive: true });
+
+assert.equal(
+  await isRemovableSkillDir(removableSkillDir, home),
+  true,
+  "an immediate child directory of ~/.claude/skills is removable",
+);
+assert.equal(
+  await isRemovableSkillDir(path.join(home, ".codex", "skills", "review"), home),
+  true,
+  "an immediate child directory of ~/.codex/skills is removable",
+);
+assert.equal(
+  await isRemovableSkillDir(path.join(home, ".agents", "skills", "brainstorming"), home),
+  true,
+  "an immediate child directory of ~/.agents/skills is removable",
+);
+assert.equal(
+  await isRemovableSkillDir(path.join(projectRoot, ".agents", "skills", "tdd"), home),
+  true,
+  "an immediate child directory of project .agents/skills is removable",
+);
+assert.equal(
+  await isRemovableSkillDir(skillsRoot, home),
+  false,
+  "the scan root itself is never removable",
+);
+assert.equal(
+  await isRemovableSkillDir(path.join(removableSkillDir, "nested"), home),
+  false,
+  "a directory nested deeper than an immediate child is rejected",
+);
+assert.equal(
+  await isRemovableSkillDir(claudeSkill, home),
+  false,
+  "a file path (SKILL.md, not a directory) is rejected",
+);
+assert.equal(
+  await isRemovableSkillDir(claudeSkillSymlink, home),
+  false,
+  "a symlinked skill directory is rejected (never follow a symlink to rm)",
+);
+assert.equal(
+  await isRemovableSkillDir(path.join(home, "secrets"), home),
+  false,
+  "a directory outside the scan roots is rejected",
+);
+assert.equal(await isRemovableSkillDir("", home), false, "empty path is rejected");
+
+// ── /api/skills/files browser guards ─────────────────────────────────────────
+
+assert.equal(
+  await resolveBrowsableSkillDir(path.dirname(claudeSkill), home),
+  await realpath(path.dirname(claudeSkill)),
+  "a skill dir whose SKILL.md passes the descriptor allow-list is browsable",
+);
+assert.equal(
+  await resolveBrowsableSkillDir(path.dirname(codexAutomation), home),
+  await realpath(path.dirname(codexAutomation)),
+  "a codex automation dir proves itself via automation.toml",
+);
+assert.equal(
+  await resolveBrowsableSkillDir(path.join(home, "secrets"), home),
+  null,
+  "a directory outside the skill roots is not browsable",
+);
+assert.equal(
+  await resolveBrowsableSkillDir(path.join(home, ".claude", "skills"), home),
+  null,
+  "the scan root itself (no descriptor) is not browsable",
+);
+assert.equal(
+  await resolveBrowsableSkillDir(claudeSkillSymlink, home),
+  null,
+  "a symlinked skill directory is rejected",
+);
+assert.equal(
+  await resolveBrowsableSkillDir(claudeSkill, home),
+  null,
+  "a file path is not a browsable directory",
+);
+assert.equal(await resolveBrowsableSkillDir("", home), null, "empty dir is rejected");
+
+assert.equal(isBrowsableSkillAuxName("checklist.md"), true, "plain .md aux file is browsable");
+assert.equal(isBrowsableSkillAuxName("config.toml"), true, "plain .toml aux file is browsable");
+assert.equal(isBrowsableSkillAuxName("SKILL.md"), true, "the descriptor itself is browsable");
+assert.equal(isBrowsableSkillAuxName("run.sh"), false, "non-text extensions are rejected");
+assert.equal(isBrowsableSkillAuxName(".env"), false, "dotfiles are rejected");
+assert.equal(isBrowsableSkillAuxName("nested/notes.md"), false, "path separators are rejected");
+assert.equal(isBrowsableSkillAuxName("../escape.md"), false, "traversal is rejected");
+assert.equal(isBrowsableSkillAuxName(""), false, "empty name is rejected");
+
+process.chdir(originalCwd);
 console.log("skill-file-paths.test.ts: ok");

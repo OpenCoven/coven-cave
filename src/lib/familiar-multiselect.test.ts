@@ -5,7 +5,24 @@ import {
   selectAll,
   isAllSelected,
   automationMatchesFilter,
+  familiarInScope,
 } from "./familiar-multiselect.ts";
+
+test("familiarInScope: empty scope matches everything (incl. ownerless)", () => {
+  const all = new Set<string>();
+  assert.equal(familiarInScope(all, "nova"), true);
+  assert.equal(familiarInScope(all, null), true);
+  assert.equal(familiarInScope(all, undefined), true);
+});
+
+test("familiarInScope: non-empty scope matches only members; ownerless excluded", () => {
+  const scope = new Set(["nova", "salem"]);
+  assert.equal(familiarInScope(scope, "nova"), true);
+  assert.equal(familiarInScope(scope, "salem"), true);
+  assert.equal(familiarInScope(scope, "cody"), false);
+  assert.equal(familiarInScope(scope, null), false);
+  assert.equal(familiarInScope(scope, undefined), false);
+});
 
 test("plain click selects only that familiar", () => {
   const next = toggleFamiliarSelection(new Set(["nova"]), "salem", false);

@@ -1,0 +1,371 @@
+/* New-chat dashboard — launcher direction 3a ("work-led dashboard"),
+ * relocated from Home to the brand-new chat view (Home went back to the quiet
+ * hearth), then simplified: the context rail is retired (ChatView's composer
+ * owns the project picker and prompt snippets) and what ships is a single
+ * no-scroll board — greeting + filter tabs · capped open work · capped recent
+ * threads. ChatView supplies the chrome above and the real composer below, so
+ * only the body ships. Everything is token-driven so the themes × dark/light
+ * and the Appearance corner-radius setting all apply. */
+
+/* ── Embedded shell — fills the empty transcript ────────────────────────── */
+/* The dashboard renders inside the chat transcript (role="log") as the empty
+   state of a brand-new chat. The transcript flexes so the embed stretches to
+   the pane's height; the board's content is capped, so nothing scrolls. The
+   thread's centered reading measure is released — the board wants the pane. */
+.cave-chat-transcript:has(.home-dash--embed) {
+  display: flex;
+  flex-direction: column;
+}
+.cave-chat-transcript:has(.home-dash--embed) .cave-chat-thread {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+}
+.home-dash--embed {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-base);
+  overflow: hidden;
+}
+
+/* ── Body: the board alone ──────────────────────────────────────────────── */
+.home-dash__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+.home-dash__section-label {
+  font: 600 10px var(--font-jetbrains-mono), monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ── Work board ─────────────────────────────────────────────────────────── */
+.home-dash__board {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  /* Height container for the no-scroll tiers below: the board never scrolls,
+     so on short panes it sheds sections instead of clipping them. Vertical
+     padding lives on __board-inner, NOT here — the tiers restyle it, and a
+     @container rule can only match descendants of the queried container,
+     never the container itself. Keep this element padding-free vertically so
+     the queried height equals the pane height. */
+  padding: 0 var(--space-8);
+  container-type: size;
+}
+.home-dash__board-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: var(--space-6) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.home-dash__board-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.home-dash__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.home-dash__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: 600 10.5px var(--font-jetbrains-mono), monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-presence);
+}
+.home-dash__eyebrow-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+  box-shadow: 0 0 12px 1px color-mix(in oklch, var(--accent-presence) 65%, transparent);
+  animation: home-dash-glow 3s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-dash__eyebrow-dot {
+    animation: none;
+  }
+}
+@keyframes home-dash-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.home-dash__headline {
+  margin: 0;
+  font-family: var(--font-eb-garamond), "EB Garamond", serif;
+  font-weight: 500;
+  font-size: var(--text-display);
+  line-height: 1.05;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+/* Identity meta under the headline — harness · model, quiet mono text. */
+.home-dash__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+.home-dash__meta span {
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-dash__meta span + span::before {
+  content: "·";
+  margin-right: var(--space-2);
+}
+
+/* Filter tabs */
+.home-dash__filters {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+}
+.home-dash__filter {
+  padding: 5px 13px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  white-space: nowrap;
+  transition: color var(--duration-fast, 120ms), background var(--duration-fast, 120ms);
+}
+.home-dash__filter:hover {
+  color: var(--text-secondary);
+}
+.home-dash__filter.is-active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.home-dash__filter-count {
+  color: var(--text-muted);
+  margin-left: 5px;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: var(--text-2xs);
+}
+.home-dash__filter.is-active .home-dash__filter-count {
+  color: var(--text-secondary);
+}
+
+/* Section scaffold (Open work / Recent threads) */
+.home-dash__section {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.home-dash__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.home-dash__section-link {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.home-dash__section-link:hover {
+  color: var(--accent-presence);
+}
+
+/* Open-work rows */
+.home-dash__work {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.home-dash__work-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 15px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: border-color var(--duration-fast, 120ms), transform var(--duration-fast, 120ms);
+}
+.home-dash__work-row:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.home-dash__work-chip {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font: 600 10px var(--font-jetbrains-mono), monospace;
+  flex-shrink: 0;
+}
+.home-dash__work-chip[data-kind="blocked"] {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+}
+.home-dash__work-chip[data-kind="inbox"],
+.home-dash__work-chip[data-kind="backlog"],
+.home-dash__work-chip[data-kind="review"] {
+  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, var(--border-hairline));
+  color: var(--accent-presence);
+}
+.home-dash__work-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-dash__work-meta {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.home-dash__work-priority {
+  font-size: var(--text-xs);
+  flex-shrink: 0;
+}
+.home-dash__work-priority[data-priority="high"] {
+  color: var(--color-warning);
+}
+.home-dash__work-priority[data-priority="urgent"] {
+  color: var(--color-danger);
+}
+/* Visual "Resume" CTA — reads as a secondary button but is a non-interactive
+   span so it never nests a real <button> inside the clickable row. The row's
+   hover deepens its border to signal the whole card is actionable. */
+.home-dash__work-resume {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-elevated);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  transition: border-color var(--duration-fast, 120ms), color var(--duration-fast, 120ms);
+}
+.home-dash__work-row:hover .home-dash__work-resume {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.home-dash__work-empty {
+  padding: 22px 15px;
+  border: 1px dashed var(--border-hairline);
+  border-radius: var(--radius-card);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Recent threads */
+.home-dash__recent {
+  display: flex;
+  flex-direction: column;
+}
+.home-dash__recent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 9px var(--space-2);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  transition: background var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+.home-dash__recent-row:hover {
+  background: var(--bg-hover);
+}
+.home-dash__recent-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-dash__recent-time {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── No-scroll fit tiers ────────────────────────────────────────────────── */
+/* The board never scrolls (overflow: hidden), so short panes shed the
+   quietest content instead of clipping it. The board carries no vertical
+   padding, so the queried height equals the pane height. Measured budgets:
+   full board ≈635px, ≈503px without Recent threads (of which 24px is bottom
+   padding — panes down to 480 clip padding only, never content), ≈294px at
+   the tight tier, ≈198px at the floor. Rules target only descendants of
+   .home-dash__board (an element can never match its own @container query),
+   and stay last in the file so these equal-specificity overrides win the
+   cascade. */
+@container (max-height: 650px) {
+  .home-dash__section--recent {
+    display: none;
+  }
+}
+@container (max-height: 480px) {
+  .home-dash__board-inner {
+    padding: var(--space-4) 0;
+    gap: var(--space-3);
+  }
+  .home-dash__eyebrow,
+  .home-dash__meta {
+    display: none;
+  }
+  .home-dash__work-row:nth-child(n + 4) {
+    display: none;
+  }
+}
+@container (max-height: 300px) {
+  .home-dash__section-head {
+    display: none;
+  }
+  .home-dash__work-row:nth-child(n + 3) {
+    display: none;
+  }
+}

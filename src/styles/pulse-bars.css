@@ -1,0 +1,68 @@
+/* Pulse bars — the shared day-count "pulse" idiom (growth roster + report,
+   familiar analytics hero). Bars scale to the window max; today is the last
+   bar. Zero days keep a faint stub so the window length stays readable. */
+.pulse-bars {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 3px;
+  align-items: end;
+  height: 30px;
+}
+.pulse-bars--sm {
+  height: 16px;
+  gap: 2px;
+}
+.pulse-bars--lg {
+  height: 72px;
+  gap: 6px;
+}
+.pulse-bars__day {
+  display: flex;
+  align-items: end;
+  height: 100%;
+  min-width: 0;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+.pulse-bars--lg .pulse-bars__day {
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--bg-base) 76%, transparent);
+}
+.pulse-bars__day i {
+  display: block;
+  width: 100%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, var(--accent-presence), var(--color-info));
+}
+.pulse-bars__day.is-empty i {
+  background: color-mix(in oklch, var(--foreground) 16%, transparent);
+}
+/* Tips variant — each day carries a native title tooltip, so give the hover
+   target a visible affordance instead of leaving the tip undiscoverable. */
+.pulse-bars--tips .pulse-bars__day:hover {
+  background: color-mix(in oklch, var(--foreground) 14%, transparent);
+}
+
+/* Interactive variant — days are toggle buttons that drill into that day's
+   sessions. Reset the button chrome to the bar shape, then make hover/selected
+   states legible: selection reads as a solid presence ring, not color alone. */
+.pulse-bars--interactive .pulse-bars__day {
+  appearance: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.pulse-bars--interactive .pulse-bars__day:hover {
+  background: color-mix(in oklch, var(--foreground) 14%, transparent);
+}
+.pulse-bars--interactive .pulse-bars__day:focus-visible {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 1px;
+}
+.pulse-bars--interactive .pulse-bars__day.is-selected {
+  box-shadow: 0 0 0 2px var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+}

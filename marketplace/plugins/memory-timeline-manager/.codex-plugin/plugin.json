@@ -1,0 +1,24 @@
+{
+  "name": "memory-timeline-manager",
+  "version": "0.1.0",
+  "description": "Capture short-term timeline notes and curate long-term MEMORY.md safely: append daily notes, label retention, promote durable snippets, and run review sweeps.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Memory Timeline Manager",
+    "shortDescription": "Capture short-term timeline notes and curate long-term MEMORY.md safely: append daily notes, label retention, promote durable snippets, and run review sweeps.",
+    "longDescription": "Route notes to memory/YYYY-MM-DD.md or MEMORY.md, promote durable snippets with timestamps, and prune only after confirmation.",
+    "developerName": "OpenCoven",
+    "category": "Knowledge & Docs",
+    "capabilities": [
+      "memory",
+      "timeline",
+      "notes",
+      "retention",
+      "curation"
+    ],
+    "defaultPrompt": "Help me use Memory Timeline Manager safely."
+  }
+}

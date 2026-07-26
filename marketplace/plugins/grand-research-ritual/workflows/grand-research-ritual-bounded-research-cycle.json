@@ -1,0 +1,12 @@
+{
+  "id": "grand-research-ritual-bounded-research-cycle",
+  "name": "Bounded research cycle",
+  "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+  "steps": [
+    "Declare scope, authority, provenance, and resource limits.",
+    "Select the smallest reproducible action and record its inputs.",
+    "Run only within the declared bounds and preserve resumable state.",
+    "Evaluate outputs against a predeclared criterion.",
+    "Summarize evidence, limitations, and the next human checkpoint."
+  ]
+}

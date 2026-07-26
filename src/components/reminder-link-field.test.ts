@@ -5,10 +5,10 @@ import { readFileSync } from "node:fs";
 const field = readFileSync(new URL("./reminder-link-field.tsx", import.meta.url), "utf8");
 const modal = readFileSync(new URL("./new-reminder-modal.tsx", import.meta.url), "utf8");
 
-// ── Kind options: None / URL / Board card / Chat session, NO Memory ──────────
+// ── Kind options: None / URL / Task card / Chat session, NO Memory ───────────
 assert.match(field, /value: "none", label: "No link"/, "should offer a None option");
 assert.match(field, /value: "url", label: "URL"/, "should offer a URL option");
-assert.match(field, /value: "card", label: "Board card"/, "should offer a Board card option");
+assert.match(field, /value: "card", label: "Task card"/, "should offer a Task card option");
 assert.match(field, /value: "session", label: "Chat session"/, "should offer a Chat session option");
 assert.doesNotMatch(
   field,
@@ -34,14 +34,19 @@ assert.match(field, /\{ kind: "card", ref:/, "card selection emits a card LinkRe
 assert.match(field, /\{ kind: "session", ref:/, "session selection emits a session LinkRef");
 
 // ── Graceful loading / empty / error states ──────────────────────────────────
-assert.match(field, /Loading board cards/, "should render a loading hint for cards");
-assert.match(field, /No board cards yet/, "should render an empty hint for cards");
-assert.match(field, /Couldn't load board cards/, "should render a fetch-error hint for cards");
+assert.match(field, /Loading task cards/, "should render a canonical loading hint for cards");
+assert.match(field, /No task cards yet/, "should render a canonical empty hint for cards");
+assert.match(field, /Couldn't load task cards/, "should render a canonical fetch-error hint for cards");
+assert.match(field, /rounded-\[var\(--radius-control\)\]/, "link controls should use the shared control radius token");
+assert.doesNotMatch(field, /rounded-md/, "link controls should not hard-code Tailwind's md radius");
 
 // ── Wired into the modal ─────────────────────────────────────────────────────
 assert.match(modal, /import \{ ReminderLinkField \}/, "modal should import the link field");
-assert.match(modal, /<Field label="Link \(optional\)">/, "modal should render a Link field");
-assert.match(modal, /<ReminderLinkField value=\{link\} onChange=\{setLink\}/, "modal should wire the link field to local state");
+assert.match(
+  modal,
+  /<fieldset\b[\s\S]*?<legend\b[^>]*>\s*Link \(optional\)\s*<\/legend>[\s\S]*?<ReminderLinkField\b[^>]*value=\{link\}[^>]*onChange=\{setLink\}[^>]*\/>[\s\S]*?<\/fieldset>/,
+  "modal should wrap the link field in a labeled fieldset and wire it to local state",
+);
 assert.match(modal, /link\?: LinkRef \| null;/, "NewReminderDraft should carry an optional link");
 
 console.log("reminder-link-field.test.ts: ok");

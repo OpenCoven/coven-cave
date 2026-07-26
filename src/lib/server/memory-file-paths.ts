@@ -1,4 +1,10 @@
-import { isMemoryFilePathAllowed, resolveAllowedMemoryFileReadPath } from "./memory-file-sources.ts";
+import {
+  isMemoryFilePathAllowed,
+  resolveAllowedFileReadPath,
+  resolveAllowedMemoryFileReadPath,
+} from "./memory-file-sources.ts";
+
+export { resolveAllowedFileReadPath };
 
 export function isAllowedMemoryFilePath(fullPath: string): boolean {
   return isMemoryFilePathAllowed(fullPath);

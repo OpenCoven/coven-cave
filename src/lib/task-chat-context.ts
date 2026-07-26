@@ -1,3 +1,6 @@
+import { buildPromptWithAttachments, type ChatAttachment } from "@/lib/chat-attachments";
+import type { Card } from "@/lib/cave-board-types";
+
 type TaskContextCard = {
   title: string;
   notes?: string | null;
@@ -6,6 +9,9 @@ type TaskContextCard = {
   labels?: string[] | null;
   links?: string[] | null;
   github?: Array<{ title: string; url: string }> | null;
+  /** Files carried onto the card at creation. Folded into the initial dispatch
+   * prompt so the familiar working the task can read them. */
+  attachments?: ChatAttachment[] | null;
 };
 
 function linesForList(title: string, values: string[]): string[] {
@@ -42,6 +48,14 @@ export function buildTaskContext(card: TaskContextCard): string {
     ),
   );
 
+  // Name the card's attachments so follow-up turns know files exist. Only the
+  // initial dispatch prompt carries their full content (buildInitialTaskChatPrompt);
+  // here a summary line keeps every later turn's context small.
+  const attachmentNames = (card.attachments ?? [])
+    .map((attachment) => attachment.name.trim())
+    .filter(Boolean);
+  if (attachmentNames.length) lines.push(`Attachments: ${attachmentNames.join(", ")}`);
+
   return lines.join("\n");
 }
 
@@ -52,13 +66,29 @@ export function buildTaskAwarePrompt(prompt: string, taskContext: string | null)
 }
 
 export function buildInitialTaskChatPrompt(card: TaskContextCard): string {
-  return `${buildTaskContext(card)}\n\nUse this session as the working thread for the task.`;
+  const base = `${buildTaskContext(card)}\n\nUse this session as the working thread for the task.`;
+  const attachments = card.attachments ?? [];
+  // Board attachments are stored lean (text inlined; image dataUrls stripped),
+  // so buildPromptWithAttachments renders text bodies in full and images as a
+  // metadata line — exactly the once-at-dispatch delivery the composer uses.
+  return attachments.length
+    ? buildPromptWithAttachments(base, attachments, { imagesMetadataOnly: true })
+    : base;
 }
 
-export async function taskContextForSession(sessionId?: string | null): Promise<string | null> {
+/**
+ * Look up the server-owned task relation for a conversation. Consumers that
+ * need to launch a task chat use this rather than accepting project or
+ * familiar identity from the browser alongside a reserved conversation id.
+ */
+export async function taskCardForSession(sessionId?: string | null): Promise<Card | null> {
   if (!sessionId) return null;
   const { loadBoard } = await import("@/lib/cave-board");
   const board = await loadBoard();
-  const card = board.cards.find((candidate) => candidate.sessionId === sessionId);
+  return board.cards.find((candidate) => candidate.sessionId === sessionId) ?? null;
+}
+
+export async function taskContextForSession(sessionId?: string | null): Promise<string | null> {
+  const card = await taskCardForSession(sessionId);
   return card ? buildTaskContext(card) : null;
 }

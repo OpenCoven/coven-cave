@@ -1,0 +1,24 @@
+{
+  "name": "1password",
+  "version": "0.1.0",
+  "description": "Manage secrets via the 1Password CLI (op): read, create, and inject credentials through op:// references so other skills get least-privilege access without exposing values.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "1Password Secret Management",
+    "shortDescription": "Manage secrets via the 1Password CLI (op): read, create, and inject credentials through op:// references so other skills get least-privilege access without exposing values.",
+    "longDescription": "Retrieve and inject secrets with op, keeping only op:// references on disk and never displaying secret values.",
+    "developerName": "OpenCoven",
+    "category": "Security",
+    "capabilities": [
+      "secrets",
+      "1password",
+      "credentials",
+      "env",
+      "op-cli"
+    ],
+    "defaultPrompt": "Help me use 1Password Secret Management safely."
+  }
+}

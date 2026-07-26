@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { StandardSelectGroup, StandardSelectOption } from "@/components/ui/select";
+import { StandardSelect } from "@/components/ui/select";
 
 type LocalSkill = { id: string; name: string; path: string; familiar: string };
 
@@ -29,23 +31,25 @@ export function SkillSelect({ value, onChange, className }: Props) {
   }, []);
 
   const known = skills.some((s) => s.path === value);
-  const scopes = [...new Set(skills.map((s) => s.familiar))];
+  const groupedSkills: (StandardSelectGroup<string> | StandardSelectOption<string>)[] = [
+    { value: "", label: "— none —" },
+    ...(value && !known ? [{ value, label: value }] : []),
+    ...[...new Set(skills.map((s) => s.familiar))].map((scope) => ({
+      label: scope,
+      options: skills
+        .filter((s) => s.familiar === scope)
+        .map((s) => ({ value: s.path, label: s.name })),
+    })),
+  ];
 
   return (
-    <select className={className} value={value ?? ""} onChange={(e) => onChange(e.target.value || null)}>
-      <option value="">— none —</option>
-      {value && !known && <option value={value}>{value}</option>}
-      {scopes.map((scope) => (
-        <optgroup key={scope} label={scope}>
-          {skills
-            .filter((s) => s.familiar === scope)
-            .map((s) => (
-              <option key={s.path} value={s.path}>
-                {s.name}
-              </option>
-            ))}
-        </optgroup>
-      ))}
-    </select>
+    <StandardSelect
+      label="Skill"
+      className={className}
+      value={value ?? ""}
+      onChange={(next) => onChange(next || null)}
+      options={groupedSkills}
+      placeholder="— none —"
+    />
   );
 }

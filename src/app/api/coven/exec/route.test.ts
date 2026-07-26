@@ -19,7 +19,7 @@ assert.match(
 assert.match(
   source,
   /isMissingExecutableError\(e\)[\s\S]*covenCliMissingError\(\)/,
-  "missing coven CLI spawn errors should return the stable install/setup payload",
+  "missing Coven CLI spawn errors should return the stable install/setup payload",
 );
 
 console.log("coven exec route.test.ts: ok");

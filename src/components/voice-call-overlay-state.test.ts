@@ -52,6 +52,29 @@ test("connecting → live on CONNECTED", () => {
   assert.equal(typeof next.startedAt, "number");
 });
 
+test("CONNECTED carries the ears engine label for the live UI (cave-vpe1)", () => {
+  let s = reduce(initialState, { type: "START" });
+  s = reduce(s, { type: "MIC_READY" });
+  s = reduce(s, { type: "SESSION_GRANTED", callId: "c1" });
+  const next = reduce(s, {
+    type: "CONNECTED",
+    startedAt: Date.now(),
+    earsEngine: "native-on-device",
+    mouthEngine: "sidecar-piper",
+  });
+  assert.equal(next.state, "live");
+  assert.equal(next.earsEngine, "native-on-device");
+  // The mouth engine rides the same event for badge parity (cave-vony).
+  assert.equal(next.mouthEngine, "sidecar-piper");
+  // Realtime providers report no ears mode — the field simply stays unset.
+  const bare = reduce(
+    { ...initialState, state: "connecting", callId: "c1" },
+    { type: "CONNECTED", startedAt: 1 },
+  );
+  assert.equal(bare.earsEngine, undefined);
+  assert.equal(bare.mouthEngine, undefined);
+});
+
 test("connecting → closed on CLOSE_REQUEST (clean cancel, no error)", () => {
   let s = reduce(initialState, { type: "START" });
   s = reduce(s, { type: "MIC_READY" });
@@ -88,6 +111,46 @@ test("live → error on PROVIDER_ERROR", () => {
   const next = reduce(s, { type: "PROVIDER_ERROR", errorCode: "connect_failed" });
   assert.equal(next.state, "error");
   assert.equal(next.errorCode, "connect_failed");
+});
+
+test("PROVIDER_ERROR carries provider hint into error state", () => {
+  let s = reduce(initialState, { type: "START" });
+  s = reduce(s, { type: "MIC_READY" });
+  s = reduce(s, { type: "SESSION_GRANTED", callId: "c1" });
+  const next = reduce(s, {
+    type: "PROVIDER_ERROR",
+    errorCode: "sdp_exchange_failed_400",
+    hint: 'Model "mock-model" is not supported in realtime mode.',
+  });
+  assert.equal(next.state, "error");
+  assert.equal(next.errorCode, "sdp_exchange_failed_400");
+  assert.equal(next.hint, 'Model "mock-model" is not supported in realtime mode.');
+});
+
+test("PROVIDER_ERROR without hint clears any stale hint", () => {
+  let s = reduce(initialState, { type: "START" });
+  s = reduce(s, { type: "MIC_READY" });
+  s = reduce(s, {
+    type: "SESSION_FAILED",
+    errorCode: "vault_key_unresolved",
+    hint: "stale detail from an earlier failure",
+  });
+  const next = reduce(s, { type: "PROVIDER_ERROR", errorCode: "connect_failed" });
+  assert.equal(next.state, "error");
+  assert.equal(next.hint, undefined);
+});
+
+test("PROVIDER_ERROR clears a stale missingKey so unrelated errors don't offer a key fix", () => {
+  let s = reduce(initialState, { type: "START" });
+  s = reduce(s, { type: "MIC_READY" });
+  s = reduce(s, {
+    type: "SESSION_FAILED",
+    errorCode: "vault_key_unresolved",
+    missingKey: "ELEVENLABS_API_KEY",
+  });
+  const next = reduce(s, { type: "PROVIDER_ERROR", errorCode: "connect_failed" });
+  assert.equal(next.state, "error");
+  assert.equal(next.missingKey, undefined);
 });
 
 test("error → requesting-mic on RETRY (clears errorCode)", () => {

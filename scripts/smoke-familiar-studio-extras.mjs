@@ -6,12 +6,12 @@
 //      events manually (Playwright's `dragTo` is unreliable for HTML5 native),
 //      reloads the page, asserts the new order survived in
 //      cave:familiar-order:v1.
-//   3. Brain-tab harness change writes ~/.coven/cave-config.json — changes
+//   3. Brain-tab harness change writes ~/.coven/cave/config.json — changes
 //      the harness select for one familiar, reads back the JSON file via
 //      Node fs, asserts the patch landed, then restores the original config.
 //
 // Run: node scripts/smoke-familiar-studio-extras.mjs
-// Pre-flight: caller MUST have backed up ~/.coven/cave-config.json.
+// Pre-flight: caller MUST have backed up ~/.coven/cave/config.json.
 
 import { chromium } from "@playwright/test";
 import { writeFile, readFile, mkdir } from "node:fs/promises";
@@ -19,7 +19,7 @@ import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 
 const OUT = "/tmp/familiar-studio-smoke-extras";
-const CONFIG_PATH = join(homedir(), ".coven", "cave-config.json");
+const CONFIG_PATH = join(homedir(), ".coven", "cave", "config.json");
 const BACKUP_PATH = "/tmp/cave-config.backup.json";
 const BASE_URL = process.env.COVEN_CAVE_SMOKE_URL ?? "http://localhost:3000";
 
@@ -259,8 +259,8 @@ async function main() {
 
   // Read current config before the test
   const configBefore = JSON.parse(await readFile(CONFIG_PATH, "utf8"));
-  // The previous drag-test moved nova to position 2, so the *current* first
-  // rail avatar is whoever ended up at position 0 (sage in the demo seed).
+  // The previous drag-test moved a demo familiar to position 2, so the
+  // current first rail avatar is whoever ended up at position 0.
   // Read the actual data-id from the DOM at brain-test time.
   const targetFamiliarId = await firstAvatar.getAttribute("data-id");
   const harnessBefore = configBefore.familiars?.[targetFamiliarId]?.harness ?? null;

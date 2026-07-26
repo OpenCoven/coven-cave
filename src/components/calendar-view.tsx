@@ -1,235 +1,56 @@
 "use client";
 
-import { useId, useMemo, useState, useRef, useEffect } from "react";
+import "@/styles/calendar.css";
+
+import { useCallback, useContext, useId, useMemo, useState, useRef, useEffect, type SetStateAction } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
-import type { Familiar } from "@/lib/types";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { familiarAccent } from "@/lib/familiar-color";
 import { Icon } from "@/lib/icon";
-import type { IconName } from "@/lib/icon";
-import { formatClock, formatDate, readDateTimePrefs } from "@/lib/datetime-format";
+import { formatClock, formatDate } from "@/lib/datetime-format";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { SnoozeMenu } from "@/components/snooze-menu";
-import { itemDate, packEventColumns } from "@/lib/calendar-layout";
+import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
+import { itemDate, packEventColumnsWithOverflow, WEEK_MAX_LANES, DAY_MAX_LANES, type PlacedOverflow } from "@/lib/calendar-layout";
+import { familiarInScope } from "@/lib/familiar-multiselect";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import {
+  AgendaDeadlineRow,
+  FamiliarColorContext,
+  FamiliarNameContext,
+  ItemChip,
+  addDays,
+  agendaDayLabel,
+  defaultEntryFireAt,
+  fmtDateHeading,
+  fmtHourLabel,
+  fmtTime,
+  isSameDay,
+  platformIcon,
+  relDayWord,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  urgencyColor,
+  urgencyLabel,
+  useFamiliarAccent,
+  useFamiliarName,
+  useNow,
+  MONTHS,
+  WEEKDAYS,
+  type CalendarDeadline,
+  type Props,
+  type ViewMode,
+} from "./calendar-view-primitives";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+export type { CalendarDeadline } from "./calendar-view-primitives";
 
-type ViewMode = "agenda" | "day" | "week" | "month";
-
-/** A read-only board task deadline overlaid on the calendar. Sourced from board
- *  cards that carry an `endDate`, so weekly planning includes task due-dates and
- *  not just inbox reminders. */
-export type CalendarDeadline = {
-  id: string;
-  title: string;
-  /** Board endDate — "YYYY-MM-DD" or ISO. Treated as an all-day due marker. */
-  date: string;
-  familiarId: string | null;
-  status?: string;
-};
-
-type Props = {
-  items: InboxItem[];
-  familiars: Familiar[];
-  /** When set, the calendar hard-scopes to items belonging to this familiar.
-   *  Defensive null escape: bypass the familiar filter entirely. Mirrors
-   *  BoardView's hard-scope. */
-  activeFamiliarId?: string | null;
-  onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
-  onOpenItem?: (item: InboxItem) => void;
-  /** Reschedule an item to a new time (drag-and-drop). Optimistic; SSE reconciles. */
-  onReschedule?: (id: string, fireAtIso: string) => void;
-  /** Mark an item done. Optimistic; the SSE stream reconciles. */
-  onComplete?: (id: string) => void;
-  /** Dismiss (remove) an item. */
-  onDismiss?: (id: string) => void;
-  /** Snooze an item until the given ISO timestamp. */
-  onSnooze?: (id: string, untilIso: string) => void;
-  /** Read-only board task deadlines (cards with an endDate) overlaid on the grid. */
-  deadlines?: CalendarDeadline[];
-  /** Open the board card behind a deadline marker. */
-  onOpenDeadline?: (id: string) => void;
-};
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
-];
-
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
-function startOfWeek(d: Date): Date {
-  const s = startOfDay(d);
-  s.setDate(s.getDate() - s.getDay());
-  return s;
-}
-
-function startOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-
-function addDays(d: Date, n: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + n);
-  return r;
-}
-
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-function fmtTime(iso: string): string {
-  return formatClock(iso);
-}
-
-function fmtDateHeading(d: Date): string {
-  return formatDate(d, undefined, { weekday: true, month: "long" });
-}
-
-// Agenda group headers read better with a relative day word for the days right
-// around now ("Today" / "Tomorrow" / "Yesterday"), falling back to the full
-// weekday + date for anything further out.
-// "Today" / "Tomorrow" / "Yesterday" for the days right around now, else null.
-function relDayWord(date: Date): string | null {
-  const days = Math.round(
-    (startOfDay(date).getTime() - startOfDay(new Date()).getTime()) / 86_400_000,
-  );
-  if (days === 0) return "Today";
-  if (days === 1) return "Tomorrow";
-  if (days === -1) return "Yesterday";
-  return null;
-}
-
-function agendaDayLabel(date: Date): string {
-  return relDayWord(date) ?? fmtDateHeading(date);
-}
-
-function fmtHourLabel(h: number): string {
-  // Honor the 24-hour clock preference for the time axis. Wrapped so the
-  // helper still works if prefs are unavailable (SSR / isolated unit runs),
-  // falling back to the 12-hour AM/PM labels.
-  try {
-    if (readDateTimePrefs().clock === "24h") return String(h).padStart(2, "0");
-  } catch { /* no prefs available — use the 12-hour labels below */ }
-  if (h === 0) return "12 AM";
-  if (h < 12) return `${h} AM`;
-  if (h === 12) return "12 PM";
-  return `${h - 12} PM`;
-}
-
-function defaultEntryFireAt(day: Date): string {
-  const target = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0, 0, 0);
-  const now = new Date();
-  if (target.getTime() > now.getTime()) return target.toISOString();
-
-  const fallback = new Date(now);
-  fallback.setMinutes(Math.ceil((fallback.getMinutes() + 5) / 15) * 15, 0, 0);
-  return fallback.toISOString();
-}
-
-// A reminder still pending after its fire time never fired — flag it so it
-// stands out on the calendar like it does in the Schedules list.
-function isOverdueReminder(item: InboxItem): boolean {
-  return (
-    item.kind === "reminder" &&
-    item.status === "pending" &&
-    !!item.fireAt &&
-    new Date(item.fireAt).getTime() < Date.now()
-  );
-}
-
-function urgencyColor(item: InboxItem): string {
-  if (isOverdueReminder(item)) return "bg-[var(--color-warning)]";
-  const meta = (item as unknown as { comms?: { urgency?: string } }).comms;
-  if (!meta) return "bg-[var(--text-muted)]";
-  if (meta.urgency === "expiring") return "bg-[var(--accent-presence)]";
-  if (meta.urgency === "time-sensitive") return "bg-[var(--color-warning)]";
-  return "bg-[var(--text-muted)]";
-}
-
-function platformIcon(item: InboxItem): IconName {
-  if (item.kind === "daily-summary") return "ph:newspaper";
-  const meta = (item as unknown as { comms?: { platform?: string } }).comms;
-  if (!meta?.platform) return "ph:bell";
-  const map: Record<string, IconName> = {
-    twitter: "ph:twitter-logo",
-    linkedin: "ph:linkedin-logo",
-    instagram: "ph:instagram-logo",
-    tiktok: "ph:tiktok-logo",
-    discord: "ph:discord-logo",
-    telegram: "ph:telegram-logo",
-    bluesky: "ph:butterfly",
-  };
-  return (map[meta.platform] ?? "ph:bell") as IconName;
-}
-
-// ─── Item chip (shared across views) ──────────────────────────────────────────
-
-function ItemChip({
-  item,
-  onClick,
-}: {
-  item: InboxItem;
-  onClick?: () => void;
-}) {
-  const done = item.status === "done";
-  return (
-    <button
-      onClick={onClick}
-      className={`focus-ring group flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-2.5 text-left text-[13px] transition-colors md:py-1 md:text-[11px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
-    >
-      {done
-        ? <Icon name="ph:check-circle" className="shrink-0 text-[var(--text-muted)] text-[12px]" />
-        : <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />}
-      <Icon
-        name={platformIcon(item)}
-        className="shrink-0 text-[var(--text-muted)] text-[12px]"
-      />
-      <span className={`flex-1 truncate text-[var(--text-primary)] ${done ? "line-through" : ""}`}>{item.title}</span>
-      {(item.fireAt ?? item.firedAt) && (
-        <span className="shrink-0 text-[var(--text-muted)]">
-          {fmtTime((item.fireAt ?? item.firedAt)!)}
-        </span>
-      )}
-    </button>
-  );
-}
-
-function EmptyScheduleState({
-  icon,
-  label,
-  onAddEntry,
-}: {
-  icon: IconName;
-  label: string;
-  onAddEntry?: () => void;
-}) {
-  return (
-    <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-3 px-4 py-12 text-center text-sm text-[var(--text-muted)]">
-      <Icon name={icon} className="text-3xl opacity-30" />
-      <span>{label}</span>
-      {onAddEntry ? (
-        <button
-          type="button"
-          onClick={onAddEntry}
-          className="calendar-empty-action inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)]"
-        >
-          <Icon name="ph:plus" width={12} />
-          Add task or event
-        </button>
-      ) : null}
-    </div>
-  );
-}
 
 // ─── Agenda view ──────────────────────────────────────────────────────────────
 
@@ -239,7 +60,6 @@ function AgendaView({
   anchor,
   onAddEntry,
   onOpenItem,
-  onReschedule,
   onOpenDeadline,
 }: {
   items: InboxItem[];
@@ -247,10 +67,10 @@ function AgendaView({
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
-  onReschedule?: (id: string, fireAtIso: string) => void;
   onOpenDeadline?: (id: string) => void;
 }) {
   const [showPast, setShowPast] = useState(false);
+  const now = useNow();
 
   const pastCount = useMemo(
     () => items.filter((it) => {
@@ -280,10 +100,25 @@ function AgendaView({
     }
     return Array.from(map.values())
       .filter((g) => showPast ? true : g.date >= startOfDay(anchor))
-      .sort((a, b) => showPast
-        ? b.date.getTime() - a.date.getTime()
-        : a.date.getTime() - b.date.getTime());
+      // Always chronological: revealing past prepends older groups above
+      // today instead of flipping the whole agenda to future-first.
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [items, deadlines, anchor, showPast]);
+
+  // The single soonest still-pending item — highlighted as "Next" so the agenda
+  // answers "what's up next" without the user scanning for it.
+  const nextId = useMemo(() => {
+    if (!now) return null;
+    const t = now.getTime();
+    let best: { id: string; ms: number } | null = null;
+    for (const it of items) {
+      if (it.status === "done" || it.status === "dismissed") continue;
+      const d = itemDate(it);
+      if (!d || d.getTime() < t) continue;
+      if (!best || d.getTime() < best.ms) best = { id: it.id, ms: d.getTime() };
+    }
+    return best?.id ?? null;
+  }, [items, now]);
 
   if (groups.length === 0) {
     return (
@@ -291,73 +126,92 @@ function AgendaView({
         <Icon name="ph:calendar-blank" width={32} className="text-[var(--text-muted)]" />
         <div>Nothing scheduled upcoming.</div>
         {pastCount > 0 && !showPast ? (
-          <button
-            type="button"
+          <Button
+            size="sm"
             onClick={() => setShowPast(true)}
-            className="calendar-empty-action focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-empty-action"
           >
             Show {pastCount} past item{pastCount !== 1 ? "s" : ""}
-          </button>
+          </Button>
         ) : null}
         {onAddEntry ? (
-          <button
-            type="button"
+          <Button
+            size="sm"
+            leadingIcon="ph:plus"
             onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
-            className="calendar-empty-action focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-empty-action"
+            title="Creates a scheduled reminder (an inbox item) — board tasks get due dates on the Tasks surface"
           >
-            <Icon name="ph:plus" width={11} />
-            Add task or event
-          </button>
+            Add reminder
+          </Button>
         ) : null}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6 overflow-y-auto px-3 py-4 sm:px-6">
+    <div className="cal-agenda-scroll flex flex-col overflow-y-auto px-3 py-3 sm:px-5">
       {showPast ? (
-        <div className="-mb-2 flex justify-end">
-          <button
-            type="button"
+        <div className="mb-1 flex justify-end">
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => setShowPast(false)}
-            className="calendar-empty-action focus-ring rounded-md px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-empty-action"
           >
             Hide past
-          </button>
+          </Button>
+        </div>
+      ) : pastCount > 0 ? (
+        // Past items must stay reachable when upcoming groups exist too — not
+        // only from the empty state.
+        <div className="mb-1 flex justify-end">
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => setShowPast(true)}
+            className="calendar-empty-action"
+          >
+            Show {pastCount} past item{pastCount !== 1 ? "s" : ""}
+          </Button>
         </div>
       ) : null}
       {groups.map(({ date, items: groupItems, deadlines: groupDeadlines }) => {
         const total = groupItems.length + groupDeadlines.length;
+        const isToday = !!now && isSameDay(date, now);
+        const relWord = now ? relDayWord(date, now) : null;
         return (
-        <div key={date.toISOString()}>
-          <div className="mb-2 flex items-center gap-2 rounded-md border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-3 py-1.5">
-            <span
-              className={`text-[12px] font-bold uppercase tracking-wider ${
-                isSameDay(date, new Date())
-                  ? "text-[var(--accent-presence)]"
-                  : "text-[var(--text-primary)]"
-              }`}
-            >
-              {agendaDayLabel(date)}
+        <div key={date.toISOString()} className={`cal-agenda-group${isToday ? " is-today" : ""}`}>
+          <div className="cal-agenda-dayhead">
+            <span className="cal-agenda-datebadge" aria-hidden>
+              <span className="cal-agenda-dow">{WEEKDAYS[date.getDay()]}</span>
+              <span className="cal-agenda-dnum">{date.getDate()}</span>
             </span>
-            <span className="ml-auto font-mono text-[11px] text-[var(--text-secondary)] opacity-80">
-              {total} item{total !== 1 ? "s" : ""}
+            <span className="cal-agenda-daylabel">
+              <span className="cal-agenda-daylabel-main">
+                {now ? agendaDayLabel(date, now) : fmtDateHeading(date)}
+              </span>
+              {relWord ? (
+                <span className="cal-agenda-daylabel-sub">{MONTHS[date.getMonth()]} {date.getDate()}, {date.getFullYear()}</span>
+              ) : null}
             </span>
+            <span className="cal-agenda-count" title={`${total} item${total !== 1 ? "s" : ""}`}>{total}</span>
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="cal-agenda-list">
             {groupDeadlines.map((d) => (
-              <DeadlineChip key={d.id} deadline={d} onOpen={onOpenDeadline} />
+              <AgendaDeadlineRow key={d.id} deadline={d} onOpen={onOpenDeadline} />
             ))}
             {[...groupItems]
-              .sort((a, b) => {
-                const ta = new Date(a.fireAt ?? a.createdAt).getTime();
-                const tb = new Date(b.fireAt ?? b.createdAt).getTime();
-                return ta - tb;
-              })
+              // Order by the same key the day bucket uses (itemDate: fireAt ??
+              // firedAt ?? createdAt) so fired items with no fireAt stay in
+              // chronological order instead of falling back to createdAt.
+              .sort((a, b) => (itemDate(a)?.getTime() ?? 0) - (itemDate(b)?.getTime() ?? 0))
               .map((item) => (
                 <ItemChip
                   key={item.id}
                   item={item}
+                  isNext={item.id === nextId}
+                  now={now}
                   onClick={() => onOpenItem?.(item)}
                 />
               ))}
@@ -376,17 +230,21 @@ const MAX_ALLDAY_VISIBLE = 3;
 function AllDayStrip({
   columns,
   onOpenItem,
-  onDayClick,
+  onMore,
+  maxVisible = MAX_ALLDAY_VISIBLE,
 }: {
   columns: { date: Date; items: InboxItem[] }[];
   onOpenItem?: (item: InboxItem) => void;
-  onDayClick?: (day: Date) => void;
+  /** Reveal a column's overflow items (jump to that day). Omit when uncapped. */
+  onMore?: (day: Date) => void;
+  /** Per-column cap before "+N more". Infinity = show every item (Day view). */
+  maxVisible?: number;
 }) {
   return (
     <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
       {/* Label */}
       <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
-        <span className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right">
+        <span className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right">
           All
           <br />
           day
@@ -398,29 +256,33 @@ function AllDayStrip({
           columns.length > 1 ? "min-w-[560px]" : "min-w-[180px]"
         }`}
       >
-        {columns.map((col, i) => (
+        {columns.map((col, i) => {
+          const cap = Number.isFinite(maxVisible) ? maxVisible : col.items.length;
+          return (
           <div key={i} className="flex-1 min-w-[80px] flex flex-col gap-0.5 p-1">
-            {col.items.slice(0, MAX_ALLDAY_VISIBLE).map((item) => (
+            {col.items.slice(0, cap).map((item) => (
               <button
                 key={item.id}
                 onClick={() => onOpenItem?.(item)}
-                className="focus-ring-inset flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] bg-[var(--accent-presence)]/15 border border-[var(--accent-presence)]/30 hover:bg-[var(--accent-presence)]/25 transition-colors w-full text-left truncate"
+                title={item.title}
+                className="focus-ring-inset flex items-center gap-1 rounded px-1.5 py-0.5 text-[length:var(--text-2xs)] bg-[var(--accent-presence)]/15 border border-[var(--accent-presence)]/30 hover:bg-[var(--accent-presence)]/25 transition-colors w-full text-left truncate"
               >
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />
+                <span role="img" aria-label={urgencyLabel(item)} title={urgencyLabel(item)} className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />
                 <span className="truncate text-[var(--text-primary)]">{item.title}</span>
               </button>
             ))}
-            {col.items.length > MAX_ALLDAY_VISIBLE && (
+            {col.items.length > cap && (
               <button
-                onClick={() => onDayClick?.(col.date)}
-                className="focus-ring-inset text-[9px] text-[var(--text-muted)] px-1 hover:text-[var(--accent-presence)] transition-colors text-left w-full"
-                title={`${col.items.length - MAX_ALLDAY_VISIBLE} more — click to see all`}
+                onClick={() => onMore?.(col.date)}
+                className="focus-ring-inset text-[length:var(--text-2xs)] text-[var(--text-muted)] px-1 hover:text-[var(--accent-presence)] transition-colors text-left w-full"
+                title={`${col.items.length - cap} more — click to open the day`}
               >
-                +{col.items.length - MAX_ALLDAY_VISIBLE} more
+                +{col.items.length - cap} more
               </button>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -445,6 +307,8 @@ function DeadlineChip({
   size?: "sm" | "xs";
 }) {
   const done = deadline.status === "done";
+  const accent = useFamiliarAccent(deadline.familiarId);
+  const familiarName = useFamiliarName(deadline.familiarId);
   return (
     <button
       type="button"
@@ -453,8 +317,10 @@ function DeadlineChip({
         e.stopPropagation();
         onOpen?.(deadline.id);
       }}
-      title={`${deadline.title} — task deadline`}
-      className={`focus-ring-inset flex w-full items-center gap-1 truncate rounded border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/12 px-1.5 py-0.5 text-left transition-colors hover:bg-[var(--color-warning)]/20 ${size === "xs" ? "text-[9px]" : "text-[10px]"}`}
+      aria-label={`${deadline.title}, task deadline${done ? ", done" : ""}${familiarName ? `, ${familiarName}` : ""}`}
+      title={`${deadline.title} — task deadline${familiarName ? ` — ${familiarName}` : ""}`}
+      style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
+      className={`focus-ring-inset flex w-full items-center gap-1 truncate rounded border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/12 px-1.5 py-0.5 text-left transition-colors hover:bg-[var(--color-warning)]/20 ${size === "xs" ? "text-[length:var(--text-2xs)]" : "text-[length:var(--text-2xs)]"}`}
     >
       <Icon name="ph:clock-countdown" width={size === "xs" ? 9 : 11} className="shrink-0 text-[var(--color-warning)]" aria-hidden />
       <span className={`truncate text-[var(--text-primary)] ${done ? "line-through opacity-70" : ""}`}>{deadline.title}</span>
@@ -478,7 +344,10 @@ function DeadlineStrip({
   return (
     <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
       <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
-        <span className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right">
+        <span
+          className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right"
+          title="Task due dates from Tasks — separate from your scheduled reminders below"
+        >
           Due
         </span>
       </div>
@@ -497,7 +366,7 @@ function DeadlineStrip({
               {col.deadlines.length > cap && (
                 <button
                   onClick={() => onMore?.(col.date)}
-                  className="focus-ring-inset text-[9px] text-[var(--text-muted)] px-1 hover:text-[var(--color-warning)] transition-colors text-left w-full"
+                  className="focus-ring-inset text-[length:var(--text-2xs)] text-[var(--text-muted)] px-1 hover:text-[var(--color-warning)] transition-colors text-left w-full"
                   title={`${col.deadlines.length - cap} more deadlines`}
                 >
                   +{col.deadlines.length - cap} more
@@ -522,28 +391,54 @@ function isAllDay(item: InboxItem): boolean {
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const HOUR_HEIGHT = 56;
+// Timed-grid interactions snap to 15-min slots. Floor to the first slot (and
+// cap at the last) so an event placed / dragged / nudged to the very top of the
+// day never lands on exact local midnight — isAllDay() treats 00:00:00 as an
+// all-day marker, which would yank the event out of the hourly grid into the
+// all-day strip.
+const SNAP_MIN = 15;
+const MAX_TIMED_MIN = 24 * 60 - SNAP_MIN;
+const clampTimedMinutes = (min: number) =>
+  Math.min(MAX_TIMED_MIN, Math.max(SNAP_MIN, min));
 
 function TimeGrid({
   columns,
   onOpenItem,
   onAddEntry,
   onReschedule,
+  maxLanes = WEEK_MAX_LANES,
 }: {
-  columns: { label: string; date: Date; isToday: boolean; items: InboxItem[] }[];
+  columns: { label: string; date: Date; items: InboxItem[] }[];
   onOpenItem?: (item: InboxItem) => void;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onReschedule?: (id: string, fireAtIso: string) => void;
+  /** Lane cap before concurrent events roll up into a "+N" pill. */
+  maxLanes?: number;
 }) {
+  // Read the per-familiar accent fn once (events render in a loop, so we can't
+  // call the hook per item).
+  const accentFor = useContext(FamiliarColorContext);
+  const nameFor = useContext(FamiliarNameContext);
+  // Reschedules (drag drop + Alt+↑/↓) move the event silently for AT users
+  // otherwise — confirm the new time through the shared live region.
+  const { announce } = useAnnouncer();
   // Tracks the in-flight drag: the item id + where in the block it was grabbed,
   // so the drop snaps the block's start (not the cursor) to the new time.
   const dragRef = useRef<{ id: string; grabY: number } | null>(null);
   const nowRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
-  const today = new Date();
+  const now = useNow();
+  const scrolledRef = useRef(false);
 
+  // Center the grid on the current time once it's known (after mount, since
+  // `now` is null on the server / first paint). Latched so it never fights a
+  // later manual scroll or the per-minute tick.
   useEffect(() => {
-    nowRef.current?.scrollIntoView({ block: "center" });
-  }, []);
+    if (now && !scrolledRef.current && nowRef.current) {
+      nowRef.current.scrollIntoView({ block: "center" });
+      scrolledRef.current = true;
+    }
+  }, [now]);
 
   useRovingTabIndex({
     containerRef: gridRef,
@@ -551,9 +446,20 @@ function TimeGrid({
     orientation: "vertical",
   });
 
+  // Lane-pack each column once per columns change rather than on every render
+  // (a drag re-renders the grid continuously).
+  const packedColumns = useMemo(
+    () => columns.map((c) => packEventColumnsWithOverflow(c.items, maxLanes)),
+    [columns, maxLanes],
+  );
+
+  // One popover serves every "+N" pill: clicking a pill anchors the popover to
+  // that pill and lists its rolled-up events.
+  const [overflowOpen, setOverflowOpen] = useState<{ colIdx: number; overflow: PlacedOverflow } | null>(null);
+  const overflowAnchorRef = useRef<HTMLElement | null>(null);
+
   const totalHeight = 24 * HOUR_HEIGHT;
-  const nowMinutes = today.getHours() * 60 + today.getMinutes();
-  const nowTop = (nowMinutes / 60) * HOUR_HEIGHT;
+  const nowTop = now ? ((now.getHours() * 60 + now.getMinutes()) / 60) * HOUR_HEIGHT : 0;
 
   return (
     <div ref={gridRef} className="flex flex-1 overflow-auto">
@@ -565,7 +471,7 @@ function TimeGrid({
         {HOURS.map((h) => (
           <div
             key={h}
-            className="absolute right-2 text-[9px] text-[var(--text-muted)] pt-0.5"
+            className="absolute right-2 text-[length:var(--text-2xs)] text-[var(--text-muted)] pt-0.5"
             style={{ top: h * HOUR_HEIGHT }}
           >
             {fmtHourLabel(h)}
@@ -582,8 +488,8 @@ function TimeGrid({
         {columns.map((col, ci) => (
           <div
             key={ci}
-            className={`calendar-daycol flex-1 relative min-w-[80px] ${
-              col.isToday ? "bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)]" : ""
+            className={`flex-1 relative min-w-[80px] ${
+              now && isSameDay(col.date, now) ? "bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)]" : ""
             } ${onAddEntry ? "cursor-pointer" : ""}`}
             style={{ height: totalHeight }}
             title={onAddEntry ? "Click an empty slot to add an event" : undefined}
@@ -595,7 +501,7 @@ function TimeGrid({
                     const rect = e.currentTarget.getBoundingClientRect();
                     const hour = Math.max(0, Math.min(23, Math.floor((e.clientY - rect.top) / HOUR_HEIGHT)));
                     const slot = new Date(col.date);
-                    slot.setHours(hour, 0, 0, 0);
+                    slot.setHours(0, clampTimedMinutes(hour * 60), 0, 0);
                     onAddEntry({ fireAt: slot.toISOString() });
                   }
                 : undefined
@@ -618,13 +524,14 @@ function TimeGrid({
                     const rect = e.currentTarget.getBoundingClientRect();
                     // Snap the block's start to the nearest 15 minutes at the drop.
                     const topPx = e.clientY - rect.top - drag.grabY;
-                    const minutes = Math.max(
-                      0,
-                      Math.min(24 * 60 - 15, Math.round((topPx / HOUR_HEIGHT) * 4) * 15),
-                    );
+                    const minutes = clampTimedMinutes(Math.round((topPx / HOUR_HEIGHT) * 4) * 15);
                     const slot = new Date(col.date);
                     slot.setHours(0, minutes, 0, 0);
                     onReschedule(drag.id, slot.toISOString());
+                    // Cross-day drags land in a different column than the one
+                    // that owns the item — search every column for the title.
+                    const dragged = columns.flatMap((c) => c.items).find((it) => it.id === drag.id);
+                    announce(`Rescheduled "${dragged?.title ?? "event"}" to ${col.label}, ${fmtTime(slot.toISOString())}`);
                   }
                 : undefined
             }
@@ -638,24 +545,26 @@ function TimeGrid({
               />
             ))}
 
-            {/* Current time indicator (today's column only) */}
-            {col.isToday && (
+            {/* Current time indicator (today's column only, once `now` resolves) */}
+            {now && isSameDay(col.date, now) && (
               <div
                 ref={nowRef}
                 className="absolute left-0 right-0 flex items-center z-10"
                 style={{ top: nowTop }}
               >
-                <div className="h-2 w-2 rounded-full bg-[var(--accent-presence)] -ml-1 shrink-0" />
-                <div className="flex-1 h-px bg-[var(--accent-presence)]" />
+                <span className="sr-only">Current time, {fmtTime(now.toISOString())}</span>
+                <div className="h-2 w-2 rounded-full bg-[var(--accent-presence)] -ml-1 shrink-0" aria-hidden />
+                <div className="flex-1 h-px bg-[var(--accent-presence)]" aria-hidden />
               </div>
             )}
 
             {/* Items — lane-packed so overlaps sit side by side */}
-            {packEventColumns(col.items).map((ev) => {
+            {packedColumns[ci].events.map((ev) => {
               const widthPct = 100 / ev.lanes;
               const leftPct = ev.lane * widthPct;
               const height = Math.max(18, ((ev.end - ev.start) / 60) * HOUR_HEIGHT - 2);
               const done = ev.item.status === "done";
+              const familiarName = nameFor(ev.item.familiarId);
               return (
                 <button
                   key={ev.item.id}
@@ -674,8 +583,27 @@ function TimeGrid({
                       : undefined
                   }
                   onClick={() => onOpenItem?.(ev.item)}
-                  title={onReschedule ? `${ev.item.title} — drag to reschedule` : ev.item.title}
-                  className={`focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px] border transition-colors overflow-hidden ${
+                  onKeyDown={
+                    onReschedule
+                      ? (e) => {
+                          // Keyboard reschedule (drag is mouse-only): Alt+↑/↓
+                          // nudges the start ±15 min, Alt+Shift+↑/↓ by an hour.
+                          // Plain ↑/↓ stay with the roving focus nav.
+                          if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+                          e.preventDefault();
+                          const step = (e.shiftKey ? 60 : 15) * (e.key === "ArrowDown" ? 1 : -1);
+                          const minutes = clampTimedMinutes(ev.start + step);
+                          if (minutes === ev.start) return;
+                          const slot = new Date(col.date);
+                          slot.setHours(0, minutes, 0, 0);
+                          onReschedule(ev.item.id, slot.toISOString());
+                          announce(`Rescheduled "${ev.item.title}" to ${fmtTime(slot.toISOString())}`);
+                        }
+                      : undefined
+                  }
+                  aria-label={`${fmtTime((ev.item.fireAt ?? ev.item.firedAt)!)}, ${ev.item.title}${done ? ", done" : ""}${familiarName ? `, ${familiarName}` : ""}`}
+                  title={`${familiarName ? `${ev.item.title} — ${familiarName}` : ev.item.title}${onReschedule ? " — drag, or Alt+↑/↓, to reschedule" : ""}`}
+                  className={`focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[length:var(--text-2xs)] border transition-colors overflow-hidden ${
                     done
                       ? "border-[var(--border-hairline)] bg-[var(--bg-raised)] opacity-60"
                       : "border-[var(--accent-presence)]/30 bg-[var(--accent-presence)]/15 hover:bg-[var(--accent-presence)]/25"
@@ -685,20 +613,93 @@ function TimeGrid({
                     height,
                     left: `calc(${leftPct}% + 1px)`,
                     width: `calc(${widthPct}% - 2px)`,
+                    ...(accentFor(ev.item.familiarId) && !done
+                      ? { borderLeftColor: accentFor(ev.item.familiarId) as string, borderLeftWidth: 3 }
+                      : null),
                   }}
                 >
                   {done
                     ? <Icon name="ph:check" width={9} className="shrink-0 text-[var(--text-muted)]" />
-                    : <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(ev.item)}`} />}
+                    : <span role="img" aria-label={urgencyLabel(ev.item)} title={urgencyLabel(ev.item)} className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(ev.item)}`} />}
                   <span className={`truncate ${done ? "line-through" : ""}`}>{ev.item.title}</span>
+                </button>
+              );
+            })}
+
+            {/* "+N" rollup pills — concurrent events beyond the lane cap */}
+            {packedColumns[ci].overflows.map((ov, oi) => {
+              const widthPct = 100 / ov.lanes;
+              const leftPct = ov.lane * widthPct;
+              const height = Math.max(18, ((ov.end - ov.start) / 60) * HOUR_HEIGHT - 2);
+              const open = overflowOpen?.colIdx === ci && overflowOpen.overflow === ov;
+              return (
+                <button
+                  key={`ov-${oi}`}
+                  type="button"
+                  data-calendar-event="true"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  aria-label={`${ov.items.length} more events from ${fmtTime(minutesToIso(col.date, ov.start))}`}
+                  title={`${ov.items.length} more events — click to list`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    overflowAnchorRef.current = e.currentTarget;
+                    setOverflowOpen(open ? null : { colIdx: ci, overflow: ov });
+                  }}
+                  className="focus-ring-inset absolute flex items-center justify-center rounded border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1 text-[length:var(--text-2xs)] font-semibold tabular-nums text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  style={{
+                    top: (ov.start / 60) * HOUR_HEIGHT + 1,
+                    height,
+                    left: `calc(${leftPct}% + 1px)`,
+                    width: `calc(${widthPct}% - 2px)`,
+                  }}
+                >
+                  +{ov.items.length}
                 </button>
               );
             })}
           </div>
         ))}
       </div>
+
+      {/* One shared popover lists whichever "+N" pill is open */}
+      <Popover
+        open={overflowOpen !== null}
+        onOpenChange={(next) => { if (!next) setOverflowOpen(null); }}
+        anchorRef={overflowAnchorRef}
+        placement="bottom-start"
+        minWidth={220}
+        ariaLabel="More events"
+      >
+        <PopoverBody role="menu" ariaLabel="More events">
+          {(overflowOpen?.overflow.items ?? []).map((item) => {
+            const iso = item.fireAt ?? item.firedAt;
+            return (
+              <PopoverItem
+                key={item.id}
+                onSelect={() => {
+                  setOverflowOpen(null);
+                  onOpenItem?.(item);
+                }}
+                title={item.title}
+              >
+                <span className="tabular-nums text-[var(--text-muted)]">{iso ? fmtTime(iso) : ""}</span>
+                {" "}
+                {item.title}
+              </PopoverItem>
+            );
+          })}
+        </PopoverBody>
+      </Popover>
     </div>
   );
+}
+
+/** ISO timestamp for a minutes-from-midnight offset on a given day. */
+function minutesToIso(day: Date, minutes: number): string {
+  const d = new Date(day);
+  d.setHours(0, minutes, 0, 0);
+  return d.toISOString();
 }
 
 // ─── Day view ─────────────────────────────────────────────────────────────────
@@ -720,7 +721,7 @@ function DayView({
   onReschedule?: (id: string, fireAtIso: string) => void;
   onOpenDeadline?: (id: string) => void;
 }) {
-  const today = new Date();
+  const now = useNow();
 
   const allDayItems = useMemo(
     () => items.filter((it) => {
@@ -746,21 +747,24 @@ function DayView({
     [deadlines, anchor],
   );
 
+  // `isToday` is derived inside TimeGrid from its own clock, so the 60s
+  // now-tick never invalidates this memo (which would otherwise re-pack the
+  // column every minute).
   const columns = useMemo(() => [{
     label: fmtDateHeading(anchor),
     date: anchor,
-    isToday: isSameDay(anchor, today),
     items: timedItems,
   }], [anchor, timedItems]);
 
+  const rel = now ? relDayWord(anchor, now) : null;
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Header */}
       <div className="shrink-0 border-b border-[var(--border-hairline)] px-3 py-3 sm:px-6">
         <h2 className="text-sm font-medium text-[var(--text-primary)]">
-          {relDayWord(anchor) ? (
-            <span className="text-[var(--accent-presence)]">{relDayWord(anchor)} · </span>
+          {rel ? (
+            <span className="text-[var(--accent-presence)]">{rel} · </span>
           ) : null}
           {fmtDateHeading(anchor)}
         </h2>
@@ -772,16 +776,17 @@ function DayView({
           onOpen={onOpenDeadline}
         />
       )}
-      {/* All-day strip */}
+      {/* All-day strip — single wide column, so show every all-day item. */}
       {allDayItems.length > 0 && (
         <AllDayStrip
           columns={[{ date: anchor, items: allDayItems }]}
           onOpenItem={onOpenItem}
+          maxVisible={Infinity}
         />
       )}
       {/* Time grid — always rendered for visual parity with Week */}
       <div className="relative flex flex-1 overflow-hidden">
-        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} />
+        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} maxLanes={DAY_MAX_LANES} />
       </div>
     </div>
   );
@@ -797,6 +802,7 @@ function WeekView({
   onOpenItem,
   onReschedule,
   onOpenDeadline,
+  onOpenDay,
 }: {
   items: InboxItem[];
   deadlines?: CalendarDeadline[];
@@ -805,16 +811,27 @@ function WeekView({
   onOpenItem?: (item: InboxItem) => void;
   onReschedule?: (id: string, fireAtIso: string) => void;
   onOpenDeadline?: (id: string) => void;
+  /** Jump to the single-day view (used by all-day overflow). */
+  onOpenDay?: (day: Date) => void;
 }) {
-  const weekStart = startOfWeek(anchor);
-  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-  const today = new Date();
+  const now = useNow();
+  // Key the week's day list on the week-start timestamp so the memo below is
+  // stable across renders (Array.from + startOfWeek would otherwise mint a new
+  // `days` identity every render and defeat the column memoisation).
+  const weekStartMs = startOfWeek(anchor).getTime();
+  const days = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(new Date(weekStartMs), i)),
+    [weekStartMs],
+  );
 
+  // `isToday` is derived per-column at render time (here for the header, in
+  // TimeGrid for the grid) rather than baked into this memo, so the 60s
+  // now-tick doesn't mint a new columns array and force TimeGrid to re-pack
+  // every column each minute.
   const columns = useMemo(() => {
     return days.map((day) => ({
       label: `${WEEKDAYS[day.getDay()]} ${day.getDate()}`,
       date: day,
-      isToday: isSameDay(day, today),
       items: items.filter((it) => {
         const d = itemDate(it);
         return d && isSameDay(d, day) && !isAllDay(it);
@@ -853,8 +870,9 @@ function WeekView({
           {columns.map((col, i) => (
             <div
               key={i}
+              aria-current={now && isSameDay(col.date, now) ? "date" : undefined}
               className={`group relative flex-1 min-w-[80px] px-2 py-2 text-center ${
-                col.isToday ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]" : ""
+                now && isSameDay(col.date, now) ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]" : ""
               }`}
             >
               {onAddEntry && (
@@ -868,15 +886,16 @@ function WeekView({
                   <Icon name="ph:plus" width={10} aria-hidden />
                 </button>
               )}
-              <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">
+              <div className="text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-secondary)]">
                 {WEEKDAYS[col.date.getDay()]}
               </div>
               <div
                 className={`text-sm font-semibold ${
-                  col.isToday ? "text-[var(--accent-presence)]" : "text-[var(--text-primary)]"
+                  now && isSameDay(col.date, now) ? "text-[var(--accent-presence)]" : "text-[var(--text-primary)]"
                 }`}
               >
                 {col.date.getDate()}
+                {now && isSameDay(col.date, now) && <span className="sr-only">, today</span>}
               </div>
             </div>
           ))}
@@ -886,9 +905,9 @@ function WeekView({
       {deadlineColumns.some((c) => c.deadlines.length > 0) && (
         <DeadlineStrip columns={deadlineColumns} onOpen={onOpenDeadline} />
       )}
-      {/* All-day strip */}
+      {/* All-day strip — overflow "+N more" opens that day's single-day view. */}
       {allDayColumns.some((c) => c.items.length > 0) && (
-        <AllDayStrip columns={allDayColumns} onOpenItem={onOpenItem} />
+        <AllDayStrip columns={allDayColumns} onOpenItem={onOpenItem} onMore={onOpenDay} />
       )}
       <div className="relative flex flex-1 overflow-hidden">
         <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} />
@@ -916,12 +935,29 @@ function MonthView({
   onAddEntry?: (opts: { fireAt: string }) => void;
   onOpenDeadline?: (id: string) => void;
 }) {
-  const today = new Date();
+  const accentFor = useContext(FamiliarColorContext);
+  const nameFor = useContext(FamiliarNameContext);
+  const now = useNow();
   const monthStart = startOfMonth(anchor);
   const gridStart = startOfWeek(monthStart);
 
   // 6 weeks × 7 days grid
   const cells = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+  const weeks = Array.from({ length: 6 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+
+  // 2-D roving focus over the day cells (←/→ = day, ↑/↓ = week), per the
+  // WAI-ARIA grid pattern. The tab stop follows the anchor day — the roving
+  // default of "first cell" would land on the previous month's tail.
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const { setActiveIndex } = useRovingTabIndex({
+    containerRef: gridRef,
+    itemSelector: '[data-month-cell="true"]',
+    columns: 7,
+  });
+  const anchorIndex = cells.findIndex((d) => isSameDay(d, anchor));
+  useEffect(() => {
+    if (anchorIndex >= 0) setActiveIndex(anchorIndex);
+  }, [anchorIndex, setActiveIndex]);
 
   const byDay = useMemo(() => {
     const map = new Map<string, InboxItem[]>();
@@ -931,6 +967,11 @@ function MonthView({
       const key = startOfDay(d).toISOString();
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(item);
+    }
+    // Show each day's items in chronological order, like the other views (the
+    // map preserves feed order, which is otherwise arbitrary).
+    for (const list of map.values()) {
+      list.sort((a, b) => (itemDate(a)?.getTime() ?? 0) - (itemDate(b)?.getTime() ?? 0));
     }
     return map;
   }, [items]);
@@ -951,76 +992,113 @@ function MonthView({
     <div className="flex flex-1 flex-col overflow-hidden px-2 pb-3 sm:px-4 sm:pb-4">
       {/* Weekday headers */}
       <div className="min-h-0 flex-1 overflow-x-auto">
-        <div className="flex h-full min-w-[560px] flex-col">
-          <div className="mb-1 grid grid-cols-7">
+        <div
+          ref={gridRef}
+          role="grid"
+          aria-label={`${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`}
+          className="flex h-full min-w-[560px] flex-col"
+        >
+          <div role="row" className="mb-1 grid grid-cols-7">
             {WEEKDAYS.map((wd) => (
               <div
                 key={wd}
-                className="py-1 text-center text-[10px] uppercase tracking-wider text-[var(--text-secondary)]"
+                role="columnheader"
+                className="py-1 text-center text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-secondary)]"
               >
                 {wd}
               </div>
             ))}
           </div>
-          {/* Day cells */}
-          <div className="grid flex-1 grid-cols-7 grid-rows-6 gap-px overflow-hidden rounded-lg bg-[var(--border-hairline)]">
-            {cells.map((day, i) => {
+          {/* Day cells — one row per week (flex-col + gap-px reproduces the
+              old grid-rows-6 hairline lattice while giving SRs real rows). */}
+          <div role="rowgroup" className="flex flex-1 flex-col gap-px overflow-hidden rounded-lg bg-[var(--border-hairline)]">
+            {weeks.map((week, wi) => (
+            <div key={wi} role="row" className="grid flex-1 grid-cols-7 gap-px">
+            {week.map((day) => {
               const key = startOfDay(day).toISOString();
               const dayItems = byDay.get(key) ?? [];
               const dayDeadlines = deadlinesByDay.get(key) ?? [];
               const isCurrentMonth = day.getMonth() === anchor.getMonth();
-              const isToday = isSameDay(day, today);
+              const isToday = now ? isSameDay(day, now) : false;
+              const isAnchor = isSameDay(day, anchor);
 
+              // Clicking an empty part of a current-month day pre-fills the add
+              // form for that day; the date number still navigates into the day.
+              const canAdd = isCurrentMonth && !!onAddEntry;
+              const itemsSuffix = dayItems.length ? `, ${dayItems.length} item${dayItems.length !== 1 ? "s" : ""}` : "";
+              const onCell = () => {
+                if (canAdd) onAddEntry!({ fireAt: defaultEntryFireAt(day) });
+                else onDayClick?.(day);
+              };
               return (
                 <div
-                  key={i}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`${fmtDateHeading(day)}${dayItems.length ? `, ${dayItems.length} item${dayItems.length !== 1 ? "s" : ""}` : ""}`}
-                  onClick={() => onDayClick?.(day)}
+                  key={key}
+                  role="gridcell"
+                  data-month-cell="true"
+                  tabIndex={-1}
+                  aria-selected={isAnchor || undefined}
+                  aria-current={isToday ? "date" : undefined}
+                  aria-label={`${canAdd ? `Add a reminder on ${fmtDateHeading(day)}` : fmtDateHeading(day)}${itemsSuffix}${isAnchor ? ", selected" : ""}`}
+                  onClick={onCell}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
+                    // Shift+Enter opens the day — the keyboard path for what
+                    // the (tab-skipped) date-number button does on click.
+                    if (e.key === "Enter" && e.shiftKey) {
                       e.preventDefault();
                       onDayClick?.(day);
+                      return;
+                    }
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onCell();
                     }
                   }}
+                  title={canAdd ? "Click to add a reminder — click the date (or Shift+Enter) to open the day" : undefined}
                   className={`group relative focus-ring-inset flex cursor-pointer flex-col overflow-hidden p-1.5 transition-colors ${
                     isCurrentMonth
                       ? "bg-[var(--bg-panel)] hover:bg-[var(--bg-raised)]"
                       : "bg-[var(--bg-base)] hover:bg-[var(--bg-panel)]"
                   } ${isToday ? "ring-1 ring-inset ring-[var(--accent-presence)]" : ""}`}
                 >
-                  {onAddEntry && isCurrentMonth && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAddEntry({ fireAt: defaultEntryFireAt(day) });
-                      }}
-                      aria-label={`Add a reminder on ${fmtDateHeading(day)}`}
-                      title="Add reminder"
-                      className="focus-ring absolute right-1 top-1 hidden h-4 w-4 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-presence)] group-hover:flex group-focus-within:flex"
-                    >
-                      <Icon name="ph:plus" width={10} aria-hidden />
-                    </button>
-                  )}
-                  <span
-                    className={`mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-medium ${
+                  {/* Out of the tab order (cave-sth7): 42 of these defeated
+                      the grid's single roving tab stop. Mouse click still
+                      works; keyboard uses Shift+Enter on the cell. */}
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={(e) => { e.stopPropagation(); onDayClick?.(day); }}
+                    aria-label={`Open ${fmtDateHeading(day)}`}
+                    className={`focus-ring mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[length:var(--text-xs)] font-medium ${
                       isToday
-                        ? "bg-[var(--accent-presence)] text-white"
+                        ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                         : isCurrentMonth
                         ? "text-[var(--text-primary)]"
                         : "text-[var(--text-muted)]"
                     }`}
                   >
                     {day.getDate()}
-                  </span>
+                  </button>
                   <div className="flex flex-col gap-0.5 overflow-hidden">
                     {dayDeadlines.slice(0, 2).map((d) => (
                       <DeadlineChip key={d.id} deadline={d} onOpen={onOpenDeadline} size="xs" />
                     ))}
+                    {dayDeadlines.length > 2 && (
+                      <button
+                        tabIndex={-1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDayClick?.(day);
+                        }}
+                        className="focus-ring w-full rounded px-1 text-left text-[length:var(--text-2xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--color-warning)]"
+                        title={`${dayDeadlines.length - 2} more deadlines — click to see all`}
+                      >
+                        +{dayDeadlines.length - 2} due
+                      </button>
+                    )}
                     {dayItems.slice(0, 3).map((item) => {
                       const done = item.status === "done";
+                      const accent = accentFor(item.familiarId);
+                      const familiarName = nameFor(item.familiarId);
                       return (
                       <button
                         key={item.id}
@@ -1028,23 +1106,26 @@ function MonthView({
                           e.stopPropagation();
                           onOpenItem?.(item);
                         }}
-                        title={item.title}
-                        className={`focus-ring flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] px-1 py-0.5 text-left text-[9px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
+                        title={familiarName ? `${item.title} — ${familiarName}` : item.title}
+                        style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
+                        className={`focus-ring flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] px-1 py-0.5 text-left text-[length:var(--text-2xs)] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
                       >
                         {done
                           ? <Icon name="ph:check" width={8} className="shrink-0 text-[var(--text-muted)]" />
-                          : <span className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />}
+                          : <span role="img" aria-label={urgencyLabel(item)} title={urgencyLabel(item)} className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />}
                         <span className={`truncate text-[var(--text-primary)] ${done ? "line-through" : ""}`}>{item.title}</span>
+                        {familiarName && <span className="sr-only">, {familiarName}</span>}
                       </button>
                       );
                     })}
                     {dayItems.length > 3 && (
                       <button
+                        tabIndex={-1}
                         onClick={(e) => {
                           e.stopPropagation();
                           onDayClick?.(day);
                         }}
-                        className="focus-ring w-full rounded px-1 text-left text-[9px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+                        className="focus-ring w-full rounded px-1 text-left text-[length:var(--text-2xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
                         title={`${dayItems.length - 3} more items — click to see all`}
                       >
                         +{dayItems.length - 3} more
@@ -1054,6 +1135,8 @@ function MonthView({
                 </div>
               );
             })}
+            </div>
+            ))}
           </div>
         </div>
       </div>
@@ -1076,19 +1159,15 @@ function MiniMonthPopover({
   const ref = useRef<HTMLDivElement>(null);
   const today = new Date();
 
+  // Trap focus + Escape + restore focus to the trigger on close. Previously
+  // Tab fell straight through to the calendar behind this dialog.
+  useFocusTrap(true, ref, { onEscape: onClose });
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
     const onClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
-    window.addEventListener("keydown", onKey);
     window.addEventListener("mousedown", onClick);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onClick);
-    };
+    return () => window.removeEventListener("mousedown", onClick);
   }, [onClose]);
 
   const monthStart = view;
@@ -1100,30 +1179,27 @@ function MiniMonthPopover({
       ref={ref}
       role="dialog"
       aria-label="Jump to date"
+      tabIndex={-1}
       className="absolute top-full left-0 z-20 mt-2 w-[260px] rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elevated)] p-3 shadow-2xl"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() - 1); return n; })}
-          className="focus-ring grid h-6 w-6 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        <IconButton
+          icon="ph:arrow-left-bold"
           aria-label="Previous month"
-        >
-          <Icon name="ph:arrow-left-bold" width={10} />
-        </button>
-        <span className="text-[12px] font-medium text-[var(--text-primary)]">
+          size="sm"
+          onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() - 1); return n; })}
+        />
+        <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
           {MONTHS[view.getMonth()]} {view.getFullYear()}
         </span>
-        <button
-          type="button"
-          onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() + 1); return n; })}
-          className="focus-ring grid h-6 w-6 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        <IconButton
+          icon="ph:arrow-right-bold"
           aria-label="Next month"
-        >
-          <Icon name="ph:arrow-right-bold" width={10} />
-        </button>
+          size="sm"
+          onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() + 1); return n; })}
+        />
       </div>
-      <div className="mb-1 grid grid-cols-7 gap-px text-[9px] uppercase tracking-widest text-[var(--text-muted)]">
+      <div className="mb-1 grid grid-cols-7 gap-px text-[length:var(--text-2xs)] uppercase tracking-widest text-[var(--text-muted)]">
         {WEEKDAYS.map((wd) => <div key={wd} className="text-center">{wd.slice(0, 1)}</div>)}
       </div>
       <div className="grid grid-cols-7 gap-px">
@@ -1136,9 +1212,11 @@ function MiniMonthPopover({
               key={i}
               type="button"
               onClick={() => onPick(day)}
-              className={`focus-ring h-7 w-full rounded text-[11px] transition-colors ${
+              aria-label={`${fmtDateHeading(day)}${isAnchor ? ", selected" : ""}`}
+              aria-current={isToday ? "date" : undefined}
+              className={`focus-ring h-7 w-full rounded text-[length:var(--text-xs)] transition-colors ${
                 isAnchor
-                  ? "bg-[var(--accent-presence)] text-white"
+                  ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                   : isToday
                     ? "ring-1 ring-inset ring-[var(--accent-presence)] text-[var(--accent-presence)]"
                     : isCurrentMonth
@@ -1151,13 +1229,15 @@ function MiniMonthPopover({
           );
         })}
       </div>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
+        fullWidth
         onClick={() => onPick(today)}
-        className="focus-ring mt-2 w-full rounded-md border border-[var(--border-hairline)] py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        className="mt-2"
       >
         Today
-      </button>
+      </Button>
     </div>
   );
 }
@@ -1181,6 +1261,7 @@ const KIND_LABEL: Record<InboxItem["kind"], string> = {
   agent: "Familiar",
   "response-needed": "Response needed",
   "daily-summary": "Daily summary",
+  milestone: "Milestone",
 };
 
 function ItemDetailPanel({
@@ -1200,6 +1281,7 @@ function ItemDetailPanel({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const { announce } = useAnnouncer();
   useFocusTrap(true, panelRef, { onEscape: onClose });
 
   const meta = (item as unknown as { comms?: { urgency?: string } }).comms;
@@ -1208,145 +1290,289 @@ function ItemDetailPanel({
   const isDone = item.status === "done";
 
   return (
-    <div
-      ref={panelRef}
-      className="cave-cal-detail-panel"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      tabIndex={-1}
-    >
-      <div className="cave-cal-detail-header">
-        <div className="flex items-center gap-2 min-w-0">
-          <Icon name={platformIcon(item)} className="shrink-0 text-[var(--text-muted)] text-[14px]" />
-          <span id={titleId} className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
-            {item.title}
-          </span>
-        </div>
-        <button
-          onClick={onClose}
-          aria-label="Close"
-          className="focus-ring shrink-0 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-        >
-          <Icon name="ph:x" width={14} />
-        </button>
-      </div>
-
-      <div className="flex flex-col gap-3 px-4 py-3 text-[12px] text-[var(--text-secondary)] overflow-y-auto flex-1">
-        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
-          <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{KIND_LABEL[item.kind]}</span>
-          {isDone ? <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--color-success,#34d399)]"><Icon name="ph:check" width={9} />Done</span> : null}
-        </div>
-        {meta?.urgency && meta.urgency !== "normal" && (
-          <div className="flex items-center gap-1.5">
-            <span className={`h-2 w-2 rounded-full ${urgencyColor(item)}`} />
-            <span className="capitalize">{meta.urgency.replace("-", " ")}</span>
-          </div>
-        )}
-        {(item.fireAt ?? item.firedAt) && (
-          <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
-            <Icon name="ph:clock" width={12} />
-            <span>
-              {(() => {
-                const at = (item.fireAt ?? item.firedAt)!;
-                // Short weekday isn't a preference; the date order + clock are.
-                const weekday = new Date(at).toLocaleDateString([], { weekday: "short" });
-                return `${weekday}, ${formatDate(at, undefined, { month: "short" })} ${formatClock(at)}`;
-              })()}
+    <>
+      {/* Backdrop makes aria-modal honest (the calendar behind is inert) and
+          adds the outside-click dismiss the drawer was missing. */}
+      <div className="cave-cal-detail-backdrop" role="presentation" onClick={onClose} />
+      <div
+        ref={panelRef}
+        className="cave-cal-detail-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+      >
+        <div className="cave-cal-detail-header">
+          <div className="flex items-center gap-2 min-w-0">
+            <Icon name={platformIcon(item)} className="shrink-0 text-[var(--text-muted)] text-[length:var(--text-md)]" />
+            <span id={titleId} className="truncate text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">
+              {item.title}
             </span>
           </div>
-        )}
-        {body && (
-          <p className="text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
-            {body}
-          </p>
-        )}
-      </div>
+          <IconButton
+            icon="ph:x"
+            aria-label="Close"
+            size="sm"
+            onClick={onClose}
+            className="shrink-0"
+          />
+        </div>
 
-      <div className="flex flex-col gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
-        {openLabel && onOpen ? (
-          <button
-            onClick={() => { onOpen(item); onClose(); }}
-            className="focus-ring inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
-          >
-            <Icon name="ph:arrow-square-out" width={12} />
-            {openLabel}
-          </button>
-        ) : null}
-        <div className="flex items-center gap-2">
-          {!isDone && onComplete ? (
-            <button
-              onClick={() => { onComplete(item.id); onClose(); }}
-              className="focus-ring inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        <div className="flex flex-col gap-3 px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] overflow-y-auto flex-1">
+          <div className="flex flex-wrap items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+            <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{KIND_LABEL[item.kind]}</span>
+            {isDone ? <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--color-success)]"><Icon name="ph:check" width={9} />Done</span> : null}
+          </div>
+          {meta?.urgency && meta.urgency !== "normal" && (
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${urgencyColor(item)}`} />
+              <span className="capitalize">{meta.urgency.replace("-", " ")}</span>
+            </div>
+          )}
+          {(item.fireAt ?? item.firedAt) && (
+            <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
+              <Icon name="ph:clock" width={12} />
+              <span>
+                {(() => {
+                  const at = (item.fireAt ?? item.firedAt)!;
+                  // Short weekday isn't a preference; the date order + clock are.
+                  const weekday = new Date(at).toLocaleDateString([], { weekday: "short" });
+                  return `${weekday}, ${formatDate(at, undefined, { month: "short" })} ${formatClock(at)}`;
+                })()}
+              </span>
+            </div>
+          )}
+          {body && (
+            <p className="text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
+              {body}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
+          {openLabel && onOpen ? (
+            <Button
+              variant="primary"
+              size="sm"
+              fullWidth
+              leadingIcon="ph:arrow-square-out"
+              onClick={() => { onOpen(item); onClose(); }}
             >
-              <Icon name="ph:check" width={12} />
-              Done
-            </button>
+              {openLabel}
+            </Button>
           ) : null}
-          {onSnooze ? (
-            <SnoozeMenu
-              className="shrink-0"
-              onSnooze={(untilIso) => { onSnooze(item.id, untilIso); onClose(); }}
-            />
-          ) : null}
-          {onDismiss ? (
-            <button
-              onClick={() => { onDismiss(item.id); onClose(); }}
-              aria-label="Dismiss"
-              className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-              title="Dismiss"
-            >
-              <Icon name="ph:trash" width={12} />
-            </button>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {!isDone && onComplete ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                leadingIcon="ph:check"
+                onClick={() => { onComplete(item.id); announce(`Marked "${item.title}" done`); onClose(); }}
+                className="flex-1"
+              >
+                Done
+              </Button>
+            ) : null}
+            {onSnooze ? (
+              <SnoozeMenu
+                className="shrink-0"
+                onSnooze={(untilIso) => { onSnooze(item.id, untilIso); announce(`Snoozed "${item.title}"`); onClose(); }}
+              />
+            ) : null}
+            {onDismiss ? (
+              <IconButton
+                icon="ph:trash"
+                aria-label="Dismiss"
+                onClick={() => { onDismiss(item.id); announce(`Dismissed "${item.title}"`); onClose(); }}
+                className="shrink-0"
+                title="Dismiss"
+              />
+            ) : null}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
 // ─── Main CalendarView ────────────────────────────────────────────────────────
 
-export function CalendarView({ items, familiars, activeFamiliarId, deadlines, onAddEntry, onOpenItem, onReschedule, onComplete, onDismiss, onSnooze, onOpenDeadline }: Props) {
+export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliarIds, deadlines, onAddEntry, onOpenItem, onReschedule, onComplete, onDismiss, onSnooze, onOpenDeadline }: Props) {
   const isMobile = useIsMobile();
   // SSR returns false from useIsMobile, so initial render is always "week"
   // on the server; the effect below snaps to agenda on mount when the
   // viewport actually matches mobile. Keeps server/client markup in sync.
-  const [viewMode, setViewMode] = useState<ViewMode>("week");
-  const [anchor, setAnchor] = useState<Date>(new Date());
+  const [storedViewMode, setStoredViewMode] = useSurfacePreference(surfacePreferenceSpecs.calendar.viewMode);
+  const [storedAnchorDate, setStoredAnchorDate] = useSurfacePreference(surfacePreferenceSpecs.calendar.anchorDate);
+  const [deepLinkViewMode, setDeepLinkViewMode] = useState<ViewMode | null>(null);
+  const [deepLinkAnchor, setDeepLinkAnchor] = useState<Date | null>(null);
+  const viewMode = deepLinkViewMode ?? storedViewMode;
+  const fallbackAnchorRef = useRef(new Date());
+  const anchor = useMemo(() => {
+    if (deepLinkAnchor) return deepLinkAnchor;
+    const restored = storedAnchorDate ? new Date(storedAnchorDate) : null;
+    return restored && !Number.isNaN(restored.getTime()) ? restored : fallbackAnchorRef.current;
+  }, [deepLinkAnchor, storedAnchorDate]);
+  const setViewMode = useCallback((next: ViewMode) => {
+    setDeepLinkViewMode(null);
+    setStoredViewMode(next);
+  }, [setStoredViewMode]);
+  const setAnchor = useCallback((next: SetStateAction<Date>) => {
+    const resolved = typeof next === "function" ? next(anchor) : next;
+    if (!Number.isNaN(resolved.getTime())) {
+      setDeepLinkAnchor(null);
+      setStoredAnchorDate(resolved.toISOString());
+    }
+  }, [anchor, setStoredAnchorDate]);
+  const [mobileRibbonDayOpen, setMobileRibbonDayOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const openDateValue = (date?: string | null) => {
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+      const next = new Date(`${date}T12:00:00`);
+      if (Number.isNaN(next.getTime())) return;
+      setDeepLinkAnchor(next);
+      setMobileRibbonDayOpen(true);
+      setDeepLinkViewMode("day");
+    };
+    const openDate = (event: Event) => {
+      openDateValue((event as CustomEvent<{ date?: string }>).detail?.date);
+    };
+    const pendingDate = window.sessionStorage.getItem("cave:calendar:pending-open-date");
+    if (pendingDate) {
+      window.sessionStorage.removeItem("cave:calendar:pending-open-date");
+      openDateValue(pendingDate);
+    }
+    window.addEventListener("cave:calendar:open-date", openDate);
+    return () => window.removeEventListener("cave:calendar:open-date", openDate);
+  }, []);
+  // Week view needs ~7 usable columns; inside a narrow split tile (~360px)
+  // they floor at ~40px each. Below 560px of CONTAINER width, week renders
+  // with the day presentation instead — the user's stored week choice is
+  // untouched and returns the moment the pane widens (cave-87zv).
+  const [narrowPane, setNarrowPane] = useState(false);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? el.clientWidth;
+      setNarrowPane(w > 0 && w < 560);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const effectiveView: ViewMode = viewMode === "week" && narrowPane ? "day" : viewMode;
+
+  // Keep the open event detail panel in sync with live updates. `selectedItem`
+  // is a snapshot captured at click; without this, an SSE update/delete (or a
+  // mutation from elsewhere) leaves the panel showing stale status/fireAt/body,
+  // and a deleted item's panel lingers over a dead id — acting on it (Done /
+  // Snooze / Dismiss) fires a mutation against nothing. Mirrors the reconciler
+  // in automations-view.tsx: adopt the fresh item when it differs, else close.
+  useEffect(() => {
+    if (!selectedItem) return;
+    const fresh = items.find((it) => it.id === selectedItem.id);
+    if (fresh) {
+      if (JSON.stringify(fresh) !== JSON.stringify(selectedItem)) setSelectedItem(fresh);
+    } else {
+      setSelectedItem(null);
+    }
+  }, [items, selectedItem?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Force agenda on phone-class viewports: the day/week/month grids all
   // have a `min-w-[560px]` floor, which would overflow a 360px screen.
   // Lets the user swap back to a grid once they're on a tablet+.
   useEffect(() => {
-    if (isMobile && viewMode !== "agenda") setViewMode("agenda");
-  }, [isMobile, viewMode]);
+    if (isMobile && viewMode !== "agenda" && !(mobileRibbonDayOpen && viewMode === "day")) {
+      setMobileRibbonDayOpen(false);
+      // Phone layout must use Agenda, but that is a viewport constraint rather
+      // than a user preference. Keep it out of the durable registry so a
+      // desktop view choice (for example Month) comes back on the next visit.
+      setDeepLinkViewMode("agenda");
+    }
+    // A responsive mobile override must also yield as soon as this surface is
+    // widened again; otherwise Agenda remains pinned for the rest of the mount
+    // even though the stored desktop choice was never changed.
+    if (!isMobile && deepLinkViewMode === "agenda") setDeepLinkViewMode(null);
+  }, [isMobile, mobileRibbonDayOpen, viewMode, deepLinkViewMode]);
+  useEffect(() => {
+    if (viewMode !== "day" && mobileRibbonDayOpen) setMobileRibbonDayOpen(false);
+  }, [mobileRibbonDayOpen, viewMode]);
 
   // Hard-scope: filter every downstream view (agenda/day/week/month) to the
   // active familiar. Defensive null escape: bypass the filter entirely.
+  const inScope = useMemo(
+    () =>
+      (familiarId: string | null | undefined): boolean =>
+        scopeFamiliarIds
+          ? familiarInScope(scopeFamiliarIds, familiarId)
+          : activeFamiliarId == null || familiarId === activeFamiliarId,
+    [scopeFamiliarIds, activeFamiliarId],
+  );
+
   const scopedItems = useMemo(
     () =>
-      (activeFamiliarId == null
-        ? items
-        : items.filter((it) => it.familiarId === activeFamiliarId)
-      // Dismissed items are removed from the calendar so a Dismiss reads as
-      // "gone"; done items stay (rendered with a completed treatment).
-      ).filter((it) => it.status !== "dismissed"),
-    [items, activeFamiliarId],
+      items
+        .filter((it) => inScope(it.familiarId))
+        // Dismissed items are removed from the calendar so a Dismiss reads as
+        // "gone"; done items stay (rendered with a completed treatment).
+        .filter((it) => it.status !== "dismissed"),
+    [items, inScope],
   );
+
+  // Pending count for the header pill (computed once, not twice inline).
+  const pendingCount = useMemo(
+    () => scopedItems.filter((i) => i.status === "pending").length,
+    [scopedItems],
+  );
+
+  // Open a specific day in the single-day view (from a month cell or an
+  // all-day "+N more" overflow).
+  const goToDay = (day: Date) => {
+    setAnchor(day);
+    setViewMode("day");
+  };
 
   // Mirror the items hard-scope for deadlines, so a scoped familiar's calendar
   // only shows that familiar's task due-dates.
   const scopedDeadlines = useMemo(
-    () =>
-      activeFamiliarId == null
-        ? (deadlines ?? [])
-        : (deadlines ?? []).filter((d) => d.familiarId === activeFamiliarId),
-    [deadlines, activeFamiliarId],
+    () => (deadlines ?? []).filter((d) => inScope(d.familiarId)),
+    [deadlines, inScope],
   );
+
+  // Per-familiar accent colour (explicit colour, else a stable derived hue).
+  const resolvedFamiliars = useResolvedFamiliars(familiars);
+  const familiarColorById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of resolvedFamiliars) m.set(f.id, familiarAccent(f.color, f.id));
+    return m;
+  }, [resolvedFamiliars]);
+  const familiarNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of resolvedFamiliars) m.set(f.id, f.display_name);
+    return m;
+  }, [resolvedFamiliars]);
+  const accentFor = useCallback(
+    (familiarId: string | null | undefined) => (familiarId ? familiarColorById.get(familiarId) ?? null : null),
+    [familiarColorById],
+  );
+  const nameFor = useCallback(
+    (familiarId: string | null | undefined) => (familiarId ? familiarNameById.get(familiarId) ?? null : null),
+    [familiarNameById],
+  );
+
+  // Legend: the distinct familiars that own something currently in view. Only
+  // worth showing when ≥2 — with one (or none) there's nothing to disambiguate.
+  const legendFamiliars = useMemo(() => {
+    const ids = new Set<string>();
+    for (const it of scopedItems) if (it.familiarId) ids.add(it.familiarId);
+    for (const d of scopedDeadlines) if (d.familiarId) ids.add(d.familiarId);
+    return [...ids]
+      .map((id) => ({ id, name: familiarNameById.get(id) ?? id, color: familiarColorById.get(id) ?? "var(--accent-presence)" }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [scopedItems, scopedDeadlines, familiarNameById, familiarColorById]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1357,22 +1583,24 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
   }, []);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
     const handler = (e: KeyboardEvent) => {
       // Don't fire when focus is inside an editable field (incl. contenteditable).
       const target = e.target as HTMLElement;
       const tag = target.tagName.toLowerCase();
       if (["input", "textarea", "select"].includes(tag) || target.isContentEditable) return;
       switch (e.key) {
-        case "ArrowLeft":  e.preventDefault(); navigate(-1); break;
-        case "ArrowRight": e.preventDefault(); navigate(1);  break;
-        case "t": case "T": setAnchor(new Date()); break;
-        case "d": case "D": setViewMode("day");    break;
-        case "w": case "W": setViewMode("week");   break;
-        case "m": case "M": setViewMode("month");  break;
-        case "a": case "A": setViewMode("agenda"); break;
+        // A focused grid event or month day-cell owns its own Arrow handling
+        // (roving nav + Alt+↑/↓ reschedule); don't also page the whole period
+        // out from under it.
+        case "ArrowLeft":  if (target.closest('[data-calendar-event="true"], [data-month-cell="true"]')) break; e.preventDefault(); navigate(-1); break;
+        case "ArrowRight": if (target.closest('[data-calendar-event="true"], [data-month-cell="true"]')) break; e.preventDefault(); navigate(1);  break;
+        case "t": case "T": if (e.metaKey || e.ctrlKey || e.altKey) break; setAnchor(new Date()); break;
+        case "d": case "D": if (e.metaKey || e.ctrlKey || e.altKey) break; setViewMode("day");    break;
+        case "w": case "W": if (e.metaKey || e.ctrlKey || e.altKey) break; setViewMode("week");   break;
+        case "m": case "M": if (e.metaKey || e.ctrlKey || e.altKey) break; setViewMode("month");  break;
+        case "a": case "A": if (e.metaKey || e.ctrlKey || e.altKey) break; setViewMode("agenda"); break;
         case "n": case "N":
+          if (e.metaKey || e.ctrlKey || e.altKey) break;
           if (onAddEntry) { e.preventDefault(); onAddEntry({ fireAt: defaultEntryFireAt(anchor) }); }
           break;
       }
@@ -1381,15 +1609,20 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
     return () => window.removeEventListener("keydown", handler);
     // re-bind when viewMode/anchor changes so navigate() and the new-entry
     // shortcut close over the current values.
-  }, [viewMode, anchor, onAddEntry]);
+    // effectiveView folds in narrowPane, so the handlers re-bind when the
+    // week→day fallback engages and navigate() steps by the visible unit.
+  }, [effectiveView, anchor, onAddEntry]);
 
   function navigate(dir: -1 | 1) {
     setAnchor((prev) => {
-      if (viewMode === "day") return addDays(prev, dir);
-      if (viewMode === "week") return addDays(prev, dir * 7);
-      if (viewMode === "month") {
-        const d = new Date(prev);
-        d.setMonth(d.getMonth() + dir);
+      if (effectiveView === "day") return addDays(prev, dir);
+      if (effectiveView === "week") return addDays(prev, dir * 7);
+      if (effectiveView === "month") {
+        // setMonth on the raw anchor overflows short months (Jan 31 + 1 → Mar 3,
+        // skipping February) — step from day 1, then clamp the day back in.
+        const d = new Date(prev.getFullYear(), prev.getMonth() + dir, 1);
+        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        d.setDate(Math.min(prev.getDate(), lastDay));
         return d;
       }
       // agenda: jump by 2 weeks
@@ -1398,8 +1631,8 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
   }
 
   function headingLabel(): string {
-    if (viewMode === "day") return fmtDateHeading(anchor);
-    if (viewMode === "week") {
+    if (effectiveView === "day") return fmtDateHeading(anchor);
+    if (effectiveView === "week") {
       const ws = startOfWeek(anchor);
       const we = addDays(ws, 6);
       if (ws.getMonth() === we.getMonth()) {
@@ -1407,7 +1640,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
       }
       return `${MONTHS[ws.getMonth()]} ${ws.getDate()} – ${MONTHS[we.getMonth()]} ${we.getDate()}, ${ws.getFullYear()}`;
     }
-    if (viewMode === "month") {
+    if (effectiveView === "month") {
       return `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`;
     }
     return "Upcoming";
@@ -1420,32 +1653,46 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
     { id: "month", label: "Month" },
   ];
 
+  // Announce view + period changes to screen readers — the grids convey the
+  // current view and date visually only. Skips the initial mount.
+  const { announce } = useAnnouncer();
+  const announcedRef = useRef(false);
+  useEffect(() => {
+    if (!announcedRef.current) { announcedRef.current = true; return; }
+    const label = VIEW_MODES.find((v) => v.id === effectiveView)?.label ?? "";
+    announce(`${label} view, ${headingLabel()}`);
+    // headingLabel() reads viewMode + anchor; re-announce whenever either moves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveView, anchor, announce]);
+
   return (
+    <FamiliarColorContext.Provider value={accentFor}>
+    <FamiliarNameContext.Provider value={nameFor}>
     <div ref={containerRef} className="relative flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
       {/* Header */}
       <div className="calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-3 sm:gap-3 sm:px-6">
         <div className="flex shrink-0 items-center gap-1">
           {/* Nav arrows */}
-          <button
-            onClick={() => navigate(-1)}
+          <IconButton
+            icon="ph:arrow-left-bold"
             aria-label="Previous"
-            className="calendar-toolbar-icon focus-ring grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:arrow-left-bold" width={12} />
-          </button>
-          <button
+            onClick={() => navigate(-1)}
+            className="calendar-toolbar-icon"
+          />
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => setAnchor(new Date())}
-            className="calendar-toolbar-button focus-ring inline-flex h-7 items-center rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+            className="calendar-toolbar-button"
           >
             Today
-          </button>
-          <button
-            onClick={() => navigate(1)}
+          </Button>
+          <IconButton
+            icon="ph:arrow-right-bold"
             aria-label="Next"
-            className="calendar-toolbar-icon focus-ring grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:arrow-right-bold" width={12} />
-          </button>
+            onClick={() => navigate(1)}
+            className="calendar-toolbar-icon"
+          />
         </div>
 
         {/* Heading + pending pill + jump-to-date popover */}
@@ -1459,9 +1706,9 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
           >
             {headingLabel()}
           </button>
-          {scopedItems.filter((i) => i.status === "pending").length > 0 && (
-            <span className="shrink-0 rounded-full bg-[var(--bg-raised)] border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] font-medium tabular-nums">
-              {scopedItems.filter((i) => i.status === "pending").length} pending
+          {pendingCount > 0 && (
+            <span className="shrink-0 rounded-full bg-[var(--bg-raised)] border border-[var(--border-hairline)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] font-medium tabular-nums">
+              {pendingCount} pending
             </span>
           )}
           {pickerOpen ? (
@@ -1475,14 +1722,15 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
 
         {/* View mode toggle — hidden on phones (only agenda is usable
             there; see the useEffect that pins viewMode to "agenda"). */}
-        <div className="hidden max-w-full shrink-0 items-center overflow-hidden rounded-lg border border-[var(--border-hairline)] md:flex">
+        <div role="group" aria-label="Calendar view" className="hidden max-w-full shrink-0 items-center overflow-hidden rounded-lg border border-[var(--border-hairline)] md:flex">
           {VIEW_MODES.map(({ id, label }) => (
             <button
               key={id}
               onClick={() => setViewMode(id)}
-              className={`focus-ring-inset inline-flex h-7 items-center px-2.5 text-[11px] transition-colors sm:px-3 ${
+              aria-pressed={viewMode === id}
+              className={`focus-ring-inset inline-flex h-7 items-center px-2.5 text-[length:var(--text-xs)] transition-colors sm:px-3 ${
                 viewMode === id
-                  ? "bg-[var(--accent-presence)] text-white"
+                  ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
               }`}
             >
@@ -1492,32 +1740,47 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
         </div>
 
         {onAddEntry ? (
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:plus-bold"
             onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
-            aria-label="Add event"
-            className="calendar-toolbar-button focus-ring inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-toolbar-button shrink-0"
           >
-            <Icon name="ph:plus-bold" width={10} />
             Add event
-          </button>
+          </Button>
         ) : null}
       </div>
 
+      {/* Per-familiar colour legend — only when ≥2 familiars own items in view,
+          so a single-familiar scope shows no noise. */}
+      {legendFamiliars.length >= 2 && (
+        <div
+          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)] sm:px-6"
+          aria-label="Familiar colour legend"
+        >
+          {legendFamiliars.map((f) => (
+            <span key={f.id} className="inline-flex items-center gap-1.5">
+              <span aria-hidden className="h-2 w-2 shrink-0 rounded-[3px]" style={{ background: f.color }} />
+              <span className="text-[var(--text-secondary)]">{f.name}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* View body */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        {viewMode === "agenda" && (
+        {effectiveView === "agenda" && (
           <AgendaView
             items={scopedItems}
             deadlines={scopedDeadlines}
             anchor={anchor}
             onAddEntry={onAddEntry}
-            onReschedule={onReschedule}
             onOpenItem={(item) => setSelectedItem(item)}
             onOpenDeadline={onOpenDeadline}
           />
         )}
-        {viewMode === "day" && (
+        {effectiveView === "day" && (
           <DayView
             items={scopedItems}
             deadlines={scopedDeadlines}
@@ -1528,7 +1791,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
             onOpenDeadline={onOpenDeadline}
           />
         )}
-        {viewMode === "week" && (
+        {effectiveView === "week" && (
           <WeekView
             items={scopedItems}
             deadlines={scopedDeadlines}
@@ -1537,9 +1800,10 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
             onReschedule={onReschedule}
             onOpenItem={(item) => setSelectedItem(item)}
             onOpenDeadline={onOpenDeadline}
+            onOpenDay={goToDay}
           />
         )}
-        {viewMode === "month" && (
+        {effectiveView === "month" && (
           <MonthView
             items={scopedItems}
             deadlines={scopedDeadlines}
@@ -1547,20 +1811,13 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
             onOpenItem={(item) => setSelectedItem(item)}
             onAddEntry={onAddEntry}
             onOpenDeadline={onOpenDeadline}
-            onDayClick={(day) => {
-              setAnchor(day);
-              setViewMode("day");
-            }}
+            onDayClick={goToDay}
           />
         )}
       </div>
-      {/* Keyboard hint — hidden on coarse-pointer / narrow viewports
-          where the single-key shortcuts can't be triggered. */}
-      <footer
-        className="hidden shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)] sm:px-6 md:block"
-      >
-        ← → navigate · T today · D Day · W Week · M Month · A Agenda{onAddEntry ? " · N new" : ""}
-      </footer>
+      {/* Keyboard hints moved to the canonical ⌘/ Shortcuts sheet (§8 chrome
+          diet — a permanently visible footer bar was chrome documenting
+          chrome). The single-key bindings themselves are unchanged. */}
       {selectedItem && (
         <ItemDetailPanel
           item={selectedItem}
@@ -1572,5 +1829,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
         />
       )}
     </div>
+    </FamiliarNameContext.Provider>
+    </FamiliarColorContext.Provider>
   );
 }

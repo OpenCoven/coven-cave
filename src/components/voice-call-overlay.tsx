@@ -1,10 +1,16 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+
 import { useEffect, useReducer, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "@iconify/react";
 import type { Familiar } from "@/lib/types";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { getVoiceProvider } from "@/lib/voice/registry";
-import type { LiveSession, VoiceSessionGrant } from "@/lib/voice/types";
+import type { LiveSession, VoiceSessionGrant, VoiceEarsEngine, VoiceMouthEngine } from "@/lib/voice/types";
+import { voiceErrorHint } from "@/lib/voice/types";
+import { voiceRecoveryVaultKey } from "@/lib/voice/vault-key-recovery";
 import { reduce, initialState, type CallState } from "./voice-call-overlay-state";
 
 type Props = {
@@ -19,6 +25,9 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
   const grantRef = useRef<VoiceSessionGrant | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useFocusTrap(true, dialogRef, { onEscape: () => dispatch({ type: "CLOSE_REQUEST" }) });
 
   useEffect(() => {
     let cancelled = false;
@@ -56,8 +65,11 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           dispatch({ type: "SESSION_FAILED", errorCode: "network" });
         }
       } else if (state.state === "connecting") {
-        const provider = getVoiceProvider(familiar.voiceProvider ?? "");
         const grant = grantRef.current;
+        // The grant names the provider that actually minted — trust it over
+        // the familiar prop, which can be stale right after an in-place
+        // settings fix (cave-xz57).
+        const provider = getVoiceProvider(grant?.provider ?? familiar.voiceProvider ?? "");
         const mic = micStreamRef.current;
         const callId = state.callId;
         if (!provider || !grant || !mic || !callId) {
@@ -65,21 +77,30 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           return;
         }
         try {
+          // The familiar-brain provider runs real chat turns — /api/chat/send
+          // already persisted both sides, so appending voice-origin transcript
+          // turns would double every exchange.
+          const persistTranscript = !provider.persistsTranscripts;
           const live = await provider.clientAdapter.connect(grant, mic, {
-            onUserTranscriptFinal: (text) => postTranscript(sessionId, callId, "user", text),
-            onAssistantTranscriptFinal: (text) => postTranscript(sessionId, callId, "assistant", text),
+            onUserTranscriptFinal: (text) => {
+              if (persistTranscript) postTranscript(sessionId, callId, "user", text);
+            },
+            onAssistantTranscriptFinal: (text) => {
+              if (persistTranscript) postTranscript(sessionId, callId, "assistant", text);
+            },
             onPartialTranscript: () => { /* live caption surface, not persisted */ },
-            onError: (err) => dispatch({ type: "PROVIDER_ERROR", errorCode: err.message }),
+            onError: (err) => dispatch({ type: "PROVIDER_ERROR", errorCode: err.message, hint: voiceErrorHint(err) }),
             onDisconnect: () => dispatch({ type: "DISCONNECTED" }),
           });
           if (cancelled) { await live.close(); return; }
           liveRef.current = live;
           if (audioElRef.current) audioElRef.current.srcObject = live.inboundAudio;
-          dispatch({ type: "CONNECTED", startedAt: Date.now() });
+          dispatch({ type: "CONNECTED", startedAt: Date.now(), earsEngine: live.earsEngine, mouthEngine: live.mouthEngine });
         } catch (err) {
           dispatch({
             type: "PROVIDER_ERROR",
             errorCode: err instanceof Error ? err.message : "connect_failed",
+            hint: voiceErrorHint(err),
           });
         }
       } else if (state.state === "ending") {
@@ -121,6 +142,53 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
     return () => clearInterval(id);
   }, [state.state]);
 
+  // In-place recovery (cave-xz57): a key-shaped failure offers a vault
+  // editor right in the error card — save the key and retry without leaving
+  // the call.
+  const [keyDraft, setKeyDraft] = useState("");
+  const [savingKey, setSavingKey] = useState(false);
+  const [keySaveError, setKeySaveError] = useState<string | null>(null);
+  useEffect(() => {
+    if (state.state !== "error") {
+      setKeyDraft("");
+      setKeySaveError(null);
+    }
+  }, [state.state]);
+
+  const fixableKey = state.state === "error"
+    ? voiceRecoveryVaultKey({
+        errorCode: state.errorCode,
+        missingKey: state.missingKey,
+        providerId: familiar.voiceProvider,
+      })
+    : null;
+
+  const saveKeyAndRetry = async () => {
+    const key = fixableKey;
+    const value = keyDraft.trim();
+    if (!key || !value || savingKey) return;
+    setSavingKey(true);
+    setKeySaveError(null);
+    try {
+      const res = await fetch("/api/vault", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key, storage: "encrypted", value }),
+      });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!json?.ok) {
+        setKeySaveError(`Couldn't save the key${json?.error ? ` — ${json.error}` : ` (http ${res.status})`}.`);
+        return;
+      }
+      setKeyDraft("");
+      dispatch({ type: "RETRY" });
+    } catch {
+      setKeySaveError("Couldn't save the key — is the daemon running?");
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
   const cleanup = () => {
     micStreamRef.current?.getTracks().forEach(t => t.stop());
     micStreamRef.current = null;
@@ -130,43 +198,128 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
   const mm = String(Math.floor(duration / 60)).padStart(2, "0");
   const ss = String(duration % 60).padStart(2, "0");
 
-  return (
-    <div className="voice-call-overlay">
-      <header className="voice-call-overlay__header">
-        <strong>{familiar.display_name}</strong>
-        <span className="voice-call-overlay__state">{labelFor(state)}</span>
-        {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
-      </header>
-      <div className="voice-call-overlay__body">
-        {state.state === "error" && (
-          <div className="voice-call-overlay__error">
-            <div>{state.errorCode}</div>
-            {state.hint && <div className="voice-call-overlay__hint">{state.hint}</div>}
-            <button type="button" onClick={() => dispatch({ type: "RETRY" })}>Try again</button>
+  const overlay = (
+    <div className="voice-call-overlay" role="presentation">
+      <div
+        ref={dialogRef}
+        className="voice-call-overlay__dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="voice-call-overlay-title"
+        aria-describedby={state.state === "error" ? "voice-call-overlay-error" : undefined}
+        tabIndex={-1}
+      >
+        <header className="voice-call-overlay__header">
+          <div className="voice-call-overlay__heading">
+            <strong id="voice-call-overlay-title">{familiar.display_name}</strong>
+            <span className="voice-call-overlay__state" role="status" aria-live="polite">{labelFor(state)}</span>
           </div>
-        )}
+          {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
+        </header>
+        <div className="voice-call-overlay__body">
+          {state.state === "live" && state.earsEngine && (
+            <span className="voice-call-overlay__ears" title="How this call hears you">
+              {earsEngineLabel(state.earsEngine)}
+            </span>
+          )}
+          {state.state === "live" && state.mouthEngine && (
+            <span className="voice-call-overlay__mouth" title="How this call speaks to you">
+              {mouthEngineLabel(state.mouthEngine)}
+            </span>
+          )}
+          {state.state === "error" && (
+            <div className="voice-call-overlay__error" role="alert">
+              <div id="voice-call-overlay-error">{errorMessage(state.errorCode)}</div>
+              {state.hint && <div className="voice-call-overlay__hint">{state.hint}</div>}
+              {fixableKey && (
+                <form
+                  className="voice-call-overlay__fix"
+                  onSubmit={(e) => { e.preventDefault(); void saveKeyAndRetry(); }}
+                >
+                  <label className="voice-call-overlay__fix-label" htmlFor="voice-call-overlay-key">
+                    Update {fixableKey} and retry
+                  </label>
+                  <div className="voice-call-overlay__fix-row">
+                    <input
+                      id="voice-call-overlay-key"
+                      className="voice-call-overlay__fix-input focus-ring"
+                      type="password"
+                      autoComplete="off"
+                      placeholder="Paste a new key"
+                      value={keyDraft}
+                      onChange={(e) => setKeyDraft(e.target.value)}
+                      disabled={savingKey}
+                    />
+                    <button
+                      type="submit"
+                      className="voice-call-overlay__retry focus-ring"
+                      disabled={savingKey || keyDraft.trim() === ""}
+                    >
+                      {savingKey ? "Saving…" : "Save & retry"}
+                    </button>
+                  </div>
+                  {keySaveError && (
+                    <div className="voice-call-overlay__fix-error" role="alert">{keySaveError}</div>
+                  )}
+                </form>
+              )}
+              <button
+                type="button"
+                className="voice-call-overlay__retry focus-ring"
+                onClick={() => dispatch({ type: "RETRY" })}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+        </div>
+        <footer className="voice-call-overlay__footer">
+          <button
+            type="button"
+            className="voice-call-overlay__control focus-ring"
+            aria-label={state.muted ? "Unmute" : "Mute"}
+            onClick={() => dispatch({ type: "MUTE_TOGGLE" })}
+            disabled={state.state !== "live"}
+          >
+            <Icon icon={state.muted ? "ph:microphone-slash-fill" : "ph:microphone-fill"} />
+          </button>
+          <button
+            type="button"
+            className="voice-call-overlay__end focus-ring"
+            aria-label="End call"
+            onClick={() => dispatch({ type: "CLOSE_REQUEST" })}
+          >
+            End call
+          </button>
+        </footer>
+        <audio ref={audioElRef} autoPlay hidden />
       </div>
-      <footer className="voice-call-overlay__footer">
-        <button
-          type="button"
-          aria-label={state.muted ? "Unmute" : "Mute"}
-          onClick={() => dispatch({ type: "MUTE_TOGGLE" })}
-          disabled={state.state !== "live"}
-        >
-          <Icon icon={state.muted ? "ph:microphone-slash-fill" : "ph:microphone-fill"} />
-        </button>
-        <button
-          type="button"
-          className="voice-call-overlay__end"
-          aria-label="End call"
-          onClick={() => dispatch({ type: "CLOSE_REQUEST" })}
-        >
-          End call
-        </button>
-      </footer>
-      <audio ref={audioElRef} autoPlay hidden />
     </div>
   );
+
+  if (typeof document === "undefined") return null;
+  return createPortal(overlay, document.body);
+}
+
+// The engine badge is honest, not decorative: "On-device" is the no-cloud
+// promise kept; the other modes tell the user their audio rides a service.
+function earsEngineLabel(engine: VoiceEarsEngine): string {
+  switch (engine) {
+    case "sidecar-whisper": return "Hearing via local Whisper";
+    case "native-on-device": return "Hearing on-device";
+    case "native-dictation": return "Hearing via Apple dictation";
+    case "web-speech": return "Hearing via browser speech";
+  }
+}
+
+// Mouth parity with the ears badge (cave-vony): local Piper is the no-cloud
+// promise kept; the other modes tell the user where synthesis runs.
+function mouthEngineLabel(engine: VoiceMouthEngine): string {
+  switch (engine) {
+    case "sidecar-piper": return "Speaking via local Piper";
+    case "elevenlabs": return "Speaking via ElevenLabs";
+    case "system-synth": return "Speaking via system voice";
+  }
 }
 
 function labelFor(s: CallState): string {
@@ -179,6 +332,60 @@ function labelFor(s: CallState): string {
     case "closed": return "Ended";
     case "error": return "Error";
     default: return "";
+  }
+}
+
+// Turn the machine-readable error code into something a person can act on. The
+// raw code (and any provider detail) still surfaces via the `hint` line below.
+function errorMessage(code: string | undefined): string {
+  // Connection-phase rejections (e.g. an invalid voiceModel only surfaces at
+  // the SDP exchange); the provider's own detail renders as the hint below.
+  if (code?.startsWith("sdp_exchange_failed_")) {
+    return "The voice provider rejected the call setup.";
+  }
+  switch (code) {
+    case "microphone_denied":
+      return "Microphone access was denied. Allow it in your browser settings to start a call.";
+    case "network":
+      return "Couldn't reach the voice service. Check your connection and try again.";
+    case "internal":
+      return "Something went wrong setting up the call. Please try again.";
+    case "connect_failed":
+      return "The call couldn't connect. Please try again.";
+    // STT / speech recognition
+    case "stt_unavailable":
+      return "Speech recognition isn't available in this window.";
+    // Vault / key issues
+    case "vault_key_unresolved":
+      return "A required API key isn't set up in your Vault.";
+    case "voice_not_configured":
+      return "This familiar has no voice provider configured.";
+    case "not_implemented":
+      return "This voice provider isn't available yet.";
+    // ElevenLabs-specific
+    case "elevenlabs_key_invalid":
+    case "elevenlabs_key_missing":
+      return "The ElevenLabs API key is missing or invalid.";
+    case "elevenlabs_probe_failed":
+    case "elevenlabs_unreachable":
+      return "Couldn't reach ElevenLabs. Check your connection and try again.";
+    case "elevenlabs_tts_failed":
+      return "ElevenLabs speech synthesis failed.";
+    // Local neural TTS
+    case "local_voice_not_ready":
+      return "The selected local voice isn't ready.";
+    case "local_tts_engine_unavailable":
+      return "The local speech engine isn't available.";
+    case "local_tts_failed":
+    case "local_tts_playback_failed":
+      return "Local speech synthesis failed.";
+    // Brain / familiar runtime issues
+    case "familiar_brain_failed":
+      return "The familiar's voice brain couldn't start.";
+    case "provider_mint_failed":
+      return "The voice provider couldn't start the call.";
+    default:
+      return "The call ran into a problem. Please try again.";
   }
 }
 

@@ -3,42 +3,13 @@
 import { useMemo } from "react";
 import CodeMirror, { EditorView, keymap, type Extension } from "@uiw/react-codemirror";
 import { loadLanguage, type LanguageName } from "@uiw/codemirror-extensions-langs";
+import { syntaxHighlighting } from "@codemirror/language";
+import { caveEditorFrame, moodHighlight } from "@/components/code-editor-theme";
 
-// Editor chrome themed to the app's tokens so it reads as part of the Cave
-// rather than a generic dark box. Only the frame is themed here (background,
-// gutter, cursor, selection, active line); the default dark syntax palette
-// still colors the code. `dark: true` keeps CodeMirror's dark-mode defaults
-// for anything not overridden.
-const appTheme = EditorView.theme(
-  {
-    "&": {
-      backgroundColor: "var(--code-surface)",
-      color: "var(--text-primary)",
-      height: "100%",
-      fontSize: "12px",
-    },
-    ".cm-content": {
-      fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
-      caretColor: "var(--accent-presence)",
-    },
-    ".cm-gutters": {
-      backgroundColor: "var(--code-surface)",
-      color: "var(--text-muted)",
-      border: "none",
-    },
-    ".cm-activeLine": { backgroundColor: "color-mix(in oklch, var(--foreground) 4%, transparent)" },
-    ".cm-activeLineGutter": {
-      backgroundColor: "color-mix(in oklch, var(--foreground) 4%, transparent)",
-      color: "var(--text-secondary)",
-    },
-    "&.cm-focused .cm-cursor": { borderLeftColor: "var(--accent-presence)" },
-    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-      backgroundColor: "color-mix(in oklch, var(--accent-presence) 28%, transparent)",
-    },
-    ".cm-scroller": { fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace' },
-  },
-  { dark: true },
-);
+// The mood-c palette + editor frame live in code-editor-theme.ts so the same
+// theme drives this editor, the MdEditor MARKDOWN mode, and the Milkdown
+// Crepe code blocks in MdEditor VISUAL mode.
+const appTheme = caveEditorFrame;
 
 // File extension → CodeMirror language. Mirrors the extensions the Projects
 // file preview already accepts; anything unmapped just edits as plain text.
@@ -105,6 +76,7 @@ export function CodeEditor({ value, filename, onChange, onSave, onCancel }: Prop
   const extensions = useMemo<Extension[]>(() => {
     const list: Extension[] = [
       EditorView.lineWrapping,
+      syntaxHighlighting(moodHighlight),
       // High-precedence so Mod-s / Escape win over default bindings.
       keymap.of([
         { key: "Mod-s", preventDefault: true, run: () => { onSave(); return true; } },

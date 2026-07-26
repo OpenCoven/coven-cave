@@ -1,0 +1,24 @@
+{
+  "name": "project-manager",
+  "version": "0.1.0",
+  "description": "Manage project-scoped knowledge bases of notes, decisions, and bookmarks under projects/, with context switching and cross-project search.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Project Manager",
+    "shortDescription": "Manage project-scoped knowledge bases of notes, decisions, and bookmarks under projects/, with context switching and cross-project search.",
+    "longDescription": "Create and maintain slugged project directories with CONTEXT.md, dated notes, and a shared bookmarks store, loading relevant context when switching projects.",
+    "developerName": "OpenCoven",
+    "category": "Project Management",
+    "capabilities": [
+      "projects",
+      "notes",
+      "bookmarks",
+      "decisions",
+      "knowledge-base"
+    ],
+    "defaultPrompt": "Help me use Project Manager safely."
+  }
+}

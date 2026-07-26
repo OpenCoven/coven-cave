@@ -6,17 +6,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./mermaid-viewer.ts", import.meta.url), "utf8");
-const bubble = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+const domWiring = readFileSync(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
 
 // The rendered diagram is injected HTML (no React node), so the viewer must be
 // wired into the shared post-render hook alongside the copy/link wiring.
 assert.match(
-  bubble,
+  domWiring,
   /import \{ wireMermaidDiagrams \} from "\.\/mermaid-viewer"/,
-  "message-bubble imports the mermaid viewer",
+  "message DOM wiring imports the mermaid viewer",
 );
 assert.match(
-  bubble,
+  domWiring,
   /wireMermaidDiagrams\(el\)/,
   "wireMermaidDiagrams runs in the shared useWireCopyButtons post-render hook",
 );

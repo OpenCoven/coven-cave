@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { GitHubItem } from "@/lib/github-tasks";
-import { resolveSecret } from "@/lib/vault";
+import { resolveGitHubToken } from "@/lib/github-token";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,13 +33,6 @@ type SearchResult = {
   items: RawGitHubItem[];
 };
 
-function resolveGitHubToken(): string | undefined {
-  return (
-    resolveSecret("GITHUB_PAT") ??
-    process.env.GITHUB_TOKEN?.trim() ??
-    process.env.COVEN_GITHUB_TOKEN?.trim()
-  );
-}
 
 export async function GET() {
   const token = resolveGitHubToken();
@@ -67,6 +60,15 @@ export async function GET() {
         : !reviewRes.ok
           ? reviewRes.status
           : createdRes.status;
+      if (failedStatus === 401) {
+        // The stored PAT was rejected (revoked/expired) — flag it so the
+        // client reopens the connect form instead of pinning a raw 401
+        // against a form gated on configured===false (cave-cjgg/cave-d6zq).
+        return NextResponse.json(
+          { ok: false, error: "GitHub rejected the stored token (revoked or expired).", items: [], configured: true, patInvalid: true },
+          { status: 200 },
+        );
+      }
       return NextResponse.json(
         { ok: false, error: `GitHub API error: HTTP ${failedStatus}`, items: [] },
         { status: 502 },

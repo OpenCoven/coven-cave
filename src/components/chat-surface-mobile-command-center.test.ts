@@ -7,8 +7,8 @@ const styles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf
 
 assert.match(
   source,
-  /<section className="chat-surface /,
-  "ChatSurface should expose a mobile-targetable root class",
+  /<section ref=\{surfaceRef\} className="chat-surface /,
+  "ChatSurface should expose a mobile-targetable root class (and the ref that measures pane width)",
 );
 
 assert.match(
@@ -43,38 +43,34 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.shell-detail:has\(> \.cave-mode-fade > \.chat-surface\)\s*\{[\s\S]*overflow\s*:\s*hidden/,
-  "Mobile chat should prevent the shell detail from becoming a second scroll owner",
+  /@media \(max-width: 767px\) \{[\s\S]*\.shell-detail:has\(> \.cave-mode-fade > \.workspace-detail-content > \.chat-surface\)\s*\{[\s\S]*overflow\s*:\s*hidden/,
+  "Mobile chat should prevent the shell detail from becoming a second scroll owner through the inertable detail wrapper",
 );
 
-// The Inspector/Debug/Changes panels live in a 230px right sidebar that is
-// hidden below the desktop shell breakpoint (no room beside the chat thread).
-// On mobile they must remain reachable — rendered in a right-edge sheet over a
-// dismissible scrim — instead of silently vanishing.
-assert.match(
+// The Inspector/Debug/Changes right sidebar is retired — the code rail is the
+// only right sidepanel, and mobile-code-rail.test.ts owns its narrow-layout
+// sheet pins. What remains here: the pane-width heuristic that decides the
+// inline-vs-sheet presentation for the code rail. The heuristic itself lives
+// in the shared rail controller (extracted for the task cockpit); ChatSurface
+// must still consume it rather than growing its own copy.
+assert.doesNotMatch(
   source,
-  /scope === "conversation" && rightPanel !== null && isMobile && \(/,
-  "ChatSurface should render the session panels as a mobile sheet when the inline sidebar is hidden",
+  /chat-right-sheet|rightPanel/,
+  "the retired session-panel sheet must not come back",
 );
-
-assert.match(
-  source,
-  /className="chat-right-sheet fixed inset-0 z-\[200\] flex justify-end lg:hidden"/,
-  "Mobile session-panel sheet should be a fixed right-edge overlay, hidden once the desktop sidebar fits (lg)",
+const railController = readFileSync(
+  new URL("../lib/use-workspace-rail-controller.ts", import.meta.url),
+  "utf8",
 );
-
 assert.match(
-  source,
-  /aria-label="Close session panels"[\s\S]*?onClick=\{\(\) => setRightPanel\(null\)\}/,
-  "Mobile session-panel sheet should close on scrim tap",
+  railController,
+  /const paneNarrow = paneWidth === null \? isMobile : paneWidth < 680/,
+  "paneNarrow falls back to the viewport heuristic until the first ResizeObserver measurement",
 );
-
-// Gate the inline desktop sidebar on !isMobile so only one RightPanel mounts per
-// breakpoint — otherwise InspectorPane double-fetches and duplicates DOM ids.
 assert.match(
   source,
-  /rightPanel !== null && !isMobile && \(/,
-  "Inline desktop right sidebar should not also mount on mobile (avoids duplicate RightPanel)",
+  /useWorkspaceRailController\(/,
+  "ChatSurface consumes the shared rail controller instead of forking the pane-width heuristic",
 );
 
 console.log("chat-surface-mobile-command-center.test.ts: ok");
