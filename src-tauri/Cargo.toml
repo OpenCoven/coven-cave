@@ -70,6 +70,9 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Securit
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.6"
 signal-hook-registry = "1.4"
+# Signal numbers for the daemon shutdown handler; signal-hook-registry only
+# exposes register(), not the SIG* constants.
+libc = "0.2"
 fs2 = "0.4.3"
 # Raw msg_send access to NSWindow's standard buttons (traffic-light
 # show/hide follows the side panel); already in the tree via tauri/wry.

@@ -42,6 +42,11 @@ assert.match(
 );
 assert.match(
   reachability,
+  /power_assertion_is_effective[\s\S]*mac_is_on_ac_power/,
+  "AC-only sleep prevention must report inactive while the Mac is on battery",
+);
+assert.match(
+  reachability,
   /mobile_mode_enabled_from_preferences[\s\S]*unwrap_or\(true\)/,
   "mobile mode must preserve its schema default until explicitly disabled",
 );
@@ -83,8 +88,28 @@ assert.match(
 );
 assert.match(
   reachability,
+  /proc_pidinfo[\s\S]*start_microseconds/,
+  "process leases must use a kernel birth timestamp rather than a reusable PID or second-granularity ps value",
+);
+assert.match(
+  reachability,
+  /GuiOwnershipState[\s\S]*sidecar: Option<DaemonSidecarState>[\s\S]*stop_recorded_gui_sidecar/,
+  "a stale GUI ownership record must retain and reap its sidecar before daemon fallback",
+);
+assert.match(
+  reachability,
+  /another CovenCave GUI already owns desktop reachability/,
+  "a second GUI must not overwrite the live GUI ownership marker",
+);
+assert.match(
+  reachability,
   /acquire_reachability_ownership_lease[\s\S]*file\.lock_exclusive\(\)/,
   "GUI and daemon ownership must serialize through an exclusive lease",
+);
+assert.match(
+  reachability,
+  /launch_agent_reconciliation_required[\s\S]*previous\.daemon_mode != next\.daemon_mode/,
+  "sleep policy updates must not replace an already enabled LaunchAgent",
 );
 assert.match(
   reachability,
@@ -152,6 +177,11 @@ assert.match(
   "a stalled Tailscale Serve command must be killed after a bounded timeout",
 );
 assert.match(
+  reachability,
+  /!mobile_mode_enabled\(\) \|\| !paired_phone_seen\(&paired_phone_path\(\)\)/,
+  "Serve repair must not adopt an existing route until Cave has pairing evidence",
+);
+assert.match(
   mobileScript,
   /exec env PORT="\$free" bash "\$SELF" "\$COMMAND"/,
   "the dev mobile runner must carry its fallback port into Serve setup",
@@ -161,6 +191,12 @@ assert.match(settings, /label="Keep Mac awake for phone"/);
 assert.match(settings, /label="Only keep awake on power"/);
 assert.match(settings, /label="Background availability"/);
 assert.match(settings, /aria-label=\{[\s\S]*Keep Mac awake for phone/);
+const reachabilityGroup = settings.indexOf('<SettingsGroup label="Keep this Mac reachable">');
+const phoneWriteAccessGroup = settings.indexOf('<SettingsGroup label="Phone write access">');
+assert.ok(
+  reachabilityGroup !== -1 && phoneWriteAccessGroup !== -1 && reachabilityGroup < phoneWriteAccessGroup,
+  "desktop reachability must remain before Phone write access in the Phone settings flow",
+);
 assert.match(
   bridge,
   /desktop_reachability_configure/,
@@ -184,6 +220,11 @@ assert.match(
   uninstall,
   /for \(\(attempt = 0; attempt < 50; attempt \+= 1\)\)[\s\S]*kill -KILL/,
   "uninstall must wait for the sidecar after launchd is unloaded before removing app paths",
+);
+assert.match(
+  uninstall,
+  /launch_agent_is_absent[\s\S]*could not verify \$\{label\} is absent from launchd[\s\S]*return 1/,
+  "uninstall must abort before deleting app paths when launchd cannot be verified absent",
 );
 assert.match(
   uninstall,
