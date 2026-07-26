@@ -2059,13 +2059,10 @@ export async function POST(req: Request) {
           pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
         }
         const openCodePlainFallback = openCodeDirect && openCodeCompatibility?.mode === "plain";
-        // Plain OpenCode has no structured error envelope. A documented
-        // missing-session line on stdout is a failed native resume, not
-        // assistant content: discard it and take the existing replay retry.
-        if (openCodePlainFallback && RESUME_ERR_RE.test(line)) {
-          resumeFailed = true;
-          return;
-        }
+        // Plain OpenCode has no structured error envelope, so stdout cannot
+        // distinguish a real resume failure from an assistant reply quoting it.
+        // Preserve every line rather than converting ordinary reply text into
+        // a dropped retry signal.
         if (!openCodePlainFallback && RESUME_ERR_RE.test(line)) resumeFailed = true;
         const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
         if (copilotStream) {
@@ -2693,9 +2690,11 @@ export async function POST(req: Request) {
         ? assistantText
         : assistantText.trim();
       const { text: cleanedAssistantText, attachments: agentAttachments } =
-        parseAgentAttachments(assistantTextForPersistence, {
-          allowedRoots: sshRuntime ? [] : [familiarCwd ?? cwd, ...grantedProjectRoots],
-        });
+        openCodeDirect && openCodeCompatibility?.mode === "plain"
+          ? { text: assistantTextForPersistence, attachments: [] }
+          : parseAgentAttachments(assistantTextForPersistence, {
+              allowedRoots: sshRuntime ? [] : [familiarCwd ?? cwd, ...grantedProjectRoots],
+            });
       for (const attachment of agentAttachments) {
         push({ kind: "attachment", attachment });
       }

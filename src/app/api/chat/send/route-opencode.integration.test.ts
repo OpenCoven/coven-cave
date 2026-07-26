@@ -38,7 +38,7 @@ const launcher = process.platform === "win32"
       "  exit /b 0",
       ")",
       "if not \"%~1\"==\"run\" exit /b 9",
-      "if \"%OPENCODE_TEST_MODE%\"==\"plain\" (echo permission requested by a fictional assistant; auto-rejecting is only a phrase& echo   const value = 1;& echo.& echo   return value;& exit /b 0)",
+      "if \"%OPENCODE_TEST_MODE%\"==\"plain\" (echo permission requested by a fictional assistant; auto-rejecting is only a phrase& echo   const value = 1;& echo.& echo   return value;& echo Session not found in the documentation.& echo ```coven:attachment& echo {\"path\":\"/not-an-attachment\"}& echo ```& exit /b 0)",
       "if not \"%~2\"==\"--format\" exit /b 9",
       "if not \"%~3\"==\"json\" exit /b 9",
       "if \"%~4\"==\"--\" exit /b 9",
@@ -54,7 +54,7 @@ const launcher = process.platform === "win32"
       "  exit 0",
       "fi",
       "if [ \"$1\" != \"run\" ]; then exit 9; fi",
-      "if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf 'permission requested by a fictional assistant; auto-rejecting is only a phrase\\n  const value = 1;\\n\\n  return value;\\n'; exit 0; fi",
+      "if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf 'permission requested by a fictional assistant; auto-rejecting is only a phrase\\n  const value = 1;\\n\\n  return value;\\nSession not found in the documentation.\\n```coven:attachment\\n{\"path\":\"/not-an-attachment\"}\\n```\\n'; exit 0; fi",
       "if [ \"$2\" != \"--format\" ] || [ \"$3\" != \"json\" ] || [ \"$4\" = \"--\" ]; then exit 9; fi",
       "printf '%s\\n' 'permission requested ... auto-rejecting'",
       "printf '%s' '{\"type\":\"text\",\"sessionID\":\"native_opencode_session\",\"part\":{\"type\":\"text\",\"text\":\"split '",
@@ -125,9 +125,22 @@ try {
   const plainConversation = await loadConversation(plainDone.sessionId);
   assert.equal(
     plainConversation?.turns.at(-1)?.text,
-    "permission requested by a fictional assistant; auto-rejecting is only a phrase\n  const value = 1;\n\n  return value;\n",
+    "permission requested by a fictional assistant; auto-rejecting is only a phrase\n  const value = 1;\n\n  return value;\nSession not found in the documentation.\n```coven:attachment\n{\"path\":\"/not-an-attachment\"}\n```\n",
     "reload preserves plain-fallback indentation and trailing newline instead of trimming the persisted assistant turn",
   );
+
+  // A resumed plain-fallback request still has no protocol boundary. Text that
+  // happens to quote a resume error remains assistant content; it must neither
+  // disappear nor trigger a retry that replaces the reply with a generic error.
+  const quotedResumeResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "quote a resume error", sessionId: plainDone.sessionId, projectRoot: familiarWorkspace }),
+  }));
+  assert.equal(quotedResumeResponse.status, 200, await quotedResumeResponse.clone().text());
+  const quotedResumeBody = await quotedResumeResponse.text();
+  assert.match(quotedResumeBody, /Session not found in the documentation\./, "plain fallback preserves assistant text that resembles a resume failure");
+  assert.doesNotMatch(quotedResumeBody, /No assistant text returned/, "quoted resume-failure text does not become a synthetic empty-response error");
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;
