@@ -28,8 +28,10 @@ export function resolveHomeComposerProject(
   recentProjectRoot?: string | null,
 ): CaveProject | null {
   if (selectedProjectId === noProjectId) return null;
+  if (selectedProjectId) {
+    return projects.find((project) => project.id === selectedProjectId) ?? null;
+  }
   return (
-    projects.find((project) => project.id === selectedProjectId) ??
     projectForRoot(recentProjectRoot, projects.slice()) ??
     projects[0] ??
     null

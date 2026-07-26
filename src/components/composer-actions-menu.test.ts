@@ -62,8 +62,8 @@ assert.match(
 );
 assert.match(
   actions,
-  /projects: context\.sortedProjects\.map\(\(p\) => \(\{ id: p\.id, name: p\.name \}\)\)/,
-  "Add to project › lists the sorted project options",
+  /projects: context\.sortedProjects\.map\(\(p\) => \(\{[\s\S]*?id: p\.id,[\s\S]*?name: p\.name,[\s\S]*?access: p\.access,[\s\S]*?\}\)\)/,
+  "Add to project › lists sorted project options with effective access metadata",
 );
 assert.match(
   actions,

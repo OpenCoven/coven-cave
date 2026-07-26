@@ -24,6 +24,10 @@ import {
 } from "@/lib/composer-add-menu-data";
 import type { SkillOption } from "@/lib/slash-skill";
 import { CHAT_OPEN_SKILLS_EVENT, markSkillsTabPending } from "@/lib/chat-tab-events";
+import {
+  projectAccessLabel,
+  type ProjectAccessLevel,
+} from "@/lib/project-access-levels";
 
 /** Route "Browse skills" / "Manage connectors" to the Marketplace surface. */
 function openMarketplace() {
@@ -106,7 +110,7 @@ function MenuNote({ children }: { children: ReactNode }) {
 
 export type AddMenuProjectsSection = {
   /** Pre-sorted list (hosts own ordering). */
-  projects: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string; access?: ProjectAccessLevel }>;
   /** Currently selected project id (or the no-project id / null). */
   selectedId: string | null;
   onPick: (id: string) => void;
@@ -202,19 +206,24 @@ export function ComposerAddMenu({
           {projects.projects.length === 0 ? (
             <MenuNote>No projects yet.</MenuNote>
           ) : (
-            projects.projects.map((p) => (
-              <AddMenuRow
-                key={p.id}
-                icon="ph:folder"
-                label={p.name}
-                role="menuitemradio"
-                checked={projects.selectedId === p.id}
-                onSelect={() => {
-                  onClose();
-                  projects.onPick(p.id);
-                }}
-              />
-            ))
+            projects.projects.map((p) => {
+              const access = p.access ? projectAccessLabel(p.access) : null;
+              return (
+                <AddMenuRow
+                  key={p.id}
+                  icon="ph:folder"
+                  label={p.name}
+                  hint={access ?? undefined}
+                  ariaLabel={access ? `${p.name}, ${access} access` : p.name}
+                  role="menuitemradio"
+                  checked={projects.selectedId === p.id}
+                  onSelect={() => {
+                    onClose();
+                    projects.onPick(p.id);
+                  }}
+                />
+              );
+            })
           )}
           {projects.noProjectId ? (
             <AddMenuRow
