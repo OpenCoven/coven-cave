@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+  evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   missingRunnerMessage,
   summarizeRuntimeAvailability,
@@ -14,6 +15,17 @@ const scratch = mkdtempSync(path.join(tmpdir(), "runtime-availability-"));
 try {
   const binDir = path.join(scratch, "bin");
   const emptyDir = path.join(scratch, "empty");
+  // Keep the simulated Linux PATH independent from the Windows host running
+  // this test. The evaluator's `platform` argument owns its path semantics.
+  const linuxBinDir = "/runtime-availability/bin";
+  const linuxClaudeDir = "/runtime-availability/claude-bin";
+  const linuxEmptyDir = "/runtime-availability/empty";
+  const linuxFiles = new Set([
+    path.posix.join(linuxBinDir, "grok"),
+    path.posix.join(linuxBinDir, "coven"),
+    path.posix.join(linuxClaudeDir, "claude"),
+  ]);
+  const linuxStat = (candidate: string) => linuxFiles.has(candidate);
   mkdirSync(binDir);
   mkdirSync(emptyDir);
   writeFileSync(path.join(binDir, "grok"), "#!/bin/sh\n", { mode: 0o755 });
@@ -22,32 +34,35 @@ try {
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
     command: "grok",
-    env: { PATH: `${emptyDir}:${binDir}` },
+    env: { PATH: `${linuxEmptyDir}:${linuxBinDir}` },
     platform: "linux",
+    statFile: linuxStat,
   });
   assert.equal(ready.state, "ready", "a bare command on the spawn PATH is ready");
   assert.equal(
     ready.state === "ready" && ready.resolvedPath,
-    path.join(binDir, "grok"),
+    path.posix.join(linuxBinDir, "grok"),
     "ready reports where the exact spawn command resolved",
   );
 
   const absoluteReady = evaluateRuntimeAvailability({
     runner: "coven",
-    command: path.join(binDir, "grok"),
+    command: path.posix.join(linuxBinDir, "grok"),
     env: { PATH: "" },
     platform: "linux",
+    statFile: linuxStat,
   });
   assert.equal(absoluteReady.state, "ready", "an absolute launch command is stat'd directly");
 
   // Verification matrix: binary absent from every discovery location →
   // missing, with per-runner install/PATH remediation.
-  for (const runner of ["coven", "copilot", "grok", "hermes", "opencode"] as const) {
+  for (const runner of ["coven", "claude", "copilot", "grok", "hermes", "opencode"] as const) {
     const missing = evaluateRuntimeAvailability({
       runner,
       command: runner === "coven" ? "coven" : runner,
-      env: { PATH: emptyDir },
+      env: { PATH: linuxEmptyDir },
       platform: "linux",
+      statFile: linuxStat,
     });
     assert.equal(missing.state, "missing", `${runner} nowhere on PATH is missing`);
     assert.equal(
@@ -82,6 +97,77 @@ try {
     platform: "linux",
   });
   assert.equal(emptyPath.state, "missing", "an env without PATH resolves nothing");
+
+  // Claude runs through Coven, so its preflight must prove BOTH executables
+  // in the exact child env. A later PATH entry represents an imported or
+  // refreshed login PATH — the stat-only resolver must use it, never a shell.
+  const claudeReady = evaluateCovenBackedRuntimeAvailability({
+    runner: "claude",
+    covenCommand: "coven",
+    env: { PATH: `${linuxEmptyDir}:${linuxBinDir}:${linuxClaudeDir}` },
+    platform: "linux",
+    statFile: linuxStat,
+  });
+  assert.equal(claudeReady.state, "ready", "Coven and Claude both resolve from the actual child PATH");
+
+  const covenMissingForClaude = evaluateCovenBackedRuntimeAvailability({
+    runner: "claude",
+    covenCommand: "coven",
+    env: { PATH: linuxClaudeDir },
+    platform: "linux",
+    statFile: linuxStat,
+  });
+  assert.equal(covenMissingForClaude.state, "missing", "a missing outer launcher is not a Claude failure");
+  assert.equal(
+    covenMissingForClaude.state === "missing" && covenMissingForClaude.code,
+    RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing,
+    "Coven and Claude missing states carry distinct structured codes",
+  );
+  assert.equal(
+    covenMissingForClaude.state === "missing" && covenMissingForClaude.message,
+    missingRunnerMessage("coven"),
+    "the missing outer launcher keeps Coven remediation",
+  );
+
+  const claudeMissing = evaluateCovenBackedRuntimeAvailability({
+    runner: "claude",
+    covenCommand: "coven",
+    env: { PATH: linuxBinDir },
+    platform: "linux",
+    statFile: linuxStat,
+  });
+  assert.equal(claudeMissing.state, "missing", "Coven without Claude is not ready");
+  assert.equal(
+    claudeMissing.state === "missing" && claudeMissing.code,
+    RUNTIME_AVAILABILITY_ERROR_CODES.claude_missing,
+    "the missing inner runtime has a Claude-specific structured code",
+  );
+  assert.equal(
+    claudeMissing.state === "missing" && claudeMissing.message,
+    missingRunnerMessage("claude"),
+    "the missing inner runtime has Claude install/PATH remediation",
+  );
+  assert.doesNotMatch(
+    claudeMissing.state === "missing" ? claudeMissing.message : "",
+    /authenticat/i,
+    "a missing Claude executable is never described as an auth failure",
+  );
+
+  const claudeProbeFailed = evaluateCovenBackedRuntimeAvailability({
+    runner: "claude",
+    covenCommand: "coven",
+    env: { PATH: linuxBinDir },
+    platform: "linux",
+    statFile: (candidate) => {
+      if (candidate.endsWith("/coven")) return true;
+      throw Object.assign(new Error(`EACCES: permission denied, stat '${candidate}'`), { code: "EACCES" });
+    },
+  });
+  assert.equal(claudeProbeFailed.state, "probe_failed", "inner probe failures do not become missing");
+  assert.ok(
+    claudeProbeFailed.state === "probe_failed" && !claudeProbeFailed.message.includes(linuxBinDir),
+    "Claude probe copy stays value-free",
+  );
 
   // Verification matrix: a found-but-unconvertible Windows shim → unlaunchable
   // (never "not installed").
@@ -166,6 +252,19 @@ try {
     statFile: winStats([]),
   });
   assert.equal(winAbsent.state, "missing", "win32 with nothing on Path is missing");
+
+  const claudeWinShim = evaluateCovenBackedRuntimeAvailability({
+    runner: "claude",
+    covenCommand: "C:\\tools\\coven.exe",
+    env: winEnv,
+    platform: "win32",
+    statFile: winStats(["C:\\tools\\coven.exe", "C:\\bin\\claude.cmd"]),
+  });
+  assert.equal(
+    claudeWinShim.state,
+    "unlaunchable",
+    "a Claude command-shim-only install is not falsely reported as absent",
+  );
 
   // An explicit native-executable command still diagnoses sibling shims of
   // its base name: hermes.exe missing while hermes.cmd exists is an
