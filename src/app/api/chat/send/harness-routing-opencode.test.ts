@@ -71,6 +71,16 @@ assert.match(
   "OpenCode carries one Windows-safe outer host, inner command, and scoped environment from early preflight through the immediate spawn recheck",
 );
 assert.match(
+  route,
+  /runner:[\s\S]*?openCodeDirect[\s\S]*?"opencode"[\s\S]*?powerShellHostedCommand:[\s\S]*?openCodeLaunchCommand\?\.input !== undefined \? openCodeCommand\(\) : undefined[\s\S]*?if \(availability\.state !== "ready"\) \{[\s\S]*?launchFailure = \{ code: availability\.code, message: availability\.message \};[\s\S]*?return null;/,
+  "OpenCode preflights the exact PowerShell/JSON-stdin plan and returns the shared structured error before spawn",
+);
+assert.match(
+  route,
+  /child\.on\("error", \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?const launchError = openCodeDirect[\s\S]*?result\.is_error = true;[\s\S]*?launchFailure \?\?= \{[\s\S]*?err\.code === "ENOENT" \? "ENOENT" : "runtime_launch_failed"/,
+  "an OpenCode launch race marks the turn failed before empty-output/auth diagnostics can run",
+);
+assert.match(
   capabilities,
   /const launch = openCodeLaunch\(\["run", "--help"\]\);[\s\S]*?launch\.command,[\s\S]*?launch\.args,[\s\S]*?openCodeSpawnEnv\(\),/,
   "OpenCode probes its CLI with the same Windows-safe command and WSL-compatible environment as a chat run",

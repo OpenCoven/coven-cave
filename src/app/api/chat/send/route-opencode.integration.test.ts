@@ -141,6 +141,38 @@ try {
   const quotedResumeBody = await quotedResumeResponse.text();
   assert.match(quotedResumeBody, /Session not found in the documentation\./, "plain fallback preserves assistant text that resembles a resume failure");
   assert.doesNotMatch(quotedResumeBody, /No assistant text returned/, "quoted resume-failure text does not become a synthetic empty-response error");
+
+  // The OpenCode-specific preflight runs after capability discovery but before
+  // a prompt/model command is created. Removing the same shim used by the
+  // successful turn proves the route returns the shared structured remediation
+  // and never manufactures an auth/no-output assistant response.
+  await rm(path.join(bin, executable), { force: true });
+  const missingResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "missing OpenCode must not run", projectRoot: familiarWorkspace }),
+  }));
+  assert.equal(missingResponse.status, 200, await missingResponse.clone().text());
+  const missingBody = await missingResponse.text();
+  const missingEvents = missingBody
+    .split("\n")
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => JSON.parse(line.slice("data: ".length)));
+  const missingError = missingEvents.find((event) => event.kind === "error");
+  assert.equal(missingError?.code, "runtime_missing", "missing OpenCode is classified before the chat launch");
+  assert.match(missingError?.message ?? "", /OpenCode CLI not found on PATH/, "missing OpenCode uses its install/PATH remediation");
+  assert.doesNotMatch(missingBody, /installed but not authenticated|produced no output/i, "a missing OpenCode binary never becomes an auth or empty-output diagnosis");
+  assert.ok(!missingEvents.some((event) => event.kind === "assistant_chunk"), "a missing OpenCode binary streams no fabricated assistant response");
+  const missingDone = missingEvents.findLast((event) => event.kind === "done");
+  assert.equal(missingDone?.isError, true, "the no-spawn OpenCode result is terminally errored");
+  if (missingDone?.sessionId) {
+    const missingConversation = await loadConversation(missingDone.sessionId);
+    assert.equal(
+      (missingConversation?.turns ?? []).filter((turn) => turn.role === "assistant").length,
+      0,
+      "the unavailable OpenCode turn never persists a fabricated assistant message",
+    );
+  }
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;
