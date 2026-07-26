@@ -24,7 +24,7 @@ try {
   assert.deepEqual(
     localRuntimeLaunchError("grok", "ENOENT"),
     {
-      code: "ENOENT",
+      code: "runtime_missing",
       message: missingRunnerMessage("grok"),
     },
     "a post-spawn missing-interpreter race retains the missing-runner contract",
@@ -62,21 +62,19 @@ try {
     "ready reports the exact executable name selected from the spawn PATH",
   );
 
-  if (process.platform !== "win32") {
-    const absoluteReady = evaluateRuntimeAvailability({
-      runner: "coven",
-      command: executable,
-      env: { PATH: "" },
-      platform: "linux",
-    });
-    assert.equal(
-      absoluteReady.state,
-      "ready",
-      "a mode-0755 regular file is launchable on POSIX",
-    );
-  }
+  const absoluteReady = evaluateRuntimeAvailability({
+    runner: "coven",
+    command: executable,
+    env: { PATH: "" },
+    platform: process.platform,
+  });
+  assert.equal(
+    absoluteReady.state,
+    "ready",
+    "a mode-0755 regular file is launchable on POSIX",
+  );
 
-  if (process.platform !== "win32") {
+  if (nativePlatform !== "win32") {
     const directoryCandidate = path.join(binDir, "grok-directory");
     mkdirSync(directoryCandidate);
     const directoryResult = evaluateRuntimeAvailability({

@@ -32,6 +32,11 @@ assert.match(
 );
 assert.match(
   source,
+  /const grokProbeEnv = h\.id === "grok" \? runtime\.spawnEnv : undefined;[\s\S]*?const grokReady = h\.id === "grok" && availability\.state === "ready";[\s\S]*?const readyGrokLaunch = grokReady \? grokLaunch : null;[\s\S]*?const version = h\.id === "grok" && !grokReady[\s\S]*?copilotLaunch\?\.env \?\? grokProbeEnv,[\s\S]*?const grokCatalog = readyGrokLaunch \? await probeGrokModels\(readyGrokLaunch, grokProbeEnv\) : null;/,
+  "Grok's version and authenticated catalog probes must only run after the shared launchability contract reports ready in the same scoped environment",
+);
+assert.match(
+  source,
   /const resolvedBinary = h\.id === "grok" \? grokBin\(\) : h\.binary;[\s\S]*?h\.id === "grok" && resolvedBinary !== h\.binary[\s\S]*?: await which\(h\.binary\)/,
   "WSL must report a Windows grok.exe discovered by the native launcher even though Linux which does not use PATHEXT",
 );
@@ -47,7 +52,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const version = await probeVersion\([\s\S]*?copilotLaunch\?\.command[\s\S]*?copilotLaunch\?\.fixedArgs[\s\S]*?copilotLaunch\?\.env/,
+  /const version = h\.id === "grok" && !grokReady[\s\S]*?copilotLaunch\?\.command[\s\S]*?copilotLaunch\?\.fixedArgs[\s\S]*?copilotLaunch\?\.env/,
   "Copilot version discovery uses the exact resolved command, fixed arguments, and credential-free environment",
 );
 assert.match(
@@ -59,6 +64,12 @@ assert.doesNotMatch(
   source,
   /availability:\s*\{[\s\S]{0,200}\b(?:command|fixedArgs|env|resolvedPath)\b/,
   "the harness API never copies private Copilot launch-plan data onto availability",
+);
+
+assert.match(
+  source,
+  /resolveCopilotRuntimeLaunch\(stream\.executable,\s*\{\s*spawnEnv: \(\) => harnessSpawnEnv\(null\)/,
+  "Copilot status must resolve the same direct launcher in the shared harness environment as chat send",
 );
 
 console.log("harness route tests passed");

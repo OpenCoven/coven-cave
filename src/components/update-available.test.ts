@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { prepareNativeUpdate } from "../lib/native-update-preparation.ts";
 import {
+  NativeUpdateCheckSequence,
   adoptNativeUpdateResult,
   NativeUpdateCoordinator,
 } from "../lib/native-update-coordinator.ts";
@@ -90,6 +91,11 @@ assert.match(src, /classifyFallbackReleaseCheck/, "HTTP-200 release error bodies
 assert.match(src, /kind: "unavailable"/, "failed native and fallback checks have a dedicated unavailable state");
 assert.match(src, /Last known/, "a failed recheck marks any retained update result as last-known data");
 assert.match(src, /confirmed \{relativeTime\(state\.checkedAt\)\}/, "only a completed successful check can render confirmed currency");
+assert.match(
+  src,
+  /const current = checkSequence\.settle\(sequence\);\s*if \(!mounted\.current\) \{\s*if \(r\.kind === "native"\) void nativeUpdateCoordinator\.release\(owner\);\s*return;\s*\}\s*if \(!current\) return;/,
+  "an unmounted Settings row releases an adopted native handle even when its check was superseded",
+);
 
 // Banner: long-running desktops re-check periodically — a mount-only check
 // would leave always-on instances permanently unaware of new releases.
@@ -124,6 +130,21 @@ assert.match(src, /Check for updates/, "settings row offers a manual re-check");
 assert.match(src, /Open installer in Browser/, "fallback keeps installer recovery inside Cave's Browser surface");
 assert.match(src, /Native updater unavailable/, "settings row distinguishes native updater failure from a normal installer fallback");
 assert.match(src, /Retry native update/, "settings row makes retrying native update the primary recovery action");
+assert.match(
+  src,
+  /if \([\s\S]*checkSequence\.inFlight[\s\S]*activeCancellation\.current[\s\S]*preparedUpdate\.current[\s\S]*installInFlight\.current[\s\S]*\)\s*return false;/,
+  "an external update check cannot replace checking, preparing, or prepared row state",
+);
+assert.match(
+  src,
+  /onCheckAvailabilityChange\?\.\([\s\S]*state\.phase !== "checking"[\s\S]*state\.phase !== "prepared"/,
+  "the row tells the hero when checking is safe so the hero action can be disabled",
+);
+assert.match(
+  src,
+  /nativeUpdateCoordinator\.subscribe\([\s\S]*checkSequence\.supersede\(\)[\s\S]*setState/,
+  "a newer coordinator snapshot supersedes any older row-local check before rendering",
+);
 
 // Banner: the native updater is the recommended install path. A native check
 // failure (often a transient mid-release latest.json gap) first offers a
@@ -256,6 +277,69 @@ function mockUpdate(version = "9.9.9") {
     },
     closeCalls: () => closeCalls,
   };
+}
+
+{
+  const sequence = new NativeUpdateCheckSequence();
+  const staleCheck = sequence.begin();
+  let rendered = "checking";
+  sequence.supersede();
+  rendered = "v2 available";
+  if (sequence.settle(staleCheck)) rendered = "current";
+
+  assert.equal(
+    rendered,
+    "v2 available",
+    "a stale local check cannot overwrite the newer coordinator-rendered result",
+  );
+  assert.equal(sequence.inFlight, false, "superseding a check immediately re-enables a fresh check");
+  const freshCheck = sequence.begin();
+  assert.equal(sequence.inFlight, true);
+  assert.equal(sequence.settle(freshCheck), true, "the next unsuperseded check can settle normally");
+  assert.equal(sequence.inFlight, false);
+}
+
+{
+  const coordinator = new NativeUpdateCoordinator();
+  const externalOwner = Symbol("newer-external-owner");
+  const unmountedRowOwner = Symbol("superseded-unmounted-row");
+  const staleCandidate = mockUpdate("1.0.0");
+  const retainedUpdate = mockUpdate("2.0.0");
+  const staleEpoch = coordinator.beginCheck();
+  const sequence = new NativeUpdateCheckSequence();
+  const staleSequence = sequence.begin();
+  const newerEpoch = coordinator.beginCheck();
+
+  await coordinator.adopt(externalOwner, retainedUpdate.handle, newerEpoch);
+  sequence.supersede();
+  await coordinator.release(unmountedRowOwner);
+
+  const result = await adoptNativeUpdateResult(
+    coordinator,
+    unmountedRowOwner,
+    staleCandidate.handle,
+    staleEpoch,
+  );
+  const current = sequence.settle(staleSequence);
+
+  assert.equal(current, false, "the row check was superseded before its native result settled");
+  assert.equal(result.kind, "available");
+  assert.equal(
+    result.update,
+    retainedUpdate.handle,
+    "the stale row check adopts the coordinator's retained newer handle",
+  );
+  assert.equal(staleCandidate.closeCalls(), 1, "the stale candidate closes during adoption");
+
+  // Mirrors the component's unmounted cleanup branch: this release must run
+  // even when `current` is false, or the row's newly acquired lease leaks.
+  await coordinator.release(unmountedRowOwner);
+  await coordinator.release(externalOwner);
+  assert.equal(
+    retainedUpdate.closeCalls(),
+    1,
+    "the retained update closes after the superseded unmounted row and external owner release",
+  );
 }
 
 {

@@ -8,6 +8,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
+if (process.platform === "win32") {
+  console.log("beads-pr-patrol: skipped on native Windows (the fixture stubs POSIX command executables)");
+  process.exit(0);
+}
+
 const root = path.resolve(new URL("..", import.meta.url).pathname);
 const temp = mkdtempSync(path.join(tmpdir(), "beads-pr-patrol-"));
 const bin = path.join(temp, "bin");

@@ -10,11 +10,25 @@ const source = [
 // Setup status actions stay together as one compact row. On narrow panes the
 // row scrolls within its own width instead of wrapping or widening the page.
 const setupHeader = source.match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
-assert.match(
-  setupHeader,
-  /className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto lg:w-auto lg:shrink-0"/,
-  "Re-check, Copy diagnostics, and readiness render in one contained non-wrapping row",
+const setupActionsMatch = setupHeader.match(
+  /<div\s+className="([^"]*\boverflow-x-auto\b[^"]*)"/,
 );
+const setupActionsClasses = setupActionsMatch?.[1]?.split(/\s+/) ?? [];
+for (const className of [
+  "flex",
+  "w-full",
+  "flex-nowrap",
+  "items-center",
+  "gap-2",
+  "overflow-x-auto",
+  "lg:w-auto",
+  "lg:shrink-0",
+]) {
+  assert.ok(
+    setupActionsClasses.includes(className),
+    `setup actions retain ${className} without pinning harmless class order`,
+  );
+}
 assert.equal(
   setupHeader.match(/focus-ring-inset/g)?.length,
   2,

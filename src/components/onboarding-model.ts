@@ -1,5 +1,6 @@
 import type { IconName } from "@/lib/icon";
 import type { LatestCheckDisplay } from "@/lib/opencoven-tools-status-display";
+import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 
 export type PruneState =
   | { idle: true }
@@ -62,12 +63,7 @@ export type HarnessReport = {
   installHint: string;
   source: string;
   manifestPath: string | null;
-  /** Exact native-chat launch status; unavailable does not necessarily mean
-   * the CLI executable itself is absent. */
-  availability?: {
-    state?: string;
-    message?: string;
-  };
+  availability?: RuntimeAvailabilitySummary;
 };
 
 export type InstallTarget =

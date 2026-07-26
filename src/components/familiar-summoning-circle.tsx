@@ -772,13 +772,22 @@ function StageVessel({
   // launcher. Hide it for SSH rather than letting a selection fall back to an
   // incompatible `coven run --stream-json` path.
   const installedHarnesses = (harnesses ?? []).filter(
-    (h) => h.installed
-      && (vessel !== "local" || h.availability?.state === undefined || h.availability.state === "ready")
-      && (vessel !== "ssh" || h.id !== "grok"),
+    (h) =>
+      h.installed &&
+      (vessel !== "local" || h.availability?.state === undefined || h.availability.state === "ready") &&
+      (h.availability?.state ?? "ready") === "ready" &&
+      (vessel !== "ssh" || h.id !== "grok"),
   );
-  const unavailableLocalHarness = vessel === "local"
-    ? (harnesses ?? []).find((h) => h.installed && h.availability?.state !== undefined && h.availability.state !== "ready")
-    : null;
+  const unavailableHarness = (harnesses ?? []).find(
+    (h) =>
+      h.availability !== undefined &&
+      h.availability.state !== "ready" &&
+      (vessel !== "ssh" || h.id !== "grok"),
+  );
+  const unavailableAvailability = unavailableHarness?.availability;
+  const unavailableRuntimeMessage = unavailableAvailability && unavailableAvailability.state !== "ready"
+    ? unavailableAvailability.message
+    : "No chat-capable runtime found. Run setup to install one (Codex, Claude Code, Copilot…), then return to the circle.";
   return (
     <div className="flex flex-col gap-3">
       <div role="radiogroup" aria-label="Vessel" className="summoning-vessels">
@@ -814,7 +823,7 @@ function StageVessel({
             // users between the circle and Settings (cave-tpji).
             <div className="flex flex-col items-start gap-1.5">
               <p className="text-[length:var(--text-xs)] text-[var(--color-warning)]">
-                {unavailableLocalHarness?.availability?.message ?? "No chat-capable runtime found. Run setup to install one (Codex, Claude Code, Copilot…), then return to the circle."}
+                {unavailableRuntimeMessage}
               </p>
               <button
                 type="button"
