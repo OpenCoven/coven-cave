@@ -791,10 +791,10 @@ assert.match(
   const hookRunning = tracker.hookStart("Read", undefined);
   const hookDone = tracker.hookEnd("Read", "hook contents", false);
   assert.equal(hookDone.id, hookRunning.id);
-  assert.equal(
+  assert.deepEqual(
     tracker.envelopeToolUse("toolu_late_envelope", "Read", '{"file_path":"/tmp/x"}'),
-    null,
-    "a late envelope links to an already-completed hook instead of duplicating it",
+    { id: hookDone.id, name: "Read", input: '{"file_path":"/tmp/x"}', status: "ok", durationMs: 0 },
+    "a late envelope fills the completed hook bubble instead of duplicating or reopening it",
   );
   assert.equal(
     tracker.envelopeToolResult("toolu_late_envelope", "envelope contents", false),
