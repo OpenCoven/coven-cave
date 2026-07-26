@@ -53,6 +53,10 @@ const nextConfig: NextConfig = {
       "./test-results/**/*",
       "./tests/**/*",
       "./src/**/*.test.*",
+      // Server routes are compiled into `.next/server`; source files are not
+      // runtime inputs. Guard against a dynamic child-process dependency
+      // causing NFT to copy the entire checkout into the desktop sidecar.
+      "./src/**/*",
       "./apps/**/*.test.*",
       "./apps/ios/**/build/**/*",
     ],

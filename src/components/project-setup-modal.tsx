@@ -230,6 +230,7 @@ export function ProjectSetupModal({
       open
       onClose={onClose}
       dismissOnBackdrop={!busy}
+      dismissOnEscape={!busy}
       breadcrumb={["Projects", "Set up project"]}
       footerActions={
         <>

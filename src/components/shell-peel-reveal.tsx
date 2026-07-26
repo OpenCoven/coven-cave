@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import {
   useEffect,
   useRef,
@@ -9,21 +8,29 @@ import {
   type ReactNode,
 } from "react";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
+// Type-only: erased at compile time, so the ~22 KB vendored WebGL module
+// still reaches the bundle only through the dynamic import() below.
+import type PeelComponent from "@/components/canvasui/Peel";
 
-// The ~22 KB vendored WebGL file loads only on HTML-in-canvas browsers.
-const Peel = dynamic(() => import("@/components/canvasui/Peel"), { ssr: false });
-
-let peelModuleReady = false;
+/** The loaded vendored component, stashed at module scope once the chunk
+ *  arrives. NOT React.lazy/next/dynamic: a lazy's thenable is always pending
+ *  on its FIRST render even when the chunk is already loaded, so the freshly
+ *  mounted Suspense boundary would commit its null fallback — blanking the
+ *  detail pane (~300ms FALLBACK_THROTTLE_MS) and double-mounting its children
+ *  (state/focus/scroll loss) exactly when `enhanced` flips true (cave-ao2o).
+ *  Rendering the stashed component directly makes the enhancement flip a
+ *  single-commit re-parent. */
+let PeelLive: typeof PeelComponent | null = null;
 const peelReadyListeners = new Set<() => void>();
-/** next/dynamic suspends with a null fallback, and the detail children live
- *  inside <Peel> — switching to the live tree before the chunk arrives would
- *  blank (and double-mount) the whole detail pane. Track module readiness so
- *  the plain tree keeps rendering until the live tree can mount for real. */
+/** The detail children live inside <Peel> — switching to the live tree before
+ *  the chunk arrives would blank the whole detail pane. Track the loaded
+ *  module so the plain tree keeps rendering until the live tree can mount for
+ *  real, in one commit. */
 function subscribePeelReady(listener: () => void) {
-  if (!peelModuleReady) {
+  if (!PeelLive) {
     void import("@/components/canvasui/Peel")
-      .then(() => {
-        peelModuleReady = true;
+      .then((mod) => {
+        PeelLive = mod.default;
         for (const notify of peelReadyListeners) notify();
       })
       // Failed chunk loads self-heal: the next subscribe retries the import.
@@ -32,10 +39,10 @@ function subscribePeelReady(listener: () => void) {
   peelReadyListeners.add(listener);
   return () => peelReadyListeners.delete(listener);
 }
-function getPeelReady() {
-  return peelModuleReady;
+function getPeelLive() {
+  return PeelLive;
 }
-const getPeelReadyServer = () => false;
+const getPeelLiveServer = () => null;
 
 /** Peel geometry while the collapsed rail arms the reveal: 232px of exposed
  *  under-layer matches the hover-peek overlay width; a 120px trigger strip
@@ -103,8 +110,10 @@ const emptySubscribe = () => () => {};
  * reduced-motion users) this renders a bare Fragment: zero wrapper elements,
  * so direct-child selector chains like `.shell-detail > .cave-mode-fade`
  * (see detail-split-host.tsx) keep matching, and the children are never
- * re-parented by `active` changes within a mode. The live tree additionally
- * waits for the vendored chunk so enhancement never blanks the pane mid-load.
+ * re-parented by `active` changes within a mode. The live tree waits for the
+ * vendored chunk and then renders the loaded component directly — no
+ * lazy/Suspense — so the enhancement flip is a single commit: the pane never
+ * blanks on a null fallback and children re-parent exactly once (cave-ao2o).
  * Under the experimental flag those `>` chains do not reach through the
  * vendor's canvas layers — a known, flag-gated divergence (Task 6 QA).
  */
@@ -118,13 +127,13 @@ export function ShellPeelReveal({
   children: ReactNode;
 }) {
   const supported = useSyncExternalStore(emptySubscribe, probeHtmlInCanvas, () => false);
-  const peelReady = useSyncExternalStore(
+  const Peel = useSyncExternalStore(
     supported ? subscribePeelReady : emptySubscribe,
-    getPeelReady,
-    getPeelReadyServer,
+    getPeelLive,
+    getPeelLiveServer,
   );
   const reducedMotion = usePrefersReducedMotion();
-  const enhanced = supported && peelReady && !reducedMotion;
+  const enhanced = supported && Peel !== null && !reducedMotion;
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [glEpoch, setGlEpoch] = useState(0);

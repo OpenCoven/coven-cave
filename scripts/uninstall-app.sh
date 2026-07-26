@@ -177,9 +177,39 @@ forget_launch_agent() {
   local label="$1"
   local plist="$2"
 
-  if command -v launchctl >/dev/null 2>&1; then
-    run launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
-    run launchctl remove "$label" 2>/dev/null || true
+  if ! command -v launchctl >/dev/null 2>&1; then
+    remove_path "$plist"
+    return 0
+  fi
+
+  # Dry runs describe the complete sequence without trying to infer launchd
+  # state from commands that were intentionally not executed.
+  if [[ "$EXECUTE" != "1" ]]; then
+    run launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null
+    run launchctl remove "$label" 2>/dev/null
+    remove_path "$plist"
+    return 0
+  fi
+
+  launch_agent_is_absent() {
+    run launchctl print "gui/$(id -u)/${label}" 2>/dev/null
+    local status=$?
+    # A normal nonzero print means the service is absent. A timeout is not
+    # proof of absence, so fail closed rather than deleting its executable.
+    [[ "$status" -ne 0 && "$status" -ne 124 ]]
+  }
+
+  if ! run launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null; then
+    if ! launch_agent_is_absent; then
+      if ! run launchctl remove "$label" 2>/dev/null && ! launch_agent_is_absent; then
+        log "error: launchd still owns ${label}; aborting uninstall before app paths are removed"
+        return 1
+      fi
+    fi
+  fi
+  if ! launch_agent_is_absent; then
+    log "error: could not verify ${label} is absent from launchd; aborting uninstall"
+    return 1
   fi
   remove_path "$plist"
 }

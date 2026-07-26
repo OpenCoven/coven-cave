@@ -39,6 +39,15 @@ export type ChatTurn = {
      *  through whole, so the field round-trips for free. */
     textOffset?: number;
   }>;
+  /** Safe, user-visible run status retained with the assistant reply. */
+  progress?: Array<{
+    id: string;
+    label: string;
+    detail?: string;
+    status: "running" | "done" | "error";
+    createdAt: string;
+    durationMs?: number;
+  }>;
   createdAt: string;
   durationMs?: number;
   isError?: boolean;

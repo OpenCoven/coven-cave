@@ -9,7 +9,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { copyText } from "@/lib/clipboard";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import type { SkillBrowserEntry } from "@/components/skill-browser";
+import type { SkillBrowserEntry } from "@/lib/skill-directory";
 import { installCommand, sourceTarget, stripFrontmatter } from "@/lib/skill-directory";
 
 export type SkillExploreDrawerProps = {

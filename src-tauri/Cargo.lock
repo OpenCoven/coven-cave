@@ -81,6 +81,7 @@ version = "0.1.6"
 dependencies = [
  "block2",
  "fs2",
+ "libc",
  "log",
  "objc2",
  "objc2-avf-audio",

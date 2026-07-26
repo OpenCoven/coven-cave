@@ -71,6 +71,26 @@ function normalizeTurn(input: unknown): ChatTurn | null {
   const now = new Date().toISOString();
   const usage = normalizeTurnUsage(value.usage);
   const costUsd = parseCostUsd(value.costUsd);
+  const progress = Array.isArray(value.progress)
+    ? value.progress.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const item = entry as NonNullable<ChatTurn["progress"]>[number];
+      if (
+        typeof item.id !== "string"
+        || typeof item.label !== "string"
+        || typeof item.createdAt !== "string"
+        || (item.status !== "running" && item.status !== "done" && item.status !== "error")
+      ) return [];
+      return [{
+        id: item.id,
+        label: item.label,
+        ...(typeof item.detail === "string" ? { detail: item.detail } : {}),
+        status: item.status,
+        createdAt: item.createdAt,
+        ...(typeof item.durationMs === "number" && Number.isFinite(item.durationMs) ? { durationMs: item.durationMs } : {}),
+      }];
+    })
+    : undefined;
   return {
     id: typeof value.id === "string" && value.id.trim() ? value.id : crypto.randomUUID(),
     role: value.role,
@@ -78,6 +98,7 @@ function normalizeTurn(input: unknown): ChatTurn | null {
     ...(Array.isArray(value.attachments) ? { attachments: value.attachments } : {}),
     ...(typeof value.reasoning === "string" ? { reasoning: value.reasoning } : {}),
     ...(Array.isArray(value.tools) ? { tools: value.tools } : {}),
+    ...(progress?.length ? { progress } : {}),
     ...(typeof value.parentId === "string" || value.parentId === null
       ? { parentId: value.parentId }
       : {}),

@@ -9,7 +9,6 @@ import { readFile } from "node:fs/promises";
 const view = await readFile(new URL("../marketplace-view.tsx", import.meta.url), "utf8");
 const model = await readFile(new URL("./marketplace-view-model.ts", import.meta.url), "utf8");
 const builder = await readFile(new URL("./skill-builder.tsx", import.meta.url), "utf8");
-const browser = await readFile(new URL("../skill-browser.tsx", import.meta.url), "utf8");
 const format = await readFile(new URL("../../lib/skill-build-format.ts", import.meta.url), "utf8");
 
 // Section wiring in the hub.
@@ -33,7 +32,6 @@ assert.match(view, /if \(next === "skills"\)[\s\S]{0,120}setKind\("skill"\)/, "t
 // The old dead-end: creating a skill used to punt to the read-only
 // Capabilities inspector.
 assert.doesNotMatch(view, /selectSection\("capabilities"\)/, "create-skill no longer punts to Capabilities");
-assert.match(browser, /Build a skill/, "the skill-browser empty-state CTA is named for authoring");
 
 // The authoring form's contract.
 assert.match(builder, /fetch\("\/api\/skills\/build"/, "saving posts to the guarded build endpoint");
