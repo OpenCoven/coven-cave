@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 // Tool-call event tracking for the native chat SSE stream.
 //
 // Two independent sources describe the same tool calls:
@@ -48,6 +50,11 @@ export const MAX_SETTLED_ENVELOPE_IDS = 512;
 export const MAX_SETTLED_RECONCILIATION_CALLS = 512;
 /** A malicious or runaway runtime must not grow the persisted event index forever. */
 export const MAX_RECORDED_TOOL_EVENTS = 512;
+
+/** Compare full tool inputs without retaining their uncapped contents. */
+function toolInputFingerprint(input: string | undefined): string | undefined {
+  return input === undefined ? undefined : createHash("sha256").update(input).digest("hex");
+}
 
 function utf8Bytes(value: string | undefined): number {
   return value === undefined ? 0 : new TextEncoder().encode(value).byteLength;
@@ -126,6 +133,8 @@ type OpenCall = {
   hookStarted: boolean;
   /** Distinguishes a real pre hook from a post-only fallback record. */
   preHookObserved: boolean;
+  /** Full-input match key for reordered same-name hook/envelope calls. */
+  inputFingerprint?: string;
 };
 
 export class ToolCallTracker {
@@ -246,6 +255,7 @@ export class ToolCallTracker {
 
   private takeSettledHookCall(name: string, unlinkedOnly = false, input?: string): OpenCall | undefined {
     const queue = this.settledHookCalls.get(name);
+    const inputFingerprint = toolInputFingerprint(input);
     const index = unlinkedOnly
       // A late assistant envelope without a matching normalized input cannot
       // be proven to describe an earlier completed pre/post hook. Pairing it
@@ -254,10 +264,9 @@ export class ToolCallTracker {
       // so retain the existing reconciliation behavior for that hook variant.
       ? queue?.findIndex((call) => {
           if (call.envelopeId) return false;
-          const recordedInput = this.recorded.get(call.id)?.input;
           return call.preHookObserved
-            ? input !== undefined && (recordedInput === undefined || recordedInput === input)
-            : recordedInput === undefined || recordedInput === input;
+            ? inputFingerprint !== undefined && (call.inputFingerprint === undefined || call.inputFingerprint === inputFingerprint)
+            : call.inputFingerprint === undefined || call.inputFingerprint === inputFingerprint;
         }) ?? -1
       : 0;
     const call = index >= 0 ? queue?.splice(index, 1)[0] : undefined;
@@ -270,10 +279,10 @@ export class ToolCallTracker {
    * lets the delayed pre attach to that record; it must never reopen it. */
   private takePostBeforePreEnvelopeCall(name: string, input?: string): OpenCall | undefined {
     const queue = this.settledHookCalls.get(name);
+    const inputFingerprint = toolInputFingerprint(input);
     const index = queue?.findIndex((call) => {
       if (!call.envelopeId || call.preHookObserved) return false;
-      const recordedInput = this.recorded.get(call.id)?.input;
-      return input === undefined || recordedInput === undefined || recordedInput === input;
+      return inputFingerprint === undefined || call.inputFingerprint === undefined || call.inputFingerprint === inputFingerprint;
     }) ?? -1;
     const call = index >= 0 ? queue?.splice(index, 1)[0] : undefined;
     if (queue?.length === 0) this.settledHookCalls.delete(name);
@@ -303,16 +312,16 @@ export class ToolCallTracker {
 
   private takeSettledEnvelopeCall(name: string, input?: string): OpenCall | undefined {
     const queue = this.settledEnvelopeCalls.get(name);
+    const inputFingerprint = toolInputFingerprint(input);
     // A completed envelope is retained only to reconcile a late hook. Do not
     // let it absorb a later same-name invocation whose input proves it is a
     // different call; that would overwrite the completed call with the later
     // hook's output and leave the actual envelope call orphaned.
-    const index = input === undefined
+    const index = inputFingerprint === undefined
       ? 0
-      : queue?.findIndex((call) => {
-          const recordedInput = this.recorded.get(call.id)?.input;
-          return recordedInput === undefined || recordedInput === input;
-        }) ?? -1;
+      : queue?.findIndex((call) =>
+          call.inputFingerprint === undefined || call.inputFingerprint === inputFingerprint,
+        ) ?? -1;
     const call = index >= 0 ? queue?.splice(index, 1)[0] : undefined;
     if (queue?.length === 0) this.settledEnvelopeCalls.delete(name);
     return call;
@@ -394,9 +403,10 @@ export class ToolCallTracker {
     // already arrived, match the hook's normalized input before falling back
     // to FIFO; otherwise the completed output can be recorded on the other
     // call's stable id.
-    const claim = input === undefined
+    const inputFingerprint = toolInputFingerprint(input);
+    const claim = inputFingerprint === undefined
       ? unclaimedEnvelopeCalls[0]
-      : unclaimedEnvelopeCalls.find((c) => this.recorded.get(c.id)?.input === input)
+      : unclaimedEnvelopeCalls.find((c) => c.inputFingerprint === inputFingerprint)
         ?? unclaimedEnvelopeCalls[0];
     if (claim) {
       claim.hookStarted = true;
@@ -458,6 +468,7 @@ export class ToolCallTracker {
       origin: "hook",
       hookStarted: true,
       preHookObserved: true,
+      inputFingerprint,
     };
     queue.push(call);
     const ev: ToolStreamEvent = { id: call.id, name, input, status: "running" };
@@ -525,6 +536,7 @@ export class ToolCallTracker {
     if (utf8Bytes(id) > 512 || utf8Bytes(name) > 512 || this.byEnvelopeId.has(id) || this.settledEnvelopeIds.has(id)) return null;
     if (this.byEnvelopeId.size >= MAX_OPEN_ENVELOPE_CALLS) return null;
     const queue = this.queueFor(name);
+    const inputFingerprint = toolInputFingerprint(input);
     // A hook pre may have surfaced this call already under a minted id. Link
     // the native id to the oldest unlinked hook call rather than emitting a
     // duplicate block — hook events win when both sources exist.
@@ -534,11 +546,12 @@ export class ToolCallTracker {
     // and envelope inputs are both normalized for display, so use an exact
     // input match when it is available; retain FIFO only when the transport
     // omitted (or cannot distinguish by) the input.
-    const hookCall = input === undefined
+    const hookCall = inputFingerprint === undefined
       ? unlinkedHookCalls[0]
-      : unlinkedHookCalls.find((c) => this.recorded.get(c.id)?.input === input) ?? unlinkedHookCalls[0];
+      : unlinkedHookCalls.find((c) => c.inputFingerprint === inputFingerprint) ?? unlinkedHookCalls[0];
     if (hookCall) {
       hookCall.envelopeId = id;
+      hookCall.inputFingerprint ??= inputFingerprint;
       this.byEnvelopeId.set(id, hookCall);
       const prev = this.recorded.get(hookCall.id);
       if (prev && prev.input === undefined && input !== undefined) {
@@ -562,6 +575,7 @@ export class ToolCallTracker {
     const settledHookCall = this.takeSettledHookCall(name, true, input);
     if (settledHookCall) {
       settledHookCall.envelopeId = id;
+      settledHookCall.inputFingerprint ??= inputFingerprint;
       this.rememberSettledEnvelopeId(id);
       this.dropPendingEnvelopeResult(id);
       const prev = this.recorded.get(settledHookCall.id);
@@ -588,6 +602,7 @@ export class ToolCallTracker {
       origin: "envelope",
       hookStarted: false,
       preHookObserved: false,
+      inputFingerprint,
     };
     queue.push(call);
     this.byEnvelopeId.set(id, call);

@@ -177,4 +177,22 @@ assert.deepEqual(postBeforePre.snapshot(), [{
   durationMs: 0,
 }]);
 
+
+// Two large same-name inputs can share the entire display-capped prefix. Their
+// full-input fingerprints must still keep reordered hook output on the matching
+// native envelope id rather than falling back to FIFO.
+const cappedPrefix = "x".repeat(LIVE_TOOL_INPUT_CAP);
+const largeA = `${cappedPrefix}-first`;
+const largeB = `${cappedPrefix}-second`;
+const largeSameName = new ToolCallTracker(() => 1_000);
+assert.ok(largeSameName.envelopeToolUse("large-a", "Read", largeA));
+assert.ok(largeSameName.envelopeToolUse("large-b", "Read", largeB));
+largeSameName.hookStart("Read", largeB);
+largeSameName.hookStart("Read", largeA);
+largeSameName.hookEnd("Read", "second output", false);
+largeSameName.hookEnd("Read", "first output", false);
+const largeSameNameRecords = new Map(largeSameName.snapshot().map((event) => [event.id, event]));
+assert.equal(largeSameNameRecords.get("large-a")?.output, "first output");
+assert.equal(largeSameNameRecords.get("large-b")?.output, "second output");
+
 console.log("chat-tool-events.test.ts: ok");
