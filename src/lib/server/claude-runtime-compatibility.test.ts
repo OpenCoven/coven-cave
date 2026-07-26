@@ -83,6 +83,11 @@ assert.match(
   /profileCache = next;[\s\S]*?cached = null;/,
   "a successful profile refresh must invalidate the cached compatibility resolution",
 );
+assert.match(
+  compatibilitySource,
+  /const profileExpiresAt = resolution\.kind === "compatible" && !resolution\.stale[\s\S]*?validUntil: Math\.min\(now \+ PROBE_TTL_MS, profileExpiresAt\)/,
+  "a cached compatible probe must expire no later than its selected profile",
+);
 
 // Signed by the registry fixture key (the private key is deliberately not
 // available to runtime code). This models a future profile received through a

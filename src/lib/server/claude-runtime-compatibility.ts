@@ -17,7 +17,10 @@ import { writeJsonAtomic } from "./atomic-write.ts";
 const PROBE_TTL_MS = 60_000;
 const PROBE_MAX_OUTPUT_BYTES = 64 * 1024;
 const PROBE_FORCE_KILL_GRACE_MS = 250;
-let cached: { at: number; value: CompatibilityResolution } | null = null;
+// Cache a probe only until either the ordinary probe TTL or the selected
+// profile's expiry, whichever arrives first. Otherwise a profile that expires
+// during the 60-second TTL could remain enabled after its trust window ends.
+let cached: { value: CompatibilityResolution; validUntil: number } | null = null;
 let profileCache = new RuntimeCompatibilityCache();
 let profileCacheLoaded = false;
 let refreshQueue: Promise<void> = Promise.resolve();
@@ -157,7 +160,7 @@ export async function resolveInstalledClaudeCompatibility(
   dependencies: { version?: () => Promise<string | null>; help?: () => Promise<string | null>; now?: () => number } = {},
 ): Promise<CompatibilityResolution> {
   const now = dependencies.now?.() ?? Date.now();
-  if (!dependencies.version && !dependencies.help && cached && now - cached.at < PROBE_TTL_MS) return cached.value;
+  if (!dependencies.version && !dependencies.help && cached && now < cached.validUntil) return cached.value;
   await loadClaudeCompatibilityCache();
   const [versionOutput, helpOutput] = await Promise.all([
     (dependencies.version ?? (() => runClaude(["--version"])))(),
@@ -183,7 +186,15 @@ export async function resolveInstalledClaudeCompatibility(
     probe: version && helpOutput !== null ? "ok" : "failed",
   };
   const resolution = resolveRuntimeCompatibility(report, profileCache.current(), new Date(now));
-  if (!dependencies.version && !dependencies.help) cached = { at: now, value: resolution };
+  if (!dependencies.version && !dependencies.help) {
+    const profileExpiresAt = resolution.kind === "compatible" && !resolution.stale
+      ? Date.parse(resolution.profile.expiresAt)
+      : Number.POSITIVE_INFINITY;
+    cached = {
+      value: resolution,
+      validUntil: Math.min(now + PROBE_TTL_MS, profileExpiresAt),
+    };
+  }
   return resolution;
 }
 
