@@ -61,7 +61,8 @@ export function parseClaudeMessageEnvelope(
         typeof block.name === "string" &&
         block.id &&
         block.name &&
-        hasOwn(block, "input")
+        hasOwn(block, "input") &&
+        block.input !== null
       ) {
         events.push({ kind: "tool-use", id: block.id, name: block.name, input: block.input });
       }
@@ -73,7 +74,8 @@ export function parseClaudeMessageEnvelope(
         block?.type === profile.eventTypes.toolResult &&
         typeof block.tool_use_id === "string" &&
         block.tool_use_id &&
-        hasOwn(block, "content")
+        hasOwn(block, "content") &&
+        block.content !== null
       ) {
         events.push({
           kind: "tool-result",
@@ -123,7 +125,8 @@ export function hasUnsupportedClaudeToolFrame(
         !block.id ||
         typeof block.name !== "string" ||
         !block.name ||
-        !hasOwn(block, "input");
+        !hasOwn(block, "input") ||
+        block.input === null;
     });
   }
   if (isUser) {
@@ -134,6 +137,7 @@ export function hasUnsupportedClaudeToolFrame(
       return typeof block.tool_use_id !== "string" ||
         !block.tool_use_id ||
         !hasOwn(block, "content") ||
+        block.content === null ||
         (block.is_error !== undefined && typeof block.is_error !== "boolean");
     });
   }

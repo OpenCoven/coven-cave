@@ -97,6 +97,8 @@ type OpenCall = {
   origin: "hook" | "envelope";
   /** A pre_tool_use hook has been paired with this call. */
   hookStarted: boolean;
+  /** Distinguishes a real pre hook from a post-only fallback record. */
+  preHookObserved: boolean;
 };
 
 export class ToolCallTracker {
@@ -168,9 +170,18 @@ export class ToolCallTracker {
   private takeSettledHookCall(name: string, unlinkedOnly = false, input?: string): OpenCall | undefined {
     const queue = this.settledHookCalls.get(name);
     const index = unlinkedOnly
-      ? queue?.findIndex((call) =>
-          !call.envelopeId && (input === undefined || this.recorded.get(call.id)?.input === undefined || this.recorded.get(call.id)?.input === input),
-        ) ?? -1
+      // A late assistant envelope without a matching normalized input cannot
+      // be proven to describe an earlier completed pre/post hook. Pairing it
+      // by name alone would make the next same-name invocation disappear.
+      // A post-only hook is the exception: it has no pre-hook input to match,
+      // so retain the existing reconciliation behavior for that hook variant.
+      ? queue?.findIndex((call) => {
+          if (call.envelopeId) return false;
+          const recordedInput = this.recorded.get(call.id)?.input;
+          return call.preHookObserved
+            ? input !== undefined && (recordedInput === undefined || recordedInput === input)
+            : recordedInput === undefined || recordedInput === input;
+        }) ?? -1
       : 0;
     const call = index >= 0 ? queue?.splice(index, 1)[0] : undefined;
     if (queue?.length === 0) this.settledHookCalls.delete(name);
@@ -267,6 +278,7 @@ export class ToolCallTracker {
         ?? unclaimedEnvelopeCalls[0];
     if (claim) {
       claim.hookStarted = true;
+      claim.preHookObserved = true;
       // `hookEnd` has no native id and pairs in pre-hook arrival order. Move
       // a claimed envelope behind earlier claimed calls so envelope arrival
       // order cannot change that FIFO pairing.
@@ -305,6 +317,7 @@ export class ToolCallTracker {
       startedAt: this.now(),
       origin: "hook",
       hookStarted: true,
+      preHookObserved: true,
     };
     queue.push(call);
     const ev: ToolStreamEvent = { id: call.id, name, input, status: "running" };
@@ -338,6 +351,7 @@ export class ToolCallTracker {
         startedAt: this.now(),
         origin: "hook",
         hookStarted: true,
+        preHookObserved: false,
       };
       this.rememberSettledHookCall(completedHook);
       const ev: ToolStreamEvent = { id: completedHook.id, name, output, status };
@@ -424,6 +438,7 @@ export class ToolCallTracker {
       envelopeId: id,
       origin: "envelope",
       hookStarted: false,
+      preHookObserved: false,
     };
     if (pending) {
       this.pendingEnvelopeResults.delete(id);

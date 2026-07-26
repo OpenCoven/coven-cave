@@ -437,6 +437,27 @@ assert.match(
   );
 }
 
+// A completed hook with no input cannot be safely associated with the next
+// same-name envelope. Retaining it by name alone makes the later real call
+// disappear from both live activity and the persisted transcript.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  tracker.hookStart("Bash");
+  tracker.hookEnd("Bash", "first output", false);
+  const nextEnvelope = tracker.envelopeToolUse("toolu-next", "Bash");
+  assert.deepEqual(nextEnvelope, {
+    id: "toolu-next",
+    name: "Bash",
+    input: undefined,
+    status: "running",
+  }, "an ambiguous same-name envelope starts a distinct tool call");
+  assert.equal(
+    tracker.envelopeToolResult("toolu-next", "second output", false)?.id,
+    "toolu-next",
+    "the later envelope result settles its own visible call",
+  );
+}
+
 // When two same-name pre hooks arrive before their envelopes, match each
 // envelope by its normalized input instead of assigning native ids by FIFO.
 // Otherwise the result/output of the second execution is persisted against the

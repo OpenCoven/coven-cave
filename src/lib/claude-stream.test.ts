@@ -78,6 +78,16 @@ assert.equal(
   true,
   "a missing tool input is a malformed profile frame rather than an empty invocation",
 );
+assert.deepEqual(
+  parseClaudeMessageEnvelope({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu-null-input", name: "Read", input: null }] } }, v2),
+  [],
+  "a null tool input does not create an incomplete tool bubble",
+);
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu-null-input", name: "Read", input: null }] } }, v2),
+  true,
+  "a null tool input is a malformed profile frame rather than an empty invocation",
+);
 assert.equal(
   hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: [{ type: "text", text: "ordinary text" }] } }, v2),
   false,
@@ -111,6 +121,22 @@ assert.equal(
   }, v2),
   true,
   "a tool_result missing content is a malformed profile frame rather than a successful empty result",
+);
+assert.deepEqual(
+  parseClaudeMessageEnvelope({
+    type: "user",
+    message: { content: [{ type: "tool_result", tool_use_id: "toolu-null-content", content: null }] },
+  }, v2),
+  [],
+  "a null tool_result content cannot settle a tool bubble successfully",
+);
+assert.equal(
+  hasUnsupportedClaudeToolFrame({
+    type: "user",
+    message: { content: [{ type: "tool_result", tool_use_id: "toolu-null-content", content: null }] },
+  }, v2),
+  true,
+  "a null tool_result content is malformed rather than a successful empty result",
 );
 assert.equal(
   hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: { type: "tool_use" } } }, v2),
