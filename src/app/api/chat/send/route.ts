@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { homedir } from "node:os";
+import { StringDecoder } from "node:string_decoder";
 import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
@@ -43,7 +44,7 @@ import {
   CodexJsonlDecoder,
   CODEX_TEXT_ONLY_FALLBACK_SCHEMA,
   codexProbeEnv,
-  peekCachedCodexRuntime,
+  discoverCachedCodexRuntime,
   productionCodexSchemaSources,
   resolveCodexSchema,
 } from "@/lib/codex-compatibility";
@@ -941,9 +942,9 @@ export async function POST(req: Request) {
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
   // Codex's JSONL item protocol evolves independently of Cave. Discover the
-  // local CLI and select a constrained version/capability schema once a
-  // cached probe is available; a cold probe warms in the background so it
-  // never delays chat startup. Unknown versions retain the generic path.
+  // local CLI and select a constrained version/capability schema. Discovery
+  // is single-flight and bounded, so the first compatible turn can use its
+  // native tool lifecycle without letting a cold probe hang chat startup.
   // Resume the harness's latest session id, not the stable conversation id —
   // after the first resume those diverge permanently.
   const resumeTarget = body.startNewConversation && !existingConversation
@@ -962,7 +963,7 @@ export async function POST(req: Request) {
   const codexCompatibility =
     codexLaunch && !codexLaunch.unresolvedWindowsShim
       ? resolveCodexSchema(
-        peekCachedCodexRuntime(
+        await discoverCachedCodexRuntime(
           { command: codexLaunch.command, fixedArgs: codexLaunch.fixedArgs },
           1_500,
           codexProbeEnv(codexHarnessEnv ?? undefined),
@@ -1585,6 +1586,7 @@ export async function POST(req: Request) {
       let assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
       let assistantText = "";
       let jsonBuf = "";
+      let stdoutDecoder = new StringDecoder("utf8");
       let result: {
         duration_ms?: number;
         is_error?: boolean;
@@ -2284,7 +2286,9 @@ export async function POST(req: Request) {
           req.signal.addEventListener("abort", onAbort, { once: true });
 
           child.stdout.on("data", (data: Buffer) => {
-            jsonBuf += data.toString("utf8");
+            // Decode one continuous UTF-8 stream. A JSONL boundary can split
+            // any multibyte character across pipe callbacks.
+            jsonBuf += stdoutDecoder.write(data);
             let idx;
             while ((idx = jsonBuf.indexOf("\n")) >= 0) {
               const line = jsonBuf.slice(0, idx);
@@ -2358,6 +2362,7 @@ export async function POST(req: Request) {
               undefined,
               Date.now() - attemptStartedAt,
             );
+            jsonBuf += stdoutDecoder.end();
             if (jsonBuf) handleLine(jsonBuf);
             if (codexDecoder?.hasPendingRecord) {
               // Terminate the buffered record through the same ordered event
@@ -2404,6 +2409,7 @@ export async function POST(req: Request) {
         // Keep already-streamed prose. The client cannot retract it, and its
         // tool offsets must remain meaningful after the replacement attempt.
         jsonBuf = "";
+        stdoutDecoder = new StringDecoder("utf8");
         result = {};
         settleToolCallsBeforeRetry();
         toolAttempt += 1;
@@ -2448,6 +2454,7 @@ export async function POST(req: Request) {
         assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
         // Keep already-streamed prose for live/reloaded transcript parity.
         jsonBuf = "";
+        stdoutDecoder = new StringDecoder("utf8");
         result = {};
         settleToolCallsBeforeRetry();
         toolAttempt += 1;

@@ -10,7 +10,7 @@
 
 import { createHash, createPublicKey, verify as verifySignature } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -25,6 +25,9 @@ const MAX_SCHEMA_FUTURE_SKEW_MS = 5 * 60_000;
 const CACHE_LOCK_TIMEOUT_MS = 2_000;
 const CACHE_LOCK_RETRY_MS = 25;
 const MAX_TOOL_DISPLAY_CHARS = 16_384;
+const MAX_JSONL_PENDING_CHARS = 256 * 1024;
+const CODEX_SCHEMA_REGISTRY_ORIGIN = "https://raw.githubusercontent.com";
+const CODEX_SCHEMA_REGISTRY_PATH_PREFIX = "/OpenCoven/coven-runtimes/";
 
 export type CodexCapabilities = {
   jsonEvents: boolean;
@@ -252,6 +255,7 @@ export function isValidCodexSchema(schema: unknown): schema is CodexEventSchema 
     || !isStringArray(value.toolItemTypes, MAX_ITEM_TYPES_PER_SCHEMA)
     || !isStringArray(value.textItemTypes, MAX_ITEM_TYPES_PER_SCHEMA)
   ) return false;
+  if (value.toolItemTypes.some((itemType) => value.textItemTypes!.includes(itemType))) return false;
   if (!value.requiredCapabilities || typeof value.requiredCapabilities !== "object") return false;
   return Object.entries(value.requiredCapabilities).every(
     ([key, enabled]) => (key === "jsonEvents" || key === "resume") && typeof enabled === "boolean",
@@ -453,8 +457,24 @@ export async function readCodexSchemaCache(
   options: { allowExpired?: boolean; ignoreTime?: boolean } = {},
 ): Promise<CodexSchemaDocument | null> {
   try {
-    if ((await stat(cachePath)).size > MAX_SCHEMA_DOCUMENT_BYTES) return null;
-    const checked = validateCodexSchemaDocument(JSON.parse(await readFile(cachePath, "utf8")), now, options);
+    // Hold one descriptor from size check through the bounded read. A second
+    // path-based read can be swapped for a multi-gigabyte file after stat.
+    const handle = await open(cachePath, "r");
+    let serialized: string;
+    try {
+      const { size } = await handle.stat();
+      if (size > MAX_SCHEMA_DOCUMENT_BYTES) return null;
+      const bytes = Buffer.alloc(size);
+      const { bytesRead } = await handle.read(bytes, 0, size, 0);
+      if (bytesRead !== size) return null;
+      // Detect growth of the opened inode/handle after its fstat as well.
+      const extra = Buffer.alloc(1);
+      if ((await handle.read(extra, 0, 1, size)).bytesRead !== 0) return null;
+      serialized = bytes.toString("utf8");
+    } finally {
+      await handle.close();
+    }
+    const checked = validateCodexSchemaDocument(JSON.parse(serialized), now, options);
     return checked.ok && verifySignature(checked.value) ? checked.value : null;
   } catch {
     return null;
@@ -590,6 +610,25 @@ export async function refreshCodexSchemaCache(
 
 const schemaRefreshes = new Map<string, { checkedAt: number; pending: Promise<void> | null }>();
 
+/** Registry documents may only come from the release-owned schema repository.
+ * The configurable value selects a path/revision there; it never grants an
+ * arbitrary outbound network destination to the chat process. */
+export function trustedCodexSchemaRegistryUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.origin === CODEX_SCHEMA_REGISTRY_ORIGIN
+      && url.protocol === "https:"
+      && !url.username
+      && !url.password
+      && url.pathname.startsWith(CODEX_SCHEMA_REGISTRY_PATH_PREFIX)
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fetch's `response.json()` buffers an arbitrarily large body before schema
  * validation gets a chance to apply the document cap. Keep the transport
@@ -698,13 +737,21 @@ export async function productionCodexSchemaSources(options: {
   const now = options.now ?? new Date();
   const sources: CodexSchemaSources = [{ source: "builtin", schemas: CODEX_BOOTSTRAP_SCHEMAS }];
   const cached = await readCodexSchemaCache(cachePath, verifier, now);
-  if (cached) sources.push({ source: "cache", schemas: cached.schemas });
+  const watermark = await readCodexSchemaWatermark(cachePath, verifier, now);
+  // A restored/replayed cache file cannot bypass the authenticated high-water
+  // mark written beside it. Leave the cache unselectable until an equal-or-
+  // newer verified document repairs it.
+  if (cached && (!watermark || compareSchemaDocumentFreshness(cached, watermark) >= 0)) {
+    sources.push({ source: "cache", schemas: cached.schemas });
+  }
 
   // The runtime registry currently publishes adapter manifests, not signed
   // Codex event schemas. Do not silently poll a guessed URL: deployments that
   // operate a signed schema registry opt in explicitly, and stock clients keep
   // using the reviewed bootstrap schemas plus a verified LKG cache.
-  const registryUrl = options.registryUrl ?? process.env.COVEN_CODEX_SCHEMA_REGISTRY_URL;
+  const registryUrl = trustedCodexSchemaRegistryUrl(
+    options.registryUrl ?? process.env.COVEN_CODEX_SCHEMA_REGISTRY_URL,
+  );
   const refresh = schemaRefreshes.get(cachePath);
   const refreshDue = !refresh || Date.now() - refresh.checkedAt >= 5 * 60_000;
   if (registryUrl && refreshDue && !refresh?.pending) {
@@ -716,6 +763,7 @@ export async function productionCodexSchemaSources(options: {
           headers: { Accept: "application/json", "User-Agent": "coven-cave" },
           signal: AbortSignal.timeout(4_000),
           cache: "no-store",
+          redirect: "error",
         });
         if (!response.ok) throw new Error(`registry fetch failed: ${response.status}`);
         return readBoundedCodexSchemaResponse(response);
@@ -1007,6 +1055,7 @@ export function parseCodexStreamEvent(value: unknown, schema: CodexEventSchema):
  */
 export class CodexJsonlDecoder {
   private pending = "";
+  private discardingOversizedRecord = false;
   // A `codex` line is common on captured pipes, but it can also be
   // user-requested assistant prose. Hold it until a valid thread preamble
   // proves protocol ownership, then consume it; otherwise preserve it.
@@ -1023,11 +1072,26 @@ export class CodexJsonlDecoder {
   }
 
   get hasPendingRecord(): boolean {
-    return this.pending.length > 0 || this.pendingUntrustedMarker !== null;
+    return this.pending.length > 0 || this.pendingUntrustedMarker !== null || this.discardingOversizedRecord;
   }
 
   push(chunk: string, schema: CodexEventSchema): { events: CodexStreamEvent[]; passthrough: string; tokens: CodexDecodedToken[] } {
+    if (this.discardingOversizedRecord) {
+      const newline = chunk.indexOf("\n");
+      if (newline < 0) return { events: [], passthrough: "", tokens: [] };
+      this.discardingOversizedRecord = false;
+      chunk = chunk.slice(newline + 1);
+    }
     this.pending += chunk;
+    if (this.pending.length > MAX_JSONL_PENDING_CHARS) {
+      // Drop only the oversized record and consume through its next newline
+      // before accepting later valid JSONL. Never retain attacker-controlled
+      // partial data just because it lacks a newline.
+      this.pending = "";
+      this.discardingOversizedRecord = true;
+      const event: CodexStreamEvent = { kind: "unknown", fingerprint: "oversized-jsonl" };
+      return { events: [event], passthrough: "", tokens: [event] };
+    }
     const lines = this.pending.split(/\r?\n/);
     this.pending = lines.pop() ?? "";
     const events: CodexStreamEvent[] = [];

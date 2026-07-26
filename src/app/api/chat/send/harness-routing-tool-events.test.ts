@@ -143,6 +143,31 @@ assert.match(
   assert.equal(orphan.durationMs, undefined, "no start time means no fabricated duration");
 }
 
+// Native Codex item ids are scoped to one invocation. A transparent retry can
+// restart at item_0, so the UI keys must remain attempt-scoped while terminal
+// frames continue to resolve by their original native id.
+{
+  const firstAttempt = new ToolCallTracker(() => 0, "attempt-0-");
+  const retryAttempt = new ToolCallTracker(() => 0, "attempt-1-");
+  const first = firstAttempt.envelopeToolUse("item_0", "Bash");
+  const retry = retryAttempt.envelopeToolUse("item_0", "Bash");
+  assert.notEqual(first?.id, retry?.id, "reused native item ids never overwrite a prior retry bubble");
+  assert.equal(firstAttempt.envelopeToolResult("item_0", "first", false)?.id, first?.id);
+  assert.equal(retryAttempt.envelopeToolResult("item_0", "second", false)?.id, retry?.id);
+}
+
+// item.updated may fill in arguments after a bare item.started. It updates the
+// existing live bubble rather than creating a second call.
+{
+  const tracker = new ToolCallTracker(() => 0, "attempt-0-");
+  const started = tracker.envelopeToolUse("item-input", "Bash");
+  const updated = tracker.envelopeToolUse("item-input", "Bash", '{"command":"pwd"}');
+  assert.equal(updated?.id, started?.id, "richer input updates the original native bubble");
+  assert.equal(updated?.input, '{"command":"pwd"}');
+  tracker.envelopeToolResult("item-input", "ok", false);
+  assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}', "updated input persists with the settled call");
+}
+
 // Behavioral: transparent retries preserve the first attempt's settled hook
 // activity, so a replacement tracker must not mint the same UI merge key.
 {

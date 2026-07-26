@@ -221,7 +221,20 @@ export class ToolCallTracker {
    * linked to the hook's id instead, so later tool_result blocks dedup).
    */
   envelopeToolUse(id: string, name: string, input?: string, textOffset?: number): ToolStreamEvent | null {
-    if (this.byEnvelopeId.has(id) || this.settledEnvelopeIds.has(id)) return null;
+    const existing = this.byEnvelopeId.get(id);
+    if (existing) {
+      // Codex commonly sends item.started before arguments are available and
+      // fills them in with item.updated. Refresh the same UI key rather than
+      // losing the richer input or creating a duplicate bubble.
+      const previous = this.recorded.get(existing.id);
+      if (input !== undefined && previous?.input === undefined) {
+        const event: ToolStreamEvent = { id: existing.id, name: existing.name, input, status: "running" };
+        this.record(event, textOffset);
+        return event;
+      }
+      return null;
+    }
+    if (this.settledEnvelopeIds.has(id)) return null;
     const queue = this.queueFor(name);
     // A hook pre may have surfaced this call already under a minted id. Link
     // the native id to the oldest unlinked hook call rather than emitting a
@@ -237,7 +250,10 @@ export class ToolCallTracker {
       return null;
     }
     const call: OpenCall = {
-      id,
+      // Native item ids are only unique within one Codex invocation. The
+      // route supplies an attempt prefix, while `envelopeId` remains native
+      // so later item.updated/completed frames resolve correctly.
+      id: `${this.generatedIdPrefix}${id}`,
       name,
       startedAt: this.now(),
       envelopeId: id,
@@ -246,7 +262,7 @@ export class ToolCallTracker {
     };
     queue.push(call);
     this.byEnvelopeId.set(id, call);
-    const ev: ToolStreamEvent = { id, name, input, status: "running" };
+    const ev: ToolStreamEvent = { id: call.id, name, input, status: "running" };
     this.record(ev, textOffset);
     return ev;
   }

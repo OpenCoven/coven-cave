@@ -18,6 +18,7 @@ import {
   readCodexSchemaCache,
   refreshCodexSchemaCache,
   schemaContentHash,
+  trustedCodexSchemaRegistryUrl,
   validateCodexSchemaDocument,
   writeCodexSchemaCache,
 } from "./codex-compatibility.ts";
@@ -140,6 +141,11 @@ assert.equal(itemJsonProse.passthrough, '{"type":"item.summary","value":"assista
 const partial = preambleFreeDecoder.push('{"type":"item.started"', selected.schema);
 assert.equal(partial.events.length, 0);
 assert.equal(preambleFreeDecoder.flush(selected.schema).events.length, 0, "partial records before protocol mode never become tool events");
+const oversizedDecoder = new CodexJsonlDecoder();
+const oversized = oversizedDecoder.push("x".repeat(256 * 1024 + 1), selected.schema);
+assert.equal(oversized.events[0]?.kind, "unknown", "oversized unterminated JSONL records are quarantined before buffering unbounded data");
+const afterOversized = oversizedDecoder.push(`\n{"type":"item.completed","item":{"id":"after-large","type":"agent_message","text":"recovered"}}\n`, selected.schema);
+assert.equal(afterOversized.passthrough.includes("recovered"), true, "a later record is processed after discarding the oversized line");
 
 const mixed = new CodexJsonlDecoder().push(
   'codex\n{"type":"thread.started","thread_id":"thread-mixed"}\n{"type":"item.started","item":{"id":"call-mixed","type":"command_execution","command":"pwd"}}\nprose after\n',
@@ -202,6 +208,10 @@ assert.equal(probe.PATH, "safe-path");
 assert.equal(probe.OPENAI_API_KEY, undefined, "provider credentials never reach a capability probe");
 assert.equal(probe.VAULT_TOKEN, undefined, "vault credentials never reach a capability probe");
 assert.ok(Object.keys(CODEX_SCHEMA_TRUSTED_KEYS).length > 0, "stock installs ship a versioned registry trust root");
+assert.equal(trustedCodexSchemaRegistryUrl("http://raw.githubusercontent.com/OpenCoven/coven-runtimes/main/codex.json"), null, "registry transport requires HTTPS");
+assert.equal(trustedCodexSchemaRegistryUrl("https://registry.invalid/codex.json"), null, "registry transport cannot target arbitrary hosts");
+assert.equal(trustedCodexSchemaRegistryUrl("https://user:pass@raw.githubusercontent.com/OpenCoven/coven-runtimes/main/codex.json"), null, "registry transport rejects credentialed URLs");
+assert.equal(trustedCodexSchemaRegistryUrl("https://raw.githubusercontent.com/OpenCoven/coven-runtimes/main/codex.json"), "https://raw.githubusercontent.com/OpenCoven/coven-runtimes/main/codex.json", "release-owned registry paths are accepted without pinning a schema version");
 await assert.rejects(
   readBoundedCodexSchemaResponse(new Response("{}", { headers: { "content-length": "1048577" } })),
   /exceeds the document limit/,
@@ -242,6 +252,7 @@ assert.equal(validateCodexSchemaDocument({ ...document, provenance: { ...documen
 assert.equal(validateCodexSchemaDocument({ ...document, provenance: { ...document.provenance, fetchedAt: "2026-07-25T00:06:00.000Z" } }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "far-future registry documents cannot freeze normal updates");
 assert.equal(validateCodexSchemaDocument({ ...document, schemas: [document.schemas[0], document.schemas[0]] }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "duplicate schema ids are rejected");
 assert.equal(validateCodexSchemaDocument({ ...document, schemas: [{ ...document.schemas[0], eventTypes: [...document.schemas[0].eventTypes, "item.finalized"] }] }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "registry schemas cannot redefine lifecycle event names without parser support");
+assert.equal(validateCodexSchemaDocument({ ...document, schemas: [{ ...document.schemas[0], toolItemTypes: [...document.schemas[0].toolItemTypes, "agent_message"] }] }, new Date("2026-07-24T12:00:00.000Z")).ok, false, "schema item types cannot be both transcript text and tool activity");
 const reorderedPayload = {
   schemas: CODEX_BOOTSTRAP_SCHEMAS.map((schema) => ({
     textItemTypes: schema.textItemTypes,
@@ -302,6 +313,10 @@ try {
   const laterReissueDocument = { ...laterReissuePayload, contentHash: schemaContentHash(laterReissuePayload), signature: document.signature };
   assert.equal(await writeCodexSchemaCache(cachePath, laterReissueDocument, verify, new Date("2026-07-24T12:00:00.000Z")), false, "a later-dated lower checkpoint cannot roll back filesystem LKG");
   assert.equal(await writeCodexSchemaCache(cachePath, olderDocument, verify, new Date("2026-07-24T10:30:00.000Z")), false, "a backward clock correction cannot erase the newer cache watermark before rejecting an older replay");
+  await writeFile(cachePath, JSON.stringify(olderDocument));
+  const replayedSources = await productionCodexSchemaSources({ cachePath, verifier: verify, now: new Date("2026-07-24T12:00:00.000Z") });
+  assert.equal(replayedSources.some((source) => source.source === "cache"), false, "a replayed cache below its authenticated watermark is never selected");
+  await writeFile(cachePath, JSON.stringify(newerDocument));
   assert.equal((await readCodexSchemaCache(cachePath, verify, new Date("2026-07-24T12:00:00.000Z")))?.provenance.revision, "newer", "the newest verified filesystem document remains cached");
   const corruptCachePath = path.join(cacheDir, "corrupt-cache.json");
   assert.equal(await writeCodexSchemaCache(corruptCachePath, document, verify, new Date("2026-07-24T12:00:00.000Z")), true);
