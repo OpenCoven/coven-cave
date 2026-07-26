@@ -22,6 +22,8 @@ const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift")
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
 const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
 const tasks = await read("apps/ios/CovenCave/CovenCave/Views/TasksView.swift");
+const terminal = await read("apps/ios/CovenCave/CovenCave/Views/TerminalView.swift");
+const settings = await read("apps/ios/CovenCave/CovenCave/Views/SettingsView.swift");
 const zoom = await read("apps/ios/CovenCave/CovenCave/Views/ContentZoom.swift");
 
 // Supplied device reference: this is the canonical first empty conversation.
@@ -89,6 +91,23 @@ assert.match(
   "Chats renders the familiar rail it defines",
 );
 assert.match(root, /CaveNavigationDrawer\(/, "the global Claude Design drawer is mounted at app root");
+assert.doesNotMatch(root, /TabView/, "the primary shell does not retain a native tab view");
+assert.doesNotMatch(root, /Tab\("/, "the primary shell does not declare native tabs");
+assert.doesNotMatch(root, /MainTabView/, "RootView mounts the semantically neutral shell");
+assert.match(root, /struct MainShellView/, "the connected root uses MainShellView");
+assert.match(
+  root,
+  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.terminal:\s*TerminalView\(\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
+  "the shell mounts exactly the selected primary destination",
+);
+for (const label of ["Chats", "Tasks", "Terminal", "Settings"]) {
+  const matches = drawer.match(new RegExp(`DrawerNavRow\\([\\s\\S]*?label: "${label}"`, "g")) ?? [];
+  assert.equal(matches.length, 1, `drawer includes ${label} exactly once as a primary row`);
+}
+for (const [name, source] of [["Chats", home], ["Tasks", tasks], ["Terminal", terminal], ["Settings", settings]]) {
+  assert.match(source, /navigationDrawerOpen = true/, `${name} exposes Open navigation`);
+}
+assert.doesNotMatch(chat, /\.toolbar\(\.hidden, for: \.tabBar\)/, "ChatView does not depend on a removed tab bar");
 assert.match(
   drawer,
   /Color\.black\.opacity\(isOpen \? 0\.46 : 0\)/,

@@ -174,9 +174,6 @@ struct ChatView: View {
         .background(chrome.bgBase.ignoresSafeArea())
         .navigationTitle(thread.title)
         .navigationBarTitleDisplayMode(.inline)
-        // Full-screen conversation: the root tab bar yields to the composer —
-        // Chats' pushed detail reads as its own surface, like Messages.
-        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 9) {

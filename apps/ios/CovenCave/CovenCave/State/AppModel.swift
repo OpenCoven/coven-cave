@@ -3,13 +3,13 @@ import Network
 import Observation
 import WidgetKit
 
-/// The bottom tabs. Lifted out of the view so slash commands (`/board`,
-/// `/chats`) can drive tab selection from anywhere.
+/// The primary destinations. Lifted out of the drawer shell so slash commands
+/// (`/board`, `/chats`) can drive selection from anywhere.
 enum AppTab: String, CaseIterable { case chats, tasks, terminal, settings }
 
 extension AppTab {
-    static let barTabs: [AppTab] = [.chats, .tasks, .terminal, .settings]
-    static let shortcutOrder: [AppTab] = barTabs
+    static let drawerDestinations: [AppTab] = [.chats, .tasks, .terminal, .settings]
+    static let shortcutOrder: [AppTab] = drawerDestinations
 }
 
 /// A transient confirmation banner shown over the chat after a command runs.
@@ -54,7 +54,7 @@ final class AppModel {
         }
     }
     /// Stamped each time the state ENTERS `.connected`. RootView uses it to
-    /// show a brief "Connected" confirmation over the freshly mounted tabs
+    /// show a brief "Connected" confirmation over the freshly mounted shell
     /// when pairing just succeeded, so the connect screen's success isn't an
     /// abrupt teleport.
     private(set) var connectedAt: Date?
@@ -76,11 +76,12 @@ final class AppModel {
 
     // MARK: - Cross-view command routing
 
-    /// The selected bottom tab. Bound by `MainTabView`; set by `/board` / `/chats`.
+    /// The selected primary destination. Mounted by `MainShellView`; set by
+    /// drawer actions, deep links, and `/board` / `/chats`.
     var selectedTab: AppTab = {
         #if DEBUG
         // Snapshot hook: `simctl launch … --ui-tab settings` boots straight
-        // into a tab (incl. hidden ones) for screenshot automation.
+        // into a destination for screenshot automation.
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "--ui-tab"), i + 1 < args.count,
            let tab = AppTab(rawValue: args[i + 1]) {
@@ -128,7 +129,7 @@ final class AppModel {
         threadToOpen = thread
     }
 
-    /// Ask the Tasks tab to open a card's detail (switches to Tasks first).
+    /// Ask the Tasks destination to open a card's detail (selects Tasks first).
     func requestOpenTask(_ card: BoardCard) {
         selectedTab = .tasks
         cardToOpen = card

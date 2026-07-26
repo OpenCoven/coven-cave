@@ -6,7 +6,6 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        @Bindable var app = app
         Group {
             switch app.connectionState {
                 case .unconfigured, .needsAuth:
@@ -21,10 +20,10 @@ struct RootView: View {
                     ConnectionView()
                 default:
                     // Connected — or a transient drop AFTER surfaces loaded. Keep
-                    // the tab tree mounted (cached data stays usable, offline
+                    // the primary shell mounted (cached data stays usable, offline
                     // compose keeps queueing) and narrate recovery with the pill
                     // instead of tearing down to the Connect screen.
-                    MainTabView()
+                    MainShellView()
             }
         }
         .overlay(alignment: .top) {
@@ -36,13 +35,13 @@ struct RootView: View {
             }
         }
         .animation(.snappy(duration: 0.25), value: showsReconnectPill)
-        // Brief "Connected" confirmation over the freshly mounted tabs when a
+        // Brief "Connected" confirmation over the freshly mounted shell when a
         // connection lands — the connect screen's success is no longer an
         // abrupt teleport into the app. Purely decorative and self-dismissing.
         .overlay {
             ConnectedMomentOverlay()
         }
-        // While the pill is up over the tabs, quietly re-probe so a desktop
+        // While the pill is up over the shell, quietly re-probe so a desktop
         // that comes back (restarted, woke from sleep) reconnects on its own.
         // The Connect screen has its own ticker for the pre-surfaces case;
         // the hasLoadedSurfaces guard keeps the two from double-probing.
@@ -59,12 +58,12 @@ struct RootView: View {
         }
         .background(chrome.bgBase.ignoresSafeArea())
         .foregroundStyle(chrome.textPrimary)
-        // Frosted, accent-infused tab + navigation bars that track the desktop
+        // Frosted, accent-infused navigation bars that track the desktop
         // palette and degrade to solid themed surfaces under Reduce Transparency.
         .glassBars()
     }
 
-    /// The tabs are mounted but the desktop is out of reach (or a recovery
+    /// The primary shell is mounted but the desktop is out of reach (or a recovery
     /// probe is in flight) — show the honest "Reconnecting…" pill.
     private var showsReconnectPill: Bool {
         guard app.hasLoadedSurfaces else { return false }
@@ -75,7 +74,7 @@ struct RootView: View {
     }
 }
 
-/// Brief celebratory "Connected" chip that fades in over the tab tree the
+/// Brief celebratory "Connected" chip that fades in over the primary shell the
 /// moment a connection lands (fresh pairing or reconnect from the Connect
 /// screen), then self-dismisses. Skips entirely when the connection predates
 /// this view (normal warm launches) and collapses to a plain fade under
@@ -121,8 +120,8 @@ private struct ConnectedMomentOverlay: View {
     }
 }
 
-/// Floating "Reconnecting… · last seen Xm" capsule shown over the mounted tab
-/// tree during a connection drop. Tapping it fires an immediate quiet probe
+/// Floating "Reconnecting… · last seen Xm" capsule shown over the mounted
+/// primary shell during a connection drop. Tapping it fires an immediate quiet probe
 /// instead of waiting out the 10s ticker.
 private struct ReconnectPill: View {
     @Environment(\.chrome) private var chrome
@@ -158,39 +157,23 @@ private struct ReconnectPill: View {
     }
 }
 
-/// Bottom tab bar shown once connected: Chats, Tasks, Terminal, and Settings.
-///
-/// Uses the modern `Tab(value:)` API (iOS 18+). The legacy `.tabItem`/`.tag`
-/// TabView on the iOS 26 SDK reset the selection to the first tab on a cold
-/// launch, clobbering any restored value; the value-based `Tab` API honours the
-/// initial selection, so the app reliably reopens on the last-used tab.
-struct MainTabView: View {
+/// Connected application shell. It mounts exactly one primary destination and
+/// overlays the global drawer for navigation and cross-surface handoffs.
+struct MainShellView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @State private var presentedOverlay: MainOverlay?
     @State private var projectToOpen: ProjectInfo?
 
     var body: some View {
-        @Bindable var app = app
         ZStack {
-            TabView(selection: $app.selectedTab) {
-                Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.chats) {
-                    ChatsHomeView()
-                }
-                Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
-                    TasksView()
-                }
-                Tab("Terminal", systemImage: "terminal.fill", value: AppTab.terminal) {
-                    TerminalView()
-                }
-                Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
-                    SettingsView()
-                }
-            }
-            .tabViewStyle(.sidebarAdaptable)
+            selectedDestination
 
             CaveNavigationDrawer(
-                isOpen: $app.navigationDrawerOpen,
+                isOpen: Binding(
+                    get: { app.navigationDrawerOpen },
+                    set: { app.navigationDrawerOpen = $0 }
+                ),
                 openProjects: { project in
                     projectToOpen = project
                     presentedOverlay = .projects
@@ -221,10 +204,10 @@ struct MainTabView: View {
             }
             }
         }
-        // Command confirmations float above the whole tab bar so they're visible
-        // whether a command stays in chat or jumps to the Tasks tab.
-        .toast($app.toast)
-        // Hardware-keyboard tab switching (iPad / Mac over Tailscale): ⌘1–4.
+        // Command confirmations float above the whole shell so they're visible
+        // whether a command stays in chat or jumps to the Tasks destination.
+        .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
+        // Hardware-keyboard destination switching (iPad / Mac over Tailscale): ⌘1–4.
         // Hidden buttons keep the shortcuts active without affecting layout.
         .background {
             ForEach(Array(AppTab.shortcutOrder.enumerated()), id: \.element) { index, tab in
@@ -246,6 +229,20 @@ struct MainTabView: View {
                 if app.connectionState == .connected { await app.loadTheme() }
                 try? await Task.sleep(for: .seconds(20))
             }
+        }
+    }
+
+    @ViewBuilder
+    private var selectedDestination: some View {
+        switch app.selectedTab {
+        case .chats:
+            ChatsHomeView()
+        case .tasks:
+            TasksView()
+        case .terminal:
+            TerminalView()
+        case .settings:
+            SettingsView()
         }
     }
 }
