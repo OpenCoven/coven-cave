@@ -31,14 +31,19 @@ test("About ports the Claude Design hero and live control-sheet hierarchy", () =
     /<SectionRule[\s\S]*?>\s*OpenCoven tools\s*<\/SectionRule>/,
   );
   assert.match(component, /<UpdateSettingsRow[\s\S]*actionRef=\{updateActionRef\}/);
-  assert.match(component, /<OpenCovenToolsUpdate showDiagnosticsAction=\{false\} \/>/);
+  assert.match(
+    component,
+    /<OpenCovenToolsUpdate[\s\S]*showDiagnosticsAction=\{false\}[\s\S]*onSnapshotChange=\{handleToolSnapshot\}/,
+  );
 });
 
 test("About preserves truthful live status and safe diagnostic behavior", () => {
   assert.match(component, /classifyAboutDaemonStatus/);
   assert.match(component, /fetch\("\/api\/daemon\/status"/);
-  assert.match(component, /fetch\("\/api\/onboarding\/update"/);
+  assert.match(component, /onSnapshotChange=\{handleToolSnapshot\}/);
   assert.match(component, /buildSafeToolDiagnostics/);
+  assert.match(component, /installJobs:\s*snapshot\.installJobs/);
+  assert.match(component, /installResults:\s*snapshot\.installResults/);
   assert.match(component, /copyText/);
   assert.match(component, /useAnnouncer/);
   assert.match(component, /role="status"/);
@@ -84,5 +89,17 @@ test("About CSS follows the token, focus, motion, and narrow-pane contracts", ()
   assert.match(css, /var\(--border-hairline\)/);
   assert.match(css, /var\(--font-serif\)/);
   assert.match(css, /var\(--font-mono\)/);
+  assert.match(
+    css,
+    /@media \(hover: none\) and \(pointer: coarse\)[\s\S]*\.settings-about-update-row \.ui-btn[\s\S]*\.settings-about-daemon-row \.ui-btn[\s\S]*\.settings-about-tools \.settings-tool-action[\s\S]*min-height:\s*var\(--touch-target\)/,
+  );
+  assert.match(
+    css,
+    /\.settings-about-build-sigil strong\s*\{[\s\S]*color:\s*var\(--text-primary\)/,
+  );
+  assert.match(
+    css,
+    /\.settings-about-link-card__copy small,[\s\S]*\.settings-about-release-card small\s*\{[\s\S]*color:\s*var\(--text-primary\)/,
+  );
   assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b/i);
 });

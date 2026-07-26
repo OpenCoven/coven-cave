@@ -124,6 +124,16 @@ assert.match(src, /Check for updates/, "settings row offers a manual re-check");
 assert.match(src, /Open installer in Browser/, "fallback keeps installer recovery inside Cave's Browser surface");
 assert.match(src, /Native updater unavailable/, "settings row distinguishes native updater failure from a normal installer fallback");
 assert.match(src, /Retry native update/, "settings row makes retrying native update the primary recovery action");
+assert.match(
+  src,
+  /if \([\s\S]*checkInFlight\.current[\s\S]*activeCancellation\.current[\s\S]*preparedUpdate\.current[\s\S]*\)\s*return false;/,
+  "an external update check cannot replace checking, preparing, or prepared row state",
+);
+assert.match(
+  src,
+  /onCheckAvailabilityChange\?\.\([\s\S]*state\.phase !== "checking"[\s\S]*state\.phase !== "prepared"/,
+  "the row tells the hero when checking is safe so the hero action can be disabled",
+);
 
 // Banner: the native updater is the recommended install path. A native check
 // failure (often a transient mid-release latest.json gap) first offers a

@@ -339,7 +339,7 @@
 }
 
 .settings-about-build-sigil strong {
-  color: var(--accent-presence);
+  color: var(--text-primary);
   font-size: var(--text-2xs);
   line-height: 1;
 }
@@ -414,7 +414,7 @@
 
 .settings-about-link-card__copy small,
 .settings-about-release-card small {
-  color: var(--accent-presence);
+  color: var(--text-primary);
   font-size: var(--text-2xs);
   font-weight: 600;
   line-height: 1;
@@ -720,8 +720,12 @@
 @media (hover: none) and (pointer: coarse) {
   .settings-about .settings-about-sigil,
   .settings-about-hero__actions .ui-btn,
+  .settings-about-update-row .ui-btn,
+  .settings-about-daemon-row .ui-btn,
+  .settings-about-tools .settings-tool-action,
   .settings-about-link-card,
   .settings-about-release-card .ui-btn {
+    min-width: var(--touch-target);
     min-height: var(--touch-target);
   }
 }

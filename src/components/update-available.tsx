@@ -510,7 +510,7 @@ type LastKnownUpdate =
   | { kind: "available"; version: string; checkedAt: string };
 
 export type UpdateSettingsActionHandle = {
-  check: () => void;
+  check: () => boolean;
 };
 
 /**
@@ -519,8 +519,10 @@ export type UpdateSettingsActionHandle = {
  */
 export function UpdateSettingsRow({
   actionRef,
+  onCheckAvailabilityChange,
 }: {
   actionRef?: Ref<UpdateSettingsActionHandle>;
+  onCheckAvailabilityChange?: (available: boolean) => void;
 } = {}) {
   const [state, setState] = useState<RowState>({ phase: "checking" });
   const mounted = useRef(true);
@@ -529,32 +531,80 @@ export function UpdateSettingsRow({
   const owner = useRef(Symbol("update-settings")).current;
   const lastKnown = useRef<LastKnownUpdate | null>(null);
   const checkSequence = useRef(0);
+  const checkInFlight = useRef(false);
+  const installInFlight = useRef(false);
 
   const check = useCallback(() => {
+    if (
+      checkInFlight.current ||
+      activeCancellation.current ||
+      preparedUpdate.current ||
+      installInFlight.current
+    )
+      return false;
+    checkInFlight.current = true;
     const sequence = ++checkSequence.current;
     setState({ phase: "checking" });
-    void resolveUpdate(owner).then((r) => {
-      if (sequence !== checkSequence.current) return;
-      if (!mounted.current) {
-        if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
-        return;
-      }
-      if (r.kind === "current") {
-        lastKnown.current = { kind: "current", checkedAt: r.checkedAt };
-        setState({ phase: "current", checkedAt: r.checkedAt, source: r.source });
-      } else if (r.kind === "unavailable") {
-        setState({ phase: "unavailable", message: r.message, stale: lastKnown.current });
-      } else if (r.kind === "native-unavailable") {
-        lastKnown.current = { kind: "available", version: r.version, checkedAt: new Date().toISOString() };
-        setState({ phase: "native-unavailable", r });
-      } else {
-        lastKnown.current = { kind: "available", version: r.version, checkedAt: new Date().toISOString() };
-        setState({ phase: "available", r });
-      }
-    });
+    void resolveUpdate(owner)
+      .then((r) => {
+        checkInFlight.current = false;
+        if (sequence !== checkSequence.current) return;
+        if (!mounted.current) {
+          if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
+          return;
+        }
+        if (r.kind === "current") {
+          lastKnown.current = { kind: "current", checkedAt: r.checkedAt };
+          setState({
+            phase: "current",
+            checkedAt: r.checkedAt,
+            source: r.source,
+          });
+        } else if (r.kind === "unavailable") {
+          setState({
+            phase: "unavailable",
+            message: r.message,
+            stale: lastKnown.current,
+          });
+        } else if (r.kind === "native-unavailable") {
+          lastKnown.current = {
+            kind: "available",
+            version: r.version,
+            checkedAt: new Date().toISOString(),
+          };
+          setState({ phase: "native-unavailable", r });
+        } else {
+          lastKnown.current = {
+            kind: "available",
+            version: r.version,
+            checkedAt: new Date().toISOString(),
+          };
+          setState({ phase: "available", r });
+        }
+      })
+      .catch((error) => {
+        checkInFlight.current = false;
+        if (sequence !== checkSequence.current || !mounted.current) return;
+        setState({
+          phase: "unavailable",
+          message: errorMessage(error, "Update check failed"),
+          stale: lastKnown.current,
+        });
+      });
+    return true;
   }, []);
 
   useImperativeHandle(actionRef, () => ({ check }), [check]);
+
+  useEffect(() => {
+    onCheckAvailabilityChange?.(
+      state.phase !== "checking" &&
+        state.phase !== "preparing" &&
+        state.phase !== "cancelling" &&
+        state.phase !== "prepared" &&
+        state.phase !== "installing",
+    );
+  }, [onCheckAvailabilityChange, state.phase]);
 
   useEffect(() => {
     mounted.current = true;
@@ -646,8 +696,10 @@ export function UpdateSettingsRow({
   const install = (update: NativeUpdateHandle, version: string) => {
     if (preparedUpdate.current !== update) return;
     preparedUpdate.current = null;
+    installInFlight.current = true;
     setState({ phase: "installing", version });
     void installPreparedUpdate(update).catch(async (err) => {
+      installInFlight.current = false;
       await nativeUpdateCoordinator.finishAction(owner);
       await nativeUpdateCoordinator.invalidate(update);
       if (mounted.current) {
