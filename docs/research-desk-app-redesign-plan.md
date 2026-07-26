@@ -18,6 +18,53 @@ of the design file):
 | Studio | "Generations" | 309–533 / 877–1109 | NEW `/api/research/generations` |
 | Resources | "Resources" | 623–762 / 1111–1171 + 1294–1403 | `/api/research/links` + mission sources cross-ref |
 
+## Autoresearch loop as a Library-tab source (implemented 2026-07-26)
+
+The Library also projects Sage's durable autoresearch receipts:
+
+- `~/.coven/research/autoresearch/results.tsv` is the authoritative ledger.
+  Its tab-separated schema is
+  `timestamp\tkind\titer\tslug\tinbox_delta\tscore\tscore_delta\tverdict\tbranch\tsummary`.
+  Historical rows are preserved as written; the UI never edits or derives rows
+  back into this file.
+- `~/.coven/logs/autoloop.jsonl` is the optional per-iteration completion event
+  stream written by the `coven-autoloop` skill. Its
+  `{ts, iter, slug, score, verdict, synthesis, staged_skill}` records may
+  enrich a matching ledger receipt with document paths, but cannot create a
+  Library row.
+- `~/.coven/research/synthesis/INDEX.md` is a read-only path fallback for
+  legacy ledger rows that predate completion events.
+
+The projection contract is:
+
+```ts
+type AutoresearchRow = {
+  timestamp: string;
+  kind: string;
+  iter: number;
+  slug: string;
+  score: number | null; // 0–30 only; historical word-count fields render as —
+  verdict: "PROMOTE" | "ACCEPT" | "REJECT" | "REVISE"; // REVISE is legacy
+  branch: string;
+  summary: string;
+  synthesisPath: string | null;
+  stagedSkillPath: string | null;
+};
+```
+
+The collapsed `Autoresearch iterations` region renders above mission artifacts,
+newest first, with iter, date, synthesis, score, verdict, and staged-skill
+columns. `PROMOTE` derives its fill and border from `--color-success`;
+`REJECT` and legacy `REVISE` derive theirs from `--color-warning`; `ACCEPT`
+uses the neutral surface tokens. Synthesis and staged-skill Markdown open in a
+focus-trapped in-app reader.
+
+The browser receives bounded snapshots from a local-origin-only SSE route.
+Server-side `fs.watch` invalidates the three source locations; no data polling
+or mtime loop is used. Document reads resolve real paths and remain contained
+under `~/.coven/research/synthesis` or `~/.coven/research/skills`, including
+symlink checks and file-size bounds. The integration is read-only end to end.
+
 Component files (one owner each — do not edit files you don't own):
 
 - `src/components/role-surfaces/researcher-surface.tsx` — tab host (Phase A)
