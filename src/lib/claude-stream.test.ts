@@ -103,6 +103,11 @@ assert.equal(
   false,
   "known stream metadata is not a compatibility failure",
 );
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "output", text: "untrusted tool payload" }, v2),
+  true,
+  "Coven's Codex-only output envelope must not make an unknown Claude payload renderable",
+);
 assert.deepEqual(parseClaudeMessageEnvelope({ type: "future", payload: "untrusted" }, v2), []);
 assert.deepEqual(
   parseClaudeTextOnlyEnvelope({

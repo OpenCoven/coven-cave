@@ -96,11 +96,15 @@ export function hasUnsupportedClaudeToolFrame(
   if (!envelope) return false;
   const isAssistant = envelope.type === profile.eventTypes.assistant;
   const isUser = envelope.type === profile.eventTypes.user;
-  // System/result/output envelopes have their own route handling. Everything
-  // else is an unrecognised protocol frame, even when it has no `message`
-  // field: silently dropping one would hide a newly introduced tool event.
+  // System/result envelopes have their own route handling. In particular,
+  // Claude must not inherit Coven's `output` envelope handling: that path is
+  // for the Windows Codex bridge and would render an unknown Claude payload
+  // as assistant text before the profile boundary can redact it.
+  // Everything else is an unrecognised protocol frame, even when it has no
+  // `message` field: silently dropping one would hide a newly introduced tool
+  // event.
   if (!isAssistant && !isUser) {
-    return !["system", "result", "output"].includes(String(envelope.type));
+    return !["system", "result"].includes(String(envelope.type));
   }
   if (!Array.isArray(content)) return true;
   if (isAssistant) {

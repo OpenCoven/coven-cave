@@ -121,6 +121,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /binding\.harness !== "claude"[\s\S]*?ev\.type === "output"[\s\S]*?typeof ev\.text === "string"/,
+  "the Codex-only output envelope must not render an unknown Claude payload before profile validation",
+);
+
+assert.match(
+  chatRoute,
   /binding\.harness === "claude" && \(toolMatch \|\| trimmed\.startsWith\("hook:"\)\)/,
   "unrecognized Claude hook lines must not leak tool payloads into empty-response diagnostics",
 );
@@ -659,13 +665,13 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /ev\.type === "output" && typeof ev\.text === "string"[\s\S]*?assistantFilter\.push\(cleaned\)[\s\S]*?kind: "assistant_chunk", text: filtered/,
+  /binding\.harness !== "claude"[\s\S]*?ev\.type === "output"[\s\S]*?typeof ev\.text === "string"[\s\S]*?assistantFilter\.push\(cleaned\)[\s\S]*?kind: "assistant_chunk", text: filtered/,
   "Coven stream-json output events must pass through the Codex assistant filter instead of being discarded as handled JSON",
 );
 
 assert.match(
   chatRoute,
-  /ev\.type === "output" && typeof ev\.text === "string"[\s\S]*?recordStdoutErrorTail\(cleaned\)[\s\S]*?assistantFilter\.push\(cleaned\)/,
+  /binding\.harness !== "claude"[\s\S]*?ev\.type === "output"[\s\S]*?typeof ev\.text === "string"[\s\S]*?recordStdoutErrorTail\(cleaned\)[\s\S]*?assistantFilter\.push\(cleaned\)/,
   "Coven stream-json output events must preserve error-looking stdout text for empty-response diagnostics before filtering",
 );
 

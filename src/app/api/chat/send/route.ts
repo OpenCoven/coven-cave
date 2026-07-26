@@ -1944,7 +1944,15 @@ export async function POST(req: Request) {
                 usage: parseStreamJsonUsage(ev.usage),
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
-            } else if (ev.type === "output" && typeof ev.text === "string") {
+            } else if (
+              // `output` belongs to Coven's Windows Codex bridge, not the
+              // profile-selected Claude protocol. Let an unexpected Claude
+              // output frame reach the compatibility boundary below so its
+              // value cannot be rendered or retained in diagnostics.
+              binding.harness !== "claude" &&
+              ev.type === "output" &&
+              typeof ev.text === "string"
+            ) {
               // Coven's Windows captured-piped Codex path wraps transcript
               // bytes as stream-json `output` events so stdout remains a
               // valid JSONL protocol. Preserve the original chunk boundaries:
