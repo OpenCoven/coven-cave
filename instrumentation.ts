@@ -15,4 +15,6 @@ export async function register() {
   mod.startScheduler();
   const watcher = await import("@/lib/github-watcher");
   watcher.startGithubWatcher();
+  const backupSync = await import("@/lib/server/backup-sync");
+  backupSync.startBackupSyncScheduler();
 }
