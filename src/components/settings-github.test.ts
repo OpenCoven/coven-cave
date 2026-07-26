@@ -24,6 +24,10 @@ test("Code owns the organization settings trigger and popover", () => {
   assert.match(section, /export function GithubOrganizationSettings\(\)/);
   assert.match(section, /<IconButton[\s\S]*aria-label="GitHub organization settings"/);
   assert.match(section, /<Popover[\s\S]*ariaLabel="GitHub organization settings"/);
+  assert.match(
+    section,
+    /<Popover[\s\S]*className="w-\[min\(20rem,calc\(100vw-1rem\)\)\]"[\s\S]*?<PopoverBody className="w-full">/,
+  );
   assert.doesNotMatch(section, /SettingsOverview|SettingsGroup/);
 });
 
@@ -40,7 +44,8 @@ test("the Code popover reads memberships from the activity API and stays accessi
   assert.match(section, /role="alert"/);
   assert.match(section, /usePopoverInitialFocus\(open, GITHUB_ORG_POPOVER_SELECTOR\)/);
   assert.match(section, /focusScopeControl/);
-  assert.match(section, /w-\[min\(20rem,calc\(100vw-1rem\)\)\]/);
+  assert.match(codeView, /role="tab"[\s\S]*?className=\{`focus-ring-inset[\s\S]*?CODE_GITHUB_TABS\.map/);
+  assert.match(codeView, /CODE_GITHUB_TABS\.map[\s\S]*?role="tab"[\s\S]*?className=\{`focus-ring-inset/);
 });
 
 test("the Code popover preserves compact pointer rhythm and coarse-pointer targets", () => {

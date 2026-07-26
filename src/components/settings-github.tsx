@@ -140,8 +140,9 @@ export function GithubOrganizationSettings() {
         anchorRef={anchorRef}
         placement="bottom-end"
         ariaLabel="GitHub organization settings"
+        className="w-[min(20rem,calc(100vw-1rem))]"
       >
-        <PopoverBody className="w-[min(20rem,calc(100vw-1rem))]">
+        <PopoverBody className="w-full">
           <header className="border-b border-[var(--border-hairline)] px-2 pb-3 pt-2">
             <h2 id={`${baseId}-title`} className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">
               GitHub organizations

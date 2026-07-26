@@ -193,7 +193,7 @@ export function CodeView({
             role="tab"
             aria-selected={topTab === "sessions"}
             onClick={() => setTopTab("sessions")}
-            className={`focus-ring inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
+            className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
               topTab === "sessions"
                 ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
@@ -209,7 +209,7 @@ export function CodeView({
               role="tab"
               aria-selected={topTab === id}
               onClick={() => setTopTab(id)}
-              className={`focus-ring inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
+              className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
                 topTab === id
                   ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
                   : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"

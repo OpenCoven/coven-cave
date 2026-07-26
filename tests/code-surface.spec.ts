@@ -184,6 +184,21 @@ test.describe("code surface (Coding familiar's room)", () => {
     );
     await page.goto("/?mode=code");
 
+    const sessionsTab = page.getByRole("tab", { name: "Sessions" });
+    await sessionsTab.focus();
+    await expect(sessionsTab).toBeFocused();
+    await expect
+      .poll(() =>
+        sessionsTab.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            outlineOffset: style.outlineOffset,
+            outlineWidth: style.outlineWidth,
+          };
+        }),
+      )
+      .toEqual({ outlineOffset: "-2px", outlineWidth: "2px" });
+
     await page.getByRole("button", { name: "GitHub organization settings" }).click();
     const popover = page.getByRole("dialog", { name: "GitHub organization settings" });
     await expect(popover).toBeVisible({ timeout: 30_000 });
@@ -194,6 +209,9 @@ test.describe("code surface (Coding familiar's room)", () => {
     expect(bounds).not.toBeNull();
     expect(bounds!.x).toBeGreaterThanOrEqual(8);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(312);
+    expect(
+      await popover.evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
 
     await popover.getByRole("button", { name: "GitHub organization scope: Selected" }).click();
     const checkbox = popover.getByRole("checkbox", { name: /OpenCoven/ });
