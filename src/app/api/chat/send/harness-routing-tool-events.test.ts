@@ -360,6 +360,28 @@ assert.match(
   assert.equal(tracker.snapshot().length, 1, "late post hooks must not create an orphan bubble");
 }
 
+// When two same-name pre hooks arrive before their envelopes, match each
+// envelope by its normalized input instead of assigning native ids by FIFO.
+// Otherwise the result/output of the second execution is persisted against the
+// first execution's bubble.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  const first = tracker.hookStart("Read", '{"path":"first.md"}');
+  const second = tracker.hookStart("Read", '{"path":"second.md"}');
+  tracker.envelopeToolUse("toolu-second", "Read", '{"path":"second.md"}');
+  tracker.envelopeToolUse("toolu-first", "Read", '{"path":"first.md"}');
+  assert.equal(tracker.envelopeToolResult("toolu-second", "second output", false)?.id, second.id);
+  assert.equal(tracker.envelopeToolResult("toolu-first", "first output", false)?.id, first.id);
+  assert.deepEqual(
+    tracker.snapshot().map(({ input, output }) => ({ input, output })),
+    [
+      { input: '{"path":"first.md"}', output: "first output" },
+      { input: '{"path":"second.md"}', output: "second output" },
+    ],
+    "concurrent reordered same-name calls retain their own inputs and outputs",
+  );
+}
+
 // If a reordered result settles a hook-first call as its delayed envelope
 // arrives, the terminal SSE update must retain the envelope input. Otherwise
 // the live bubble drops it (the UI keeps prior fields when an update omits

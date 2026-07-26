@@ -19,8 +19,8 @@ assert.match(
 );
 assert.match(
   compatibilitySource,
-  /timer = setTimeout\(\(\) => \{[\s\S]*?child\.kill\("SIGTERM"\);[\s\S]*?finish\(null\);[\s\S]*?\}, 2_500\)/,
-  "a probe that ignores SIGTERM must still resolve at the deadline instead of blocking chat indefinitely",
+  /const terminate = \(\) => \{[\s\S]*?child\.kill\("SIGTERM"\);[\s\S]*?child\.kill\("SIGKILL"\);[\s\S]*?timer = setTimeout\(\(\) => \{[\s\S]*?terminate\(\);[\s\S]*?finish\(null\);[\s\S]*?\}, 2_500\)/,
+  "a probe that ignores SIGTERM must return at the deadline and be force-killed shortly afterward",
 );
 
 const compatible = await resolveInstalledClaudeCompatibility({

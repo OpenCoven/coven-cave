@@ -16,6 +16,7 @@ import { writeJsonAtomic } from "./atomic-write.ts";
 
 const PROBE_TTL_MS = 60_000;
 const PROBE_MAX_OUTPUT_BYTES = 64 * 1024;
+const PROBE_FORCE_KILL_GRACE_MS = 250;
 let cached: { at: number; value: CompatibilityResolution } | null = null;
 let profileCache = new RuntimeCompatibilityCache();
 let profileCacheLoaded = false;
@@ -93,18 +94,36 @@ function runClaude(args: string[]): Promise<string | null> {
     let outputBytes = 0;
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
     const finish = (value: string | null) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
       resolve(value);
     };
+    const terminate = () => {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // A process that already exited needs no further cleanup.
+        return;
+      }
+      // A broken local shim can ignore SIGTERM. Do not leave an untrusted
+      // probe process behind after the request has already timed out.
+      forceKillTimer ??= setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          /* process already exited */
+        }
+      }, PROBE_FORCE_KILL_GRACE_MS);
+    };
     const capture = (chunk: unknown) => {
       if (settled) return;
       const text = String(chunk);
       outputBytes += Buffer.byteLength(text);
       if (outputBytes > PROBE_MAX_OUTPUT_BYTES) {
-        child.kill("SIGTERM");
+        terminate();
         finish(null);
         return;
       }
@@ -113,7 +132,7 @@ function runClaude(args: string[]): Promise<string | null> {
     child.stdout.on("data", capture);
     child.stderr.on("data", capture);
     timer = setTimeout(() => {
-      child.kill("SIGTERM");
+      terminate();
       // A broken shim can ignore SIGTERM or leave a descendant holding its
       // pipes open. The compatibility probe must not hold a chat request
       // indefinitely waiting for a `close` event after its bounded deadline.
@@ -123,6 +142,7 @@ function runClaude(args: string[]): Promise<string | null> {
       finish(null);
     });
     child.on("close", (code) => {
+      if (forceKillTimer) clearTimeout(forceKillTimer);
       // Some failed invocations print their installed version before reporting
       // an error. Treat every non-zero exit as a failed probe so that banner
       // text can never select a tool-envelope profile.

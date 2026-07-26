@@ -323,7 +323,15 @@ export class ToolCallTracker {
     // A hook pre may have surfaced this call already under a minted id. Link
     // the native id to the oldest unlinked hook call rather than emitting a
     // duplicate block — hook events win when both sources exist.
-    const hookCall = queue.find((c) => c.origin === "hook" && !c.envelopeId);
+    const unlinkedHookCalls = queue.filter((c) => c.origin === "hook" && !c.envelopeId);
+    // When concurrent same-name hooks arrive before their assistant envelopes,
+    // FIFO alone can link the second envelope to the first execution. The hook
+    // and envelope inputs are both normalized for display, so use an exact
+    // input match when it is available; retain FIFO only when the transport
+    // omitted (or cannot distinguish by) the input.
+    const hookCall = input === undefined
+      ? unlinkedHookCalls[0]
+      : unlinkedHookCalls.find((c) => this.recorded.get(c.id)?.input === input) ?? unlinkedHookCalls[0];
     if (hookCall) {
       hookCall.envelopeId = id;
       this.byEnvelopeId.set(id, hookCall);
