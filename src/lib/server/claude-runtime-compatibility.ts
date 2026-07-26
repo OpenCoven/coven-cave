@@ -23,6 +23,11 @@ const PROBE_FORCE_KILL_GRACE_MS = 250;
 let cached: { value: CompatibilityResolution; validUntil: number } | null = null;
 let profileCache = new RuntimeCompatibilityCache();
 let profileCacheLoaded = false;
+// Once a durable high-water mark exists, a corrupt or older selectable cache
+// must not silently fall back to bundled profiles. A newer profile may be a
+// security correction for the same CLI range, so selecting the bundle here
+// would turn cache loss into a rollback after restart.
+let profileCacheTrustFailure = false;
 let refreshQueue: Promise<void> = Promise.resolve();
 
 type ProfileCacheDocument = { schemaVersion: 1; profiles: unknown[] };
@@ -73,6 +78,7 @@ export async function loadClaudeCompatibilityCache(
   } = {},
 ): Promise<void> {
   if (profileCacheLoaded && !dependencies.read) return;
+  let hasDurableWatermark = false;
   try {
     const readWatermark = dependencies.readWatermark
       ?? (dependencies.read ? undefined : (target: string) => readFile(target, "utf8"));
@@ -81,11 +87,19 @@ export async function loadClaudeCompatibilityCache(
         const watermark = JSON.parse(await readWatermark(dependencies.watermarkPath ?? profileCacheWatermarkPath())) as unknown;
         // A malformed durable high-water mark is a trust failure, not an
         // invitation to reload a potentially rolled-back cache snapshot.
-        if (!isProfileCacheWatermark(watermark)) return;
+        if (!isProfileCacheWatermark(watermark)) {
+          profileCacheTrustFailure = true;
+          return;
+        }
+        hasDurableWatermark = true;
         acceptedProfileSequence = Math.max(acceptedProfileSequence, watermark.maxSequence);
-      } catch {
+      } catch (error) {
         // No watermark exists on a first run. Keep the signed bundled profile
         // sequence as the immutable genesis floor.
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          profileCacheTrustFailure = true;
+          return;
+        }
       }
     }
     const raw = await (dependencies.read ?? ((target) => readFile(target, "utf8")))(dependencies.path ?? profileCachePath());
@@ -94,10 +108,17 @@ export async function loadClaudeCompatibilityCache(
       ? profileMaxSequence(document.profiles)
       : null;
     if (maximum !== null && maximum >= acceptedProfileSequence) {
-      profileCache.refresh(document.profiles);
+      if (!profileCache.refresh(document.profiles) && hasDurableWatermark) {
+        profileCacheTrustFailure = true;
+      }
+    } else if (hasDurableWatermark) {
+      profileCacheTrustFailure = true;
     }
   } catch {
     // Offline first run and a rejected cache both safely retain the bundle.
+    // Once a durable high-water mark exists, however, retaining the bundle
+    // would be a rollback to a profile known to be older than accepted state.
+    if (hasDurableWatermark) profileCacheTrustFailure = true;
   }
   if (!dependencies.read) profileCacheLoaded = true;
 }
@@ -149,6 +170,7 @@ export async function refreshClaudeCompatibilityProfiles(
       await writeJsonAtomic(target, document);
     }
     profileCache = next;
+    profileCacheTrustFailure = false;
     acceptedProfileSequence = Math.max(acceptedProfileSequence, maximum);
     // The probe cache contains a completed resolution rather than just raw
     // probe output. It may have selected a fallback for a profile that this
@@ -167,6 +189,7 @@ export function resetClaudeCompatibilityCacheForTest(): void {
   cached = null;
   profileCache = new RuntimeCompatibilityCache();
   profileCacheLoaded = false;
+  profileCacheTrustFailure = false;
   refreshQueue = Promise.resolve();
   acceptedProfileSequence = BUNDLED_PROFILE_MAX_SEQUENCE;
 }
@@ -272,7 +295,9 @@ export async function resolveInstalledClaudeCompatibility(
     capabilities,
     probe: version && helpOutput !== null ? "ok" : "failed",
   };
-  const resolution = resolveRuntimeCompatibility(report, profileCache.current(), new Date(now));
+  const resolution = profileCacheTrustFailure
+    ? { kind: "fallback", reason: "invalid-profile" } as const
+    : resolveRuntimeCompatibility(report, profileCache.current(), new Date(now));
   if (!dependencies.version && !dependencies.help) {
     const profileExpiresAt = resolution.kind === "compatible" && !resolution.stale
       ? Date.parse(resolution.profile.expiresAt)

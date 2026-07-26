@@ -174,8 +174,19 @@ const rollbackAfterRestart = await resolveInstalledClaudeCompatibility({
 });
 assert.deepEqual(
   rollbackAfterRestart,
-  { kind: "fallback", reason: "unsupported-version" },
+  { kind: "fallback", reason: "invalid-profile" },
   "a signed lower-sequence cache snapshot must be rejected after restart",
+);
+
+const bundledRollbackAfterRestart = await resolveInstalledClaudeCompatibility({
+  version: async () => "2.1.179 (Claude Code)",
+  help: async () => "--output-format stream-json",
+  now: () => Date.parse("2026-07-24T00:00:00.000Z"),
+});
+assert.deepEqual(
+  bundledRollbackAfterRestart,
+  { kind: "fallback", reason: "invalid-profile" },
+  "a rejected cache behind a durable high-water mark must not silently select an older bundled profile",
 );
 
 console.log("claude-runtime-compatibility: ok");
