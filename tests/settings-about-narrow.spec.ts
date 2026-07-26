@@ -27,7 +27,10 @@ test("About update recovery stays reachable in a narrow coarse-pointer pane", as
 
   const row = page.locator(".settings-about-update-row");
   await expect(row).toBeVisible({ timeout: 30_000 });
-  await expect(row).toContainText(/Native updater unavailable|Update v9\.9\.9/);
+  await expect(row).toContainText(
+    /Native updater unavailable|Update v9\.9\.9/,
+    { timeout: 30_000 },
+  );
 
   const layout = await row.evaluate((element) => {
     const actions = element.querySelector<HTMLElement>(

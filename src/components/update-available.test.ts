@@ -91,6 +91,11 @@ assert.match(src, /classifyFallbackReleaseCheck/, "HTTP-200 release error bodies
 assert.match(src, /kind: "unavailable"/, "failed native and fallback checks have a dedicated unavailable state");
 assert.match(src, /Last known/, "a failed recheck marks any retained update result as last-known data");
 assert.match(src, /confirmed \{relativeTime\(state\.checkedAt\)\}/, "only a completed successful check can render confirmed currency");
+assert.match(
+  src,
+  /const current = checkSequence\.settle\(sequence\);\s*if \(!mounted\.current\) \{\s*if \(r\.kind === "native"\) void nativeUpdateCoordinator\.release\(owner\);\s*return;\s*\}\s*if \(!current\) return;/,
+  "an unmounted Settings row releases an adopted native handle even when its check was superseded",
+);
 
 // Banner: long-running desktops re-check periodically — a mount-only check
 // would leave always-on instances permanently unaware of new releases.
@@ -292,6 +297,49 @@ function mockUpdate(version = "9.9.9") {
   assert.equal(sequence.inFlight, true);
   assert.equal(sequence.settle(freshCheck), true, "the next unsuperseded check can settle normally");
   assert.equal(sequence.inFlight, false);
+}
+
+{
+  const coordinator = new NativeUpdateCoordinator();
+  const externalOwner = Symbol("newer-external-owner");
+  const unmountedRowOwner = Symbol("superseded-unmounted-row");
+  const staleCandidate = mockUpdate("1.0.0");
+  const retainedUpdate = mockUpdate("2.0.0");
+  const staleEpoch = coordinator.beginCheck();
+  const sequence = new NativeUpdateCheckSequence();
+  const staleSequence = sequence.begin();
+  const newerEpoch = coordinator.beginCheck();
+
+  await coordinator.adopt(externalOwner, retainedUpdate.handle, newerEpoch);
+  sequence.supersede();
+  await coordinator.release(unmountedRowOwner);
+
+  const result = await adoptNativeUpdateResult(
+    coordinator,
+    unmountedRowOwner,
+    staleCandidate.handle,
+    staleEpoch,
+  );
+  const current = sequence.settle(staleSequence);
+
+  assert.equal(current, false, "the row check was superseded before its native result settled");
+  assert.equal(result.kind, "available");
+  assert.equal(
+    result.update,
+    retainedUpdate.handle,
+    "the stale row check adopts the coordinator's retained newer handle",
+  );
+  assert.equal(staleCandidate.closeCalls(), 1, "the stale candidate closes during adoption");
+
+  // Mirrors the component's unmounted cleanup branch: this release must run
+  // even when `current` is false, or the row's newly acquired lease leaks.
+  await coordinator.release(unmountedRowOwner);
+  await coordinator.release(externalOwner);
+  assert.equal(
+    retainedUpdate.closeCalls(),
+    1,
+    "the retained update closes after the superseded unmounted row and external owner release",
+  );
 }
 
 {

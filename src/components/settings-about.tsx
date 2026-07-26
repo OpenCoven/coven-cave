@@ -24,6 +24,7 @@ import {
 } from "@/lib/about-status";
 import { APP_VERSION } from "@/lib/app-version";
 import { copyText } from "@/lib/clipboard";
+import { exactSemver } from "@/lib/exact-semver";
 import { Icon, type IconName } from "@/lib/icon";
 import { openExternalUrl } from "@/lib/open-external";
 import { relativeTime } from "@/lib/relative-time";
@@ -66,9 +67,10 @@ function daemonPresentation(state: AboutDaemonState): {
   tone: "success" | "warning" | "danger" | "muted";
 } {
   if (state.kind === "running") {
+    const version = exactSemver(state.version);
     return {
-      label: state.version ? `daemon v${state.version}` : "daemon running",
-      detail: state.version ? `Running v${state.version}` : "Running (version unavailable)",
+      label: version ? `daemon v${version}` : "daemon running",
+      detail: version ? `Running v${version}` : "Running (version unavailable)",
       tone: "success",
     };
   }
@@ -89,7 +91,7 @@ function safeDaemonDiagnostics(state: AboutDaemonState) {
   if (state.kind === "running") {
     return {
       state: "running",
-      version: state.version,
+      version: exactSemver(state.version),
       checkedAt: state.checkedAt,
     };
   }

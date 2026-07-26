@@ -546,11 +546,12 @@ export function UpdateSettingsRow({
     setState({ phase: "checking" });
     void resolveUpdate(owner)
       .then((r) => {
-        if (!checkSequence.settle(sequence)) return;
+        const current = checkSequence.settle(sequence);
         if (!mounted.current) {
           if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
           return;
         }
+        if (!current) return;
         if (r.kind === "current") {
           lastKnown.current = { kind: "current", checkedAt: r.checkedAt };
           setState({

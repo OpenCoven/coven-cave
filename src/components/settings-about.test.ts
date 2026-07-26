@@ -54,6 +54,11 @@ test("About preserves truthful live status and safe diagnostic behavior", () => 
   assert.match(component, /fetch\("\/api\/daemon\/status"/);
   assert.match(component, /onSnapshotChange=\{handleToolSnapshot\}/);
   assert.match(component, /buildSafeToolDiagnostics/);
+  assert.match(
+    component,
+    /version:\s*exactSemver\(state\.version\)/,
+    "copied daemon diagnostics independently allowlist exact semver",
+  );
   assert.match(component, /installJobs:\s*snapshot\.installJobs/);
   assert.match(component, /installResults:\s*snapshot\.installResults/);
   assert.match(component, /copyText/);
