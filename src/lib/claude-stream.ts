@@ -74,8 +74,10 @@ export function parseClaudeMessageEnvelope(
         typeof block.name === "string" &&
         block.id &&
         block.name &&
-        hasOwn(block, "input") &&
-        block.input !== null
+        // Claude tool-use input is a JSON object. Accepting a scalar or array
+        // here would make an incomplete/foreign stream block create a trusted
+        // tool bubble under the selected profile.
+        record(block.input) !== null
       ) {
         events.push({ kind: "tool-use", id: block.id, name: block.name, input: block.input });
       }
@@ -141,8 +143,7 @@ export function hasUnsupportedClaudeToolFrame(
         !block.id ||
         typeof block.name !== "string" ||
         !block.name ||
-        !hasOwn(block, "input") ||
-        block.input === null;
+        record(block.input) === null;
     });
   }
   if (isUser) {

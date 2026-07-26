@@ -94,6 +94,16 @@ assert.equal(
   true,
   "a null tool input is a malformed profile frame rather than an empty invocation",
 );
+assert.deepEqual(
+  parseClaudeMessageEnvelope({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu-scalar-input", name: "Read", input: "README.md" }] } }, v2),
+  [],
+  "a scalar tool input does not create a tool bubble for a malformed Claude block",
+);
+assert.equal(
+  hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu-array-input", name: "Read", input: ["README.md"] }] } }, v2),
+  true,
+  "an array tool input is a malformed profile frame rather than a trusted invocation",
+);
 assert.equal(
   hasUnsupportedClaudeToolFrame({ type: "assistant", message: { content: [{ type: "text", text: "ordinary text" }] } }, v2),
   false,
