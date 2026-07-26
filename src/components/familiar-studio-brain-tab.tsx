@@ -72,7 +72,7 @@ type HarnessReport = {
   label: string;
   installed: boolean;
   availability?: {
-    state?: string;
+    state: "ready" | "missing" | "unlaunchable" | "probe_failed" | "unsupported_runtime";
     message?: string;
   };
   models?: RuntimeModelOption[];
@@ -844,10 +844,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                           .filter((h) => isBindableRuntimeChoice(h.id))
                           .map((h) => ({
                             value: h.id,
-                            label: h.label,
-                            detail: h.availability?.state && h.availability.state !== "ready"
-                              ? h.availability.message
-                              : h.installed ? undefined : "not installed",
+                            label: h.availability && h.availability.state !== "ready"
+                              ? `${h.label} (${h.availability.message ?? "not ready"})`
+                              : `${h.label}${h.installed ? "" : " (not installed)"}`,
                           })),
                       } satisfies StandardSelectGroup<string>,
                     ]}

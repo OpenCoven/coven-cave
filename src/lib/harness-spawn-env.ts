@@ -1,13 +1,13 @@
 /**
  * Harness spawn env — the vault-scoping enforcement point (cave-4nu6).
  *
- * `resolveSecret()` caches every resolved vault value into `process.env`, and
- * `covenSpawnEnv()` forwards the full process env, so without intervention
- * every spawned harness inherits every secret. This module subtracts, at
- * spawn time, the vault-managed keys whose `scope` does not grant the familiar
- * being spawned (denylist subtraction — PATH/HOME and non-vault env stay
- * intact). Unscoped entries are shared and pass through, so existing
- * vault.yaml files behave exactly as before.
+ * `resolveSecret()` caches ordinary resolved vault values into `process.env`,
+ * and `covenSpawnEnv()` forwards the scrubbed process env, so without
+ * intervention every spawned harness would inherit every cached secret. This
+ * module subtracts, at spawn time, the vault-managed keys whose `scope` does
+ * not grant the familiar being spawned (denylist subtraction — PATH/HOME and
+ * non-vault env stay intact). Unscoped entries are shared and pass through, so
+ * existing vault.yaml files behave exactly as before.
  *
  * Use this instead of `covenSpawnEnv()` for anything that runs a harness
  * (`coven run`, adapter binaries, `codex exec`) or the daemon. Spawns with no

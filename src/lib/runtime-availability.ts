@@ -85,12 +85,21 @@ export function summarizeRuntimeAvailability(
  * uses richer candidate inspection so POSIX execute permissions are checked. */
 export type StatFileFn = (candidate: string) => boolean;
 
+/** True when a fixed, non-executable argv artifact is readable by the child.
+ * A Windows npm shim becomes `node <entry.js>`, so the entry must remain
+ * readable in addition to the Node host being launchable. */
+export type ReadableFileFn = (candidate: string) => boolean;
+
 export type RuntimeAvailabilityProbe = {
   runner: DirectRunnerId;
   /** The exact executable that will be passed to `spawn()`. */
   command: string;
   /** The exact environment object the spawn will receive. */
   env: Record<string, string | undefined>;
+  /** Files the exact argv-list launch requires in addition to `command`.
+   * For example, a safe Windows npm shim launch is `node <entry.js>` and the
+   * entry script must still exist when the child is spawned. */
+  requiredFiles?: string[];
   /** Coven/Grok launch resolution found a Windows shim it could not safely
    * convert into a runnable command (`CovenLaunchCommand.unresolvedWindowsShim`). */
   unresolvedWindowsShim?: boolean;
@@ -99,6 +108,7 @@ export type RuntimeAvailabilityProbe = {
   powerShellHostedCommand?: string;
   platform?: NodeJS.Platform;
   statFile?: StatFileFn;
+  readableFile?: ReadableFileFn;
 };
 
 // The missing-runner remediation copy is shared with the post-spawn ENOENT
@@ -197,6 +207,20 @@ function defaultInspectCandidate(
 
 function inspectWithStatFile(candidate: string, statFile: StatFileFn): CandidateInspection {
   return statFile(candidate) ? "launchable" : "missing";
+}
+
+function defaultReadableFile(candidate: string): boolean {
+  try {
+    if (!statSync(candidate).isFile()) return false;
+    accessSync(candidate, constants.R_OK);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT" || code === "ENOTDIR" || code === "EACCES" || code === "EPERM") {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function pathEntries(env: Record<string, string | undefined>, platform: NodeJS.Platform): string[] {
@@ -319,6 +343,8 @@ export function evaluateRuntimeAvailability(
   const inspectCandidate: InspectCandidateFn = probe.statFile
     ? (candidate) => inspectWithStatFile(candidate, probe.statFile!)
     : (candidate) => defaultInspectCandidate(candidate, platform);
+  const readableFile = probe.readableFile
+    ?? (probe.statFile ? probe.statFile : defaultReadableFile);
   const label = RUNNER_LABELS[runner];
   try {
     if (probe.unresolvedWindowsShim) {
@@ -358,6 +384,15 @@ export function evaluateRuntimeAvailability(
         }
       }
       return notReady(runner, "missing", missingRunnerMessage(runner));
+    }
+    for (const requiredFile of probe.requiredFiles ?? []) {
+      if (!readableFile(requiredFile)) {
+        return notReady(
+          runner,
+          "unlaunchable",
+          `${label} has a resolved launch command, but a required launch artifact is unavailable. Reinstall it, then try again.`,
+        );
+      }
     }
     if (probe.powerShellHostedCommand !== undefined) {
       const inner = resolveCommand(
