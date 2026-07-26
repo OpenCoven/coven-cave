@@ -9,8 +9,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
+// Node maps SIGTERM/SIGINT to forced termination on native Windows, bypassing
+// the Bash traps this test is intended to exercise. Keep signal-tree coverage
+// on POSIX, where its delivery semantics are real rather than simulated.
+if (process.platform === "win32") {
+  console.log("dev-app-teardown: skipped on native Windows (Bash signal traps are not observable through Node signals)");
+  process.exit(0);
+}
 
+const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function probePort(port) {
