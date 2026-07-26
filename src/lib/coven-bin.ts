@@ -27,7 +27,6 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-<<<<<<< HEAD
 import {
   scrubSidecarInternalEnv,
   vaultFreeDiscoveryEnv,
@@ -36,9 +35,6 @@ import { managedNodePaths, managedNodeSpawnEnv } from "./server/managed-node-too
 import { loadVaultMap } from "./vault.ts";
 
 export { scrubSidecarInternalEnv } from "./child-spawn-env.ts";
-=======
-import { managedNodePaths, managedNodeSpawnEnv } from "./server/managed-node-toolchain.ts";
->>>>>>> b5fd3d1b (feat(onboarding): manage prerequisite toolchain installs)
 
 let cachedBin: string | null = null;
 let cachedPath: string | null = null;
