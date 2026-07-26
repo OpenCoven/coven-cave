@@ -164,6 +164,18 @@ function pathExtCandidates(name: string, env: Record<string, string | undefined>
   return [...candidates];
 }
 
+/** Candidate filenames that prove a runner IS installed even though this
+ * direct spawn cannot start it. A bare name diagnoses its PATHEXT shims; an
+ * explicit native-executable name (`hermes.exe`) also diagnoses sibling
+ * shims of its base name (`hermes.cmd`) — a `.cmd`-only install behind an
+ * `.exe` spawn is unlaunchable, not missing. */
+function shimOnlyCandidates(name: string, env: Record<string, string | undefined>): string[] {
+  const ext = path.win32.extname(name);
+  if (!ext) return pathExtCandidates(name, env);
+  if (!/^\.(exe|com)$/i.test(ext)) return [name];
+  return pathExtCandidates(name.slice(0, -ext.length), env);
+}
+
 function isPathLike(command: string, platform: NodeJS.Platform): boolean {
   if (command.includes("/")) return true;
   if (platform === "win32" && (command.includes("\\") || /^[A-Za-z]:/.test(command))) {
@@ -247,7 +259,7 @@ export function evaluateRuntimeAvailability(
       }
       if (platform === "win32") {
         const shimOnly = resolveCommand(command, env, platform, statFile, (name) =>
-          pathExtCandidates(name, env),
+          shimOnlyCandidates(name, env),
         );
         if (shimOnly) {
           return notReady(

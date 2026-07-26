@@ -64,7 +64,7 @@ import {
 } from "@/lib/grok-build";
 import { grokLaunchCommand } from "@/lib/grok-bin";
 import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
-import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
+import { evaluateRuntimeAvailability, missingRunnerMessage } from "@/lib/runtime-availability";
 import {
   quarantineOpenCodeSchema,
   redactedOpenCodeEventFingerprint,
@@ -2787,18 +2787,23 @@ export async function POST(req: Request) {
               push({
                 kind: "error",
                 code: "ENOENT",
+                // SSH is a remote transport, not a direct runner; every local
+                // runner shares the pre-spawn gate's remediation copy so the
+                // two failure paths cannot drift.
                 message:
                   sshRuntime
                     ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
-                    : copilotStream
-                      ? "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again."
-                      : grokDirect
-                        ? "Grok Build CLI not found on PATH. Install Grok Build, sign in with `grok`, then try again."
-                      : openCodeDirect
-                        ? "OpenCode CLI not found on PATH. Install it with `npm install -g opencode-ai`, then try again."
-                      : hermesDirect
-                        ? "Hermes CLI not found on PATH. Install Hermes, then try again."
-                        : "Coven CLI not found on PATH. Open Setup to install it, then try again.",
+                    : missingRunnerMessage(
+                        copilotStream
+                          ? "copilot"
+                          : grokDirect
+                            ? "grok"
+                          : openCodeDirect
+                            ? "opencode"
+                          : hermesDirect
+                            ? "hermes"
+                            : "coven",
+                      ),
               });
             } else {
               push({ kind: "error", message: launchError });

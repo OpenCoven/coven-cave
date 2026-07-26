@@ -167,6 +167,39 @@ try {
   });
   assert.equal(winAbsent.state, "missing", "win32 with nothing on Path is missing");
 
+  // An explicit native-executable command still diagnoses sibling shims of
+  // its base name: hermes.exe missing while hermes.cmd exists is an
+  // installed-but-unlaunchable state, not a missing install.
+  const winExplicitExeShimOnly = evaluateRuntimeAvailability({
+    runner: "hermes",
+    command: "hermes.exe",
+    env: winEnv,
+    platform: "win32",
+    statFile: winStats(["C:\\bin\\hermes.cmd"]),
+  });
+  assert.equal(
+    winExplicitExeShimOnly.state,
+    "unlaunchable",
+    "a .cmd-only install behind an explicit .exe spawn is unlaunchable, not missing",
+  );
+  assert.match(
+    winExplicitExeShimOnly.state === "unlaunchable" ? winExplicitExeShimOnly.message : "",
+    /command shim/,
+    "the explicit-.exe shim-only diagnosis reports the shim reinstall remediation",
+  );
+  const winExplicitExeAbsent = evaluateRuntimeAvailability({
+    runner: "hermes",
+    command: "hermes.exe",
+    env: winEnv,
+    platform: "win32",
+    statFile: winStats([]),
+  });
+  assert.equal(
+    winExplicitExeAbsent.state,
+    "missing",
+    "an explicit .exe with no install at all remains missing",
+  );
+
   // OpenCode's Windows launch is PowerShell-hosted: the host must exist and
   // the inner `opencode` command must resolve with PATHEXT semantics.
   const psHost = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
