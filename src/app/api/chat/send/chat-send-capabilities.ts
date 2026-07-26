@@ -388,8 +388,8 @@ function advertisedStructuredSwitches(options: string[], noValueOptions: string[
 }
 
 async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCodeRunContractProbe> {
-  const helpLaunch = openCodeLaunch(["run", "--help"]);
-  const versionLaunch = openCodeLaunch(["--version"]);
+  const helpLaunch = openCodeLaunch(["run", "--help"], process.platform, env);
+  const versionLaunch = openCodeLaunch(["--version"], process.platform, env);
   const [helpProbe, versionProbe] = await Promise.all([
     probeOutput(helpLaunch.command, helpLaunch.args, env, helpLaunch.input),
     probeOutput(versionLaunch.command, versionLaunch.args, env, versionLaunch.input),
@@ -618,12 +618,13 @@ export function hermesChatSupportsModel(launch: {
 
 /** OpenCode is direct-spawned so its own documented capability is authoritative. */
 export function openCodeRunSupportsModel(): Promise<boolean> {
-  const launch = openCodeLaunch(["run", "--help"]);
+  const env = openCodeSpawnEnv();
+  const launch = openCodeLaunch(["run", "--help"], process.platform, env);
   return (openCodeModelFlagProbe ??= probeHelp(
     launch.command,
     launch.args,
     (help) => /(^|\s)--model(?![\w-])/m.test(help),
-    openCodeSpawnEnv(),
+    env,
     launch.input,
   ));
 }
@@ -636,13 +637,18 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
 export async function openCodeRunCapabilities(
   familiarId?: string,
   probeRunContract: (env: NodeJS.ProcessEnv) => Promise<OpenCodeRunContractProbe> = probeOpenCodeRunContract,
-  capabilityIdentity: CapabilityIdentityProbe = openCodeCapabilityLaunchIdentity,
-  now: CapabilityClock = Date.now,
+  spawnEnvOrCapabilityIdentity?: NodeJS.ProcessEnv | CapabilityIdentityProbe,
+  capabilityIdentityNow: CapabilityClock = Date.now,
 ): Promise<OpenCodeRunCapabilities> {
   // Probe the exact scoped environment used for this chat turn. A version
   // string alone is not a safe cache key: package managers and shims can
   // replace a CLI in place while preserving both PATH and `--version`.
-  const env = openCodeSpawnEnv(familiarId);
+  const env = typeof spawnEnvOrCapabilityIdentity === "function"
+    ? openCodeSpawnEnv(familiarId)
+    : spawnEnvOrCapabilityIdentity ?? openCodeSpawnEnv(familiarId);
+  const capabilityIdentity = typeof spawnEnvOrCapabilityIdentity === "function"
+    ? spawnEnvOrCapabilityIdentity
+    : openCodeCapabilityLaunchIdentity;
   // Hashing a large npm executable is streamed asynchronously and overlaps
   // the help/version children, so it never blocks the request event loop.
   const launcherIdentityBeforeProbe = Promise.resolve(capabilityIdentity(env));
@@ -659,7 +665,7 @@ export async function openCodeRunCapabilities(
     ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null
     : null;
   const scope = openCodeCapabilityProbeScope(familiarId);
-  const observedNow = now();
+  const observedNow = capabilityIdentityNow();
   pruneVerifiedOpenCodeCapabilities(observedNow);
   if (helpProbe.complete) {
     const capabilities = {

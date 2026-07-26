@@ -23,7 +23,7 @@ assert.match(
 
 {
   const previousPath = process.env.PATH;
-  process.env.PATH = "/queue-launch-path:/usr/bin";
+  process.env.PATH = ["/queue-launch-path", "/usr/bin"].join(path.delimiter);
   refreshCovenSpawnEnv();
   assert.equal(
     caveToolSpawnEnv().PATH?.split(path.delimiter)[0],

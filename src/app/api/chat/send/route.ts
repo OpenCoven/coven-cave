@@ -70,7 +70,14 @@ import {
   redactedGrokEventFingerprint,
   resolveGrokCompatibility,
 } from "@/lib/grok-compatibility";
-import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
+import {
+  openCodeCommand,
+  openCodeLaunch,
+  openCodeSpawnEnv,
+  OPENCODE_COMMAND_NOT_FOUND_MARKER,
+  OPENCODE_LAUNCH_FAILED_MARKER,
+  writeOpenCodeLaunchInput,
+} from "@/lib/opencode-bin";
 import {
   codexAdapterFailureAvailability,
   probeCodexRuntimeAvailability,
@@ -1390,7 +1397,7 @@ export async function POST(req: Request) {
     ? await probeReadyLocalRuntimeCapability({
         plan: localRuntimePlan,
         runner: "opencode",
-        probe: () => openCodeRunCapabilities(body.familiarId),
+        probe: () => openCodeRunCapabilities(body.familiarId, undefined, localRuntimePlan?.env),
       })
     : null;
   const openCodeCompatibility = openCodeCapabilities
@@ -3507,15 +3514,27 @@ export async function POST(req: Request) {
               err.code,
             );
             if (hermesDirect) localLaunchError = hermesLaunchFailure(localRuntimePlan ?? undefined);
+            const openCodeWindowsOuterLaunchFailure =
+              openCodeDirect && process.platform === "win32" && err.code === "ENOENT";
+            const openCodeCommandMissing =
+              openCodeDirect && !openCodeWindowsOuterLaunchFailure && err.code === "ENOENT";
             const launchError = sshRuntime
               ? err.code === "ENOENT"
                 ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
                 : err.message
-              : localLaunchError.message;
+              : openCodeWindowsOuterLaunchFailure
+                ? "OpenCode failed to start. Check its installation and try again."
+                : openCodeCommandMissing
+                  ? missingRunnerMessage("opencode")
+                  : localLaunchError.message;
             const launchCode =
               !sshRuntime && err.code === "ENOENT" && binding.harness === "claude"
                 ? RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing
-                : localLaunchError.code;
+                : openCodeCommandMissing
+                  ? "runtime_missing"
+                  : openCodeWindowsOuterLaunchFailure
+                    ? "runtime_launch_failed"
+                    : localLaunchError.code;
             result.is_error = true;
             launchFailure ??= {
               code: sshRuntime ? err.code ?? "runtime_launch_failed" : launchCode,
@@ -3530,7 +3549,7 @@ export async function POST(req: Request) {
             );
             push({
               kind: "error",
-              ...(sshRuntime ? (err.code ? { code: err.code } : {}) : { code: launchCode }),
+              ...(sshRuntime ? (err.code ? { code: err.code } : {}) : { code: launchFailure.code }),
               message: launchError,
             });
           };
@@ -3738,8 +3757,33 @@ export async function POST(req: Request) {
             if (chunk) handleStdoutChunk(chunk);
           });
 
+          let openCodeLaunchMarkerTail = "";
           child.stderr.on("data", (data: Buffer) => {
             const text = stripAnsi(data.toString("utf8"));
+            if (openCodeDirect) {
+              const markerText = `${openCodeLaunchMarkerTail}${text}`;
+              openCodeLaunchMarkerTail = markerText.slice(-OPENCODE_COMMAND_NOT_FOUND_MARKER.length);
+              const commandMissing = markerText.includes(OPENCODE_COMMAND_NOT_FOUND_MARKER);
+              const launchFailed = markerText.includes(OPENCODE_LAUNCH_FAILED_MARKER);
+              if (!launchFailure && (commandMissing || launchFailed)) {
+                const launchError = commandMissing
+                  ? missingRunnerMessage("opencode")
+                  : "OpenCode failed to start. Check its installation and try again.";
+                launchFailure = {
+                  code: commandMissing ? "runtime_missing" : "runtime_launch_failed",
+                  message: launchError,
+                };
+                result.is_error = true;
+                pushProgress(
+                  "harness-start",
+                  "opencode failed to start",
+                  "error",
+                  launchError,
+                  Date.now() - attemptStartedAt,
+                );
+                push({ kind: "error", code: launchFailure.code, message: launchError });
+              }
+            }
             captureHermesSessionFromStderr(text);
             if (RESUME_ERR_RE.test(text)) resumeFailed = true;
             if (!adapterConflict) {
@@ -3747,6 +3791,10 @@ export async function POST(req: Request) {
             }
             for (const line of text.split(/\r?\n/)) {
               const trimmed = line.trim();
+              if (
+                trimmed === OPENCODE_COMMAND_NOT_FOUND_MARKER
+                || trimmed === OPENCODE_LAUNCH_FAILED_MARKER
+              ) continue;
               if (!trimmed) continue;
               // Claude stderr can include tool payloads. It must not be copied
               // into the generic empty-response diagnostic, which is rendered

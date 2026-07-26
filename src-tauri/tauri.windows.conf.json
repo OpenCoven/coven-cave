@@ -8,6 +8,10 @@
       "resources/piper/**/*"
     ],
     "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
       "wix": {
         "fragmentPaths": [
           "./windows/fragments/sidecar-cache-cleanup.wxs"

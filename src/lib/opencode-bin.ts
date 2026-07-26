@@ -6,6 +6,13 @@ export function openCodeCommand(): string {
   return "opencode";
 }
 
+// Fixed, value-free sentinels emitted only when the Windows PowerShell host
+// could not invoke the inner CLI after the route's preflight passed. They let
+// the route preserve the no-synthetic-turn launch-failure contract for the
+// small race between the stat check and PowerShell resolving `opencode`.
+export const OPENCODE_COMMAND_NOT_FOUND_MARKER = "COVEN_OPENCODE_COMMAND_NOT_FOUND";
+export const OPENCODE_LAUNCH_FAILED_MARKER = "COVEN_OPENCODE_LAUNCH_FAILED";
+
 export type OpenCodeLaunch = { command: string; args: string[]; input?: string };
 
 function windowsPowerShell(env: NodeJS.ProcessEnv): string {
@@ -34,8 +41,7 @@ export function openCodeLaunch(
     "[Console]::OutputEncoding = $utf8",
     "$OutputEncoding = $utf8",
     "$openCodeArgs = [Console]::In.ReadToEnd() | ConvertFrom-Json",
-    "& opencode @openCodeArgs",
-    "exit $LASTEXITCODE",
+    "try { & opencode @openCodeArgs; exit $LASTEXITCODE } catch { if ($_.Exception -is [System.Management.Automation.CommandNotFoundException]) { [Console]::Error.WriteLine('COVEN_OPENCODE_COMMAND_NOT_FOUND'); exit 127 }; [Console]::Error.WriteLine('COVEN_OPENCODE_LAUNCH_FAILED'); exit 126 }",
   ].join("; ");
   return {
     command: windowsPowerShell(env),

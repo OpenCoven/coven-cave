@@ -222,6 +222,17 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   );
 });
 
+test("Windows bundles explicitly bootstrap WebView2 before onboarding can render", async () => {
+  const windowsConfig = JSON.parse(
+    await readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
+  );
+  assert.deepEqual(
+    windowsConfig.bundle?.windows?.webviewInstallMode,
+    { type: "downloadBootstrapper", silent: true },
+    "the signed MSI explicitly carries Tauri's WebView2 bootstrapper behavior",
+  );
+});
+
 test("macOS reachability daemon uses the managed Piper runtime", async () => {
   const daemon = await readNativeHost("desktop_reachability.rs");
 

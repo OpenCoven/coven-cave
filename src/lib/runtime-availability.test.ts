@@ -21,6 +21,7 @@ import {
   summarizeRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
 } from "./runtime-availability.ts";
+import { openCodeCommand, openCodeLaunch } from "./opencode-bin.ts";
 
 const scratch = mkdtempSync(path.join(tmpdir(), "runtime-availability-"));
 try {
@@ -40,7 +41,6 @@ try {
     },
     "every non-ENOENT local spawn error uses the normalized launch-failure contract",
   );
-
   const binDir = path.join(scratch, "bin");
   const emptyDir = path.join(scratch, "empty");
   mkdirSync(binDir);
@@ -51,6 +51,8 @@ try {
   writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   chmodSync(executable, 0o755);
   // Verification matrix: binary resolves in the spawn env → ready.
+  // Do not use this Windows host's temporary path while simulating Linux:
+  // a drive letter contains `:`, which is a POSIX PATH delimiter.
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
     command: nativeGrok,
@@ -413,13 +415,23 @@ try {
 
   // OpenCode's Windows launch is PowerShell-hosted: the host must exist and
   // the inner `opencode` command must resolve with PATHEXT semantics.
-  const psHost = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+  const openCodeWindowsLaunch = openCodeLaunch(
+    ["run", "safe & literal"],
+    "win32",
+    { SystemRoot: "C:\\Windows", NODE_ENV: "test" },
+  );
+  const psHost = openCodeWindowsLaunch.command;
+  assert.equal(
+    openCodeWindowsLaunch.input,
+    JSON.stringify(["run", "safe & literal"]),
+    "the preflight receives the same JSON-stdin launch plan as chat",
+  );
   const openCodeWinReady = evaluateRuntimeAvailability({
     runner: "opencode",
     command: psHost,
     env: { Path: "C:\\bin", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
     platform: "win32",
-    powerShellHostedCommand: "opencode",
+    powerShellHostedCommand: openCodeWindowsLaunch.input === undefined ? undefined : openCodeCommand(),
     statFile: winStats([psHost, "C:\\bin\\opencode.CMD"]),
   });
   assert.equal(
@@ -460,10 +472,37 @@ try {
     /PowerShell/,
     "the host failure names the actual remediation target",
   );
+  assert.doesNotMatch(
+    openCodeHostGone.state === "unlaunchable" ? openCodeHostGone.message : "",
+    /OpenCode CLI not found/i,
+    "a missing host never blames the inner OpenCode command",
+  );
 
-  // Availability never executes anything: the whole evaluation uses bounded
-  // filesystem inspection, so evaluating before every chat turn stays cheap
-  // and side-effect free.
+  const openCodeInnerProbeFailed = evaluateRuntimeAvailability({
+    runner: "opencode",
+    command: psHost,
+    env: { Path: "C:\\bin" },
+    platform: "win32",
+    powerShellHostedCommand: openCodeCommand(),
+    statFile: (candidate) => {
+      if (candidate === psHost) return true;
+      throw Object.assign(new Error(`EACCES: permission denied, stat '${candidate}'`), {
+        code: "EACCES",
+      });
+    },
+  });
+  assert.equal(
+    openCodeInnerProbeFailed.state,
+    "probe_failed",
+    "an unreadable inner OpenCode command is not reported as missing",
+  );
+  assert.ok(
+    openCodeInnerProbeFailed.state === "probe_failed" && !openCodeInnerProbeFailed.message.includes("C:\\bin"),
+    "hosted-command probe errors do not leak the launch PATH",
+  );
+
+  // Availability never executes anything: the whole evaluation is stat-only,
+  // so evaluating before every chat turn stays cheap and side-effect free.
   // (Enforced structurally — the module must not import child_process.)
   const moduleSource = readFileSync(
     new URL("./runtime-availability.ts", import.meta.url),

@@ -275,6 +275,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const defaultHarnessId = familiar.defaultHarness ?? familiar.harness ?? "";
   const defaultHarnessLabel = runtimeLabel(defaultHarnessId, harnesses);
   const harnessId = draftHarness || defaultHarnessId;
+  const selectedHarnessAvailability = harnesses.find((item) => item.id === harnessId)?.availability;
 
   // Model parity: source the per-familiar model menu from the same runtime →
   // provider catalog the chat picker uses. allowCustom keeps the free-text
@@ -861,6 +862,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                       } satisfies StandardSelectGroup<string>,
                     ]}
                   />
+                  {selectedHarnessAvailability?.state !== undefined && selectedHarnessAvailability.state !== "ready" && selectedHarnessAvailability.message ? (
+                    <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                      {selectedHarnessAvailability.message}
+                    </p>
+                  ) : null}
                 </div>
               </label>
 
