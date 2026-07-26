@@ -184,6 +184,21 @@ try {
   assert.ok(reclaimedLower?.runtimeVersion === "5.0.0" || reclaimedHigher?.runtimeVersion === "5.0.0", "a stale lock is reclaimed by exactly one owner");
   assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "5.0.0", "concurrent stale-lock recovery preserves monotonic cache updates");
 
+  // A stale mtime is not proof that a process on another machine is dead. A
+  // remote owner can resume after its lock is reclaimed and overwrite a newer
+  // cache entry, so cross-host locks deliberately retain LKG rather than
+  // attempting an unfenced distributed takeover.
+  await writeFile(staleLockPath, JSON.stringify({ token: "remote-owner", pid: 12345, host: "another-cave-host" }), "utf8");
+  await utimes(staleLockPath, staleAt, staleAt);
+  const foreignLock = await refreshRuntimeCompatibility("copilot", {
+    cachePath,
+    now: new Date(at.getTime() + 3_750),
+    fetchImpl: async () => response(index("6.0.0")),
+  });
+  assert.equal(foreignLock, null, "an expired lock owned by another host is not stolen without a fencing token");
+  assert.equal(JSON.parse(await readFile(cachePath, "utf8")).runtimeVersion, "5.0.0", "a foreign stale lock cannot permit a rollback race");
+  await rm(staleLockPath, { force: true });
+
   const corrupt = await refreshRuntimeCompatibility("copilot", {
     cachePath,
     now: new Date(at.getTime() + 3_000),

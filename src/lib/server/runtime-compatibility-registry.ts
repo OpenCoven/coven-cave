@@ -315,6 +315,18 @@ async function reclaimStaleCacheLock(lockPath: string): Promise<boolean> {
     const info = await stat(/* turbopackIgnore: true */ lockPath);
     if (Date.now() - info.mtimeMs < CACHE_LOCK_STALE_MS) return false;
     const contents = await readFile(/* turbopackIgnore: true */ lockPath, "utf8");
+    // A filesystem-visible stale mtime is not a fencing mechanism across
+    // hosts: a paused remote owner can resume after we replace its lock and
+    // publish an older snapshot after ours. Only reclaim legacy/unattributed
+    // locks or locks whose owner is known to be dead on this host. A foreign
+    // lock fails closed (retaining LKG) until its owner cleans it up.
+    try {
+      const owner = JSON.parse(contents) as Partial<CacheLockMetadata>;
+      if (typeof owner.host === "string" && owner.host && owner.host !== hostname()) return false;
+    } catch {
+      // Locks written by older builds have no host metadata and remain
+      // reclaimable after expiry.
+    }
     // A delayed or network-paused owner can outlive its mtime. Never steal
     // from a still-live local process: it may already have selected a snapshot
     // and must retain ownership through the final atomic publication.
