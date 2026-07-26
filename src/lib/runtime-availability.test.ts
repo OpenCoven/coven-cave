@@ -50,7 +50,6 @@ try {
   // Verification matrix: binary resolves in the spawn env → ready.
   // Do not use this Windows host's temporary path while simulating Linux:
   // a drive letter contains `:`, which is a POSIX PATH delimiter.
-  const posixBinDir = "/runtime-availability/bin";
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
     command: "grok",
