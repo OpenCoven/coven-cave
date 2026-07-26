@@ -27,6 +27,14 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  scrubSidecarInternalEnv,
+  vaultFreeDiscoveryEnv,
+} from "./child-spawn-env.ts";
+import { managedNodePaths, managedNodeSpawnEnv } from "./server/managed-node-toolchain.ts";
+import { loadVaultMap } from "./vault.ts";
+
+export { scrubSidecarInternalEnv } from "./child-spawn-env.ts";
 
 let cachedBin: string | null = null;
 let cachedPath: string | null = null;
@@ -43,41 +51,37 @@ export type CovenLaunchCommand = {
   unresolvedWindowsShim?: true;
 };
 
-// These aliases may authenticate Cave's own GitHub API routes. Do not leak a
-// launcher-provided credential into arbitrary installers, probes, or harness
-// sessions just because the desktop process inherited it.
-const FORBIDDEN_SPAWN_ENV_KEYS = [
-  "GITHUB_PAT",
-  "GITHUB_TOKEN",
-  "COVEN_GITHUB_TOKEN",
-  "GH_TOKEN",
-  "GITHUB_PERSONAL_ACCESS_TOKEN",
-] as const;
+export type CovenSpawnEnvOptions = {
+  /** Credential-free source env used only by PATH discovery subprocesses. */
+  discoveryEnv?: NodeJS.ProcessEnv;
+  /** Absolute timestamp after which no new discovery subprocess may start. */
+  discoveryDeadline?: number;
+  /** Clock seam for absolute discovery deadlines. */
+  now?: () => number;
+};
 
-// Sidecar-internal env namespaces that must never reach child processes
-// (cave-o01k). The packaged app's Next standalone config override breaks any
-// `next build`/dev server a session runs (JSON config has no generateBuildId
-// function, and its baked CI paths are wrong for the user's machine), and the
-// sidecar's own auth/bundle state 401-gates a dev server that inherits it —
-// the tokens are secrets that arbitrary child processes (npx postinstalls,
-// harness sessions, user shells) have no business seeing.
-const SIDECAR_INTERNAL_ENV_PREFIXES = ["COVEN_CAVE_", "__NEXT_PRIVATE_"] as const;
+type DiscoveryOptions = {
+  env: NodeJS.ProcessEnv;
+  deadline?: number;
+  now: () => number;
+};
 
-/**
- * Remove Cave/sidecar-internal variables (and forbidden token keys) from a
- * spawn env, in place. Every path that hands the server's env to a child —
- * agents, CLI probes, installers, terminals — must pass through this.
- */
-export function scrubSidecarInternalEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  for (const key of Object.keys(env)) {
-    if (SIDECAR_INTERNAL_ENV_PREFIXES.some((prefix) => key.startsWith(prefix))) {
-      delete env[key];
-    }
-  }
-  for (const key of FORBIDDEN_SPAWN_ENV_KEYS) {
-    delete env[key];
-  }
-  return env;
+function discoveryOptions(options: CovenSpawnEnvOptions = {}): DiscoveryOptions {
+  return {
+    env: options.discoveryEnv ??
+      vaultFreeDiscoveryEnv(process.env, loadVaultMap(true)),
+    deadline: options.discoveryDeadline,
+    now: options.now ?? Date.now,
+  };
+}
+
+function remainingDiscoveryTimeout(
+  maximum: number,
+  deadline: number | undefined,
+  now: () => number,
+): number {
+  if (deadline === undefined) return maximum;
+  return Math.min(maximum, deadline - now());
 }
 
 const HOME = os.homedir();
@@ -89,7 +93,7 @@ type NodeRuntimeProbe = (
     timeout: number;
     stdio: "ignore";
     windowsHide: boolean;
-    env?: NodeJS.ProcessEnv;
+    env: NodeJS.ProcessEnv;
     shell?: boolean;
   },
 ) => unknown;
@@ -106,11 +110,16 @@ export function runnableNodeToolchainDirs(
     platform?: NodeJS.Platform;
     exists?: (file: string) => boolean;
     probe?: NodeRuntimeProbe;
+    env?: NodeJS.ProcessEnv;
+    deadline?: number;
+    now?: () => number;
   } = {},
 ): string[] {
   const platform = dependencies.platform ?? process.platform;
   const exists = dependencies.exists ?? existsSync;
   const probe = dependencies.probe ?? execFileSync;
+  const sourceEnv = dependencies.env ?? process.env;
+  const now = dependencies.now ?? Date.now;
   const nodeName = platform === "win32" ? "node.exe" : "node";
   const npmNames = platform === "win32" ? ["npm.cmd", "npm.exe", "npm"] : ["npm"];
 
@@ -122,31 +131,39 @@ export function runnableNodeToolchainDirs(
     }
     const npm = path.join(/* turbopackIgnore: true */ directory, npmName);
     const env = scrubSidecarInternalEnv({
-      ...process.env,
-      PATH: [directory, process.env.PATH].filter(Boolean).join(path.delimiter),
+      ...sourceEnv,
+      PATH: [directory, sourceEnv.PATH].filter(Boolean).join(path.delimiter),
     });
     try {
+      const nodeTimeout = remainingDiscoveryTimeout(1500, dependencies.deadline, now);
+      if (nodeTimeout <= 0) return false;
       probe(node, ["--version"], {
-        timeout: 1500,
+        timeout: nodeTimeout,
         stdio: "ignore",
         windowsHide: true,
         env,
       });
+      const npmTimeout = remainingDiscoveryTimeout(1500, dependencies.deadline, now);
+      if (npmTimeout <= 0) return false;
       probe(npm, ["--version"], {
-        timeout: 1500,
+        timeout: npmTimeout,
         stdio: "ignore",
         windowsHide: true,
         env,
         shell: platform === "win32" && /\.(cmd|bat)$/i.test(npm),
       });
-      return true;
+      return remainingDiscoveryTimeout(
+        Number.POSITIVE_INFINITY,
+        dependencies.deadline,
+        now,
+      ) > 0;
     } catch {
       return false;
     }
   });
 }
 
-function nodeNvmBinDirs(): string[] {
+function nodeNvmBinDirs(discovery: DiscoveryOptions): string[] {
   const nvmRoot = path.join(/* turbopackIgnore: true */ HOME, ".nvm", "versions", "node");
   if (!existsSync(/* turbopackIgnore: true */ nvmRoot)) return [];
   try {
@@ -155,13 +172,17 @@ function nodeNvmBinDirs(): string[] {
       .filter((d) => existsSync(/* turbopackIgnore: true */ d))
       .sort()
       .reverse(); // newest version first by lexicographic sort
-    return runnableNodeToolchainDirs(directories);
+    return runnableNodeToolchainDirs(directories, {
+      env: discovery.env,
+      deadline: discovery.deadline,
+      now: discovery.now,
+    });
   } catch {
     return [];
   }
 }
 
-function fnmBinDirs(): string[] {
+function fnmBinDirs(discovery: DiscoveryOptions): string[] {
   const fnmRoot = path.join(/* turbopackIgnore: true */ HOME, ".fnm", "node-versions");
   if (!existsSync(/* turbopackIgnore: true */ fnmRoot)) return [];
   try {
@@ -170,28 +191,39 @@ function fnmBinDirs(): string[] {
       .filter((d) => existsSync(/* turbopackIgnore: true */ d))
       .sort()
       .reverse();
-    return runnableNodeToolchainDirs(directories);
+    return runnableNodeToolchainDirs(directories, {
+      env: discovery.env,
+      deadline: discovery.deadline,
+      now: discovery.now,
+    });
   } catch {
     return [];
   }
 }
 
-function windowsNpmBinDirs(): string[] {
+function windowsNpmBinDirs(discovery: DiscoveryOptions): string[] {
   if (process.platform === "win32") {
     const dirs = [
-      process.env.APPDATA ? path.join(/* turbopackIgnore: true */ process.env.APPDATA, "npm") : null,
-      process.env.npm_config_prefix ?? null,
+      discovery.env.APPDATA
+        ? path.join(/* turbopackIgnore: true */ discovery.env.APPDATA, "npm")
+        : null,
+      discovery.env.npm_config_prefix ?? null,
     ].filter((d): d is string => !!d && existsSync(/* turbopackIgnore: true */ d));
     return Array.from(new Set(dirs));
   }
   return [];
 }
 
-function candidateDirs(): string[] {
+function candidateDirs(discovery = discoveryOptions()): string[] {
+  const managed = managedNodePaths();
   return [
-    ...nodeNvmBinDirs(),
-    ...fnmBinDirs(),
-    ...windowsNpmBinDirs(),
+    // Cave's verified user-scoped Node/npm lane precedes opportunistic host
+    // managers. It never edits system PATH; this only affects Cave children.
+    managed?.npmBin,
+    managed ? path.dirname(managed.node) : null,
+    ...nodeNvmBinDirs(discovery),
+    ...fnmBinDirs(discovery),
+    ...windowsNpmBinDirs(discovery),
     path.join(/* turbopackIgnore: true */ HOME, "Library", "pnpm"),
     path.join(/* turbopackIgnore: true */ HOME, ".bun", "bin"),
     "/opt/homebrew/bin",
@@ -205,7 +237,7 @@ function candidateDirs(): string[] {
     // ~/.cargo/bin last: often holds a stale `cargo install` of coven that's
     // missing flags. Prefer the npm-published binary when both exist.
     path.join(/* turbopackIgnore: true */ HOME, ".cargo", "bin"),
-  ].filter((d) => existsSync(/* turbopackIgnore: true */ d));
+  ].filter((d): d is string => !!d && existsSync(/* turbopackIgnore: true */ d));
 }
 
 function candidateBinNames(): string[] {
@@ -231,7 +263,7 @@ export function pickWindowsLauncher(lines: string[]): string | null {
   );
 }
 
-function loginShellPath(): string | null {
+function loginShellPath(discovery: DiscoveryOptions): string | null {
   // Windows has no POSIX login shell to source — the `-ilc` probe below would
   // always fail. Skip it (callers fall back to the registry/system PATH).
   if (process.platform === "win32") return null;
@@ -239,12 +271,15 @@ function loginShellPath(): string | null {
   // analysis can't union the value with a string literal like "/bin/zsh"
   // and treat it as a file pattern that matches the whole project tree.
   // The fallback below uses a runtime concatenation for the same reason.
-  const env = process.env as Record<string, string | undefined>;
+  const env = discovery.env as Record<string, string | undefined>;
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
+  const timeout = remainingDiscoveryTimeout(4000, discovery.deadline, discovery.now);
+  if (timeout <= 0) return null;
   try {
     const out = execFileSync(shell, ["-ilc", "echo $PATH"], {
       encoding: "utf-8",
-      timeout: 4000,
+      timeout,
+      env: discovery.env,
     }).trim();
     return out || null;
   } catch {
@@ -284,7 +319,7 @@ export function windowsPathFromRegQuery(
 // machine/user Path in the registry and broadcasting WM_SETTINGCHANGE —
 // which already-running processes never receive. Re-reading the registry is
 // how a refresh actually picks those up without an app restart.
-function windowsRegistryPath(): string | null {
+function windowsRegistryPath(discovery: DiscoveryOptions): string | null {
   // Machine PATH first, then user PATH — the same order Windows itself uses
   // when it builds a process environment.
   const keys = [
@@ -293,12 +328,15 @@ function windowsRegistryPath(): string | null {
   ];
   const parts: string[] = [];
   for (const key of keys) {
+    const timeout = remainingDiscoveryTimeout(2000, discovery.deadline, discovery.now);
+    if (timeout <= 0) break;
     try {
       const out = execFileSync("reg", ["query", key, "/v", "Path"], {
         encoding: "utf-8",
-        timeout: 2000,
+        timeout,
+        env: discovery.env,
       });
-      const value = windowsPathFromRegQuery(out);
+      const value = windowsPathFromRegQuery(out, discovery.env);
       if (value) parts.push(value);
     } catch {
       /* key or value missing — keep whatever the other hive provides */
@@ -330,7 +368,8 @@ export function covenBin(): string {
     }
   }
 
-  for (const dir of candidateDirs()) {
+  const discovery = discoveryOptions();
+  for (const dir of candidateDirs(discovery)) {
     for (const name of candidateBinNames()) {
       const candidate = path.join(/* turbopackIgnore: true */ dir, name);
       try {
@@ -356,7 +395,10 @@ export function covenBin(): string {
       const out = execFileSync("where", ["coven"], {
         encoding: "utf-8",
         timeout: 1500,
-        env: covenSpawnEnv(),
+        env: {
+          ...discovery.env,
+          PATH: covenSpawnEnv({ discoveryEnv: discovery.env }).PATH,
+        },
       });
       const picked = pickWindowsLauncher(out.split(/\r?\n/));
       if (picked) {
@@ -455,11 +497,23 @@ export function covenAdapterDirsEnvValue(
  * a Finder-spawned cave can still resolve nested tooling (codex, claude,
  * git, gh, …).
  */
-function augmentedSpawnPath(preferLaunchPath: boolean): string {
-  const fromSystem = process.platform === "win32" ? windowsRegistryPath() : loginShellPath();
-  const launchPath = process.env.PATH ? process.env.PATH.split(path.delimiter) : [];
+function augmentedSpawnPath(
+  preferLaunchPath: boolean,
+  discovery: DiscoveryOptions,
+): string {
+  const fromSystem = process.platform === "win32"
+    ? windowsRegistryPath(discovery)
+    : loginShellPath(discovery);
+  // Windows retains the casing it inherited for environment keys (normally
+  // `Path`). After copying the environment, `env.PATH` therefore cannot be
+  // relied on even though `process.env.PATH` is case-insensitive. Read it
+  // case-insensitively so a desktop launch PATH remains first for Queue tools.
+  const launchPathValue = discovery.env.PATH ?? Object.entries(discovery.env).find(
+    ([key]) => key.toUpperCase() === "PATH",
+  )?.[1];
+  const launchPath = launchPathValue ? launchPathValue.split(path.delimiter) : [];
   const systemPath = fromSystem ? fromSystem.split(path.delimiter) : [];
-  const candidates = candidateDirs();
+  const candidates = candidateDirs(discovery);
   // `coven` intentionally prefers its managed install locations over a stale
   // shell binary. General Queue tools must do the opposite: a desktop launch
   // should honor the user's PATH before falling back to Cave's helpful extras.
@@ -470,8 +524,12 @@ function augmentedSpawnPath(preferLaunchPath: boolean): string {
   return parts.filter((part) => !!part && !seen.has(part) && (seen.add(part), true)).join(path.delimiter);
 }
 
-function spawnEnv(pathValue: string): NodeJS.ProcessEnv {
+function spawnEnv(pathValue: string, includeManagedNode = true): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, PATH: pathValue };
+  if (includeManagedNode) {
+    const managed = managedNodeSpawnEnv(env);
+    if (managed) Object.assign(env, managed);
+  }
   env.COVEN_HARNESS_ADAPTER_DIRS = covenAdapterDirsEnvValue(
     process.env.COVEN_HARNESS_ADAPTER_DIRS,
     process.env.COVEN_HOME,
@@ -489,9 +547,14 @@ function spawnEnv(pathValue: string): NodeJS.ProcessEnv {
   return scrubSidecarInternalEnv(env);
 }
 
-export function covenSpawnEnv(): NodeJS.ProcessEnv {
-  cachedPath ??= augmentedSpawnPath(false);
-  return spawnEnv(cachedPath);
+export function covenSpawnEnv(options: CovenSpawnEnvOptions = {}): NodeJS.ProcessEnv {
+  if (cachedPath !== null) return spawnEnv(cachedPath);
+  const discovery = discoveryOptions(options);
+  const pathValue = augmentedSpawnPath(false, discovery);
+  if (discovery.deadline === undefined || discovery.now() < discovery.deadline) {
+    cachedPath = pathValue;
+  }
+  return spawnEnv(pathValue);
 }
 
 /**
@@ -502,14 +565,16 @@ export function covenSpawnEnv(): NodeJS.ProcessEnv {
  * binary-discovery priority.
  */
 export function caveToolSpawnEnv(): NodeJS.ProcessEnv {
-  cachedToolPath ??= augmentedSpawnPath(true);
-  return spawnEnv(cachedToolPath);
+  cachedToolPath ??= augmentedSpawnPath(true, discoveryOptions());
+  return spawnEnv(cachedToolPath, false);
 }
 
-export function refreshCovenSpawnEnv(): NodeJS.ProcessEnv {
+export function refreshCovenSpawnEnv(
+  options: CovenSpawnEnvOptions = {},
+): NodeJS.ProcessEnv {
   cachedPath = null;
   cachedToolPath = null;
-  return covenSpawnEnv();
+  return covenSpawnEnv(options);
 }
 
 /**

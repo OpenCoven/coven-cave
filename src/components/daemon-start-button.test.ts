@@ -2,7 +2,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const settingsShell = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const settingsDaemon = await readFile(new URL("./settings-daemon.tsx", import.meta.url), "utf8");
+const settings = `${settingsShell}\n${settingsDaemon}`;
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 assert.match(settings, /fetch\("\/api\/daemon\/start", \{ method: "POST" \}\)/);

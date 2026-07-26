@@ -11,7 +11,10 @@ import { copilotStreamSpec, type RuntimeEventProtocolSchema } from "@/lib/copilo
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
-import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
+import {
+  copilotCapabilityFailureMessage,
+  probeCopilotCapability,
+} from "@/lib/server/copilot-capability-probe";
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
@@ -311,6 +314,13 @@ async function runViaSession(body: RunBody) {
       probeCopilotCapability(),
       resolveRuntimeCompatibility("copilot"),
     ]);
+    const capabilityFailure = copilotCapabilityFailureMessage(capability);
+    if (capabilityFailure) {
+      return NextResponse.json(
+        { ok: false, error: capabilityFailure },
+        { status: 409 },
+      );
+    }
     const spec = copilotStreamSpec(
       capability.version,
       compatibility?.eventProtocols,

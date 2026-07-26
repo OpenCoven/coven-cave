@@ -77,26 +77,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const modelForwardingEnabled\s*=[\s\S]*?hermesDirect\s*\?\s*hermesApi !== null \|\| await hermesChatSupportsModel\(\)/,
-  "Hermes model forwarding must accept its structured API or probe its direct CLI instead of assuming the coven-run capability applies",
-);
-
-assert.match(
-  chatRoute,
-  /codexResumeNeedsGenericFallback[\s\S]*?codexCapabilities\.resumeSkipGitRepoCheck === true[\s\S]*?\["exec", "resume", "--json"\][\s\S]*?if \(!resumeSessionId\)[\s\S]*?"--sandbox"[\s\S]*?"--add-dir"[\s\S]*?a\.push\("--"\);[\s\S]*?if \(resumeSessionId\) a\.push\(resumeSessionId\);/,
-  "Resumed direct Codex chats require non-Git resume support and terminate options before the native thread id",
-);
-
-assert.match(
-  chatRoute,
-  /const codexHarnessEnv = !sshRuntime && binding\.harness === "codex"[\s\S]*?codexLaunchCommand\(codexBin\(codexHarnessEnv\)\)/,
-  "Direct Codex chat must resolve a Windows npm shim to a non-shell launcher",
-);
-
-assert.doesNotMatch(
-  chatRoute,
-  /shell:\s*codexShellShim/,
-  "Direct Codex chat must never route project paths or resume ids through cmd.exe",
+  /const hermesModelCapability\s*=[\s\S]*?probe:\s*hermesChatSupportsModel[\s\S]*?const modelForwardingEnabled\s*=\s*hermesDirect[\s\S]*?\(hermesModelCapability \?\? false\)/,
+  "Hermes model forwarding must consume its ready-plan-gated direct CLI probe instead of assuming the coven-run capability applies",
 );
 
 assert.match(
@@ -128,8 +110,8 @@ assert.doesNotMatch(
 // the flag; "full" stays implicit so the harness keeps its default sandbox.
 assert.match(
   chatRoute,
-  /covenRunSupportsPermission\(\)/,
-  "route capability-probes coven run --permission before forwarding",
+  /probeCovenCapability\(covenRunSupportsPermission\)/,
+  "route capability-probes coven run --permission through the ready-plan gate before forwarding",
 );
 assert.match(
   chatRoute,
@@ -606,8 +588,20 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /boundarySentinel\?\.observe\(block\.name, block\.input\)/,
-  "Envelope tool_use blocks should feed the boundary sentinel",
+  /parseClaudeMessageEnvelope\(ev, claudeCompatibility\.profile\)[\s\S]*?boundarySentinel\?\.observe\(claudeEvent\.name, claudeEvent\.input\)/,
+  "Profile-selected envelope tool_use blocks should feed the boundary sentinel",
+);
+
+assert.match(
+  chatRoute,
+  /binding\.harness === "claude" && sshRuntime[\s\S]*?tool activity cannot be verified on an SSH host/,
+  "SSH Claude sessions should preserve text-only chat and surface an honest compatibility diagnostic",
+);
+
+assert.match(
+  chatRoute,
+  /const claudeDiagnostic =[\s\S]*?if \(claudeDiagnostic\) \{[\s\S]*?pushProgress\("claude-runtime-compatibility", claudeDiagnostic, "error"\)/,
+  "Claude compatibility diagnostics should be emitted before stdout so an immediately failing CLI still explains the text-only fallback",
 );
 
 assert.match(

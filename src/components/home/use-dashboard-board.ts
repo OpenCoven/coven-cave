@@ -2,9 +2,10 @@
 
 // Board snapshot for the Home dashboard's "Open work" board (launcher 3a).
 // One /api/board GET, mapped to the lean fields the board rows and filter tabs
-// need: title, column status (→ row kind + chip), priority, and — for running
-// cards — the timeout badge inputs (runningSince/timeoutMs). A failed fetch
-// leaves the empty list so the board degrades to an empty state, never errors.
+// need: title, familiar ownership, column status (→ row kind + chip), priority,
+// and — for running cards — the timeout badge inputs (runningSince/timeoutMs).
+// A failed fetch leaves the empty list so the board degrades to an empty state,
+// never errors.
 //
 // This is a dedicated dashboard fetch for suggestion and pending-task
 // helper) because the dashboard needs the richer per-card lifecycle fields
@@ -16,6 +17,7 @@ import type { CardLifecycle, CardPriority, CardStatus } from "@/lib/cave-board-t
 export type DashboardCard = {
   id: string;
   title: string;
+  familiarId: string | null;
   status: CardStatus;
   priority: CardPriority;
   lifecycle: CardLifecycle;
@@ -38,6 +40,7 @@ export function useDashboardBoard(): DashboardCard[] {
             (c: DashboardCard): DashboardCard => ({
               id: c.id,
               title: c.title,
+              familiarId: c.familiarId ?? null,
               status: c.status,
               priority: c.priority,
               lifecycle: c.lifecycle,

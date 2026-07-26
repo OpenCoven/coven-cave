@@ -2,7 +2,7 @@
 
 import "@/styles/dashboard.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import type { PairingStep } from "@/lib/mobile-handoff";
@@ -16,21 +16,16 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
 import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import { RelativeTime } from "@/components/ui/relative-time";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
 import { PairingStepsList } from "@/components/pairing-steps-list";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { Familiar } from "@/lib/types";
-import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
 import type { Mode, ModePref } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
 import { FamiliarStudioProvider, useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
-import { APP_VERSION } from "@/lib/app-version";
-import { UpdateSettingsRow } from "@/components/update-available";
-import { classifyAboutDaemonStatus, type AboutDaemonState } from "@/lib/about-status";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useCelebrationsEnabled, writeCelebrationsEnabled } from "@/lib/celebrations-pref";
 import {
@@ -46,12 +41,12 @@ import { Popover } from "@/components/ui/popover";
 import { addRecentColor, getRecentColors } from "@/lib/recent-colors";
 import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
+import { DaemonSection } from "./settings-daemon";
 import { SettingsTabbed } from "./settings-section-tabs";
 import type { TabItem } from "@/components/ui/tabs";
 import { ProfileSection } from "./settings-profile";
-import { GithubSection } from "./settings-github";
-import { AccessGroupsSection } from "./access-groups-section";
 import { SettingsOverview } from "./settings-overview";
+import { AboutSection } from "./settings-about";
 import {
   SECTIONS,
   SETTINGS_INDEX,
@@ -92,69 +87,8 @@ import {
 import { publishFleetTokenStatus } from "@/lib/omnigent/use-fleet-gate";
 import {
   formatHostWorkspaceText,
-  parseExecutorUrls,
   parseHostWorkspaceText,
 } from "./settings-multihost";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type DaemonStatus = {
-  running: boolean;
-  reason?: string;
-  checkedAt?: string;
-  covenVersion?: string;
-  apiVersion?: string;
-  workspacePath?: string;
-  daemon?: { pid: number; startedAt: string; socket: string };
-  executors?: Array<{
-    url: string;
-    healthUrl: string;
-    ok: boolean;
-    state: "available" | "unreachable";
-    detail: string;
-  }>;
-  target?: {
-    mode: "local" | "hub" | "unconfigured-hub";
-    label: string;
-    socket?: string;
-    url?: string;
-    error?: string;
-  };
-  travel?: {
-    mode: "home" | "hub" | "watching-hub" | "travel" | "handoff-pending";
-    authority: "local" | "hub" | "travel-local";
-    reason: string;
-    manualOffline: boolean;
-    staleCache: boolean;
-    wakeLocalSubdaemon: boolean;
-    localBindHost: "127.0.0.1";
-    hubUnreachableSince: string | null;
-    hubUnreachableForMs: number;
-    pendingQueueCount: number;
-    handoffPending: boolean;
-  };
-};
-
-type MultiHostMode = "local" | "hub";
-
-type TailscaleDevice = {
-  name: string;
-  dnsName: string | null;
-  hostName: string | null;
-  tailnetIp: string | null;
-  os: string | null;
-  online: boolean;
-  lastSeen: string | null;
-  isSelf: boolean;
-};
-
-type DaemonProbe = {
-  reachable: boolean;
-  status: number;
-  latencyMs: number;
-  reason?: string;
-  url: string;
-};
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
@@ -398,18 +332,29 @@ export function SettingsShell() {
         {/* Content */}
         <main
           hidden={showPicker}
-          className="settings-shell__content min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 [padding-bottom:calc(1.5rem_+_var(--sai-bottom))]!"
+          className={`settings-shell__content min-h-0 flex-1 ${
+            section === "familiars" ? "settings-shell__content--familiars" : ""
+          } ${
+            section === "familiars"
+              ? "overflow-hidden"
+              : "overflow-y-auto px-4 py-6 md:px-8 [padding-bottom:calc(1.5rem_+_var(--sai-bottom))]!"
+          }`}
         >
           {section === "profile" && <ProfileSection />}
           {section === "general" && <GeneralSection />}
-          {section === "daemon"   && <DaemonSection suggestedHubUrl={suggestedHubUrl} onSuggestionConsumed={() => setSuggestedHubUrl(null)} />}
+          {section === "daemon" && (
+            <DaemonSection
+              suggestedHubUrl={suggestedHubUrl}
+              onSuggestionConsumed={() => setSuggestedHubUrl(null)}
+              omnigentSettings={<OmnigentSettingsGroup />}
+            />
+          )}
           {section === "familiars" && (
             <FamiliarsSection
               tabTarget={familiarsTabTarget}
               onTabTargetConsumed={() => setFamiliarsTabTarget(null)}
             />
           )}
-          {section === "github"   && <GithubSection />}
           {section === "mobile"   && <MobileSection onUseAsHub={(url) => { setSuggestedHubUrl(url); openSection("daemon"); }} />}
           {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
           {section === "about"    && <AboutSection />}
@@ -1124,516 +1069,6 @@ function OmnigentSettingsGroup() {
   );
 }
 
-function DaemonSection({
-  suggestedHubUrl,
-  onSuggestionConsumed,
-}: {
-  suggestedHubUrl: string | null;
-  onSuggestionConsumed: () => void;
-}) {
-  const [status, setStatus] = useState<DaemonStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [starting, setStarting] = useState(false);
-  const [restarting, setRestarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-  const [mode, setMode] = useState<MultiHostMode>("local");
-  const [hubUrl, setHubUrl] = useState("");
-  const [executorText, setExecutorText] = useState("");
-  const [savingConnection, setSavingConnection] = useState(false);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [devices, setDevices] = useState<TailscaleDevice[]>([]);
-  const [devicesLoading, setDevicesLoading] = useState(false);
-  const [devicesError, setDevicesError] = useState<string | null>(null);
-  const [probe, setProbe] = useState<DaemonProbe | null>(null);
-  const [probing, setProbing] = useState(false);
-  const { announce } = useAnnouncer();
-  const [savingTravel, setSavingTravel] = useState(false);
-  const [travelError, setTravelError] = useState<string | null>(null);
-
-  // Abort the in-flight status read on each refresh: Start/Restart/Manual-
-  // Offline each trigger one, and without cancellation a slow earlier
-  // response can land after a newer one and flash a stale pre-action status
-  // (same guard FamiliarsSection uses for its loads).
-  const refreshCtlRef = useRef<AbortController | null>(null);
-  const devicesCtlRef = useRef<AbortController | null>(null);
-  const suggestionAppliedRef = useRef(false);
-  const refresh = () => {
-    refreshCtlRef.current?.abort();
-    const ctl = new AbortController();
-    refreshCtlRef.current = ctl;
-    setLoading(true);
-    fetch("/api/daemon/status", { cache: "no-store", signal: ctl.signal })
-      .then((r) => r.json())
-      .then((j: DaemonStatus) => {
-        if (ctl.signal.aborted) return;
-        setStatus(j); setLoading(false);
-      })
-      .catch(() => {
-        if (ctl.signal.aborted) return;
-        setStatus({ running: false }); setLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    refresh();
-    return () => refreshCtlRef.current?.abort();
-    // refresh is stable-by-construction (only touches refs/setters); running
-    // this once on mount is the intent.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const ctl = new AbortController();
-    fetch("/api/config", { cache: "no-store", signal: ctl.signal })
-      .then((r) => r.json())
-      .then((j: { ok?: boolean; config?: { multiHost?: { mode?: MultiHostMode; hubUrl?: string; executorUrls?: string[] } } }) => {
-        if (ctl.signal.aborted) return;
-        const multiHost = j.config?.multiHost;
-        if (!j.ok || !multiHost) return;
-        // Always hydrate executor addresses from config so a later save can't
-        // PATCH an empty executorUrls list. Only skip applying mode/hubUrl when
-        // a hub suggestion has already been applied (it wins over stored config).
-        setExecutorText((multiHost.executorUrls ?? []).join("\n"));
-        if (suggestionAppliedRef.current) return;
-        setMode(multiHost.mode === "hub" ? "hub" : "local");
-        setHubUrl(multiHost.hubUrl ?? "");
-      })
-      .catch(() => {});
-    return () => ctl.abort();
-  }, []);
-
-  useEffect(() => {
-    if (!suggestedHubUrl) return;
-    suggestionAppliedRef.current = true;
-    setMode("hub");
-    setHubUrl(suggestedHubUrl);
-    setProbe(null);
-    onSuggestionConsumed();
-  }, [onSuggestionConsumed, suggestedHubUrl]);
-
-  const loadDevices = useCallback(() => {
-    devicesCtlRef.current?.abort();
-    const ctl = new AbortController();
-    devicesCtlRef.current = ctl;
-    setDevicesLoading(true);
-    setDevicesError(null);
-    fetch("/api/tailscale/devices", { cache: "no-store", signal: ctl.signal })
-      .then((response) => response.json())
-      .then((result: { ok?: boolean; devices?: TailscaleDevice[]; reason?: string }) => {
-        if (ctl.signal.aborted) return;
-        if (!result.ok) {
-          setDevices([]);
-          setDevicesError(result.reason || "Tailscale status unavailable");
-        } else {
-          setDevices(result.devices ?? []);
-        }
-        setDevicesLoading(false);
-      })
-      .catch((error) => {
-        if (ctl.signal.aborted) return;
-        setDevicesError(error instanceof Error ? error.message : "Tailscale status unavailable");
-        setDevicesLoading(false);
-      });
-  }, []);
-
-  useEffect(() => {
-    if (mode !== "hub") {
-      devicesCtlRef.current?.abort();
-      return;
-    }
-    loadDevices();
-    return () => devicesCtlRef.current?.abort();
-  }, [loadDevices, mode]);
-
-  const persistConnection = async (nextMode = mode) => {
-    setSavingConnection(true);
-    setConnectionError(null);
-    try {
-      const res = await fetch("/api/config", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ multiHost: { mode: nextMode, hubUrl, executorUrls: parseExecutorUrls(executorText) } }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || `save failed (${res.status})`);
-      }
-      setMode(nextMode);
-      announce("Daemon connection saved.");
-      refresh();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "could not save daemon connection";
-      setConnectionError(msg);
-      announce(`Couldn't save daemon connection: ${msg}`, "assertive");
-    } finally {
-      setSavingConnection(false);
-    }
-  };
-
-  const probeHub = async (candidate: string, saveWhenReachable: boolean) => {
-    const url = candidate.trim();
-    if (!url) {
-      setConnectionError("Enter a Server Hub URL.");
-      return;
-    }
-    setProbing(true);
-    setConnectionError(null);
-    try {
-      const response = await fetch("/api/daemon/probe", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const result = await response.json().catch(() => ({})) as Partial<DaemonProbe> & { ok?: boolean; error?: string };
-      if (!response.ok || result.ok === false || typeof result.reachable !== "boolean") {
-        throw new Error(result.error || `probe failed (${response.status})`);
-      }
-      const nextProbe: DaemonProbe = {
-        reachable: result.reachable,
-        status: result.status ?? 0,
-        latencyMs: result.latencyMs ?? 0,
-        reason: result.reason,
-        url,
-      };
-      setProbe(nextProbe);
-      if (nextProbe.reachable && saveWhenReachable) await persistConnection("hub");
-    } catch (error) {
-      setConnectionError(error instanceof Error ? error.message : "could not probe Server Hub");
-    } finally {
-      setProbing(false);
-    }
-  };
-
-  const saveConnection = async (nextMode = mode) => {
-    if (nextMode === "hub") {
-      await probeHub(hubUrl, true);
-      return;
-    }
-    await persistConnection(nextMode);
-  };
-
-  const chooseMode = (nextMode: MultiHostMode) => {
-    setMode(nextMode);
-    if (nextMode === "local") void persistConnection(nextMode);
-  };
-
-  const selectDevice = (device: TailscaleDevice) => {
-    const host = device.tailnetIp || device.dnsName;
-    if (!host) return;
-    const url = `http://${host}:8787`;
-    setMode("hub");
-    setHubUrl(url);
-    setProbe(null);
-    void probeHub(url, false);
-  };
-
-  const startDaemon = async () => {
-    setStarting(true);
-    setStartError(null);
-    try {
-      const res = await fetch("/api/daemon/start", { method: "POST" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || json?.stderr || "daemon did not start");
-      }
-      refresh();
-    } catch (err) {
-      setStartError(err instanceof Error ? err.message : "daemon did not start");
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const restartDaemon = async () => {
-    setRestarting(true);
-    setStartError(null);
-    try {
-      const res = await fetch("/api/daemon/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ restart: true }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || json?.stderr || "daemon did not restart");
-      }
-      refresh();
-    } catch (err) {
-      setStartError(err instanceof Error ? err.message : "daemon did not restart");
-    } finally {
-      setRestarting(false);
-    }
-  };
-
-  const setManualOffline = async (manualOffline: boolean) => {
-    setSavingTravel(true);
-    setTravelError(null);
-    try {
-      const res = await fetch("/api/travel/client", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ manualOffline }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || `travel mode save failed (${res.status})`);
-      }
-      refresh();
-    } catch (err) {
-      setTravelError(err instanceof Error ? err.message : "could not save travel mode");
-    } finally {
-      setSavingTravel(false);
-    }
-  };
-
-  return (
-    <SettingsPage section="daemon" title="Daemon" description="The coven daemon manages familiar sessions and the workspace.">
-      <SettingsGroup label="Connection">
-        <SettingControlRow
-          label="Runtime target"
-          hint={status?.target?.mode === "hub" ? `Connected through ${status.target.url ?? "server hub"}` : "Local runs everything on this machine (the default). Server hub connects to a shared daemon on another machine."}
-        >
-          <Segmented
-            options={["local", "hub"] as const}
-            value={mode}
-            onChange={chooseMode}
-            getLabel={(option) => option === "local" ? "Local" : "Server hub"}
-            ariaLabel="Daemon runtime target"
-          />
-        </SettingControlRow>
-        {mode === "hub" ? (
-          <SettingControlRow label="Tailnet devices" hint="Choose a machine on your private Tailscale network, or enter an address manually below.">
-            <div className="w-full min-w-[260px] max-w-md space-y-2">
-              <div className="flex items-center justify-end">
-                <Button variant="ghost" size="xs" onClick={loadDevices} disabled={devicesLoading} leadingIcon="ph:arrows-clockwise">
-                  {devicesLoading ? "Finding devices..." : "Refresh devices"}
-                </Button>
-              </div>
-              {devicesError ? (() => {
-                const friendly = classifyTailscaleFailure(devicesError);
-                return (
-                  <div role="status" className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2">
-                    <p className="text-[length:var(--text-xs)] font-medium text-[var(--color-warning)]">{friendly.headline}</p>
-                    <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{friendly.hint}</p>
-                  </div>
-                );
-              })() : null}
-              {!devicesError && !devicesLoading && devices.length === 0 ? (
-                <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">No tailnet devices found.</p>
-              ) : null}
-              {devices.length > 0 ? (
-                <div className="overflow-hidden rounded-md border border-[var(--border-hairline)]">
-                  {devices.map((device) => {
-                    const selectable = Boolean(device.tailnetIp || device.dnsName);
-                    return (
-                      <button
-                        key={`${device.isSelf ? "self" : "peer"}:${device.dnsName || device.name}`}
-                        type="button"
-                        onClick={() => selectDevice(device)}
-                        disabled={!selectable}
-                        className="focus-ring flex w-full items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-left last:border-b-0 hover:bg-[var(--bg-raised)] disabled:opacity-50"
-                      >
-                        <span className={`h-2 w-2 shrink-0 rounded-full ${device.online ? "bg-[var(--color-success)]" : "bg-[var(--text-muted)]"}`} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
-                            {device.name}{device.isSelf ? " · This device" : ""}
-                          </span>
-                          <span className="block truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                            {device.tailnetIp || device.dnsName || "No hub address"}{device.os ? ` · ${device.os}` : ""}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-          </SettingControlRow>
-        ) : null}
-        <SettingControlRow label="Server hub URL" hint="HTTP endpoint for the Linux/server hub on your private network.">
-          <input
-            value={hubUrl}
-            onChange={(event) => { setHubUrl(event.target.value); setProbe(null); }}
-            onBlur={() => void saveConnection()}
-            aria-label="Server hub URL"
-            placeholder="http://server.tailnet:8787"
-            disabled={mode !== "hub"}
-            className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none disabled:opacity-50"
-          />
-          {mode === "hub" && (probing || probe?.url === hubUrl.trim()) ? (
-            <p className={`mt-1 text-[length:var(--text-xs)] ${probe?.reachable ? "text-[var(--color-success)]" : probe ? "text-[var(--color-danger)]" : "text-[var(--text-muted)]"}`} role="status">
-              {probing
-                ? "Checking reachability..."
-                : probe?.reachable
-                  ? `Reachable · ${probe.latencyMs} ms`
-                  : `Unreachable${probe?.reason ? ` · ${probe.reason}` : ""}`}
-            </p>
-          ) : null}
-        </SettingControlRow>
-        <SettingControlRow label="Executor addresses" hint="Advanced, optional: addresses of extra machines that can run familiar sessions, one per line. Leave empty unless you run a multi-machine setup.">
-          <textarea
-            value={executorText}
-            onChange={(event) => setExecutorText(event.target.value)}
-            onBlur={() => void persistConnection(mode)}
-            aria-label="Executor addresses, one per line"
-            placeholder={"executor-1.tailnet:8787\nexecutor-2.tailnet:8787"}
-            disabled={mode !== "hub"}
-            rows={3}
-            className="w-full min-w-[260px] max-w-md resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none disabled:opacity-50"
-          />
-        </SettingControlRow>
-        {/* Save hugs the section's bottom-right corner at the short (xs)
-            control height — same as the Status row's Refresh button. */}
-        <div className="flex flex-wrap items-center justify-end gap-2 px-4 pb-2.5 pt-0.5">
-          {connectionError && <span role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">{connectionError}</span>}
-          {mode === "hub" && probe?.url === hubUrl.trim() && !probe.reachable ? (
-            <Button variant="ghost" size="xs" onClick={() => void persistConnection("hub")} disabled={savingConnection} leadingIcon="ph:warning">
-              Save anyway
-            </Button>
-          ) : null}
-          <Button
-            variant="secondary"
-            size="xs"
-            onClick={() => void saveConnection()}
-            disabled={savingConnection}
-            leadingIcon="ph:floppy-disk-bold"
-          >
-            {savingConnection ? "Saving..." : "Save connection"}
-          </Button>
-        </div>
-      </SettingsGroup>
-
-      <OmnigentSettingsGroup />
-
-      <SettingsGroup label="Status">
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3">
-          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-            loading ? "animate-pulse bg-[var(--text-muted)]"
-            : status?.running ? "bg-[var(--color-success)]"
-            : "bg-red-400"
-          }`} />
-          <span className="text-[length:var(--text-base)] font-medium">
-            {loading ? "Checking…" : status?.running ? "Running" : "Offline"}
-          </span>
-          {status?.running && status.daemon && (
-            <span className="ml-auto font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
-              pid {status.daemon.pid}
-            </span>
-          )}
-          {!loading && !status?.running && mode === "local" && (
-            <Button
-              variant="primary"
-              size="sm"
-              className="ml-auto"
-              onClick={startDaemon}
-              disabled={starting}
-              leadingIcon="ph:rocket-launch-bold"
-              title="coven daemon start"
-            >
-              {starting ? "Starting..." : "Start daemon"}
-            </Button>
-          )}
-          {status?.running && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={restartDaemon}
-              disabled={restarting}
-              leadingIcon="ph:arrow-clockwise"
-              title="coven daemon start"
-            >
-              {restarting ? "Restarting..." : "Restart daemon"}
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={refresh}
-            leadingIcon="ph:arrow-clockwise"
-          >
-            Refresh
-          </Button>
-          {status?.target?.mode === "hub" && (
-            <span className="font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
-              hub {status.target.url}
-            </span>
-          )}
-          {!loading && status?.target?.mode === "hub" && status.running ? (
-            <p className="basis-full text-[length:var(--text-xs)] text-[var(--color-success)]">
-              Connected · last seen <RelativeTime iso={status.checkedAt} fallback="just now" />
-            </p>
-          ) : null}
-          {startError && <p className="basis-full text-[length:var(--text-xs)] text-[var(--color-danger)]">{startError}</p>}
-          {!loading && !status?.running && mode === "hub" && status?.target?.mode === "hub" && (
-            <p className="basis-full text-[length:var(--text-xs)] text-[var(--color-danger)]">
-              Configured but unreachable · {status.target.url}{status.reason ? ` · ${status.reason}` : ""}
-            </p>
-          )}
-          {mode === "hub" && (status?.executors?.length ?? 0) > 0 && (
-            <div className="basis-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2">
-              <div className="mb-1 flex items-center gap-2 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
-                <Icon name="ph:terminal-window" width={12} />
-                Executor nodes
-              </div>
-              <div className="space-y-1">
-                {status?.executors?.map((executor) => (
-                  <div key={executor.url} className="flex min-w-0 flex-wrap items-center gap-2 text-[length:var(--text-xs)]">
-                    <span className={`h-2 w-2 rounded-full ${executor.ok ? "bg-[var(--color-success)]" : "bg-red-400"}`} />
-                    <span className="min-w-0 truncate font-mono text-[var(--text-primary)]">{executor.url}</span>
-                    <span className={executor.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}>
-                      {executor.detail}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {status?.travel && (
-            <div className="basis-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Icon name="ph:device-mobile" width={13} />
-                <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">Travel mode</span>
-                <span className="rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[length:var(--text-2xs)] uppercase tracking-wide text-[var(--text-muted)]">
-                  {status.travel.mode}
-                </span>
-                <Button
-                  variant="secondary"
-                  size="xs"
-                  onClick={() => void setManualOffline(!status.travel?.manualOffline)}
-                  disabled={savingTravel}
-                  className="ml-auto"
-                  leadingIcon={status.travel.manualOffline ? "ph:plug-bold" : "ph:plug"}
-                >
-                  {status.travel.manualOffline ? "Return online" : "Manual offline"}
-                </Button>
-              </div>
-              <div className="grid gap-2 text-[length:var(--text-xs)] text-[var(--text-muted)] sm:grid-cols-3">
-                <span>Reason: <strong className="font-medium text-[var(--text-primary)]">{status.travel.reason}</strong></span>
-                <span>Pending queue: <strong className="font-medium text-[var(--text-primary)]">{status?.travel?.pendingQueueCount ?? 0}</strong></span>
-                <span>Local bind: <strong className="font-mono font-medium text-[var(--text-primary)]">127.0.0.1</strong></span>
-                <span>Stale cache: <strong className="font-medium text-[var(--text-primary)]">{status.travel.staleCache ? "yes" : "no"}</strong></span>
-                <span>Wake local: <strong className="font-medium text-[var(--text-primary)]">{status.travel.wakeLocalSubdaemon ? "requested" : "standby"}</strong></span>
-                <span>Handoff: <strong className="font-medium text-[var(--text-primary)]">{status.travel.handoffPending ? "pending sync" : "clear"}</strong></span>
-              </div>
-              {travelError && <p className="mt-2 text-[length:var(--text-xs)] text-[var(--color-danger)]">{travelError}</p>}
-            </div>
-          )}
-        </div>
-      </SettingsGroup>
-
-      {status?.running && (
-        <SettingsGroup label="Info">
-          <SettingsKV label="Coven version" value={status.covenVersion ?? "—"} />
-          <SettingsKV label="API version"   value={status.apiVersion   ?? "—"} />
-          <SettingsKV label="Socket"        value={status.daemon?.socket ?? "—"} mono />
-          <SettingsKV label="Started"       value={<RelativeTime iso={status.daemon?.startedAt} fallback="—" />} />
-          <SettingsKV label="Workspace"     value={status.workspacePath ?? "—"} mono />
-        </SettingsGroup>
-      )}
-    </SettingsPage>
-  );
-}
-
 // ─── Section: Familiars ───────────────────────────────────────────────────────
 
 function FamiliarsSection({
@@ -1654,7 +1089,7 @@ function FamiliarsSection({
   const [createOpen, setCreateOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
-  const familiars = useResolvedFamiliars(rawFamiliars);
+  const familiars = useResolvedFamiliars(rawFamiliars, { includeArchived: true });
   // This renders below FamiliarStudioProvider (the shell mounts it), so the
   // studio tab state is reachable here even though the shell body can't.
   const { setActiveTab, openFamiliarStudio } = useFamiliarStudio();
@@ -1798,20 +1233,12 @@ function FamiliarsSection({
 
   return (
     <>
-      {/* Summon lives in the familiar picker's fixed footer, alongside the
-          roster it extends instead of floating above the Studio. */}
       <FamiliarStudioInlinePanel
         familiars={rawFamiliars}
         resolved={familiars}
         onSummon={() => setCreateOpen(true)}
         onRosterChanged={() => void load()}
       />
-      {/* Cross-familiar access groups — shared base project grants at read or
-          write level; per-familiar effective access renders in the studio's
-          Projects tab. */}
-      <div className="mt-4">
-        <AccessGroupsSection familiars={familiars} />
-      </div>
       {createDialog}
     </>
   );
@@ -3560,123 +2987,6 @@ function MobileSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
   );
 }
 
-// ─── Section: About ───────────────────────────────────────────────────────────
-
-function AboutDaemonStatusRow() {
-  const [state, setState] = useState<AboutDaemonState>({ kind: "checking" });
-  const requestRef = useRef<AbortController | null>(null);
-
-  const refresh = useCallback(() => {
-    requestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
-    setState({ kind: "checking" });
-    void fetch("/api/daemon/status", { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => null);
-        if (controller.signal.aborted) return;
-        setState(classifyAboutDaemonStatus({
-          responseOk: response.ok,
-          payload,
-          checkedAt: new Date().toISOString(),
-        }));
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setState(classifyAboutDaemonStatus({
-          responseOk: false,
-          payload: null,
-          checkedAt: new Date().toISOString(),
-          error: error instanceof Error ? error.message : "status request failed",
-        }));
-      });
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    return () => requestRef.current?.abort();
-  }, [refresh]);
-
-  const detail =
-    state.kind === "running"
-      ? state.version ? `Running v${state.version}` : "Running (version unavailable)"
-      : state.kind === "stopped"
-        ? "Stopped"
-        : state.kind === "unreachable"
-          ? "Unreachable"
-          : state.kind === "failed-to-check"
-            ? "Failed to check"
-            : "Checking…";
-  const reason = state.kind === "checking" || state.kind === "running" ? null : state.reason;
-  const checkedAt = state.kind === "checking" ? null : state.checkedAt;
-  const tone =
-    state.kind === "running"
-      ? "text-[var(--color-success)]"
-      : state.kind === "checking"
-        ? "text-[var(--text-muted)]"
-        : state.kind === "stopped"
-          ? "text-[var(--color-warning)]"
-          : "text-[var(--color-danger)]";
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-      <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">Daemon</span>
-      <div className="flex min-w-0 items-center gap-2">
-        <span className={`truncate text-right text-[length:var(--text-sm)] ${tone}`} title={reason ?? checkedAt ?? undefined}>
-          {detail}{checkedAt ? ` · checked ${relativeTime(checkedAt)}` : ""}
-        </span>
-        <Button variant="secondary" size="xs" onClick={refresh} disabled={state.kind === "checking"}>
-          {state.kind === "checking" ? "Checking…" : "Retry"}
-        </Button>
-      </div>
-      {reason ? (
-        <p className="basis-full text-right text-[length:var(--text-xs)] text-[var(--text-muted)]">
-          {reason}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function AboutSection() {
-  return (
-    <SettingsPage section="about" title="About" description="Version and build information.">
-      <SettingsGroup label="CovenCave">
-        <SettingsKV label="App version" value={APP_VERSION} />
-        <UpdateSettingsRow />
-        <AboutDaemonStatusRow />
-        <SettingsKV label="Built with" value="Next.js · React · Tauri · Tailwind" />
-      </SettingsGroup>
-      <SettingsGroup label="OpenCoven tools">
-        <OpenCovenToolsUpdate />
-      </SettingsGroup>
-      <SettingsGroup label="Links">
-        <div className="flex flex-wrap gap-2 px-4 py-3">
-          {[
-            { label: "GitHub",   href: "https://github.com/OpenCoven/coven-cave", icon: "ph:github-logo" as const },
-            { label: "Docs",     href: "https://docs.opencoven.ai",               icon: "ph:file-text" as const },
-            { label: "X",        href: "https://x.com/OpenCvn",                   icon: "ph:x-logo-bold" as const },
-            { label: "Discord",  href: "https://discord.gg/opencoven",            icon: "ph:discord-logo" as const },
-            { label: "Grimoire", href: "https://mind.opencoven.ai",               icon: "ph:book-open" as const },
-            { label: "Podcast",  href: "https://pod.opencoven.ai",                icon: "ph:waveform-bold" as const },
-          ].map((l) => (
-            <Button
-              key={l.href}
-              variant="secondary"
-              size="xs"
-              className="settings-touch-action settings-tool-action gap-1.5 px-2.5 text-[length:var(--text-xs)]"
-              onClick={() => openExternalUrl(l.href)}
-              leadingIcon={l.icon}
-            >
-              {l.label}
-            </Button>
-          ))}
-        </div>
-      </SettingsGroup>
-    </SettingsPage>
-  );
-}
-
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
 function SettingsPage({ title, description, section, children }: { title: string; description?: string; section?: Section; children: React.ReactNode }) {
@@ -3708,15 +3018,6 @@ function SettingsRow({ label, description, comingSoon, children }: { label: stri
       {comingSoon ? (
         <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">Soon</span>
       ) : children}
-    </div>
-  );
-}
-
-function SettingsKV({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">{label}</span>
-      <span className={`text-right text-[length:var(--text-sm)] text-[var(--text-muted)] ${mono ? "font-mono" : ""}`}>{value}</span>
     </div>
   );
 }

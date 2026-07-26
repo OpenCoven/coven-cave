@@ -171,11 +171,12 @@ test("resolveOmnigentAuth reads JWT and rejects expired", async () => {
     assert.equal(expired.token, null);
     assert.equal(expired.mode, "none");
   } finally {
-    process.env.HOME = prevHome;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
   }
 });
 
-test("resolveOmnigentAuth recognizes databricks pointer without requiring CLI mint", async () => {
+test("resolveOmnigentAuth recognizes a Databricks pointer without a workspace host", async () => {
   const prevHome = process.env.HOME;
   const tmp = await mkdtemp(path.join(os.tmpdir(), "omnigent-dbx-"));
   process.env.HOME = tmp;
@@ -188,18 +189,19 @@ test("resolveOmnigentAuth recognizes databricks pointer without requiring CLI mi
       JSON.stringify({
         [base]: {
           auth_type: "databricks",
-          workspace_host: "https://example.databricks.com",
           org_id: "12345",
         },
       }),
     );
-    // databricks CLI may be missing — pointer still marks authenticated, mode databricks
+    // The persisted pointer itself is credential material even before a
+    // workspace host is available for minting.
     const auth = await resolveOmnigentAuth(base);
     assert.equal(auth.mode, "databricks");
     assert.equal(auth.authenticated, true);
     assert.equal(auth.extraHeaders["X-Databricks-Org-Id"], "12345");
   } finally {
-    process.env.HOME = prevHome;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
   }
 });
 
@@ -215,7 +217,8 @@ test("resolveOmnigentAuth allows unauthenticated local mode", async () => {
     assert.equal(auth.token, null);
     assert.equal(auth.authenticated, false);
   } finally {
-    process.env.HOME = prevHome;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
     if (prevTok === undefined) delete process.env.OMNIGENT_TOKEN;
     else process.env.OMNIGENT_TOKEN = prevTok;
   }
@@ -234,18 +237,50 @@ test("resolveOmnigentAuth resolves OMNIGENT_TOKEN through the Cave Vault", async
       "../local-encrypted-vault.ts"
     );
     setLocalEncryptedSecret("OMNIGENT_TOKEN", "vault-token");
+    setLocalEncryptedSecret("OMNIGENT_SERVER_URL", "https://omni.example.com/path");
     try {
       assert.equal(isOmnigentEnvConfigured(), true);
-      const auth = await resolveOmnigentAuth("https://omni.example.com");
+      const auth = await resolveOmnigentAuth("https://omni.example.com/other");
       assert.equal(auth.mode, "env");
       assert.equal(auth.token, "vault-token");
       assert.equal(auth.authenticated, true);
     } finally {
       deleteLocalEncryptedSecret("OMNIGENT_TOKEN");
+      deleteLocalEncryptedSecret("OMNIGENT_SERVER_URL");
     }
   } finally {
     delete process.env.OMNIGENT_TOKEN; // resolveSecret caches into process.env
-    process.env.HOME = prevHome;
+    delete process.env.OMNIGENT_SERVER_URL;
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+  }
+});
+
+test("resolveOmnigentAuth scopes OMNIGENT_TOKEN to OMNIGENT_SERVER_URL", async () => {
+  const prevHome = process.env.HOME;
+  const prevToken = process.env.OMNIGENT_TOKEN;
+  const prevServerUrl = process.env.OMNIGENT_SERVER_URL;
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "omnigent-scoped-env-"));
+  process.env.HOME = tmp;
+  process.env.OMNIGENT_TOKEN = "global-secret";
+  process.env.OMNIGENT_SERVER_URL = "https://trusted.example.com/api/";
+  try {
+    const attacker = await resolveOmnigentAuth("https://attacker.example.com");
+    assert.equal(attacker.mode, "none");
+    assert.equal(attacker.token, null);
+    assert.equal(attacker.authenticated, false);
+
+    const trusted = await resolveOmnigentAuth("https://trusted.example.com/other");
+    assert.equal(trusted.mode, "env");
+    assert.equal(trusted.token, "global-secret");
+    assert.equal(trusted.authenticated, true);
+  } finally {
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    if (prevToken === undefined) delete process.env.OMNIGENT_TOKEN;
+    else process.env.OMNIGENT_TOKEN = prevToken;
+    if (prevServerUrl === undefined) delete process.env.OMNIGENT_SERVER_URL;
+    else process.env.OMNIGENT_SERVER_URL = prevServerUrl;
   }
 });
 

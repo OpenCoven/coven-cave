@@ -17,7 +17,9 @@ async function gotoFamiliarSettings(page: Page) {
     route.fulfill({ json: { ok: true, familiars: FAMILIARS } }),
   );
   await page.goto("/settings#familiars");
-  await expect(page.locator(".familiar-studio-picker__trigger")).toBeVisible({
+  await expect(
+    page.getByRole("complementary", { name: "Familiar roster" }),
+  ).toBeVisible({
     timeout: 30_000,
   });
 }
@@ -49,63 +51,58 @@ async function expectContained(inner: Locator, outer: Locator) {
     outer.boundingBox(),
   ]);
   expect(innerBox, "inner control has layout bounds").not.toBeNull();
-  expect(outerBox, "popover has layout bounds").not.toBeNull();
-  expect(innerBox!.y, "control top stays inside the popover").toBeGreaterThanOrEqual(
+  expect(outerBox, "container has layout bounds").not.toBeNull();
+  expect(innerBox!.y, "control top stays inside the container").toBeGreaterThanOrEqual(
     outerBox!.y - 1,
   );
   expect(
     innerBox!.y + innerBox!.height,
-    "control bottom stays inside the popover",
+    "control bottom stays inside the container",
   ).toBeLessThanOrEqual(outerBox!.y + outerBox!.height + 1);
 }
 
-test("a keyboard-shrunk visual viewport keeps fixed controls and one full result", async ({ page }) => {
+test("a keyboard-shrunk visual viewport keeps roster controls and one full result", async ({ page }) => {
   // Mobile keyboards can shrink visualViewport without changing the CSS layout
-  // viewport. Keep the latter tall so a max-height media query cannot make this
-  // pass accidentally; Popover must propagate its computed available height.
+  // viewport. The persistent roster must keep its controls fixed while only
+  // the familiar list scrolls.
   await page.setViewportSize({ width: 390, height: 720 });
-  // 270px puts both sides of the anchor below Popover's 120px safety floor.
   await emulateVisualViewport(page, 390, 270);
   await gotoFamiliarSettings(page);
 
-  await page.locator(".familiar-studio-picker__trigger").click();
-  const popover = page.locator(".familiar-studio-picker__popover");
-  const search = page.getByRole("combobox", { name: "Search familiars" });
+  const roster = page.getByRole("complementary", { name: "Familiar roster" });
+  const search = page.getByRole("searchbox", { name: "Find a familiar" });
   const summon = page.getByRole("button", { name: "Summon familiar" });
-  const results = page.getByRole("listbox", { name: "Familiars" });
-  await expect(popover).toBeVisible();
-  await expect.poll(() => popover.evaluate((element) => element.style.maxHeight)).toBe("120px");
+  const results = page.getByRole("list", { name: "Familiars" });
+  const options = results.locator(".settings-familiar-roster__option");
+  const first = options.first();
+  const last = options.last();
 
-  await expectContained(search, popover);
-  await expectContained(summon, popover);
+  await expect(options).toHaveCount(60);
+  await expectContained(search, roster);
+  await expectContained(summon, roster);
 
-  // Wrapping from the first result to the last scrolls the result list. It must
-  // not scroll the containing dialog and carry the still-focused search field
-  // out of view (the failure mode seen with mobile keyboards / short windows).
-  await search.press("ArrowUp");
-  await expect(search).toBeFocused();
-  await expect(search).toHaveAttribute(
-    "aria-activedescendant",
-    "settings-familiar-picker-option-59",
-  );
-  await expectContained(search, popover);
-  await expectContained(summon, popover);
-  const highlighted = page.locator(".familiar-studio-picker__option[data-highlighted]");
-  await expect(highlighted).toContainText("Familiar 60");
+  // Wrapping from the first result to the last must scroll only the roster list
+  // and leave the search and summon controls in place.
+  await first.focus();
+  await first.press("ArrowUp");
+  await expect(last).toBeFocused();
+  await expect(last).toContainText("Familiar 60");
+  await expectContained(search, roster);
+  await expectContained(summon, roster);
   const resultsBox = await results.boundingBox();
   expect(resultsBox, "the result scroller has layout bounds").not.toBeNull();
-  expect(resultsBox!.height, "the exact floor preserves a full 44px option").toBeGreaterThanOrEqual(44);
-  await expectContained(highlighted, results);
+  expect(resultsBox!.height, "the roster preserves a full touch target").toBeGreaterThanOrEqual(44);
+  await expectContained(last, results);
 
-  const scrollState = await popover.evaluate((element) => ({
+  const scrollState = await roster.evaluate((element) => ({
     scrollTop: element.scrollTop,
     scrollHeight: element.scrollHeight,
     clientHeight: element.clientHeight,
   }));
-  expect(scrollState.scrollTop, "the outer dialog must stay fixed").toBe(0);
+  expect(scrollState.scrollTop, "the roster shell must stay fixed").toBe(0);
   expect(
     scrollState.scrollHeight - scrollState.clientHeight,
-    "the outer dialog itself must not be the scrolling region",
+    "the roster shell itself must not be the scrolling region",
   ).toBeLessThanOrEqual(1);
 });
 
@@ -113,33 +110,35 @@ test("a 60-familiar roster stays compact, searchable, and keyboard-selectable", 
   await page.setViewportSize({ width: 1280, height: 720 });
   await gotoFamiliarSettings(page);
 
-  const trigger = page.locator(".familiar-studio-picker__trigger");
-  await expect(trigger).toContainText("60 familiars");
-  const triggerBox = await trigger.boundingBox();
-  expect(triggerBox, "the familiar trigger has layout bounds").not.toBeNull();
-  expect(triggerBox!.height, "roster size must not grow the Settings header").toBeLessThanOrEqual(50);
-
-  await trigger.click();
-  const results = page.getByRole("listbox", { name: "Familiars" });
-  await expect(results.getByRole("option")).toHaveCount(60);
+  const roster = page.getByRole("complementary", { name: "Familiar roster" });
+  const summary = roster.locator(".settings-familiar-roster__summary");
+  const results = page.getByRole("list", { name: "Familiars" });
+  const options = results.locator(".settings-familiar-roster__option");
+  await expect(summary).toHaveText("60 familiars");
+  await expect(options).toHaveCount(60);
+  const rosterBox = await roster.boundingBox();
+  expect(rosterBox, "the familiar roster has layout bounds").not.toBeNull();
+  expect(rosterBox!.width, "the persistent roster stays compact").toBeLessThanOrEqual(260);
   const resultsScroll = await results.evaluate((element) => ({
     clientHeight: element.clientHeight,
     scrollHeight: element.scrollHeight,
   }));
-  expect(resultsScroll.clientHeight, "the roster has a bounded viewport").toBeLessThanOrEqual(320);
-  expect(resultsScroll.scrollHeight, "large rosters scroll inside the popup").toBeGreaterThan(
+  expect(resultsScroll.scrollHeight, "large rosters scroll inside the roster").toBeGreaterThan(
     resultsScroll.clientHeight,
   );
 
-  const search = page.getByRole("combobox", { name: "Search familiars" });
+  await options.first().focus();
+  await options.first().press("ArrowDown");
+  await expect(options.nth(1)).toBeFocused();
+
+  const search = page.getByRole("searchbox", { name: "Find a familiar" });
   await search.fill("Researcher familiar-60");
-  const match = results.getByRole("option");
+  const match = results.locator(".settings-familiar-roster__option");
   await expect(match).toHaveCount(1);
   await expect(match).toContainText("Familiar 60");
   await expect(match).toContainText("Researcher");
-  await expect(match).toContainText("familiar-60");
 
-  await search.press("Enter");
-  await expect(page.locator(".familiar-studio-picker__popover")).toHaveCount(0);
-  await expect(trigger).toContainText("Familiar 60");
+  await match.press("Enter");
+  await expect(match).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Familiar 60" })).toBeVisible();
 });

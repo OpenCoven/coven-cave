@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
-const COVEN_CLI_INSTALL_COMMAND = "npm i -g @opencoven/cli@latest";
+const COVEN_CLI_INSTALL_GUIDANCE = "Install Cave-managed Node.js and npm first, then use Cave's reviewed Coven CLI installer.";
 
 type Step = { ok: boolean; detail?: string; hint?: string; optional?: boolean };
 
@@ -57,7 +57,7 @@ function checkCovenCli(tool: OpenCovenToolReadinessStatus | undefined): Step {
   if (!tool?.installed) {
     return {
       ok: false,
-      hint: `Install the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
+      hint: `${COVEN_CLI_INSTALL_GUIDANCE} Then re-check.`,
     };
   }
   if (!tool.compatible) {
@@ -67,7 +67,7 @@ function checkCovenCli(tool: OpenCovenToolReadinessStatus | undefined): Step {
     return {
       ok: false,
       detail,
-      hint: `Update the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, then re-check.`,
+      hint: `${COVEN_CLI_INSTALL_GUIDANCE} Then re-check.`,
     };
   }
   const location = tool.path ?? tool.binary;
@@ -311,7 +311,9 @@ export async function GET() {
   const steps: Record<string, Step> = {
     covenCli,
     covenHome,
-    git,
+    // Git is a Queue capability gate, not a prerequisite for basic Cave
+    // onboarding or local familiar setup.
+    git: { ...git, optional: true },
     adapters: adapters.step,
     daemon,
     familiars: familiarsRes.step,
@@ -320,9 +322,9 @@ export async function GET() {
     // detail stays informative for the checklist and diagnostics only.
     binding: { ...binding, optional: true },
   };
-  // Optional familiar and binding steps surface in the checklist but never
-  // gate completion. Git remains a required boundary; the Queue project is
-  // chosen on the Tasks page's Queue tab, not during onboarding.
+  // Optional familiar, binding, and Queue/Git steps surface in the checklist
+  // but never gate basic onboarding. The Queue page enforces Git when that
+  // capability is selected.
   const complete = Object.values(steps).every((s) => s.ok || s.optional);
 
   return NextResponse.json({ ok: true, complete, steps, tools: openCovenTools });

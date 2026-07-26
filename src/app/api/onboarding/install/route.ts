@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
 import { execFile, spawn } from "node:child_process";
-import { access } from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
-import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
@@ -18,9 +15,7 @@ import {
   refreshCovenBin,
   refreshCovenSpawnEnv,
 } from "@/lib/coven-bin";
-import { installHermesShim } from "@/lib/hermes-shim";
 import {
-  npmLaunchCommandForPath,
   verifyOpenCovenToolInstall,
   type OpenCovenToolVerification,
 } from "@/lib/opencoven-tools-status";
@@ -45,11 +40,23 @@ import {
   type InstallJobOutput,
 } from "./install-job-output";
 import { runInstallProcess } from "./install-process";
+import { prerequisiteById, type PrerequisiteId } from "@/lib/onboarding-prerequisites";
+import {
+  installManagedNodeToolchain,
+  managedNpmLaunch,
+  probeManagedNodeToolchain,
+} from "@/lib/server/managed-node-toolchain";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
+
+function reviewedPackage(id: Extract<PrerequisiteId, "coven-cli" | "runtime-codex" | "runtime-claude" | "runtime-copilot" | "runtime-openclaw">): string {
+  const install = prerequisiteById(id).install;
+  if (install.kind !== "managed-npm") throw new Error(`${id} must use the managed npm manifest lane`);
+  return `${install.package.packageName}@${install.package.version}`;
+}
 
 /**
  * One-click dependency installs for onboarding.
@@ -58,57 +65,51 @@ const execFileAsync = promisify(execFile);
  * maps to a fixed install mechanism so nothing user-controlled ever reaches
  * a shell:
  *
- *   - kind "npm":    `npm install -g <pinned package>`
- *   - kind "script": the harness's official installer at a pinned HTTPS URL,
- *                    run byte-for-byte as its docs instruct users to run it
- *                    (bash on POSIX, PowerShell on Windows).
+ *   - kind "managed-node": Cave-owned, exact Node/npm archive installation
+ *   - kind "npm":            `node npm-cli.js install -g <pinned package>`
+ *                              from that managed toolchain, never host PATH.
  */
 const INSTALL_TARGETS = {
+  "managed-node": {
+    kind: "managed-node",
+    label: "Coven-managed Node.js and npm",
+    binary: "node",
+    timeoutMs: 300_000,
+  },
   "coven-cli": {
     kind: "npm",
     label: "Coven CLI",
-    packageName: "@opencoven/cli@latest",
+    packageName: reviewedPackage("coven-cli"),
     binary: "coven",
     timeoutMs: 240_000,
   },
   codex: {
     kind: "npm",
     label: "Codex",
-    packageName: "@openai/codex",
+    packageName: reviewedPackage("runtime-codex"),
     binary: "codex",
     timeoutMs: 240_000,
   },
   claude: {
     kind: "npm",
     label: "Claude Code",
-    packageName: "@anthropic-ai/claude-code",
+    packageName: reviewedPackage("runtime-claude"),
     binary: "claude",
     timeoutMs: 240_000,
   },
   copilot: {
     kind: "npm",
     label: "Copilot",
-    packageName: "@github/copilot@latest",
+    packageName: reviewedPackage("runtime-copilot"),
     binary: "copilot",
     timeoutMs: 240_000,
   },
   openclaw: {
     kind: "npm",
     label: "OpenClaw",
-    packageName: "openclaw@latest",
+    packageName: reviewedPackage("runtime-openclaw"),
     binary: "openclaw",
     timeoutMs: 240_000,
-  },
-  hermes: {
-    kind: "script",
-    label: "Hermes",
-    // Official installer (github.com/NousResearch/hermes-agent#quick-install).
-    // It provisions its own dependencies (uv, Python, …), so no npm precheck.
-    posix: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
-    windows: "iex (irm https://hermes-agent.nousresearch.com/install.ps1)",
-    binary: "hermes",
-    // Heavier than an npm install — it bootstraps a Python toolchain.
-    timeoutMs: 600_000,
   },
 } as const;
 
@@ -121,14 +122,8 @@ function isOpenCovenToolInstallTarget(
   return target === "coven-cli";
 }
 
-function nodeInstallHint(): string {
-  if (process.platform === "darwin") {
-    return "Install Node.js LTS from https://nodejs.org or with `brew install node`, then click Install again.";
-  }
-  if (process.platform === "win32") {
-    return "Install Node.js LTS from https://nodejs.org (or `winget install OpenJS.NodeJS.LTS`), restart Cave so the new PATH applies, then click Install again.";
-  }
-  return "Install Node.js LTS from https://nodejs.org or your package manager (e.g. `sudo apt install nodejs npm`), then click Install again.";
+function managedNodeInstallHint(): string {
+  return "Install Cave-managed Node.js and npm first. Cave keeps this toolchain in its user data and does not modify your system PATH.";
 }
 
 async function commandPath(
@@ -167,55 +162,6 @@ function isInstallTarget(value: unknown): value is InstallTarget {
   return typeof value === "string" && value in INSTALL_TARGETS;
 }
 
-/** Walk up from `start` to the nearest directory that actually exists. The
- *  global npm dirs may not exist yet on a fresh prefix, so we check the
- *  closest existing ancestor for writability instead. */
-async function nearestExistingDir(start: string): Promise<string | null> {
-  let cur = start;
-  for (let i = 0; i < 16; i++) {
-    try {
-      await access(cur);
-      return cur;
-    } catch {
-      const parent = dirname(cur);
-      if (parent === cur) return null;
-      cur = parent;
-    }
-  }
-  return null;
-}
-
-/** True when the current user can write the global npm install dirs. A
- *  root-owned prefix (system Node under /usr/local, distro packages) is what
- *  makes `npm install -g` fail with EACCES and need sudo. nvm/fnm/Homebrew
- *  prefixes are user-owned and return true here, so we never sudo them. */
-async function npmGlobalDirsWritable(npm: string): Promise<boolean> {
-  let prefix: string;
-  try {
-    const { stdout } = await execFileAsync(npm, ["prefix", "-g"], {
-      env: covenSpawnEnv(),
-      timeout: 5000,
-    });
-    prefix = stdout.trim();
-  } catch {
-    // Can't determine the prefix — don't force sudo on a guess.
-    return true;
-  }
-  if (!prefix) return true;
-  // npm writes the package tree under <prefix>/lib/node_modules and the bin
-  // shims under <prefix>/bin on POSIX. Either being unwritable needs sudo.
-  for (const dir of [join(prefix, "lib", "node_modules"), join(prefix, "bin")]) {
-    const existing = await nearestExistingDir(dir);
-    if (!existing) continue;
-    try {
-      await access(existing, fsConstants.W_OK);
-    } catch {
-      return false;
-    }
-  }
-  return true;
-}
-
 type SpawnPlan = {
   command: string;
   args: string[];
@@ -228,86 +174,38 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-/** Resolve the fixed spawn plan for a target. Returns null when a
- *  prerequisite is missing (npm targets need npm on PATH). */
+/** Resolve the fixed spawn plan for a reviewed npm target. The managed
+ * Node/npm probe is deliberately the only prerequisite: a host Node/npm,
+ * Corepack, pnpm, or global PATH entry is never consulted. */
 async function spawnPlanFor(
   target: (typeof INSTALL_TARGETS)[InstallTarget],
 ): Promise<
   | SpawnPlan
-  | { npmMissing: true }
-  | { commandLookupFailed: true; binary: string; error: string }
-  | { sudoRequired: true; packageName: string }
+  | { managedNodeMissing: true }
   | null
 > {
   if (target.kind === "npm") {
-    const npmResult = await commandPath("npm", { refreshOnMiss: true });
-    if (npmResult.error) {
-      return {
-        commandLookupFailed: true,
-        binary: "npm",
-        error: npmResult.error,
-      };
-    }
-    const npm = npmResult.path;
-    if (!npm) return { npmMissing: true };
-
-    // On POSIX a root-owned global prefix (system Node, /usr/local) fails
-    // `npm install -g` with EACCES. Do not elevate from this API route: even
-    // with an allowlisted package and fixed argv, global npm installs may run
-    // package lifecycle scripts and write system locations. Require the
-    // operator to run the sudo command manually instead. nvm/fnm/Homebrew
-    // prefixes are user-owned and return true here, so they stay one-click.
-    if (process.platform !== "win32" && !(await npmGlobalDirsWritable(npm))) {
-      return { sudoRequired: true, packageName: target.packageName };
-    }
-
-    const launch = npmLaunchCommandForPath(npm);
-    if (!launch) {
-      return {
-        commandLookupFailed: true,
-        binary: "npm runtime",
-        error: `Could not resolve npm-cli.js from ${npm}`,
-      };
-    }
+    const managed = await probeManagedNodeToolchain();
+    if (managed.status !== "ready") return { managedNodeMissing: true };
+    const launch = managedNpmLaunch(managed.paths);
+    if (!launch) return { managedNodeMissing: true };
 
     return {
       command: launch.command,
-      args: [...launch.fixedArgs, "install", "-g", target.packageName],
-      // Node 24 concatenates shell:true argv without escaping. A Windows npm
-      // path such as C:\Program Files\nodejs\npm.cmd is consequently truncated
-      // to C:\Program and exits 1. npmLaunchCommandForPath remaps the shim to
-      // `node npm-cli.js`, preserving fixed argv without cmd.exe.
+      args: [...launch.args, "install", "--global", target.packageName],
       shell: false,
       traceLines: [
-        "npm discovery: runnable launcher found on Cave PATH.",
-        launch.fixedArgs.length > 0
-          ? "Installer launch: npm-cli.js via Node with fixed argv; shell disabled."
-          : "Installer launch: direct npm executable with fixed argv; shell disabled.",
+        "Managed Node/npm probe: ready in Cave user data.",
+        "Installer launch: managed npm-cli.js via Node with fixed argv; shell disabled.",
       ],
     };
   }
-  // kind === "script" — run the harness's official installer exactly as its
-  // docs instruct. The command string is a pinned constant from the
-  // allowlist above; the request never contributes to it.
-  if (process.platform === "win32") {
-    return {
-      command: "powershell",
-      args: ["-NoProfile", "-Command", target.windows],
-      shell: false,
-      traceLines: ["Installer launch: pinned PowerShell allowlist script; nested shell disabled."],
-    };
-  }
-  return {
-    command: "bash",
-    args: ["-lc", target.posix],
-    shell: false,
-    traceLines: ["Installer launch: pinned POSIX allowlist script."],
-  };
+  return null;
 }
 
 type InstallJob = {
   status: "running" | "done";
-  kind: "npm" | "script";
+  kind: "managed-node" | "npm";
   startedAt: number;
   finishedAt?: number;
   /** Raw interleaved stdout+stderr, capped to OUTPUT_CAP. */
@@ -344,13 +242,13 @@ type NpmLaneView = {
 /**
  * The lease intentionally lives outside the jobs map. A request can spend time
  * on target-specific preparation before it reserves the npm tree, and the
- * final reservation has to be atomic across every npm target.
+ * final reservation has to be atomic across managed-toolchain and npm work.
  */
 function activeNpmInstallTarget(): InstallTarget | null {
   const owner = globalNpmInstallOwner();
   if (!owner || !isInstallTarget(owner)) return null;
   const job = jobs.get(owner);
-  if (job?.status === "running" && job.kind === "npm") return owner;
+  if (job?.status === "running" && (job.kind === "npm" || job.kind === "managed-node")) return owner;
   // Recovery after HMR/reload: a completed or orphaned job must never leave
   // the process-wide lease stuck. This only clears the same owner, so it
   // cannot release a newer reservation.
@@ -378,7 +276,7 @@ function npmBusyResponse(owner: InstallTarget) {
       ok: false,
       retryable: true,
       code: "npm_install_in_progress",
-      error: `${INSTALL_TARGETS[owner].label} is updating the shared global npm directory. Wait for it to finish, then retry.`,
+      error: `${INSTALL_TARGETS[owner].label} is using Cave's shared managed toolchain. Wait for it to finish, then retry.`,
       ...npmLaneView(),
     },
     { status: 409, headers: { "Retry-After": "2" } },
@@ -388,7 +286,7 @@ function npmBusyResponse(owner: InstallTarget) {
 function releaseNpmLease(job: InstallJob, npmLease?: NpmInstallLease) {
   if (!npmLease) return;
   npmLease.release();
-  appendTrace(job, "Global npm lane: released.");
+  appendTrace(job, "Managed toolchain/install lane: released.");
 }
 
 function verificationTraceLine(verification: OpenCovenToolVerification): string {
@@ -497,15 +395,8 @@ function installFailureHint(targetName: InstallTarget, output: string): string |
   ) {
     return "coven.exe is still locked. Cave only uses graceful local-daemon shutdown and never terminates a process by PID. Quit the process that owns the file (or restart Cave), then retry the update.";
   }
-  // Backstop for a non-writable global prefix that slipped past the upfront
-  // writability check (race, or a prefix we couldn't resolve): npm reports a
-  // permission error and the user needs to re-run the install with sudo.
-  const target = INSTALL_TARGETS[targetName];
-  if (
-    target.kind === "npm" &&
-    /(EACCES|EPERM|EROFS|permission denied)/i.test(output)
-  ) {
-    return `npm couldn't write to the global directory (permission denied). Re-run the install in a terminal with sudo: \`sudo npm install -g ${target.packageName}\`.`;
+  if (/(EACCES|EPERM|EROFS|permission denied)/i.test(output)) {
+    return "Cave could not write to its user-scoped npm prefix. Check that your Cave application-data directory is writable, then retry; Cave will not request elevation.";
   }
   return null;
 }
@@ -672,33 +563,6 @@ async function finishInstallJob(
       );
     }
 
-    // POSIX Hermes installs need a shim because the harness convention passes
-    // prompts positionally. Windows uses the native adapter recipe with `-q`,
-    // so attempting to install the bash shim there would only report a false
-    // setup failure after an otherwise successful install.
-    if (
-      installOk &&
-      targetName === "hermes" &&
-      installed.path &&
-      process.platform !== "win32"
-    ) {
-      try {
-        const shim = await installHermesShim(installed.path);
-        appendOutput(
-          job,
-          shim.ok
-            ? `Installed hermes-coven shim at ${shim.path}\n`
-            : `Note: could not install hermes-coven shim (${shim.error}); ` +
-                "chat may fail until it is installed manually.\n",
-        );
-      } catch (err) {
-        appendOutput(
-          job,
-          `Note: could not install hermes-coven shim (${err instanceof Error ? err.message : String(err)}); chat may fail until it is installed manually.\n`,
-        );
-      }
-    }
-
     const recovered = await recoverDaemonAfterCliInstall(targetName, job);
     const recoveryError = !recovered
       ? job.daemon?.detail ?? "local daemon recovery failed"
@@ -846,6 +710,53 @@ async function runInstallJob(
   }
 }
 
+async function runManagedNodeInstallJob(job: InstallJob, npmLease?: NpmInstallLease) {
+  const controller = new AbortController();
+  job.cancel = () => {
+    if (job.status !== "running" || job.cancelRequested) return;
+    job.cancelRequested = true;
+    job.error = "install cancelled";
+    appendOutput(job, "Cancellation requested; stopping managed Node download...\n");
+    controller.abort();
+  };
+  try {
+    appendTrace(job, "Managed Node installer: starting verified user-scoped toolchain setup.");
+    const result = await installManagedNodeToolchain({
+      signal: controller.signal,
+      onProgress: (line) => appendOutput(job, `${line}\n`),
+    });
+    if (result.status === "ready" && !job.cancelRequested) {
+      refreshCovenBin();
+      refreshCovenSpawnEnv();
+      job.ok = true;
+      job.code = 0;
+      job.binaryPath = result.paths.node;
+      appendTrace(job, "Managed Node installer: digest-verified toolchain re-probed successfully.");
+    } else {
+      job.ok = false;
+      job.code = 1;
+      job.error = job.cancelRequested
+        ? "install cancelled"
+        : result.status === "unusable"
+          ? result.detail
+          : "Managed Node.js and npm could not be verified after installation.";
+      appendOutput(job, `${job.error}\n`);
+    }
+  } catch (error) {
+    job.ok = false;
+    job.code = 1;
+    job.error = job.cancelRequested
+      ? "install cancelled"
+      : installStartErrorMessage(error);
+    appendOutput(job, `${job.error}\n`);
+  } finally {
+    job.status = "done";
+    job.finishedAt = Date.now();
+    job.cancel = undefined;
+    releaseNpmLease(job, npmLease);
+  }
+}
+
 export async function GET(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
@@ -932,41 +843,41 @@ export async function POST(req: Request) {
   // This early check keeps the ordinary busy path quick. The authoritative,
   // atomic reservation comes *after* spawnPlanFor below, because that function
   // awaits target preparation and two requests can pass this check together.
-  if (target.kind === "npm") {
+  if (target.kind === "npm" || target.kind === "managed-node") {
     const activeTarget = activeNpmInstallTarget();
     if (activeTarget) return npmBusyResponse(activeTarget);
   }
 
+  if (target.kind === "managed-node") {
+    const reservation = reserveGlobalNpmInstall(targetName);
+    if (!reservation.ok) {
+      const owner = isInstallTarget(reservation.owner) ? reservation.owner : targetName;
+      return npmBusyResponse(owner);
+    }
+    const job: InstallJob = {
+      status: "running",
+      kind: target.kind,
+      startedAt: Date.now(),
+      output: "",
+      trace: [],
+    };
+    appendTrace(job, "Managed toolchain/install lane: reserved for this installer.");
+    jobs.set(targetName, job);
+    void runManagedNodeInstallJob(job, reservation.lease);
+    return NextResponse.json(
+      { started: true, target: targetName, ...npmLaneView() },
+      { status: 202 },
+    );
+  }
+
   const plan = await spawnPlanFor(target);
-  if (plan && "npmMissing" in plan) {
+  if (plan && "managedNodeMissing" in plan) {
     return NextResponse.json(
       {
         ok: false,
-        npmMissing: true,
-        error: "npm is not available on PATH",
-        hint: nodeInstallHint(),
-      },
-      { status: 422 },
-    );
-  }
-  if (plan && "commandLookupFailed" in plan) {
-    return NextResponse.json(
-      {
-        ok: false,
-        commandLookupFailed: true,
-        error: `Cave couldn't check ${plan.binary} on PATH`,
-        hint: "Retry in a moment. If it keeps happening, quit stuck terminal/session processes and try again.",
-      },
-      { status: 503 },
-    );
-  }
-  if (plan && "sudoRequired" in plan) {
-    return NextResponse.json(
-      {
-        ok: false,
-        sudoRequired: true,
-        error: "the global npm directory needs elevated permissions to write",
-        hint: `Cave can't write to the global npm directory from this API route. Run \`sudo npm install -g ${plan.packageName}\` in a terminal, then click Install again.`,
+        managedNodeMissing: true,
+        error: "Cave-managed Node.js and npm are not ready",
+        hint: managedNodeInstallHint(),
       },
       { status: 422 },
     );
@@ -986,9 +897,7 @@ export async function POST(req: Request) {
   }
 
   // This is the atomic boundary. It comes after every asynchronous plan
-  // lookup/preparation step and covers every npm allowlist target, rather than
-  // only the requested target. Script installers intentionally do not reserve
-  // it and may continue under the existing independent-installer policy.
+  // lookup/preparation step and covers every manifest-controlled npm target.
   const reservation =
     target.kind === "npm" ? reserveGlobalNpmInstall(targetName) : null;
   if (reservation && !reservation.ok) {
@@ -1007,7 +916,7 @@ export async function POST(req: Request) {
     trace: [],
   };
   for (const line of plan.traceLines) appendTrace(job, line);
-  if (npmLease) appendTrace(job, "Global npm lane: reserved for this installer.");
+  if (npmLease) appendTrace(job, "Managed toolchain/install lane: reserved for this installer.");
   jobs.set(targetName, job);
 
   void runInstallJob(targetName, target, plan, job, npmLease);

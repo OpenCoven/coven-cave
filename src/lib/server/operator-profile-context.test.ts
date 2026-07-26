@@ -19,4 +19,20 @@ describe("buildOperatorProfileContext", () => {
     const ctx = buildOperatorProfileContext({ links: [{ label: "GitHub", url: "https://github.com/x" }] });
     assert.match(ctx!.contents, /GitHub — https:\/\/github\.com\/x/);
   });
+  it("renders structured identity and the selected personality", () => {
+    const ctx = buildOperatorProfileContext({
+      firstName: "Valentina",
+      lastName: "Alexander",
+      nickname: "Val",
+      personality: {
+        type: "INTJ",
+        tuned: true,
+        axes: { ei: 72, sn: 18, tf: 31, jp: 24 },
+      },
+    });
+    assert.match(ctx!.contents, /Name: Val/);
+    assert.match(ctx!.contents, /Full name: Valentina Alexander/);
+    assert.match(ctx!.contents, /Personality: INTJ/);
+    assert.match(ctx!.contents, /I 72% · N 82% · T 69% · J 76%/);
+  });
 });

@@ -57,7 +57,7 @@
   transition: border-color 0.12s;
 }
 .vault-row:hover { border-color: var(--border-strong); }
-.vault-row--warn { border-color: color-mix(in oklch, var(--color-danger) 35%, transparent); }
+.vault-row--warn { border-color: color-mix(in oklch, var(--color-warning) 35%, transparent); }
 
 .vault-row-main {
   display: flex;

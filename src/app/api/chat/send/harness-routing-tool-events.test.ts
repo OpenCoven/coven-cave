@@ -11,13 +11,10 @@ import {
   flattenToolResultContent,
   formatToolInputValue,
   formatToolPayload,
+  MAX_PENDING_TOOL_RESULTS,
   ToolCallTracker,
   toPersistedTools,
 } from "../../../../lib/chat-tool-events.ts";
-import {
-  CodexJsonlDecoder,
-  resolveCodexSchema,
-} from "../../../../lib/codex-compatibility.ts";
 
 const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
@@ -39,6 +36,37 @@ const chatView = await readFile(
   new URL("../../../../components/chat-view.tsx", import.meta.url),
   "utf8",
 );
+
+assert.match(
+  chatRoute,
+  /dispatchOpenClawGatewayTurn\([\s\S]*?sessionKey: openClawSessionKey\(conversationId\),[\s\S]*?agentId,[\s\S]*?message: args\.harnessPrompt/,
+  "OpenClaw uses the Gateway-owned dispatcher with the canonical session key and agent id before selecting the CLI fallback",
+);
+assert.match(
+  chatRoute,
+  /openClawGatewayPairedDeviceAuthStatus\(\)[\s\S]*?gatewayAuth\.available[\s\S]*?dispatchOpenClawGatewayTurn/,
+  "the route must retain the CLI fallback until an OS-backed paired-device credential store can activate Gateway dispatch",
+);
+assert.match(
+  chatRoute,
+  /gatewayDispatch\.kind === "accepted"[\s\S]*?return;[\s\S]*?pushProgress\("openclaw-start", "Starting OpenClaw bridge"/,
+  "an accepted Gateway turn exits before the CLI branch, preventing duplicate transport ownership",
+);
+assert.match(
+  chatRoute,
+  /gatewayDispatch\.kind === "indeterminate"[\s\S]*?openclaw_gateway_indeterminate[\s\S]*?return;/,
+  "an ambiguous Gateway acknowledgement produces a terminal error instead of a duplicate CLI turn",
+);
+assert.match(
+  chatRoute,
+  /if \(event\.replace\) \{[\s\S]*?gatewayAssistantText = event\.text;[\s\S]*?kind: "assistant_replace"/,
+  "a published Gateway replacement delta corrects both the live stream and persisted transcript",
+);
+assert.match(
+  chatRoute,
+  /event\.kind === "final" && event\.text[\s\S]*?gatewayAssistantText !== event\.text[\s\S]*?kind: "assistant_replace"/,
+  "the terminal Gateway message reconciles divergent streamed text for connected clients",
+);
 // ── Tool-event fidelity (CHAT-D4-03 + CHAT-D4-04) ──────────────────────────
 // Source pins: the route must route BOTH tool-event sources through the
 // shared ToolCallTracker — hook lines and stream-json envelope blocks — and
@@ -46,7 +74,7 @@ const chatView = await readFile(
 
 assert.match(
   chatRoute,
-  /let toolTracker = new ToolCallTracker\(Date\.now, `attempt-\$\{toolAttempt\}-`\);/,
+  /let toolTracker = new ToolCallTracker\(/,
   "Native chat should track open tool calls with the shared ToolCallTracker",
 );
 
@@ -64,20 +92,98 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /block\.type === "tool_use" && block\.id && block\.name[\s\S]*?toolTracker\.envelopeToolUse\(/,
-  "Assistant envelope tool_use blocks should surface as running tool events (CHAT-D4-04)",
+  /parseClaudeMessageEnvelope\(ev, claudeCompatibility\.profile\)[\s\S]*?toolTracker\.envelopeToolUse\(/,
+  "Profile-selected Claude envelopes should surface running tool events (CHAT-D4-04)",
 );
 
 assert.match(
   chatRoute,
-  /ev\.type === "user" && Array\.isArray\(ev\.message\?\.content\)[\s\S]*?block\.type === "tool_result" && block\.tool_use_id[\s\S]*?toolTracker\.envelopeToolResult\(/,
-  "User envelope tool_result blocks should settle the matching tool event (CHAT-D4-04)",
+  /parseClaudeMessageEnvelope\(ev, claudeCompatibility\.profile\)[\s\S]*?toolTracker\.envelopeToolResult\(/,
+  "Profile-selected Claude envelopes should settle matching tool events (CHAT-D4-04)",
 );
 
 assert.match(
   chatRoute,
-  /settleToolCallsBeforeRetry\(\);[\s\S]*?toolAttempt \+= 1;[\s\S]*?toolTracker = new ToolCallTracker\(Date\.now, `attempt-\$\{toolAttempt\}-`\);/,
-  "Retries settle announced tools before resetting per-attempt state, so live bubbles cannot remain running",
+  /if \(toolMatch && claudeToolsEnabled\)/,
+  "Claude compatibility fallback must not create tool bubbles from unverified hook lines",
+);
+
+assert.match(
+  chatRoute,
+  /let claudeToolsEnabled =\s*binding\.harness !== "claude" \|\|\s*\(claudeCompatibility\?\.kind === "compatible" && !claudeCompatibility\.stale\);[\s\S]*?binding\.harness === "claude" &&\s*claudeCompatibility\?\.kind === "compatible" &&\s*!claudeCompatibility\.stale &&\s*claudeToolsEnabled/,
+  "an expired profile must preserve text-only Claude chat while disabling both hook and envelope tool decoding",
+);
+
+assert.match(
+  chatRoute,
+  /reportMalformedClaudeStreamFrame = \(frame: unknown\) => \{[\s\S]*?claudeToolsEnabled = false;[\s\S]*?reportUnsupportedClaudeToolFrame = \(frame: unknown\) => \{[\s\S]*?claudeToolsEnabled = false;/,
+  "a malformed or unknown Claude frame must disable profile-selected tool decoding for the rest of the stream",
+);
+
+assert.match(
+  chatRoute,
+  /hasUnsupportedClaudeToolFrame\(ev, claudeCompatibility\.profile\)[\s\S]*?reportUnsupportedClaudeToolFrame\(ev\)/,
+  "a malformed or unknown profiled tool block should emit one redacted compatibility diagnostic instead of silently creating a bubble",
+);
+
+assert.match(
+  chatRoute,
+  /if \(hasUnsupportedClaudeToolFrame\(ev, claudeCompatibility\.profile\)\) \{[\s\S]*?reportUnsupportedClaudeToolFrame\(ev\);[\s\S]*?parseClaudeTextOnlyEnvelope\(ev\)[\s\S]*?return;[\s\S]*?parseClaudeMessageEnvelope\(ev, claudeCompatibility\.profile\)/,
+  "a partially malformed Claude envelope must fall back to text-only before any tool block is decoded",
+);
+
+assert.match(
+  chatRoute,
+  /reportUnsupportedClaudeToolFrame = \(frame: unknown\) => \{[\s\S]*?fingerprint: redactedEventFingerprint\(frame\)[\s\S]*?Claude Code tool frame is not supported/,
+  "unsupported profiled tool blocks must be logged as redacted fingerprints",
+);
+
+assert.match(
+  chatRoute,
+  /Claude stream frame could not be decoded[\s\S]*?fingerprint: redactedEventFingerprint\(frame\)[\s\S]*?chat text will continue without unverified tool bubbles[\s\S]*?reportMalformedClaudeStreamFrame\(line\)/,
+  "malformed Claude JSONL must be reduced to a fingerprint and diagnostic rather than falling through to payload-bearing stdout diagnostics",
+);
+
+assert.match(
+  chatRoute,
+  /let claudeCompatibilityDiagnosticSent = Boolean\(claudeDiagnostic\);[\s\S]*?reportMalformedClaudeStreamFrame[\s\S]*?if \(claudeCompatibilityDiagnosticSent\) return;[\s\S]*?reportUnsupportedClaudeToolFrame[\s\S]*?if \(claudeCompatibilityDiagnosticSent\) return/,
+  "a probe or SSH fallback must retain its first truthful diagnostic when a later malformed frame is logged",
+);
+
+assert.match(
+  chatRoute,
+  /binding\.harness === "claude" && \(trimmed\.startsWith\("\{"\) \|\| trimmed\.startsWith\("\["\)\)/,
+  "malformed Claude array frames must also bypass payload-bearing stdout diagnostics",
+);
+
+assert.match(
+  chatRoute,
+  /binding\.harness === "claude" && isClaudeStreamJsonFrame\(line\)/,
+  "valid primitive Claude JSONL frames must reach the redacted protocol boundary rather than the plain-text stdout path",
+);
+
+assert.match(
+  chatRoute,
+  /binding\.harness !== "claude"[\s\S]*?ev\.type === "output"[\s\S]*?typeof ev\.text === "string"/,
+  "the Codex-only output envelope must not render an unknown Claude payload before profile validation",
+);
+
+assert.match(
+  chatRoute,
+  /if \(binding\.harness !== "claude"\) \{\s*recordStdoutErrorTail\(cleaned\);/,
+  "Claude stdout must not enter empty-response diagnostics because unrecognised lines can contain tool payloads",
+);
+
+assert.match(
+  chatRoute,
+  /Claude stderr can include tool payloads[\s\S]*?if \(binding\.harness !== "claude"\) \{[\s\S]*?stderrTail\.push\(trimmed\);/,
+  "Claude stderr must not enter empty-response diagnostics with tool payloads",
+);
+
+assert.match(
+  chatRoute,
+  /resetToolTrackerForRetry\(\);/,
+  "The resume retry should reset tool tracking alongside the other per-attempt state",
 );
 
 assert.match(
@@ -88,26 +194,44 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /formatToolInputValue\(block\.input\),\s*assistantText\.length,/,
-  "envelope tool starts are stamped with the current assistant-text offset",
+  /formatToolInputValue\(claudeEvent\.input\),\s*assistantText\.length,/,
+  "profile-decoded envelope tool starts are stamped with the current assistant-text offset",
 );
 
 assert.match(
   chatRoute,
-  /toPersistedTools\(\[\.\.\.retrySettledTools, \.\.\.toolTracker\.snapshot\(\)\]/,
-  "the saved assistant turn captures both retry-settled and final tool state",
+  /toPersistedTools\(\[\.\.\.priorAttemptTools, \.\.\.toolTracker\.snapshot\(\)\]/,
+  "the saved assistant turn captures the tracker's final tool state",
 );
 
 assert.match(
   chatRoute,
-  /hermesApiConfig\(harnessSpawnEnv\(body\.familiarId\) as \{/,
-  "Hermes API credentials must come through the familiar-scoped environment boundary",
+  /const settleUnfinishedTools = \(\) => \{[\s\S]*?toolTracker\.settleUnfinished\(\)[\s\S]*?push\(\{ kind: "tool_use", \.\.\.toolEv \}\)/,
+  "the route must settle every live tool chip before completing the stream",
+);
+
+assert.match(
+  chatRoute,
+  /const hermesSpawnEnvironment = hermesDirect[\s\S]*?harnessSpawnEnv\(body\.familiarId\)[\s\S]*?const hermesApi = hermesSpawnEnvironment[\s\S]*?hermesApiConfig\(hermesSpawnEnvironment as \{/,
+  "Hermes API credentials and CLI fallback must reuse one familiar-scoped environment boundary",
+);
+
+assert.match(
+  chatRoute,
+  /const resetToolTrackerForRetry = \(\) => \{[\s\S]*?settleUnfinishedTools\(\);[\s\S]*?priorAttemptTools\.push[\s\S]*?toolTracker = new ToolCallTracker\(Date\.now, `retry-\$\{toolAttempt\}:`\);/,
+  "resume and recovery retries must settle and persist prior-attempt tools under a distinct id namespace",
 );
 
 assert.match(
   chatRoute,
   /if \(hermesApi\) return runHermesApiAttempt\(apiPrompt\);/,
   "a configured Hermes API must use the structured Responses SSE transport rather than terminal scraping",
+);
+
+assert.match(
+  chatRoute,
+  /toPersistedTools\(\[\.\.\.priorAttemptTools, \.\.\.toolTracker\.snapshot\(\)\]/,
+  "tools emitted before a retry must remain in the saved assistant turn",
 );
 
 assert.match(
@@ -316,10 +440,10 @@ assert.match(
 {
   const tracker = new ToolCallTracker();
   tracker.envelopeToolUse("call-progress", "shell");
-  assert.deepEqual(
+  assert.equal(
     tracker.envelopeToolUse("call-progress", "shell", '{"command":"pwd"}'),
-    { id: "call-progress", name: "shell", input: '{"command":"pwd"}', status: "running" },
-    "the canonical duplicate start refreshes the existing stable bubble",
+    null,
+    "the canonical duplicate start keeps the existing stable id",
   );
   const refreshed = tracker.envelopeToolInput("call-progress", '{"command":"pwd"}');
   assert.deepEqual(refreshed, {
@@ -354,41 +478,6 @@ assert.match(
   assert.ok(orphan.id, "orphan post still gets an id");
   assert.equal(orphan.status, "ok");
   assert.equal(orphan.durationMs, undefined, "no start time means no fabricated duration");
-}
-
-// Native Codex item ids are scoped to one invocation. A transparent retry can
-// restart at item_0, so the UI keys must remain attempt-scoped while terminal
-// frames continue to resolve by their original native id.
-{
-  const firstAttempt = new ToolCallTracker(() => 0, "attempt-0-");
-  const retryAttempt = new ToolCallTracker(() => 0, "attempt-1-");
-  const first = firstAttempt.envelopeToolUse("item_0", "Bash");
-  const retry = retryAttempt.envelopeToolUse("item_0", "Bash");
-  assert.notEqual(first?.id, retry?.id, "reused native item ids never overwrite a prior retry bubble");
-  assert.equal(firstAttempt.envelopeToolResult("item_0", "first", false)?.id, first?.id);
-  assert.equal(retryAttempt.envelopeToolResult("item_0", "second", false)?.id, retry?.id);
-}
-
-// item.updated may fill in arguments after a bare item.started. It updates the
-// existing live bubble rather than creating a second call.
-{
-  const tracker = new ToolCallTracker(() => 0, "attempt-0-");
-  const started = tracker.envelopeToolUse("item-input", "Bash");
-  const updated = tracker.envelopeToolUse("item-input", "Bash", '{"command":"pwd"}');
-  assert.equal(updated?.id, started?.id, "richer input updates the original native bubble");
-  assert.equal(updated?.input, '{"command":"pwd"}');
-  tracker.envelopeToolResult("item-input", "ok", false);
-  assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}', "updated input persists with the settled call");
-}
-
-// Behavioral: transparent retries preserve the first attempt's settled hook
-// activity, so a replacement tracker must not mint the same UI merge key.
-{
-  const firstAttempt = new ToolCallTracker(() => 0, "attempt-0-");
-  const retryAttempt = new ToolCallTracker(() => 0, "attempt-1-");
-  const first = firstAttempt.hookStart("Bash", '{"command":"pwd"}');
-  const retry = retryAttempt.hookStart("Bash", '{"command":"pwd"}');
-  assert.notEqual(first.id, retry.id, "same-name hook calls from separate attempts keep distinct live and persisted ids");
 }
 
 // Behavioral: envelope-only harnesses (no pre/post_tool_use hooks) get a full
@@ -430,6 +519,121 @@ assert.match(
   assert.equal(erroredDone?.status, "error", "is_error tool_result blocks settle as errors");
 }
 
+// Behavioral: a reordered user result can settle an envelope before a late
+// pre-hook arrives. That hook is live again and must receive a terminal SSE
+// update when its matching post hook is lost before the turn ends.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  tracker.envelopeToolResult("toolu-late-hook", "done", false);
+  const startedEnvelope = tracker.envelopeToolUse("toolu-late-hook", "Bash", "{\"command\":\"ls\"}");
+  assert.equal(startedEnvelope?.status, "running");
+  const settledEnvelope = tracker.consumePendingEnvelopeResult("toolu-late-hook");
+  assert.equal(settledEnvelope?.status, "ok");
+  t = 50;
+  const lateHook = tracker.hookStart("Bash", "{\"command\":\"ls\"}");
+  assert.equal(lateHook.id, "toolu-late-hook");
+  assert.equal(lateHook.status, "running");
+  t = 100;
+  assert.deepEqual(
+    tracker.settleUnfinished(),
+    [{
+      id: "toolu-late-hook",
+      name: "Bash",
+      output: "[tool did not settle before the turn ended]",
+      status: "error",
+      durationMs: 50,
+    }],
+    "a late hook without post_tool_use must not leave the live tool chip running after done",
+  );
+}
+
+// Unknown result ids are retained briefly to recover reordered JSONL, but a
+// malformed stream cannot grow that recovery buffer without bound.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  for (let index = 0; index <= MAX_PENDING_TOOL_RESULTS; index += 1) {
+    tracker.envelopeToolResult(`unknown-${index}`, "ignored", false);
+  }
+  assert.equal(
+    tracker.envelopeToolUse("unknown-0", "Read")?.status,
+    "running",
+    "the oldest unmatched result is evicted once the bounded recovery buffer fills",
+  );
+  assert.equal(
+    tracker.envelopeToolUse(`unknown-${MAX_PENDING_TOOL_RESULTS}`, "Read")?.status,
+    "running",
+    "the most recent reordered result remains recoverable within the bound",
+  );
+  assert.equal(
+    tracker.consumePendingEnvelopeResult(`unknown-${MAX_PENDING_TOOL_RESULTS}`)?.status,
+    "ok",
+    "the retained reordered result settles after the start is announced",
+  );
+}
+
+// Retries create a new tracker. Namespace its stream ids while retaining
+// native envelope lookup keys so same-name tool calls cannot overwrite a
+// previous attempt's live or persisted record.
+{
+  const initial = new ToolCallTracker(() => 0);
+  const retry = new ToolCallTracker(() => 0, "retry-1:");
+  assert.equal(initial.hookStart("Bash").id, "tool-1-Bash");
+  assert.equal(retry.hookStart("Bash").id, "retry-1:tool-1-Bash");
+  assert.equal(retry.envelopeToolUse("toolu_retry", "Read")?.id, "retry-1:toolu_retry");
+  assert.equal(
+    retry.envelopeToolResult("toolu_retry", "done", false)?.id,
+    "retry-1:toolu_retry",
+    "the namespaced UI id must still settle through the native envelope id",
+  );
+}
+
+// A buffered/partial JSONL transport can deliver the result line before the
+// matching assistant block. Once the tool_use arrives, its retained terminal
+// result remains available to settle the announced bubble.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  assert.equal(tracker.envelopeToolResult("toolu_reordered", "done", false), null);
+  const started = tracker.envelopeToolUse("toolu_reordered", "Read", '{"path":"a.ts"}');
+  assert.equal(started?.status, "running");
+  const settled = tracker.consumePendingEnvelopeResult("toolu_reordered");
+  assert.deepEqual(settled, {
+    id: "toolu_reordered",
+    name: "Read",
+    input: '{"path":"a.ts"}',
+    output: "done",
+    status: "ok",
+    durationMs: 0,
+  });
+  assert.equal(
+    toPersistedTools(tracker.snapshot(), 0)?.[0].status,
+    "ok",
+    "reordered envelopes must not become an indefinitely running persisted tool",
+  );
+}
+
+// An announced call that never receives a result must emit a terminal SSE
+// update before `done`, not just be fixed up in the persisted transcript.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  const running = tracker.envelopeToolUse("toolu_unfinished", "Bash");
+  assert.equal(running?.status, "running");
+  t = 75;
+  assert.deepEqual(tracker.settleUnfinished(), [{
+    id: "toolu_unfinished",
+    name: "Bash",
+    output: "[tool did not settle before the turn ended]",
+    status: "error",
+    durationMs: 75,
+  }]);
+  assert.equal(
+    toPersistedTools(tracker.snapshot(), 0)?.[0].status,
+    "error",
+    "unfinished calls are terminal both live and after reload",
+  );
+}
+
 // Behavioral: hook events win when hooks AND envelopes describe the same
 // call — envelope blocks are linked onto the hook's id (UI merges on id) or
 // suppressed once the hook has settled the call.
@@ -460,6 +664,150 @@ assert.match(
   );
 }
 
+// A buffered stream can flush a user tool_result before the corresponding
+// post_tool_use hook. The late hook must update the original bubble, rather
+// than creating a second orphan record for the same tool execution.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  const started = tracker.hookStart("Bash", '{"command":"pwd"}');
+  tracker.envelopeToolUse("toolu_late_post", "Bash");
+  t = 100;
+  const result = tracker.envelopeToolResult("toolu_late_post", "envelope output", false);
+  assert.equal(result?.id, started.id);
+  t = 250;
+  const post = tracker.hookEnd("Bash", "hook output", false);
+  assert.equal(post.id, started.id, "late post hooks retain the original tool id");
+  assert.equal(post.output, "hook output", "post-hook output takes precedence over the envelope result");
+  assert.equal(post.durationMs, 250, "late post-hook timing uses the pre-hook start");
+  assert.equal(tracker.snapshot().length, 1, "late post hooks must not create an orphan bubble");
+}
+
+// Hooks can be configured independently. If only a post hook arrives before
+// its delayed assistant envelope, retain its completed record long enough to
+// attach the native id and suppress the matching user result.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  const post = tracker.hookEnd("Bash", "hook output", false);
+  assert.equal(post.status, "ok");
+  assert.deepEqual(
+    tracker.envelopeToolUse("toolu-post-only", "Bash", '{"command":"pwd"}'),
+    { id: post.id, name: "Bash", input: '{"command":"pwd"}', status: "ok" },
+    "a late envelope must fill the completed post-only hook bubble without duplicating or reopening it",
+  );
+  assert.equal(tracker.envelopeToolResult("toolu-post-only", "envelope output", false), null);
+  assert.deepEqual(
+    tracker.snapshot().map(({ id, input, output, status }) => ({ id, input, output, status })),
+    [{ id: post.id, input: '{"command":"pwd"}', output: "hook output", status: "ok" }],
+    "post-hook output remains authoritative after the native envelope arrives",
+  );
+}
+
+// A completed hook with no input cannot be safely associated with the next
+// same-name envelope. Retaining it by name alone makes the later real call
+// disappear from both live activity and the persisted transcript.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  tracker.hookStart("Bash");
+  tracker.hookEnd("Bash", "first output", false);
+  const nextEnvelope = tracker.envelopeToolUse("toolu-next", "Bash");
+  assert.deepEqual(nextEnvelope, {
+    id: "toolu-next",
+    name: "Bash",
+    input: undefined,
+    status: "running",
+  }, "an ambiguous same-name envelope starts a distinct tool call");
+  assert.equal(
+    tracker.envelopeToolResult("toolu-next", "second output", false)?.id,
+    "toolu-next",
+    "the later envelope result settles its own visible call",
+  );
+}
+
+// When two same-name pre hooks arrive before their envelopes, match each
+// envelope by its normalized input instead of assigning native ids by FIFO.
+// Otherwise the result/output of the second execution is persisted against the
+// first execution's bubble.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  const first = tracker.hookStart("Read", '{"path":"first.md"}');
+  const second = tracker.hookStart("Read", '{"path":"second.md"}');
+  tracker.envelopeToolUse("toolu-second", "Read", '{"path":"second.md"}');
+  tracker.envelopeToolUse("toolu-first", "Read", '{"path":"first.md"}');
+  assert.equal(tracker.envelopeToolResult("toolu-second", "second output", false)?.id, second.id);
+  assert.equal(tracker.envelopeToolResult("toolu-first", "first output", false)?.id, first.id);
+  assert.deepEqual(
+    tracker.snapshot().map(({ input, output }) => ({ input, output })),
+    [
+      { input: '{"path":"first.md"}', output: "first output" },
+      { input: '{"path":"second.md"}', output: "second output" },
+    ],
+    "concurrent reordered same-name calls retain their own inputs and outputs",
+  );
+}
+
+// The inverse arrival order must make the same input-based association. If
+// assistant envelopes are buffered before two same-name pre hooks, FIFO would
+// otherwise apply the second hook's timing and output to the first bubble.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  tracker.envelopeToolUse("toolu-first", "Read", '{"path":"first.md"}');
+  tracker.envelopeToolUse("toolu-second", "Read", '{"path":"second.md"}');
+  const second = tracker.hookStart("Read", '{"path":"second.md"}');
+  const first = tracker.hookStart("Read", '{"path":"first.md"}');
+  assert.equal(second.id, "toolu-second");
+  assert.equal(first.id, "toolu-first");
+  assert.equal(tracker.hookEnd("Read", "second output", false).id, "toolu-second");
+  assert.equal(tracker.hookEnd("Read", "first output", false).id, "toolu-first");
+  assert.deepEqual(
+    tracker.snapshot().map(({ id, output }) => ({ id, output })),
+    [
+      { id: "toolu-first", output: "first output" },
+      { id: "toolu-second", output: "second output" },
+    ],
+    "concurrent same-name envelope-first calls retain their hook outputs",
+  );
+}
+
+// If a reordered result settles a hook-first call as its delayed envelope
+// arrives, the terminal SSE update must retain the envelope input. Otherwise
+// the live bubble drops it (the UI keeps prior fields when an update omits
+// them), even though the persisted record receives the backfill.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  const started = tracker.hookStart("Bash");
+  assert.equal(tracker.envelopeToolResult("toolu_reordered_input", "done", false), null);
+  tracker.envelopeToolUse(
+    "toolu_reordered_input",
+    "Bash",
+    '{"command":"pwd"}',
+  );
+  const settled = tracker.consumePendingEnvelopeResult("toolu_reordered_input");
+  assert.equal(settled?.id, started.id);
+  assert.equal(settled?.input, '{"command":"pwd"}', "the live terminal update backfills the envelope input");
+  assert.equal(tracker.snapshot()[0]?.input, '{"command":"pwd"}', "the persisted tool keeps the same input");
+}
+
+// When a buffered stream reorders both envelope frames ahead of its hooks, the
+// eventual hooks must still replace the envelope result on the native record.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  tracker.envelopeToolResult("toolu_reordered_hook", "envelope output", false);
+  tracker.envelopeToolUse("toolu_reordered_hook", "Bash", '{"command":"pwd"}');
+  const envelope = tracker.consumePendingEnvelopeResult("toolu_reordered_hook");
+  assert.equal(envelope?.status, "ok");
+  t = 100;
+  const hookStart = tracker.hookStart("Bash", '{"command":"pwd"}');
+  assert.equal(hookStart.id, "toolu_reordered_hook", "a late pre hook reuses the envelope id");
+  t = 250;
+  const hookEnd = tracker.hookEnd("Bash", "hook output", false);
+  assert.equal(hookEnd.id, "toolu_reordered_hook", "a late post hook updates the same tool record");
+  assert.equal(hookEnd.output, "hook output", "hook output takes precedence after full reordering");
+  assert.equal(hookEnd.durationMs, 150, "hook timing begins at the late pre hook");
+  assert.equal(tracker.snapshot().length, 1, "fully reordered hooks must not create an orphan bubble");
+}
+
 {
   // Hook first (interleaving can deliver the hook line before the envelope).
   const tracker = new ToolCallTracker(() => 0);
@@ -475,6 +823,94 @@ assert.match(
     tracker.envelopeToolResult("toolu_b", "contents", false),
     null,
     "the linked native id dedups the tool_result after the hook settled the call",
+  );
+}
+
+// A full pre/post pair can also reach stdout before its delayed assistant
+// envelope. Linking the late native id must preserve the hook record so both
+// the eventual tool_result and persistence remain deduplicated.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  const hookRunning = tracker.hookStart("Read", undefined);
+  const hookDone = tracker.hookEnd("Read", "hook contents", false);
+  assert.equal(hookDone.id, hookRunning.id);
+  assert.deepEqual(
+    tracker.envelopeToolUse("toolu_late_envelope", "Read", '{"file_path":"/tmp/x"}'),
+    { id: hookDone.id, name: "Read", input: '{"file_path":"/tmp/x"}', status: "ok", durationMs: 0 },
+    "a late envelope fills the completed hook bubble instead of duplicating or reopening it",
+  );
+  assert.equal(
+    tracker.envelopeToolResult("toolu_late_envelope", "envelope contents", false),
+    null,
+    "the late native id suppresses its duplicate envelope result",
+  );
+  const snapshot = tracker.snapshot();
+  assert.equal(snapshot.length, 1, "late envelopes must not add an orphan bubble");
+  assert.equal(snapshot[0].output, "hook contents", "hook output keeps precedence");
+  assert.equal(snapshot[0].input, '{"file_path":"/tmp/x"}', "late envelope input backfills the hook record");
+}
+
+// A delayed envelope with a different input is a distinct same-name call, not
+// a duplicate of an already completed hook. Preserve both records rather than
+// silently dropping the envelope's lifecycle.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  const first = tracker.hookStart("Read", '{"path":"first.md"}');
+  tracker.hookEnd("Read", "first contents", false);
+  const second = tracker.envelopeToolUse("toolu-second-late", "Read", '{"path":"second.md"}');
+  assert.ok(second, "a different-input delayed envelope must create its own tool record");
+  assert.equal(tracker.envelopeToolResult("toolu-second-late", "second contents", false)?.id, second.id);
+  assert.deepEqual(
+    tracker.snapshot().map(({ id, input, output }) => ({ id, input, output })),
+    [
+      { id: first.id, input: '{"path":"first.md"}', output: "first contents" },
+      { id: "toolu-second-late", input: '{"path":"second.md"}', output: "second contents" },
+    ],
+    "a completed same-name hook must not absorb a distinct delayed envelope",
+  );
+}
+
+// A late hook attached to an already settled envelope must not consume the
+// next concurrent call of the same name when its assistant frame arrives
+// before that hook's post line.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  tracker.envelopeToolResult("toolu_first", "first result", false);
+  tracker.envelopeToolUse("toolu_first", "Read");
+  tracker.consumePendingEnvelopeResult("toolu_first");
+  const firstHook = tracker.hookStart("Read");
+  assert.equal(firstHook.id, "toolu_first");
+
+  const second = tracker.envelopeToolUse("toolu_second", "Read");
+  assert.equal(second?.id, "toolu_second", "a pending late post must not absorb a different concurrent envelope id");
+  assert.equal(tracker.envelopeToolResult("toolu_second", "second result", false)?.id, "toolu_second");
+  assert.equal(tracker.hookEnd("Read", "first hook result", false).id, "toolu_first");
+  assert.deepEqual(
+    tracker.snapshot().map((event) => event.id),
+    ["toolu_first", "toolu_second"],
+    "reordered concurrent same-name calls retain one record per native id",
+  );
+}
+
+// A lost pre hook for one call followed by a same-name later call must not
+// overwrite the completed first envelope when their inputs distinguish them.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  tracker.envelopeToolResult("toolu_first", "first result", false);
+  tracker.envelopeToolUse("toolu_first", "Read", '{"path":"first.md"}');
+  tracker.consumePendingEnvelopeResult("toolu_first");
+
+  const secondHook = tracker.hookStart("Read", '{"path":"second.md"}');
+  assert.notEqual(secondHook.id, "toolu_first");
+  tracker.hookEnd("Read", "second hook result", false);
+
+  assert.deepEqual(
+    tracker.snapshot().map(({ id, input, output }) => ({ id, input, output })),
+    [
+      { id: "toolu_first", input: '{"path":"first.md"}', output: "first result" },
+      { id: secondHook.id, input: '{"path":"second.md"}', output: "second hook result" },
+    ],
+    "a late completed envelope cannot steal a distinct same-name hook call",
   );
 }
 
@@ -525,123 +961,15 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const codexLaunch = codexHarnessEnv[\s\S]*?codexLaunchCommand\(codexBin\(codexHarnessEnv\)\)/,
-  "Codex parsing must probe the same credential-sanitized executable it later launches",
-);
-
-assert.doesNotMatch(
-  chatRoute,
-  /codex_jsonl\?: boolean|ev\.codex_jsonl/,
-  "generic captured stdout cannot self-attest as Codex JSONL from assistant-authored content",
+  /binding\.harness !== "claude"[\s\S]*?ev\.type === "output"[\s\S]*?typeof ev\.text === "string"[\s\S]*?assistantFilter\.push\(cleaned\)[\s\S]*?kind: "assistant_chunk", text: filtered/,
+  "Coven stream-json output events must pass through the Codex assistant filter instead of being discarded as handled JSON",
 );
 
 assert.match(
   chatRoute,
-  /let codexDecoder: CodexJsonlDecoder \| null = codexDirect[\s\S]*?new CodexJsonlDecoder\(\{ trustThreadPreamble: true \}\)/,
-  "Codex JSONL decoding is created only for Cave's direct native process channel",
+  /binding\.harness !== "claude"[\s\S]*?ev\.type === "output"[\s\S]*?typeof ev\.text === "string"[\s\S]*?recordStdoutErrorTail\(cleaned\)[\s\S]*?assistantFilter\.push\(cleaned\)/,
+  "Coven stream-json output events must preserve error-looking stdout text for empty-response diagnostics before filtering",
 );
-
-assert.match(
-  chatRoute,
-  /const selectedCodexDirect = codexCompatibility\?\.ok === true;[\s\S]*?const codexCapabilities = codexCompatibility\?\.ok === true[\s\S]*?codexCapabilities\?\.skipGitRepoCheck === true[\s\S]*?codexCapabilities\.resumeJson === true[\s\S]*?\["exec", "resume", "--json"\][\s\S]*?codexCapabilities\?\.color === true[\s\S]*?codexCapabilities\?\.resumeSkipGitRepoCheck === true[\s\S]*?command: codexLaunch\.command,[\s\S]*?\.\.\.codexLaunch\.fixedArgs/,
-  "a selected local Codex schema launches its authenticated native JSONL pipe only after probing the fresh and resume argv contracts",
-);
-
-assert.match(
-  chatRoute,
-  /const retrySettledTools: RecordedToolEvent\[\] = \[\];[\s\S]*?retrySettledTools\.push\(\.\.\.toolTracker\.snapshot\(\)\);[\s\S]*?toPersistedTools\(\[\.\.\.retrySettledTools, \.\.\.toolTracker\.snapshot\(\)\]/,
-  "retry-settled tool records are retained for reload parity with live SSE",
-);
-
-assert.match(
-  chatRoute,
-  /Codex emitted an unsupported tool event; continuing in plain chat/,
-  "unknown Codex shapes surface a visible plain-chat compatibility diagnostic",
-);
-
-assert.match(
-  chatRoute,
-  /const safeDirectCodexFailure = binding\.harness === "codex" && codexDirect;[\s\S]*?const tailSource = safeDirectCodexFailure \? \[\] : \(stderrTail\.length \? stderrTail : stdoutErrTail\);[\s\S]*?_The Codex CLI failed/,
-  "direct Codex failures use a payload-free transcript diagnostic instead of raw stderr",
-);
-
-assert.match(
-  chatRoute,
-  /case "text":[\s\S]*?assistantText \+= event\.text;[\s\S]*?kind: "assistant_chunk", text: event\.text/,
-  "known Codex agent-message items bypass the legacy transcript phase gate and preserve assistant prose",
-);
-
-assert.match(
-  chatRoute,
-  /let codexHarnessSessionId: string \| null = null;[\s\S]*?codexHarnessSessionId = event\.sessionId/,
-  "Codex's resume handle is retained separately from Cave's stable conversation id",
-);
-
-assert.match(
-  chatRoute,
-  /const MAX_DIRECT_CODEX_STDOUT_RECORD_CHARS = 256 \* 1024;[\s\S]*?discardingOversizedDirectCodexRecord[\s\S]*?line\.length > MAX_DIRECT_CODEX_STDOUT_RECORD_CHARS[\s\S]*?jsonBuf\.length > MAX_DIRECT_CODEX_STDOUT_RECORD_CHARS/,
-  "direct Codex stdout bounds unterminated and complete records before JSONL buffering",
-);
-
-assert.match(
-  chatRoute,
-  /ev\.type === "output" && typeof ev\.text === "string"[\s\S]*?recordStdoutErrorTail\(passthrough\)[\s\S]*?assistantFilter\.push\(passthrough\)/,
-  "Coven stream-json output events must preserve error-looking transcript passthrough for empty-response diagnostics before filtering",
-);
-
-// Behavioral: Windows captured pipes can coalesce prose and several JSONL
-// records, then close without a final newline. Drive the same decoder and
-// tracker pair used by the route and assert the ordered SSE/persistence shape
-// rather than inferring it from source text.
-{
-  const resolution = resolveCodexSchema({
-    version: "0.145.0",
-    capabilities: { jsonEvents: true, resume: true },
-  });
-  assert.ok(resolution.ok, "fixture runtime resolves a Codex schema");
-  if (!resolution.ok) throw new Error("fixture schema unavailable");
-
-  const decoder = new CodexJsonlDecoder({ trustThreadPreamble: true });
-  const tracker = new ToolCallTracker(() => 0);
-  const sse: Array<{ kind: string; id?: string; status?: string; text?: string }> = [];
-  let text = "";
-  let threadId: string | null = null;
-  const routeCapturedOutput = (chunk: string) => {
-    for (const token of decoder.push(chunk, resolution.schema).tokens) {
-      if (token.kind === "passthrough") {
-        text += token.text;
-        sse.push({ kind: "assistant_chunk", text: token.text });
-      } else if (token.kind === "session") {
-        threadId = token.sessionId;
-      } else if (token.kind === "tool_start") {
-        const tool = tracker.envelopeToolUse(token.id, token.name, formatToolInputValue(token.input), text.length);
-        if (tool) sse.push({ kind: "tool_use", id: tool.id, status: tool.status });
-      } else if (token.kind === "tool_end") {
-        const tool = tracker.envelopeToolResult(token.id, token.output, token.isError);
-        if (tool) sse.push({ kind: "tool_use", id: tool.id, status: tool.status });
-      } else if (token.kind === "text") {
-        text += token.text;
-        sse.push({ kind: "assistant_chunk", text: token.text });
-      }
-    }
-  };
-
-  routeCapturedOutput('notice\ncodex\n{"type":"thread.started","thread_id":"thread-captured"}\n{"type":"item.started","item":{"id":"call-captured","type":"command_execution","command":"pwd"}}\n');
-  routeCapturedOutput('{"type":"item.completed","item":{"id":"call-captured","type":"command_execution","exit_code":2}}\n{"type":"item.completed","item":{"id":"answer-captured","type":"agent_message","text":"answer"}}');
-  routeCapturedOutput("\n"); // equivalent to the route's close-time flush
-
-  assert.equal(threadId, "thread-captured", "captured thread id is retained for resume");
-  assert.deepEqual(
-    sse.map((event) => [event.kind, event.status ?? event.text]),
-    [["assistant_chunk", "notice\n"], ["tool_use", "running"], ["tool_use", "error"], ["assistant_chunk", "answer"]],
-    "mixed captured chunks preserve assistant/tool SSE ordering and settle nonzero exits as errors",
-  );
-  assert.deepEqual(
-    toPersistedTools(tracker.snapshot(), 0).map((tool) => [tool.id, tool.status, tool.textOffset]),
-    [["call-captured", "error", 7]],
-    "the same stable tool lifecycle is retained for persistence with its prose offset",
-  );
-}
 
 assert.match(
   streamEvents,
@@ -799,54 +1127,6 @@ assert.match(
   assert.equal(snap[0].textOffset, 40);
   assert.equal(snap[0].status, "ok");
   assert.equal(snap[0].durationMs, 250);
-}
-
-{
-  // A terminated JSONL stream must settle the same live id that started the
-  // bubble; otherwise the client spinner stays running until a reload.
-  let t = 0;
-  const tracker = new ToolCallTracker(() => t);
-  tracker.envelopeToolUse("codex-open", "Bash", '{"command":"pwd"}', 3);
-  t = 400;
-  const [settled] = tracker.settleOpenCalls();
-  assert.deepEqual(
-    settled,
-    {
-      id: "codex-open",
-      name: "Bash",
-      output: "[tool did not settle before the turn ended]",
-      status: "error",
-      durationMs: 400,
-    },
-    "an unterminated tool becomes a terminal error with its original stream id",
-  );
-  assert.equal(tracker.settleOpenCalls().length, 0, "terminal settlement is idempotent");
-  assert.equal(tracker.snapshot()[0]?.status, "error", "the settled state is what persistence sees");
-}
-
-{
-  // A Codex tool can fail before the runtime writes its start frame (for
-  // example, while validating its sandbox). Preserve a terminal bubble keyed
-  // by the native id instead of silently dropping that failure.
-  const tracker = new ToolCallTracker(() => 0);
-  const failed = tracker.envelopeToolResult(
-    "codex-preflight-failure",
-    "permission denied",
-    true,
-    { name: "Bash", input: '{"command":"pwd"}', textOffset: 2 },
-  );
-  assert.deepEqual(failed, {
-    id: "codex-preflight-failure",
-    name: "Bash",
-    output: "permission denied",
-    status: "error",
-    durationMs: 0,
-  });
-  assert.equal(
-    tracker.envelopeToolResult("codex-preflight-failure", "duplicate", true, { name: "Bash" }),
-    null,
-    "a duplicate terminal frame must not reopen an already failed tool",
-  );
 }
 
 {

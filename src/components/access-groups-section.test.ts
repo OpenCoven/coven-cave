@@ -4,11 +4,17 @@ import { readFileSync } from "node:fs";
 
 const section = readFileSync(new URL("./access-groups-section.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const inline = readFileSync(new URL("./familiar-studio-inline.tsx", import.meta.url), "utf8");
 const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
 
 // ── Access groups management lives in Settings → Familiars ───────────────────
 assert.match(section, /export function AccessGroupsSection/, "exports the access groups section");
-assert.match(shell, /<AccessGroupsSection familiars=\{familiars\} \/>/, "FamiliarsSection mounts the access groups manager");
+assert.doesNotMatch(shell, /<AccessGroupsSection/, "the shell does not duplicate access groups below the control sheet");
+assert.match(
+  inline,
+  /<AccessGroupsSection familiars=\{resolved\} \/>/,
+  "the Projects tab mounts the access groups manager",
+);
 assert.match(sections, /group: "Access groups"/, "settings search indexes the access groups group");
 
 // ── Speaks the access-groups API, human-confirmed ─────────────────────────────

@@ -2,6 +2,7 @@ export type SettingsFamiliarSearchItem = {
   id: string;
   display_name: string;
   role?: string | null;
+  archived?: boolean;
 };
 
 export function filterSettingsFamiliars<T extends SettingsFamiliarSearchItem>(
@@ -9,14 +10,21 @@ export function filterSettingsFamiliars<T extends SettingsFamiliarSearchItem>(
   query: string,
 ): T[] {
   const tokens = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return [...familiars];
+  const matched = tokens.length === 0
+    ? [...familiars]
+    : familiars.filter((familiar) => {
+        const searchable = [familiar.id, familiar.display_name, familiar.role ?? ""]
+          .join(" ")
+          .toLocaleLowerCase();
+        return tokens.every((token) => searchable.includes(token));
+      });
 
-  return familiars.filter((familiar) => {
-    const searchable = [familiar.id, familiar.display_name, familiar.role ?? ""]
-      .join(" ")
-      .toLocaleLowerCase();
-    return tokens.every((token) => searchable.includes(token));
-  });
+  // The handoff keeps archived familiars recoverable at the end of the roster.
+  // Partition instead of sorting so daemon order remains stable in both groups.
+  return [
+    ...matched.filter((familiar) => !familiar.archived),
+    ...matched.filter((familiar) => familiar.archived),
+  ];
 }
 
 export function familiarRosterCountLabel(count: number): string {

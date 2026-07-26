@@ -7,10 +7,10 @@ import {
   shouldRequeueOn409,
 } from "./onboarding-install-queue.ts";
 
-test("shouldQueueInstall: script installs never queue", () => {
+test("shouldQueueInstall: managed Node setup shares the npm lane", () => {
   assert.equal(
-    shouldQueueInstall({ kind: "script", npmBusy: true, inFlight: true, queuedCount: 5 }),
-    false,
+    shouldQueueInstall({ kind: "managed-node", npmBusy: true, inFlight: true, queuedCount: 5 }),
+    true,
   );
 });
 
@@ -42,10 +42,11 @@ test("nextDrainTarget: null when empty or lane not free; head otherwise", () => 
   assert.equal(nextDrainTarget(["a", "b"], { npmBusy: false, inFlight: false }), "a");
 });
 
-test("shouldRequeueOn409: only a 409 on an npm target re-queues", () => {
+test("shouldRequeueOn409: a 409 on any managed lane target re-queues", () => {
   assert.equal(shouldRequeueOn409("npm", 409), true);
+  assert.equal(shouldRequeueOn409("managed-node", 409), true);
   assert.equal(shouldRequeueOn409("npm", 422), false);
-  assert.equal(shouldRequeueOn409("script", 409), false);
+  assert.equal(shouldRequeueOn409("managed-node", 422), false);
 });
 
 test("integration: 'install both' serializes coven-cli then coven-code", () => {

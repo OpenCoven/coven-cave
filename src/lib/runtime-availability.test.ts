@@ -1,53 +1,236 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+  evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
+  localRuntimeLaunchError,
   missingRunnerMessage,
+  runtimeLaunchFailedMessage,
   summarizeRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
 } from "./runtime-availability.ts";
+import { openCodeCommand, openCodeLaunch } from "./opencode-bin.ts";
 
 const scratch = mkdtempSync(path.join(tmpdir(), "runtime-availability-"));
 try {
+  assert.deepEqual(
+    localRuntimeLaunchError("grok", "ENOENT"),
+    {
+      code: "runtime_missing",
+      message: missingRunnerMessage("grok"),
+    },
+    "a post-spawn missing-interpreter race retains the missing-runner contract",
+  );
+  assert.deepEqual(
+    localRuntimeLaunchError("grok", "UNKNOWN"),
+    {
+      code: "runtime_launch_failed",
+      message: runtimeLaunchFailedMessage("grok"),
+    },
+    "every non-ENOENT local spawn error uses the normalized launch-failure contract",
+  );
   const binDir = path.join(scratch, "bin");
   const emptyDir = path.join(scratch, "empty");
   mkdirSync(binDir);
   mkdirSync(emptyDir);
-  writeFileSync(path.join(binDir, "grok"), "#!/bin/sh\n", { mode: 0o755 });
+  const nativePlatform = process.platform;
+  const nativeGrok = nativePlatform === "win32" ? "grok.exe" : "grok";
+  const executable = path.join(binDir, nativeGrok);
+  writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
+  chmodSync(executable, 0o755);
 
   // Verification matrix: binary resolves in the spawn env → ready.
+  // Do not use this Windows host's temporary path while simulating Linux:
+  // a drive letter contains `:`, which is a POSIX PATH delimiter.
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
-    command: "grok",
-    env: { PATH: `${emptyDir}:${binDir}` },
-    platform: "linux",
+    command: nativeGrok,
+    env: { PATH: [emptyDir, binDir].join(path.delimiter) },
+    platform: nativePlatform,
   });
   assert.equal(ready.state, "ready", "a bare command on the spawn PATH is ready");
-  assert.equal(
-    ready.state === "ready" && ready.resolvedPath,
-    path.join(binDir, "grok"),
-    "ready reports where the exact spawn command resolved",
+  assert.match(
+    String(ready.state === "ready" && ready.resolvedPath),
+    /(?:^|[\\/])grok(?:\.exe)?$/,
+    "ready reports the exact executable name selected from the spawn PATH",
   );
 
+  const linuxBinDir = "/runtime-availability/bin";
+  const linuxClaudeDir = "/runtime-availability/claude-bin";
+  const linuxFiles = new Set([
+    path.posix.join(linuxBinDir, "coven"),
+    path.posix.join(linuxClaudeDir, "claude"),
+  ]);
+  const linuxStat = (candidate: string) => linuxFiles.has(candidate);
+  const claudeReady = evaluateCovenBackedRuntimeAvailability({
+    runner: "claude",
+    covenCommand: "coven",
+    env: { PATH: `${linuxBinDir}:${linuxClaudeDir}` },
+    platform: "linux",
+    statFile: linuxStat,
+  });
+  assert.equal(claudeReady.state, "ready", "Claude requires both Coven and Claude to resolve");
+  const claudeMissing = evaluateCovenBackedRuntimeAvailability({
+    runner: "claude",
+    covenCommand: "coven",
+    env: { PATH: linuxBinDir },
+    platform: "linux",
+    statFile: linuxStat,
+  });
+  assert.equal(claudeMissing.state, "missing", "missing inner Claude blocks the composite launch");
+  assert.equal(
+    claudeMissing.state === "missing" && claudeMissing.code,
+    RUNTIME_AVAILABILITY_ERROR_CODES.claude_missing,
+    "a missing inner Claude has a distinct structured code",
+  );
+  const covenMissing = evaluateCovenBackedRuntimeAvailability({
+    runner: "claude",
+    covenCommand: "coven",
+    env: { PATH: linuxClaudeDir },
+    platform: "linux",
+    statFile: linuxStat,
+  });
+  assert.equal(covenMissing.state, "missing", "missing outer Coven blocks the composite launch");
+  assert.equal(
+    covenMissing.state === "missing" && covenMissing.code,
+    RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing,
+    "a missing outer Coven has a distinct structured code",
+  );
   const absoluteReady = evaluateRuntimeAvailability({
     runner: "coven",
-    command: path.join(binDir, "grok"),
+    command: executable,
     env: { PATH: "" },
-    platform: "linux",
+    platform: process.platform,
   });
-  assert.equal(absoluteReady.state, "ready", "an absolute launch command is stat'd directly");
+  assert.equal(
+    absoluteReady.state,
+    "ready",
+    "a mode-0755 regular file is launchable on POSIX",
+  );
+
+  if (nativePlatform !== "win32") {
+    const directoryCandidate = path.join(binDir, "grok-directory");
+    mkdirSync(directoryCandidate);
+    const directoryResult = evaluateRuntimeAvailability({
+      runner: "grok",
+      command: directoryCandidate,
+      env: { PATH: "" },
+      platform: "linux",
+    });
+    assert.equal(
+      directoryResult.state,
+      "unlaunchable",
+      "an existing directory at the launch path is found but unlaunchable",
+    );
+    assert.equal(
+      directoryResult.state === "unlaunchable" && directoryResult.code,
+      RUNTIME_AVAILABILITY_ERROR_CODES.unlaunchable,
+      "a non-file candidate carries runtime_unlaunchable",
+    );
+
+    const nonExecutable = path.join(binDir, "grok-no-exec");
+    writeFileSync(nonExecutable, "#!/bin/sh\n", { mode: 0o644 });
+    chmodSync(nonExecutable, 0o644);
+    const nonExecutableResult = evaluateRuntimeAvailability({
+      runner: "grok",
+      command: nonExecutable,
+      env: { PATH: "" },
+      platform: "linux",
+    });
+    assert.equal(
+      nonExecutableResult.state,
+      "unlaunchable",
+      "a mode-0644 regular file is unlaunchable on POSIX",
+    );
+    assert.equal(
+      nonExecutableResult.state === "unlaunchable" && nonExecutableResult.code,
+      RUNTIME_AVAILABILITY_ERROR_CODES.unlaunchable,
+      "a non-executable regular file carries runtime_unlaunchable",
+    );
+
+    const earlierBinDir = path.join(scratch, "earlier-bin");
+    mkdirSync(earlierBinDir);
+    const earlierNonExecutable = path.join(earlierBinDir, "grok");
+    writeFileSync(earlierNonExecutable, "#!/bin/sh\n", { mode: 0o644 });
+    chmodSync(earlierNonExecutable, 0o644);
+    const laterExecutableWins = evaluateRuntimeAvailability({
+      runner: "grok",
+      command: "grok",
+      env: { PATH: `${earlierBinDir}:${binDir}` },
+      platform: "linux",
+    });
+    assert.equal(
+      laterExecutableWins.state,
+      "ready",
+      "a later executable PATH candidate wins after an earlier non-executable file",
+    );
+    assert.equal(
+      laterExecutableWins.state === "ready" && laterExecutableWins.resolvedPath,
+      path.posix.join(binDir, "grok"),
+      "PATH resolution reports the exact later executable that won",
+    );
+  }
+
+  // A direct Windows npm-shim plan is `node <entry.js>`: validating only the
+  // host must not mark a removed or unreadable fixed script as ready.
+  const requiredArtifactMissing = evaluateRuntimeAvailability({
+    runner: "copilot",
+    command: "node.exe",
+    requiredFiles: ["C:\\bin\\copilot-entry.js"],
+    env: { Path: "C:\\bin" },
+    platform: "win32",
+    statFile: (candidate) => candidate === "C:\\bin\\node.exe",
+  });
+  assert.equal(requiredArtifactMissing.state, "unlaunchable");
+  assert.doesNotMatch(
+    requiredArtifactMissing.state === "unlaunchable" ? requiredArtifactMissing.message : "",
+    /copilot-entry|C:\\bin/i,
+    "required-artifact diagnostics do not expose local path details",
+  );
+
+  const requiredArtifactReady = evaluateRuntimeAvailability({
+    runner: "copilot",
+    command: "node.exe",
+    requiredFiles: ["C:\\bin\\copilot-entry.js"],
+    env: { Path: "C:\\bin" },
+    platform: "win32",
+    statFile: (candidate) => candidate === "C:\\bin\\node.exe" || candidate === "C:\\bin\\copilot-entry.js",
+  });
+  assert.equal(requiredArtifactReady.state, "ready", "a complete direct launch plan is ready");
+
+  const requiredArtifactUnreadable = evaluateRuntimeAvailability({
+    runner: "copilot",
+    command: "node.exe",
+    requiredFiles: ["C:\\bin\\copilot-entry.js"],
+    env: { Path: "C:\\bin" },
+    platform: "win32",
+    statFile: () => true,
+    readableFile: () => false,
+  });
+  assert.equal(
+    requiredArtifactUnreadable.state,
+    "unlaunchable",
+    "an unreadable fixed shim entry is not safe to launch through Node",
+  );
 
   // Verification matrix: binary absent from every discovery location →
   // missing, with per-runner install/PATH remediation.
-  for (const runner of ["coven", "copilot", "grok", "hermes", "opencode"] as const) {
+  for (const runner of ["coven", "codex", "copilot", "grok", "hermes", "opencode"] as const) {
     const missing = evaluateRuntimeAvailability({
       runner,
       command: runner === "coven" ? "coven" : runner,
       env: { PATH: emptyDir },
-      platform: "linux",
+      platform: nativePlatform,
     });
     assert.equal(missing.state, "missing", `${runner} nowhere on PATH is missing`);
     assert.equal(
@@ -79,7 +262,7 @@ try {
     runner: "hermes",
     command: "hermes",
     env: {},
-    platform: "linux",
+    platform: nativePlatform,
   });
   assert.equal(emptyPath.state, "missing", "an env without PATH resolves nothing");
 
@@ -202,13 +385,23 @@ try {
 
   // OpenCode's Windows launch is PowerShell-hosted: the host must exist and
   // the inner `opencode` command must resolve with PATHEXT semantics.
-  const psHost = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+  const openCodeWindowsLaunch = openCodeLaunch(
+    ["run", "safe & literal"],
+    "win32",
+    { SystemRoot: "C:\\Windows", NODE_ENV: "test" },
+  );
+  const psHost = openCodeWindowsLaunch.command;
+  assert.equal(
+    openCodeWindowsLaunch.input,
+    JSON.stringify(["run", "safe & literal"]),
+    "the preflight receives the same JSON-stdin launch plan as chat",
+  );
   const openCodeWinReady = evaluateRuntimeAvailability({
     runner: "opencode",
     command: psHost,
     env: { Path: "C:\\bin", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
     platform: "win32",
-    powerShellHostedCommand: "opencode",
+    powerShellHostedCommand: openCodeWindowsLaunch.input === undefined ? undefined : openCodeCommand(),
     statFile: winStats([psHost, "C:\\bin\\opencode.CMD"]),
   });
   assert.equal(
@@ -248,6 +441,34 @@ try {
     openCodeHostGone.state === "unlaunchable" ? openCodeHostGone.message : "",
     /PowerShell/,
     "the host failure names the actual remediation target",
+  );
+  assert.doesNotMatch(
+    openCodeHostGone.state === "unlaunchable" ? openCodeHostGone.message : "",
+    /OpenCode CLI not found/i,
+    "a missing host never blames the inner OpenCode command",
+  );
+
+  const openCodeInnerProbeFailed = evaluateRuntimeAvailability({
+    runner: "opencode",
+    command: psHost,
+    env: { Path: "C:\\bin" },
+    platform: "win32",
+    powerShellHostedCommand: openCodeCommand(),
+    statFile: (candidate) => {
+      if (candidate === psHost) return true;
+      throw Object.assign(new Error(`EACCES: permission denied, stat '${candidate}'`), {
+        code: "EACCES",
+      });
+    },
+  });
+  assert.equal(
+    openCodeInnerProbeFailed.state,
+    "probe_failed",
+    "an unreadable inner OpenCode command is not reported as missing",
+  );
+  assert.ok(
+    openCodeInnerProbeFailed.state === "probe_failed" && !openCodeInnerProbeFailed.message.includes("C:\\bin"),
+    "hosted-command probe errors do not leak the launch PATH",
   );
 
   // Availability never executes anything: the whole evaluation is stat-only,

@@ -20,6 +20,11 @@ assert.match(
 );
 assert.match(
   source,
+  /h\.availability && h\.availability\.state !== "ready"[\s\S]*?h\.availability\.message/,
+  "Runtime picker should reuse server-provided launchability remediation instead of treating an installed but unlaunchable CLI as ready",
+);
+assert.match(
+  source,
   /modelOptions\.map/,
   "Brain tab should render a model select from the catalog options",
 );
@@ -80,6 +85,11 @@ assert.match(
   source,
   /label: "Available runtimes"[\s\S]{0,360}harnesses\s*\.filter\(\(h\) => isBindableRuntimeChoice\(h\.id\)\)[\s\S]{0,120}\.map/,
   "Other available runtimes group below the inherited default, filtered to bindable choices (no Coven Code)",
+);
+assert.match(
+  source,
+  /h\.availability && h\.availability\.state !== "ready"[\s\S]{0,180}" \(unavailable\)"[\s\S]{0,160}detail: h\.availability\?\.state !== "ready"/,
+  "Runtime picker labels a discovered-but-unlaunchable CLI as unavailable and shows the shared remediation",
 );
 assert.match(
   source,
@@ -466,6 +476,16 @@ assert.match(
   source,
   /familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status"/,
   "not-ready states render as warning hints announced via role=status",
+);
+assert.match(
+  source,
+  /import type \{ RuntimeAvailabilitySummary \} from "@\/lib\/runtime-availability";[\s\S]*?availability\?: RuntimeAvailabilitySummary;/,
+  "the runtime picker receives the launchability summary returned by /api/harnesses",
+);
+assert.match(
+  source,
+  /const selectedHarnessAvailability = harnesses\.find\(\(item\) => item\.id === harnessId\)\?\.availability;[\s\S]*?selectedHarnessAvailability\.state !== "ready"[\s\S]*?selectedHarnessAvailability\.message/,
+  "the selected runtime shows truthful launch remediation rather than only an install bit",
 );
 assert.match(
   source,

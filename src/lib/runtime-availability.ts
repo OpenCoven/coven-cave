@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { accessSync, constants, statSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -10,14 +10,18 @@ import path from "node:path";
  * command the route is about to hand to `spawn()`, resolved inside the EXACT
  * environment that spawn will receive, points at a real launchable file.
  *
- * The evaluation is bounded and passive — filesystem stats only. It never
- * spawns a process, never prompts, and never touches the user's message, so
- * it is safe to run before every chat turn. Authentication/provider health is
- * deliberately out of scope: a runner that launches but is signed out is
- * "ready" here and must fail through its own real output.
+ * The evaluation is bounded and passive — filesystem metadata and permission
+ * checks only. It never spawns a process, never prompts, and never touches the
+ * user's message, so it is safe to run before every chat turn.
+ * Authentication/provider health is deliberately out of scope: a runner that
+ * launches but is signed out is "ready" here and must fail through its own
+ * real output.
  */
 
 export type DirectRunnerId = "coven" | "codex" | "copilot" | "grok" | "hermes" | "opencode";
+/** A runtime launched by Coven rather than handed directly to Node's spawn. */
+export type CovenBackedRunnerId = "claude";
+export type RuntimeRunnerId = DirectRunnerId | CovenBackedRunnerId;
 
 export type RuntimeAvailabilityState =
   | "ready"
@@ -31,6 +35,10 @@ export const RUNTIME_AVAILABILITY_ERROR_CODES = {
   unlaunchable: "runtime_unlaunchable",
   probe_failed: "runtime_probe_failed",
   unsupported_runtime: "runtime_unsupported",
+  /** Coven-backed launches distinguish an absent outer launcher from an
+   * absent harness resolved by that launcher. */
+  coven_missing: "runtime_coven_missing",
+  claude_missing: "runtime_claude_missing",
 } as const;
 
 export type RuntimeAvailabilityErrorCode =
@@ -39,16 +47,18 @@ export type RuntimeAvailabilityErrorCode =
 export type RuntimeAvailability =
   | {
       state: "ready";
-      runner: DirectRunnerId;
+      runner: RuntimeRunnerId;
       /** Where the spawn command resolved. Diagnostic only — the spawn keeps
        * using the original command so resolution and launch cannot drift. */
       resolvedPath: string;
     }
   | {
       state: Exclude<RuntimeAvailabilityState, "ready">;
-      runner: DirectRunnerId;
+      runner: RuntimeRunnerId;
       code: RuntimeAvailabilityErrorCode;
       message: string;
+      /** Present when a composite launch names the layer that failed. */
+      component?: "coven" | "adapter";
     };
 
 /** Wire-safe shape for status surfaces: state plus remediation copy, without
@@ -59,6 +69,11 @@ export type RuntimeAvailabilitySummary =
       state: Exclude<RuntimeAvailabilityState, "ready">;
       code: RuntimeAvailabilityErrorCode;
       message: string;
+      /**
+       * Which layer of a composite launch failed. Most direct runners leave
+       * this unset; Codex routes through Coven and names the failing layer.
+       */
+      component?: "coven" | "adapter";
     };
 
 export function summarizeRuntimeAvailability(
@@ -69,26 +84,47 @@ export function summarizeRuntimeAvailability(
     state: availability.state,
     code: availability.code,
     message: availability.message,
+    ...(availability.component ? { component: availability.component } : {}),
   };
 }
 
-/** True when the stat proves a launchable file exists; false when the path
- * definitively does not exist. Unexpected errors (EACCES, EIO, …) propagate
- * so the caller can report `probe_failed` instead of a false "missing". */
+/** Legacy injectable seam for filesystem simulations. The production probe
+ * uses richer candidate inspection so POSIX execute permissions are checked. */
 export type StatFileFn = (candidate: string) => boolean;
 
+/** True when a fixed, non-executable argv artifact is readable by the child.
+ * A Windows npm shim becomes `node <entry.js>`, so the entry must remain
+ * readable in addition to the Node host being launchable. */
+export type ReadableFileFn = (candidate: string) => boolean;
+
 export type RuntimeAvailabilityProbe = {
-  runner: DirectRunnerId;
+  runner: RuntimeRunnerId;
   /** The exact executable that will be passed to `spawn()`. */
   command: string;
   /** The exact environment object the spawn will receive. */
   env: Record<string, string | undefined>;
+  /** Files the exact argv-list launch requires in addition to `command`.
+   * For example, a safe Windows npm shim launch is `node <entry.js>` and the
+   * entry script must still exist when the child is spawned. */
+  requiredFiles?: string[];
   /** Coven/Grok launch resolution found a Windows shim it could not safely
    * convert into a runnable command (`CovenLaunchCommand.unresolvedWindowsShim`). */
   unresolvedWindowsShim?: boolean;
   /** OpenCode on Windows launches through a PowerShell host whose script
    * invokes this inner command; PowerShell resolves it via PATHEXT. */
   powerShellHostedCommand?: string;
+  platform?: NodeJS.Platform;
+  statFile?: StatFileFn;
+  readableFile?: ReadableFileFn;
+};
+
+/** The exact two executable boundaries of `coven run claude`. */
+export type CovenBackedRuntimeAvailabilityProbe = {
+  runner: CovenBackedRunnerId;
+  covenCommand: string;
+  env: Record<string, string | undefined>;
+  requiredCovenFiles?: string[];
+  unresolvedCovenWindowsShim?: boolean;
   platform?: NodeJS.Platform;
   statFile?: StatFileFn;
 };
@@ -98,9 +134,12 @@ export type RuntimeAvailabilityProbe = {
 // The Coven line is additionally pinned by the chat client, which shows its
 // "Open Setup" recovery when the message matches /Coven CLI not found on
 // PATH/i (src/components/chat-view.test.ts).
-const MISSING_RUNNER_MESSAGES: Record<DirectRunnerId, string> = {
+const MISSING_RUNNER_MESSAGES: Record<RuntimeRunnerId, string> = {
   coven: "Coven CLI not found on PATH. Open Setup to install it, then try again.",
-  codex: "Codex CLI not found on PATH. Install it with `npm install -g @openai/codex`, then try again.",
+  claude:
+    "Claude Code CLI not found on PATH. Install it with `npm install -g @anthropic-ai/claude-code`, then run `claude doctor`.",
+  codex:
+    "Codex CLI not found on PATH. Install it with `npm install -g @openai/codex`, then try again.",
   copilot:
     "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again.",
   grok: "Grok Build CLI not found on PATH. Install Grok Build, sign in with `grok`, then try again.",
@@ -109,8 +148,18 @@ const MISSING_RUNNER_MESSAGES: Record<DirectRunnerId, string> = {
     "OpenCode CLI not found on PATH. Install it with `npm install -g opencode-ai`, then try again.",
 };
 
-const RUNNER_LABELS: Record<DirectRunnerId, string> = {
+const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
+  coven: "Coven CLI failed to start. Check its installation and try again.",
+  codex: "Codex CLI failed to start. Check its installation and try again.",
+  copilot: "copilot CLI failed to start. Check its installation and try again.",
+  grok: "Grok Build CLI failed to start. Check its installation and try again.",
+  hermes: "Hermes CLI failed to start. Check its installation and try again.",
+  opencode: "OpenCode CLI failed to start. Check its installation and try again.",
+};
+
+const RUNNER_LABELS: Record<RuntimeRunnerId, string> = {
   coven: "Coven CLI",
+  claude: "Claude Code CLI",
   codex: "Codex CLI",
   copilot: "copilot CLI",
   grok: "Grok Build CLI",
@@ -118,17 +167,80 @@ const RUNNER_LABELS: Record<DirectRunnerId, string> = {
   opencode: "OpenCode CLI",
 };
 
-export function missingRunnerMessage(runner: DirectRunnerId): string {
+export function missingRunnerMessage(runner: RuntimeRunnerId): string {
   return MISSING_RUNNER_MESSAGES[runner];
 }
 
-function defaultStatFile(candidate: string): boolean {
+export function runtimeLaunchFailedMessage(runner: DirectRunnerId): string {
+  return RUNTIME_LAUNCH_FAILED_MESSAGES[runner];
+}
+
+export function localRuntimeLaunchError(
+  runner: DirectRunnerId,
+  errorCode: string | undefined,
+): {
+  code: "runtime_missing" | "runtime_launch_failed";
+  message: string;
+} {
+  return errorCode === "ENOENT"
+    ? { code: "runtime_missing", message: missingRunnerMessage(runner) }
+    : {
+        code: "runtime_launch_failed",
+        message: runtimeLaunchFailedMessage(runner),
+      };
+}
+
+type CandidateInspection = "launchable" | "missing" | "unlaunchable";
+
+type CommandResolution =
+  | { state: "launchable"; resolvedPath: string }
+  | { state: "missing" | "unlaunchable" };
+
+type InspectCandidateFn = (candidate: string) => CandidateInspection;
+
+function isMissingCandidateError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+function defaultInspectCandidate(
+  candidate: string,
+  platform: NodeJS.Platform,
+): CandidateInspection {
   try {
-    return statSync(candidate).isFile();
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === "ENOENT" || code === "ENOTDIR") return false;
-    throw err;
+    if (!statSync(candidate).isFile()) return "unlaunchable";
+  } catch (error) {
+    if (isMissingCandidateError(error)) return "missing";
+    throw error;
+  }
+  if (platform !== "win32") {
+    try {
+      accessSync(candidate, constants.X_OK);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code === "EACCES" || code === "EPERM") return "unlaunchable";
+      if (isMissingCandidateError(error)) return "missing";
+      throw error;
+    }
+  }
+  return "launchable";
+}
+
+function inspectWithStatFile(candidate: string, statFile: StatFileFn): CandidateInspection {
+  return statFile(candidate) ? "launchable" : "missing";
+}
+
+function defaultReadableFile(candidate: string): boolean {
+  try {
+    if (!statSync(candidate).isFile()) return false;
+    accessSync(candidate, constants.R_OK);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT" || code === "ENOTDIR" || code === "EACCES" || code === "EPERM") {
+      return false;
+    }
+    throw error;
   }
 }
 
@@ -190,33 +302,47 @@ function resolveCommand(
   command: string,
   env: Record<string, string | undefined>,
   platform: NodeJS.Platform,
-  statFile: StatFileFn,
+  inspectCandidate: InspectCandidateFn,
   candidatesFor: (name: string) => string[],
-): string | null {
+): CommandResolution {
+  let sawUnlaunchable = false;
+  const inspect = (candidate: string): CommandResolution | null => {
+    const inspection = inspectCandidate(candidate);
+    if (inspection === "launchable") return { state: "launchable", resolvedPath: candidate };
+    if (inspection === "unlaunchable") sawUnlaunchable = true;
+    return null;
+  };
+
   if (isPathLike(command, platform)) {
     // Launch plans only ever produce absolute path-like commands (discovered
-    // binaries, process.execPath, the PowerShell host). Stat them as given.
+    // binaries, process.execPath, the PowerShell host). Inspect them as given.
     for (const candidate of candidatesFor(command)) {
-      if (statFile(candidate)) return candidate;
+      const resolved = inspect(candidate);
+      if (resolved) return resolved;
     }
-    return null;
+    return { state: sawUnlaunchable ? "unlaunchable" : "missing" };
   }
   const joiner = platform === "win32" ? path.win32 : path.posix;
   for (const dir of pathEntries(env, platform)) {
     for (const candidate of candidatesFor(command)) {
       const full = joiner.join(dir, candidate);
-      if (statFile(full)) return full;
+      const resolved = inspect(full);
+      if (resolved) return resolved;
     }
   }
-  return null;
+  return { state: sawUnlaunchable ? "unlaunchable" : "missing" };
 }
 
 function notReady(
-  runner: DirectRunnerId,
+  runner: RuntimeRunnerId,
   state: Exclude<RuntimeAvailabilityState, "ready">,
   message: string,
 ): RuntimeAvailability {
   return { state, runner, code: RUNTIME_AVAILABILITY_ERROR_CODES[state], message };
+}
+
+function unlaunchableRunnerMessage(runner: RuntimeRunnerId): string {
+  return `${RUNNER_LABELS[runner]} was found but is not executable. Restore executable permissions or reinstall it, then try again.`;
 }
 
 /**
@@ -235,7 +361,11 @@ export function evaluateRuntimeAvailability(
 ): RuntimeAvailability {
   const { runner, command, env } = probe;
   const platform = probe.platform ?? process.platform;
-  const statFile = probe.statFile ?? defaultStatFile;
+  const inspectCandidate: InspectCandidateFn = probe.statFile
+    ? (candidate) => inspectWithStatFile(candidate, probe.statFile!)
+    : (candidate) => defaultInspectCandidate(candidate, platform);
+  const readableFile = probe.readableFile
+    ?? (probe.statFile ? probe.statFile : defaultReadableFile);
   const label = RUNNER_LABELS[runner];
   try {
     if (probe.unresolvedWindowsShim) {
@@ -245,10 +375,10 @@ export function evaluateRuntimeAvailability(
         `${label} was found as a Windows launcher shim that cannot be converted into a directly runnable command. Reinstall it so a native executable is on PATH, then try again.`,
       );
     }
-    const resolved = resolveCommand(command, env, platform, statFile, (name) =>
+    const resolved = resolveCommand(command, env, platform, inspectCandidate, (name) =>
       spawnCandidates(name, platform),
     );
-    if (!resolved) {
+    if (resolved.state !== "launchable") {
       if (probe.powerShellHostedCommand !== undefined) {
         // The outer command for a hosted launch is the PowerShell host
         // itself; its absence is a broken launch vehicle, not a missing
@@ -259,11 +389,14 @@ export function evaluateRuntimeAvailability(
           `Windows PowerShell was not found at its system location, so ${label} cannot be launched. Restore Windows PowerShell, then try again.`,
         );
       }
+      if (resolved.state === "unlaunchable") {
+        return notReady(runner, "unlaunchable", unlaunchableRunnerMessage(runner));
+      }
       if (platform === "win32") {
-        const shimOnly = resolveCommand(command, env, platform, statFile, (name) =>
+        const shimOnly = resolveCommand(command, env, platform, inspectCandidate, (name) =>
           shimOnlyCandidates(name, env),
         );
-        if (shimOnly) {
+        if (shimOnly.state === "launchable") {
           return notReady(
             runner,
             "unlaunchable",
@@ -273,17 +406,31 @@ export function evaluateRuntimeAvailability(
       }
       return notReady(runner, "missing", missingRunnerMessage(runner));
     }
+    for (const requiredFile of probe.requiredFiles ?? []) {
+      if (!readableFile(requiredFile)) {
+        return notReady(
+          runner,
+          "unlaunchable",
+          `${label} has a resolved launch command, but a required launch artifact is unavailable. Reinstall it, then try again.`,
+        );
+      }
+    }
     if (probe.powerShellHostedCommand !== undefined) {
       const inner = resolveCommand(
         probe.powerShellHostedCommand,
         env,
         platform,
-        statFile,
+        inspectCandidate,
         (name) => pathExtCandidates(name, env),
       );
-      if (!inner) return notReady(runner, "missing", missingRunnerMessage(runner));
+      if (inner.state === "unlaunchable") {
+        return notReady(runner, "unlaunchable", unlaunchableRunnerMessage(runner));
+      }
+      if (inner.state === "missing") {
+        return notReady(runner, "missing", missingRunnerMessage(runner));
+      }
     }
-    return { state: "ready", runner, resolvedPath: resolved };
+    return { state: "ready", runner, resolvedPath: resolved.resolvedPath };
   } catch {
     // Keep the message value-free: stat errors embed local filesystem paths,
     // and OpenCode diagnostics in particular must never surface them.
@@ -293,4 +440,58 @@ export function evaluateRuntimeAvailability(
       `Could not verify the ${label} launch command before starting it, so this turn was not run. Check file permissions on its install location, then try again.`,
     );
   }
+}
+
+function remapCovenBackedFailure(
+  failure: Exclude<RuntimeAvailability, { state: "ready" }>,
+  runner: CovenBackedRunnerId,
+  missingCode: RuntimeAvailabilityErrorCode,
+): RuntimeAvailability {
+  return {
+    ...failure,
+    runner,
+    ...(failure.state === "missing" ? { code: missingCode } : {}),
+  };
+}
+
+/**
+ * Verify both the outer Coven command and the Claude command that Coven will
+ * resolve in the identical child environment. The check is intentionally
+ * passive: no shell lookup or capability process can hide a missing Claude.
+ */
+export function evaluateCovenBackedRuntimeAvailability(
+  probe: CovenBackedRuntimeAvailabilityProbe,
+): RuntimeAvailability {
+  const outer = evaluateRuntimeAvailability({
+    runner: "coven",
+    command: probe.covenCommand,
+    env: probe.env,
+    requiredFiles: probe.requiredCovenFiles,
+    unresolvedWindowsShim: probe.unresolvedCovenWindowsShim,
+    platform: probe.platform,
+    statFile: probe.statFile,
+  });
+  if (outer.state !== "ready") {
+    return remapCovenBackedFailure(
+      outer,
+      probe.runner,
+      RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing,
+    );
+  }
+
+  const inner = evaluateRuntimeAvailability({
+    runner: probe.runner,
+    command: probe.runner,
+    env: probe.env,
+    platform: probe.platform,
+    statFile: probe.statFile,
+  });
+  if (inner.state !== "ready") {
+    return remapCovenBackedFailure(
+      inner,
+      probe.runner,
+      RUNTIME_AVAILABILITY_ERROR_CODES.claude_missing,
+    );
+  }
+  return inner;
 }
