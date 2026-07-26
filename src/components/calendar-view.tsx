@@ -4,12 +4,10 @@ import "@/styles/calendar.css";
 
 import { useCallback, useContext, useId, useMemo, useState, useRef, useEffect, type SetStateAction } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
-import type { Familiar } from "@/lib/types";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { familiarAccent } from "@/lib/familiar-color";
 import { Icon } from "@/lib/icon";
-import type { IconName } from "@/lib/icon";
-import { formatClock, formatDate, readDateTimePrefs } from "@/lib/datetime-format";
+import { formatClock, formatDate } from "@/lib/datetime-format";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -24,7 +22,6 @@ import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import {
   AgendaDeadlineRow,
-  EmptyScheduleState,
   FamiliarColorContext,
   FamiliarNameContext,
   ItemChip,
@@ -34,7 +31,6 @@ import {
   fmtDateHeading,
   fmtHourLabel,
   fmtTime,
-  isOverdueReminder,
   isSameDay,
   platformIcon,
   relDayWord,

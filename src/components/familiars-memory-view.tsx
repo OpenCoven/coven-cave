@@ -3,7 +3,6 @@
 import "@/styles/cave-md.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { invalidateIfDefined } from "@/lib/surface-warm-cache";
@@ -14,12 +13,9 @@ import { relativeTime as age } from "@/lib/relative-time";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { Familiar } from "@/lib/types";
 import type { CovenMemoryEntry } from "@/components/familiars-view-stats";
-import { MarkdownBlock } from "@/components/message-bubble";
 import { useUndoDelete } from "@/lib/use-undo-delete";
-import { useMemoryFile } from "@/lib/use-memory-file";
 import { UndoToast } from "@/components/ui/undo-toast";
 import {
-  classifyProtection,
   detectStale,
   normalizeCovenEntry,
   normalizeFileEntry,
@@ -40,7 +36,7 @@ import {
   MemoryReaderModal,
   SourceFilterChip,
 } from "@/components/familiars-memory-files";
-import { compactPath, fileBase, fileDir, formatBytes, memoryMatches, type FileMemoryEntry } from "@/components/familiars-memory-utils";
+import { fileBase, formatBytes, memoryMatches, type FileMemoryEntry } from "@/components/familiars-memory-utils";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 

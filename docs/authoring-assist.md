@@ -50,8 +50,8 @@ be built; they need to be *shared*.
   [`prompt-packs.md`](prompt-packs.md)). Half-filled templates are never
   destructive. This is the pattern for *every* fill-in-the-blanks body.
 - **P5 · Template galleries as data, distributed by packs** —
-  `AUTOMATION_TEMPLATES` (`src/lib/automation-templates.ts`, rendered by
-  `automations-view.tsx`) shows the gallery-of-prefills shape; marketplace
+  `SKILL_TEMPLATES` (`src/lib/skill-templates.ts`, rendered by
+  `marketplace/skill-builder.tsx`) shows the gallery-of-prefills shape; marketplace
   packs already distribute prompt templates (`prompts/*.md`), knowledge-pack
   `templates/` folders, and the `skill-creator` skill. This is the pattern for
   *starter content that isn't hardcoded in a component*.
@@ -87,7 +87,7 @@ templates.
 
 **Enablement plan** (bead `cave-6ptj`):
 1. Extract the starter into a data module `src/lib/skill-templates.ts` (the
-   `AUTOMATION_TEMPLATES` shape, P5): id, name, description, tags-prefill,
+   `SKILL_TEMPLATES` shape, P5): id, name, description, tags-prefill,
    instructions body — seeded with 4–6 kinds (checklist/procedure,
    tool-wrapper, reference/lookup, review/verification, meta/orchestration),
    bodies written with `{{placeholder|default}}` blanks (P4). The button

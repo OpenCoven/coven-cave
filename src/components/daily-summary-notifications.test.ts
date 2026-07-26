@@ -151,8 +151,7 @@ assert.match(
 // ── Bell "Open" lands on the Inbox surface (cave-ipze) ──────────────────────
 // The popover is a triage list, not a chat launcher: a row's Open marks the
 // item read, scopes to its familiar, and opens the Inbox (Schedules) view.
-// Session jumps stay on the chat surface and Home needs-you paths, which
-// share openInspectorInboxItem.
+// Session jumps stay on the chat surface and Home needs-you paths.
 assert.match(
   workspace,
   /<TopBar[\s\S]*?onOpenInboxItem=\{\(item\) => \{\s*markInboxItemRead\(item\.id\);\s*if \(item\.familiarId\) setActiveId\(item\.familiarId\);\s*setMode\("inbox"\);\s*\}\}/,

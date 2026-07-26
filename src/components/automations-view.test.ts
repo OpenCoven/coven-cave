@@ -8,17 +8,14 @@ const source = [
   readFileSync(new URL("./automations/cron-detail-primitives.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/cron-detail-panel.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/reminder-detail-panel.tsx", import.meta.url), "utf8"),
-  readFileSync(new URL("./automations/automation-lists.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/schedule-list.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/inbox-feed-list.tsx", import.meta.url), "utf8"),
-  readFileSync(new URL("./automations/templates-panel.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/ritual-overview.tsx", import.meta.url), "utf8"),
 ].join("\n");
 const codexDetailPanel = readFileSync(new URL("./automations/cron-detail-panel.tsx", import.meta.url), "utf8");
 const reminderDetailPanel = readFileSync(new URL("./automations/reminder-detail-panel.tsx", import.meta.url), "utf8");
 const detailPanelControls = reminderDetailPanel.slice(reminderDetailPanel.indexOf("export function DetailPanel"));
 
-assert.match(source, /from "@\/components\/automations\/templates-panel"/, "template browsing is owned by its dedicated module");
 assert.match(source, /from "@\/components\/automations\/ritual-overview"/, "Ritual overview rows and calendar helpers are owned by a dedicated module");
 
 // Save is gated on a valid, changed form: not busy, dirty, named, and a valid
@@ -127,14 +124,8 @@ assert.match(
   "closing the cron detail also resets the expansion so the next open starts as a rail",
 );
 
-// Beginner-friendly schedule copy: presets read as plain cadences, the
-// raw-RRULE escape hatch is labeled Advanced, and the cryptic RRULE string
-// only surfaces in Advanced mode or when the schedule is invalid.
-assert.match(
-  source,
-  /const SCHEDULE_MODE_LABEL[\s\S]{0,160}weekly: "Weekly",\s*\n\s*daily: "Daily",\s*\n\s*raw: "Advanced",/,
-  "schedule modes carry beginner-facing labels (raw reads as Advanced)",
-);
+// Beginner-friendly schedule copy: the cryptic RRULE string only surfaces in
+// Advanced mode or when the schedule is invalid.
 assert.match(
   codexDetailPanel,
   /scheduleMode !== "raw" && !invalidSchedule \?[\s\S]{0,320}?Runs every day at[\s\S]{0,220}?Runs weekly on/,
@@ -235,25 +226,9 @@ assert.match(source, /actions\.runAutomation\(auto\)/, "the automation row expos
 // Inbox feed rows expose done/snooze/dismiss/unwatch instead (run/pause live
 // in the reminder detail panel) — and never while picking rows in select mode.
 assert.match(source, /\{!selectMode && !resolved && \(onDone \|\| onSnooze \|\| onDismiss \|\| onUnwatch\)/, "inbox row actions hide in select mode");
-assert.match(
-  source,
-  /entry\.name[\s\S]*?label=\{`Run \$\{entry\.name\} now`\}/,
-  "unified automation row Run action routes through RowActionButton (label → aria-label)",
-);
-assert.match(
-  source,
-  /\{name\}<\/span>[\s\S]*?onClick=\{onRun\}[\s\S]*?onClick=\{onOpen\}/,
-  "managed automation row actions render below the automation name",
-);
-assert.match(
-  source,
-  /label=\{`Run \$\{name\} now`\}/,
-  "the managed row's Run action carries a distinct accessible name (not just \"Run\"/\"…\")",
-);
-
 // cave-4op: every Schedules row action (Run / Pause / Open) routes through the
-// shared RowActionButton (a ghost Button primitive), which now supports a
-// disabled/busy state — no row hand-rolls its own <button> action.
+// shared RowActionButton (a ghost Button primitive), which supports a
+// disabled/busy state.
 assert.match(
   source,
   /function RowActionButton\(\{ icon, label, text, onClick, disabled \}/,
@@ -290,7 +265,7 @@ assert.match(source, /announce\(`Created cron '\$\{input\.name\}'\.`\)/, "create
 assert.match(source, /role="img" aria-label="Paused"/, "status dots carry accessible names");
 assert.match(source, /<section aria-labelledby=\{headingId\}/, "list sections are labelled landmarks with real headings");
 assert.match(source, /<div[\s\S]{0,120}role="tabpanel"[\s\S]{0,120}id=\{`automations-panel-\$\{activeTab\}`\}[\s\S]{0,120}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}[\s\S]{0,180}aria-label=\{activeTab === "overview" \? "Rituals overview" : activeTab === "calendar" \? "Rituals calendar" : "Rituals crons"\}/, "the active Rituals panel is a tabpanel with the destination-specific label");
-assert.match(source, /onClose=\{\(\) => \{ setCreateOpen\(false\); setTemplateInitialValues\(undefined\); \}\}/, "the create dialog closes through one reset path");
+assert.match(source, /onClose=\{\(\) => setCreateOpen\(false\)\}/, "the create dialog closes through one reset path");
 assert.match(source, /window\.setTimeout\(\(\) => \(newBtnRef\.current \?\? newCronBtnRef\.current\)\?\.focus\(\), 0\)/, "deletes hand focus to whichever header action is mounted instead of dropping it on <body>");
 assert.match(source, /const deleteCodex = useCallback\(\(auto: CodexAutomation\) => \{\s*setSelectedCodex\(null\);\s*focusHeaderAction\(\)/, "cron deletes restore focus via the shared helper (newBtnRef is unmounted on the crons tab)");
 assert.match(source, /ref=\{newCronBtnRef\}/, "the crons-tab New button carries the focus-restore ref");
@@ -359,4 +334,3 @@ assert.match(source, /item\.firedAt \?\? item\.updatedAt \?\? item\.createdAt\s*
 // Status dots + schedule-mode toggle derive from theme tokens, not hardcoded
 // white — rgba(255,255,255,…) was invisible-on-light-themes.
 assert.doesNotMatch(source, /rgba\(255,\s*255,\s*255/, "no hardcoded white rgba left in the Rituals surface");
-

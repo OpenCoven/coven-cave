@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { SearchInput } from "@/components/ui/search-input";
-import { Modal } from "@/components/ui/modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useMinuteTick } from "@/lib/use-minute-tick";
@@ -18,7 +17,6 @@ import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   buildWorkQueue,
   hasVerificationEvidence,
-  type AttentionItem,
   type ReadyBead,
   type MergedPrRef,
   type WorkQueue,
@@ -264,7 +262,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     });
   }, []);
 
-  const load = useCallback(async (force = false) => {
+  const load = useCallback(async () => {
     const seq = ++loadSeq.current;
     abortRef.current?.abort();
     const ctrl = new AbortController();
@@ -337,12 +335,12 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
           resetForProject(json.readiness.project);
           setReadiness(json.readiness);
           setError(json.error || json.readiness.message);
-          void load(true);
+          void load();
           return;
         }
         throw new Error(json?.error || "Couldn't generate the Queue workspace");
       }
-      await load(true);
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't generate the Queue workspace");
     } finally {
@@ -361,7 +359,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       // unavailable. Clear all prior-project controls synchronously so a
       // transient B failure cannot leave actionable cards from A on screen.
       resetForProject(project);
-      void load(true);
+      void load();
     });
   }, [load, resetForProject]);
 
@@ -385,7 +383,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     queueSurfaceRef.current?.focus({ preventScroll: true });
   }, [hasLoaded, queue, error]);
 
-  usePausablePoll(() => void load(true), 30_000, { pauseWhileInputActive: true });
+  usePausablePoll(() => void load(), 30_000, { pauseWhileInputActive: true });
 
   const familiarName = useCallback(
     (key: string) => {
@@ -413,7 +411,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || `${action} failed`);
         announce(action === "claim" ? `Claimed ${id}.` : `Closed ${id}.`);
-        await load(true);
+        await load();
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not ${action} ${id}`, "assertive");
       } finally {
@@ -447,7 +445,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         if (activeProjectRootRef.current !== projectRoot) return false;
         setEvidenceAdded((prev) => new Set(prev).add(id.toLowerCase()));
         announce(`Handoff note added to ${id}.`);
-        await load(true);
+        await load();
         return true;
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not add a note to ${id}`, "assertive");
@@ -477,7 +475,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "claim failed");
         announce(`Claimed ${id} for ${familiar.display_name}.`);
-        await load(true);
+        await load();
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not claim ${id}`, "assertive");
       } finally {
@@ -513,7 +511,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         if (!json.ok) throw new Error(json.error || "create failed");
         const beadId = (json.data as { id?: string } | null)?.id;
         announce(beadId ? `Filed ${beadId} for PR #${pr.number}.` : `Filed a bead for PR #${pr.number}.`);
-        await load(true);
+        await load();
         return true;
       } catch (err) {
         announce(
@@ -625,11 +623,11 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
                   </Button>
                 ) : (
                   // Queue setup happens here, on the tab itself — selection
-                  // publishes, the subscription resets state, and load(true)
+                  // publishes, the subscription resets state, and load()
                   // re-reads readiness for the newly chosen repository.
                   <QueueProjectSetup selectedProjectId={readiness?.project?.id ?? null} />
                 )}
-                <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load(true)}>
+                <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
                   Retry
                 </Button>
               </div>
@@ -674,7 +672,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         <button
           type="button"
           className="fwq-refresh"
-          onClick={() => void load(true)}
+          onClick={() => void load()}
           aria-label="Refresh queue"
         >
           <Icon name="ph:arrow-clockwise" width={14} className="fwq-refresh-icon" aria-hidden />
@@ -779,7 +777,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         <div className="fwq-banner fwq-banner--danger" role="alert" title={error}>
           <Icon name="ph:warning-circle" width={14} aria-hidden />
           <span className="fwq-banner-text">Couldn&apos;t refresh the queue — showing earlier data.</span>
-          <Button variant="ghost" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load(true)}>
+          <Button variant="ghost" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
             Retry
           </Button>
         </div>
@@ -807,7 +805,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
 
       <AsanaQueueStrip
         onOpenUrl={onOpenUrl}
-        onFiledBead={() => void load(true)}
+        onFiledBead={() => void load()}
         familiarId={activeFamiliarId}
         projectRoot={readiness?.project?.root}
       />
