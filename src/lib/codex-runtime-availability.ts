@@ -68,6 +68,8 @@ export function classifyCodexAdapterFailure(text: string): "missing" | "unlaunch
   if (
     /(?:(?:harness|adapter)\s+)?[`'"]?codex[`'"]?\s+(?:is\s+)?not\s+(?:available|installed|found)/i.test(text) ||
     /codex\s+(?:harness|adapter)\s+(?:is\s+)?not\s+(?:available|installed|found)/i.test(text) ||
+    /(?:(?:harness|adapter)\s+)?[`'"]?codex[`'"]?\s+(?:is\s+)?unavailable/i.test(text) ||
+    /codex\s+(?:harness|adapter)\s+(?:is\s+)?unavailable/i.test(text) ||
     /(?:spawn\s+codex\s+ENOENT|codex:\s*command not found|command not found[:\s]+[`'"]?codex)/i.test(text)
   ) {
     return "missing";
