@@ -36,7 +36,7 @@ export const SECTIONS: SectionMeta[] = [
 ];
 
 export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
-  profile: ["Display name & pronouns", "Profile image", "Bio, timezone & links"],
+  profile: ["Identity & pronouns", "Context & personality", "Portrait & links"],
   general: ["Workspace path", "Encrypted backup", "Launch behavior"],
   daemon: ["Runtime health", "Local/hub routing", "Socket & version"],
   familiars: ["Roster & identity", "Per-familiar permissions", "Pinned strip order"],
@@ -47,8 +47,9 @@ export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
 
 export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "profile", group: "Identity", keywords: "profile name display pronouns identity operator user you" },
-  { section: "profile", group: "Image", keywords: "avatar image photo picture upload face profile" },
-  { section: "profile", group: "Details", keywords: "bio about timezone time zone" },
+  { section: "profile", group: "Identity", keywords: "avatar image photo picture upload face profile" },
+  { section: "profile", group: "Context", keywords: "bio about timezone time zone familiar draft" },
+  { section: "profile", group: "Personality", keywords: "personality mbti type axes tone familiar" },
   { section: "profile", group: "Links", keywords: "links github socials url website portfolio" },
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
   { section: "general", group: "Home", keywords: "news headlines rss carousel media home digest daily summary" },
