@@ -10,7 +10,7 @@ const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 for (const f of ["./coven-bin.ts", "./mobile-handoff.ts"]) {
   assert.match(
     read(f),
-    /function loginShellPath\(\): string \| null \{[\s\S]*?process\.platform === "win32"\) return null/,
+    /function loginShellPath\([^)]*\): string \| null \{[\s\S]*?process\.platform === "win32"\) return null/,
     `${f}: loginShellPath short-circuits on Windows`,
   );
 }

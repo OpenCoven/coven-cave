@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { accessSync, constants, statSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -10,11 +10,12 @@ import path from "node:path";
  * command the route is about to hand to `spawn()`, resolved inside the EXACT
  * environment that spawn will receive, points at a real launchable file.
  *
- * The evaluation is bounded and passive — filesystem stats only. It never
- * spawns a process, never prompts, and never touches the user's message, so
- * it is safe to run before every chat turn. Authentication/provider health is
- * deliberately out of scope: a runner that launches but is signed out is
- * "ready" here and must fail through its own real output.
+ * The evaluation is bounded and passive — filesystem metadata and permission
+ * checks only. It never spawns a process, never prompts, and never touches the
+ * user's message, so it is safe to run before every chat turn.
+ * Authentication/provider health is deliberately out of scope: a runner that
+ * launches but is signed out is "ready" here and must fail through its own
+ * real output.
  */
 
 export type DirectRunnerId = "coven" | "copilot" | "grok" | "hermes" | "opencode";
@@ -72,9 +73,8 @@ export function summarizeRuntimeAvailability(
   };
 }
 
-/** True when the stat proves a launchable file exists; false when the path
- * definitively does not exist. Unexpected errors (EACCES, EIO, …) propagate
- * so the caller can report `probe_failed` instead of a false "missing". */
+/** Legacy injectable seam for filesystem simulations. The production probe
+ * uses richer candidate inspection so POSIX execute permissions are checked. */
 export type StatFileFn = (candidate: string) => boolean;
 
 export type RuntimeAvailabilityProbe = {
@@ -108,6 +108,14 @@ const MISSING_RUNNER_MESSAGES: Record<DirectRunnerId, string> = {
     "OpenCode CLI not found on PATH. Install it with `npm install -g opencode-ai`, then try again.",
 };
 
+const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
+  coven: "Coven CLI failed to start. Check its installation and try again.",
+  copilot: "copilot CLI failed to start. Check its installation and try again.",
+  grok: "Grok Build CLI failed to start. Check its installation and try again.",
+  hermes: "Hermes CLI failed to start. Check its installation and try again.",
+  opencode: "OpenCode CLI failed to start. Check its installation and try again.",
+};
+
 const RUNNER_LABELS: Record<DirectRunnerId, string> = {
   coven: "Coven CLI",
   copilot: "copilot CLI",
@@ -120,14 +128,63 @@ export function missingRunnerMessage(runner: DirectRunnerId): string {
   return MISSING_RUNNER_MESSAGES[runner];
 }
 
-function defaultStatFile(candidate: string): boolean {
+export function runtimeLaunchFailedMessage(runner: DirectRunnerId): string {
+  return RUNTIME_LAUNCH_FAILED_MESSAGES[runner];
+}
+
+export function localRuntimeLaunchError(
+  runner: DirectRunnerId,
+  errorCode: string | undefined,
+): {
+  code: "ENOENT" | "runtime_launch_failed";
+  message: string;
+} {
+  return errorCode === "ENOENT"
+    ? { code: "ENOENT", message: missingRunnerMessage(runner) }
+    : {
+        code: "runtime_launch_failed",
+        message: runtimeLaunchFailedMessage(runner),
+      };
+}
+
+type CandidateInspection = "launchable" | "missing" | "unlaunchable";
+
+type CommandResolution =
+  | { state: "launchable"; resolvedPath: string }
+  | { state: "missing" | "unlaunchable" };
+
+type InspectCandidateFn = (candidate: string) => CandidateInspection;
+
+function isMissingCandidateError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+function defaultInspectCandidate(
+  candidate: string,
+  platform: NodeJS.Platform,
+): CandidateInspection {
   try {
-    return statSync(candidate).isFile();
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === "ENOENT" || code === "ENOTDIR") return false;
-    throw err;
+    if (!statSync(candidate).isFile()) return "unlaunchable";
+  } catch (error) {
+    if (isMissingCandidateError(error)) return "missing";
+    throw error;
   }
+  if (platform !== "win32") {
+    try {
+      accessSync(candidate, constants.X_OK);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code === "EACCES" || code === "EPERM") return "unlaunchable";
+      if (isMissingCandidateError(error)) return "missing";
+      throw error;
+    }
+  }
+  return "launchable";
+}
+
+function inspectWithStatFile(candidate: string, statFile: StatFileFn): CandidateInspection {
+  return statFile(candidate) ? "launchable" : "missing";
 }
 
 function pathEntries(env: Record<string, string | undefined>, platform: NodeJS.Platform): string[] {
@@ -188,25 +245,35 @@ function resolveCommand(
   command: string,
   env: Record<string, string | undefined>,
   platform: NodeJS.Platform,
-  statFile: StatFileFn,
+  inspectCandidate: InspectCandidateFn,
   candidatesFor: (name: string) => string[],
-): string | null {
+): CommandResolution {
+  let sawUnlaunchable = false;
+  const inspect = (candidate: string): CommandResolution | null => {
+    const inspection = inspectCandidate(candidate);
+    if (inspection === "launchable") return { state: "launchable", resolvedPath: candidate };
+    if (inspection === "unlaunchable") sawUnlaunchable = true;
+    return null;
+  };
+
   if (isPathLike(command, platform)) {
     // Launch plans only ever produce absolute path-like commands (discovered
-    // binaries, process.execPath, the PowerShell host). Stat them as given.
+    // binaries, process.execPath, the PowerShell host). Inspect them as given.
     for (const candidate of candidatesFor(command)) {
-      if (statFile(candidate)) return candidate;
+      const resolved = inspect(candidate);
+      if (resolved) return resolved;
     }
-    return null;
+    return { state: sawUnlaunchable ? "unlaunchable" : "missing" };
   }
   const joiner = platform === "win32" ? path.win32 : path.posix;
   for (const dir of pathEntries(env, platform)) {
     for (const candidate of candidatesFor(command)) {
       const full = joiner.join(dir, candidate);
-      if (statFile(full)) return full;
+      const resolved = inspect(full);
+      if (resolved) return resolved;
     }
   }
-  return null;
+  return { state: sawUnlaunchable ? "unlaunchable" : "missing" };
 }
 
 function notReady(
@@ -215,6 +282,10 @@ function notReady(
   message: string,
 ): RuntimeAvailability {
   return { state, runner, code: RUNTIME_AVAILABILITY_ERROR_CODES[state], message };
+}
+
+function unlaunchableRunnerMessage(runner: DirectRunnerId): string {
+  return `${RUNNER_LABELS[runner]} was found but is not executable. Restore executable permissions or reinstall it, then try again.`;
 }
 
 /**
@@ -233,7 +304,9 @@ export function evaluateRuntimeAvailability(
 ): RuntimeAvailability {
   const { runner, command, env } = probe;
   const platform = probe.platform ?? process.platform;
-  const statFile = probe.statFile ?? defaultStatFile;
+  const inspectCandidate: InspectCandidateFn = probe.statFile
+    ? (candidate) => inspectWithStatFile(candidate, probe.statFile!)
+    : (candidate) => defaultInspectCandidate(candidate, platform);
   const label = RUNNER_LABELS[runner];
   try {
     if (probe.unresolvedWindowsShim) {
@@ -243,10 +316,10 @@ export function evaluateRuntimeAvailability(
         `${label} was found as a Windows launcher shim that cannot be converted into a directly runnable command. Reinstall it so a native executable is on PATH, then try again.`,
       );
     }
-    const resolved = resolveCommand(command, env, platform, statFile, (name) =>
+    const resolved = resolveCommand(command, env, platform, inspectCandidate, (name) =>
       spawnCandidates(name, platform),
     );
-    if (!resolved) {
+    if (resolved.state !== "launchable") {
       if (probe.powerShellHostedCommand !== undefined) {
         // The outer command for a hosted launch is the PowerShell host
         // itself; its absence is a broken launch vehicle, not a missing
@@ -257,11 +330,14 @@ export function evaluateRuntimeAvailability(
           `Windows PowerShell was not found at its system location, so ${label} cannot be launched. Restore Windows PowerShell, then try again.`,
         );
       }
+      if (resolved.state === "unlaunchable") {
+        return notReady(runner, "unlaunchable", unlaunchableRunnerMessage(runner));
+      }
       if (platform === "win32") {
-        const shimOnly = resolveCommand(command, env, platform, statFile, (name) =>
+        const shimOnly = resolveCommand(command, env, platform, inspectCandidate, (name) =>
           shimOnlyCandidates(name, env),
         );
-        if (shimOnly) {
+        if (shimOnly.state === "launchable") {
           return notReady(
             runner,
             "unlaunchable",
@@ -276,12 +352,17 @@ export function evaluateRuntimeAvailability(
         probe.powerShellHostedCommand,
         env,
         platform,
-        statFile,
+        inspectCandidate,
         (name) => pathExtCandidates(name, env),
       );
-      if (!inner) return notReady(runner, "missing", missingRunnerMessage(runner));
+      if (inner.state === "unlaunchable") {
+        return notReady(runner, "unlaunchable", unlaunchableRunnerMessage(runner));
+      }
+      if (inner.state === "missing") {
+        return notReady(runner, "missing", missingRunnerMessage(runner));
+      }
     }
-    return { state: "ready", runner, resolvedPath: resolved };
+    return { state: "ready", runner, resolvedPath: resolved.resolvedPath };
   } catch {
     // Keep the message value-free: stat errors embed local filesystem paths,
     // and OpenCode diagnostics in particular must never surface them.

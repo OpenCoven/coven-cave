@@ -462,8 +462,18 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /code: "ENOENT",[\s\S]{0,400}?: missingRunnerMessage\(/,
-    "/chat/send: the post-spawn ENOENT race copy must come from the shared missingRunnerMessage helper so it cannot drift from the pre-spawn gate",
+    /launchFailure \?\?= \{[\s\S]{0,180}?message: launchError,[\s\S]{0,400}?pushProgress\([\s\S]{0,220}?launchError,[\s\S]{0,300}?code: "ENOENT",\s*message: launchError/,
+    "/chat/send: launch state, progress, and the post-spawn ENOENT race event must reuse one normalized message",
+  );
+  assert.match(
+    sendSource,
+    /const localLaunchError = localRuntimeLaunchError\([\s\S]{0,100}?err\.code,[\s\S]{0,80}?const launchError = sshRuntime[\s\S]{0,180}?: localLaunchError\.message/,
+    "/chat/send: every local post-spawn failure uses the shared runner-specific normalizer while SSH retains transport diagnostics",
+  );
+  assert.doesNotMatch(
+    sendSource,
+    /(?:launchFailure \?\?=|pushProgress\(|kind: "error")[\s\S]{0,160}?message: err\.message/,
+    "/chat/send: local runner state, progress, and SSE diagnostics never copy a raw OS launch error",
   );
   assert.match(
     sendSource,

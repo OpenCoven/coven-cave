@@ -1,22 +1,50 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
   evaluateRuntimeAvailability,
+  localRuntimeLaunchError,
   missingRunnerMessage,
+  runtimeLaunchFailedMessage,
   summarizeRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
 } from "./runtime-availability.ts";
 
 const scratch = mkdtempSync(path.join(tmpdir(), "runtime-availability-"));
 try {
+  assert.deepEqual(
+    localRuntimeLaunchError("grok", "ENOENT"),
+    {
+      code: "ENOENT",
+      message: missingRunnerMessage("grok"),
+    },
+    "a post-spawn missing-interpreter race retains the missing-runner contract",
+  );
+  assert.deepEqual(
+    localRuntimeLaunchError("grok", "UNKNOWN"),
+    {
+      code: "runtime_launch_failed",
+      message: runtimeLaunchFailedMessage("grok"),
+    },
+    "every non-ENOENT local spawn error uses the normalized launch-failure contract",
+  );
+
   const binDir = path.join(scratch, "bin");
   const emptyDir = path.join(scratch, "empty");
   mkdirSync(binDir);
   mkdirSync(emptyDir);
-  writeFileSync(path.join(binDir, "grok"), "#!/bin/sh\n", { mode: 0o755 });
+  const executable = path.join(binDir, "grok");
+  writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
+  chmodSync(executable, 0o755);
 
   // Verification matrix: binary resolves in the spawn env → ready.
   const ready = evaluateRuntimeAvailability({
@@ -28,17 +56,84 @@ try {
   assert.equal(ready.state, "ready", "a bare command on the spawn PATH is ready");
   assert.equal(
     ready.state === "ready" && ready.resolvedPath,
-    path.join(binDir, "grok"),
+    executable,
     "ready reports where the exact spawn command resolved",
   );
 
   const absoluteReady = evaluateRuntimeAvailability({
     runner: "coven",
-    command: path.join(binDir, "grok"),
+    command: executable,
     env: { PATH: "" },
     platform: "linux",
   });
-  assert.equal(absoluteReady.state, "ready", "an absolute launch command is stat'd directly");
+  assert.equal(
+    absoluteReady.state,
+    "ready",
+    "a mode-0755 regular file is launchable on POSIX",
+  );
+
+  if (process.platform !== "win32") {
+    const directoryCandidate = path.join(binDir, "grok-directory");
+    mkdirSync(directoryCandidate);
+    const directoryResult = evaluateRuntimeAvailability({
+      runner: "grok",
+      command: directoryCandidate,
+      env: { PATH: "" },
+      platform: "linux",
+    });
+    assert.equal(
+      directoryResult.state,
+      "unlaunchable",
+      "an existing directory at the launch path is found but unlaunchable",
+    );
+    assert.equal(
+      directoryResult.state === "unlaunchable" && directoryResult.code,
+      RUNTIME_AVAILABILITY_ERROR_CODES.unlaunchable,
+      "a non-file candidate carries runtime_unlaunchable",
+    );
+
+    const nonExecutable = path.join(binDir, "grok-no-exec");
+    writeFileSync(nonExecutable, "#!/bin/sh\n", { mode: 0o644 });
+    chmodSync(nonExecutable, 0o644);
+    const nonExecutableResult = evaluateRuntimeAvailability({
+      runner: "grok",
+      command: nonExecutable,
+      env: { PATH: "" },
+      platform: "linux",
+    });
+    assert.equal(
+      nonExecutableResult.state,
+      "unlaunchable",
+      "a mode-0644 regular file is unlaunchable on POSIX",
+    );
+    assert.equal(
+      nonExecutableResult.state === "unlaunchable" && nonExecutableResult.code,
+      RUNTIME_AVAILABILITY_ERROR_CODES.unlaunchable,
+      "a non-executable regular file carries runtime_unlaunchable",
+    );
+
+    const earlierBinDir = path.join(scratch, "earlier-bin");
+    mkdirSync(earlierBinDir);
+    const earlierNonExecutable = path.join(earlierBinDir, "grok");
+    writeFileSync(earlierNonExecutable, "#!/bin/sh\n", { mode: 0o644 });
+    chmodSync(earlierNonExecutable, 0o644);
+    const laterExecutableWins = evaluateRuntimeAvailability({
+      runner: "grok",
+      command: "grok",
+      env: { PATH: `${earlierBinDir}:${binDir}` },
+      platform: "linux",
+    });
+    assert.equal(
+      laterExecutableWins.state,
+      "ready",
+      "a later executable PATH candidate wins after an earlier non-executable file",
+    );
+    assert.equal(
+      laterExecutableWins.state === "ready" && laterExecutableWins.resolvedPath,
+      executable,
+      "PATH resolution reports the exact later executable that won",
+    );
+  }
 
   // Verification matrix: binary absent from every discovery location →
   // missing, with per-runner install/PATH remediation.
@@ -250,8 +345,9 @@ try {
     "the host failure names the actual remediation target",
   );
 
-  // Availability never executes anything: the whole evaluation is stat-only,
-  // so evaluating before every chat turn stays cheap and side-effect free.
+  // Availability never executes anything: the whole evaluation uses bounded
+  // filesystem inspection, so evaluating before every chat turn stays cheap
+  // and side-effect free.
   // (Enforced structurally — the module must not import child_process.)
   const moduleSource = readFileSync(
     new URL("./runtime-availability.ts", import.meta.url),
