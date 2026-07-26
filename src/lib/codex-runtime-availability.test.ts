@@ -123,6 +123,25 @@ const covenProbe = {
   assert.doesNotMatch(availability.state === "probe_failed" ? availability.message : "", /not found|not installed/i);
 }
 
+// A malformed or future adapter-list row cannot prove that Codex is absent.
+// Preserve uncertainty as probe_failed rather than sending a false install
+// remediation.
+{
+  const availability = await probeCodexRuntimeAvailability({
+    launch,
+    env,
+    covenProbe,
+    adapterList: async () => ({
+      exitCode: 0,
+      stdout: JSON.stringify([{ id: "codex", available: "unknown" }]),
+      stderr: "",
+    }),
+  });
+  assert.equal(availability.state, "probe_failed");
+  assert.equal(availability.state === "probe_failed" && availability.component, "adapter");
+  assert.doesNotMatch(availability.state === "probe_failed" ? availability.message : "", /not found|not installed/i);
+}
+
 assert.equal(classifyCodexAdapterFailure("harness `codex` is not available"), "missing");
 assert.equal(classifyCodexAdapterFailure("Codex adapter is not installed"), "missing");
 assert.equal(classifyCodexAdapterFailure("unsupported adapter codex"), "unlaunchable");

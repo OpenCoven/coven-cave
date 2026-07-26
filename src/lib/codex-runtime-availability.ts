@@ -192,8 +192,14 @@ export async function probeCodexRuntimeAvailability(
       ? rows.find((row): row is CovenAdapterRow => !!row && typeof row === "object" && (row as CovenAdapterRow).id === "codex")
       : null;
     if (!codex) return unavailable("unlaunchable", "adapter", CODEX_ADAPTER_MESSAGE);
-    if (codex.available !== true) return unavailable("missing", "adapter", CODEX_MISSING_MESSAGE);
-    return { state: "ready", runner: "codex", resolvedPath: coven.resolvedPath };
+    if (codex.available === true) {
+      return { state: "ready", runner: "codex", resolvedPath: coven.resolvedPath };
+    }
+    // Only the documented boolean `false` proves the adapter executable is
+    // absent. A partial/newer response is an uncertain probe result, not a
+    // basis for telling the user that Codex is missing.
+    if (codex.available === false) return unavailable("missing", "adapter", CODEX_MISSING_MESSAGE);
+    return unavailable("probe_failed", "adapter", CODEX_PROBE_MESSAGE);
   } catch {
     return unavailable("probe_failed", "adapter", CODEX_PROBE_MESSAGE);
   }
