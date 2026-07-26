@@ -326,7 +326,11 @@ export function OpenCovenToolsBannerTrigger() {
   return null;
 }
 
-export function OpenCovenToolsUpdate() {
+export function OpenCovenToolsUpdate({
+  showDiagnosticsAction = true,
+}: {
+  showDiagnosticsAction?: boolean;
+} = {}) {
   const { dismissBanner } = useShellBanners();
   const [tools, setTools] = useState<ToolStatus[]>([]);
   const [checking, setChecking] = useState(true);
@@ -727,27 +731,29 @@ export function OpenCovenToolsUpdate() {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <Button
-            variant="secondary"
-            size="xs"
-            onClick={() => void copyDiagnostics()}
-            className={`${ghostBtn} cave-fill-btn`}
-            data-state={diagnosticsStatus}
-            aria-live="polite"
-            leadingIcon={
-              diagnosticsStatus === "copied"
-                ? "ph:check-bold"
+          {showDiagnosticsAction ? (
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={() => void copyDiagnostics()}
+              className={`${ghostBtn} cave-fill-btn`}
+              data-state={diagnosticsStatus}
+              aria-live="polite"
+              leadingIcon={
+                diagnosticsStatus === "copied"
+                  ? "ph:check-bold"
+                  : diagnosticsStatus === "failed"
+                    ? "ph:warning"
+                    : "ph:copy"
+              }
+            >
+              {diagnosticsStatus === "copied"
+                ? "Copied"
                 : diagnosticsStatus === "failed"
-                  ? "ph:warning"
-                  : "ph:copy"
-            }
-          >
-            {diagnosticsStatus === "copied"
-              ? "Copied"
-              : diagnosticsStatus === "failed"
-                ? "Copy failed"
-                : "Copy diagnostics (safe)"}
-          </Button>
+                  ? "Copy failed"
+                  : "Copy diagnostics (safe)"}
+            </Button>
+          ) : null}
           <Button variant="secondary" size="xs" onClick={() => void load(true)} className={ghostBtn} disabled={checking}>
             Check tools
           </Button>
