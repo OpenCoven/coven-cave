@@ -1,11 +1,14 @@
 /*
  * projects.css — the Chat → Projects "Project access" surface.
  *
- * One familiar's access map: serif display header, a toolbar (familiar
- * picker, search, tally, reset), then WORKSPACES / REPOSITORIES sections
+ * One familiar's access map: compact serif header, a quiet toolbar (familiar
+ * picker, search, grouping toggle, tally, reset), then project sections —
+ * grouped into WORKSPACES / REPOSITORIES or one flat ALL PROJECTS list —
  * whose rows carry a tri-state pill — No access · Read · Full — that cycles
- * on click. Every color routes through theme tokens so the page holds up in
- * light mode and custom accents; the filled "Full" pill pairs
+ * on click. Secondary controls (per-section Set all, the row gear) stay
+ * invisible until hover or keyboard focus reaches them, keeping the resting
+ * page minimal. Every color routes through theme tokens so the page holds up
+ * in light mode and custom accents; the filled "Full" pill pairs
  * --accent-presence with --accent-presence-foreground for contrast.
  */
 
@@ -18,7 +21,7 @@
 
 .projects-access-inner {
   /* Full-width (2026-07-23): the access map spans the pane (was 920px). */
-  padding: clamp(20px, 4vh, 44px) clamp(16px, 4vw, 40px) calc(var(--space-8) * 2);
+  padding: clamp(16px, 3vh, 32px) clamp(16px, 4vw, 40px) calc(var(--space-8) * 2);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -45,7 +48,8 @@
 .projects-access-title {
   margin: 0;
   font-family: var(--font-serif, ui-serif, serif);
-  font-size: clamp(26px, 3.2vw, 34px);
+  /* Compact header (minimal pass): one type-scale step, not a display hero. */
+  font-size: var(--text-xl);
   font-weight: 500;
   line-height: 1.1;
   letter-spacing: 0.01em;
@@ -53,11 +57,11 @@
 }
 
 .projects-access-subtitle {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   max-width: 56ch;
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   line-height: 1.5;
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
 /* ── Toolbar ────────────────────────────────────────────────────────── */
@@ -124,7 +128,7 @@
 .projects-access-counts {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   margin-left: auto;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-xs);
@@ -147,6 +151,10 @@
 
 .projects-access-count.is-write {
   color: var(--accent-presence);
+}
+
+.projects-access-grouping {
+  flex: 0 0 auto;
 }
 
 .projects-access-reset {
@@ -232,6 +240,22 @@
   display: inline-flex;
   align-items: center;
   font-size: var(--text-xs);
+  /* Quiet chrome: invisible until the section head is hovered or a Set-all
+     button holds keyboard focus (opacity-only — reduced-motion safe). */
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.projects-access-section-head:hover .projects-access-setall,
+.projects-access-section-head:focus-within .projects-access-setall {
+  opacity: 1;
+}
+
+/* No hover on touch — keep the controls always visible there. */
+@media (hover: none) {
+  .projects-access-setall {
+    opacity: 1;
+  }
 }
 
 .projects-access-setall-label {
@@ -298,7 +322,20 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  /* Quiet chrome: revealed by row hover or its own keyboard focus. */
+  opacity: 0;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+
+.projects-access-rowwrap:hover .projects-access-row-settings,
+.projects-access-rowwrap:focus-within .projects-access-row-settings {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .projects-access-row-settings {
+    opacity: 1;
+  }
 }
 
 .projects-access-row-settings:hover {
@@ -353,11 +390,6 @@
   background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
 }
 
-.projects-access-row-icon {
-  flex: 0 0 auto;
-  color: var(--text-muted);
-}
-
 .projects-access-row-name {
   flex: 1 1 auto;
   min-width: 0;
@@ -394,6 +426,8 @@
 }
 
 .projects-access-pill.is-none {
+  /* Quietest state: plain muted text, no chip chrome. */
+  border-color: transparent;
   color: var(--text-muted);
 }
 
