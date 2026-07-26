@@ -10,6 +10,9 @@ function requireRegistryFs(): RegistryFs {
 
 export type OpenCodeRunCapabilities = {
   version: string | null;
+  /** Whether this capability record came from a complete probe, a bounded
+   * same-launcher fallback, or no usable probe at all. */
+  probeStatus?: "verified" | "fallback" | "unavailable";
   json: boolean;
   model: boolean;
   session: boolean;
@@ -122,6 +125,8 @@ export type OpenCodeCompatibility = {
 
 /** These stable codes are intentionally safe to render or log. Never include event payloads. */
 export type OpenCodeCompatibilityDiagnostic =
+  | "capability-probe-unavailable"
+  | "capability-probe-fallback"
   | "json-format-unavailable"
   | "no-compatible-schema"
   | "schema-quarantined"
@@ -1292,6 +1297,14 @@ export async function resolveOpenCodeCompatibility(
   capabilities: OpenCodeRunCapabilities,
   source?: OpenCodeSchemaBundleSource,
 ): Promise<OpenCodeCompatibility> {
+  if (capabilities.probeStatus === "unavailable") {
+    return {
+      mode: "plain",
+      capabilities,
+      bundleSource: "built-in",
+      diagnostic: "capability-probe-unavailable",
+    };
+  }
   if (!capabilities.json) {
     return {
       mode: "plain",
@@ -1371,6 +1384,8 @@ export async function resolveOpenCodeCompatibility(
     // The shipped parser is a source-trusted offline baseline. A failed
     // registry refresh must not remove otherwise compatible tool activity,
     // but callers still surface the value-free recovery state.
-    diagnostic: loaded.diagnostic,
+    diagnostic: capabilities.probeStatus === "fallback"
+      ? "capability-probe-fallback"
+      : loaded.diagnostic,
   };
 }

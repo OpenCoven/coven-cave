@@ -332,9 +332,32 @@ assert.equal(rejectedRollback.diagnostic, "schema-registry-refresh-rejected", "r
 const plain = await resolveOpenCodeCompatibility({ version: "9.9.9", json: false, model: true, session: true, protocols: [] });
 assert.equal(plain.mode, "plain");
 assert.equal(plain.diagnostic, "json-format-unavailable", "capabilities, not version thresholds, decide fallback");
+const unavailableProbe = await resolveOpenCodeCompatibility({
+  version: "9.9.9",
+  probeStatus: "unavailable",
+  json: false,
+  model: false,
+  session: false,
+  protocols: [],
+});
+assert.equal(unavailableProbe.mode, "plain");
+assert.equal(unavailableProbe.diagnostic, "capability-probe-unavailable", "an incomplete probe is not presented as proof that OpenCode lacks JSON");
 const structured = await resolveOpenCodeCompatibility({ version: null, json: true, model: false, session: true, protocols: ["json"] });
 assert.equal(structured.mode, "structured");
 assert.equal(structured.schema?.id, "opencode-run-json-v1", "new schemas are chosen by observed capabilities, not a version threshold");
+const fallbackStructured = await resolveOpenCodeCompatibility({
+  version: "1.18.5",
+  probeStatus: "fallback",
+  json: true,
+  model: false,
+  session: true,
+  protocols: ["json"],
+  options: ["--format", "--session"],
+  valueOptions: ["--format", "--session"],
+  structuredOutputs: [{ option: "--format", values: ["json"] }],
+});
+assert.equal(fallbackStructured.mode, "structured");
+assert.equal(fallbackStructured.diagnostic, "capability-probe-fallback", "a recent verified capability remains visible when the fresh probe is unavailable");
 const missingSession = await resolveOpenCodeCompatibility({ version: "1.2.3", json: true, model: true, session: false, protocols: ["json"] });
 assert.equal(missingSession.mode, "plain");
 assert.equal(missingSession.diagnostic, "no-compatible-schema", "an envelope that cannot be distinguished by observed capabilities fails closed");

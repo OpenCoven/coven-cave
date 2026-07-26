@@ -2489,7 +2489,11 @@ export async function POST(req: Request) {
         if (!line && !(openCodeDirect && openCodeCompatibility?.mode === "plain")) return;
         if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
           openCodeCompatibilityHealthNoticeSent = true;
-          const diagnostic = openCodeCompatibility.diagnostic === "json-format-unavailable"
+          const diagnostic = openCodeCompatibility.diagnostic === "capability-probe-unavailable"
+            ? "Couldn't verify OpenCode JSON events; continuing in plain chat without tool activity"
+            : openCodeCompatibility.diagnostic === "capability-probe-fallback"
+              ? "OpenCode capability probe was unavailable; using recently verified JSON event support"
+            : openCodeCompatibility.diagnostic === "json-format-unavailable"
             ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
             : openCodeCompatibility.diagnostic === "no-compatible-schema"
               ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
@@ -2500,7 +2504,14 @@ export async function POST(req: Request) {
               : openCodeCompatibility.bundleSource === "built-in"
                 ? "OpenCode schema refresh was not trusted; using the shipped compatible parser"
                 : "OpenCode schema refresh was not trusted; using the last known compatible parser";
-          pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
+          pushProgress(
+            "opencode-compatibility",
+            diagnostic,
+            openCodeCompatibility.diagnostic === "capability-probe-unavailable" || openCodeCompatibility.diagnostic === "capability-probe-fallback"
+              ? "done"
+              : "error",
+            openCodeCompatibility.diagnostic,
+          );
         }
         const openCodePlainFallback = openCodeDirect && openCodeCompatibility?.mode === "plain";
         // Plain OpenCode has no structured error envelope, so stdout cannot
@@ -3237,7 +3248,11 @@ export async function POST(req: Request) {
       // stdout. Announce it before spawning instead of relying on handleLine.
       if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
         openCodeCompatibilityHealthNoticeSent = true;
-        const diagnostic = openCodeCompatibility.diagnostic === "json-format-unavailable"
+        const diagnostic = openCodeCompatibility.diagnostic === "capability-probe-unavailable"
+          ? "Couldn't verify OpenCode JSON events; continuing in plain chat without tool activity"
+          : openCodeCompatibility.diagnostic === "capability-probe-fallback"
+            ? "OpenCode capability probe was unavailable; using recently verified JSON event support"
+          : openCodeCompatibility.diagnostic === "json-format-unavailable"
           ? "This OpenCode client does not advertise JSON events; continuing without tool activity"
           : openCodeCompatibility.diagnostic === "no-compatible-schema"
             ? "This OpenCode client has no verified tool-event schema; continuing without tool activity"
@@ -3248,7 +3263,14 @@ export async function POST(req: Request) {
             : openCodeCompatibility.bundleSource === "built-in"
               ? "OpenCode schema refresh was not trusted; using the shipped compatible parser"
               : "OpenCode schema refresh was not trusted; using the last known compatible parser";
-        pushProgress("opencode-compatibility", diagnostic, "error", openCodeCompatibility.diagnostic);
+        pushProgress(
+          "opencode-compatibility",
+          diagnostic,
+          openCodeCompatibility.diagnostic === "capability-probe-unavailable" || openCodeCompatibility.diagnostic === "capability-probe-fallback"
+            ? "done"
+            : "error",
+          openCodeCompatibility.diagnostic,
+        );
       }
       if (openCodeFreshSessionForCompatibility) {
         pushProgress(

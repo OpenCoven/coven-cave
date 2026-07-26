@@ -147,6 +147,11 @@ assert.match(
   /compatibility registry is unavailable; continuing in plain chat without tool activity/,
   "an unavailable expired registry accurately reports plain fallback rather than a parser that is not active",
 );
+assert.match(
+  route,
+  /Couldn't verify OpenCode JSON events; continuing in plain chat without tool activity[\s\S]*?capability-probe-unavailable[\s\S]*?capability-probe-fallback[\s\S]*?\? "done"\s*:\s*"error"/,
+  "an unavailable capability probe is distinct from confirmed JSON incompatibility and does not create a false error issue",
+);
 assert.doesNotMatch(
   route,
   /openCodeStructuredIncompatibility|structured-stream-quarantined/,
@@ -255,7 +260,7 @@ assert.match(
 assert.doesNotMatch(
   capabilities,
   /openCodeCapabilitiesProbe/,
-  "OpenCode must not retain capability evidence that could be stale after an in-place same-version CLI upgrade; chat-send-capabilities tests this behavior with two probes",
+  "OpenCode does not use a normal TTL cache that would skip re-probing after an in-place same-version CLI upgrade",
 );
 
 console.log("opencode harness routing tests passed");
