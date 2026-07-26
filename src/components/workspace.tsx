@@ -1600,7 +1600,10 @@ export function Workspace() {
       }
       // Bare `?` also opens the sheet, but only when focus is not in an
       // input/textarea/contentEditable — typing "?" must stay typing.
-      if (e.key === "?" && !isEditableTarget(e.target)) {
+      // Some keyboard layouts report Shift+/ as the physical Slash key rather
+      // than the printable "?" character. Accept both representations so the
+      // documented shortcut remains available outside editable controls.
+      if ((e.key === "?" || (e.code === "Slash" && e.shiftKey)) && !isEditableTarget(e.target)) {
         e.preventDefault();
         setShortcutsOpen(true);
       }

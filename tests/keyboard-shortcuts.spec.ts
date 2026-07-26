@@ -32,9 +32,10 @@ const GROUPS = ["Panels & navigation", "Browser", "Composer", "Slash menu", "Oth
 test.describe("keyboard shortcuts sheet", () => {
   test("opens with ?, lists every catalog group, closes with Escape", async ({ page }) => {
     await gotoApp(page);
-    // Focus the page chrome (not a text field) so the `?` guard lets it through.
-    await page.mouse.click(5, 5);
-    await page.keyboard.press("?");
+    // Target a non-editable element and send the physical Shift+/ chord. This
+    // avoids a layout-dependent printable-key label and proves the global
+    // shortcut works outside fields that deliberately suppress it.
+    await page.locator("body").press("Shift+/");
 
     await expect(sheet(page)).toBeVisible();
     for (const group of GROUPS) {
