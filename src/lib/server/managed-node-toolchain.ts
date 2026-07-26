@@ -17,7 +17,7 @@ const execFileAsync = promisify(execFile);
 const INSTALL_TIMEOUT_MS = 5 * 60_000;
 
 export type ManagedNodePaths = {
-  platform: PrerequisitePlatform;
+  platform: ManagedNodePlatform;
   root: string;
   stagingRoot: string;
   installDir: string;
@@ -27,13 +27,15 @@ export type ManagedNodePaths = {
   npmBin: string;
 };
 
+type ManagedNodePlatform = "win32" | "darwin" | "linux";
+
 export type ManagedNodeProbe =
   | { status: "ready"; version: string; paths: ManagedNodePaths }
   | { status: "missing"; paths: ManagedNodePaths }
   | { status: "incompatible"; version: string; paths: ManagedNodePaths }
   | { status: "unusable"; detail: string; paths: ManagedNodePaths };
 
-function supportedPlatform(platform: NodeJS.Platform): platform is PrerequisitePlatform {
+function supportedPlatform(platform: NodeJS.Platform): platform is ManagedNodePlatform {
   return platform === "win32" || platform === "darwin" || platform === "linux";
 }
 
@@ -60,7 +62,7 @@ export function managedNodeRoot(
 
 export function managedNodePaths(
   platform: NodeJS.Platform = process.platform,
-  architecture = process.arch,
+  architecture: string = process.arch,
   env: NodeJS.ProcessEnv = process.env,
   home = homedir(),
 ): ManagedNodePaths | null {

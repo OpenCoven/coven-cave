@@ -76,15 +76,15 @@ test("safe zip extraction checks central and local entry boundaries", async () =
 });
 
 test("managed Node paths are user-scoped and never point at a system installation", () => {
-  const paths = managedNodePaths("win32", "x64", { LOCALAPPDATA: "C:\\Users\\Sage\\AppData\\Local" }, "C:\\Users\\Sage");
+  const paths = managedNodePaths("win32", "x64", { LOCALAPPDATA: "C:\\Users\\Sage\\AppData\\Local" } as unknown as NodeJS.ProcessEnv, "C:\\Users\\Sage");
   assert.ok(paths);
   assert.match(paths.root, /OpenCoven[\\/]CovenCave[\\/]toolchains/);
   assert.match(paths.node, /node\.exe$/);
-  const env = managedNodeSpawnEnv({ PATH: "C:\\Windows\\System32" }, paths);
+  const env = managedNodeSpawnEnv({ PATH: "C:\\Windows\\System32" } as unknown as NodeJS.ProcessEnv, paths);
   assert.ok(env);
   assert.equal(env.NPM_CONFIG_PREFIX, paths.npmPrefix);
   assert.match(env.PATH ?? "", /CovenCave/);
-  assert.equal(managedNodeRoot("linux", { XDG_DATA_HOME: "/home/sage/.local/share" }, "/home/sage"), "/home/sage/.local/share/opencoven/coven-cave/toolchains");
+  assert.equal(managedNodeRoot("linux", { XDG_DATA_HOME: "/home/sage/.local/share" } as unknown as NodeJS.ProcessEnv, "/home/sage"), "/home/sage/.local/share/opencoven/coven-cave/toolchains");
 });
 
 test("managed Node probe distinguishes an absent toolchain from an unusable one", async () => {

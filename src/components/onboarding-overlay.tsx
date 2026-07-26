@@ -1327,7 +1327,6 @@ export function OnboardingOverlay({
                         ) : step.key === "adapters" ? (
                           <StepRuntimes
                             chatHarnesses={chatHarnesses}
-                            platform={platform}
                             installJobs={installJobs}
                             installResults={installResults}
                             nodeHint={nodeHint}
@@ -1980,7 +1979,6 @@ function StepCovenCli({
 
 function StepRuntimes({
   chatHarnesses,
-  platform,
   installJobs,
   installResults,
   nodeHint,
@@ -1995,7 +1993,6 @@ function StepRuntimes({
   onCodexPortPreflight,
 }: {
   chatHarnesses: HarnessReport[];
-  platform: PlatformId;
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   nodeHint: string | null;
@@ -2156,11 +2153,7 @@ function StepRuntimes({
                           : `Install ${adapter.label}`}
                       </Button>
                       <CommandRow
-                        command={
-                          platform === "windows" && oneClick.windowsCommand
-                            ? oneClick.windowsCommand
-                            : oneClick.command
-                        }
+                        command={oneClick.command}
                         onCopy={onCopy}
                       />
                       {busy && job ? <InstallLiveTail tail={job.tail} /> : null}
