@@ -283,7 +283,7 @@ try {
   const openCodeWindowsLaunch = openCodeLaunch(
     ["run", "safe & literal"],
     "win32",
-    { SystemRoot: "C:\\Windows" },
+    { SystemRoot: "C:\\Windows", NODE_ENV: "test" },
   );
   const psHost = openCodeWindowsLaunch.command;
   assert.equal(
