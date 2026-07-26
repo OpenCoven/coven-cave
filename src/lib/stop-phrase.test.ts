@@ -93,7 +93,7 @@ test("preferences default stopPhrase and survive normalize/patch round-trips", (
   assert.equal(defaults.general.stopPhrase, DEFAULT_STOP_PHRASE);
 
   // Legacy files without the field normalize to the default.
-  const legacy = normalizeCavePreferences({ general: { newsHeadlines: false } });
+  const legacy = normalizeCavePreferences({ general: {} });
   assert.equal(legacy.general.stopPhrase, DEFAULT_STOP_PHRASE);
 
   // A patch can change it; empty string persists (that is the off switch).
@@ -101,7 +101,7 @@ test("preferences default stopPhrase and survive normalize/patch round-trips", (
   assert.equal(custom.general.stopPhrase, "halt");
   const disabled = applyPreferencesPatch(custom, { general: { stopPhrase: "" } });
   assert.equal(disabled.general.stopPhrase, "");
-  assert.equal(disabled.general.newsHeadlines, true);
+  assert.equal(disabled.general.celebrations, true);
 });
 
 test("validatePreferencesPatch validates stopPhrase as a trimmed bounded string", () => {

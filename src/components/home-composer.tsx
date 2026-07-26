@@ -45,7 +45,6 @@ import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { canonicalize } from "@/lib/slash-commands";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
-import type { InboxItem } from "@/lib/cave-inbox";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID, recentChatProjectRoot } from "@/lib/chat-projects";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
@@ -109,13 +108,6 @@ type Props = {
   onSlash?: (command: string, args: string) => void;
   /** Resume a recent chat from the Continue column's session cards. */
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
-  /** "Needs you" attention tier (fired + response-needed) — the SAME
-   *  groupInboxFeed slice the Schedules nav badge counts (cave-925w). */
-  needsYou: InboxItem[];
-  /** Open one needs-you item's target — same handler the bell popover uses. */
-  onOpenInboxItem: (item: InboxItem) => void;
-  /** Jump to the Schedules surface for the full feed. */
-  onOpenSchedules: () => void;
   /** Voice new-chat: start a live voice call in a brand-new chat with this
    *  familiar. The workspace pre-creates the session and routes to chat.
    *  May return a promise so the button can gate itself against rapid
@@ -142,9 +134,6 @@ export function HomeComposer({
   onToast,
   onSlash,
   onOpenSession,
-  needsYou,
-  onOpenInboxItem,
-  onOpenSchedules,
   onStartVoiceCall,
 }: Props) {
   const [text, setText] = useState(() => readComposerDraft(HOME_DRAFT_KEY));

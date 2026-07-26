@@ -41,7 +41,6 @@ const css = (
     [
       "../styles/home-composer/landing-composer.css",
       "../styles/home-composer/feed-menus.css",
-      "../styles/home-composer/digest.css",
       "../styles/home-composer/hearth-continuations.css",
     ].map((sheet) => readFile(new URL(sheet, import.meta.url), "utf8")),
   )

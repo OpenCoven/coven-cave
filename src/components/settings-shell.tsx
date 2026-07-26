@@ -33,7 +33,6 @@ import { UpdateSettingsRow } from "@/components/update-available";
 import { classifyAboutDaemonStatus, type AboutDaemonState } from "@/lib/about-status";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useCelebrationsEnabled, writeCelebrationsEnabled } from "@/lib/celebrations-pref";
-import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
 import {
   DEFAULT_STOP_PHRASE,
   STOP_PHRASE_MAX_LENGTH,
@@ -434,9 +433,6 @@ function GeneralSection() {
           <WorkspacePathField />
         </SettingsRow>
       </SettingsGroup>
-      <SettingsGroup label="Home">
-        <HomeNewsToggle />
-      </SettingsGroup>
       <SettingsGroup label="Chat">
         <StopPhraseField />
       </SettingsGroup>
@@ -450,32 +446,6 @@ function GeneralSection() {
         <SettingsRow label="Open to" description="Which view to show on launch." comingSoon />
       </SettingsGroup>
     </SettingsPage>
-  );
-}
-
-// News on Home is opt-out here rather than dismissible inline — the carousel
-// row carries no X, so this switch is the one place the choice lives (and it
-// persists across visits, unlike the old per-mount dismiss). Rendered as a
-// minimal track/knob switch (user-requested): the row label carries the
-// meaning, so the control itself needs no On/Off text.
-function HomeNewsToggle() {
-  const newsEnabled = useHomeNewsEnabled();
-  return (
-    <SettingsRow
-      label="News headlines"
-      description="Show the News carousel on the Home screen's daily summary."
-    >
-      <button
-        type="button"
-        role="switch"
-        aria-checked={newsEnabled}
-        aria-label="News headlines"
-        onClick={() => writeHomeNewsEnabled(!newsEnabled)}
-        className={`settings-switch focus-ring${newsEnabled ? " is-on" : ""}`}
-      >
-        <span className="settings-switch__knob" aria-hidden />
-      </button>
-    </SettingsRow>
   );
 }
 

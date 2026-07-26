@@ -3051,9 +3051,6 @@ export function Workspace() {
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
-        needsYou={inboxNeedsYou}
-        onOpenInboxItem={openInspectorInboxItem}
-        onOpenSchedules={() => setMode("inbox")}
       />
     );
 

@@ -1,13 +1,11 @@
 /* ============================================================
    Coven aesthetic tokens (Mood C — foundation, issue #14)
    ============================================================
-   Promoted from the /mockup clean-room theme so the entire app
-   inherits the same palette/radii/spacing. The mockup's
-   `.multica-theme` class still works — it now just inherits these
-   :root values.
+   The entire app inherits the same palette/radii/spacing from these
+   root values.
 
    Two vocabularies are exposed on the same palette:
-     - Mockup names: --background, --card, --muted, --border, --primary, --brand…
+     - Compatibility names: --background, --card, --muted, --border, --primary, --brand…
      - Issue #14 names: --bg-base, --bg-raised, --border-hairline, --text-*…
    Both resolve to the same colours so they stay in sync.
 

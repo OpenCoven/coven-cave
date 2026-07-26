@@ -26,7 +26,6 @@ class TestBroadcastChannel {
 
 const storage = new MemoryStorage();
 storage.setItem("cave:font:sans", "source-sans-3");
-storage.setItem("cave:home-news-enabled", "false");
 
 let server = createDefaultPreferences(false);
 let firstResponse = null;
@@ -98,23 +97,21 @@ assert.equal(await preferences.flushAppPreferences(), true);
 
 assert.equal(sent.length, 2, "the in-flight write is followed by one serialized patch");
 assert.equal(sent[0].appearance.fonts.sans, "source-sans-3", "legacy font migration is retained");
-assert.equal(sent[0].general.newsHeadlines, false, "legacy news migration is retained");
 assert.equal(sent[0].appearance.cornerRadius, "round", "pre-init user choice joins migration");
 assert.deepEqual(sent[1], { appearance: { screenScale: 125 } }, "in-flight user choice is not cleared");
 assert.equal(server.appearance.fonts.sans, "source-sans-3");
 assert.equal(server.appearance.cornerRadius, "round");
 assert.equal(server.appearance.screenScale, 125);
-assert.equal(server.general.newsHeadlines, false);
 assert.equal(preferences.readAppPreferences().initialized, true);
 
 // Same-tick independent writes coalesce, and a failed write remains retryable.
 const beforeCoalesce = sent.length;
-preferences.updateAppPreferences({ general: { newsHeadlines: true } });
+preferences.updateAppPreferences({ general: { celebrations: false } });
 preferences.updateAppPreferences({ phone: { mobileMode: false } });
 assert.equal(await preferences.flushAppPreferences(), true);
 assert.equal(sent.length, beforeCoalesce + 1);
 assert.deepEqual(sent.at(-1), {
-  general: { newsHeadlines: true },
+  general: { celebrations: false },
   phone: { mobileMode: false },
 });
 

@@ -293,8 +293,7 @@
 }
 
 /* ── Suggested prompts / needs-you — both strips folded into the digest
-   carousel's chats track as tinted cards (see .home-digest__card--needs and
-   .home-digest__card--suggestion below). */
+   Home no longer carries an ambient carousel; attention lives in Rituals. */
 
 /* ── Two-column footer (Continue · News) ─────────────────────────────────── */
 .home-columns {

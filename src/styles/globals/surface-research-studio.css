@@ -119,8 +119,7 @@
   font-style: italic;
 }
 /* Native select for the source research run — labelled, one obvious current
-   value, and it scales past the handful of runs chips could. Chevron follows
-   the .required-inputs-select recipe (primitives.css). */
+   value, and it scales past the handful of runs chips could. */
 .research-studio__select {
   appearance: none;
   -webkit-appearance: none;
