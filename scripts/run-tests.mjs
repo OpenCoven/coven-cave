@@ -709,6 +709,7 @@ export const SUITES = {
     "src/components/settings-action-buttons.test.ts",
     "src/components/settings-section-tabs.test.ts",
     "src/components/settings-overview.test.ts",
+    "src/components/voice-engine-settings.test.ts",
     "src/components/theme-script.test.ts",
     "src/components/ui/error-state.test.ts",
     "src/components/ui/avatar-lightbox.test.ts",

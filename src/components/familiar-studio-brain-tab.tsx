@@ -536,6 +536,15 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     };
   }, [draftVoiceProvider, localVoiceCatalogAttempt]);
 
+  useEffect(() => {
+    const refreshLocalVoices = () => {
+      setLocalVoiceCatalog((catalog) => ({ ...catalog, status: "idle", voices: [] }));
+      setLocalVoiceCatalogAttempt((attempt) => attempt + 1);
+    };
+    window.addEventListener("cave:voice-engines-refresh", refreshLocalVoices);
+    return () => window.removeEventListener("cave:voice-engines-refresh", refreshLocalVoices);
+  }, []);
+
   // Probe the native speech engine when Local (on-device) is picked, so a
   // missing dictation model is discovered here instead of at call connect,
   // where local-loop's requireOnDevice contract rejects the session. Probe

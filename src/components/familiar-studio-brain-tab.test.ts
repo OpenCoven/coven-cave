@@ -275,6 +275,11 @@ assert.match(
   /setLocalVoiceCatalog\(\{ status: "loading", voices: \[\] \}\)/,
   "a pending catalog probe must not leave a stale local voice selectable",
 );
+assert.match(
+  source,
+  /setLocalVoiceCatalogAttempt\([\s\S]{0,240}addEventListener\("cave:voice-engines-refresh", refreshLocalVoices\)/,
+  "model downloads and removals invalidate an open Studio voice picker",
+);
 
 console.log("familiar-studio-brain-tab.test.ts: ok");
 
