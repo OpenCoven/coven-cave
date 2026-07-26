@@ -17,12 +17,17 @@ delete process.env.COVEN_CAVE_HUB_ACCESS_TOKEN;
 
 const { splitHubAccessToken, storedHubAccessToken, rememberHubAccessToken, HUB_ACCESS_TOKEN_KEY } =
   await import("./hub-access-token.ts");
-const { getLocalEncryptedSecret } = await import("./local-encrypted-vault.ts");
+const { getLocalEncryptedSecret, setLocalEncryptedSecret } = await import("./local-encrypted-vault.ts");
 const { loadConfig, saveConfig } = await import("./cave-config.ts");
 const { daemonTargetForConfig } = await import("./coven-daemon.ts");
 const { writeJsonAtomic } = await import("./server/atomic-write.ts");
 
 const CONFIG_PATH = path.join(process.env.COVEN_HOME, "cave", "config.json");
+
+function decodedHubTokenCustody() {
+  const raw = getLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
 
 // ── splitHubAccessToken is pure and conservative ─────────────────────────────
 {
@@ -52,21 +57,54 @@ const CONFIG_PATH = path.join(process.env.COVEN_HOME, "cave", "config.json");
 
 // ── vault custody round-trip with env override precedence ────────────────────
 {
-  assert.equal(storedHubAccessToken(), null, "no custody yet → null");
-  assert.equal(rememberHubAccessToken("v1.vaulted"), true, "vault write succeeds");
-  assert.equal(storedHubAccessToken(), "v1.vaulted", "vault value resolves");
+  assert.equal(storedHubAccessToken("https://hub.example"), null, "no custody yet → null");
   assert.equal(
-    getLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY),
+    rememberHubAccessToken("v1.vaulted", "https://hub.example"),
+    true,
+    "vault write succeeds",
+  );
+  assert.equal(
+    storedHubAccessToken("https://hub.example/path"),
     "v1.vaulted",
-    "the token lives in the encrypted local vault",
+    "vault value resolves for its origin",
+  );
+  assert.equal(
+    storedHubAccessToken("https://other.example"),
+    null,
+    "vault value is not used for another origin",
+  );
+  assert.deepEqual(
+    decodedHubTokenCustody(),
+    { v: 1, origin: "https://hub.example", token: "v1.vaulted" },
+    "the token lives in the encrypted local vault with its hub origin",
   );
   process.env.COVEN_CAVE_HUB_ACCESS_TOKEN = "v1.env";
-  assert.equal(storedHubAccessToken(), "v1.env", "an explicit env override wins over the vault");
+  assert.equal(
+    storedHubAccessToken("https://other.example"),
+    "v1.env",
+    "an explicit env override wins over the vault",
+  );
   delete process.env.COVEN_CAVE_HUB_ACCESS_TOKEN;
-  assert.equal(rememberHubAccessToken("   "), false, "blank tokens are refused, not parked in the vault");
-  assert.equal(storedHubAccessToken(), "v1.vaulted", "a refused write leaves prior custody intact");
-  assert.equal(rememberHubAccessToken("  v1.padded \n"), true, "padded input is trimmed before storage");
-  assert.equal(storedHubAccessToken(), "v1.padded", "custody resolves trimmed, never truthy-but-padded");
+  assert.equal(
+    rememberHubAccessToken("   ", "https://hub.example"),
+    false,
+    "blank tokens are refused, not parked in the vault",
+  );
+  assert.equal(
+    storedHubAccessToken("https://hub.example"),
+    "v1.vaulted",
+    "a refused write leaves prior custody intact",
+  );
+  assert.equal(
+    rememberHubAccessToken("  v1.padded \n", "https://hub.example"),
+    true,
+    "padded input is trimmed before storage",
+  );
+  assert.equal(
+    storedHubAccessToken("https://hub.example"),
+    "v1.padded",
+    "custody resolves trimmed, never truthy-but-padded",
+  );
 }
 
 // ── saveConfig never persists the embedded token ──────────────────────────────
@@ -81,7 +119,11 @@ const CONFIG_PATH = path.join(process.env.COVEN_HOME, "cave", "config.json");
   assert.doesNotMatch(saved.multiHost.hubUrl, /coven_access_token|v1\.saved/, "the in-memory result is clean");
   const onDisk = await readFile(CONFIG_PATH, "utf8");
   assert.doesNotMatch(onDisk, /coven_access_token|v1\.saved/, "config.json never contains the credential");
-  assert.equal(getLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY), "v1.saved", "the credential moved to the vault");
+  assert.deepEqual(
+    decodedHubTokenCustody(),
+    { v: 1, origin: "https://hub.tailnet.example.ts.net", token: "v1.saved" },
+    "the credential moved to the vault with its origin",
+  );
 }
 
 // ── the daemon target resolves the token back from custody ───────────────────
@@ -117,11 +159,52 @@ const CONFIG_PATH = path.join(process.env.COVEN_HOME, "cave", "config.json");
   });
   const migrated = await loadConfig();
   assert.doesNotMatch(migrated.multiHost.hubUrl, /coven_access_token|v1\.legacy/, "load returns the clean URL");
-  assert.equal(getLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY), "v1.legacy", "the legacy token moved to the vault");
+  assert.deepEqual(
+    decodedHubTokenCustody(),
+    { v: 1, origin: "https://hub.tailnet.example.ts.net", token: "v1.legacy" },
+    "the legacy token moved to the vault with its origin",
+  );
   const rewritten = await readFile(CONFIG_PATH, "utf8");
   assert.doesNotMatch(rewritten, /coven_access_token|v1\.legacy/, "the file itself is rewritten clean");
   const target = daemonTargetForConfig(migrated);
   assert.equal(target.accessToken, "v1.legacy", "hub auth survives the migration");
+}
+
+// ── raw vaulted custody migrates once to the configured hub origin ──────────
+{
+  setLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY, "v1.raw-vault");
+  const migrated = await loadConfig();
+  assert.deepEqual(
+    decodedHubTokenCustody(),
+    { v: 1, origin: "https://hub.tailnet.example.ts.net", token: "v1.raw-vault" },
+    "pre-origin custody is rebound once to the current configured hub",
+  );
+  const target = daemonTargetForConfig(migrated);
+  assert.equal(target.accessToken, "v1.raw-vault", "raw-custody migration preserves hub auth");
+}
+
+// ── changing to a tokenless hub URL does not leak prior custody ──────────────
+{
+  const switched = await saveConfig({
+    multiHost: {
+      mode: "hub",
+      hubUrl: "https://attacker.example",
+      executorUrls: [],
+    },
+  });
+  const target = daemonTargetForConfig(switched);
+  assert.equal(target.mode, "hub");
+  assert.equal(target.url, "https://attacker.example");
+  assert.equal(
+    target.accessToken,
+    undefined,
+    "prior hub token is not attached to a different origin",
+  );
+  assert.equal(
+    getLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY),
+    null,
+    "origin change clears stale vaulted custody",
+  );
 }
 
 console.log("hub-access-token.test.ts OK");
