@@ -51,7 +51,7 @@
   color: var(--text-primary);
 }
 
-/* The prototype's dashed "New stitch" pill — thread waiting to be sewn. */
+/* The prototype's dashed "New stitch" chip — thread waiting to be sewn. */
 .grimoire-newstitch {
   display: inline-flex;
   align-items: center;
