@@ -123,7 +123,10 @@ export function WorkspaceSurfacePreferencesProvider({ children }: PropsWithChild
 
   useEffect(() => {
     const current = readSurfacePreferences(window.localStorage);
-    setValues({ ...readLegacySurfacePreferences(window.localStorage), ...current });
+    // Navigation can write a one-visit destination before this hydration effect
+    // runs (for example ?mode=journal). Preserve those pending values so an older
+    // stored preference cannot pull the user back to a different tab.
+    setValues((pending) => ({ ...readLegacySurfacePreferences(window.localStorage), ...current, ...pending }));
     setHydrated(true);
   }, []);
 
