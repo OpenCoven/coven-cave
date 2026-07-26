@@ -17,7 +17,7 @@ import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/copilot-str
 import { probeCodexRuntimeAvailability } from "@/lib/codex-runtime-availability";
 import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
+import { openCodeAvailabilityProbe, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
 import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
 import {
   resolveCopilotRuntimeLaunch,
@@ -99,12 +99,9 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
   if (id === "opencode") {
     const launch = openCodeLaunch([], process.platform, env);
     return {
-      availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
-        runner: "opencode",
-        command: launch.command,
-        env,
-        powerShellHostedCommand: launch.input !== undefined ? openCodeCommand() : undefined,
-      })),
+      availability: summarizeRuntimeAvailability(
+        evaluateRuntimeAvailability(openCodeAvailabilityProbe(launch, env)),
+      ),
     };
   }
   if (id === "grok") {

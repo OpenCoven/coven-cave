@@ -1,6 +1,11 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
+import { spawn } from "node:child_process";
+import {
+  openCodeAvailabilityProbe,
+  openCodeLaunch,
+  openCodeSpawnEnv,
+} from "@/lib/opencode-bin";
 import { parseOpenCodeModels } from "@/lib/opencode-models";
+import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 import type { RuntimeModelOption } from "@/lib/runtime-models";
 
 const MODEL_LIST_TIMEOUT_MS = 8_000;
@@ -16,15 +21,19 @@ export function listOpenCodeModels(familiarId?: string | null): Promise<RuntimeM
       resolve(models);
     };
     try {
-      const launch = openCodeLaunch(["models"]);
+      const env = openCodeSpawnEnv(familiarId);
+      const launch = openCodeLaunch(["models"], process.platform, env);
+      if (evaluateRuntimeAvailability(openCodeAvailabilityProbe(launch, env)).state !== "ready") {
+        done([]);
+        return;
+      }
       const child = spawn(launch.command, launch.args, {
         // Match the chat spawn's vault scope. A provider key can be granted to
         // one familiar only, and listing its authenticated OpenCode models must
         // not silently drop that key by using the unscoped probe environment.
-        env: openCodeSpawnEnv(familiarId),
-        stdio: launch.input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
-      }) as ChildProcessWithoutNullStreams;
-      writeOpenCodeLaunchInput(child, launch);
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
       const timeout = setTimeout(() => {
         try { child.kill("SIGTERM"); } catch { /* inventory stays unavailable */ }

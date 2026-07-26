@@ -14,7 +14,11 @@ import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { addChatProject, type CreateProjectOptions } from "@/lib/chat-add-project";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
-import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
+import {
+  projectForPickerQuery,
+  sortProjectsAlphabetically,
+  type CaveProject,
+} from "@/lib/cave-projects-types";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import { isTauri } from "@/lib/tauri-platform";
 
@@ -191,16 +195,22 @@ export function ProjectPickerPopover({
       ariaLabel={ariaLabel}
     >
       <PopoverBody>
-        {projects.length > 6 ? (
-          <input
-            type="text"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Filter projects…"
-            aria-label="Filter projects"
-            className="cave-project-picker__filter focus-ring-inset"
-          />
-        ) : null}
+        <input
+          type="text"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            const match = projectForPickerQuery(sortedProjects, query);
+            if (!match) return;
+            onChange(match.id);
+            close();
+          }}
+          placeholder="Filter projects…"
+          aria-label="Filter projects"
+          className="cave-project-picker__filter focus-ring-inset"
+        />
         <PopoverLabel>Project</PopoverLabel>
         {allowNoProject ? (
           <PopoverItem

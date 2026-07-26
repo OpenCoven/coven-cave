@@ -37,8 +37,13 @@ assert.match(
 );
 assert.match(
   route,
-  /const openCodeEndOfOptionsSupported = Boolean\([\s\S]*?capabilities\.endOfOptions[\s\S]*?mode === "plain"[\s\S]*?launch\.endOfOptions === true[\s\S]*?const openCodePromptNeedsDelimiter = openCodeDirect && harnessPrompt\.startsWith\("--"\);[\s\S]*?if \(openCodePromptNeedsDelimiter && !openCodeEndOfOptionsSupported\)[\s\S]*?status: 400[\s\S]*?if \(openCodeEndOfOptionsSupported\) a\.push\("--"\);/,
-  "OpenCode emits the end-of-options delimiter only when both the selected schema and help probe confirm it, refusing an unsafe flag-shaped prompt otherwise",
+  /if \(openCodeDirect\) \{[\s\S]*?const a = \["run"\];[\s\S]*?if \(forwardModel\) a\.push\("--model", forwardModel\);[\s\S]*?OpenCode reads non-TTY stdin verbatim[\s\S]*?return a;/,
+  "OpenCode builds an option-only run argv and leaves the full prompt for the stdin transport",
+);
+assert.doesNotMatch(
+  route,
+  /openCodePromptNeedsDelimiter|a\.push\(prompt\)/,
+  "OpenCode never interprets a flag-shaped or oversized prompt as argv",
 );
 assert.match(
   route,
@@ -62,33 +67,28 @@ assert.match(
 );
 assert.match(
   route,
-  /const launch = openCodeLaunch\(\[\], process\.platform, env\);[\s\S]*?launch: \{ command: launch\.command, fixedArgs: launch\.args \}[\s\S]*?powerShellHostedCommand:[\s\S]*?launch\.input !== undefined \? openCodeCommand\(\) : undefined/,
-  "OpenCode's passive plan owns the exact outer host, PowerShell argv, and inner command",
+  /const launch = openCodeLaunch\(\[\], process\.platform, env\);[\s\S]*?const availabilityProbe = openCodeAvailabilityProbe\(launch, env\);[\s\S]*?command: launch\.command,[\s\S]*?fixedArgs: launch\.args,[\s\S]*?unresolvedWindowsShim: launch\.unresolvedWindowsShim,[\s\S]*?availability: evaluateRuntimeAvailability\(availabilityProbe\)/,
+  "OpenCode's canonical passive probe owns the exact direct command, fixed target args, shim-resolution state, and environment",
 );
 assert.match(
   route,
-  /const openCodeLaunchCommand = openCodeDirect[\s\S]*?command: localPlan\.command,[\s\S]*?args: \[\.\.\.localPlan\.fixedArgs\],[\s\S]*?input: JSON\.stringify\(spawnArgs\)[\s\S]*?const availability =[\s\S]*?command: localPlan\.command,[\s\S]*?env: localPlan\.env,[\s\S]*?let child:[\s\S]*?try \{[\s\S]*?child = spawn\(command\.command, command\.args, \{[\s\S]*?env: localPlan\.env,[\s\S]*?writeOpenCodeLaunchInput\(child, openCodeLaunchCommand\)/,
-  "OpenCode carries one Windows-safe outer host, inner command, and scoped environment from early preflight through the immediate spawn recheck",
+  /const openCodeLaunchCommand = openCodeDirect[\s\S]*?openCodeLaunch\(spawnArgs, process\.platform, localPlan\.env\)[\s\S]*?const availability =[\s\S]*?openCodeAvailabilityProbe\([\s\S]*?openCodeLaunchCommand,[\s\S]*?localPlan\.env[\s\S]*?if \(openCodeDirect\) \{[\s\S]*?stdio: \["pipe", "pipe", "pipe"\],[\s\S]*?child\.stdin\.on\("error"[\s\S]*?child\.stdin\.end\(apiPrompt, "utf8"\);/,
+  "OpenCode regenerates its canonical shell-free option argv, rechecks it, and writes the exact attempt prompt through an observed UTF-8 stdin pipe",
 );
 assert.match(
   route,
-  /const env = openCodeSpawnEnv\(body\.familiarId\);[\s\S]*?const launch = openCodeLaunch\(\[\], process\.platform, env\);[\s\S]*?runner: "opencode",[\s\S]*?powerShellHostedCommand:[\s\S]*?launch\.input !== undefined \? openCodeCommand\(\) : undefined[\s\S]*?const availability =[\s\S]*?command: localPlan\.command,[\s\S]*?powerShellHostedCommand:[\s\S]*?localPlan\.powerShellHostedCommand,[\s\S]*?if \(availability\.state !== "ready"\) \{[\s\S]*?launchFailure = \{ code: availability\.code, message: availability\.message \};[\s\S]*?return null;/,
-  "OpenCode preflights the exact PowerShell/JSON-stdin plan and returns the shared structured error before spawn",
+  /openCodeLaunchCommand[\s\S]*?\? openCodeAvailabilityProbe\([\s\S]*?openCodeLaunchCommand,[\s\S]*?localPlan\.env,[\s\S]*?\)/,
+  "the immediate pre-spawn gate probes OpenCode through its canonical mapper over the exact launch plan and environment the child will receive",
 );
 assert.match(
   route,
-  /child\.on\("error", \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?const openCodeWindowsOuterLaunchFailure =[\s\S]*?process\.platform === "win32" && err\.code === "ENOENT";[\s\S]*?const openCodeCommandMissing =[\s\S]*?!openCodeWindowsOuterLaunchFailure[\s\S]*?launchFailure \?\?= \{[\s\S]*?"runtime_missing"[\s\S]*?"runtime_launch_failed"/,
-  "an ambiguous Windows outer-process race stays generic while a missing POSIX OpenCode command remains distinct",
-);
-assert.match(
-  route,
-  /OPENCODE_COMMAND_NOT_FOUND_MARKER[\s\S]*?OPENCODE_LAUNCH_FAILED_MARKER[\s\S]*?launchFailure = \{[\s\S]*?code: commandMissing \? "runtime_missing" : "runtime_launch_failed"[\s\S]*?push\(\{ kind: "error", code: launchFailure\.code, message: launchError \}\)/,
-  "a PowerShell-hosted inner OpenCode race is streamed as a launch failure instead of becoming synthetic no-output text",
+  /const reportLaunchFailure = \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?let localLaunchError: \{ code: string; message: string \} = localRuntimeLaunchError\([\s\S]*?localRuntimePlan\?\.runner \?\? "coven",[\s\S]*?err\.code,[\s\S]*?\);[\s\S]*?if \(hermesDirect\) localLaunchError = hermesLaunchFailure\([\s\S]*?const openCodeCommandMissing =[\s\S]*?const launchCode =[\s\S]*?binding\.harness === "claude"[\s\S]*?RUNTIME_AVAILABILITY_ERROR_CODES\.coven_missing[\s\S]*?openCodeCommandMissing[\s\S]*?"runtime_missing"[\s\S]*?openCodeWindowsOuterLaunchFailure[\s\S]*?"runtime_launch_failed"[\s\S]*?: localLaunchError\.code;[\s\S]*?launchFailure \?\?= \{[\s\S]*?code: sshRuntime \?[\s\S]*?: launchCode,[\s\S]*?message: launchError/,
+  "a post-gate OpenCode spawn failure keeps the shared value-free runner classification instead of leaking host paths or blaming authentication",
 );
 assert.match(
   capabilities,
-  /async function probeOpenCodeRunContract\(env: NodeJS\.ProcessEnv\)[\s\S]*?const helpLaunch = openCodeLaunch\(\["run", "--help"\], process\.platform, env\);[\s\S]*?probeOutput\(helpLaunch\.command, helpLaunch\.args, env, helpLaunch\.input\)/,
-  "OpenCode probes its CLI with the same Windows-safe command and WSL-compatible environment as a chat run",
+  /const env = openCodeSpawnEnv\(\);[\s\S]*?const launch = openCodeLaunch\(\["run", "--help"\], process\.platform, env\);[\s\S]*?launch\.command,[\s\S]*?launch\.args,[\s\S]*?env,/,
+  "OpenCode resolves and probes its CLI inside the same Windows-safe or WSL-compatible environment as a chat run",
 );
 assert.match(
   route,

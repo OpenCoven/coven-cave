@@ -1,8 +1,9 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import type { Readable, Writable } from "node:stream";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
@@ -10,8 +11,14 @@ import {
   covenRunSupportsPermissionFlag,
 } from "@/lib/harness-adapters";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
+import {
+  isOpenCodeLaunchSpawnable,
+  openCodeAvailabilityProbe,
+  openCodeLaunch,
+  openCodeSpawnEnv,
+} from "@/lib/opencode-bin";
 import type { OpenCodeRunCapabilities } from "@/lib/opencode-compatibility";
+import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
@@ -40,8 +47,9 @@ type VerifiedCapability = {
 // false claim that an otherwise unchanged OpenCode lacks JSON support.
 const verifiedOpenCodeCapabilities = new Map<string, VerifiedCapability>();
 const openCodeFileIdentities = new Map<string, string>();
+type OpenCodeProbeChild = ChildProcessByStdio<null, Readable, Readable>;
 
-/** PowerShell/npm shims can be delayed by cold start or Defender scanning. */
+/** Native OpenCode startup can be delayed by cold start or Defender scanning. */
 export function openCodeCapabilityProbeTimeoutMs(platform: NodeJS.Platform = process.platform): number {
   return platform === "win32" ? WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS : DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS;
 }
@@ -85,8 +93,8 @@ export function openCodeProbeSpawnOptions(
   return { detached: platform !== "win32" };
 }
 
-/** `taskkill /T` is required because killing the PowerShell launcher alone
- * leaves its opencode(.cmd) child running on Windows. */
+/** `taskkill /T` ensures a timed-out native OpenCode probe cannot leave helper
+ * children running on Windows. */
 export function openCodeProbeTreeKillCommand(
   pid: number | undefined,
   platform: NodeJS.Platform = process.platform,
@@ -96,7 +104,7 @@ export function openCodeProbeTreeKillCommand(
   return { command: "taskkill.exe", args: ["/PID", String(processId), "/T", "/F"] };
 }
 
-function terminateProbeProcessTree(child: ChildProcessWithoutNullStreams): Promise<void> {
+function terminateProbeProcessTree(child: OpenCodeProbeChild): Promise<void> {
   const treeKill = openCodeProbeTreeKillCommand(child.pid);
   if (!treeKill) {
     return new Promise((resolve) => {
@@ -175,8 +183,8 @@ function probeHelp(
         cwd,
         stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
         ...openCodeProbeSpawnOptions(),
-      }) as ChildProcessWithoutNullStreams;
-      if (input !== undefined) writeOpenCodeLaunchInput(child, { command, args, input });
+      }) as ChildProcessByStdio<Writable, Readable, Readable>;
+      if (input !== undefined) child.stdin.end(input, "utf8");
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
       child.stderr.on("data", (chunk) => (output += chunk.toString()));
       const timeout = setTimeout(() => {
@@ -207,7 +215,6 @@ function probeOutput(
   command: string,
   args: string[],
   env = harnessSpawnEnv(),
-  input?: string,
   timeoutMs = openCodeCapabilityProbeTimeoutMs(),
 ): Promise<ProbeOutput> {
   return new Promise<ProbeOutput>((resolve) => {
@@ -222,10 +229,9 @@ function probeOutput(
     try {
       const child = spawn(command, args, {
         env,
-        stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "pipe"],
         ...openCodeProbeSpawnOptions(),
-      }) as ChildProcessWithoutNullStreams;
-      if (input !== undefined) writeOpenCodeLaunchInput(child, { command, args, input });
+      });
       let overflowed = false;
       const append = (chunk: Buffer) => {
         if (output.length >= MAX_PROBE_OUTPUT) { overflowed = true; return; }
@@ -390,18 +396,29 @@ function advertisedStructuredSwitches(options: string[], noValueOptions: string[
 async function probeOpenCodeRunContract(env: NodeJS.ProcessEnv): Promise<OpenCodeRunContractProbe> {
   const helpLaunch = openCodeLaunch(["run", "--help"], process.platform, env);
   const versionLaunch = openCodeLaunch(["--version"], process.platform, env);
+  if (
+    !isOpenCodeLaunchSpawnable(helpLaunch)
+    || !isOpenCodeLaunchSpawnable(versionLaunch)
+    || evaluateRuntimeAvailability(openCodeAvailabilityProbe(helpLaunch, env)).state !== "ready"
+    || evaluateRuntimeAvailability(openCodeAvailabilityProbe(versionLaunch, env)).state !== "ready"
+  ) {
+    return {
+      helpProbe: { output: "", complete: false },
+      versionProbe: { output: "", complete: false },
+    };
+  }
   const [helpProbe, versionProbe] = await Promise.all([
-    probeOutput(helpLaunch.command, helpLaunch.args, env, helpLaunch.input),
-    probeOutput(versionLaunch.command, versionLaunch.args, env, versionLaunch.input),
+    probeOutput(helpLaunch.command, helpLaunch.args, env),
+    probeOutput(versionLaunch.command, versionLaunch.args, env),
   ]);
   return { helpProbe, versionProbe };
 }
 
 /**
- * Return a local-only fingerprint for the exact command files PowerShell or
- * spawn can resolve. It is intentionally never rendered or persisted. The
- * npm PowerShell shim and its package executable both participate: package
- * upgrades can replace the latter while leaving the small `.cmd` shim intact.
+ * Return a local-only fingerprint for the exact shell-free launch files. It
+ * is intentionally never rendered or persisted. Windows npm shims are parsed
+ * first, so only the native package target (or Node plus its legacy script)
+ * participates; the command-shell wrappers are never trusted as launchers.
  */
 function rememberOpenCodeFileIdentity(key: string, identity: string): void {
   openCodeFileIdentities.delete(key);
@@ -453,42 +470,40 @@ async function fileIdentity(file: string, platform: NodeJS.Platform): Promise<st
   }
 }
 
-function npmPackageExecutable(directory: string, pathApi: typeof path.win32): string {
-  // A project-local npm shim sits at node_modules/.bin/opencode.cmd; global
-  // npm shims conventionally sit beside their node_modules directory.
-  const packageRoot = pathApi.basename(directory).toLowerCase() === ".bin"
-    ? pathApi.dirname(directory)
-    : pathApi.join(directory, "node_modules");
-  return pathApi.join(packageRoot, "opencode-ai", "bin", "opencode.exe");
+async function commandFileIdentity(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+): Promise<string | null> {
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
+  const pathLike = pathApi.isAbsolute(command)
+    || command.includes("/")
+    || (platform === "win32" && command.includes("\\"));
+  if (pathLike) return fileIdentity(command, platform);
+
+  const rawPath = env.PATH ?? env.Path ?? env.path;
+  if (!rawPath) return null;
+  const separator = platform === "win32" ? ";" : ":";
+  for (const directory of rawPath.split(separator).filter(Boolean).slice(0, 512)) {
+    const identity = await fileIdentity(pathApi.join(directory, command), platform);
+    if (identity) return identity;
+  }
+  return null;
 }
 
 export async function openCodeCapabilityLaunchIdentity(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform = process.platform,
 ): Promise<string | null> {
-  const rawPath = env.PATH ?? env.Path ?? env.path;
-  if (!rawPath) return null;
-  const separator = platform === "win32" ? ";" : ":";
-  const pathApi = platform === "win32" ? path.win32 : path.posix;
-  const extensions = platform === "win32"
-    ? [...new Set([".PS1", ...(env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)].map((extension) => extension.toLowerCase()))]
-    : [""];
-  for (const directory of rawPath.split(separator).filter(Boolean).slice(0, 512)) {
-    for (const extension of extensions) {
-      const candidate = pathApi.join(directory, `${openCodeCommand()}${extension}`);
-      const launcher = await fileIdentity(candidate, platform);
-      if (!launcher) continue;
-      if (platform !== "win32" || extension === ".exe" || extension === ".com") return launcher;
-
-      // A cmd/bat/PowerShell wrapper can dispatch to a mutable downstream
-      // executable. Permit fallback only for npm's known layout, and include
-      // the resolved package executable in the fingerprint. Unknown wrappers
-      // deliberately receive no fallback evidence.
-      const packageTarget = await fileIdentity(npmPackageExecutable(directory, pathApi), platform);
-      return packageTarget ? `${launcher}\0${packageTarget}` : null;
-    }
-  }
-  return null;
+  const launch = openCodeLaunch([], platform, env);
+  if (!isOpenCodeLaunchSpawnable(launch)) return null;
+  const identities = await Promise.all([
+    commandFileIdentity(launch.command, env, platform),
+    ...(launch.requiredFiles ?? []).map((file) => fileIdentity(file, platform)),
+  ]);
+  return identities.every((identity): identity is string => identity !== null)
+    ? identities.join("\0")
+    : null;
 }
 
 function capabilityKey(scope: string, launcherIdentity: string, version: string): string {
@@ -620,12 +635,17 @@ export function hermesChatSupportsModel(launch: {
 export function openCodeRunSupportsModel(): Promise<boolean> {
   const env = openCodeSpawnEnv();
   const launch = openCodeLaunch(["run", "--help"], process.platform, env);
+  if (
+    !isOpenCodeLaunchSpawnable(launch)
+    || evaluateRuntimeAvailability(openCodeAvailabilityProbe(launch, env)).state !== "ready"
+  ) {
+    return Promise.resolve(false);
+  }
   return (openCodeModelFlagProbe ??= probeHelp(
     launch.command,
     launch.args,
     (help) => /(^|\s)--model(?![\w-])/m.test(help),
     env,
-    launch.input,
   ));
 }
 

@@ -107,16 +107,15 @@ export type RuntimeAvailabilityProbe = {
   env: Record<string, string | undefined>;
   /** Spawn cwd. Relative PATH entries resolve from this directory. */
   cwd?: string;
-  /** Files the exact argv-list launch requires in addition to `command`.
-   * For example, a safe Windows npm shim launch is `node <entry.js>` and the
-   * entry script must still exist when the child is spawned. */
-  requiredFiles?: string[];
   /** Coven/Grok launch resolution found a Windows shim it could not safely
    * convert into a runnable command (`CovenLaunchCommand.unresolvedWindowsShim`). */
   unresolvedWindowsShim?: boolean;
-  /** OpenCode on Windows launches through a PowerShell host whose script
-   * invokes this inner command; PowerShell resolves it via PATHEXT. */
-  powerShellHostedCommand?: string;
+  /** Launch resolution itself could not complete (for example, a PATH entry
+   * could not be inspected). Never collapse this into a false missing state. */
+  resolutionFailed?: boolean;
+  /** Files consumed by the exact launch after argv[0] starts, such as a Node
+   * script resolved from an npm shim. They must still exist at preflight. */
+  requiredFiles?: readonly string[];
   platform?: NodeJS.Platform;
   statFile?: StatFileFn;
   readableFile?: ReadableFileFn;
@@ -305,7 +304,7 @@ function spawnCandidates(name: string, platform: NodeJS.Platform): string[] {
   return [`${name}.exe`, `${name}.com`];
 }
 
-/** Candidate filenames PowerShell (PATHEXT semantics) can invoke. */
+/** Candidate filenames a PATHEXT-aware Windows shell can invoke. */
 function pathExtCandidates(name: string, env: Record<string, string | undefined>): string[] {
   if (path.win32.extname(name)) return [name];
   const exts = (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean);
@@ -357,7 +356,8 @@ function resolveCommand(
 
   if (isPathLike(command, platform)) {
     // Launch plans only ever produce absolute path-like commands (discovered
-    // binaries, process.execPath, the PowerShell host). Inspect them as given.
+    // binaries, process.execPath, or resolved package targets). Inspect them
+    // as given.
     for (const candidate of candidatesFor(command)) {
       const resolved = inspect(candidate);
       if (resolved) return resolved;
@@ -397,8 +397,8 @@ function unlaunchableRunnerMessage(runner: RuntimeRunnerId): string {
  * - `ready`      — the spawn command resolves to a real file in the spawn env.
  * - `missing`    — nothing resolves anywhere the spawn would look.
  * - `unlaunchable` — something was found, but this launch method cannot run
- *   it (unconverted Windows shim, `.cmd`-only install behind a direct spawn,
- *   or a missing PowerShell host for OpenCode on Windows).
+ *   it (an unconverted Windows shim or `.cmd`-only install behind a direct
+ *   spawn).
  * - `probe_failed` — the check itself failed (e.g. EACCES statting a PATH
  *   entry); deliberately NOT reported as "not installed".
  */
@@ -415,6 +415,13 @@ export function evaluateRuntimeAvailability(
     ?? (probe.statFile ? probe.statFile : defaultReadableFile);
   const label = RUNNER_LABELS[runner];
   try {
+    if (probe.resolutionFailed) {
+      return notReady(
+        runner,
+        "probe_failed",
+        `Could not verify the ${label} launch command before starting it, so this turn was not run. Check file permissions on its install location, then try again.`,
+      );
+    }
     if (probe.unresolvedWindowsShim) {
       return notReady(
         runner,
@@ -427,16 +434,6 @@ export function evaluateRuntimeAvailability(
       cwd,
     );
     if (resolved.state !== "launchable") {
-      if (probe.powerShellHostedCommand !== undefined) {
-        // The outer command for a hosted launch is the PowerShell host
-        // itself; its absence is a broken launch vehicle, not a missing
-        // runner install.
-        return notReady(
-          runner,
-          "unlaunchable",
-          `Windows PowerShell was not found at its system location, so ${label} cannot be launched. Restore Windows PowerShell, then try again.`,
-        );
-      }
       if (resolved.state === "unlaunchable") {
         return notReady(runner, "unlaunchable", unlaunchableRunnerMessage(runner));
       }
@@ -462,22 +459,6 @@ export function evaluateRuntimeAvailability(
           "unlaunchable",
           `${label} has a resolved launch command, but a required launch artifact is unavailable. Reinstall it, then try again.`,
         );
-      }
-    }
-    if (probe.powerShellHostedCommand !== undefined) {
-      const inner = resolveCommand(
-        probe.powerShellHostedCommand,
-        env,
-        platform,
-        inspectCandidate,
-        (name) => pathExtCandidates(name, env),
-        cwd,
-      );
-      if (inner.state === "unlaunchable") {
-        return notReady(runner, "unlaunchable", unlaunchableRunnerMessage(runner));
-      }
-      if (inner.state === "missing") {
-        return notReady(runner, "missing", missingRunnerMessage(runner));
       }
     }
     return { state: "ready", runner, resolvedPath: resolved.resolvedPath };

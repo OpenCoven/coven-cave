@@ -71,12 +71,9 @@ import {
   resolveGrokCompatibility,
 } from "@/lib/grok-compatibility";
 import {
-  openCodeCommand,
+  openCodeAvailabilityProbe,
   openCodeLaunch,
   openCodeSpawnEnv,
-  OPENCODE_COMMAND_NOT_FOUND_MARKER,
-  OPENCODE_LAUNCH_FAILED_MARKER,
-  writeOpenCodeLaunchInput,
 } from "@/lib/opencode-bin";
 import {
   codexAdapterFailureAvailability,
@@ -272,7 +269,6 @@ type LocalRuntimePlan = LocalRuntimeCapabilityPlan & {
   env: NodeJS.ProcessEnv;
   cwd?: string;
   unresolvedWindowsShim?: boolean;
-  powerShellHostedCommand?: string;
 };
 
 function createLocalRuntimePlan(input: {
@@ -282,7 +278,6 @@ function createLocalRuntimePlan(input: {
   };
   env: NodeJS.ProcessEnv;
   availability?: RuntimeAvailability;
-  powerShellHostedCommand?: string;
   cwd?: string;
 }): LocalRuntimePlan {
   const availability = input.availability ?? evaluateRuntimeAvailability({
@@ -291,7 +286,6 @@ function createLocalRuntimePlan(input: {
     env: input.env,
     requiredFiles: input.launch.requiredFiles,
     unresolvedWindowsShim: input.launch.unresolvedWindowsShim === true,
-    powerShellHostedCommand: input.powerShellHostedCommand,
     cwd: input.cwd,
   });
   return {
@@ -304,9 +298,6 @@ function createLocalRuntimePlan(input: {
     availability,
     ...(input.launch.unresolvedWindowsShim
       ? { unresolvedWindowsShim: true as const }
-      : {}),
-    ...(input.powerShellHostedCommand
-      ? { powerShellHostedCommand: input.powerShellHostedCommand }
       : {}),
   };
 }
@@ -1359,12 +1350,16 @@ export async function POST(req: Request) {
     } else if (openCodeDirect) {
       const env = openCodeSpawnEnv(body.familiarId);
       const launch = openCodeLaunch([], process.platform, env);
+      const availabilityProbe = openCodeAvailabilityProbe(launch, env);
       localRuntimePlan = createLocalRuntimePlan({
         runner: "opencode",
-        launch: { command: launch.command, fixedArgs: launch.args },
+        launch: {
+          command: launch.command,
+          fixedArgs: launch.args,
+          unresolvedWindowsShim: launch.unresolvedWindowsShim,
+        },
         env,
-        powerShellHostedCommand:
-          launch.input !== undefined ? openCodeCommand() : undefined,
+        availability: evaluateRuntimeAvailability(availabilityProbe),
       });
     } else if (grokDirect) {
       const env = harnessSpawnEnv(body.familiarId);
@@ -1771,20 +1766,6 @@ export async function POST(req: Request) {
   // back to the boundary block ("listed above") and only exists when the
   // conversation's previous turn strayed out of the granted roots.
   const harnessPrompt = buildPromptWithBoundaryReminder(scopedPrompt, body.sessionId);
-  // A selected schema may opt into the delimiter, but the installed client
-  // must also document it before Cave sends an otherwise unsupported flag.
-  const openCodeEndOfOptionsSupported = Boolean(
-    openCodeDirect
-    && openCodeCompatibility?.capabilities.endOfOptions
-    && (openCodeCompatibility?.mode === "plain" || openCodeCompatibility?.schema?.launch.endOfOptions === true),
-  );
-  const openCodePromptNeedsDelimiter = openCodeDirect && harnessPrompt.startsWith("--");
-  if (openCodePromptNeedsDelimiter && !openCodeEndOfOptionsSupported) {
-    return new Response(
-      JSON.stringify({ ok: false, error: "This OpenCode client does not document support for prompts that begin with '--'. Start the prompt with text or update OpenCode." }),
-      { status: 400, headers: { "content-type": "application/json" } },
-    );
-  }
 
   if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
@@ -1961,10 +1942,10 @@ export async function POST(req: Request) {
         }
       }
       if (forwardModel) a.push("--model", forwardModel);
-      // Prompts are untrusted data. Insert the delimiter only after both the
-      // selected launch schema and `run --help` confirmed it is supported.
-      if (openCodeEndOfOptionsSupported) a.push("--");
-      a.push(prompt);
+      // OpenCode reads non-TTY stdin verbatim. Keep the full Cave prompt out
+      // of argv so Windows' command-line ceiling and positional-message
+      // quoting cannot truncate or rewrite it. runAttempt() writes the exact
+      // per-attempt prompt after spawning this option-only launch plan.
       return a;
     }
     const a = ["run", binding.harness, "--stream-json"];
@@ -3583,20 +3564,11 @@ export async function POST(req: Request) {
                   push({ kind: "error", code: "runtime_probe_failed", message });
                   return null;
                 }
-                // OpenCode's early plan already owns the exact outer command,
-                // PowerShell flags, inner command, and environment. Only the
-                // per-attempt argv payload is added here.
+                // Regenerate OpenCode's canonical direct command and fixed
+                // target args with the per-attempt argv; the early plan's
+                // environment is reused.
                 const openCodeLaunchCommand = openCodeDirect
-                  ? localPlan.powerShellHostedCommand
-                    ? {
-                        command: localPlan.command,
-                        args: [...localPlan.fixedArgs],
-                        input: JSON.stringify(spawnArgs),
-                      }
-                    : {
-                        command: localPlan.command,
-                        args: [...localPlan.fixedArgs, ...spawnArgs],
-                      }
+                  ? openCodeLaunch(spawnArgs, process.platform, localPlan.env)
                   : null;
                 // Preserve the early no-spawn decision. Ready plans receive a
                 // second passive check immediately before spawn so a removed
@@ -3612,17 +3584,22 @@ export async function POST(req: Request) {
                             localPlan.unresolvedWindowsShim === true,
                           requiredCovenFiles: localPlan.requiredFiles,
                         })
-                      : evaluateRuntimeAvailability({
-                          runner: localPlan.runner,
-                          command: localPlan.command,
-                          env: localPlan.env,
-                          requiredFiles: localPlan.requiredFiles,
-                          unresolvedWindowsShim:
-                            localPlan.unresolvedWindowsShim === true,
-                          powerShellHostedCommand:
-                            localPlan.powerShellHostedCommand,
-                          cwd: localPlan.cwd,
-                        })
+                      : evaluateRuntimeAvailability(
+                          openCodeLaunchCommand
+                            ? openCodeAvailabilityProbe(
+                                openCodeLaunchCommand,
+                                localPlan.env,
+                              )
+                            : {
+                                runner: localPlan.runner,
+                                command: localPlan.command,
+                                env: localPlan.env,
+                                requiredFiles: localPlan.requiredFiles,
+                                unresolvedWindowsShim:
+                                  localPlan.unresolvedWindowsShim === true,
+                                cwd: localPlan.cwd,
+                              },
+                        )
                     : localPlan.availability;
                 if (availability.state !== "ready") {
                   launchFailure = { code: availability.code, message: availability.message };
@@ -3642,29 +3619,41 @@ export async function POST(req: Request) {
                     command: localPlan.command,
                     args: [...localPlan.fixedArgs, ...spawnArgs],
                   };
-                let child: ChildProcessWithoutNullStreams;
                 try {
-                  child = spawn(command.command, command.args, {
+                  const spawnOptions = {
                     // Spawn IN the familiar's workspace when no project root was
                     // supplied, so coven's project-root resolver picks that dir as
                     // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
                     // from the familiar's home. When a project root IS supplied,
                     // honor that instead.
                     cwd: localPlan.cwd ?? cwd,
-                    stdio: openCodeLaunchCommand?.input === undefined
-                      ? ["ignore", "pipe", "pipe"]
-                      : ["pipe", "pipe", "pipe"],
                     env: localPlan.env,
                     shell: false,
-                  }) as ChildProcessWithoutNullStreams;
+                  } as const;
+                  if (openCodeDirect) {
+                    const child = spawn(command.command, command.args, {
+                      ...spawnOptions,
+                      stdio: ["pipe", "pipe", "pipe"],
+                    });
+                    // Always observe stdin errors: a fast child exit can close
+                    // the pipe while a large prompt is still being written.
+                    // Keep diagnostics fixed and value-free so prompt contents
+                    // and local paths never leak into the transcript.
+                    child.stdin.on("error", () => {
+                      result = { ...result, is_error: true };
+                      recordStdoutErrorTail("OpenCode prompt input failed", true);
+                    });
+                    child.stdin.end(apiPrompt, "utf8");
+                    return child;
+                  }
+                  return spawn(command.command, command.args, {
+                    ...spawnOptions,
+                    stdio: ["ignore", "pipe", "pipe"],
+                  });
                 } catch (error) {
                   reportLaunchFailure(error as NodeJS.ErrnoException);
                   return null;
                 }
-                if (openCodeLaunchCommand) {
-                  writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
-                }
-                return child;
               })();
           } catch (error) {
             // A plan can pass passive preflight yet still throw synchronously
@@ -3757,33 +3746,8 @@ export async function POST(req: Request) {
             if (chunk) handleStdoutChunk(chunk);
           });
 
-          let openCodeLaunchMarkerTail = "";
           child.stderr.on("data", (data: Buffer) => {
             const text = stripAnsi(data.toString("utf8"));
-            if (openCodeDirect) {
-              const markerText = `${openCodeLaunchMarkerTail}${text}`;
-              openCodeLaunchMarkerTail = markerText.slice(-OPENCODE_COMMAND_NOT_FOUND_MARKER.length);
-              const commandMissing = markerText.includes(OPENCODE_COMMAND_NOT_FOUND_MARKER);
-              const launchFailed = markerText.includes(OPENCODE_LAUNCH_FAILED_MARKER);
-              if (!launchFailure && (commandMissing || launchFailed)) {
-                const launchError = commandMissing
-                  ? missingRunnerMessage("opencode")
-                  : "OpenCode failed to start. Check its installation and try again.";
-                launchFailure = {
-                  code: commandMissing ? "runtime_missing" : "runtime_launch_failed",
-                  message: launchError,
-                };
-                result.is_error = true;
-                pushProgress(
-                  "harness-start",
-                  "opencode failed to start",
-                  "error",
-                  launchError,
-                  Date.now() - attemptStartedAt,
-                );
-                push({ kind: "error", code: launchFailure.code, message: launchError });
-              }
-            }
             captureHermesSessionFromStderr(text);
             if (RESUME_ERR_RE.test(text)) resumeFailed = true;
             if (!adapterConflict) {
@@ -3791,10 +3755,6 @@ export async function POST(req: Request) {
             }
             for (const line of text.split(/\r?\n/)) {
               const trimmed = line.trim();
-              if (
-                trimmed === OPENCODE_COMMAND_NOT_FOUND_MARKER
-                || trimmed === OPENCODE_LAUNCH_FAILED_MARKER
-              ) continue;
               if (!trimmed) continue;
               // Claude stderr can include tool payloads. It must not be copied
               // into the generic empty-response diagnostic, which is rendered

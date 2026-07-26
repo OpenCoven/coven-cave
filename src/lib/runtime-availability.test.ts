@@ -21,7 +21,6 @@ import {
   summarizeRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
 } from "./runtime-availability.ts";
-import { openCodeCommand, openCodeLaunch } from "./opencode-bin.ts";
 
 const scratch = mkdtempSync(path.join(tmpdir(), "runtime-availability-"));
 try {
@@ -41,6 +40,7 @@ try {
     },
     "every non-ENOENT local spawn error uses the normalized launch-failure contract",
   );
+
   const binDir = path.join(scratch, "bin");
   const emptyDir = path.join(scratch, "empty");
   mkdirSync(binDir);
@@ -51,8 +51,6 @@ try {
   writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   chmodSync(executable, 0o755);
   // Verification matrix: binary resolves in the spawn env → ready.
-  // Do not use this Windows host's temporary path while simulating Linux:
-  // a drive letter contains `:`, which is a POSIX PATH delimiter.
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
     command: nativeGrok,
@@ -413,96 +411,60 @@ try {
     "a started Hermes process has a structured error distinct from availability",
   );
 
-  // OpenCode's Windows launch is PowerShell-hosted: the host must exist and
-  // the inner `opencode` command must resolve with PATHEXT semantics.
-  const openCodeWindowsLaunch = openCodeLaunch(
-    ["run", "safe & literal"],
-    "win32",
-    { SystemRoot: "C:\\Windows", NODE_ENV: "test" },
-  );
-  const psHost = openCodeWindowsLaunch.command;
-  assert.equal(
-    openCodeWindowsLaunch.input,
-    JSON.stringify(["run", "safe & literal"]),
-    "the preflight receives the same JSON-stdin launch plan as chat",
-  );
+  // A resolved npm shim may produce a direct Node + script launch. Both the
+  // executable and its fixed package target are part of the exact plan.
+  const nodeHost = "C:\\node\\node.exe";
+  const openCodeTarget = "C:\\npm\\node_modules\\opencode-ai\\bin\\opencode.js";
   const openCodeWinReady = evaluateRuntimeAvailability({
     runner: "opencode",
-    command: psHost,
-    env: { Path: "C:\\bin", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
+    command: nodeHost,
+    env: { Path: "C:\\npm" },
     platform: "win32",
-    powerShellHostedCommand: openCodeWindowsLaunch.input === undefined ? undefined : openCodeCommand(),
-    statFile: winStats([psHost, "C:\\bin\\opencode.CMD"]),
+    requiredFiles: [openCodeTarget],
+    statFile: winStats([nodeHost, openCodeTarget]),
   });
   assert.equal(
     openCodeWinReady.state,
     "ready",
-    "PowerShell-hosted OpenCode is ready when the host and the PATHEXT shim exist",
+    "a resolved Windows launch is ready only when its outer process and fixed package target exist",
   );
 
-  const openCodeWinMissing = evaluateRuntimeAvailability({
+  const openCodeTargetGone = evaluateRuntimeAvailability({
     runner: "opencode",
-    command: psHost,
-    env: { Path: "C:\\bin" },
+    command: nodeHost,
+    env: { Path: "C:\\npm" },
     platform: "win32",
-    powerShellHostedCommand: "opencode",
-    statFile: winStats([psHost]),
+    requiredFiles: [openCodeTarget],
+    statFile: winStats([nodeHost]),
   });
   assert.equal(
-    openCodeWinMissing.state,
-    "missing",
-    "a present PowerShell host with no opencode shim is missing, with install copy",
-  );
-
-  const openCodeHostGone = evaluateRuntimeAvailability({
-    runner: "opencode",
-    command: psHost,
-    env: { Path: "C:\\bin" },
-    platform: "win32",
-    powerShellHostedCommand: "opencode",
-    statFile: winStats(["C:\\bin\\opencode.cmd"]),
-  });
-  assert.equal(
-    openCodeHostGone.state,
+    openCodeTargetGone.state,
     "unlaunchable",
-    "a missing PowerShell host breaks the launch vehicle, not the install",
-  );
-  assert.match(
-    openCodeHostGone.state === "unlaunchable" ? openCodeHostGone.message : "",
-    /PowerShell/,
-    "the host failure names the actual remediation target",
+    "a shim whose resolved package target disappeared is broken, not missing or ready",
   );
   assert.doesNotMatch(
-    openCodeHostGone.state === "unlaunchable" ? openCodeHostGone.message : "",
-    /OpenCode CLI not found/i,
-    "a missing host never blames the inner OpenCode command",
+    openCodeTargetGone.state === "unlaunchable" ? openCodeTargetGone.message : "",
+    /C:\\/,
+    "a broken fixed target never leaks its local path",
   );
 
-  const openCodeInnerProbeFailed = evaluateRuntimeAvailability({
+  const openCodeResolutionFailed = evaluateRuntimeAvailability({
     runner: "opencode",
-    command: psHost,
-    env: { Path: "C:\\bin" },
+    command: "opencode.exe",
+    env: { Path: "C:\\npm" },
     platform: "win32",
-    powerShellHostedCommand: openCodeCommand(),
-    statFile: (candidate) => {
-      if (candidate === psHost) return true;
-      throw Object.assign(new Error(`EACCES: permission denied, stat '${candidate}'`), {
-        code: "EACCES",
-      });
-    },
+    resolutionFailed: true,
+    statFile: winStats([]),
   });
   assert.equal(
-    openCodeInnerProbeFailed.state,
+    openCodeResolutionFailed.state,
     "probe_failed",
-    "an unreadable inner OpenCode command is not reported as missing",
-  );
-  assert.ok(
-    openCodeInnerProbeFailed.state === "probe_failed" && !openCodeInnerProbeFailed.message.includes("C:\\bin"),
-    "hosted-command probe errors do not leak the launch PATH",
+    "a failed Windows shim-resolution probe never collapses to a false missing result",
   );
 
-  // Availability never executes anything: the whole evaluation is stat-only,
-  // so evaluating before every chat turn stays cheap and side-effect free.
+  // Availability never executes anything: the whole evaluation uses bounded
+  // filesystem inspection, so evaluating before every chat turn stays cheap
+  // and side-effect free.
   // (Enforced structurally — the module must not import child_process.)
   const moduleSource = readFileSync(
     new URL("./runtime-availability.ts", import.meta.url),
