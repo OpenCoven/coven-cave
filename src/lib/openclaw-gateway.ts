@@ -1,5 +1,5 @@
 import { GatewayClient } from "@openclaw/gateway-client";
-import { ChatEventSchema } from "@openclaw/gateway-protocol";
+import { ChatEventSchema, HelloOkSchema } from "@openclaw/gateway-protocol";
 import { PROTOCOL_VERSION } from "@openclaw/gateway-protocol/version";
 import { Value } from "typebox/value";
 
@@ -232,7 +232,9 @@ export async function dispatchOpenClawGatewayTurn(args: {
     connectChallengeTimeoutMs: STARTUP_TIMEOUT_MS,
     requestTimeoutMs: STARTUP_TIMEOUT_MS,
     onHelloOk: (rawHello) => {
-      const failure = supportedHello(rawHello as GatewayHello);
+      const failure = Value.Check(HelloOkSchema, rawHello)
+        ? supportedHello(rawHello as GatewayHello)
+        : "Gateway returned an invalid hello response for the pinned v4 schema";
       if (failure) {
         const error = new Error(failure);
         helloReject?.(error);
