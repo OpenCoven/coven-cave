@@ -150,7 +150,10 @@ test.describe("onboarding wizard", () => {
     await openWizardManually(page);
 
     const recheck = wizard(page).getByRole("button", { name: "Re-check" });
-    await recheck.focus();
+    // Enter through a real keyboard transition so Chromium/WebKit apply
+    // :focus-visible for the same modality this regression protects.
+    await wizard(page).focus();
+    await page.keyboard.press("Tab");
     await expect(recheck).toBeFocused();
 
     const focusStyle = await recheck.evaluate((button) => {
