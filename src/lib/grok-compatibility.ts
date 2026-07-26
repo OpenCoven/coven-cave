@@ -50,7 +50,7 @@ export function grokRunCapabilitiesFromHelp(help: string, version: string | null
 export function grokProbeEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const probeEnv = { ...env };
   for (const key of Object.keys(probeEnv)) {
-    if (/(?:key|token|secret|password|credential|authorization|^xai_|^grok_.*(?:auth|api))/i.test(key)) delete probeEnv[key];
+    if (/(?:key|token|secret|password|credential|auth(?:orization)?|cookie|proxy|^xai_|^grok_.*(?:auth|api))/i.test(key)) delete probeEnv[key];
   }
   return probeEnv;
 }
