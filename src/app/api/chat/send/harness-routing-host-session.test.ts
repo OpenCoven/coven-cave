@@ -254,6 +254,19 @@ assert.match(
   "OpenClaw agent listing should launch Windows npm .cmd shims correctly",
 );
 
+const malformedOpenClawIndex = chatRoute.indexOf('assistantText = "The OpenClaw bridge emitted an invalid response."');
+const openClawFinalizationIndex = chatRoute.indexOf('if (sessionId) push({ kind: "session", sessionId });', malformedOpenClawIndex);
+assert.ok(
+  malformedOpenClawIndex >= 0 && openClawFinalizationIndex > malformedOpenClawIndex,
+  "malformed OpenClaw stdout records a fixed diagnostic and continues through normal stream finalization",
+);
+const openClawMalformedWindow = chatRoute.slice(malformedOpenClawIndex, openClawFinalizationIndex);
+assert.doesNotMatch(
+  openClawMalformedWindow,
+  /copilotProtocolDiagnosticCodes|return;/,
+  "OpenClaw malformed-output handling is isolated from Copilot diagnostics and cannot abandon completion",
+);
+
 assert.match(
   chatRoute,
   /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*const spawnArgv = \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\];[\s\S]*spawn\(openclawLaunch\.command, spawnArgv,[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: false/,

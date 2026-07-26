@@ -1694,7 +1694,7 @@ export function GrimoireView({
           // edit/delete with undo), coven-wide (no familiar scope). Not
           // `standalone`: it's inside the Workspace, so "Run now" and toast
           // actions ride the live event bus.
-          <div className="grimoire-journal-tab h-full min-h-0">
+          <div className="grimoire-journal-tab flex h-full min-h-0 overflow-hidden">
             <JournalEntries familiars={familiars} activeFamiliarId={activeFamiliarId} />
           </div>
         ) : view === "graph" ? (

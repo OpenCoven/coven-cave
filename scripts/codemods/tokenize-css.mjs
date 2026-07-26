@@ -20,7 +20,6 @@
 //     stay visible in the drift ratchet instead;
 //   - values inside calc()/max()/var() fallbacks, negative values, and
 //     multi-line or commented declarations;
-//   - `src/app/mockup/` (standalone mockup with its own token copy);
 //   - lines carrying a `tokens-exempt` marker comment.
 //
 // Usage:
@@ -106,7 +105,7 @@ export const SPACING_PROPS = new Set([
 export const RADIUS_PROPS = new Set(["border-radius"]);
 
 /** Repo-relative path prefixes the codemod (and the drift gate) never touch. */
-export const EXCLUDED_PATHS = ["src/app/mockup/"];
+export const EXCLUDED_PATHS = [];
 
 export const EXEMPT_MARKER = "tokens-exempt";
 

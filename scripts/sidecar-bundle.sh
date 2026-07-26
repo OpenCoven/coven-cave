@@ -4,22 +4,11 @@
 # Windows packages a bounded archive that the launcher expands into its
 # versioned local runtime cache.
 #
-# Mobile-Tauri builds: skip entirely. iOS and Android sandboxes can't spawn
-# a child Node.js process, the resulting IPA / APK would balloon by ~100MB
-# of `node_modules`, and the daemon model on mobile is "point at the user's
-# home Tailscale daemon" anyway — see docs/mobile-tailscale.md. Tauri sets
-# `TAURI_PLATFORM` for us during `tauri ios build` / `tauri android build`,
-# so a simple branch on that variable is enough.
+# Desktop-only: the Cave app ships the Node sidecar exclusively on the desktop
+# Tauri targets. The mobile experience is the native Swift app under `apps/ios/`,
+# which points at the user's home Tailscale daemon rather than a bundled sidecar
+# (see docs/mobile-tailscale.md), so there is no mobile build path through here.
 set -euo pipefail
-
-case "${TAURI_PLATFORM:-}" in
-  ios|android)
-    echo "==> sidecar-bundle.sh: skipping for mobile target ($TAURI_PLATFORM)"
-    echo "    mobile-Tauri builds rely on the user's remote Tailscale daemon;"
-    echo "    no bundled Node sidecar is shipped. See docs/mobile-tailscale.md."
-    exit 0
-    ;;
-esac
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/src-tauri/resources/server"

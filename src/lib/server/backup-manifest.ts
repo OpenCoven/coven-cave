@@ -49,6 +49,7 @@ const CAVE_FILES = [
   "preferences.json",
   "theme.json",
   "mobile-paired.json",
+  "backup-sync.json",
   "automation-runs.json",
   "workflow-runs.json",
   "salem-pathfinder.json",

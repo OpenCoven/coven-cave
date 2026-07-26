@@ -100,6 +100,7 @@ export type GroupStreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
+  | { kind: "assistant_replace"; text: string }
   | { kind: "progress"; label?: string; status?: "running" | "done" | "error" }
   | { kind: "tool_use"; name?: string; status?: "running" | "ok" | "error" }
   | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string; costUsd?: number }
@@ -116,6 +117,8 @@ export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupR
       return { ...reply, sessionId: ev.sessionId };
     case "assistant_chunk":
       return { ...reply, status: "streaming", activity: undefined, text: reply.text + ev.text };
+    case "assistant_replace":
+      return { ...reply, status: "streaming", activity: undefined, text: ev.text };
     case "progress":
       return {
         ...reply,

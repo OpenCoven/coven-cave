@@ -80,6 +80,154 @@
   color: var(--text-muted);
 }
 
+/* ── Sage autoresearch receipts: collapsed, source-backed, read-only. ── */
+.research-library-autoloop {
+  margin-top: var(--space-4);
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-raised) 46%, transparent);
+}
+.research-library-autoloop__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.research-library-autoloop__summary::-webkit-details-marker { display: none; }
+.research-library-autoloop__summary:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.research-library-autoloop__caret {
+  flex: none;
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+.research-library-autoloop[open] .research-library-autoloop__caret {
+  transform: rotate(90deg);
+}
+.research-library-autoloop__count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.research-library-autoloop__region {
+  border-top: 1px solid var(--border-hairline);
+}
+.research-library-autoloop__error,
+.research-library-autoloop__empty {
+  margin: 0;
+  padding: var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.research-library-autoloop__error {
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--color-warning);
+}
+.research-library-autoloop__scroller {
+  max-height: calc(var(--space-10) * 8);
+  overflow: auto;
+}
+.research-library-autoloop__table {
+  width: 100%;
+  min-width: calc(var(--space-10) * 16);
+  border-collapse: collapse;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.research-library-autoloop__table th,
+.research-library-autoloop__table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  text-align: left;
+  vertical-align: middle;
+}
+.research-library-autoloop__table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.research-library-autoloop__table tbody tr:last-child td { border-bottom: 0; }
+.research-library-autoloop__table tbody tr:hover { background: var(--bg-hover); }
+.research-library-autoloop__iter,
+.research-library-autoloop__table time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.research-library-autoloop__slug {
+  display: block;
+  max-width: calc(var(--space-10) * 6);
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.research-library-autoloop__link {
+  max-width: calc(var(--space-10) * 6);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0;
+  background: none;
+  color: var(--research-accent);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.research-library-autoloop__link:hover { text-decoration: underline; }
+.research-library-autoloop__verdict {
+  display: inline-flex;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+.research-library-autoloop__verdict[data-verdict="PROMOTE"] {
+  border-color: color-mix(in oklch, var(--color-success) 38%, transparent);
+  background: color-mix(in oklch, var(--color-success) 14%, transparent);
+  color: var(--color-success);
+}
+.research-library-autoloop__verdict:where([data-verdict="REJECT"], [data-verdict="REVISE"]) {
+  border-color: color-mix(in oklch, var(--color-warning) 38%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
+}
+.research-library-autoloop__document {
+  min-height: calc(var(--space-10) * 4);
+}
+.research-library-autoloop__document-state {
+  margin: 0;
+  padding: var(--space-8) var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .research-library-autoloop__caret {
+    transition: none;
+  }
+}
+
 /* ── Filter chips + cards/rows segmented toggle (design 277–284). ── */
 .research-library__toolbar {
   display: flex;

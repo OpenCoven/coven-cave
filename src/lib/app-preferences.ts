@@ -36,7 +36,6 @@ const LEGACY_KEYS = [
   "cave:datetime-date",
   "cave:datetime-density",
   "cave:corner-radius",
-  "cave:home-news-enabled",
   "cave:mobile-mode-enabled",
   "cave:backdrop:v1",
 ] as const;

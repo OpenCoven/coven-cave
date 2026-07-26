@@ -496,25 +496,45 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           });
           return;
         }
-        const piper = json.runtimes?.piper as PiperRuntime | undefined;
+        const runtimes = json.runtimes as
+          | Partial<Record<LocalTtsVoice["engine"], PiperRuntime>>
+          | undefined;
         // Treat an absent/malformed runtime report as unavailable. A ready
         // model alone cannot synthesize, and offering it during a sidecar
         // version mismatch only leads to a failing preview/call.
-        const piperAvailable = piper?.available === true;
-        const piperUnavailable = !piperAvailable;
+        const runtimeAvailable = (engine: LocalTtsVoice["engine"]) =>
+          runtimes?.[engine]?.available === true;
         const verifiedVoices = json.tts.filter(
           (voice: LocalTtsVoice) =>
             voice?.ready === true &&
             voice?.verified === true &&
-            voice.engine === "piper" &&
-            piperAvailable,
+            (voice.engine === "piper" || voice.engine === "kokoro") &&
+            runtimeAvailable(voice.engine),
         );
+        const piperUnavailable = !runtimeAvailable("piper");
+        // Kokoro is additive: only surface its runtime hint when it hides a
+        // downloaded voice, so Piper-only setups never see noise about a
+        // runtime they don't use.
+        const kokoroHidden =
+          !runtimeAvailable("kokoro") &&
+          json.tts.some(
+            (voice: LocalTtsVoice) =>
+              voice?.ready === true &&
+              voice?.verified === true &&
+              voice.engine === "kokoro",
+          );
+        const runtimeNotes = [
+          ...(piperUnavailable
+            ? [runtimes?.piper?.hint ?? "The local Piper runtime isn't available on this device."]
+            : []),
+          ...(kokoroHidden
+            ? [runtimes?.kokoro?.hint ?? "The local Kokoro runtime isn't available on this device."]
+            : []),
+        ];
         setLocalVoiceCatalog({
           status: "ready",
           voices: verifiedVoices,
-          note: piperUnavailable
-            ? piper?.hint ?? "The local Piper runtime isn't available on this device."
-            : undefined,
+          note: runtimeNotes.length ? runtimeNotes.join(" ") : undefined,
         });
       } catch {
         if (!cancelled) {

@@ -1,6 +1,6 @@
 // Time-bucketed "Recent chats" model for the chat sidebar's recency view
 // (docs/specs/2026-07-03-chat-sidebar-recency-grouping-design.md). Pure and
-// clock-injected (same convention as home-digest.ts) so tests pin exact
+// clock-injected so tests pin exact
 // calendar-day boundaries. Boundaries are LOCAL calendar days: Today = same
 // local date, Yesterday = previous, week = 2–7 days old, month = 8–30, else
 // Older. Sessions with unparseable timestamps land in Older.

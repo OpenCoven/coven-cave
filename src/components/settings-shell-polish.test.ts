@@ -337,18 +337,12 @@ assert.match(source, /connectionError && <span role="alert"/, "the daemon save e
 
 // (cave-9yll, then user-revised) The Mobile-mode On/Off switch matches the
 // shared button shape — a --radius-control rectangle (.ui-btn), not a pill.
-// The News-headlines toggle was later slimmed to a minimal track/knob switch
-// (user-requested): no On/Off text, the row label carries the meaning.
+// Other settings switches use the minimal track/knob treatment.
 assert.ok(
   (source.match(/settings-mobile-switch rounded-\[var\(--radius-control\)\]/g) ?? []).length === 1,
   "the Mobile mode On/Off switch uses the shared control radius",
 );
 assert.doesNotMatch(source, /settings-mobile-switch rounded-full/, "the pill shape stays gone from the labeled switch");
-assert.match(
-  source,
-  /aria-label="News headlines"[\s\S]{0,200}settings-switch focus-ring/,
-  "News headlines renders the minimal track/knob switch",
-);
 assert.match(
   dashboardCss,
   /\.settings-switch \{[\s\S]{0,400}?border-radius: var\(--radius-pill\)/,

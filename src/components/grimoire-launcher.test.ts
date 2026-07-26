@@ -35,6 +35,24 @@ assert.match(
   "the New stitch pill is contextual to the Knowledge tab",
 );
 
+// Both header verbs stay on one line and share the Search documents input's
+// control radius — no pill-vs-control mismatch, no two-line labels when the
+// band gets cramped (cave-w3hu).
+const launcherCss = await readFile(
+  new URL("../styles/grimoire-launcher.css", import.meta.url),
+  "utf8",
+);
+assert.match(
+  launcherCss,
+  /\.grimoire-newstitch \{[^}]*flex: none;[^}]*white-space: nowrap;[^}]*border-radius: var\(--radius-control\);/,
+  "New stitch keeps control radius (matching the search input) and never wraps",
+);
+assert.match(
+  view,
+  /shrink-0[^"]*whitespace-nowrap[^"]*rounded-\[var\(--radius-control\)\][^>]*>\s*<Icon name="ph:plus"[\s\S]{0,80}Blank entry/,
+  "Blank entry matches the search input's control radius and never wraps",
+);
+
 // ── Stitch prefill: capture/template opens re-key the intake mount ──────────
 
 assert.match(

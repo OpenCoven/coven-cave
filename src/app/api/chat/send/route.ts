@@ -60,10 +60,13 @@ import {
 import {
   buildCopilotStreamArgs,
   copilotIdentityPreamble,
-  copilotStreamSpec,
+  copilotProtocolDiagnostic,
+  CopilotMessageTranscript,
   CopilotTextAssembler,
+  isSafeCopilotResumeSessionId,
   parseCopilotChatEvent,
 } from "@/lib/copilot-stream";
+import { prepareCopilotChatRouting } from "./copilot-routing";
 import {
   buildGrokBuildArgs,
   grokIdentityRules,
@@ -108,6 +111,8 @@ import {
 import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
+import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
+import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { loadProjects } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
@@ -729,7 +734,17 @@ function openClawChatResponse(args: {
             assistantText = extractOpenClawText(parsed);
             isError = isError || parsed.status === "error";
           } catch {
-            if (!cancelledByUser) assistantText = stdout.trim();
+            // Never persist raw bridge output: it can contain prompts, paths,
+            // or secrets. Keep the fixed diagnostic, then fall through to the
+            // normal close/finalization path.
+            isError = true;
+            assistantText = "The OpenClaw bridge emitted an invalid response.";
+            pushProgress(
+              "openclaw-protocol",
+              "OpenClaw response was malformed",
+              "error",
+              "The bridge emitted an invalid response.",
+            );
           }
         }
         if (gatewaySessionId) {
@@ -1403,8 +1418,14 @@ export async function POST(req: Request) {
   // parse its event stream instead. Local runtimes only — SSH runtimes go
   // through `coven run` on the remote host. Null keeps the passthrough
   // fallback (and every other adapter keeps it unconditionally).
-  const copilotStream =
-    !sshRuntime && binding.harness === "copilot" ? copilotStreamSpec() : null;
+  const copilotRouting = await prepareCopilotChatRouting({
+    harness: binding.harness,
+    isSshRuntime: Boolean(sshRuntime),
+    probe: probeCopilotCapability,
+    resolveCompatibility: () => resolveRuntimeCompatibility("copilot"),
+  });
+  const copilotStream = copilotRouting.spec;
+  const copilotCompatibilityDiagnostic = copilotRouting.compatibilityDiagnostic;
   // Hermes has a documented one-shot API (`hermes chat -Q -q <prompt>`), but
   // its Coven adapter convention requires a POSIX shell shim to translate the
   // positional prompt that `coven run` appends. The shim cannot be installed
@@ -1446,7 +1467,13 @@ export async function POST(req: Request) {
       });
     }
     if (copilotStream) {
-      copilotSessionHint = resumeSessionId ?? crypto.randomUUID();
+      // A rejected resume token must start a named fresh native session. If
+      // argv silently omits it, retaining the invalid token here would make
+      // Cave announce/persist an id the CLI never used.
+      const safeResumeSessionId = isSafeCopilotResumeSessionId(resumeSessionId)
+        ? resumeSessionId
+        : null;
+      copilotSessionHint = safeResumeSessionId ?? crypto.randomUUID();
       // The direct spawn bypasses `coven run --familiar`, so mirror coven's
       // identity preamble here — without it the familiar answers as the
       // generic Copilot CLI.
@@ -1458,8 +1485,8 @@ export async function POST(req: Request) {
       return buildCopilotStreamArgs({
         spec: copilotStream,
         prompt: identity ? `${identity}\n\n${prompt}` : prompt,
-        resumeSessionId,
-        newSessionId: resumeSessionId ? null : copilotSessionHint,
+        resumeSessionId: safeResumeSessionId,
+        newSessionId: safeResumeSessionId ? null : copilotSessionHint,
         model: cleanModelId(desiredModel),
         permissionMode: body.permissionMode === "read" ? "read" : "full",
         // Ungated grant list (cave-n1yc): the direct spawn never goes through
@@ -1704,6 +1731,14 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
+      if (copilotCompatibilityDiagnostic) {
+        pushProgress(
+          "copilot-client-compatibility",
+          "Copilot tool activity needs an update",
+          "error",
+          copilotCompatibilityDiagnostic,
+        );
+      }
       if (hermesDirect && !hermesApi) {
         // Do not fabricate tool bubbles from the CLI's presentation layer.
         // This gives the operator an actionable, privacy-safe degradation
@@ -1797,6 +1832,14 @@ export async function POST(req: Request) {
       // already seen its prior attempt's terminal events. Preserve that
       // snapshot so reloads match the live transcript.
       const retrySettledTools: RecordedToolEvent[] = [];
+      // JSONL frames can be replayed or reordered. Hold a completion until
+      // its request/start arrives so the shared tracker emits one settled
+      // tool bubble instead of later synthesizing a failure for the call.
+      let pendingCopilotToolCompletions = new Map<
+        string,
+        { output: string | undefined; isError: boolean }
+      >();
+      const MAX_PENDING_COPILOT_TOOL_COMPLETIONS = 64;
       // Keep stderr off the assistant stream — surface it only on failure
       // or empty-success so users don't see raw 401 traces mid-bubble.
       const stderrTail: string[] = [];
@@ -1867,6 +1910,56 @@ export async function POST(req: Request) {
         : null;
       let codexUnknownShapeReported = false;
       let codexHarnessSessionId: string | null = null;
+      const copilotTranscript = new CopilotMessageTranscript();
+      // A changed Copilot tool event must be visible, but diagnostics must
+      // remain bounded and never include the event payload (which can contain
+      // prompts, paths, or tool output). One status row per safe code avoids
+      // flooding the transcript when a newer CLI repeats the frame.
+      const copilotProtocolDiagnosticCodes = new Set<string>();
+
+      const reportCopilotProtocolDiagnostic = (code: string, detail: string) => {
+        if (copilotProtocolDiagnosticCodes.has(code)) return;
+        copilotProtocolDiagnosticCodes.add(code);
+        push({
+          kind: "progress",
+          id: `copilot-protocol-${code}`,
+          label: "Copilot tool activity needs an update",
+          detail,
+          status: "error",
+        });
+      };
+
+      const rememberPendingCopilotToolCompletion = (
+        toolCallId: string,
+        completion: { output: string | undefined; isError: boolean },
+      ) => {
+        // Preserve the first terminal result for an out-of-order call. A
+        // replay must not replace an already buffered completion.
+        if (pendingCopilotToolCompletions.has(toolCallId)) return;
+        if (!pendingCopilotToolCompletions.has(toolCallId) &&
+            pendingCopilotToolCompletions.size >= MAX_PENDING_COPILOT_TOOL_COMPLETIONS) {
+          const oldest = pendingCopilotToolCompletions.keys().next().value;
+          if (oldest) pendingCopilotToolCompletions.delete(oldest);
+          reportCopilotProtocolDiagnostic(
+            "orphan-tool-completion-limit",
+            "Copilot emitted too many unmatched tool completions; some tool details were discarded.",
+          );
+        }
+        pendingCopilotToolCompletions.set(toolCallId, completion);
+      };
+
+      const settlePendingCopilotToolCompletion = (toolCallId: string) => {
+        const completion = pendingCopilotToolCompletions.get(toolCallId);
+        if (!completion) return;
+        const toolEv = toolTracker.envelopeToolResult(
+          toolCallId,
+          completion.output,
+          completion.isError,
+        );
+        if (!toolEv) return;
+        pendingCopilotToolCompletions.delete(toolCallId);
+        push({ kind: "tool_use", ...toolEv });
+      };
 
       const announceSession = (id: string) => {
         sessionId = id;
@@ -2065,8 +2158,15 @@ export async function POST(req: Request) {
       const handleCopilotLine = (line: string, isJson: boolean) => {
         if (isJson) {
           try {
-            const ev = parseCopilotChatEvent(JSON.parse(line));
-            if (!ev) return;
+            const raw = JSON.parse(line);
+            const protocol = copilotStream?.protocol;
+            if (!protocol) return;
+            const ev = parseCopilotChatEvent(raw, protocol);
+            if (!ev) {
+              const diagnostic = copilotProtocolDiagnostic(raw, protocol);
+              if (diagnostic) reportCopilotProtocolDiagnostic(diagnostic.code, diagnostic.message);
+              return;
+            }
             if (!confirmedModel && ev.kind !== "result") {
               const echoed = cleanModelId(ev.model);
               if (echoed) confirmedModel = echoed;
@@ -2077,18 +2177,56 @@ export async function POST(req: Request) {
             if (!sessionId && copilotSessionHint) announceSession(copilotSessionHint);
             switch (ev.kind) {
               case "text_delta": {
-                const text = copilotText.delta(ev.messageId, ev.text);
+                const text = copilotText.delta(ev.messageId, ev.text, ev.frameId);
                 if (text) {
-                  assistantText += text;
-                  push({ kind: "assistant_chunk", text });
+                  const previousAssistantText = assistantText;
+                  assistantText = copilotTranscript.appendDelta(ev.messageId, text);
+                  // Deltas for distinct message ids can interleave. Append
+                  // only when the aggregate transcript really gained a tail;
+                  // otherwise send the reconciled transcript to every client.
+                  if (assistantText === `${previousAssistantText}${text}`) {
+                    push({ kind: "assistant_chunk", text });
+                  } else {
+                    push({ kind: "assistant_replace", text: assistantText });
+                  }
                 }
                 break;
               }
               case "message": {
                 const text = copilotText.message(ev.messageId, ev.content);
-                if (text) {
-                  assistantText += text;
-                  push({ kind: "assistant_chunk", text });
+                const replacement = copilotText.takeReplacement(ev.messageId);
+                const correctionStart = copilotTranscript.offset(ev.messageId);
+                const previousMessageLength = copilotTranscript.messageLength(ev.messageId);
+                const previousAssistantText = assistantText;
+                const correctedText = copilotTranscript.setMessage(ev.messageId, ev.content);
+                // Tools can be announced after a delta but before this final
+                // frame. Shift later tool positions for every length change,
+                // including the normal "append suffix" confirmation path.
+                toolTracker.rebaseTextOffsets(
+                  correctionStart + previousMessageLength,
+                  ev.content.length - previousMessageLength,
+                );
+                if (replacement) {
+                  // A full frame corrects only its own message. Rebuild from
+                  // per-message spans so an interleaved later message survives.
+                  assistantText = correctedText;
+                  push({ kind: "assistant_replace", text: assistantText });
+                } else if (text) {
+                  if (correctedText === `${previousAssistantText}${text}`) {
+                    assistantText = correctedText;
+                    push({ kind: "assistant_chunk", text });
+                  } else {
+                    assistantText = correctedText;
+                    push({ kind: "assistant_replace", text: assistantText });
+                  }
+                } else {
+                  assistantText = correctedText;
+                }
+                if (ev.malformedToolRequests) {
+                  reportCopilotProtocolDiagnostic(
+                    "malformed-tool-event",
+                    "Copilot CLI emitted a malformed tool-activity event; assistant chat continues but tool details may be incomplete. Update the Copilot runtime schema or CLI.",
+                  );
                 }
                 // Tool requests announce calls before execution starts; the
                 // tracker links the later execution_start onto the same id.
@@ -2101,6 +2239,7 @@ export async function POST(req: Request) {
                     assistantText.length,
                   );
                   if (toolEv) push({ kind: "tool_use", ...toolEv });
+                  settlePendingCopilotToolCompletion(req.toolCallId);
                 }
                 break;
               }
@@ -2113,6 +2252,7 @@ export async function POST(req: Request) {
                   assistantText.length,
                 );
                 if (toolEv) push({ kind: "tool_use", ...toolEv });
+                settlePendingCopilotToolCompletion(ev.toolCallId);
                 break;
               }
               case "tool_end": {
@@ -2122,6 +2262,12 @@ export async function POST(req: Request) {
                   ev.isError,
                 );
                 if (toolEv) push({ kind: "tool_use", ...toolEv });
+                else if (!toolTracker.hasSettledEnvelopeId(ev.toolCallId)) {
+                  rememberPendingCopilotToolCompletion(ev.toolCallId, {
+                    output: ev.output,
+                    isError: ev.isError,
+                  });
+                }
                 break;
               }
               case "result": {
@@ -2135,10 +2281,23 @@ export async function POST(req: Request) {
             }
             return;
           } catch {
-            /* not valid JSON after all — fall through to the error tail */
+            // Never persist raw malformed JSONL: tool inputs and outputs can
+            // contain prompts, paths, or secrets. Keep diagnostics fixed and
+            // redacted just like other protocol-drift reporting.
+            const code = "malformed-jsonl";
+            reportCopilotProtocolDiagnostic(code, "Copilot emitted a malformed protocol frame.");
+            recordStdoutErrorTail("Copilot emitted a malformed protocol frame.", true);
+            return;
           }
         }
-        recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+        // Direct Copilot stdout is protocol-only. Preserve no raw text here:
+        // future CLIs may write prompts, paths, tool input, or output before
+        // their JSONL frame, and the generic empty-response error is persisted.
+        reportCopilotProtocolDiagnostic(
+          "unframed-output",
+          "Copilot emitted an unrecognized protocol frame.",
+        );
+        recordStdoutErrorTail("Copilot emitted an unrecognized protocol frame.", true);
       };
 
       const handleGrokLine = (line: string, isJson: boolean) => {
@@ -2359,7 +2518,10 @@ export async function POST(req: Request) {
           return;
         }
         if (copilotStream) {
-          handleCopilotLine(line, isJson);
+          // Direct Copilot output is JSONL. A truncated frame still starts
+          // with `{`, so route it through the fixed redacted diagnostic path
+          // instead of ever adding raw tool data to stdout error tails.
+          handleCopilotLine(line, isJson || line.trimStart().startsWith("{"));
           return;
         }
         if (grokDirect) {
@@ -2820,7 +2982,7 @@ export async function POST(req: Request) {
                 // direct CLI integrations. Every other local harness goes
                 // through `coven run`.
                 const launch = copilotStream
-                  ? { command: copilotStream.executable, fixedArgs: [] as string[] }
+                  ? copilotStream.launchCommand ?? { command: copilotStream.executable, fixedArgs: [] as string[] }
                   : grokDirect
                     ? grokLaunchCommand()
                   : hermesDirect
@@ -2946,8 +3108,7 @@ export async function POST(req: Request) {
           };
 
           child.stdout.on("data", (data: Buffer) => {
-            const chunk = openCodeStdoutDecoder ? openCodeStdoutDecoder.write(data)
-              : stdoutDecoder.write(data);
+            const chunk = openCodeStdoutDecoder ? openCodeStdoutDecoder.write(data) : stdoutDecoder.write(data);
             if (chunk) handleStdoutChunk(chunk);
           });
 
@@ -3008,14 +3169,26 @@ export async function POST(req: Request) {
           });
 
           child.on("close", (code) => {
-            const trailingStdoutText = openCodeStdoutDecoder?.end() ?? stdoutDecoder.end();
+            const trailingOpenCodeText = openCodeStdoutDecoder?.end();
+            if (trailingOpenCodeText) handleStdoutChunk(trailingOpenCodeText);
+            const trailingStdoutText = openCodeStdoutDecoder ? "" : stdoutDecoder.end();
             if (trailingStdoutText) handleStdoutChunk(trailingStdoutText);
             captureHermesSessionFromStderr("", true);
             // OpenCode normally emits a JSON error envelope, but older CLI
             // builds can exit non-zero with only stderr. Do not mistake that
             // failed invocation for a successful model application below.
-            if ((openCodeDirect || codexDirect) && code !== 0) {
+            if ((openCodeDirect || copilotStream || codexDirect) && code !== 0) {
               result = { ...result, is_error: true };
+            }
+            // Copilot JSONL stderr can contain raw prompt or tool payloads on
+            // a successful malformed stream too. Its only user-facing
+            // diagnostics are fixed/redacted protocol messages.
+            if (copilotStream) {
+              stderrTail.length = 0;
+              if (code !== 0) {
+                stdoutErrTail.length = 0;
+                stdoutErrTail.push("Copilot exited before completing its response.");
+              }
             }
             pushProgress(
               "harness-start",
@@ -3122,8 +3295,10 @@ export async function POST(req: Request) {
         settleToolCallsBeforeRetry();
         toolAttempt += 1;
         toolTracker = new ToolCallTracker(Date.now, `attempt-${toolAttempt}-`);
+        pendingCopilotToolCompletions = new Map();
         openCodeModelRejected = false;
         copilotText.reset();
+        copilotTranscript.reset();
         codexDecoder = codexDirect ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
         codexUnknownShapeReported = false;
         codexHarnessSessionId = null;
@@ -3176,8 +3351,10 @@ export async function POST(req: Request) {
         settleToolCallsBeforeRetry();
         toolAttempt += 1;
         toolTracker = new ToolCallTracker(Date.now, `attempt-${toolAttempt}-`);
+        pendingCopilotToolCompletions = new Map();
         openCodeModelRejected = false;
         copilotText.reset();
+        copilotTranscript.reset();
         codexDecoder = codexDirect ? new CodexJsonlDecoder({ trustThreadPreamble: true }) : null;
         codexUnknownShapeReported = false;
         codexHarnessSessionId = null;

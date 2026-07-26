@@ -99,7 +99,7 @@ function fakeMouth() {
   };
 }
 
-function loopFixture({ brain, earsEngine } = {}) {
+function loopFixture({ brain, earsEngine, mouthEngine } = {}) {
   const ears = fakeEars();
   const mic = fakeMic();
   const mouth = fakeMouth();
@@ -109,6 +109,7 @@ function loopFixture({ brain, earsEngine } = {}) {
     ears: ears.factory,
     earsEngine,
     mouth: mouth.mouth,
+    mouthEngine,
     callbacks: {
       onUserTranscriptFinal: (t) => events.userFinals.push(t),
       onAssistantTranscriptFinal: (t) => events.assistantFinals.push(t),
@@ -193,6 +194,17 @@ test("the session reports how it hears from the supplied ears' label (cave-vpe1)
   // …and injected ears without a label stay unlabeled rather than lying.
   const unlabeled = loopFixture();
   assert.equal(unlabeled.session.earsEngine, undefined);
+});
+
+test("the session reports how it speaks from the supplied mouth's label (cave-vony)", () => {
+  // Injected mouths surface the provider's engine label…
+  const piper = loopFixture({ mouthEngine: "sidecar-piper" });
+  assert.equal(piper.session.mouthEngine, "sidecar-piper");
+  const eleven = loopFixture({ mouthEngine: "elevenlabs" });
+  assert.equal(eleven.session.mouthEngine, "elevenlabs");
+  // …and injected mouths without a label stay unlabeled rather than lying.
+  const unlabeled = loopFixture();
+  assert.equal(unlabeled.session.mouthEngine, undefined);
 });
 
 test("without injected ears and without a window engine the loop refuses with stt_unavailable", () => {

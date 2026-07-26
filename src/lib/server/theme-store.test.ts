@@ -77,7 +77,7 @@ try {
   const persisted = JSON.parse(await readFile(preferencesFile, "utf8"));
   assert.equal(persisted.appearance.theme.id, "tide");
   assert.equal(persisted.appearance.theme.tokens["--bg-base"], undefined);
-  assert.equal(persisted.general.newsHeadlines, true);
+  assert.equal(persisted.general.celebrations, true);
   assert.equal(persisted.phone.mobileMode, true);
   assert.equal(
     Object.hasOwn(persisted, "themeId"),

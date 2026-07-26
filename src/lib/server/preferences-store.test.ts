@@ -53,7 +53,7 @@ try {
       cornerRadius: "round",
       backdrop: { enabled: true, intensity: 63, matchAccent: false },
     },
-    general: { newsHeadlines: false },
+    general: { celebrations: false },
     phone: { mobileMode: false },
   });
   assert.equal(initialized.initialized, true);
@@ -65,7 +65,7 @@ try {
     store.patchPreferences({ appearance: { reading: { width: "narrow" } } }),
     store.patchPreferences({ appearance: { reading: { weight: "light", hyphens: "on" } } }),
     store.patchPreferences({ appearance: { recentColors: ["#112233", "#aabbcc"] } }),
-    store.patchPreferences({ general: { newsHeadlines: true } }),
+    store.patchPreferences({ general: { celebrations: true } }),
   ]);
   const afterConcurrent = await store.loadPreferences();
   assert.equal(afterConcurrent.appearance.reading.align, "justify");
@@ -73,7 +73,7 @@ try {
   assert.equal(afterConcurrent.appearance.reading.weight, "light");
   assert.equal(afterConcurrent.appearance.reading.hyphens, "on");
   assert.deepEqual(afterConcurrent.appearance.recentColors, ["#112233", "#aabbcc"]);
-  assert.equal(afterConcurrent.general.newsHeadlines, true);
+  assert.equal(afterConcurrent.general.celebrations, true);
   assert.deepEqual(
     concurrent.map((entry) => entry.revision),
     [2, 3, 4, 5, 6],
@@ -104,7 +104,7 @@ try {
     { appearance: { datetime: { date: "off" } } },
     { appearance: { datetime: { density: "compact" } } },
     { appearance: { cornerRadius: "sharp" } },
-    { general: { newsHeadlines: false } },
+    { general: { stopPhrase: "enough" } },
     { phone: { mobileMode: true } },
   ];
   const loaderUrl = pathToFileURL(path.resolve("scripts/test-alias-register.mjs")).href;
@@ -153,7 +153,7 @@ try {
     density: "compact",
   });
   assert.equal(afterCrossProcess.appearance.cornerRadius, "sharp");
-  assert.equal(afterCrossProcess.general.newsHeadlines, false);
+  assert.equal(afterCrossProcess.general.stopPhrase, "enough");
   assert.equal(afterCrossProcess.phone.mobileMode, true);
   assert.deepEqual(
     (await readdir(intentsDir)).filter((name) => name.endsWith(".lock")),

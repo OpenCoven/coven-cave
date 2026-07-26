@@ -17,10 +17,17 @@
  *   /api/research/missions/[id]/files/[key].
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MarkdownBlock } from "@/components/message-bubble";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
+import { formatDate, useDateTimePrefs } from "@/lib/datetime-format";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { Icon } from "@/lib/icon";
+import {
+  isAutoresearchSnapshot,
+  type AutoresearchRow,
+} from "@/lib/research-autoloop";
 import {
   researchBoundReadings,
   researchPhaseStatuses,
@@ -225,11 +232,54 @@ const FILTER_DEFS: ReadonlyArray<{ id: LibraryFilter; label: string }> = [
   { id: "progress", label: "In progress" },
 ];
 
+type AutoresearchDocument = {
+  title: string;
+  content: string | null;
+  error: string | null;
+};
+
 export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
   // Relative stamps and the ticker's budget reading advance between polls.
   useMinuteTick();
+  const dateTimePrefs = useDateTimePrefs();
   const [filter, setFilter] = useState<LibraryFilter>("all");
   const [view, setViewState] = useState<LibraryView>(readStoredView);
+  const [autoresearchRows, setAutoresearchRows] = useState<AutoresearchRow[]>([]);
+  const [autoresearchAvailable, setAutoresearchAvailable] = useState(false);
+  const [autoresearchError, setAutoresearchError] = useState<string | null>(null);
+  const [autoresearchDocument, setAutoresearchDocument] =
+    useState<AutoresearchDocument | null>(null);
+  const autoresearchDocumentRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const source = new EventSource("/api/research/autoloop/stream");
+    source.onmessage = (event) => {
+      if (!mounted) return;
+      try {
+        const parsed: unknown = JSON.parse(event.data);
+        if (!isAutoresearchSnapshot(parsed)) {
+          setAutoresearchError("Autoresearch data could not be read. Cave will retry.");
+          return;
+        }
+        setAutoresearchRows(parsed.rows);
+        setAutoresearchAvailable(parsed.available);
+        setAutoresearchError(null);
+      } catch {
+        setAutoresearchError("Autoresearch data could not be read. Cave will retry.");
+      }
+    };
+    source.onerror = () => {
+      if (mounted) {
+        setAutoresearchError("Live autoresearch refresh paused. Cave is retrying…");
+      }
+    };
+    return () => {
+      mounted = false;
+      source.close();
+      autoresearchDocumentRequest.current?.abort();
+    };
+  }, []);
 
   const setView = useCallback((next: LibraryView) => {
     setViewState(next);
@@ -239,6 +289,50 @@ export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
     } catch {
       // Private mode / quota — the toggle still works for the session.
     }
+  }, []);
+
+  const openAutoresearchDocument = useCallback(
+    async (documentPath: string, title: string) => {
+      autoresearchDocumentRequest.current?.abort();
+      const request = new AbortController();
+      autoresearchDocumentRequest.current = request;
+      setAutoresearchDocument({ title, content: null, error: null });
+      try {
+        const response = await fetch(
+          `/api/research/autoloop/document?path=${encodeURIComponent(documentPath)}`,
+          { cache: "no-store", signal: request.signal },
+        );
+        const payload: unknown = await response.json();
+        if (
+          !response.ok ||
+          !payload ||
+          typeof payload !== "object" ||
+          !("content" in payload) ||
+          typeof payload.content !== "string"
+        ) {
+          throw new Error("document unavailable");
+        }
+        setAutoresearchDocument({ title, content: payload.content, error: null });
+      } catch (error) {
+        if (request.signal.aborted) return;
+        setAutoresearchDocument({
+          title,
+          content: null,
+          error: "Couldn't open this research document.",
+        });
+      } finally {
+        if (autoresearchDocumentRequest.current === request) {
+          autoresearchDocumentRequest.current = null;
+        }
+      }
+    },
+    [],
+  );
+
+  const closeAutoresearchDocument = useCallback(() => {
+    autoresearchDocumentRequest.current?.abort();
+    autoresearchDocumentRequest.current = null;
+    setAutoresearchDocument(null);
   }, []);
 
   const missions = research.missions;
@@ -320,6 +414,119 @@ export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
           </span>
           <span className="research-library__sort">Sorted by newest</span>
         </header>
+
+        {autoresearchAvailable || autoresearchError ? (
+          <details className="research-library-autoloop">
+            <summary className="research-library-autoloop__summary focus-ring">
+              <Icon
+                name="ph:caret-right"
+                className="research-library-autoloop__caret"
+                aria-hidden
+              />
+              <span>Autoresearch iterations</span>
+              <span className="research-library-autoloop__count">
+                {autoresearchRows.length}
+              </span>
+            </summary>
+            <section className="research-library-autoloop__region" role="region" aria-label="Autoresearch iterations">
+              {autoresearchError && autoresearchRows.length === 0 ? (
+                <p className="research-library-autoloop__error" role="status">
+                  {autoresearchError}
+                </p>
+              ) : autoresearchRows.length === 0 ? (
+                <p className="research-library-autoloop__empty">
+                  No autoresearch iterations recorded yet.
+                </p>
+              ) : (
+                <>
+                  {autoresearchError ? (
+                    <p className="research-library-autoloop__error" role="status">
+                      {autoresearchError}
+                    </p>
+                  ) : null}
+                  <div className="research-library-autoloop__scroller">
+                    <table className="research-library-autoloop__table">
+                      <caption className="sr-only">
+                        Autoresearch iterations, newest first
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Iter</th>
+                          <th scope="col">Date</th>
+                          <th scope="col">Research</th>
+                          <th scope="col">Score</th>
+                          <th scope="col">Verdict</th>
+                          <th scope="col">Skill</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {autoresearchRows.map((row) => (
+                          <tr key={`${row.timestamp}:${row.iter}:${row.slug}`}>
+                            <td className="research-library-autoloop__iter">{row.iter}</td>
+                            <td>
+                              <time dateTime={row.timestamp}>
+                                {formatDate(row.timestamp, dateTimePrefs, { year: true })}
+                              </time>
+                            </td>
+                            <td>
+                              {row.synthesisPath ? (
+                                <button
+                                  type="button"
+                                  className="research-library-autoloop__link focus-ring"
+                                  title={row.summary || row.slug}
+                                  aria-label={`Open ${row.slug} synthesis`}
+                                  onClick={() => void openAutoresearchDocument(
+                                    row.synthesisPath!,
+                                    row.slug,
+                                  )}
+                                >
+                                  {row.slug}
+                                </button>
+                              ) : (
+                                <span
+                                  className="research-library-autoloop__slug"
+                                  title={row.summary || row.slug}
+                                >
+                                  {row.slug}
+                                </span>
+                              )}
+                            </td>
+                            <td>{row.score === null ? "—" : `${row.score}/30`}</td>
+                            <td>
+                              <span
+                                className="research-library-autoloop__verdict"
+                                data-verdict={row.verdict}
+                              >
+                                {row.verdict}
+                              </span>
+                            </td>
+                            <td>
+                              {row.stagedSkillPath ? (
+                                <button
+                                  type="button"
+                                  className="research-library-autoloop__link focus-ring"
+                                  aria-label={`Open staged skill for ${row.slug}`}
+                                  onClick={() => void openAutoresearchDocument(
+                                    row.stagedSkillPath!,
+                                    `${row.slug} skill`,
+                                  )}
+                                >
+                                  Open
+                                </button>
+                              ) : (
+                                <span aria-label="No staged skill">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </section>
+          </details>
+        ) : null}
 
         {artifactCount === 0 ? (
           <div className="research-library__empty">
@@ -441,6 +648,25 @@ export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
           </>
         )}
       </div>
+
+      {autoresearchDocument ? (
+        <Modal
+          open
+          onClose={closeAutoresearchDocument}
+          breadcrumb={["Research library", autoresearchDocument.title]}
+          wide
+        >
+          <div className="research-library-autoloop__document">
+            {autoresearchDocument.error ? (
+              <p className="research-library-autoloop__document-state" role="alert">{autoresearchDocument.error}</p>
+            ) : autoresearchDocument.content === null ? (
+              <p className="research-library-autoloop__document-state" role="status">Loading research document…</p>
+            ) : (
+              <MarkdownBlock text={autoresearchDocument.content} className="cave-md--expanded cave-md--reader" />
+            )}
+          </div>
+        </Modal>
+      ) : null}
     </section>
   );
 }

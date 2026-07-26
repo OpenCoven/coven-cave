@@ -227,14 +227,14 @@ try {
     const canonical = createDefaultPreferences(true);
     canonical.revision = 8;
     canonical.updatedAt = "2026-03-01T00:00:00Z";
-    canonical.general.newsHeadlines = false;
+    canonical.general.celebrations = false;
     await writeFile(path.join(coven, "cave-preferences.json"), JSON.stringify(legacy));
     await writeFile(path.join(cave, "preferences.json"), JSON.stringify(canonical));
     const result = await migrateCaveHome({ createSymlink: denySymlink });
     assert.ok(result.skipped.includes("cave-preferences.json"));
     assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-preferences.json"), true);
     assert.equal((await json(path.join(coven, "cave-preferences.json"))).general.stopPhrase, "legacy stop");
-    assert.equal((await json(path.join(cave, "preferences.json"))).general.newsHeadlines, false);
+    assert.equal((await json(path.join(cave, "preferences.json"))).general.celebrations, false);
   }
 
   // Divergent board copies never auto-merge (conservative philosophy from

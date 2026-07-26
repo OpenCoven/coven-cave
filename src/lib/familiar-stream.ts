@@ -89,6 +89,9 @@ export async function streamFamiliarText(opts: {
     if (ev.kind === "assistant_chunk") {
       text += ev.text ?? "";
       opts.onText?.(text);
+    } else if (ev.kind === "assistant_replace") {
+      text = ev.text ?? "";
+      opts.onText?.(text);
     } else if (ev.kind === "session") noteSession(ev.sessionId);
     else if (ev.kind === "done") {
       noteSession(ev.sessionId);

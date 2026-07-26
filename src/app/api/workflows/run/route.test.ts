@@ -15,9 +15,14 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 assert.match(source, /rejectNonLocalRequest\(req\)/, "run route must reject non-local requests");
 assert.match(source, /readJsonBody<RunBody>\(req, MAX_SESSION_JSON_BYTES\)/, "run route must read the body through the bounded guard");
 
-// Daemon-first: the native engine is still tried before anything local.
+// Native engine routing remains available for non-local-Copilot bindings.
 assert.match(source, /path:\s*"\/api\/v1\/workflows\/run"/, "run route probes the native daemon engine first");
 assert.match(source, /executor:\s*"engine"/, "a native-engine run is tagged executor: engine");
+assert.match(
+  source,
+  /if \(await usesLocalCopilotWorkflowRuntime\(body, gateWorkflow\)\) \{\s*return runViaSession\(body\);\s*\}[\s\S]*?runWorkflowEngineAfterCopilotGate\([\s\S]*?localCopilot:\s*false[\s\S]*?runEngine:\s*\(\)\s*=>\s*callDaemon<DaemonRunResponse>/,
+  "local Copilot bypasses the separately configured daemon engine and takes the directly probed session path",
+);
 
 // 404 (reachable, no engine) → the session executor runs it for real.
 assert.match(source, /engine\.status === 404[\s\S]{0,80}runViaSession\(body\)/, "a 404 from the engine hands off to the session executor");
@@ -59,8 +64,24 @@ assert.match(
 // flows. SSH/hub copilot stays on the daemon.
 assert.match(
   source,
-  /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]{0,160}startCopilotFlowRun\(/,
+  /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]{0,1200}startCopilotFlowRun\(/,
   "a local copilot workflow spawns the CLI directly instead of an orphaned daemon TUI",
+);
+assert.match(
+  source,
+  /Promise\.all\(\[\s*probeCopilotCapability\(\),\s*resolveRuntimeCompatibility\("copilot"\),[\s\S]*copilotStreamSpec\(\s*capability\.version,\s*compatibility\?\.eventProtocols,/,
+  "direct Copilot workflows select only event protocol data from a locally probed version and verified runtime catalog",
+);
+assert.match(
+  source,
+  /if \(binding\.harness === "copilot" && !sshBound && !hubAuthority\)[\s\S]*?if \(!spec\)[\s\S]*?NextResponse\.json\([\s\S]*?status: 409/,
+  "an unsupported local Copilot workflow fails explicitly instead of starting the known unattached daemon TUI",
+);
+const compatibilityGateIndex = source.indexOf("if (!spec)");
+const directCopilotLaunchIndex = source.indexOf("startCopilotFlowRun", compatibilityGateIndex);
+assert.ok(
+  compatibilityGateIndex >= 0 && directCopilotLaunchIndex > compatibilityGateIndex,
+  "an unsupported local Copilot workflow returns before creating a durable running workflow record",
 );
 
 console.log("workflow run route.test.ts: ok");

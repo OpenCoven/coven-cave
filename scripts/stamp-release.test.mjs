@@ -40,17 +40,10 @@ assert.throws(() => bumpVersion("1.2.3", "mega"), /unknown bump level/);
   assert.match(content, /name = "app"\nversion = "0\.0\.160"/);
 }
 {
-  const plist = `<key>CFBundleShortVersionString</key>\n\t<string>0.0.159</string>\n<key>CFBundleVersion</key>\n\t<string>0.0.159</string>\n<key>Other</key>\n\t<string>1.0</string>`;
-  const { content, replaced } = stampContent("plist-string", plist, "0.0.159", "0.0.160");
-  assert.equal(replaced, 2, "both plist version strings stamp");
-  assert.doesNotMatch(content, /0\.0\.159/);
-  assert.match(content, /<string>1\.0<\/string>/, "unrelated strings untouched");
-}
-{
   const { replaced } = stampContent("toml-version", `[package]\nname = "app"\nversion = "0.0.159"\n`, "0.0.159", "0.0.160");
   assert.equal(replaced, 1);
 }
-assert.equal(STAMP_FILES.length, 6, "exactly the six stamp locations");
+assert.equal(STAMP_FILES.length, 4, "exactly the four stamp locations");
 assert.throws(() => stampContent("nope", "", "a", "b"), /unknown stamp kind/);
 
 // ── changelog ─────────────────────────────────────────────────────────────────

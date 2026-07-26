@@ -11,7 +11,7 @@ import {
   runSpeechModelDownload,
   type SpeechModelRegistryEntry,
   speechEnginesReadiness,
-  speechModelCompanionPath,
+  speechModelCompanionPaths,
   speechModelPath,
   speechModelReadiness,
   startSpeechModelDownload,
@@ -51,10 +51,10 @@ test("speech registry is static, reviewed, and grouped for readiness consumers",
     assert.match(model.sha256, /^[a-f0-9]{64}$/);
     assert.ok(model.sizeBytes > 0);
     assert.ok(model.license.length > 0);
-    if (model.companion) {
-      assert.match(model.companion.url, /^https:\/\//);
-      assert.match(model.companion.sha256, /^[a-f0-9]{64}$/);
-      assert.ok(model.companion.sizeBytes > 0);
+    for (const companion of model.companions ?? []) {
+      assert.match(companion.url, /^https:\/\//);
+      assert.match(companion.sha256, /^[a-f0-9]{64}$/);
+      assert.ok(companion.sizeBytes > 0);
     }
   }
   const root = testRoot("empty");
@@ -141,6 +141,74 @@ test("Piper Amy registry metadata matches the reviewed pinned artifact", () => {
   );
 });
 
+// The signature-voice roster (cave-vony): every entry pins the reviewed
+// artifact at the same vetted piper-voices revision as Amy, and only
+// redistribution-safe licenses ship (CC BY-NC-SA and custom-licensed voices
+// were rejected during vetting).
+test("signature voice roster pins reviewed artifacts with vetted licenses", () => {
+  const roster = [
+    {
+      id: "piper-alba-medium-en-gb",
+      sha256: "401369c4a81d09fdd86c32c5c864440811dbdcc66466cde2d64f7133a66ad03b",
+      companionSha256: "aa965a2f02ecced632c2694e1fc72bbff6d65f265fab567ca945918c73dd89f4",
+      license: "CC-BY-4.0",
+    },
+    {
+      id: "piper-joe-medium-en-us",
+      sha256: "58afce0321b8d9c46d7cdf9c16500cc55a793b4220212dba6b70fb788b3baf06",
+      companionSha256: "3d6d5410b3795cb1950595247ef8f06190719e6fdbfa3a2356d8ec368e1aad33",
+      license: "CC0-1.0",
+    },
+    {
+      id: "piper-kristin-medium-en-us",
+      sha256: "5849957f929cbf720c258f8458692d6103fff2f0e3d3b19c8259474bb06a18d4",
+      companionSha256: "5681426d4aead22195de70531eeeeddb46493cfaffc5764b2ea3db73428b651c",
+      license: "Public domain (LibriVox dataset)",
+    },
+  ];
+  for (const expected of roster) {
+    const entry = SPEECH_MODEL_REGISTRY.find((model) => model.id === expected.id);
+    assert.ok(entry, `${expected.id} is registered`);
+    assert.equal(entry.engine, "piper");
+    assert.equal(entry.kind, "tts");
+    assert.equal(entry.sha256, expected.sha256);
+    assert.equal(entry.license, expected.license);
+    // Voice ids double as local TTS voiceNames — they must satisfy the
+    // route's validation pattern or the voice can never synthesize.
+    assert.match(entry.id, /^(?:piper|kokoro)-[a-z0-9][a-z0-9-]*$/);
+    // Piper needs the config beside the weights; an entry without its
+    // companion would advertise an unusable voice.
+    assert.equal(entry.companions?.[0]?.sha256, expected.companionSha256);
+    // Same pinned revision as Amy: artifacts can't drift under re-review.
+    assert.match(entry.url, /\/resolve\/0d907f158acc877ddeebcbf827659ee13bea8bcd\//);
+    assert.match(entry.companions?.[0]?.url ?? "", /\/resolve\/0d907f158acc877ddeebcbf827659ee13bea8bcd\//);
+  }
+});
+
+// Kokoro (cave-tr09i): one reviewed model bundle, addressed by voiceName like
+// any Piper voice. The companions order [voices.bin, tokens.txt] is a pinned
+// contract — the TTS route hands companionPaths[0]/[1] to the runner
+// positionally.
+test("kokoro registry entry pins reviewed artifacts and companion order", () => {
+  const entry = SPEECH_MODEL_REGISTRY.find((model) => model.id === "kokoro-en-v0-19");
+  assert.ok(entry, "kokoro-en-v0-19 is registered");
+  assert.equal(entry.engine, "kokoro");
+  assert.equal(entry.kind, "tts");
+  assert.equal(entry.license, "Apache-2.0");
+  assert.match(entry.id, /^(?:piper|kokoro)-[a-z0-9][a-z0-9-]*$/);
+  assert.equal(entry.sha256, "10ff414106a038ce7e9e0126c6461e4dc8a86efaa89dc91d2009d69fe635e339");
+  assert.equal(entry.kokoroSpeakerId, 0);
+  // Pinned HF revision: artifacts can't drift under re-review.
+  assert.match(entry.url, /\/resolve\/92805c485745946a0d945562d3aba19e7cbb2104\//);
+  assert.deepEqual(
+    entry.companions?.map((companion) => companion.fileName),
+    ["voices.bin", "tokens.txt"],
+  );
+  for (const companion of entry.companions ?? []) {
+    assert.match(companion.url, /\/resolve\/92805c485745946a0d945562d3aba19e7cbb2104\//);
+  }
+});
+
 test("Piper readiness requires its verified config companion", async () => {
   const root = testRoot("companion");
   await rm(root, { recursive: true, force: true });
@@ -152,15 +220,15 @@ test("Piper readiness requires its verified config companion", async () => {
     engine: "piper",
     kind: "tts",
     fileName: "voice.onnx",
-    companion: {
+    companions: [{
       url: "https://example.invalid/voice.onnx.json",
       sha256: sha256(configBody),
       sizeBytes: Buffer.byteLength(configBody),
       fileName: "voice.onnx.json",
-    },
+    }],
   };
   const modelPath = speechModelPath(model, root);
-  const companionPath = speechModelCompanionPath(model, root);
+  const [companionPath] = speechModelCompanionPaths(model, root);
   assert.ok(companionPath);
   await mkdir(path.dirname(modelPath), { recursive: true });
   await writeFile(modelPath, modelBody);
@@ -171,7 +239,7 @@ test("Piper readiness requires its verified config companion", async () => {
   await writeFile(companionPath, configBody);
   const ready = await speechModelReadiness(model, root);
   assert.equal(ready.ready, true);
-  assert.equal(ready.companionPath, companionPath);
+  assert.deepEqual(ready.companionPaths, [companionPath]);
   assert.equal(
     ready.diskSizeBytes,
     Buffer.byteLength(modelBody) + Buffer.byteLength(configBody),
@@ -239,12 +307,12 @@ test("download publishes Piper weights and config as one ready directory", async
     engine: "piper",
     kind: "tts",
     fileName: "voice.onnx",
-    companion: {
+    companions: [{
       url: "https://example.invalid/voice.onnx.json",
       sha256: sha256(configBody),
       sizeBytes: Buffer.byteLength(configBody),
       fileName: "voice.onnx.json",
-    },
+    }],
   };
   const now = new Date().toISOString();
   const job = {
@@ -252,7 +320,7 @@ test("download publishes Piper weights and config as one ready directory", async
     modelId: model.id,
     status: "running" as const,
     receivedBytes: 0,
-    totalBytes: model.sizeBytes + model.companion!.sizeBytes,
+    totalBytes: model.sizeBytes + model.companions![0].sizeBytes,
     startedAt: now,
     updatedAt: now,
   };
@@ -267,7 +335,7 @@ test("download publishes Piper weights and config as one ready directory", async
 
   assert.equal(await readFile(speechModelPath(model, root), "utf8"), modelBody);
   assert.equal(
-    await readFile(speechModelCompanionPath(model, root)!, "utf8"),
+    await readFile(speechModelCompanionPaths(model, root)[0], "utf8"),
     configBody,
   );
   assert.equal((await speechModelReadiness(model, root)).ready, true);
