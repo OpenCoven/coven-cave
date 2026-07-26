@@ -1445,11 +1445,7 @@ fn daemon_shutdown_requested() -> bool {
 #[cfg(all(desktop, target_os = "macos"))]
 fn install_daemon_shutdown_handler() -> Result<(), String> {
     DAEMON_SHUTDOWN_REQUESTED.store(false, Ordering::Release);
-    for signal in [
-        signal_hook_registry::consts::signal::SIGTERM,
-        signal_hook_registry::consts::signal::SIGINT,
-        signal_hook_registry::consts::signal::SIGHUP,
-    ] {
+    for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
         unsafe {
             signal_hook_registry::register(signal, || {
                 DAEMON_SHUTDOWN_REQUESTED.store(true, Ordering::Release);
