@@ -2829,22 +2829,60 @@ export async function POST(req: Request) {
                 }
                 const command = openCodeLaunchCommand
                   ?? { command: launch.command, args: [...launch.fixedArgs, ...spawnArgs] };
-                const child = spawn(command.command, command.args, {
-                  // Spawn IN the familiar's workspace when no project root was
-                  // supplied, so coven's project-root resolver picks that dir as
-                  // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
-                  // from the familiar's home. When a project root IS supplied,
-                  // honor that instead.
-                  cwd: familiarCwd ?? cwd,
-                  stdio: openCodeLaunchCommand?.input === undefined
-                    ? ["ignore", "pipe", "pipe"]
-                    : ["pipe", "pipe", "pipe"],
-                  env: spawnEnv,
-                }) as ChildProcessWithoutNullStreams;
-                if (openCodeLaunchCommand) {
-                  writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
+                try {
+                  const child = spawn(command.command, command.args, {
+                    // Spawn IN the familiar's workspace when no project root was
+                    // supplied, so coven's project-root resolver picks that dir as
+                    // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
+                    // from the familiar's home. When a project root IS supplied,
+                    // honor that instead.
+                    cwd: familiarCwd ?? cwd,
+                    stdio: openCodeLaunchCommand?.input === undefined
+                      ? ["ignore", "pipe", "pipe"]
+                      : ["pipe", "pipe", "pipe"],
+                    env: spawnEnv,
+                  }) as ChildProcessWithoutNullStreams;
+                  if (openCodeLaunchCommand) {
+                    writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
+                  }
+                  return child;
+                } catch (error) {
+                  // Windows may synchronously throw for an existing malformed
+                  // executable (for example, a race after the stat-only gate)
+                  // instead of returning a child that emits "error".
+                  const err = error as NodeJS.ErrnoException;
+                  const launchError = err.message || `${binding.harness} failed to start.`;
+                  const code = err.code === "ENOENT" && binding.harness === "claude"
+                    ? RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing
+                    : err.code ?? "runtime_launch_failed";
+                  result.is_error = true;
+                  launchFailure ??= { code, message: launchError };
+                  pushProgress(
+                    "harness-start",
+                    `${binding.harness} failed to start`,
+                    "error",
+                    launchError,
+                    Date.now() - attemptStartedAt,
+                  );
+                  push({
+                    kind: "error",
+                    code,
+                    message: err.code === "ENOENT"
+                      ? missingRunnerMessage(
+                          openCodeDirect
+                            ? "opencode"
+                            : copilotStream
+                              ? "copilot"
+                              : grokDirect
+                                ? "grok"
+                                : hermesDirect
+                                  ? "hermes"
+                                  : "coven",
+                        )
+                      : launchError,
+                  });
+                  return null;
                 }
-                return child;
               })();
 
           if (!child) {
