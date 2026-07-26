@@ -18,6 +18,7 @@ const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousCovenBin = process.env.COVEN_BIN;
 const previousCovenTestLog = process.env.COVEN_TEST_LOG;
+const previousCovenTestMode = process.env.COVEN_TEST_MODE;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.COVEN_TEST_LOG = log;
@@ -27,8 +28,12 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: false }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: process.env.COVEN_TEST_MODE === 'post-start' }]));",
   "  process.exit(0);",
+  "}",
+  "if (process.argv[2] === 'run' && process.argv[3] === 'codex') {",
+  "  process.stderr.write('unsupported harness `codex`');",
+  "  process.exit(1);",
   "}",
   "process.exit(0);",
 ].join("\n");
@@ -98,6 +103,34 @@ try {
     const conversation = await loadConversation(done.sessionId);
     assert.equal((conversation?.turns ?? []).filter((turn) => turn.role === "assistant").length, 0);
   }
+
+  // A successful probe cannot promise that Coven will keep its adapter
+  // available forever. When the started process emits adapter evidence, the
+  // route maps that evidence to the same actionable Codex state instead of
+  // calling it an authentication or empty-output failure.
+  process.env.COVEN_TEST_MODE = "post-start";
+  const postStartResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "hello after probe", projectRoot: familiarWorkspace }),
+  }));
+  const { body: postStartBody, events: postStartEvents } = await readSse(postStartResponse);
+  const postStartError = postStartEvents.find((event) => event.kind === "error");
+  assert.ok(postStartError, "a started Coven adapter failure produces a structured error event");
+  assert.equal(postStartError.code, "runtime_unlaunchable");
+  assert.match(postStartError.message, /Codex adapter is unavailable or misconfigured in Coven/);
+  assert.doesNotMatch(postStartBody, /installed but not authenticated|produced no output/i);
+  assert.ok(!postStartEvents.some((event) => event.kind === "assistant_chunk"));
+
+  const callsAfterStart = (await readFile(log, "utf8"))
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  assert.ok(
+    callsAfterStart.some((args) => args[0] === "run" && args[1] === "codex" && args.includes("--stream-json")),
+    "the post-start fixture exercises a real Coven run after the availability probe passed",
+  );
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;
@@ -107,6 +140,8 @@ try {
   else process.env.COVEN_BIN = previousCovenBin;
   if (previousCovenTestLog === undefined) delete process.env.COVEN_TEST_LOG;
   else process.env.COVEN_TEST_LOG = previousCovenTestLog;
+  if (previousCovenTestMode === undefined) delete process.env.COVEN_TEST_MODE;
+  else process.env.COVEN_TEST_MODE = previousCovenTestMode;
   await rm(home, { recursive: true, force: true });
 }
 
