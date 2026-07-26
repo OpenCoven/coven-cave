@@ -2468,9 +2468,9 @@ export function GitHubView({
     return orgScope.length === 0 ? byKind : byKind.filter((i) => orgScope.includes(orgOf(i.repo)));
   }, [items, filter, orgScope]);
 
-  // Only organizations that actually have rows in the current GitHub table are
-  // offered — a membership that returned no items is not listed (filtering to it
-  // would just show an empty table). The active filter is still included so a
+  // Org filter options are derived only from organizations represented in the
+  // current base item set (after kind + orgScope filtering, but before org/repo
+  // filters and the search query). The active orgFilter is still included so a
   // selection whose rows dropped out doesn't fall out of the select's options.
   const orgOptions = useMemo(
     () => Array.from(new Set([
