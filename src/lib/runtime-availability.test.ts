@@ -5,6 +5,7 @@ import {
   evaluateRuntimeAvailability,
   missingRunnerMessage,
   resolveHermesLaunch,
+  runtimeProcessFailure,
   summarizeRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
 } from "./runtime-availability.ts";
@@ -77,6 +78,19 @@ import {
     missingRunnerMessage("coven"),
     /Coven CLI not found on PATH/,
     "Coven missing copy stays pinned to the client recovery matcher",
+  );
+
+  const hermesProcessFailure = runtimeProcessFailure("hermes");
+  assert.equal(
+    hermesProcessFailure.code,
+    RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
+    "a started Hermes failure uses the shared runtime error-code contract",
+  );
+  assert.match(hermesProcessFailure.message, /Hermes sign-in and configuration/);
+  assert.doesNotMatch(
+    hermesProcessFailure.message,
+    /\/virtual\/runtime|[A-Za-z]:\\/,
+    "started-process remediation never exposes a local executable path",
   );
 
   const emptyPath = evaluateRuntimeAvailability({

@@ -67,6 +67,7 @@ import {
   missingRunnerMessage,
   RUNTIME_AVAILABILITY_ERROR_CODES,
   resolveHermesLaunch,
+  runtimeProcessFailure,
 } from "@/lib/runtime-availability";
 import {
   quarantineOpenCodeSchema,
@@ -2906,17 +2907,17 @@ export async function POST(req: Request) {
             // runner output out of the assistant transcript: it can contain
             // provider/configuration details and must not masquerade as a
             // successful answer.
-            const message = "Hermes exited with an error before returning a response. Check Hermes sign-in and configuration, then try again.";
+            const failure = runtimeProcessFailure("hermes");
             result.is_error = true;
-            launchFailure ??= { code: "runtime_process_failed", message };
+            launchFailure ??= failure;
             pushProgress(
               "harness-start",
               "Hermes exited with an error",
               "error",
-              message,
+              failure.message,
               Date.now() - attemptStartedAt,
             );
-            push({ kind: "error", code: "runtime_process_failed", message });
+            push({ kind: "error", code: failure.code, message: failure.message });
           };
           const child = sshRuntime
             ? (() => {

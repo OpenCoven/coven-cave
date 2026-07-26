@@ -32,6 +32,7 @@ export const RUNTIME_AVAILABILITY_ERROR_CODES = {
   unlaunchable: "runtime_unlaunchable",
   probe_failed: "runtime_probe_failed",
   unsupported_runtime: "runtime_unsupported",
+  process_failed: "runtime_process_failed",
 } as const;
 
 export type RuntimeAvailabilityErrorCode =
@@ -139,6 +140,26 @@ const RUNNER_LABELS: Record<DirectRunnerId, string> = {
   hermes: "Hermes CLI",
   opencode: "OpenCode CLI",
 };
+
+/** A process that starts and then exits unsuccessfully is not a discovery or
+ * launchability failure. Keep its safe, actionable terminal error in the same
+ * runtime contract so the chat route does not invent a separate response
+ * shape or expose provider output. */
+export type RuntimeProcessFailure = {
+  runner: DirectRunnerId;
+  code: typeof RUNTIME_AVAILABILITY_ERROR_CODES.process_failed;
+  message: string;
+};
+
+export function runtimeProcessFailure(runner: DirectRunnerId): RuntimeProcessFailure {
+  const label = RUNNER_LABELS[runner];
+  const launchLabel = runner === "hermes" ? "Hermes" : label;
+  return {
+    runner,
+    code: RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
+    message: `${launchLabel} exited with an error before returning a response. Check ${launchLabel} sign-in and configuration, then try again.`,
+  };
+}
 
 export function missingRunnerMessage(runner: DirectRunnerId): string {
   return MISSING_RUNNER_MESSAGES[runner];
