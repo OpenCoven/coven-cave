@@ -194,6 +194,28 @@ const v3 = await resolveInstalledClaudeCompatibility({
 });
 assert.equal(v3.kind === "compatible" && v3.profile.id, signedV3.id);
 
+// A selectable cache ahead of its durable watermark is inconsistent too. If
+// it were accepted, deleting it on the next restart would make the stale
+// watermark permit a lower signed snapshot and silently roll back the v3
+// profile that this process had selected.
+resetClaudeCompatibilityCacheForTest();
+await loadClaudeCompatibilityCache({
+  path: "ahead-cache",
+  read: async () => JSON.stringify({ schemaVersion: 1, profiles: [...CLAUDE_COMPATIBILITY_PROFILES, signedV3] }),
+  watermarkPath: "stale-watermark",
+  readWatermark: async () => JSON.stringify({ schemaVersion: 1, maxSequence: 2 }),
+});
+const cacheAheadOfWatermark = await resolveInstalledClaudeCompatibility({
+  version: async () => "3.1.0",
+  help: async () => "--output-format stream-json",
+  now: () => Date.parse("2026-07-24T00:00:00.000Z"),
+});
+assert.deepEqual(
+  cacheAheadOfWatermark,
+  { kind: "fallback", reason: "invalid-profile" },
+  "a cache snapshot ahead of its durable rollback watermark must fail closed",
+);
+
 // A restart must not make a previously accepted higher profile disappear just
 // because an attacker or interrupted cache writer leaves an older, otherwise
 // valid signed snapshot at the selectable cache path.

@@ -136,7 +136,11 @@ export async function loadClaudeCompatibilityCache(
     const maximum = document?.schemaVersion === 1 && Array.isArray(document.profiles)
       ? profileMaxSequence(document.profiles)
       : null;
-    if (maximum !== null && maximum >= acceptedProfileSequence) {
+    // With a durable watermark, the selectable snapshot must agree with that
+    // exact high-water mark. A cache ahead of the watermark is also suspect:
+    // if it were accepted, later deletion of that cache would let a lower
+    // signed snapshot become selectable from the stale watermark.
+    if (maximum !== null && (!hasDurableWatermark || maximum === acceptedProfileSequence)) {
       if (!profileCache.refresh(document.profiles) && hasDurableWatermark) {
         profileCacheTrustFailure = true;
       }
