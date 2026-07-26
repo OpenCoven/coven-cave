@@ -134,7 +134,7 @@ assert.match(
   /initialSection === "roles" \|\| initialSection === "capabilities" \? "browse" : initialSection/,
   "'roles' and 'capabilities' deep links land on Browse",
 );
-assert.match(marketplaceView, /import \{ type SkillBrowserEntry \} from "@\/components\/skill-browser"/, "hub consumes the registry skill entry type for Explore");
+assert.match(marketplaceView, /import \{ type SkillBrowserEntry \} from "@\/lib\/skill-directory"/, "hub consumes the registry skill entry type for Explore");
 assert.match(marketplaceView, /SkillExploreDrawer/, "hub mounts the Explore skill detail drawer");
 assert.doesNotMatch(marketplaceView, /CapabilitiesViewSurface|capabilities-view/, "the hub no longer imports or renders the Capabilities surface");
 assert.match(

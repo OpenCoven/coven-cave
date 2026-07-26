@@ -129,17 +129,21 @@
   overflow: auto;
   display: grid;
   place-items: center;
+  /* Fill preset: the sketch owns the whole stage — no gutter. */
+  padding: 0;
+}
+/* Sized device presets keep breathing room around the scaled frame (and the
+   scale math reads this padding back, so the footprint never touches edges). */
+.canvas-editor__stage:has(.canvas-editor__frame-shell--viewport) {
   padding: var(--space-6);
 }
 .canvas-editor__frame-shell {
   position: relative;
-  width: min(900px, 100%);
+  /* Fill preset: edge-to-edge — the aside's own border draws the seam. */
+  width: 100%;
   height: 100%;
   min-height: 240px;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
   background: var(--bg-panel);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
   overflow: hidden;
 }
 .canvas-editor__frame {
@@ -237,6 +241,10 @@
   width: 320px;
   flex: none;
   border-left: 1px solid var(--border-hairline);
+  /* Solid panel ground — side panes stay opaque so the chat backdrop image
+     never bleeds through the inspector/design-chat column (backdrop.css
+     side-pane contract). */
+  background: var(--bg-panel);
   display: flex;
   flex-direction: column;
   min-height: 0;

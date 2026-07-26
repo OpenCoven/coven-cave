@@ -70,6 +70,23 @@ export function openCodeNeedsTmpRuntimeDir(
   return isWsl || (platform !== "win32" && !env.XDG_RUNTIME_DIR);
 }
 
+/** Prefer the process launch PATH while retaining the scoped harness fallback.
+ * This keeps a freshly updated user npm shim ahead of Cave's discovered CLI
+ * directories without importing that dynamic discovery into the sidecar. */
+export function preferOpenCodeLaunchPath(
+  scopedPath: string | undefined,
+  launchPath: string | undefined = process.env.PATH ?? process.env.Path,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  const delimiter = platform === "win32" ? ";" : ":";
+  const seen = new Set<string>();
+  const normalize = (entry: string) => platform === "win32" ? entry.toLowerCase() : entry;
+  const entries = [launchPath, scopedPath]
+    .flatMap((pathValue) => pathValue?.split(delimiter) ?? [])
+    .filter((entry) => entry && !seen.has(normalize(entry)) && (seen.add(normalize(entry)), true));
+  return entries.length ? entries.join(delimiter) : undefined;
+}
+
 /**
  * Preserve the familiar's scoped vault environment while making WSL's CLI
  * runnable outside a login session. The snap/node launcher rejects the absent
@@ -78,6 +95,11 @@ export function openCodeNeedsTmpRuntimeDir(
  */
 export function openCodeSpawnEnv(familiarId?: string | null): NodeJS.ProcessEnv {
   const env = harnessSpawnEnv(familiarId);
+  // OpenCode is direct user-selected tooling: preserve its scoped fallback,
+  // but order the actual launch PATH first so a newly updated npm shim cannot
+  // be shadowed by an older discovered global copy.
+  const launchPath = preferOpenCodeLaunchPath(env.PATH);
+  if (launchPath) env.PATH = launchPath;
   if (openCodeNeedsTmpRuntimeDir(process.platform, env)) {
     env.XDG_RUNTIME_DIR = "/tmp";
   }

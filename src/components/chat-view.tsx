@@ -3352,6 +3352,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             return;
           }
           storeConversation(sessionId, json);
+          // Revalidation no-op guard: when the cache already painted this exact
+          // conversation, skip re-applying it. applyConversationPayload maps
+          // fresh turn objects every call, so an identical re-apply rebuilds the
+          // whole transcript — a visible flicker on heavy blocks (code, images)
+          // every time a cached thread is reopened. Content-equal → leave the
+          // painted turns untouched; only a real change re-renders.
+          if (
+            cachedConversation &&
+            JSON.stringify(json.conversation) === JSON.stringify(cachedConversation.conversation)
+          ) {
+            setHistoryState("loaded");
+            return;
+          }
           applyConversationPayload(json);
         } else if (json.ok && json.context) {
           // Known affiliation (e.g. fresh task chat) — no transcript yet.

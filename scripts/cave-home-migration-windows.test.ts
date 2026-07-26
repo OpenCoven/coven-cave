@@ -116,19 +116,25 @@ try {
   const candidateFailureCave = path.join(candidateFailureHome, "cave");
   await mkdir(candidateFailureCave, { recursive: true });
   let candidateAttempts = 0;
+  let candidateClock = 0;
   const candidates = new Set<string>();
   const persistentEperm = async (candidate: string) => {
     candidateAttempts += 1;
+    candidateClock += 100;
     candidates.add(candidate);
     const error = new Error("injected persistent Windows EPERM") as NodeJS.ErrnoException;
     error.code = "EPERM";
     throw error;
   };
   await assert.rejects(
-    migrateCaveHome({ lockTimeoutMs: retryTimeoutMs, lockCandidateRename: persistentEperm }),
+    migrateCaveHome({
+      lockTimeoutMs: retryTimeoutMs,
+      lockNow: () => candidateClock,
+      lockCandidateRename: persistentEperm,
+    }),
     (error) => error?.code === "ETIMEDOUT",
   );
-  assert.ok(candidateAttempts >= 2);
+  assert.ok(candidateAttempts >= 2, "the injected monotonic clock permits the intended retry sequence independent of CI scheduling");
   assert.equal(candidates.size, 1, "candidate retries reuse one directory on Windows");
   assert.equal(
     (await readdir(candidateFailureCave)).some((name) => name.startsWith(".migration.lock.candidate-")),
@@ -150,7 +156,7 @@ try {
   let reclaimAttempts = 0;
   await assert.rejects(
     migrateCaveHome({
-      lockTimeoutMs: retryTimeoutMs,
+      lockTimeoutMs: 150,
       lockFenceRename: async () => {
         reclaimAttempts += 1;
         const error = new Error("injected persistent Windows reclaim EPERM") as NodeJS.ErrnoException;

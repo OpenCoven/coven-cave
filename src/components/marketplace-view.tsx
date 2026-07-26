@@ -33,7 +33,7 @@ import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
 import { CollectionStrip } from "@/components/marketplace/collection-strip";
 import { SkillBuilder } from "@/components/marketplace/skill-builder";
-import { type SkillBrowserEntry } from "@/components/skill-browser";
+import { type SkillBrowserEntry } from "@/lib/skill-directory";
 import { type FamiliarForSkill } from "@/components/skill-detail-drawer";
 import { SkillExploreCard } from "@/components/marketplace/skill-explore-card";
 import { SkillExploreDrawer } from "@/components/marketplace/skill-explore-drawer";

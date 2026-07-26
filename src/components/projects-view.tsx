@@ -22,22 +22,21 @@ import {
   type ProjectAccessLevel,
 } from "@/lib/project-access-levels";
 import {
-  SECTION_LABELS,
-  SECTION_ORDER,
   accessCounts,
   accessStateMeta,
   filterProjectsByQuery,
   nextAccessState,
+  sectionModels,
   setAllOps,
-  splitProjectsBySection,
   type AccessOp,
   type AccessState,
-  type ProjectSection,
+  type SectionModel,
 } from "@/lib/projects/access-page";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -87,10 +86,14 @@ async function runAccessOp(familiarId: string, op: AccessOp): Promise<void> {
   if (!res.ok) throw new Error(String(res.status));
 }
 
+/** Grouping preference: "1" (default) = workspaces/repositories, "0" = flat. */
+const GROUPED_STORAGE_KEY = "cave:projects:grouped";
+
 /**
  * The Chat → Projects surface: one familiar's project-access map. Pick a
- * familiar, see every registered project split into workspaces and
- * repositories, and click a row to cycle its direct grant — no access → read
+ * familiar, see every registered project — grouped into workspaces and
+ * repositories, or flattened into one list via the toolbar toggle (persisted
+ * per profile) — and click a row to cycle its direct grant — no access → read
  * → full → none — against /api/project-grants. Effective levels fold in
  * access-group grants (union-max), and the supreme familiar renders locked
  * at Full everywhere.
@@ -261,11 +264,25 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     [rowByProject],
   );
 
-  // ── Search ─────────────────────────────────────────────────────────────
+  // ── Search & grouping ──────────────────────────────────────────────────
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
+  // Grouped by default; the preference survives reloads per profile.
+  const [grouped, setGrouped] = useState<boolean>(
+    () => typeof window === "undefined" || window.localStorage.getItem(GROUPED_STORAGE_KEY) !== "0",
+  );
+  const toggleGrouped = useCallback(() => {
+    const next = !grouped;
+    setGrouped(next);
+    try {
+      window.localStorage.setItem(GROUPED_STORAGE_KEY, next ? "1" : "0");
+    } catch {
+      // Storage failures (private mode) only lose the preference, not the view.
+    }
+    announce(next ? "Projects grouped by type." : "Projects shown as one flat list.");
+  }, [grouped, announce]);
   const filtered = useMemo(() => filterProjectsByQuery(projects, query), [projects, query]);
-  const sections = useMemo(() => splitProjectsBySection(filtered), [filtered]);
+  const sections = useMemo(() => sectionModels(filtered, grouped), [filtered, grouped]);
 
   // "/" jumps to the search box (unless focus is already in an editable).
   useEffect(() => {
@@ -383,8 +400,8 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   );
 
   const setAllInSection = useCallback(
-    (section: ProjectSection, target: AccessState) => {
-      const ids = sections[section].map((p) => p.id);
+    (section: SectionModel<CaveProject>, target: AccessState) => {
+      const ids = section.projects.map((p) => p.id);
       const ops = setAllOps(ids, directByProject, target);
       if (ops.length === 0) {
         announce("Nothing to change.");
@@ -392,10 +409,10 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       }
       void applyOps(
         ops,
-        `${SECTION_LABELS[section]}: ${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.`,
+        `${section.label}: ${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.`,
       );
     },
-    [sections, directByProject, applyOps, announce],
+    [directByProject, applyOps, announce],
   );
 
   const resetAll = useCallback(async () => {
@@ -481,7 +498,6 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       />
     );
   } else {
-    const visibleSections = SECTION_ORDER.filter((section) => sections[section].length > 0);
     body = (
       <>
         {supreme && familiar ? (
@@ -500,17 +516,17 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
             {addFlow.addError}
           </p>
         ) : null}
-        {visibleSections.length === 0 ? (
+        {sections.length === 0 ? (
           <p className="projects-access-nomatch" role="status">
             No projects match “{query.trim()}”.
           </p>
         ) : (
-          visibleSections.map((section) => (
-            <section key={section} className="projects-access-section" aria-label={SECTION_LABELS[section]}>
+          sections.map((section) => (
+            <section key={section.key} className="projects-access-section" aria-label={section.label}>
               <header className="projects-access-section-head">
                 <h2 className="projects-access-section-title">
-                  {SECTION_LABELS[section]}
-                  <span className="projects-access-section-count">{sections[section].length}</span>
+                  {section.label}
+                  <span className="projects-access-section-count">{section.projects.length}</span>
                 </h2>
                 <span className="projects-access-rule" aria-hidden />
                 <span className="projects-access-setall">
@@ -519,7 +535,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                     <button
                       key={target}
                       type="button"
-                      className="projects-access-setall-btn"
+                      className="projects-access-setall-btn focus-ring"
                       disabled={controlsDisabled}
                       onClick={() => setAllInSection(section, target)}
                     >
@@ -529,7 +545,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                 </span>
               </header>
               <ul className="projects-access-list">
-                {sections[section].map((project) => {
+                {section.projects.map((project) => {
                   const row = rowByProject.get(project.id) ?? {
                     project,
                     state: "none" as AccessState,
@@ -558,7 +574,6 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                           }
                           aria-label={`${project.name}: ${meta.label}${viaGroups}. ${supreme ? "Locked for the supreme familiar." : `Click to ${meta.action}.`}`}
                         >
-                          <Icon className="projects-access-row-icon" name="ph:folder" width={15} aria-hidden />
                           <span className="projects-access-row-name">{project.name}</span>
                           {project.repoUrl ? (
                             <Icon
@@ -613,8 +628,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
           <p className="projects-access-eyebrow">Familiars</p>
           <h1 className="projects-access-title">Project access</h1>
           <p className="projects-access-subtitle">
-            Choose what each familiar can see and touch. Click any project to cycle its access —
-            none, read, or full.
+            Click a project to cycle access — none, read, full.
           </p>
         </header>
 
@@ -639,6 +653,19 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
               aria-label="Find a project"
             />
           </label>
+          <IconButton
+            icon={grouped ? "ph:stack" : "ph:rows"}
+            size="sm"
+            active={grouped}
+            className="projects-access-grouping"
+            aria-label="Group projects by type"
+            title={
+              grouped
+                ? "Grouped into workspaces and repositories — click for one flat list"
+                : "Flat list — click to group into workspaces and repositories"
+            }
+            onClick={toggleGrouped}
+          />
           <span className="projects-access-counts" title={`${counts.none} without access · ${counts.read} read · ${counts.write} full`}>
             <span className="projects-access-count is-none">
               <span className="projects-access-dot" aria-hidden />

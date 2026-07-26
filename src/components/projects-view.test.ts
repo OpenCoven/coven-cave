@@ -27,11 +27,12 @@ test("the surface keeps its mount contract with ChatSurface", () => {
   assert.match(chatSurface, /scope === "projects" \? \(/, "ChatSurface still branches to the Projects surface");
 });
 
-test("the header is the cave-typography access hero", () => {
+test("the header is the compact cave-typography access header", () => {
   assert.match(view, /className="projects-access-eyebrow">Familiars</, "eyebrow reads Familiars");
-  assert.match(view, /className="projects-access-title">Project access</, "serif display title");
-  assert.match(view, /Choose what each familiar can see and touch\./, "subtitle explains the page");
+  assert.match(view, /className="projects-access-title">Project access</, "serif title");
+  assert.match(view, /Click a project to cycle access — none, read, full\./, "one-line subtitle explains the cycle");
   assert.match(css, /\.projects-access-title \{[^}]*font-family: var\(--font-serif, ui-serif, serif\)/, "title uses the cave serif");
+  assert.match(css, /\.projects-access-title \{[^}]*font-size: var\(--text-xl\)/, "title sits on the type scale, not a display hero");
   assert.match(css, /\.projects-access-eyebrow \{[^}]*font-family: var\(--font-mono, ui-monospace, monospace\)/, "eyebrow is mono");
   assert.match(css, /\.projects-access-eyebrow \{[^}]*text-transform: uppercase/, "eyebrow is uppercase");
   assert.match(css, /\.projects-access-eyebrow \{[^}]*color: var\(--accent-presence\)/, "eyebrow carries the accent");
@@ -58,7 +59,7 @@ test("rows cycle a direct grant against /api/project-grants", () => {
   assert.match(view, /resolveEffectiveAccess\(\{/, "pills show the effective level (direct ∪ groups)");
   assert.match(view, /setOptimistic\(/, "mutations render optimistically");
   assert.match(view, /await loadGrants\(\)/, "server snapshot is re-fetched after a mutation");
-  assert.match(view, /splitProjectsBySection\(filtered\)/, "sections derive from the pure splitter");
+  assert.match(view, /sectionModels\(filtered, grouped\)/, "sections derive from the pure grouping-aware splitter");
   assert.match(view, /setAllOps\(/, "bulk actions compute the minimal op set");
   assert.match(view, /keeps \$\{accessStateMeta\(row\.state\)\.label\} via/, "group-held access explains itself instead of firing a no-op revoke");
 });
@@ -76,11 +77,34 @@ test("command-palette focus scrolls and flashes the row", () => {
   assert.match(view, /scrollIntoView\(\{ block: "center", behavior: smoothScrollBehavior\(\) \}\)/, "respects reduced motion");
 });
 
+test("a persisted toolbar toggle switches grouped sections to one flat list", () => {
+  assert.match(view, /const GROUPED_STORAGE_KEY = "cave:projects:grouped"/, "preference key follows the cave:<surface>:<pref> convention");
+  assert.match(view, /window\.localStorage\.getItem\(GROUPED_STORAGE_KEY\) !== "0"/, "grouped stays the default until explicitly turned off");
+  assert.match(view, /window\.localStorage\.setItem\(GROUPED_STORAGE_KEY, next \? "1" : "0"\)/, "toggling persists the preference");
+  assert.match(view, /<IconButton[\s\S]{0,240}active=\{grouped\}/, "the toolbar control is an aria-pressed IconButton");
+  assert.match(view, /aria-label="Group projects by type"/, "the toggle keeps a stable accessible name");
+  assert.match(view, /icon=\{grouped \? "ph:stack" : "ph:rows"\}/, "the glyph mirrors the current mode");
+  assert.match(view, /announce\(next \? "Projects grouped by type\." : "Projects shown as one flat list\."\)/, "mode changes are announced");
+  assert.match(view, /onClick=\{toggleGrouped\}/, "clicking flips the mode");
+  assert.match(css, /\.projects-access-grouping \{/, "the toggle is styled into the toolbar");
+});
+
+test("secondary controls stay quiet until hover or keyboard focus", () => {
+  assert.match(css, /\.projects-access-setall \{[^}]*opacity: 0/, "Set-all rests invisible");
+  assert.match(css, /\.projects-access-section-head:hover \.projects-access-setall,\n\.projects-access-section-head:focus-within \.projects-access-setall \{[^}]*opacity: 1/, "hover or focus reveals Set-all");
+  assert.match(view, /className="projects-access-setall-btn focus-ring"/, "revealed Set-all buttons carry the focus ring");
+  assert.match(css, /\.projects-access-row-settings \{[^}]*opacity: 0/, "the row gear rests invisible");
+  assert.match(css, /\.projects-access-rowwrap:hover \.projects-access-row-settings,\n\.projects-access-rowwrap:focus-within \.projects-access-row-settings \{[^}]*opacity: 1/, "row hover or focus reveals the gear");
+  const hoverNoneBlocks = css.match(/@media \(hover: none\)/g) ?? [];
+  assert.ok(hoverNoneBlocks.length >= 2, "touch devices keep both controls always visible");
+});
+
 test("pills and states are token-driven for both themes", () => {
   assert.match(css, /\.projects-access-pill\.is-write \{[^}]*background: var\(--accent-presence\)/, "Full pill fills with the accent");
   assert.match(css, /\.projects-access-pill\.is-write \{[^}]*color: var\(--accent-presence-foreground\)/, "Full pill text uses the paired foreground token");
   assert.match(css, /\.projects-access-pill\.is-read \{[^}]*color-mix\(in oklch, var\(--accent-presence\) 12%, transparent\)/, "Read pill is an accent tint");
   assert.match(css, /\.projects-access-pill\.is-none \{[^}]*color: var\(--text-muted\)/, "No-access pill stays muted");
+  assert.match(css, /\.projects-access-pill\.is-none \{[^}]*border-color: transparent/, "No-access pill drops the chip border — quietest state");
   assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "no hard-coded hex colors — theme tokens only");
   assert.match(css, /\.projects-access-row\.is-flash/, "flash state is styled");
   assert.match(css, /\.projects-access-rule \{[^}]*background: var\(--border-hairline\)/, "section rules are hairlines");

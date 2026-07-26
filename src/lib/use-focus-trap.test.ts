@@ -45,6 +45,16 @@ assert.match(
   "stores onEscape in a ref to avoid effect re-runs on callback identity change",
 );
 
+// Escape dismissal is optional: the handler must optional-chain the ref so an
+// undefined onEscape is a safe no-op. Callers (Modal's dismissOnEscape gate,
+// cave-0g9u) rely on this to block Esc dismissal mid-submit while the trap —
+// Tab cycling and focus return — stays active.
+assert.match(
+  source,
+  /onEscapeRef\.current\?\.\(\)/,
+  "an undefined onEscape no-ops on Esc without deactivating the trap",
+);
+
 // onEscape must NOT appear in the trap effect's dep array.
 const trapEffect = source.match(/useEffect\(\s*\(\)\s*=>\s*\{[\s\S]*?\},\s*\[([^\]]*)\]\s*\)/g) ?? [];
 const trapDeps = trapEffect.find((b) => b.includes('e.key === "Tab"')) ?? "";

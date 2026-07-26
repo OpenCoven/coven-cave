@@ -5,8 +5,6 @@ struct SettingsView: View {
     @Environment(\.chrome) private var chrome
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @AppStorage(ChatNotifications.enabledKey) private var chatNotificationsEnabled = true
-    @State private var editingHost: String = ""
-    @State private var showDisconnectConfirm = false
     @State private var exportArchive: ExportArchive?
     @State private var exportFailed = false
     @State private var themeError = false
@@ -22,25 +20,25 @@ struct SettingsView: View {
         return "\(version) (\(build))"
     }
 
+    /// Top level mirrors the design handoff's settings IA: profile hero, then
+    /// Appearance / Wards / Chats / Community / Legal groups and a centered
+    /// mono brand footer. Connection plumbing (address, re-check, disconnect)
+    /// lives one level down behind the hero.
     var body: some View {
         NavigationStack {
             Form {
-                connectionCard
-                themeSection
+                heroSection
                 appearanceSection
+                wardsSection
                 chatsSection
-                permissionsSection
                 communitySection
-                hostSection
-                disconnectSection
-                aboutSection
+                legalSection
             }
             .themedListBackground()
             .readableListWidth(680)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
-                editingHost = app.connection?.host ?? ""
                 pushMode = (app.publishedMode ?? (chrome.colorScheme == .light ? "light" : "dark")) == "light" ? .light : .dark
             }
             .onChange(of: app.publishedMode) { _, mode in
@@ -48,14 +46,6 @@ struct SettingsView: View {
                 // from elsewhere, so the swatches and selection stay truthful.
                 guard let mode else { return }
                 pushMode = mode == "light" ? .light : .dark
-            }
-            .confirmationDialog("Disconnect from your desktop?",
-                                isPresented: $showDisconnectConfirm,
-                                titleVisibility: .visible) {
-                Button("Disconnect", role: .destructive) { app.disconnect() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("You'll need to re-enter your desktop address to reconnect.")
             }
             .sheet(item: $exportArchive) { archive in
                 ActivityView(items: [archive.url])
@@ -71,49 +61,86 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Connection hero
+    // MARK: - Profile hero (per the design: sigil avatar, name, mono host + status dot)
 
-    /// Profile-style hero per the design: a gradient sigil avatar, the cave's
-    /// name, the desktop host in mono, and a live status pill — so the most
-    /// important state (am I connected?) reads at once.
-    private var connectionCard: some View {
+    /// The most important state — who am I and am I connected? — reads at once:
+    /// a gradient sigil avatar, the cave's name, and the desktop host in mono
+    /// behind a live status dot. Tapping through opens the Connection page
+    /// (address, re-check, disconnect), keeping the top level uncluttered.
+    private var heroSection: some View {
         Section {
-            HStack(spacing: 14) {
-                Circle()
-                    .fill(chrome.accentGradient)
-                    .frame(width: 54, height: 54)
-                    .overlay {
-                        Image(systemName: "moon.stars.fill")
-                            .font(.system(size: 22, weight: .medium))
-                            .foregroundStyle(chrome.accentForeground)
-                    }
+            NavigationLink {
+                ConnectionSettingsView()
+            } label: {
+                HStack(spacing: 14) {
+                    Circle()
+                        .fill(chrome.accentGradient)
+                        .frame(width: 54, height: 54)
+                        .overlay {
+                            Image(systemName: "moon.stars.fill")
+                                .font(.system(size: 22, weight: .medium))
+                                .foregroundStyle(chrome.accentForeground)
+                        }
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(app.operatorDisplayName)
-                        .font(.headline)
-                    Text(app.connection?.host ?? "Not set up")
-                        .font(.footnote.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    statusBadge.padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(app.operatorDisplayName)
+                            .font(.headline)
+                        HStack(spacing: 6) {
+                            Circle().fill(statusTint).frame(width: 7, height: 7)
+                            Text(statusLine)
+                                .font(.footnote.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .padding(.vertical, 6)
             }
-            .padding(.vertical, 6)
             .listRowBackground(chrome.bgRaised.opacity(0.6))
-        } footer: {
-            Text("Connected over your Tailscale network with a paired Cave access token.")
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(app.operatorDisplayName), \(statusAccessibilityLabel)")
+            .accessibilityHint("Opens connection settings.")
         }
     }
 
-    // MARK: - Theme (overrides the desktop)
+    private var statusTint: Color {
+        switch app.connectionState {
+        case .connected: return .green
+        case .unreachable, .needsAuth: return .orange
+        case .checking, .unconfigured: return .secondary
+        }
+    }
+
+    private var statusLine: String {
+        switch app.connectionState {
+        case .connected: return app.connection?.host ?? "Connected"
+        case .checking: return "Checking…"
+        case .unreachable: return "Unreachable"
+        case .needsAuth: return "Needs pairing"
+        case .unconfigured: return "Not set up"
+        }
+    }
+
+    private var statusAccessibilityLabel: String {
+        switch app.connectionState {
+        case .connected: return "connected to \(app.connection?.host ?? "your desktop")"
+        case .checking: return "checking connection"
+        case .unreachable: return "desktop unreachable"
+        case .needsAuth: return "needs pairing"
+        case .unconfigured: return "not set up"
+        }
+    }
+
+    // MARK: - Appearance (theme pushed to the desktop + this phone's override)
 
     /// The headline feature: pick any of the desktop's named themes from the
     /// phone. Selecting one publishes it to the desktop (`PUT /api/theme`), which
     /// adopts it and re-publishes the resolved palette — so both the Mac and this
-    /// phone re-theme together within a couple of seconds.
-    private var themeSection: some View {
+    /// phone re-theme together within a couple of seconds. The trailing row
+    /// overrides light/dark on this phone alone.
+    private var appearanceSection: some View {
         Section {
             Picker("Mode", selection: $pushMode) {
                 Label("Light", systemImage: "sun.max.fill").tag(ColorScheme.light)
@@ -143,10 +170,18 @@ struct SettingsView: View {
             }
             .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
             .listRowBackground(Color.clear)
+
+            Picker(selection: $appearanceRaw) {
+                ForEach(AppearanceMode.allCases) { mode in
+                    Label(mode.label, systemImage: mode.icon).tag(mode.rawValue)
+                }
+            } label: {
+                Label("On this phone", systemImage: "iphone")
+            }
         } header: {
-            Text("Theme")
+            Text("Appearance")
         } footer: {
-            Text("Sets the palette for your Cave desktop **and** this phone. Your desktop must be open; it updates within a few seconds.")
+            Text("Theme re-paints your Cave desktop **and** this phone within a few seconds. “Match desktop” follows its light/dark mode; Light or Dark fixes this phone only.")
         }
     }
 
@@ -157,21 +192,20 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Appearance (this phone only)
+    // MARK: - Wards (familiar project access)
 
-    private var appearanceSection: some View {
+    private var wardsSection: some View {
         Section {
-            Picker(selection: $appearanceRaw) {
-                ForEach(AppearanceMode.allCases) { mode in
-                    Label(mode.label, systemImage: mode.icon).tag(mode.rawValue)
-                }
+            NavigationLink {
+                PermissionsView()
             } label: {
-                Label("Light / Dark", systemImage: "circle.lefthalf.filled")
+                Label("Familiar permissions", systemImage: "key.fill")
+                    .foregroundStyle(.primary)
             }
         } header: {
-            Text("On this phone")
+            Text("Wards")
         } footer: {
-            Text("“Match desktop” follows your Cave desktop's light/dark mode. Light or Dark fixes it on this phone only — handy when you're outdoors and the desktop is dark.")
+            Text("Per-familiar project access. Changes from the phone require the desktop opt-in.")
         }
     }
 
@@ -201,39 +235,39 @@ struct SettingsView: View {
         } header: {
             Text("Chats")
         } footer: {
-            Text("Get notified when a familiar finishes replying while you're away. Muted chats stay silent. Export saves every conversation as Markdown files in a single .zip.")
+            Text("Get notified when a familiar finishes replying while you're away. Export saves every chat as Markdown in a .zip.")
         }
     }
 
-    // MARK: - Permissions (familiar project access)
-
-    private var permissionsSection: some View {
-        Section {
-            NavigationLink {
-                PermissionsView()
-            } label: {
-                Label("Familiar permissions", systemImage: "key.fill")
-                    .foregroundStyle(.primary)
-            }
-        } header: {
-            Text("Wards")
-        } footer: {
-            Text("See and manage which projects each familiar can read or change. Changing them from the phone requires the desktop opt-in.")
-        }
-    }
+    // MARK: - Community & Legal
 
     private var communitySection: some View {
         Section("Community") {
-            communityLink("Discord", value: "OpenCoven", url: "https://discord.gg/opencoven")
-            communityLink("X", value: "@OpenCvn", url: "https://x.com/OpenCvn")
-            communityLink("Docs", value: "docs.opencoven.ai", url: "https://docs.opencoven.ai")
-            communityLink("Podcast", value: "pod.opencoven.ai", url: "https://pod.opencoven.ai")
-            communityLink("Blog", value: "mind.opencoven.ai", url: "https://mind.opencoven.ai")
+            linkRow("Discord", value: "OpenCoven", url: "https://discord.gg/opencoven")
+            linkRow("X", value: "@OpenCvn", url: "https://x.com/OpenCvn")
+            linkRow("Docs", value: "docs.opencoven.ai", url: "https://docs.opencoven.ai")
+            linkRow("Podcast", value: "pod.opencoven.ai", url: "https://pod.opencoven.ai")
+            linkRow("Blog", value: "mind.opencoven.ai", url: "https://mind.opencoven.ai")
+        }
+    }
+
+    private var legalSection: some View {
+        Section {
+            linkRow("Terms of Service", value: "opencoven.ai/terms", url: "https://opencoven.ai/terms")
+            linkRow("Privacy", value: "opencoven.ai/privacy", url: "https://opencoven.ai/privacy")
+        } header: {
+            Text("Legal")
+        } footer: {
+            // Design's mono brand footer, centered under the last group.
+            Text("Coven Cave · \(appVersion)")
+                .font(.caption.monospaced())
+                .frame(maxWidth: .infinity)
+                .padding(.top, 10)
         }
     }
 
     @ViewBuilder
-    private func communityLink(_ label: String, value: String, url: String) -> some View {
+    private func linkRow(_ label: String, value: String, url: String) -> some View {
         if let destination = URL(string: url) {
             Link(destination: destination) {
                 LabeledContent(label) {
@@ -245,55 +279,64 @@ struct SettingsView: View {
             .foregroundStyle(.primary)
         }
     }
+}
 
-    // MARK: - Change host
+// MARK: - Connection detail (pushed from the hero)
 
-    private var hostSection: some View {
-        Section {
-            LabeledContent("Status") { statusBadge }
-            Button("Re-check connection") {
-                Task { await app.refreshConnection() }
+/// Everything about the desktop link that used to sprawl across the settings
+/// top level: live status, re-check, changing the Tailscale address, and the
+/// destructive disconnect.
+private struct ConnectionSettingsView: View {
+    @Environment(AppModel.self) private var app
+    @State private var editingHost: String = ""
+    @State private var showDisconnectConfirm = false
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Status") { statusBadge }
+                Button("Re-check connection") {
+                    Task { await app.refreshConnection() }
+                }
+            } footer: {
+                Text("Connected over your Tailscale network with a paired Cave access token.")
             }
-            TextField("my-mac.tailnet.ts.net", text: $editingHost)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.URL)
-                .font(.callout.monospaced())
-            Button("Save and reconnect") {
-                Task { await app.configure(host: editingHost) }
-            }
-            .disabled(editingHost.trimmingCharacters(in: .whitespaces).isEmpty
-                      || editingHost == app.connection?.host)
-        } header: {
-            Text("Connection")
-        } footer: {
-            Text("Change this if your desktop's Tailscale name changes.")
-        }
-    }
 
-    private var disconnectSection: some View {
-        Section {
-            Button("Disconnect", role: .destructive) {
-                showDisconnectConfirm = true
-            }
-        }
-    }
-
-    private var aboutSection: some View {
-        Section {
-            LabeledContent("Version") {
-                Text(appVersion)
+            Section {
+                TextField("my-mac.tailnet.ts.net", text: $editingHost)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
                     .font(.callout.monospaced())
-                    .foregroundStyle(.secondary)
+                Button("Save and reconnect") {
+                    Task { await app.configure(host: editingHost) }
+                }
+                .disabled(editingHost.trimmingCharacters(in: .whitespaces).isEmpty
+                          || editingHost == app.connection?.host)
+            } header: {
+                Text("Desktop address")
+            } footer: {
+                Text("Change this if your desktop's Tailscale name changes.")
             }
-        } header: {
-            Text("About")
-        } footer: {
-            // Design's mono brand footer, centered under the last group.
-            Text("Coven Cave · \(appVersion)")
-                .font(.caption.monospaced())
-                .frame(maxWidth: .infinity)
-                .padding(.top, 10)
+
+            Section {
+                Button("Disconnect", role: .destructive) {
+                    showDisconnectConfirm = true
+                }
+            }
+        }
+        .themedListBackground()
+        .readableListWidth(680)
+        .navigationTitle("Connection")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { editingHost = app.connection?.host ?? "" }
+        .confirmationDialog("Disconnect from your desktop?",
+                            isPresented: $showDisconnectConfirm,
+                            titleVisibility: .visible) {
+            Button("Disconnect", role: .destructive) { app.disconnect() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll need to re-enter your desktop address to reconnect.")
         }
     }
 

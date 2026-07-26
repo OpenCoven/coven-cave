@@ -1,12 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { getResearchMissionFile, type ResearchMissionFile } from "@/lib/research-mission-client";
-import type { ResearchArtifactRef, ResearchMission } from "@/lib/research-missions";
+import type { ResearchArtifactKind, ResearchArtifactRef, ResearchMission } from "@/lib/research-missions";
+
+// The typeset reader is interaction-only and carries its own stylesheet; lazy
+// so its JS+CSS stay out of the researcher route's first-load bundle.
+const ResearchReader = dynamic(() => import("./research-reader").then((m) => m.ResearchReader), {
+  ssr: false,
+});
+
+/** Prose deliverables get the typeset Research Reader; the machine-readable
+ *  source ledger and the chronological research log keep the plain viewer. */
+const READER_KINDS = new Set<ResearchArtifactKind>(["findings", "report", "paper", "brief"]);
 
 type ResearchArtifactActionsProps = {
   mission: ResearchMission;
@@ -53,6 +64,8 @@ export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: 
   const [error, setError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<ResearchMissionFile | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [readerFile, setReaderFile] = useState<ResearchMissionFile | null>(null);
+  const [readerOpen, setReaderOpen] = useState(false);
 
   const loadFile = async (): Promise<ResearchMissionFile | null> => {
     setPending(true);
@@ -73,6 +86,13 @@ export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: 
     if (pending) return;
     const file = await loadFile();
     if (!file) return;
+    // Prose deliverables open in the typeset reader; everything else keeps the
+    // plain viewer. A published/rejected findings ref still reads best typeset.
+    if (READER_KINDS.has(artifact.kind)) {
+      setReaderFile(file);
+      setReaderOpen(true);
+      return;
+    }
     setViewing(file);
     setViewerOpen(true);
   };
@@ -166,6 +186,15 @@ export function ResearchArtifactActions({ mission, artifact, busy, onPublish }: 
           <pre className="research-artifact-viewer__content">{viewing.content}</pre>
         )}
       </Modal>
+      {readerOpen ? (
+        <ResearchReader
+          mission={mission}
+          artifact={artifact}
+          markdown={readerFile?.content ?? null}
+          onClose={() => setReaderOpen(false)}
+          onPublish={onPublish ? () => onPublish(artifact.key) : undefined}
+        />
+      ) : null}
     </>
   );
 }

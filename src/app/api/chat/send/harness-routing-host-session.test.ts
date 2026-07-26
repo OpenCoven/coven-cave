@@ -386,18 +386,18 @@ assert.match(
 // Native (coven) path: same stable-identity contract.
 assert.match(
   chatRoute,
-  /const resumeTarget = body\.startNewConversation && !existingConversation\s*\? null\s*:\s*body\.sessionId\s*\? existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
-  "A reserved Board conversation starts fresh once, then resumes with the harness's latest session id",
+  /const resumeTarget = body\.startNewConversation && !existingConversation[\s\S]*?body\.sessionId[\s\S]*?openCodeDirect[\s\S]*?existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
+  "OpenCode preserves a submitted native session token when no Cave transcript is recorded",
 );
 assert.match(
   chatRoute,
-  /const finalSessionId = body\.sessionId \?\? sessionId/,
-  "Transcripts persist under the stable conversation id across resumed turns",
+  /const finalSessionId = body\.sessionId && !openCodeUnrecordedResume\s*\? body\.sessionId\s*:\s*sessionId/,
+  "An unrecorded native OpenCode resume is persisted under a new stable Cave id",
 );
 assert.match(
   chatRoute,
-  /const announcedId = body\.sessionId \?\? sessionId/,
-  "The client is always told the stable conversation id, never the rotated harness id",
+  /const announcedId = body\.sessionId && !openCodeUnrecordedResume\s*\? body\.sessionId\s*:\s*sessionId/,
+  "The client is told a new stable Cave id when it resumes an unrecorded native session",
 );
 assert.match(
   chatRoute,
@@ -575,13 +575,13 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /pushProgress\(\s*"resume-retry",[\s\S]*?"Resume failed; starting a fresh chat",\s*"running",?\s*\)[\s\S]*?pushProgress\(\s*"resume-retry",[\s\S]*?"Fresh chat started",\s*"done",?\s*\)[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
+  /pushProgress\(\s*"resume-retry",[\s\S]*?"Resume failed; starting a fresh chat",\s*"running",?\s*\)[\s\S]*?pushProgress\(\s*"resume-retry",[\s\S]*?"Fresh chat started",\s*"done",?\s*\)[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\), retry\.prompt\)/,
   "Transparent resume fallback should be visible in the progress timeline and settle BEFORE the fresh attempt runs — left running until the attempt ended, 'Resume failed…' headlined the activity strip for the whole reply",
 );
 
 assert.match(
   chatRoute,
-  /const retry = buildResumeRetryPrompt\(harnessPrompt, existingConversation\)[\s\S]*?retry\.replayedHistory[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
+  /const retry = buildResumeRetryPrompt\(harnessPrompt, existingConversation\)[\s\S]*?retry\.replayedHistory[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\), retry\.prompt\)/,
   "Fresh-session retry should replay recent conversation history so the familiar keeps context",
 );
 
@@ -605,7 +605,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /stderrTail\.length = 0;[\s\S]*stdoutErrTail\.length = 0;[\s\S]*await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
+  /stderrTail\.length = 0;[\s\S]*stdoutErrTail\.length = 0;[\s\S]*await runAttempt\(buildArgs\(null, retry\.prompt\), retry\.prompt\)/,
   "Fresh-chat retry should clear stale diagnostic tails before the retry attempt",
 );
 
