@@ -123,7 +123,7 @@ export type GrokRegistryCheckpoint = { sequence: number; payloadHash: string };
 export type GrokEventSchema = {
   id: string;
   priority?: number;
-  requires: { streamingJson: true; options?: string[] };
+  requires: { streamingJson: true; options?: string[]; versions?: string[] };
   eventTypes: {
     ignored: string[];
     text: string[];
@@ -199,6 +199,8 @@ const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const CACHE_LOCK_STALE_MS = 30_000;
 const CACHE_LOCK_WAIT_MS = 500;
 const CACHE_LOCK_POLL_MS = 20;
+const MAX_ANCHOR_JOURNAL_ENTRIES = 16;
+const MAX_ANCHOR_JOURNAL_SCAN = 64;
 const schemaQuarantine = new Map<string, string>();
 
 /** The only source-verified built-in Grok frame contract as of 2026-07-26. */
@@ -212,7 +214,7 @@ export const BUILTIN_GROK_SCHEMA_BUNDLE: GrokSchemaBundle = {
     id: "grok-build-streaming-json-v1",
     requires: { streamingJson: true, options: ["--output-format"] },
     eventTypes: {
-      ignored: ["thought", "max_turns_reached", "auto_compact_start", "auto_compact_end"],
+      ignored: ["thought"],
       text: ["text"], end: ["end"], error: ["error"],
       toolStart: [], toolProgress: [], toolEnd: [], toolComplete: [],
     },
@@ -327,12 +329,13 @@ function validKeyring(value: unknown): value is GrokRegistryKeyring {
 function validSchema(value: unknown): value is GrokEventSchema {
   if (!isRecord(value) || !validName(value.id) || !isRecord(value.requires) || value.requires.streamingJson !== true || !isRecord(value.eventTypes) || !isRecord(value.fields) || !isRecord(value.launch)) return false;
   if (!Object.keys(value).every((key) => ["id", "priority", "requires", "eventTypes", "fields", "launch"].includes(key))) return false;
-  if (!Object.keys(value.requires).every((key) => key === "streamingJson" || key === "options")) return false;
+  if (!Object.keys(value.requires).every((key) => key === "streamingJson" || key === "options" || key === "versions")) return false;
   if (!Object.keys(value.eventTypes).every((key) => ["ignored", "text", "end", "error", "toolStart", "toolProgress", "toolEnd", "toolComplete"].includes(key))) return false;
   if (!Object.keys(value.fields).every((key) => ["type", "text", "sessionId", "message", "usage", "totalCostUsd", "id", "name", "input", "output", "state", "error", "terminalStates", "errorStates"].includes(key))) return false;
   if (!Object.keys(value.launch).every((key) => key === "outputOption" || key === "outputValue")) return false;
   if (value.priority !== undefined && (typeof value.priority !== "number" || !Number.isSafeInteger(value.priority) || Math.abs(value.priority) > 1_000)) return false;
   if (value.requires.options !== undefined && !validOptions(value.requires.options)) return false;
+  if (value.requires.versions !== undefined && (!Array.isArray(value.requires.versions) || value.requires.versions.length < 1 || value.requires.versions.length > 8 || new Set(value.requires.versions).size !== value.requires.versions.length || !value.requires.versions.every((version) => typeof version === "string" && /^\d+(?:\.\d+){1,3}(?:[-+][A-Za-z0-9.-]+)?$/.test(version)))) return false;
   if (value.launch.outputOption !== "--output-format" || value.launch.outputValue !== "streaming-json") return false;
   const events = value.eventTypes;
   const eventGroups = [events.ignored, events.text, events.end, events.error, events.toolStart, events.toolProgress ?? [], events.toolEnd, events.toolComplete];
@@ -348,6 +351,10 @@ function validSchema(value: unknown): value is GrokEventSchema {
   if (!typedFields.type.length) return false;
   if (typedEvents.text.length && !typedFields.text.length) return false;
   if ((typedEvents.toolStart.length || typedEvents.toolEnd.length || typedEvents.toolComplete.length || (typedEvents.toolProgress?.length ?? 0)) && !typedFields.id.length) return false;
+  // Tool envelopes are version-sensitive protocol claims. A publisher must
+  // bind them to the exact locally probed launcher revisions rather than
+  // allowing a signed alias to match every future Grok Build version.
+  if ((typedEvents.toolStart.length || typedEvents.toolEnd.length || typedEvents.toolComplete.length || (typedEvents.toolProgress?.length ?? 0)) && !value.requires.versions?.length) return false;
   return !(typedEvents.toolStart.length || typedEvents.toolComplete.length) || typedFields.name.length > 0;
 }
 
@@ -391,6 +398,7 @@ export function selectGrokSchema(schemas: GrokEventSchema[], capabilities: GrokR
   const valueOptions = new Set(capabilities.valueOptions);
   const matches = schemas.filter((schema) =>
     (schema.requires.options?.every((option) => options.has(option)) ?? true)
+    && (schema.requires.versions === undefined || (capabilities.version !== null && schema.requires.versions.includes(capabilities.version)))
     && options.has(schema.launch.outputOption)
     && valueOptions.has(schema.launch.outputOption),
   );
@@ -434,6 +442,10 @@ function defaultCachePath(): string {
 }
 
 function trustAnchorPath(file: string): string { return `${file}.anchor`; }
+function trustAnchorJournalPath(file: string): string { return `${trustAnchorPath(file)}.journal`; }
+function trustAnchorJournalEntryPath(file: string, anchor: TrustAnchor): string {
+  return path.join(trustAnchorJournalPath(file), `${anchor.sequence}-${anchor.payloadHash}.json`);
+}
 function cacheLockPath(file: string): string { return `${file}.lock`; }
 
 function validTrustAnchor(value: unknown): value is TrustAnchor {
@@ -469,13 +481,53 @@ async function readBoundedRegistryBody(response: Response): Promise<string> {
   return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
 
-async function readTrustAnchor(file: string): Promise<TrustAnchor | null> {
+async function readLegacyTrustAnchor(file: string): Promise<TrustAnchor | null> {
   try {
     const raw = await fs.readFile(trustAnchorPath(file), "utf8");
     if (Buffer.byteLength(raw) > 1024) return null;
     const anchor = JSON.parse(raw);
     return validTrustAnchor(anchor) ? anchor : null;
   } catch { return null; }
+}
+
+/**
+ * High-water records use immutable sequence/hash filenames. A reclaimed
+ * writer lease can therefore add a stale record but can never replace the
+ * newer record that readers use for rollback protection.
+ */
+async function readJournalTrustAnchors(file: string): Promise<TrustAnchor[] | null> {
+  let directory: Awaited<ReturnType<typeof fs.opendir>>;
+  try {
+    directory = await fs.opendir(trustAnchorJournalPath(file));
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? [] : null;
+  }
+  const anchors: TrustAnchor[] = [];
+  try {
+    let count = 0;
+    for await (const entry of directory) {
+      count += 1;
+      if (count > MAX_ANCHOR_JOURNAL_SCAN || !entry.isFile()) return null;
+      const match = /^(\d{1,16})-([a-f0-9]{64})\.json$/.exec(entry.name);
+      if (!match) return null;
+      const sequence = Number(match[1]);
+      if (!Number.isSafeInteger(sequence) || sequence < 1) return null;
+      anchors.push({ sequence, payloadHash: match[2] });
+    }
+  } finally {
+    await directory.close().catch(() => undefined);
+  }
+  return anchors;
+}
+
+async function readTrustAnchor(file: string): Promise<TrustAnchor | null> {
+  const [legacy, journal] = await Promise.all([readLegacyTrustAnchor(file), readJournalTrustAnchors(file)]);
+  if (journal === null) return null;
+  const anchors = legacy ? [...journal, legacy] : journal;
+  if (!anchors.length) return null;
+  const highWater = Math.max(...anchors.map((anchor) => anchor.sequence));
+  const highest = anchors.filter((anchor) => anchor.sequence === highWater);
+  return new Set(highest.map((anchor) => anchor.payloadHash)).size === 1 ? highest[0] : null;
 }
 
 async function cacheRecordExists(file: string): Promise<boolean> {
@@ -510,6 +562,33 @@ async function writeJsonAtomic(file: string, value: unknown): Promise<boolean> {
     await fs.rename(temporary, file);
     return true;
   } catch { return false; /* Cache is an optimization; a failed write never broadens parsing. */ }
+}
+
+async function writeTrustAnchor(file: string, anchor: TrustAnchor): Promise<boolean> {
+  const entry = trustAnchorJournalEntryPath(file, anchor);
+  try {
+    await fs.mkdir(path.dirname(entry), { recursive: true });
+    await fs.writeFile(entry, JSON.stringify(anchor), { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") return false;
+    try {
+      const existing = JSON.parse(await fs.readFile(entry, "utf8"));
+      if (!validTrustAnchor(existing) || existing.sequence !== anchor.sequence || existing.payloadHash !== anchor.payloadHash) return false;
+    } catch { return false; }
+  }
+  const entries = await readJournalTrustAnchors(file);
+  if (entries === null) return false;
+  const retained = new Set(entries
+    .sort((left, right) => right.sequence - left.sequence || right.payloadHash.localeCompare(left.payloadHash))
+    .slice(0, MAX_ANCHOR_JOURNAL_ENTRIES)
+    .map((entryValue) => `${entryValue.sequence}-${entryValue.payloadHash}.json`));
+  await Promise.all(entries
+    .filter((entryValue) => !retained.has(`${entryValue.sequence}-${entryValue.payloadHash}.json`))
+    .map((entryValue) => fs.rm(trustAnchorJournalEntryPath(file, entryValue), { force: true }).catch(() => undefined)));
+  // Keep the original single-record sidecar as a fast recovery hint. Readers
+  // always consult the immutable journal as well, so this replace cannot lower
+  // the accepted high-water mark after a stale lock lease resumes.
+  return writeJsonAtomic(trustAnchorPath(file), anchor);
 }
 
 type CacheLock = {
@@ -555,10 +634,12 @@ async function writeCache(file: string, bundle: GrokSchemaBundle, checkedAt = Da
   try {
     if (!await lock.owns()) return false;
     if (!meetsTrustAnchor(bundle, await readTrustAnchor(file))) return false;
-  // Anchor first: an interruption can make the cache unavailable, never make
-  // an older cache appear acceptable after a newer bundle was trusted.
-    if (!await writeJsonAtomic(trustAnchorPath(file), { sequence: bundle.sequence, payloadHash: grokSchemaBundlePayloadHash(bundle) })) return false;
+    // Anchor first: an interruption can make the cache unavailable, never make
+    // an older cache appear acceptable after a newer bundle was trusted.
+    const anchor = { sequence: bundle.sequence, payloadHash: grokSchemaBundlePayloadHash(bundle) };
+    if (!await writeTrustAnchor(file, anchor)) return false;
     if (!await lock.owns()) return false;
+    if (!meetsTrustAnchor(bundle, await readTrustAnchor(file))) return false;
     return writeJsonAtomic(file, { checkedAt, bundle });
   } finally { await lock.release(); }
 }

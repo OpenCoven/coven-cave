@@ -11,6 +11,7 @@ import {
   grokSchemaBundleSigningPayload,
   isGrokSchemaBundle,
   resolveGrokCompatibility,
+  selectGrokSchema,
   verifyGrokSchemaBundle,
 } from "./grok-compatibility.ts";
 
@@ -32,6 +33,18 @@ const incompleteTool = structuredClone(signed);
 incompleteTool.schemas[0].eventTypes.toolStart = ["tool_started"];
 incompleteTool.schemas[0].fields.id = [];
 assert.equal(isGrokSchemaBundle(incompleteTool), false, "tool schemas must declare their stable id field before selection");
+const unboundTool = structuredClone(signed);
+unboundTool.schemas[0].eventTypes.toolStart = ["tool_started"];
+assert.equal(isGrokSchemaBundle(unboundTool), false, "tool schemas require exact locally-probed launcher versions");
+const versionBoundTool = structuredClone(signed);
+versionBoundTool.schemas[0].eventTypes.toolStart = ["tool_started"];
+versionBoundTool.schemas[0].requires.versions = ["1.0.0"];
+assert.equal(isGrokSchemaBundle(versionBoundTool), true, "a tool schema may bind aliases to verified launcher versions");
+assert.equal(
+  selectGrokSchema(versionBoundTool.schemas, { version: "1.0.1", streamingJson: true, options: ["--output-format"], valueOptions: ["--output-format"] }),
+  null,
+  "a signed tool schema never applies to an unlisted Grok Build version",
+);
 const { keyId: _keyId, signature: _signature, ...unsignedWithoutKeyId } = signed;
 const signedWithoutKeyId = {
   ...unsignedWithoutKeyId,
@@ -89,8 +102,8 @@ try {
   assert.equal(rollback.bundleSource, "cache", "a lower signed sequence cannot replace the local high-water contract");
   assert.equal(rollback.diagnostic, "schema-registry-refresh-rejected");
 
-  // Losing the durable anchor must not turn the still-present cache into a
-  // first-use state where an older signed response can replace it.
+  // The immutable journal survives loss of the replaceable recovery sidecar,
+  // so a stale writer cannot erase high-water state by replacing that sidecar.
   await rm(`${cachePath}.anchor`);
   const missingAnchor = await resolveGrokCompatibility(supported, {
     publicKeys: keyring,
@@ -98,8 +111,8 @@ try {
     url: "https://registry.example/grok.json",
     fetch: async () => new Response(JSON.stringify(signed)),
   });
-  assert.equal(missingAnchor.bundleSource, "built-in", "a cache without its durable high-water anchor is never selected or refreshed");
-  assert.equal(missingAnchor.diagnostic, "cached-schema-unavailable");
+  assert.equal(missingAnchor.bundleSource, "cache", "the immutable high-water journal keeps the verified cache available after sidecar loss");
+  assert.equal(missingAnchor.diagnostic, undefined);
 
   // Simulate an interruption after the high-water anchor is committed but
   // before the replacement cache file can be installed. The prior cache was
