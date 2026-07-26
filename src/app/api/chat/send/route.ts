@@ -1965,11 +1965,16 @@ export async function POST(req: Request) {
               // Profile-selected decoding keeps version-specific envelope names
               // outside this route. The shared tracker continues to provide
               // stable ids, hook/envelope deduplication, and persisted state.
-              if (
-                !claudeUnsupportedFrameDiagnosticSent &&
-                hasUnsupportedClaudeToolFrame(ev, claudeCompatibility.profile)
-              ) {
+              if (hasUnsupportedClaudeToolFrame(ev, claudeCompatibility.profile)) {
                 reportUnsupportedClaudeToolFrame(ev);
+                // A partially known envelope is not a verified tool protocol:
+                // keep only ordinary assistant text rather than pairing its
+                // sibling tool blocks with untrusted frames.
+                for (const text of parseClaudeTextOnlyEnvelope(ev)) {
+                  assistantText += text;
+                  push({ kind: "assistant_chunk", text });
+                }
+                return;
               }
               for (const claudeEvent of parseClaudeMessageEnvelope(ev, claudeCompatibility.profile)) {
                 if (claudeEvent.kind === "text") {

@@ -91,6 +91,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /if \(hasUnsupportedClaudeToolFrame\(ev, claudeCompatibility\.profile\)\) \{[\s\S]*?reportUnsupportedClaudeToolFrame\(ev\);[\s\S]*?parseClaudeTextOnlyEnvelope\(ev\)[\s\S]*?return;[\s\S]*?parseClaudeMessageEnvelope\(ev, claudeCompatibility\.profile\)/,
+  "a partially malformed Claude envelope must fall back to text-only before any tool block is decoded",
+);
+
+assert.match(
+  chatRoute,
   /reportUnsupportedClaudeToolFrame = \(frame: unknown\) => \{[\s\S]*?fingerprint: redactedEventFingerprint\(frame\)[\s\S]*?Claude Code tool frame is not supported/,
   "unsupported profiled tool blocks must be logged as redacted fingerprints",
 );
@@ -412,6 +418,29 @@ assert.match(
       { input: '{"path":"second.md"}', output: "second output" },
     ],
     "concurrent reordered same-name calls retain their own inputs and outputs",
+  );
+}
+
+// The inverse arrival order must make the same input-based association. If
+// assistant envelopes are buffered before two same-name pre hooks, FIFO would
+// otherwise apply the second hook's timing and output to the first bubble.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  tracker.envelopeToolUse("toolu-first", "Read", '{"path":"first.md"}');
+  tracker.envelopeToolUse("toolu-second", "Read", '{"path":"second.md"}');
+  const second = tracker.hookStart("Read", '{"path":"second.md"}');
+  const first = tracker.hookStart("Read", '{"path":"first.md"}');
+  assert.equal(second.id, "toolu-second");
+  assert.equal(first.id, "toolu-first");
+  assert.equal(tracker.hookEnd("Read", "second output", false).id, "toolu-second");
+  assert.equal(tracker.hookEnd("Read", "first output", false).id, "toolu-first");
+  assert.deepEqual(
+    tracker.snapshot().map(({ id, output }) => ({ id, output })),
+    [
+      { id: "toolu-first", output: "first output" },
+      { id: "toolu-second", output: "second output" },
+    ],
+    "concurrent same-name envelope-first calls retain their hook outputs",
   );
 }
 

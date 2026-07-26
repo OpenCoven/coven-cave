@@ -242,9 +242,25 @@ export class ToolCallTracker {
     // The envelope may have announced this call first (assistant message
     // flushes before the tool executes). Claim the oldest unclaimed
     // envelope-announced call of this name so both sources share one id.
-    const claim = queue.find((c) => c.origin === "envelope" && !c.hookStarted);
+    const unclaimedEnvelopeCalls = queue.filter((c) => c.origin === "envelope" && !c.hookStarted);
+    // The hook side can be reordered too. When two same-name envelopes have
+    // already arrived, match the hook's normalized input before falling back
+    // to FIFO; otherwise the completed output can be recorded on the other
+    // call's stable id.
+    const claim = input === undefined
+      ? unclaimedEnvelopeCalls[0]
+      : unclaimedEnvelopeCalls.find((c) => this.recorded.get(c.id)?.input === input)
+        ?? unclaimedEnvelopeCalls[0];
     if (claim) {
       claim.hookStarted = true;
+      // `hookEnd` has no native id and pairs in pre-hook arrival order. Move
+      // a claimed envelope behind earlier claimed calls so envelope arrival
+      // order cannot change that FIFO pairing.
+      const claimIndex = queue.indexOf(claim);
+      if (claimIndex >= 0) {
+        queue.splice(claimIndex, 1);
+        queue.push(claim);
+      }
       // The hook marks actual execution start — a tighter duration baseline
       // than when the envelope was parsed.
       claim.startedAt = this.now();
