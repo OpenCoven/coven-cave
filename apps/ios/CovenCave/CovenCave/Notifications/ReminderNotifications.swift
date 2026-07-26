@@ -76,7 +76,24 @@ enum ReminderNotifications {
 /// Bridges notification taps (and foreground presentation) back to the app's
 /// deep-link router. Set as the notification-center delegate at launch.
 final class CaveNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
-    var onOpen: ((URL) -> Void)?
+    @MainActor private var pendingOpen: URL?
+    @MainActor var onOpen: ((URL) -> Void)? {
+        didSet {
+            guard let onOpen, let pendingOpen else { return }
+            self.pendingOpen = nil
+            onOpen(pendingOpen)
+        }
+    }
+
+    /// Buffer a cold-launch tap until the SwiftUI app installs its router.
+    @MainActor
+    func open(_ url: URL) {
+        guard let onOpen else {
+            pendingOpen = url
+            return
+        }
+        onOpen(url)
+    }
 
     /// Show reminder banners even while the app is in the foreground.
     func userNotificationCenter(
@@ -93,6 +110,6 @@ final class CaveNotificationDelegate: NSObject, UNUserNotificationCenterDelegate
     ) async {
         guard let raw = response.notification.request.content.userInfo["deepLink"] as? String,
               let url = URL(string: raw) else { return }
-        await MainActor.run { onOpen?(url) }
+        await MainActor.run { open(url) }
     }
 }

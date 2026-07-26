@@ -43,9 +43,8 @@ import { MagicTriggers } from "@/components/magic-triggers";
 import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
-import { Icon } from "@/lib/icon";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
-import { FamiliarStudioProvider, openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
+import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -70,7 +69,7 @@ import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
-// their chunks (and deps like @xyflow/react, @uiw/react-codemirror) load on
+// their chunks (and deps like @uiw/react-codemirror) load on
 // first open instead of shipping in the main bundle. See lazy-surfaces.tsx.
 import {
   BoardView,
@@ -1969,20 +1968,6 @@ export function Workspace() {
     }
   }, [nextRouter, openFamiliarSession, openUrlInAppBrowser, openGitHubTarget]);
 
-  const openInspectorInboxItem = useCallback((item: InboxItem) => {
-    markInboxItemRead(item.id);
-    const sessionId =
-      item.sessionId ?? (item.link?.kind === "session" ? item.link.ref : null);
-    if (sessionId) {
-      openFamiliarSession(sessionId, item.familiarId);
-      return;
-    }
-    // A GitHub-event notification's target is its PR/issue — open it natively.
-    if (item.link?.kind === "url" && openGitHubTarget(item.link.ref)) return;
-    if (item.familiarId) setActiveId(item.familiarId);
-    setMode("inbox");
-  }, [openFamiliarSession, markInboxItemRead, openGitHubTarget]);
-
   const startFamiliarChat = useCallback((
     familiarId?: string | null,
     projectRoot?: string | null,
@@ -2719,10 +2704,6 @@ export function Workspace() {
     };
   }, [openUrlInAppBrowser]);
 
-  const openProjectChat = useCallback((projectRoot: string) => {
-    startFamiliarChat(activeId, projectRoot);
-  }, [activeId, startFamiliarChat]);
-
   // Page modes currently open as split tiles — the sidebar marks their rows
   // "open in split" so the active highlight stays honest after drag-to-split
   // (dropping opens the page beside the primary WITHOUT changing `mode`).
@@ -2904,7 +2885,6 @@ export function Workspace() {
         pendingChatAction={pendingChatAction}
         onSetActiveFamiliar={setActiveId}
         onFamiliarScopeChange={selectFamiliarScope}
-        onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
         onActiveSessionChange={setActiveChatSessionId}
         onSessionStarted={loadSessions}
@@ -2951,19 +2931,8 @@ export function Workspace() {
       <InboxEscalationsView
         key={mode}
         initialTab={mode === "calendar" ? "calendar" : "overview"}
-        onOpenSource={(item) => {
-          if (item.sourceSessionKey) {
-            openFamiliarSession(item.sourceSessionKey);
-          } else if (item.sourceUrl) {
-            openUrlInAppBrowser(item.sourceUrl);
-          }
-        }}
         familiars={familiars}
-        activeFamiliarId={activeId}
         onNewReminder={() => openReminderModal()}
-        onOpenSession={(sessionId, familiarId) => {
-          openFamiliarSession(sessionId, familiarId);
-        }}
         onEditReminder={(item) => {
           setEditingReminder(item);
           setReminderModalOpen(true);
@@ -3008,7 +2977,6 @@ export function Workspace() {
       <BrowserPane
         handleRef={browserPaneRef}
         label="main"
-        activeFamiliarId={active?.id ?? null}
         active={browserVisible}
         navigationRequest={browserNavigationQueue[0] ?? null}
         onNavigationConsumed={acknowledgeBrowserNavigation}
@@ -3140,7 +3108,7 @@ export function Workspace() {
     ) : target.kind === "memory" ? (
       <RailInspector familiar={active} onOpenFullView={() => setMode("agents")} />
     ) : (
-      <BrowserPane label="companion" activeFamiliarId={active?.id ?? null} active={browserVisible} />
+      <BrowserPane label="companion" active={browserVisible} />
     );
 
   const splitTiles: DetailSplitTile[] = splitTargets
@@ -3193,7 +3161,6 @@ export function Workspace() {
           <>
             <FamiliarMenuBar
               activeFamiliarId={activeId}
-              activeFamiliarName={active?.display_name ?? null}
               // Running processes: clicking the waveform trigger lists each
               // live daemon session; a row jumps into that chat.
               runningStatus={
@@ -3263,8 +3230,7 @@ export function Workspace() {
               inboxBadgeCount={notificationUnreadCount}
               // Bell rows open in the Inbox (Schedules) surface — the popover
               // is a triage list, not a chat launcher. Session jumps stay on
-              // the chat surface and Home needs-you paths
-              // (openInspectorInboxItem).
+              // the chat surface and Home needs-you paths.
               onOpenInboxItem={(item) => {
                 markInboxItemRead(item.id);
                 if (item.familiarId) setActiveId(item.familiarId);

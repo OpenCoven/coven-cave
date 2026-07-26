@@ -2480,10 +2480,6 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   const [mode, setMode] = useState<ModePref>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
   const [appearanceHydrated, setAppearanceHydrated] = useState(false);
-  // Below the shell's FamiliarStudioProvider — lets the pin-order hint open
-  // Familiars directly on the Lifecycle tab (the app-wide roster order lives
-  // there, distinct from the avatar-strip pin order set here).
-  const { setActiveTab: setStudioTab } = useFamiliarStudio();
 
   // No on-change daemon mirror here: RemoteThemeController publishes tokens
   // whenever the canonical theme signature changes (every selection, mode flip,

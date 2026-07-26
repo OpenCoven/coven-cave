@@ -69,27 +69,6 @@ const DEFAULT_CONFIG: CaveConfig = {
   remoteHosts: [],
 };
 
-const DEFAULT_STATE: CaveState = {
-  sessionFamiliar: {},
-  sessionTitles: {},
-  sessionTitleAuto: {},
-  sessionArchived: {},
-  sessionSacrificed: {},
-  sessionKeep: {},
-  sessionArchiveExtendedUntil: {},
-  sessionOwned: {},
-  mergedPrAutoArchived: {},
-  travel: {
-    manualOffline: false,
-    hubUnreachableSince: null,
-    lastHubReachableAt: null,
-    staleCache: false,
-    localSubdaemonWakeRequestedAt: null,
-    localBindHost: "127.0.0.1",
-    offlineQueue: [],
-  },
-};
-
 function defaultConfig(): CaveConfig {
   return {
     version: DEFAULT_CONFIG.version,

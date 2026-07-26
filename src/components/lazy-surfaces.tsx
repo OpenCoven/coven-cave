@@ -6,8 +6,7 @@
 // static `import` still ships their code (and their heavy transitive deps) in
 // the always-loaded main bundle. Routing them through `next/dynamic` moves each
 // into its own chunk that the browser fetches on first open instead of at app
-// boot. Notably this pulls `@xyflow/react` (FlowView) and
-// `@uiw/react-codemirror` (ComuxView → code-editor) out of the shared bundle.
+// boot. Notably this pulls `@uiw/react-codemirror` out of the shared bundle.
 //
 // `ssr: false` is safe: the whole app is client-rendered (`workspace.tsx` is a
 // client component) and these surfaces are interactive-only.

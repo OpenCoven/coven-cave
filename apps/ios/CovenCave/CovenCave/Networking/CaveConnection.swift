@@ -44,7 +44,7 @@ struct CaveConnection: Codable, Equatable {
     }
 
     /// WebSocket base derived from `baseURL` (https→wss, http→ws). Used by the
-    /// Developer tab's terminal to reach `/api/pty-ws`.
+    /// Developer terminal surface to reach `/api/pty-ws`.
     var wsBaseURL: URL? {
         guard let base = baseURL,
               var comps = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }

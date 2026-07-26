@@ -139,7 +139,7 @@ function normalizeLoopbackBackend(value: string | null | undefined) {
   }
 }
 
-function nativeAppBackendUrl(req: Request) {
+function nativeAppBackendUrl() {
   const configured = normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL);
   if (configured) return configured;
 
@@ -160,7 +160,7 @@ function backendPort(backend: string) {
   }
 }
 
-async function verifyNativeAppBackend(req: Request, backend: string) {
+async function verifyNativeAppBackend(backend: string) {
   if (backend === backendUrl()) return { ok: true as const };
 
   const controller = new AbortController();
@@ -277,17 +277,16 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
     return mobileAccessUnavailableResponse();
   }
 
-  const res = await ensureNativeAppServeReady(req, chatId, access.secret);
+  const res = await ensureNativeAppServeReady(chatId, access.secret);
   return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
 }
 
 async function ensureNativeAppServeReady(
-  req: Request,
   chatId: string | null | undefined,
   accessSecret: string,
 ) {
-  const backend = nativeAppBackendUrl(req);
-  const backendReady = await verifyNativeAppBackend(req, backend);
+  const backend = nativeAppBackendUrl();
+  const backendReady = await verifyNativeAppBackend(backend);
   if (!backendReady.ok) {
     return mobileUnavailableResponse(backendReady.error, {
       backendUrl: backend,
@@ -456,12 +455,11 @@ async function mobileHandoff(req: Request, chatId?: string | null) {
     return mobileAccessUnavailableResponse();
   }
 
-  const res = await mobileHandoffReady(req, access.secret, chatId);
+  const res = await mobileHandoffReady(access.secret, chatId);
   return access.provisioned ? withBrowserAccessCookie(res, req, access.secret) : res;
 }
 
 async function mobileHandoffReady(
-  req: Request,
   accessSecret: string,
   chatId?: string | null,
 ) {

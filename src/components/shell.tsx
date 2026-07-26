@@ -11,7 +11,7 @@ import {
   type GroupImperativeHandle,
   type PanelImperativeHandle,
 } from "react-resizable-panels";
-import { Icon, CAVE_ICON_SIZE, type IconName } from "@/lib/icon";
+import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";

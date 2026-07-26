@@ -6,11 +6,15 @@
  * to avoid pulling node:fs/promises into the browser bundle.
  */
 
+import type { ProjectAccessLevel } from "./project-access-levels.ts";
+
 export type CaveProject = {
   id: string;
   name: string;
   root: string;
   color?: string;
+  /** Effective familiar access on familiar-scoped reads; absent on the operator registry view. */
+  access?: ProjectAccessLevel;
   /** Canonical GitHub repository link (https://github.com/owner/repo), when tied to one. */
   repoUrl?: string;
   createdAt: string;

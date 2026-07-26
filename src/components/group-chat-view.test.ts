@@ -68,6 +68,45 @@ test("GroupChatView schedules Broadcast and Round robin replies through /api/cha
   );
 });
 
+test("Group Chat requires one project every participant can access", () => {
+  assert.match(
+    view,
+    /useGroupProjects\(activeGroup\?\.familiarIds \?\? EMPTY_FAMILIAR_IDS\)/,
+    "project choices load from every current participant's familiar scope",
+  );
+  assert.match(
+    view,
+    /const selectedGroupProject =\s*groupProjects\.find\(\(project\) => project\.id === activeGroup\?\.projectId\) \?\? null/,
+    "the persisted group project must still exist in the verified intersection",
+  );
+  assert.match(
+    view,
+    /groupProjectsLoadedSuccessfully[\s\S]{0,220}!groupProjectsLoading[\s\S]{0,220}!groupProjectsError[\s\S]{0,220}selectedGroupProject/,
+    "launch readiness fails closed while intersection access is loading or failed",
+  );
+  assert.match(
+    view,
+    /projectRoot,\s*\n\s*\}\),/,
+    "every participant chat request carries the shared authorized project root",
+  );
+  assert.match(
+    view,
+    /if \(!projectLaunchReady \|\| !selectedGroupProject\) \{[\s\S]{0,180}return;/,
+    "a coven message returns before optimistic transcript mutation when no valid project is selected",
+  );
+  assert.match(view, /<ProjectPicker/, "the coven header exposes the shared access-labelled project picker");
+  assert.match(
+    view,
+    /setGroupProject\(group, projectId, nowIso\(\)\)/,
+    "changing project uses the model helper that clears cwd-scoped participant sessions",
+  );
+  assert.match(
+    view,
+    /disabled=\{participants\.length === 0 \|\| !draft\.trim\(\) \|\| !projectLaunchReady\}/,
+    "the group send action remains disabled until its project intersection is verified",
+  );
+});
+
 test("@mentions target a subset of the coven", () => {
   // Send routes to mentioned familiars only, falling back to the full roster.
   assert.match(view, /resolveGroupMessageTargets\(/, "resolves composer mentions and explicit targets through the pure routing helper");

@@ -20,7 +20,6 @@ import {
   hasVerifiedLatestVersion,
   latestCheckText,
   toolStatusText,
-  type LatestCheckDisplay,
 } from "@/lib/opencoven-tools-status-display";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
@@ -61,7 +60,6 @@ import {
   type PlatformId,
   type PortPreflightResult,
   type PruneState,
-  type Step,
   type OpenCovenToolStatus,
 } from "./onboarding-model";
 

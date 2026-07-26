@@ -344,13 +344,13 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /persistSendModelIntent\(conv, args\.body, args\.modelState\)/,
-  "OpenClaw transcript persistence should save direct session-scoped model intent",
+  /persistSendModelIntent\(\s*conv,\s*args\.body,\s*args\.modelState,\s*args\.initialModelIntent,\s*\)/,
+  "OpenClaw transcript persistence should guard session model intent against a newer mid-stream PATCH",
 );
 assert.match(
   chatRoute,
-  /persistSendModelIntent\(conv, body, modelState\)/,
-  "Native transcript persistence should save direct session-scoped model intent",
+  /persistSendModelIntent\(\s*conv,\s*body,\s*modelState,\s*existingConversation\?\.modelIntent\?\.model \?\? null,\s*\)/,
+  "Native transcript persistence should guard session model intent against a newer mid-stream PATCH",
 );
 assert.match(
   chatRoute,
@@ -407,6 +407,20 @@ assert.match(
   modelHelpers,
   /const speed = normalizeResponseSpeed\(body\.responseSpeed\)/,
   "Chat send model helpers should continue accepting responseSpeed from all composer send bodies",
+);
+assert.match(
+  modelHelpers,
+  /export function persistedTurnControls\([\s\S]*reasoningEffort: normalizeReasoningEffort\(body\.reasoningEffort\),[\s\S]*responseSpeed: normalizeResponseSpeed\(body\.responseSpeed\),[\s\S]*cleanModelId\(retryModel\)/,
+  "Completed user turns should retain normalized controls and only a confirmed or routed retry model",
+);
+assert.equal(
+  (
+    chatRoute.match(
+      /\.\.\.persistedTurnControls\((?:args\.body|body), responseMetadata\.retryModel\)/g,
+    ) ?? []
+  ).length,
+  4,
+  "OpenClaw and native stub plus transcript writers should persist retry controls",
 );
 assert.match(
   chatRoute,
@@ -474,8 +488,42 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /await resolveLocalRuntimeCwd\(body\.projectRoot \?\? resumeCwd \?\? resolvedFamiliarWorkspace\)/,
-  "Local Cave chat must fail closed on invalid project roots instead of downgrading to homedir",
+  /await resolveLocalRuntimeCwd\(authorizedProjectRoot\)/,
+  "Local Cave chat should resolve only the root accepted by the shared launch gate",
+);
+
+assert.match(
+  chatRoute,
+  /authorizeChatProjectLaunch/,
+  "typed chat should use the shared project launch gate",
+);
+assert.match(
+  chatRoute,
+  /const projectRootForLaunch = body\.projectRoot \?\? resumeCwd/,
+  "typed chat should only derive launch context from an explicit or trusted persisted project root",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /projectRootForLaunch\s*=\s*body\.projectRoot \?\? resumeCwd \?\? resolvedFamiliarWorkspace/,
+  "typed chat must not fall back to an unregistered familiar workspace",
+);
+assert.match(
+  chatRoute,
+  /const generationOrigin = existingConversation\?\.origin \?\? body\.origin/,
+  "a request must not relabel an existing user chat as a projectless hidden generation",
+);
+
+const authorizeLaunchIndex = chatRoute.indexOf("await authorizeChatProjectLaunch");
+const offlineLaunchIndex = chatRoute.indexOf("const offlineChatResponse = await maybeQueueOfflineChat");
+const openClawLaunchIndex = chatRoute.indexOf("return openClawChatResponse");
+assert.ok(authorizeLaunchIndex >= 0, "typed route should await project authorization");
+assert.ok(
+  offlineLaunchIndex > authorizeLaunchIndex,
+  "project authorization must run before an offline chat is queued",
+);
+assert.ok(
+  openClawLaunchIndex > authorizeLaunchIndex,
+  "project authorization must run before the OpenClaw bridge can spawn",
 );
 
 assert.match(
@@ -511,13 +559,13 @@ assert.match(
 assert.match(
   chatRoute,
   /import \{ chatProjectAccessId \} from "@\/lib\/chat-project-access";/,
-  "Chat send should resolve project access ids through the shared chat-project-access helper (explicit and resumed roots resolve to a project id; unknown explicit roots fail closed; the familiar's own workspace is exempt — see chat-project-access.test.ts)",
+  "Chat send should resolve exact and worktree roots through the shared chat-project-access helper",
 );
 
 assert.match(
   chatRoute,
-  /const chatProjectId = sshRuntime[\s\S]*chatProjectAccessId\(\{[\s\S]*requestedProjectRoot: body\.projectRoot,[\s\S]*resumeCwd,[\s\S]*resolvedCwd: cwd,[\s\S]*familiarWorkspace: resolvedFamiliarWorkspace,[\s\S]*\}\);[\s\S]*await assertProjectAccess\(\{ familiarId: body\.familiarId \}, chatProjectId, "chat"\);/,
-  "Local project-scoped chat must assert project access — with the familiar's own workspace exempt — before building the harness prompt",
+  /authorizeChatProjectLaunch\([\s\S]*chatProjectAccessId\(\{[\s\S]*requestedProjectRoot: requestedRoot,[\s\S]*resolvedCwd: resolvedRoot,[\s\S]*\}\)[\s\S]*await assertProjectAccess\(\{ familiarId: requestedFamiliarId \}, projectId, surface\)/,
+  "typed chat should resolve registration and assert familiar access inside the shared launch gate",
 );
 
 assert.match(
@@ -528,7 +576,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /body\.startNewConversation[\s\S]*!existingConversation[\s\S]*taskCard\?\.projectId[\s\S]*taskCard\.cwd === body\.projectRoot[\s\S]*taskWorktreeProjectId \?\? chatProjectAccessId/,
+  /body\.startNewConversation[\s\S]*!existingConversation[\s\S]*taskCard\?\.projectId[\s\S]*taskCard\.cwd === body\.projectRoot[\s\S]*projectIdOverride: taskWorktreeProjectId/,
   "A fresh Board worktree handoff should authorize through its persisted task project instead of treating the worktree as an unregistered project",
 );
 

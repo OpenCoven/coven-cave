@@ -10,8 +10,8 @@ const chatRoute = await readFile(new URL("./route.ts", import.meta.url), "utf8")
 
 assert.match(
   chatRoute,
-  /createConversationStub,[\s\S]*?stripConversationStubTurn,[\s\S]*?\} from "@\/lib\/cave-conversations";/,
-  "Chat send should persist first-turn stubs through the conversation store helpers",
+  /createConversationStub,[\s\S]*?stripConversationStubTurn,[\s\S]*?withConversationLock,[\s\S]*?\} from "@\/lib\/cave-conversations";/,
+  "Chat send should persist and serialize first-turn stubs through the conversation store helpers",
 );
 
 // ── coven-run path ───────────────────────────────────────────────────────────
@@ -30,8 +30,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /if \(stubWrite\) await stubWrite;\s*const existing = await loadConversation\(finalSessionId\);/,
-  "the coven-run save must settle the stub write before loading, so a late stub can never clobber the authoritative transcript",
+  /if \(stubWrite\) await stubWrite;\s*const isFirstExchange = await withConversationLock\(finalSessionId, async \(\) => \{\s*const existing = await loadConversation\(finalSessionId\);/,
+  "the coven-run save must settle the stub write and lock before loading, so a stub or model PATCH can never lose an authoritative update",
 );
 
 assert.match(
@@ -50,8 +50,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /await stubWrite;\s*const existing = await loadConversation\(sessionId\);/,
-  "the OpenClaw close handler must settle the stub write before loading the conversation",
+  /await stubWrite;\s*const isFirstExchange = await withConversationLock\(sessionId, async \(\) => \{\s*const existing = await loadConversation\(sessionId\);/,
+  "the OpenClaw close handler must settle the stub write and lock before loading the conversation",
 );
 
 assert.match(

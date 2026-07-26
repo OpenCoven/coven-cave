@@ -143,7 +143,7 @@ assert.match(view, /description: `Filed from unlinked PR #\$\{pr\.number\} — \
 assert.match(view, /externalRef: `gh-\$\{pr\.number\}`/, "externalRef uses the gh-<n> form");
 assert.match(view, /labels: \["from-pr"\]/);
 assert.match(view, /`Filed \$\{beadId\} for PR #\$\{pr\.number\}\.`/, "success announces the new bead id");
-assert.match(view, /await load\(true\)/, "queue mutations reload the explicitly selected project");
+assert.match(view, /await load\(\)/, "queue mutations reload the explicitly selected project");
 
 // Queue readiness is explicit: load its selected root first, include it in
 // both bridge calls, and offer the requested Generate recovery if Beads is

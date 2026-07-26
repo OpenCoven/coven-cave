@@ -83,7 +83,6 @@ type Props = {
   pendingChatAction?: PendingChatAction;
   onSetActiveFamiliar: (id: string | null) => void;
   onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => void;
-  onClearPendingProjectRoot: () => void;
   onPendingChatActionHandled: () => void;
   onSessionStarted: () => void;
   onSlashFromChat: (command: string, args: string) => boolean;
@@ -122,7 +121,6 @@ export function ChatSurface({
   pendingChatAction,
   onSetActiveFamiliar,
   onFamiliarScopeChange,
-  onClearPendingProjectRoot,
   onPendingChatActionHandled,
   onSessionStarted,
   onSlashFromChat,

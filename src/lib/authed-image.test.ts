@@ -165,7 +165,7 @@ for (const rel of [
   "../components/quick-chat-primitives.tsx",
   "../components/familiar-growth-view.tsx",
   "../components/familiar-analytics-view.tsx",
-  "../components/familiars-view.tsx",
+  "../components/familiars-view-sections.tsx",
   // The bento dashboard renders familiar avatars in its roster, board and
   // footer-collaborator rows.
   "../components/dashboard/bento-dashboard.tsx",

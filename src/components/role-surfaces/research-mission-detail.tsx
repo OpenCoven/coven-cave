@@ -39,11 +39,10 @@ import {
   type ResearchMission,
   type ResearchMissionAction,
   type ResearchMissionActionInput,
-  type ResearchSourceRef,
 } from "@/lib/research-missions";
 import { relativeTime } from "@/lib/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
-import { ResearchArtifactActions, fetchResearchWorkspacePath } from "./research-artifact-actions";
+import { fetchResearchWorkspacePath } from "./research-artifact-actions";
 import { ResearchEvidenceLedger, type ResearchOutputTab } from "./research-evidence-ledger";
 
 type Props = {
