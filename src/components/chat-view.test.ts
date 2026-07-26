@@ -226,8 +226,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const covenMissing = useMemo\(\s*\(\) => \/Coven CLI not found on PATH\/i\.test\(message\) \|\| code === "ENOENT"/,
-  "the error strip detects the coven-CLI-missing failure class",
+  /const covenMissing = useMemo\([\s\S]{0,500}?Coven CLI \(\?:not found on PATH\|was found as a Windows launcher shim\|is installed as a Windows command shim\)[\s\S]{0,500}?Windows PowerShell was not found at its system location, so Coven CLI cannot be launched[\s\S]{0,500}?code === "ENOENT"/,
+  "the error strip offers Setup for missing and known-unlaunchable Coven launchers",
 );
 assert.match(
   source,

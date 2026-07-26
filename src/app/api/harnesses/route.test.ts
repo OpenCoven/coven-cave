@@ -22,6 +22,16 @@ assert.match(
 );
 assert.match(
   source,
+  /if \(id === "codex"\) \{[\s\S]*?await probeCodexRuntimeAvailability\(\{[\s\S]*?launch: covenLaunchCommand\(\),[\s\S]*?env,[\s\S]*?\}\)/,
+  "Codex status uses the resolved Coven launch plan and its scoped spawn environment",
+);
+assert.match(
+  source,
+  /h\.id === "codex" && availability\.state !== "ready"/,
+  "a generic executable discovery result cannot mark an unavailable Codex-through-Coven route as installed",
+);
+assert.match(
+  source,
   /const grokProbeEnv = h\.id === "grok" \? runtime\.spawnEnv : undefined;[\s\S]*?const grokReady = h\.id === "grok" && availability\.state === "ready";[\s\S]*?const readyGrokLaunch = grokReady \? grokLaunch : null;[\s\S]*?const version = h\.id === "grok" && !grokReady[\s\S]*?copilotLaunch\?\.env \?\? grokProbeEnv,[\s\S]*?const grokCatalog = readyGrokLaunch \? await probeGrokModels\(readyGrokLaunch, grokProbeEnv\) : null;/,
   "Grok's version and authenticated catalog probes must only run after the shared launchability contract reports ready in the same scoped environment",
 );

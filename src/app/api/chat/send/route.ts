@@ -72,6 +72,10 @@ import {
 } from "@/lib/grok-compatibility";
 import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import {
+  codexAdapterFailureAvailability,
+  probeCodexRuntimeAvailability,
+} from "@/lib/codex-runtime-availability";
+import {
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
   type DirectRunnerId,
@@ -2161,6 +2165,15 @@ export async function POST(req: Request) {
       // (a never-launched CLI must not be diagnosed as "installed but not
       // authenticated") and skips persisting a fabricated assistant turn.
       let launchFailure: { code: string; message: string } | null = null;
+      // Coven can send adapter startup failures through stdout, where Codex's
+      // transcript filter intentionally suppresses pre-assistant noise. Keep
+      // only the classified, fixed remediation so those failures cannot fall
+      // through to the generic empty-output/authentication diagnostic.
+      let codexAdapterFailure: ReturnType<typeof codexAdapterFailureAvailability> = null;
+      const captureCodexAdapterFailure = (text: string) => {
+        if (binding.harness !== "codex" || codexAdapterFailure) return;
+        codexAdapterFailure = codexAdapterFailureAvailability(text);
+      };
       // Tracks open tool calls from both hook lines and stream-json
       // envelopes: per-name FIFO queues give concurrent same-name calls
       // distinct ids, and hook/envelope events describing the same call are
@@ -3023,6 +3036,7 @@ export async function POST(req: Request) {
               // AssistantFilter buffers partial lines and exposes only the
               // assistant phase after stripping Codex's startup transcript.
               const cleaned = resolveBackspaces(stripAnsi(ev.text));
+              captureCodexAdapterFailure(cleaned);
               recordStdoutErrorTail(cleaned);
               const filtered = assistantFilter.push(cleaned);
               if (filtered) {
@@ -3124,6 +3138,9 @@ export async function POST(req: Request) {
             return;
           }
         }
+        // Snapshot error-looking stdout lines for the empty-response diagnostic.
+        captureCodexAdapterFailure(cleaned);
+        recordStdoutErrorTail(cleaned);
         // Surface tool-use hook lines as structured events so the chat can
         // render a tool block. Hooks are still discarded by AssistantFilter
         // below, so this is purely additive.
@@ -3761,6 +3778,36 @@ export async function POST(req: Request) {
       // First attempt — uses --continue if body.sessionId was set.
       };
       const turnSpawnStartMs = Date.now();
+      // Codex's native-chat route is a two-layer launch: Cave starts Coven,
+      // then Coven starts Codex. Preflight with the exact command, fixed args,
+      // and familiar-scoped environment that the local plan will spawn.
+      const codexLaunchPlan =
+        !sshRuntime && binding.harness === "codex" && localRuntimePlan?.runner === "coven"
+          ? {
+              command: localRuntimePlan.command,
+              fixedArgs: localRuntimePlan.fixedArgs,
+              ...(localRuntimePlan.unresolvedWindowsShim ? { unresolvedWindowsShim: true as const } : {}),
+            }
+          : null;
+      if (codexLaunchPlan && localRuntimePlan) {
+        const availability = await probeCodexRuntimeAvailability({
+          launch: codexLaunchPlan,
+          env: localRuntimePlan.env,
+        });
+        if (availability.state !== "ready") {
+          launchFailure = { code: availability.code, message: availability.message };
+          result.is_error = true;
+          pushProgress(
+            "harness-start",
+            "codex failed to start",
+            "error",
+            availability.message,
+            Date.now() - turnSpawnStartMs,
+          );
+          push({ kind: "error", code: availability.code, message: availability.message });
+        }
+      }
+      if (!launchFailure) {
       // A compatibility decision is meaningful even when the CLI exits before
       // stdout. Announce it before spawning instead of relying on handleLine.
       if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
@@ -3851,6 +3898,7 @@ export async function POST(req: Request) {
         copilotTranscript.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
+        codexAdapterFailure = null;
         resumeFailed = false;
         adapterConflict = null;
         // Settle the heal step BEFORE the retry attempt runs (same shape as
@@ -3900,6 +3948,7 @@ export async function POST(req: Request) {
         copilotTranscript.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
+        codexAdapterFailure = null;
         resumeFailed = false;
         // Settle the retry step BEFORE the fresh attempt runs, not after it
         // finishes: the step's own work (rebuild context, relaunch) is done
@@ -3915,6 +3964,22 @@ export async function POST(req: Request) {
           "done",
         );
         await runAttempt(buildArgs(null, retry.prompt), retry.prompt);
+      }
+      }
+
+      // A Codex adapter can disappear or become misconfigured after the
+      // bounded preflight passed. Coven has started in this branch, so map
+      // only its adapter-level evidence back to the same actionable Codex
+      // state; provider/auth errors intentionally remain untouched.
+      if (!launchFailure && binding.harness === "codex" && !assistantText.trim()) {
+        const adapterFailure = codexAdapterFailure
+          ?? codexAdapterFailureAvailability([...stderrTail, ...stdoutErrTail].join("\n"));
+        if (adapterFailure) {
+          launchFailure = { code: adapterFailure.code, message: adapterFailure.message };
+          result.is_error = true;
+          pushProgress("harness-start", "codex failed to start", "error", adapterFailure.message);
+          push({ kind: "error", code: adapterFailure.code, message: adapterFailure.message });
+      }
       }
 
       // User cancel (CHAT-D5-02): when the client stops the response
