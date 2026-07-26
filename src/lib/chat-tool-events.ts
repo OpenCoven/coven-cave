@@ -324,9 +324,19 @@ export class ToolCallTracker {
       ?? queue[0];
     const status = isError ? "error" : "ok";
     if (!call) {
-      // Post without any open call: surface it anyway under a fresh id.
+      // Post without any open call: surface it under a fresh id, but retain
+      // the completed hook claim so a delayed assistant envelope can attach
+      // its native id instead of creating a duplicate bubble.
       this.seq += 1;
-      const ev: ToolStreamEvent = { id: this.streamId(`tool-${this.seq}-${name}`), name, output, status };
+      const completedHook: OpenCall = {
+        id: this.streamId(`tool-${this.seq}-${name}`),
+        name,
+        startedAt: this.now(),
+        origin: "hook",
+        hookStarted: true,
+      };
+      this.rememberSettledHookCall(completedHook);
+      const ev: ToolStreamEvent = { id: completedHook.id, name, output, status };
       this.record(ev);
       return ev;
     }

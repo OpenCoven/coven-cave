@@ -411,6 +411,26 @@ assert.match(
   assert.equal(tracker.snapshot().length, 1, "late post hooks must not create an orphan bubble");
 }
 
+// Hooks can be configured independently. If only a post hook arrives before
+// its delayed assistant envelope, retain its completed record long enough to
+// attach the native id and suppress the matching user result.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  const post = tracker.hookEnd("Bash", "hook output", false);
+  assert.equal(post.status, "ok");
+  assert.equal(
+    tracker.envelopeToolUse("toolu-post-only", "Bash", '{"command":"pwd"}'),
+    null,
+    "a late envelope must link the post-only hook instead of emitting a duplicate bubble",
+  );
+  assert.equal(tracker.envelopeToolResult("toolu-post-only", "envelope output", false), null);
+  assert.deepEqual(
+    tracker.snapshot().map(({ id, input, output, status }) => ({ id, input, output, status })),
+    [{ id: post.id, input: '{"command":"pwd"}', output: "hook output", status: "ok" }],
+    "post-hook output remains authoritative after the native envelope arrives",
+  );
+}
+
 // When two same-name pre hooks arrive before their envelopes, match each
 // envelope by its normalized input instead of assigning native ids by FIFO.
 // Otherwise the result/output of the second execution is persisted against the
