@@ -6,9 +6,32 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
 const entries = read("./journal-entries.tsx");
 const css = read("../../styles/journal.css");
+const grimoire = read("../grimoire-view.tsx");
 
 assert.match(css, /\.journal-list \{[\s\S]*?min-width:\s*0;/, "Journal master-detail shell can shrink inside the workspace");
-assert.match(css, /\.journal-detail \{[\s\S]*?overflow:\s*hidden;/, "Journal detail pane contains overflowing code surfaces");
+assert.match(css, /\.journal-detail \{[\s\S]*?overflow-y:\s*auto;/, "Journal detail pane scrolls so long entries remain reviewable");
+assert.match(css, /\.journal-detail \{[\s\S]*?overflow-x:\s*hidden;/, "Journal detail pane still contains horizontal overflow");
+assert.match(
+  grimoire,
+  /className="grimoire-journal-tab flex h-full min-h-0 overflow-hidden"/,
+  "the Grimoire Journal host constrains the detail pane to a real scroll boundary",
+);
+
+// ── The journal day rail collapses to a persistent, reachable spine ──────────
+assert.match(entries, /JOURNAL_RAIL_COLLAPSED_KEY = "cave:journal:rail-collapsed:v1"/, "journal rail collapse uses a versioned preference");
+assert.match(entries, /railCollapsed,\s*setRailCollapsed/, "JournalEntries tracks the day rail's collapsed state");
+assert.match(entries, /aria-expanded=\{!railCollapsed\}/, "the rail disclosure exposes its current state");
+assert.match(entries, /aria-controls="journal-day-rail-content"/, "the rail disclosure names the controlled content");
+assert.match(entries, /aria-label=\{railCollapsed \? "Expand journal entries" : "Collapse journal entries"\}/, "the rail disclosure names the next action");
+assert.match(entries, /data-collapsed=\{railCollapsed \? "true" : undefined\}/, "the rail publishes collapsed layout state");
+assert.match(entries, /window\.localStorage\.setItem\(JOURNAL_RAIL_COLLAPSED_KEY, String\(next\)\)/, "rail collapse persists locally");
+assert.match(css, /\.journal-list__rail\[data-collapsed="true"\] \{[\s\S]*?flex-basis:/, "the collapsed rail becomes a narrow spine");
+assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.journal-list__rail/, "rail motion respects reduced-motion");
+assert.match(
+  css,
+  /transition:\s*width var\(--duration-base\) var\(--ease-standard\),\s*flex-basis var\(--duration-base\) var\(--ease-standard\),\s*padding var\(--duration-base\) var\(--ease-standard\)/,
+  "rail motion uses the design-system duration and easing tokens",
+);
 
 // JournalEntries can be edited and deleted through the persisted journal API.
 assert.match(entries, /editing,\s*setEditing/, "JournalEntries tracks edit mode for daily reflections");
@@ -50,8 +73,12 @@ assert.match(entries, /const selectedFamiliarId = activeFamiliarId \?\? familiar
 // scope (empty = All), so switching familiars/scope never refetches.
 assert.match(entries, /await fetch\(`\/api\/journal`, \{ cache: "no-store" \}\)/, "JournalEntries fetches the full journal day list");
 assert.match(entries, /if \(!familiarInScope\(scope, d\.reflectedBy\)\) return false/, "JournalEntries filters the day list by the familiar multiselect scope");
-// The day detail scopes its memory stats to the single active familiar (null at 0/≥ 2).
-assert.match(entries, /const dayQuery = useCallback\(\(slug: string\) => \(\s*activeFamiliarId\s*\?\s*`date=\$\{encodeURIComponent\(slug\)\}&familiar=\$\{encodeURIComponent\(activeFamiliarId\)\}`\s*:\s*`date=\$\{encodeURIComponent\(slug\)\}`/, "JournalEntries scopes day detail stats to the active familiar");
+// Entry reads stay coven-wide so a list row written by another familiar always
+// opens. Only the inventory-derived stats/context request is familiar-scoped.
+assert.match(entries, /const entryQuery = useCallback\(\(slug: string\) => `date=\$\{encodeURIComponent\(slug\)\}`/, "journal entry reads never inherit the active-familiar filter");
+assert.match(entries, /const statsQuery = useCallback\(\(slug: string\) => \(\s*selectedFamiliarId\s*\?\s*`date=\$\{encodeURIComponent\(slug\)\}&familiar=\$\{encodeURIComponent\(selectedFamiliarId\)\}`/, "journal stats and generation context use the selected familiar");
+assert.match(entries, /fetch\(`\/api\/journal\?\$\{entryQuery\(slug\)\}`/, "loadDay uses the coven-wide entry query");
+assert.match(entries, /fetch\(`\/api\/journal\?\$\{statsQuery\(slug\)\}&stats=1`/, "fetchDayStats uses the familiar-scoped stats query");
 
 // ── Perf: the entry paints without waiting for the memory inventory (cave-tgx9)
 // The stats block needs a full memory-file inventory walk server-side (~1900
@@ -71,7 +98,7 @@ assert.match(
 );
 assert.match(
   entries,
-  /fetch\(`\/api\/journal\?\$\{dayQuery\(slug\)\}&stats=1`/,
+  /fetch\(`\/api\/journal\?\$\{statsQuery\(slug\)\}&stats=1`/,
   "JournalEntries fetches the stats block on a separate non-blocking request",
 );
 assert.match(
@@ -103,6 +130,43 @@ assert.match(entries, /const reqId = \+\+loadDayReqRef\.current/, "each loadDay 
 assert.match(entries, /if \(reqId !== loadDayReqRef\.current \|\| !mountedRef\.current\) return/, "a stale/late day fetch is dropped");
 assert.match(entries, /const mountedRef = useRef\(true\)/, "tracks mounted state for async guards");
 assert.match(entries, /return \(\) => \{ mountedRef\.current = false; \}/, "mountedRef is cleared on unmount");
+assert.match(entries, /setDay\(null\);\s*\n\s*setDayError\(null\);/, "selecting a day clears the previous entry before its request starts");
+assert.match(entries, /if \(!res\.ok \|\| !json\.ok\) throw new Error\(json\.error \?\? "Couldn't load journal entry\."\)/, "failed day responses cannot leave stale content visible");
+assert.match(entries, /headline="Couldn't load this journal entry"/, "day failures render a truthful error state");
+assert.match(entries, /onClick=\{\(\) => \{ void loadDay\(selected\); \}\}/, "day failures expose a retry action");
+
+// Initial list failures must not masquerade as an empty journal.
+assert.match(entries, /daysError,\s*setDaysError/, "JournalEntries tracks day-list failures separately");
+assert.match(entries, /const loadDaysReqRef = useRef\(0\)/, "loadDays tracks a request id");
+assert.match(entries, /const reqId = \+\+loadDaysReqRef\.current/, "each loadDays stamps a request id");
+assert.match(
+  entries,
+  /if \(reqId !== loadDaysReqRef\.current \|\| !mountedRef\.current\) return/,
+  "a stale/late list response is dropped",
+);
+assert.match(entries, /if \(!res\.ok \|\| !json\.ok\) throw new Error\(json\.error \?\? "Couldn't load journal entries\."\)/, "failed list responses surface as errors");
+assert.match(entries, /headline="Couldn't load journal entries"/, "list failures use the shared ErrorState");
+assert.match(entries, /onClick=\{\(\) => \{ void loadDays\(\); \}\}/, "list failures expose a retry action");
+
+// Generation may finish after the user navigates to another day. The list
+// refresh is still useful, but the completed generation must not pull the
+// detail pane back to the captured day.
+assert.match(entries, /const selectedRef = useRef\(selected\)/, "generation can read the current selection");
+assert.match(
+  entries,
+  /if \(selectedRef\.current === day\.date\) await loadDay\(day\.date\);/,
+  "generation only reloads the detail when its day is still selected",
+);
+
+// Mutation failures stay visible even when the independently collapsible rail
+// content is hidden.
+{
+  const railContentStart = entries.indexOf('<div id="journal-day-rail-content"');
+  const asideEnd = entries.indexOf("</aside>", railContentStart);
+  const mutationError = entries.indexOf('{error ? (', railContentStart);
+  assert.ok(railContentStart >= 0 && asideEnd > railContentStart, "the collapsible rail subtree is present");
+  assert.ok(mutationError > asideEnd, "the shared mutation error alert renders outside the collapsible rail");
+}
 
 // ── Selected day is announced + keyboard-navigable ──────────────────────────
 assert.match(entries, /aria-current=\{d\.date === selected \? "true" : undefined\}/, "the open day row is aria-current");
@@ -161,6 +225,9 @@ assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.journal-ne
 assert.match(entries, /const \{ announce \} = useAnnouncer\(\)/, "the surface uses the shared announcer");
 assert.match(entries, /announce\("Reflection generated\."\)/, "generate success is announced");
 assert.match(entries, /announce\("Journal entry saved\."\)/, "save success is announced");
+assert.match(entries, /const saveJson = await saveRes\.json\(\)\.catch\(\(\) => \(\{\}\)\)/, "generation inspects the persistence response body");
+assert.match(entries, /if \(!saveRes\.ok \|\| !saveJson\.ok\) throw new Error\(saveJson\.error \?\? "Couldn't save the generated reflection\."\)/, "generation refuses to report success when persistence fails");
+assert.match(entries, /\} finally \{\s*\n\s*if \(mountedRef\.current\) setGenerating\(false\);/, "generation always clears its busy state");
 // Delete deliberately does NOT announce(): UndoToast is itself role=status
 // (ui/undo-toast.tsx) and speaks the scheduled deletion — a second announce
 // made AT hear every delete twice (cave-6rhk).

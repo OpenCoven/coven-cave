@@ -44,6 +44,15 @@ test("legacy fields migrate without replacing a new preference", () => {
   assert.equal({ ...legacy, ...newValues }["board.viewMode"], "gantt");
 });
 
+test("navigation written before hydration wins over an older stored preference", () => {
+  const source = readFileSync(new URL("./surface-preferences.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /setValues\(\(pending\) => \(\{ \.\.\.readLegacySurfacePreferences\(window\.localStorage\), \.\.\.current, \.\.\.pending \}\)\)/,
+    "provider hydration merges pending navigation last instead of replacing it",
+  );
+});
+
 test("specs normalize allowed values and discard stale enum values", () => {
   assert.equal(surfacePreferenceSpecs.github.sortDir.parse("asc"), "asc");
   assert.equal(surfacePreferenceSpecs.github.sortDir.parse("sideways"), undefined);
