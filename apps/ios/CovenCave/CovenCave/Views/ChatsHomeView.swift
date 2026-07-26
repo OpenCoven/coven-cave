@@ -202,8 +202,8 @@ struct ChatsHomeView: View {
         open(.thread(thread))
     }
 
-    /// Large-title header pinned to the top, mirroring the Read / Tasks tabs
-    /// so every tab's title aligns at the same flush position.
+    /// Large-title header pinned to the top, mirroring the Read / Tasks
+    /// destinations so every destination title aligns at the same flush position.
     private var header: some View {
         HStack(spacing: 10) {
             CircularIconButton(systemImage: "line.3.horizontal",

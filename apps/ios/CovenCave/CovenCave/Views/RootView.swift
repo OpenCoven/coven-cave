@@ -60,7 +60,7 @@ struct RootView: View {
         .foregroundStyle(chrome.textPrimary)
         // Frosted, accent-infused navigation bars that track the desktop
         // palette and degrade to solid themed surfaces under Reduce Transparency.
-        .glassBars()
+        .glassNavigationBars()
     }
 
     /// The primary shell is mounted but the desktop is out of reach (or a recovery

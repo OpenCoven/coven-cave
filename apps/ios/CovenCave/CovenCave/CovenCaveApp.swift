@@ -58,7 +58,7 @@ struct CovenCaveApp: App {
                     }
                 }
                 // Deep links from the home-screen widget (covencave://…) route to
-                // the matching tab/sheet. Handled even before connect — the tab is
+                // the matching destination/sheet. Handled even before connect — the destination is
                 // set so the right surface shows once the desktop is reached.
                 .onOpenURL { app.handleDeepLink($0) }
         }

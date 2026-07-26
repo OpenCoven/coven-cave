@@ -165,7 +165,7 @@ final class AppModel {
     var remindersError: String?
     var remindersLoaded = false
 
-    // MARK: - Developer tab
+    // MARK: - Developer surface
 
     /// Configured project roots, shared across the Code and Terminal surfaces.
     var projects: [ProjectInfo] = []
@@ -579,7 +579,7 @@ final class AppModel {
         tasks[idx] = card
     }
 
-    // MARK: - Developer tab actions
+    // MARK: - Developer surface actions
 
     func loadProjects() async {
         guard let client else { return }
@@ -1276,7 +1276,7 @@ final class AppModel {
         if changed { persistFamiliarViews() }
     }
 
-    /// Drag-reorder familiars in the Chats tab; persists the new order.
+    /// Drag-reorder familiars in the Chats destination; persists the new order.
     func moveFamiliar(fromOffsets source: IndexSet, toOffset destination: Int) {
         familiars.move(fromOffsets: source, toOffset: destination)
         familiarOrder = familiars.map(\.id)

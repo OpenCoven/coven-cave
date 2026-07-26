@@ -230,7 +230,7 @@ struct TasksView: View {
         statusFilter = []; priorityFilter = []; familiarFilter = []
     }
 
-    /// Consume a cross-tab "open this task" intent set by `requestOpenTask`.
+    /// Consume a cross-destination "open this task" intent set by `requestOpenTask`.
     private func openRequestedCard() {
         guard let card = app.cardToOpen else { return }
         if selection?.id != card.id { selection = card }

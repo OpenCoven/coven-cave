@@ -24,6 +24,7 @@ const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift")
 const tasks = await read("apps/ios/CovenCave/CovenCave/Views/TasksView.swift");
 const terminal = await read("apps/ios/CovenCave/CovenCave/Views/TerminalView.swift");
 const settings = await read("apps/ios/CovenCave/CovenCave/Views/SettingsView.swift");
+const glass = await read("apps/ios/CovenCave/CovenCave/Theme/Glass.swift");
 const zoom = await read("apps/ios/CovenCave/CovenCave/Views/ContentZoom.swift");
 
 // Supplied device reference: this is the canonical first empty conversation.
@@ -108,6 +109,10 @@ for (const [name, source] of [["Chats", home], ["Tasks", tasks], ["Terminal", te
   assert.match(source, /navigationDrawerOpen = true/, `${name} exposes Open navigation`);
 }
 assert.doesNotMatch(chat, /\.toolbar\(\.hidden, for: \.tabBar\)/, "ChatView does not depend on a removed tab bar");
+assert.doesNotMatch(glass, /UITabBar(?:Appearance)?|tabAppearance|liveTabBars/,
+  "the chrome system no longer styles an unavailable native tab bar");
+assert.match(glass, /UINavigationBarAppearance\.glass/,
+  "the chrome system still styles live navigation bars");
 assert.match(
   drawer,
   /Color\.black\.opacity\(isOpen \? 0\.46 : 0\)/,
