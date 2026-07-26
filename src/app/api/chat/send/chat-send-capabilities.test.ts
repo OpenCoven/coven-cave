@@ -24,10 +24,16 @@ assert.notEqual(
 assert.equal(openCodeCapabilityProbeScope(), "default", "the unscoped probe cache has a stable explicit scope");
 assert.deepEqual(openCodeProbeSpawnOptions("linux"), { detached: true }, "POSIX OpenCode probes create an isolated process group that timeout cleanup can terminate");
 assert.deepEqual(openCodeProbeSpawnOptions("win32"), { detached: false }, "Windows probes rely on taskkill's explicit process-tree cleanup rather than a detached process group");
-const firstCapabilities = await openCodeRunCapabilities("probe-fixture", async () => ({
-  helpProbe: { complete: true, output: "  --format <format>  Output format: text, json\n" },
-  versionProbe: { complete: true, output: "opencode 1.0.0" },
-}));
+const probeEnv = { PATH: "/scoped/opencode", XDG_RUNTIME_DIR: "/tmp" };
+let observedProbeEnv: NodeJS.ProcessEnv | undefined;
+const firstCapabilities = await openCodeRunCapabilities("probe-fixture", async (env) => {
+  observedProbeEnv = env;
+  return {
+    helpProbe: { complete: true, output: "  --format <format>  Output format: text, json\n" },
+    versionProbe: { complete: true, output: "opencode 1.0.0" },
+  };
+}, probeEnv);
+assert.equal(observedProbeEnv, probeEnv, "callers can retain one scoped environment for preflight, probes, and launch");
 const replacementCapabilities = await openCodeRunCapabilities("probe-fixture", async () => ({
   helpProbe: { complete: true, output: "  --format <format>  Output format: text\n" },
   versionProbe: { complete: true, output: "opencode 1.0.0" },

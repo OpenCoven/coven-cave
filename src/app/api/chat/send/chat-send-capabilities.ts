@@ -471,11 +471,12 @@ export function openCodeRunSupportsModel(): Promise<boolean> {
 export async function openCodeRunCapabilities(
   familiarId?: string,
   probeRunContract: (env: NodeJS.ProcessEnv) => Promise<OpenCodeRunContractProbe> = probeOpenCodeRunContract,
+  spawnEnv?: NodeJS.ProcessEnv,
 ): Promise<OpenCodeRunCapabilities> {
   // Probe the exact scoped environment used for this chat turn. A version
   // string alone is not a safe cache key: package managers and shims can
   // replace a CLI in place while preserving both PATH and `--version`.
-  const env = openCodeSpawnEnv(familiarId);
+  const env = spawnEnv ?? openCodeSpawnEnv(familiarId);
   const { helpProbe, versionProbe } = await probeRunContract(env);
   const version = versionProbe.complete
     ? versionProbe.output.match(/\b\d+(?:\.\d+){1,3}(?:[-+][\w.-]+)?\b/)?.[0] ?? null
