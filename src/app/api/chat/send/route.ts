@@ -70,6 +70,18 @@ import {
   resolveOpenCodeCompatibility,
 } from "@/lib/opencode-compatibility";
 import { handleOpenCodeJsonLine } from "@/lib/opencode-stream";
+import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
+import {
+  HermesSseDecoder,
+  hermesApiConfig,
+  hermesApiCanAccessLocalFiles,
+  isHermesResponsesEventName,
+  isHermesMissingPreviousResponseError,
+  hermesResponsesUrl,
+  isHermesInvalidPreviousResponseIdError,
+  parseHermesResponsesEvent,
+} from "@/lib/hermes-responses-stream";
+import { redactSecretText, redactSecretsDeep } from "@/lib/secret-redaction";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
@@ -937,7 +949,7 @@ export async function POST(req: Request) {
   // harness uses coven run's capability probe.
   const hermesDirect = !sshRuntime && binding.harness === "hermes";
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
-  // Cave's Read-only control is a security promise, not a prompt hint.
+// Cave's Read-only control is a security promise, not a prompt hint.
   // OpenCode's one-shot CLI exposes no read-only/sandbox flag, so do not even
   // run its capability probes with the familiar-scoped credentials here.
   if (openCodeDirect && body.permissionMode === "read") {
@@ -952,9 +964,19 @@ export async function POST(req: Request) {
   const openCodeCompatibility = openCodeDirect
     ? await resolveOpenCodeCompatibility(await openCodeRunCapabilities(body.familiarId))
     : null;
+  // Tool activity from Hermes is only reliable over its documented structured
+  // API. The quiet CLI mode intentionally hides terminal tool previews, so it
+  // remains an explicit plain-text fallback when no API server is configured.
+  // Read credentials from the familiar-scoped env boundary, never a request.
+  const hermesApi = hermesDirect
+    ? hermesApiConfig(harnessSpawnEnv(body.familiarId) as {
+        HERMES_API_URL?: string;
+        HERMES_API_KEY?: string;
+      })
+    : null;
   const modelForwardingEnabled =
     hermesDirect
-      ? await hermesChatSupportsModel()
+      ? hermesApi !== null || await hermesChatSupportsModel()
       : openCodeDirect
         ? openCodeCompatibility?.capabilities.model ?? false
         : binding.harness === "grok" ||
@@ -1016,6 +1038,18 @@ export async function POST(req: Request) {
     );
   }
   await ensureAdapterManifestScaffold(binding.harness);
+// The Responses API does not expose a documented, enforceable equivalent of
+  // Cave's read-only sandbox. Do not downgrade that security promise to a
+  // prompt merely because a familiar opted into the structured transport.
+  if (hermesDirect && hermesApi && body.permissionMode === "read") {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "Hermes API does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
   if (sshRuntime && binding.harness === "openclaw") {
     return new Response(
       JSON.stringify({
@@ -1158,10 +1192,11 @@ export async function POST(req: Request) {
   });
   if (offlineChatResponse) return offlineChatResponse;
 
-  // Image delivery channel: only local coven-run harnesses can Read files on
-  // this machine. The OpenClaw bridge and SSH runtimes cannot, so their
-  // prompts carry an explicit unsupported notice instead of a dead path.
-  const imagesSupported = !sshRuntime && binding.harness !== "openclaw";
+  // Image delivery channel: only harnesses that can read Cave's local temp
+  // files may receive image paths. Remote Hermes Responses endpoints cannot,
+  // so they receive the same explicit unsupported notice as bridge/SSH runs.
+  const imagesSupported = !sshRuntime && binding.harness !== "openclaw" &&
+    !(hermesApi && !hermesApiCanAccessLocalFiles(hermesApi));
   const imageFilePaths = imagesSupported
     ? await writeImageAttachmentsToTemp(attachments)
     : new Map<number, string>();
@@ -1577,6 +1612,17 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
+      if (hermesDirect && !hermesApi) {
+        // Do not fabricate tool bubbles from the CLI's presentation layer.
+        // This gives the operator an actionable, privacy-safe degradation
+        // notice while preserving normal CLI chat output.
+        pushProgress(
+          "hermes-tool-activity",
+          "Hermes tool activity unavailable",
+          "error",
+          "Configure valid HERMES_API_URL and HERMES_API_KEY values for the versioned structured event transport.",
+        );
+      }
       if (grokFreshSessionForSandbox) {
         pushProgress(
           "grok-sandbox-restart",
@@ -1596,6 +1642,22 @@ export async function POST(req: Request) {
       // ID on resumed turns. Always retain the latest event-provided native ID
       // for the next CLI resume, while only announcing the stable Cave ID.
       let openCodeSessionId: string | null = null;
+      // Responses API ids rotate per turn like other harness session ids, but
+      // Cave's `sessionId` remains the stable conversation identity. Preserve
+      // the latest response id separately so follow-ups send
+      // `previous_response_id` instead of accidentally resuming from Cave's
+      // UUID.
+      let hermesResponseId: string | null = null;
+      // A conversation created by Hermes CLI has a CLI-native session id here,
+      // not a Responses id. If the API rejects it, the shared resume fallback
+      // replays saved context into one fresh Responses turn instead.
+      let hermesPreviousResponseId = existingConversation?.harnessSessionId ?? null;
+      // Legacy/failed conversations may not have a usable Responses id. A
+      // fresh API request must receive saved context rather than silently
+      // answering only the newest prompt.
+      const hermesNeedsContextReplay = Boolean(
+        hermesApi && body.sessionId && !hermesPreviousResponseId,
+      );
       // First-turn visibility (cave-0g2x): the id of the in-flight user turn,
       // minted up front so the announce-time stub conversation and the
       // end-of-stream authoritative save agree on the turn's identity.
@@ -2226,9 +2288,11 @@ export async function POST(req: Request) {
       // run as user-cancelled. A bare transport abort no longer kills — the
       // turn finishes and persists, bounded by the detach cap.
       let currentChild: ReturnType<typeof spawn> | null = null;
+      let currentHermesAbort: AbortController | null = null;
       const killCurrentChild = () => {
         try {
           currentChild?.kill("SIGTERM");
+          currentHermesAbort?.abort();
         } catch {
           /* ignore */
         }
@@ -2257,8 +2321,247 @@ export async function POST(req: Request) {
         },
       });
 
-      const runAttempt = (spawnArgs: string[]): Promise<void> =>
-        new Promise((resolve) => {
+      const runHermesApiAttempt = async (apiPrompt: string): Promise<void> => {
+        // This is an opt-in local/API-server transport. Hermes quiet CLI output
+        // is intentionally not treated as a versioned tool-event protocol.
+        if (!hermesApi) return;
+        const attemptStartedAt = Date.now();
+        const abort = new AbortController();
+        currentHermesAbort = abort;
+        let hermesToolsSettled = false;
+        const settleOpenHermesTools = (reason: string) => {
+          if (hermesToolsSettled) return;
+          hermesToolsSettled = true;
+          for (const toolEv of toolTracker.failOpenCalls(reason)) {
+            push({ kind: "tool_use", ...toolEv });
+          }
+        };
+        // Endpoint paths can carry reverse-proxy credentials; never put a
+        // configured URL in browser-visible progress or run-replay events.
+        pushProgress("harness-start", "Starting Hermes API", "running");
+        const onAbort = () => {
+          // Transport loss is resumable, not a user Stop: keep consuming until
+          // the shared detach deadline, exactly like a child-process attempt.
+          armDetachKill();
+        };
+        req.signal.addEventListener("abort", onAbort, { once: true });
+        // AbortSignal does not replay an already-fired event. Route setup can
+        // outlive a client disconnect, so arm the shared deadline before the
+        // remote request starts in that race as well.
+        if (req.signal.aborted) onAbort();
+        try {
+          const previousResponseId = hermesPreviousResponseId;
+          const response = await fetch(hermesResponsesUrl(hermesApi), {
+            method: "POST",
+            signal: abort.signal,
+            // Do not let a configured server redirect prompts or bearer
+            // credentials past the validated endpoint boundary.
+            redirect: "error",
+            headers: {
+              "content-type": "application/json",
+              accept: "text/event-stream",
+              authorization: `Bearer ${hermesApi.apiKey}`,
+            },
+            body: JSON.stringify({
+              model: forwardModel ?? desiredModel,
+              input: apiPrompt,
+              stream: true,
+              ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
+            }),
+          });
+          const contentType = response.headers.get("content-type") ?? "";
+          if (!response.ok || !response.body || !/^text\/event-stream(?:\s*;|$)/i.test(contentType)) {
+            const apiError = !response.ok && /^application\/(?:[a-z0-9.-]+\+)?json(?:\s*;|$)/i.test(contentType)
+              ? await response.json().catch(() => undefined)
+              : undefined;
+            if (
+              previousResponseId &&
+              (isHermesInvalidPreviousResponseIdError(apiError) ||
+                (response.status === 404 && isHermesMissingPreviousResponseError(apiError)))
+            ) {
+              resumeFailed = true;
+            }
+            result = { ...result, is_error: true };
+            recordStdoutErrorTail(
+              !response.ok
+                ? `Hermes API request failed (${response.status})`
+                : `Hermes API protocol error: expected text/event-stream, received ${contentType || "no content type"}`,
+              true,
+            );
+            await response.body?.cancel().catch(() => undefined);
+            return;
+          }
+          const reader = response.body.getReader();
+          const utf8 = new TextDecoder();
+          const decoder = new HermesSseDecoder();
+          const hermesCallIdsByItemId = new Map<string, string>();
+          const hermesCallNamesById = new Map<string, string>();
+          const hermesArgumentBuffers = new Map<string, string>();
+          const consume = (frame: { event: string; data: string }): boolean => {
+            if (!frame.data.trim()) return false;
+            if (frame.data === "[DONE]") return true;
+            // Extensions commonly emit textual pings/progress. Unknown named
+            // events are deliberately forward-compatible; only supported
+            // protocol events must parse as JSON.
+            if (frame.event && frame.event !== "message" && !isHermesResponsesEventName(frame.event)) {
+              return false;
+            }
+            let payload: unknown;
+            try {
+              payload = JSON.parse(frame.data);
+            } catch {
+              // A malformed event can hide text or a tool transition. Do not
+              // present a later terminal frame as a completed response after
+              // silently discarding it.
+              result = { ...result, is_error: true };
+              recordStdoutErrorTail("Hermes API protocol error: malformed SSE payload", true);
+              return true;
+            }
+            const event = parseHermesResponsesEvent(frame.event, payload);
+            switch (event.kind) {
+              case "session":
+                hermesResponseId = event.id;
+                if (!sessionId) announceSession(event.id);
+                return false;
+              case "text":
+                assistantText += event.text;
+                push({ kind: "assistant_chunk", text: event.text });
+                return false;
+              case "tool_start": {
+                const input = formatToolInputValue(redactSecretsDeep(event.input));
+                if (event.itemId) hermesCallIdsByItemId.set(event.itemId, event.id);
+                hermesCallNamesById.set(event.id, event.name);
+                if (input !== undefined) hermesArgumentBuffers.set(event.id, input);
+                boundarySentinel?.observe(event.name, input ?? "");
+                const toolEv = toolTracker.envelopeToolUse(event.id, event.name, input, assistantText.length);
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                else if (input !== undefined) {
+                  // Hermes progress can announce a call before the canonical
+                  // Responses item. Keep the same bubble id but replace its
+                  // preliminary input when the canonical item is complete.
+                  const updated = toolTracker.envelopeToolInput(event.id, input);
+                  if (updated) push({ kind: "tool_use", ...updated });
+                }
+                return false;
+              }
+              case "tool_input": {
+                const id = event.id ?? (event.itemId ? hermesCallIdsByItemId.get(event.itemId) : undefined);
+                if (!id) return false;
+                const next = event.isFinal
+                  ? event.input
+                  : `${hermesArgumentBuffers.get(id) ?? ""}${event.input}`;
+                hermesArgumentBuffers.set(id, next);
+                // Standard Responses calls often arrive with empty arguments
+                // and stream their actual path-bearing input afterward. Check
+                // the assembled final value at the same runtime boundary as
+                // the initial tool announcement.
+                if (event.isFinal) {
+                  const name = hermesCallNamesById.get(id);
+                  if (name) boundarySentinel?.observe(name, next);
+                }
+                const toolEv = toolTracker.envelopeToolInput(id, formatToolInputValue(redactSecretText(next)));
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                return false;
+              }
+              case "tool_end": {
+                const safeOutput = redactSecretsDeep(event.output);
+                const rawOutput = flattenToolResultContent(safeOutput) ?? formatToolInputValue(safeOutput);
+                const output = rawOutput === undefined ? undefined : redactSecretText(rawOutput);
+                const toolEv = toolTracker.envelopeToolResult(event.id, output, event.isError);
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                return false;
+              }
+              case "done":
+                if (event.id) {
+                  hermesResponseId = event.id;
+                  if (!sessionId) announceSession(event.id);
+                }
+                result = { ...result, is_error: event.isError };
+                if (event.isError) recordStdoutErrorTail("Hermes API stream failed", true);
+                if (event.isError && previousResponseId && event.invalidPreviousResponseId) resumeFailed = true;
+                return true;
+              case "error":
+                result = { ...result, is_error: true };
+                if (previousResponseId && event.invalidPreviousResponseId) resumeFailed = true;
+                recordStdoutErrorTail("Hermes API stream failed", true);
+                return true;
+              case "ignore":
+                return false;
+            }
+          };
+          try {
+            let terminal = false;
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              for (const frame of decoder.push(utf8.decode(value, { stream: true }))) {
+                terminal = consume(frame) || terminal;
+                if (terminal) break;
+              }
+              if (terminal) {
+                await reader.cancel();
+                break;
+              }
+            }
+            if (!terminal) {
+              for (const frame of decoder.push(utf8.decode())) {
+                terminal = consume(frame) || terminal;
+                if (terminal) break;
+              }
+            }
+            if (!terminal) {
+              for (const frame of decoder.finish()) {
+                terminal = consume(frame) || terminal;
+                if (terminal) break;
+              }
+            }
+            if (!terminal && !abort.signal.aborted) {
+              // EOF without an explicit protocol terminal means a proxy or
+              // server cut the response short. Preserve any partial text for
+              // diagnostics, but never present or persist it as a completed
+              // model turn.
+              result = { ...result, is_error: true };
+              recordStdoutErrorTail("Hermes API stream ended before a terminal event", true);
+            }
+          } finally {
+            reader.releaseLock();
+          }
+        } catch (error) {
+          if (abort.signal.aborted) {
+            // A detach deadline aborts the fetch just like a child kill. It
+            // never received a protocol terminal, so do not persist partial
+            // output as a resumable completed turn. Explicit Stop follows the
+            // cancellation path below and remains intentionally non-error.
+            if (!runHandle.stopRequested) {
+              result = { ...result, is_error: true };
+              recordStdoutErrorTail("Hermes API stream aborted after client disconnect", true);
+            }
+          } else {
+            result = { ...result, is_error: true };
+            recordStdoutErrorTail("Hermes API request failed", true);
+          }
+        } finally {
+          settleOpenHermesTools(
+            abort.signal.aborted
+              ? "[tool interrupted because the Hermes stream was cancelled]"
+              : "[tool did not settle before the Hermes stream ended]",
+          );
+          req.signal.removeEventListener("abort", onAbort);
+          if (currentHermesAbort === abort) currentHermesAbort = null;
+          result.duration_ms = Date.now() - attemptStartedAt;
+          pushProgress(
+            "harness-start",
+            result.is_error ? "Hermes API stream failed" : "Hermes API stream finished",
+            result.is_error ? "error" : "done",
+            undefined,
+            result.duration_ms,
+          );
+        }
+      };
+
+      const runAttempt = (spawnArgs: string[], apiPrompt = harnessPrompt): Promise<void> => {
+        if (hermesApi) return runHermesApiAttempt(apiPrompt);
+        return new Promise((resolve) => {
           const attemptStartedAt = Date.now();
           let discardingOpenCodeFrame = false;
           pushProgress(
@@ -2475,6 +2778,7 @@ export async function POST(req: Request) {
         });
 
       // First attempt — uses --continue if body.sessionId was set.
+      };
       const turnSpawnStartMs = Date.now();
       // A compatibility decision is meaningful even when the CLI exits before
       // stdout. Announce it before spawning instead of relying on handleLine.
@@ -2509,7 +2813,19 @@ export async function POST(req: Request) {
           "session-unavailable",
         );
       }
-      await runAttempt(args);
+      if (hermesNeedsContextReplay) {
+        const replay = buildResumeRetryPrompt(harnessPrompt, existingConversation);
+        pushProgress(
+          "resume-retry",
+          replay.replayedHistory
+            ? "No Responses session found; replaying recent context into a fresh chat"
+            : "No Responses session found; starting a fresh chat",
+          "done",
+        );
+        await runAttempt(buildArgs(null, replay.prompt), replay.prompt);
+      } else {
+        await runAttempt(args);
+      }
 
       // Self-heal (cave-1c05): a stale scaffolded manifest whose id the
       // installed CLI now ships as a built-in harness makes the registry load
@@ -2577,6 +2893,8 @@ export async function POST(req: Request) {
         // that token would persist it again if the fresh process exits before
         // announcing a replacement session.
         openCodeSessionId = null;
+        hermesResponseId = null;
+        hermesPreviousResponseId = null;
         assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
         assistantText = "";
         jsonBuf = "";
@@ -2600,7 +2918,7 @@ export async function POST(req: Request) {
             : "Fresh chat started",
           "done",
         );
-        await runAttempt(buildArgs(null, retry.prompt));
+        await runAttempt(buildArgs(null, retry.prompt), retry.prompt);
       }
 
       // User cancel (CHAT-D5-02): when the client stops the response
@@ -2719,13 +3037,17 @@ export async function POST(req: Request) {
       // access session.
       const harnessSessionId = grokDirect
         ? grokSessionId
-        : openCodeDirect
+ : openCodeDirect
           // Plain output has no new native id to announce, but a token is
           // reusable only when this attempt actually forwarded it. A fresh
           // compatibility fallback must invalidate an older native session.
           ? openCodeSessionId ?? (openCodeNativeResumeUsed
             ? existingConversation?.harnessSessionId ?? (!existingConversation ? body.sessionId : undefined)
             : undefined)
+          : hermesDirect && hermesApi
+            ? !result.is_error && hermesResponseId
+              ? hermesResponseId
+              : existingConversation?.harnessSessionId ?? null
           : sessionId;
       // OpenCode's JSON event protocol does not echo the selected model. Its
       // direct argv proves the selection was forwarded, while a successful

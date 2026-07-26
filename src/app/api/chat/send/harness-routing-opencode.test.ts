@@ -82,7 +82,7 @@ assert.match(
 );
 assert.match(
   route,
-  /if \(resumeFailed && body\.sessionId\) \{[\s\S]*?sessionId = null;[\s\S]*?openCodeSessionId = null;[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\)\)/,
+  /if \(resumeFailed && body\.sessionId\) \{[\s\S]*?sessionId = null;[\s\S]*?openCodeSessionId = null;[\s\S]*?await runAttempt\(buildArgs\(null, retry\.prompt\)(?:, retry\.prompt)?\)/,
   "a fresh OpenCode resume retry clears the stale native token before launching without --session",
 );
 assert.match(

@@ -177,6 +177,7 @@ export function KnowledgePackSeedModal({ open, manifest, alreadyInstalled, onClo
       breadcrumb={["Marketplace", manifest.displayName, "Seed"]}
       footerActions={footerActions}
       dismissOnBackdrop={!busy}
+      dismissOnEscape={!busy}
     >
       <div className="flex flex-col gap-5" aria-live="polite">
         <section className="flex flex-col gap-2">

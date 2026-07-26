@@ -162,6 +162,12 @@ export function parseOpenCodeRunEvent(value: unknown, schema?: OpenCodeEventSche
     if (lifecycleText !== undefined && hasExpectedPayloadKind(lifecycleTextEnvelope, schema, "text")) {
       return { kind: "text", sessionId, text: lifecycleText, diagnostic: "unknown-event" };
     }
+    // Lifecycle labels are schema-authorized only for metadata. If a future
+    // client reuses one for a tool payload, ignoring it would silently drop
+    // activity without quarantining this now-stale profile.
+    if (lifecyclePayload && hasExpectedPayloadKind(lifecyclePayload, schema, "tool")) {
+      return { kind: "other", sessionId, diagnostic: "unknown-event" };
+    }
     return sessionId && !carriesText ? { kind: "ignore", sessionId } : { kind: "ignore" };
   }
   if (eventTypes(schema, "error", ["error"]).includes(eventType)) {

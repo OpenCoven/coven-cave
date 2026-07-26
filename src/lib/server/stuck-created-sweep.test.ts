@@ -102,8 +102,8 @@ const OPTS = { cwd: CWD, prompt: "ping", sinceMs: Date.parse("2026-07-12T07:53:0
   );
   assert.match(
     route,
-    /const turnSpawnStartMs = Date\.now\(\);[\s\S]*?await runAttempt\(args\);/,
-    "turn window anchor is captured before any optional pre-launch compatibility notice and the first attempt",
+    /const turnSpawnStartMs = Date\.now\(\);[\s\S]*?if \(hermesNeedsContextReplay\) \{[\s\S]*?await runAttempt\(buildArgs\(null, replay\.prompt\), replay\.prompt\);[\s\S]*?\} else \{\s*await runAttempt\(args\);/,
+    "turn window anchor is captured before either the context-replay or normal first attempt",
   );
 }
 

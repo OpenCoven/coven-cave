@@ -88,6 +88,14 @@ assert.deepEqual(
   { kind: "text", sessionId: "ses_future", text: "Do not lose this reply", diagnostic: "unknown-event" },
   "a future lifecycle label that carries a schema-authorized text payload preserves the reply and quarantines the stale profile",
 );
+assert.deepEqual(
+  parseOpenCodeRunEvent(
+    { type: "step_finish", sessionID: "ses_future_tool", part: { type: "tool", id: "future_tool", tool: "Read", state: { output: "done" } } },
+    BUILTIN_OPENCODE_SCHEMA_BUNDLE.schemas[0],
+  ),
+  { kind: "other", sessionId: "ses_future_tool", diagnostic: "unknown-event" },
+  "a lifecycle label repurposed for a tool payload is quarantined instead of silently dropping activity",
+);
 {
   const sessions: string[] = [];
   handleOpenCodeJsonLine(

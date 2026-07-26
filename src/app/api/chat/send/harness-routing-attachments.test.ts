@@ -46,8 +46,8 @@ const chatView = await readFile(
 
 assert.match(
   chatRoute,
-  /const imagesSupported = !sshRuntime && binding\.harness !== "openclaw";/,
-  "Image temp-file delivery should be limited to local coven-run harnesses with a Read tool",
+  /const imagesSupported = !sshRuntime && binding\.harness !== "openclaw" &&\s*!\(hermesApi && !hermesApiCanAccessLocalFiles\(hermesApi\)\);/,
+  "Remote Hermes API runs must receive an explicit image-unsupported notice rather than Cave-local file paths",
 );
 
 assert.match(
