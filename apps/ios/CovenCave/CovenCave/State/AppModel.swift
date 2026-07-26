@@ -73,6 +73,13 @@ final class AppModel {
     var familiarOrder: [String] = []
 
     var threads: [ChatThread] = []
+    /// Default Chats destination: the newest active conversation. Pinning only
+    /// affects list order and never makes an older thread the launch default.
+    var mostRecentThread: ChatThread? {
+        threads
+            .filter { !$0.archived }
+            .max { $0.updatedAt < $1.updatedAt }
+    }
     /// Process-lifetime launch intent. It survives destination remounts until a
     /// matching hydrated thread can be opened, then is consumed exactly once.
     var launchThreadId: String?

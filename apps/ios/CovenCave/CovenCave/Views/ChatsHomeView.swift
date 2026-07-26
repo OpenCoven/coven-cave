@@ -101,9 +101,11 @@ struct ChatsHomeView: View {
             .onAppear {
                 consumeLaunchThreadIntent()
                 consumeGlobalRequests()
+                selectMostRecentThreadIfNeeded()
             }
             .onChange(of: app.threads.map(\.id)) { _, _ in
                 consumeLaunchThreadIntent()
+                selectMostRecentThreadIfNeeded()
             }
             // A slash command (`/new`, `/familiar <name>`) or a task link asked to
             // open a specific thread — surface it in the detail column.
@@ -387,6 +389,19 @@ struct ChatsHomeView: View {
 
     private func consumeLaunchThreadIntent() {
         guard let thread = app.consumeLaunchThreadIntent() else { return }
+        open(.thread(thread))
+    }
+
+    /// Open Chats at the latest active conversation without stealing focus from
+    /// a deep link, cross-view handoff, New Chat, or an existing selection.
+    private func selectMostRecentThreadIfNeeded() {
+        guard selection == nil,
+              !showNewChat,
+              app.threadToOpen == nil,
+              app.launchThreadId == nil,
+              !app.newChatRequested,
+              let thread = app.mostRecentThread
+        else { return }
         open(.thread(thread))
     }
 

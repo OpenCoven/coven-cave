@@ -2,10 +2,13 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
-const source = readFileSync(
+const shellSource = readFileSync(
   new URL("./settings-shell.tsx", import.meta.url),
   "utf8",
 );
+const daemonUrl = new URL("./settings-daemon.tsx", import.meta.url);
+const daemonSource = existsSync(daemonUrl) ? readFileSync(daemonUrl, "utf8") : "";
+const source = `${shellSource}\n${daemonSource}`;
 const sectionsUrl = new URL("./settings-sections.ts", import.meta.url);
 const overviewUrl = new URL("./settings-overview.tsx", import.meta.url);
 const sections = existsSync(sectionsUrl) ? readFileSync(sectionsUrl, "utf8") : "";
@@ -340,7 +343,7 @@ assert.match(source, /aria-label="Workspace path"/, "the workspace path field is
 assert.match(source, /aria-label="Server hub URL"/, "the hub URL input is labelled");
 assert.match(source, /aria-label="Executor addresses, one per line"/, "the executor textarea is labelled");
 assert.match(source, /focusTarget\.focus\(\{ preventScroll: true \}\)/, "a search/deep-link jump moves focus to the target group");
-assert.match(source, /connectionError && <span role="alert"/, "the daemon save error is a live alert");
+assert.match(source, /connectionError (?:&&|\?) <span role="alert"/, "the daemon save error is a live alert");
 
 // (cave-rj0z) var(--danger) is NOT a defined token — only --color-danger
 // exists. Uses of the phantom variable silently resolved to nothing, so

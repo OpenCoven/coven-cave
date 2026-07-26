@@ -1,9 +1,81 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
-const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const shellEntry = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const daemonUrl = new URL("./settings-daemon.tsx", import.meta.url);
+const daemon = existsSync(daemonUrl) ? readFileSync(daemonUrl, "utf8") : "";
+const shell = `${shellEntry}\n${daemon}`;
 const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
+const daemonCssUrl = new URL("../styles/settings-daemon.css", import.meta.url);
+const daemonCss = existsSync(daemonCssUrl) ? readFileSync(daemonCssUrl, "utf8") : "";
+
+// ── Claude Design daemon control sheet ───────────────────────────────────────
+assert.match(
+  shellEntry,
+  /import \{ DaemonSection \} from "\.\/settings-daemon"/,
+  "SettingsShell should delegate the daemon control sheet to a focused component",
+);
+assert.match(
+  daemon,
+  /export function DaemonSection/,
+  "the focused daemon module should export the Settings section",
+);
+assert.match(daemon, /className="settings-daemon"/, "the daemon page should own a responsive control-sheet container");
+assert.match(daemon, /className="settings-daemon-hero"/, "the daemon page should open with the approved compact hero");
+assert.match(daemon, /Settings · Daemon/, "the hero should carry the approved settings kicker");
+assert.match(daemon, /className="settings-daemon-chip-list"/, "the hero should summarize target, API, queue, and uptime");
+assert.match(daemon, />\s*Refresh\s*</, "the hero should expose an explicit status refresh");
+assert.match(daemon, /Restart daemon/, "the hero should expose the daemon restart action");
+assert.match(daemon, /Start daemon/, "the hero should make an offline local daemon actionable");
+
+assert.match(daemon, /className="settings-daemon-status-card"/, "daemon state should render as the approved status card");
+assert.match(daemon, /className="settings-daemon-status-strip"/, "the primary daemon state should lead the status card");
+assert.match(daemon, /className="settings-daemon-status-grid"/, "the six daemon metrics should share a dense grid");
+for (const label of [
+  "AUTHORITY",
+  "PENDING QUEUE",
+  "LOCAL BIND",
+  "STALE CACHE",
+  "WAKE LOCAL",
+  "HANDOFF",
+]) {
+  assert.match(daemon, new RegExp(`label: "${label}"`), `the status grid should include ${label}`);
+}
+assert.match(daemon, />HOME</, "travel state should expose the approved HOME segment");
+assert.match(daemon, />AWAY</, "travel state should expose the approved AWAY segment");
+assert.match(daemon, /Manual offline/, "travel state should preserve the real manual-offline action");
+assert.match(daemon, /Back online/, "manual-offline state should expose the matching recovery action");
+
+assert.match(daemon, /className="settings-daemon-target-grid"/, "runtime targets should render as selectable cards");
+assert.match(daemon, /aria-pressed=\{mode === target\.id\}/, "runtime target cards should expose selection programmatically");
+assert.match(daemon, /<TextInput[\s\S]*aria-label="Server hub URL"/, "the hub field should reuse the shared text-input primitive");
+assert.match(daemon, /<TextArea[\s\S]*aria-label="Executor addresses, one per line"/, "executor addresses should reuse the shared textarea primitive");
+assert.match(daemon, /aria-expanded=\{executorsOpen\}/, "executor addresses should use progressive disclosure");
+assert.match(daemon, /optional · multi-machine setups/, "executor disclosure should explain its advanced scope");
+assert.match(daemon, /const connectionDirty =/, "connection changes should remain drafts until explicitly saved");
+assert.match(daemon, />\s*Revert\s*</, "connection drafts should be reversible");
+assert.match(daemon, />\s*Save connection\s*</, "connection drafts should have one explicit save action");
+
+assert.match(daemon, /className="settings-daemon-info"/, "daemon metadata should use the compact approved info table");
+assert.match(daemon, /copyInfoValue/, "copyable daemon paths should share one announced copy path");
+assert.match(shell, /omnigentSettings=\{<OmnigentSettingsGroup \/>\}/, "the Vault-gated Omnigent settings must remain reachable from Daemon");
+
+assert.match(
+  daemonCss,
+  /@container settings-daemon \(max-width:/,
+  "the control sheet should adapt to its pane with a container query",
+);
+assert.match(
+  daemonCss,
+  /@media \(prefers-reduced-motion: reduce\)/,
+  "daemon-specific motion should have an explicit reduced-motion treatment",
+);
+assert.doesNotMatch(
+  shell,
+  /bg-red-400/,
+  "daemon error states should use the semantic danger token across every theme",
+);
 
 assert.match(
   shell,
