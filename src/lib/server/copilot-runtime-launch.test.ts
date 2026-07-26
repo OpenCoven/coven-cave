@@ -169,6 +169,11 @@ try {
     [shimEntry],
     "a Windows npm shim keeps the exact transformed fixed args",
   );
+  assert.deepEqual(
+    windowsPlan.requiredFiles,
+    [shimEntry],
+    "a converted Windows npm shim preflights its fixed JavaScript entry",
+  );
   assert.equal(
     evaluatedWindowsCommand,
     windowsPlan.command,

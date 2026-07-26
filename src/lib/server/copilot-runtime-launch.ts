@@ -148,7 +148,7 @@ export async function resolveCopilotRuntimeLaunch(
       reason: "timeout",
       command: launch.command,
       fixedArgs: launch.fixedArgs,
-      requiredFiles: launch.requiredFiles,
+      requiredFiles: launch.requiredFiles ?? [],
     });
   }
 
@@ -158,7 +158,7 @@ export async function resolveCopilotRuntimeLaunch(
     runner: "copilot",
     command: launch.command,
     env,
-    requiredFiles: launch.requiredFiles,
+    requiredFiles: launch.requiredFiles ?? [],
     unresolvedWindowsShim: launch.unresolvedWindowsShim === true,
     platform: options.platform,
   });
@@ -170,14 +170,14 @@ export async function resolveCopilotRuntimeLaunch(
       reason: "timeout",
       command: launch.command,
       fixedArgs: launch.fixedArgs,
-      requiredFiles: launch.requiredFiles,
+      requiredFiles: launch.requiredFiles ?? [],
     });
   }
   return {
     env,
     command: launch.command,
     fixedArgs: launch.fixedArgs,
-    requiredFiles: launch.requiredFiles,
+    requiredFiles: launch.requiredFiles ?? [],
     deadline: discoveryDeadline,
     availability,
     ...(launch.unresolvedWindowsShim

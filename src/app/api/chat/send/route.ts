@@ -1114,13 +1114,16 @@ export async function POST(req: Request) {
     resolveCompatibility: () => resolveRuntimeCompatibility("copilot"),
   });
   const copilotStream = copilotRouting.spec;
-  const copilotCompatibilityDiagnostic = copilotRouting.compatibilityDiagnostic;
 
   let localRuntimePlan: LocalRuntimePlan | null = null;
   if (!sshRuntime && binding.harness !== "openclaw" && !(hermesDirect && hermesApi)) {
     if (
       copilotRuntimeLaunch &&
-      (copilotRuntimeLaunch.availability.state !== "ready" || copilotStream)
+      (
+        copilotRuntimeLaunch.availability.state !== "ready"
+        || copilotStream
+        || copilotRouting.mode === "blocked"
+      )
     ) {
       localRuntimePlan = createLocalRuntimePlan({
         runner: "copilot",
@@ -1129,7 +1132,9 @@ export async function POST(req: Request) {
           body.familiarId,
           copilotRuntimeLaunch.env,
         ),
-        availability: copilotRuntimeLaunch.availability,
+        availability: copilotRouting.mode === "blocked"
+          ? copilotRouting.failure
+          : copilotRuntimeLaunch.availability,
       });
     } else if (openCodeDirect) {
       const env = openCodeSpawnEnv(body.familiarId);
@@ -1874,17 +1879,6 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
-      if (
-        copilotCompatibilityDiagnostic &&
-        copilotRuntimeLaunch?.availability.state === "ready"
-      ) {
-        pushProgress(
-          "copilot-client-compatibility",
-          "Copilot tool activity needs an update",
-          "error",
-          copilotCompatibilityDiagnostic,
-        );
-      }
       if (hermesDirect && !hermesApi) {
         // Do not fabricate tool bubbles from the CLI's presentation layer.
         // This gives the operator an actionable, privacy-safe degradation
@@ -3201,6 +3195,7 @@ export async function POST(req: Request) {
                     ? ["ignore", "pipe", "pipe"]
                     : ["pipe", "pipe", "pipe"],
                   env: localPlan.env,
+                  shell: false,
                 }) as ChildProcessWithoutNullStreams;
                 if (openCodeLaunchCommand) {
                   writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
