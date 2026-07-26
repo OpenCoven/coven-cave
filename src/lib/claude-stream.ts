@@ -15,6 +15,19 @@ function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
 
+/** True for every syntactically valid JSON value, including primitive roots.
+ * Claude stream-json requires an object envelope, but the route must first
+ * recognize primitives as protocol frames so they are redacted rather than
+ * falling through to the plain-text stdout path. */
+export function isClaudeStreamJsonFrame(line: string): boolean {
+  try {
+    JSON.parse(line);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Decode only assistant text for the compatibility fallback. In particular,
  * malformed sibling blocks must not make a valid later text block disappear,
  * and this path must never manufacture a tool activity event. */

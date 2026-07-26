@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   hasUnsupportedClaudeToolFrame,
+  isClaudeStreamJsonFrame,
   parseClaudeMessageEnvelope,
   parseClaudeTextOnlyEnvelope,
 } from "./claude-stream.ts";
@@ -8,6 +9,11 @@ import { CLAUDE_COMPATIBILITY_PROFILES } from "./runtime-compatibility.ts";
 
 const v1 = CLAUDE_COMPATIBILITY_PROFILES.find((entry) => entry.id === "claude-stream-json-v1")!;
 const v2 = CLAUDE_COMPATIBILITY_PROFILES.find((entry) => entry.id === "claude-stream-json-v2")!;
+
+assert.equal(isClaudeStreamJsonFrame('{"type":"assistant"}'), true);
+assert.equal(isClaudeStreamJsonFrame('"tool output that must not reach plain text"'), true);
+assert.equal(isClaudeStreamJsonFrame("42"), true);
+assert.equal(isClaudeStreamJsonFrame("{partial"), false);
 
 for (const profile of CLAUDE_COMPATIBILITY_PROFILES) {
   assert.deepEqual(

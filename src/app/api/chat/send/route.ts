@@ -76,6 +76,7 @@ import { handleOpenCodeJsonLine } from "@/lib/opencode-stream";
 import { parseOpenCodeRunEvent } from "@/lib/opencode-stream";
 import {
   hasUnsupportedClaudeToolFrame,
+  isClaudeStreamJsonFrame,
   parseClaudeMessageEnvelope,
   parseClaudeTextOnlyEnvelope,
 } from "@/lib/claude-stream";
@@ -2381,7 +2382,10 @@ export async function POST(req: Request) {
         // Preserve every line rather than converting ordinary reply text into
         // a dropped retry signal.
         if (!openCodePlainFallback && RESUME_ERR_RE.test(line)) resumeFailed = true;
-        const isJson = !hermesDirect && line.startsWith("{") && line.endsWith("}");
+        const isJson = !hermesDirect && (
+          (line.startsWith("{") && line.endsWith("}")) ||
+          (binding.harness === "claude" && isClaudeStreamJsonFrame(line))
+        );
         if (copilotStream) {
           // Direct Copilot output is JSONL. A truncated frame still starts
           // with `{`, so route it through the fixed redacted diagnostic path

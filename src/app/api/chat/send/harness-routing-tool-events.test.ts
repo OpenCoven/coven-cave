@@ -127,6 +127,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /binding\.harness === "claude" && isClaudeStreamJsonFrame\(line\)/,
+  "valid primitive Claude JSONL frames must reach the redacted protocol boundary rather than the plain-text stdout path",
+);
+
+assert.match(
+  chatRoute,
   /binding\.harness !== "claude"[\s\S]*?ev\.type === "output"[\s\S]*?typeof ev\.text === "string"/,
   "the Codex-only output envelope must not render an unknown Claude payload before profile validation",
 );
