@@ -139,6 +139,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /Claude stderr can include tool payloads[\s\S]*?if \(binding\.harness !== "claude"\) \{[\s\S]*?stderrTail\.push\(trimmed\);/,
+  "Claude stderr must not enter empty-response diagnostics with tool payloads",
+);
+
+assert.match(
+  chatRoute,
   /resetToolTrackerForRetry\(\);/,
   "The resume retry should reset tool tracking alongside the other per-attempt state",
 );

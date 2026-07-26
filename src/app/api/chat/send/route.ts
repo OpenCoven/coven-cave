@@ -2211,8 +2211,13 @@ export async function POST(req: Request) {
             for (const line of text.split(/\r?\n/)) {
               const trimmed = line.trim();
               if (!trimmed) continue;
-              stderrTail.push(trimmed);
-              if (stderrTail.length > STDERR_KEEP) stderrTail.shift();
+              // Claude stderr can include tool payloads. It must not be copied
+              // into the generic empty-response diagnostic, which is rendered
+              // to the chat transcript.
+              if (binding.harness !== "claude") {
+                stderrTail.push(trimmed);
+                if (stderrTail.length > STDERR_KEEP) stderrTail.shift();
+              }
             }
           });
 
