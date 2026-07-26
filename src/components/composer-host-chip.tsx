@@ -64,6 +64,7 @@ export function ConnectHostDialog({ onClose, onConnected }: { onClose: () => voi
       onClose={onClose}
       breadcrumb={["Chat", "Connect a new host"]}
       dismissOnBackdrop={!pending}
+      dismissOnEscape={!pending}
       footerActions={
         <>
           <Button variant="ghost" onClick={onClose} disabled={pending}>
