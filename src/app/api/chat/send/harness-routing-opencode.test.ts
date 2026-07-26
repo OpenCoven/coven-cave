@@ -67,7 +67,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const openCodeLaunchCommand = openCodeDirect[\s\S]*?command: localPlan\.command,[\s\S]*?args: \[\.\.\.localPlan\.fixedArgs\],[\s\S]*?input: JSON\.stringify\(spawnArgs\)[\s\S]*?const availability =[\s\S]*?command: localPlan\.command,[\s\S]*?env: localPlan\.env,[\s\S]*?const child = spawn\(command\.command, command\.args, \{[\s\S]*?env: localPlan\.env,[\s\S]*?writeOpenCodeLaunchInput\(child, openCodeLaunchCommand\)/,
+  /const openCodeLaunchCommand = openCodeDirect[\s\S]*?command: localPlan\.command,[\s\S]*?args: \[\.\.\.localPlan\.fixedArgs\],[\s\S]*?input: JSON\.stringify\(spawnArgs\)[\s\S]*?const availability =[\s\S]*?command: localPlan\.command,[\s\S]*?env: localPlan\.env,[\s\S]*?let child:[\s\S]*?try \{[\s\S]*?child = spawn\(command\.command, command\.args, \{[\s\S]*?env: localPlan\.env,[\s\S]*?writeOpenCodeLaunchInput\(child, openCodeLaunchCommand\)/,
   "OpenCode carries one Windows-safe outer host, inner command, and scoped environment from early preflight through the immediate spawn recheck",
 );
 assert.match(

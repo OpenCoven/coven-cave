@@ -71,9 +71,10 @@ for (const capabilityVersion of ["1.0.70.1", "0.9.9", "2.0.0", "2.0.0-rc.1"]) {
     isSshRuntime: false,
     capabilityVersion,
   });
-  assert.equal(routing.mode, "plain", `${capabilityVersion ?? "unavailable"} must use generic chat`);
-  assert.equal(routing.spec, null, "the fallback must never direct-spawn the JSONL parser");
-  assert.match(routing.compatibilityDiagnostic ?? "", /not yet compatible/);
+  assert.equal(routing.mode, "blocked", `${capabilityVersion ?? "unavailable"} must not change transports`);
+  assert.equal(routing.spec, null, "an incompatible client must never direct-spawn the JSONL parser");
+  assert.equal(routing.failure.code, "runtime_unsupported");
+  assert.match(routing.compatibilityDiagnostic, /compatible/i);
 }
 
 const capabilityCauseMessages = {
@@ -96,7 +97,7 @@ for (const [diagnostic, expected] of Object.entries(capabilityCauseMessages)) {
       resolvedPath: "/must-not-reach-wire",
     },
   });
-  assert.equal(routing.mode, "plain");
+  assert.equal(routing.mode, "blocked");
   assert.equal(
     routing.compatibilityDiagnostic,
     expected,
@@ -123,6 +124,12 @@ assert.equal(
   missingAvailabilityMessage,
   "runtime availability cause wins before generic version diagnostics",
 );
+assert.equal(
+  missingRouting.mode,
+  "blocked",
+  "a missing Copilot launch plan never falls back to generic Coven",
+);
+assert.equal(missingRouting.failure.code, "runtime_missing");
 assert.doesNotMatch(
   missingRouting.compatibilityDiagnostic ?? "",
   /must-not-reach-wire|resolvedPath|PATH=/,
@@ -180,8 +187,9 @@ const preparedFallback = await prepareCopilotChatRouting({
   }),
   resolveCompatibility: async () => ({ eventProtocols: [] }),
 });
-assert.equal(preparedFallback.mode, "plain", "an unsupported mocked runtime retains generic plain chat");
-assert.match(preparedFallback.compatibilityDiagnostic ?? "", /not yet compatible/);
+assert.equal(preparedFallback.mode, "blocked", "an unsupported local runtime fails before generic Coven routing");
+assert.equal(preparedFallback.failure.code, "runtime_unsupported");
+assert.match(preparedFallback.compatibilityDiagnostic, /compatible/i);
 assert.notEqual(
   preparedFallback.compatibilityDiagnostic,
   capabilityCauseMessages["version-unavailable"],
@@ -299,18 +307,18 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /let localRuntimePlan: LocalRuntimePlan \| null = null;[\s\S]*?runner: "copilot"[\s\S]*?else if \(openCodeDirect\)[\s\S]*?runner: "opencode"[\s\S]*?else if \(grokDirect\)[\s\S]*?runner: "grok"[\s\S]*?else if \(hermesDirect\)[\s\S]*?runner: "hermes"[\s\S]*?runner: "coven"[\s\S]*?const command = openCodeLaunchCommand[\s\S]*?command: localPlan\.command,[\s\S]*?args: \[\.\.\.localPlan\.fixedArgs, \.\.\.spawnArgs\]/,
+  /let localRuntimePlan: LocalRuntimePlan \| null = null;[\s\S]*?runner: "copilot"[\s\S]*?copilotRouting\.mode === "blocked"[\s\S]*?else if \(openCodeDirect\)[\s\S]*?runner: "opencode"[\s\S]*?else if \(grokDirect\)[\s\S]*?runner: "grok"[\s\S]*?runner: "coven"[\s\S]*?requiredFiles: localPlan\.requiredFiles[\s\S]*?shell: false/,
   "Copilot, Grok Build, Hermes, and OpenCode direct turns spawn their own CLI; other local harnesses spawn coven",
 );
 assert.match(
   chatRoute,
-  /const copilotManifestStream = copilotDirect \? copilotStreamSpec\(\) : null;[\s\S]*?resolveCopilotRuntimeLaunch\(copilotManifestStream\.executable\)[\s\S]*?probeCopilotCapability\(copilotManifestStream\.executable/,
-  "Copilot resolves and probes the manifest-declared executable instead of an independent default",
+  /const copilotSpawnEnv = copilotDirect \? harnessSpawnEnv\(body\.familiarId\) : null;[\s\S]*?resolveCopilotRuntimeLaunch\(copilotManifestStream\.executable, \{[\s\S]*?spawnEnv: \(\) => copilotSpawnEnv![\s\S]*?probeCopilotCapability\(copilotManifestStream\.executable/,
+  "Copilot resolves and probes the manifest-declared executable in the exact familiar-scoped spawn environment",
 );
-assert.match(
+assert.doesNotMatch(
   chatRoute,
-  /if \(\s*copilotCompatibilityDiagnostic &&\s*copilotRuntimeLaunch\?\.availability\.state === "ready"\s*\) \{[\s\S]*?copilot-client-compatibility/,
-  "a non-ready Copilot plan emits only the structured runtime error, not a duplicate compatibility notice",
+  /copilot-client-compatibility/,
+  "a blocked Copilot launch emits one structured runtime error rather than a duplicate compatibility notice",
 );
 
 assert.match(

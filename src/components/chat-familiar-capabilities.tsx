@@ -106,7 +106,12 @@ function FamiliarIdentityHero({
       .map((h) => ({
         value: h.id,
         label: h.label,
-        detail: [h.version, h.installed ? null : "not installed"].filter(Boolean).join(" · ") || undefined,
+        detail: [
+          h.version,
+          h.availability && h.availability.state !== "ready"
+            ? h.availability.message
+            : h.installed ? null : "not installed",
+        ].filter(Boolean).join(" · ") || undefined,
       })),
   ];
 
