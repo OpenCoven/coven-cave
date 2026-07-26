@@ -9,7 +9,7 @@ struct CaveNavigationDrawer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Binding var isOpen: Bool
-    var openProjects: () -> Void
+    var openProjects: (ProjectInfo?) -> Void
     var openFamiliars: () -> Void
     var openThread: (ChatThread) -> Void
     var newChat: () -> Void
@@ -32,7 +32,7 @@ struct CaveNavigationDrawer: View {
         GeometryReader { geo in
             let width = min(geo.size.width * 0.86, 344)
             ZStack(alignment: .leading) {
-                Color.black.opacity(0.46)
+                Color.black.opacity(isOpen ? 0.46 : 0)
                     .ignoresSafeArea()
                     .onTapGesture(perform: close)
                     .accessibilityLabel("Close menu")
@@ -61,7 +61,7 @@ struct CaveNavigationDrawer: View {
                                  active: app.selectedTab == .chats) { go(.chats) }
                     DrawerNavRow(systemImage: "folder", label: "Projects") {
                         close()
-                        openProjects()
+                        openProjects(nil)
                     }
                     DrawerNavRow(systemImage: "cat", label: "Familiars") {
                         close()
@@ -79,7 +79,7 @@ struct CaveNavigationDrawer: View {
                         ForEach(app.projects.prefix(3)) { project in
                             DrawerProjectRow(project: project) {
                                 close()
-                                openProjects()
+                                openProjects(project)
                             }
                         }
                     }

@@ -1,5 +1,25 @@
 import SwiftUI
 
+private func isDesktopManaged(_ plugin: MarketplacePlugin) -> Bool {
+    plugin.kind == "craft" || plugin.kind == "knowledge-pack"
+}
+
+enum MarketplacePluginCatalogLoadOutcome {
+    case applied
+    case superseded
+    case failed
+}
+
+enum MarketplacePluginMutationReconciliation {
+    static func isConfirmed(
+        _ outcome: MarketplacePluginCatalogLoadOutcome,
+        installed: Bool?,
+        expectedInstalled: Bool
+    ) -> Bool {
+        outcome == .applied && installed == expectedInstalled
+    }
+}
+
 /// The desktop's real marketplace catalog. Install state and setup readiness
 /// come from `/api/marketplace`; iOS never invents connectors or stores secret
 /// configuration locally.
@@ -13,7 +33,10 @@ struct PluginsPanel: View {
     @State private var loading = true
     @State private var errorMessage: String?
     @State private var mutating: Set<String> = []
-    let tryInChat: () -> Void
+    /// Monotonic request token: a slower, older refresh must never overwrite a
+    /// newer catalog snapshot after concurrent pull-to-refresh/install work.
+    @State private var loadGeneration = 0
+    let tryInChat: (MarketplacePlugin) -> Void
 
     var body: some View {
         NavigationStack {
@@ -51,9 +74,9 @@ struct PluginsPanel: View {
                     plugin: currentPlugin(plugin.id) ?? plugin,
                     busy: mutating.contains(plugin.id),
                     toggleInstall: { Task { await toggle(plugin.id) } },
-                    tryInChat: {
+                    tryInChat: { selectedPlugin in
                         dismiss()
-                        tryInChat()
+                        tryInChat(selectedPlugin)
                     })
             }
         }
@@ -89,36 +112,41 @@ struct PluginsPanel: View {
 
                 sectionLabel(query.isEmpty ? "Available" : "Results")
                 ForEach(filtered) { plugin in
-                    Button { selected = plugin } label: {
-                        HStack(spacing: 13) {
-                            pluginTile(plugin, size: 46)
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack(spacing: 6) {
-                                    Text(plugin.displayName)
-                                        .font(.headline)
-                                        .foregroundStyle(.primary)
-                                    if plugin.updateAvailable {
-                                        Text("Update")
-                                            .font(.caption2.weight(.semibold))
-                                            .foregroundStyle(chrome.accent)
+                    HStack(spacing: 13) {
+                        Button { selected = plugin } label: {
+                            HStack(spacing: 13) {
+                                pluginTile(plugin, size: 46)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 6) {
+                                        Text(plugin.displayName)
+                                            .font(.headline)
+                                            .foregroundStyle(.primary)
+                                        if plugin.updateAvailable {
+                                            Text("Update")
+                                                .font(.caption2.weight(.semibold))
+                                                .foregroundStyle(chrome.accent)
+                                        }
+                                    }
+                                    Text(plugin.description.isEmpty ? plugin.category : plugin.description)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                    if plugin.requiresSetup && !plugin.configured {
+                                        Label("Setup required on desktop", systemImage: "key")
+                                            .font(.caption)
+                                            .foregroundStyle(.orange)
                                     }
                                 }
-                                Text(plugin.description.isEmpty ? plugin.category : plugin.description)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                                if plugin.requiresSetup && !plugin.configured {
-                                    Label("Setup required on desktop", systemImage: "key")
-                                        .font(.caption)
-                                        .foregroundStyle(.orange)
-                                }
+                                Spacer(minLength: 8)
                             }
-                            Spacer(minLength: 8)
-                            installButton(plugin)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens plugin details")
+
+                        installButton(plugin)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(16)
@@ -127,6 +155,7 @@ struct PluginsPanel: View {
 
     @ViewBuilder
     private func installButton(_ plugin: MarketplacePlugin) -> some View {
+        let desktopManaged = isDesktopManaged(plugin)
         Button {
             Task { await toggle(plugin.id) }
         } label: {
@@ -135,17 +164,32 @@ struct PluginsPanel: View {
                     .controlSize(.small)
                     .frame(width: 36, height: 36)
             } else {
-                Image(systemName: plugin.installed ? "checkmark" : "plus")
+                Image(systemName: desktopManaged
+                      ? "desktopcomputer"
+                      : (plugin.installed ? "checkmark" : "plus"))
                     .frame(width: 36, height: 36)
-                    .background(plugin.installed ? chrome.accent : chrome.bgRaised, in: Circle())
-                    .foregroundStyle(plugin.installed ? chrome.accentForeground : chrome.textPrimary)
+                    .background(
+                        plugin.installed && !desktopManaged ? chrome.accent : chrome.bgRaised,
+                        in: Circle()
+                    )
+                    .foregroundStyle(
+                        plugin.installed && !desktopManaged
+                            ? chrome.accentForeground
+                            : chrome.textPrimary
+                    )
             }
         }
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
         .buttonStyle(.plain)
-        .disabled(mutating.contains(plugin.id) || !plugin.available || plugin.kind == "craft")
-        .accessibilityLabel(plugin.installed
-                            ? "Remove \(plugin.displayName)"
-                            : "Add \(plugin.displayName)")
+        .disabled(mutating.contains(plugin.id) || !plugin.available || desktopManaged)
+        .accessibilityLabel(
+            desktopManaged
+                ? "Manage \(plugin.displayName) on desktop"
+                : (plugin.installed
+                   ? "Remove \(plugin.displayName)"
+                   : "Add \(plugin.displayName)")
+        )
     }
 
     private var filtered: [MarketplacePlugin] {
@@ -200,30 +244,41 @@ struct PluginsPanel: View {
         return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    private func loadPlugins() async {
+    @discardableResult
+    private func loadPlugins() async -> MarketplacePluginCatalogLoadOutcome {
+        loadGeneration += 1
+        let generation = loadGeneration
         guard let client = app.client else {
             loading = false
             errorMessage = "Connect to your desktop to browse plugins."
-            return
+            return .failed
         }
         loading = true
-        defer { loading = false }
+        defer {
+            if generation == loadGeneration { loading = false }
+        }
         do {
-            plugins = try await client.marketplacePlugins()
+            let refreshed = try await client.marketplacePlugins()
+            guard generation == loadGeneration else { return .superseded }
+            plugins = refreshed
             errorMessage = nil
             if let selected {
                 self.selected = currentPlugin(selected.id)
             }
+            return .applied
         } catch {
+            guard generation == loadGeneration else { return .superseded }
             errorMessage = error.localizedDescription
+            return .failed
         }
     }
 
     private func toggle(_ id: String) async {
         guard let client = app.client,
-              let index = plugins.firstIndex(where: { $0.id == id }),
-              !mutating.contains(id) else { return }
-        let wasInstalled = plugins[index].installed
+              let plugin = plugins.first(where: { $0.id == id }),
+              !mutating.contains(id),
+              !isDesktopManaged(plugin) else { return }
+        let wasInstalled = plugin.installed
         mutating.insert(id)
         defer { mutating.remove(id) }
         do {
@@ -232,7 +287,24 @@ struct PluginsPanel: View {
             } else {
                 try await client.installMarketplacePlugin(id: id)
             }
-            await loadPlugins()
+            // The mutation succeeded. Reflect it immediately, then require a
+            // catalog reconciliation before claiming the final state.
+            if let refreshedIndex = plugins.firstIndex(where: { $0.id == id }) {
+                plugins[refreshedIndex].installed = !wasInstalled
+                if selected?.id == id { selected = plugins[refreshedIndex] }
+            }
+            let outcome = await loadPlugins()
+            guard MarketplacePluginMutationReconciliation.isConfirmed(
+                outcome,
+                installed: currentPlugin(id)?.installed,
+                expectedInstalled: !wasInstalled
+            ) else {
+                app.showToast(
+                    "Plugin changed, but its status couldn’t refresh",
+                    systemImage: "arrow.clockwise",
+                    style: .warning)
+                return
+            }
             app.showToast(
                 wasInstalled ? "Plugin removed" : "Plugin added",
                 systemImage: wasInstalled ? "minus.circle" : "checkmark.circle.fill",
@@ -250,7 +322,7 @@ private struct MarketplacePluginDetailView: View {
     let plugin: MarketplacePlugin
     let busy: Bool
     let toggleInstall: () -> Void
-    let tryInChat: () -> Void
+    let tryInChat: (MarketplacePlugin) -> Void
 
     var body: some View {
         ScrollView {
@@ -273,10 +345,10 @@ private struct MarketplacePluginDetailView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if plugin.kind == "craft" {
+                if isDesktopManaged(plugin) {
                     detailSection("Installation") {
                         Label(
-                            "Manage this Craft from Cave on your desktop.",
+                            desktopManagementCopy,
                             systemImage: "desktopcomputer"
                         )
                         .foregroundStyle(.secondary)
@@ -344,13 +416,19 @@ private struct MarketplacePluginDetailView: View {
                     }
                 }
                 .buttonStyle(.bordered)
-                .disabled(busy || !plugin.available || plugin.kind == "craft")
+                .disabled(busy || !plugin.available || isDesktopManaged(plugin))
 
-                Button(action: tryInChat) {
+                Button(action: { tryInChat(plugin) }) {
                     Label("Try in chat", systemImage: "bubble.left.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!canTryInChat)
+                .accessibilityHint(
+                    canTryInChat
+                        ? "Prefills the composer with this plugin"
+                        : "Install and configure this plugin on your desktop first"
+                )
             }
             .frame(minHeight: 48)
             .padding(.horizontal, 16)
@@ -363,9 +441,23 @@ private struct MarketplacePluginDetailView: View {
     }
 
     private var installActionLabel: String {
-        if plugin.kind == "craft" { return "Desktop only" }
+        if isDesktopManaged(plugin) { return "Desktop only" }
         if !plugin.available { return "Unavailable" }
         return plugin.installed ? "Remove" : "Add"
+    }
+
+    private var canTryInChat: Bool {
+        !busy
+            && plugin.available
+            && plugin.installed
+            && (!plugin.requiresSetup || plugin.configured)
+    }
+
+    private var desktopManagementCopy: String {
+        if plugin.kind == "knowledge-pack" {
+            return "Manage this Knowledge pack from Cave on your desktop."
+        }
+        return "Manage this Craft from Cave on your desktop."
     }
 
     private func detailSection<Content: View>(

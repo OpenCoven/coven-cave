@@ -422,6 +422,10 @@ struct CaveClient {
         /// Real per-send controls consumed by `/api/chat/send`.
         var reasoningEffort: ChatThinkingEffort = .high
         var responseSpeed: ChatResponseSpeed = .fast
+        /// A model selected before the first server session exists travels with
+        /// the send instead of mutating the familiar's global default.
+        var modelOverride: String? = nil
+        var modelOverrideScope: ChatModelOverrideScope? = nil
     }
 
     /// One decoded SSE frame: the event plus the server's `id:` (the run

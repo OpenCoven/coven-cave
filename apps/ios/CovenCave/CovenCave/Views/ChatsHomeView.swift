@@ -48,7 +48,9 @@ struct ChatsHomeView: View {
     var body: some View {
         splitView
         .sheet(isPresented: $showFamiliars) {
-            FamiliarsListView { open(.familiar($0)) }
+            FamiliarsListView { familiar in
+                open(.thread(app.directThread(for: familiar.id)))
+            }
         }
         .onAppear {
             #if DEBUG

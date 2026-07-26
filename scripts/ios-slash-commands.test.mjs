@@ -76,8 +76,13 @@ assert.match(
 );
 assert.match(
   chatView,
-  /client\.setChatModel\(\s*familiarId:[\s\S]{0,160}scope: scope\)/,
-  "switchModel should PATCH the chosen model through setChatModel",
+  /guard sessionId != nil else \{[\s\S]{0,240}thread\.pendingModelOverride = model/,
+  "switchModel should retain a pre-send model choice for the new chat",
+);
+assert.match(
+  chatView,
+  /client\.setChatModel\(\s*familiarId:[\s\S]{0,160}scope: "session"\)/,
+  "switchModel should PATCH an existing session through setChatModel",
 );
 
 for (const command of ["/journal", "/automations", "/remind", "/attach", "/tui", "/toggle-agent"]) {

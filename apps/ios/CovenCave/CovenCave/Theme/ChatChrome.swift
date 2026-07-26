@@ -68,6 +68,8 @@ struct CircularIconButton: View {
                 .glass(.control, in: Circle())
                 .accentGlow(active: active)
         }
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
         .buttonStyle(.glassPress)
         .accessibilityLabel(label)
     }

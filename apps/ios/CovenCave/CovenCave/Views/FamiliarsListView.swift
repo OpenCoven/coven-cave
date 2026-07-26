@@ -159,7 +159,8 @@ struct FamiliarDetailView: View {
             ModelPickerSheet(
                 options: modelOptions,
                 current: modelState?.effectiveModel ?? familiar.model ?? "",
-                onSelect: { model in Task { await chooseModel(model) } })
+                onSelect: { model in Task { await chooseModel(model) } },
+                application: .familiarDefault)
         }
         .sheet(isPresented: $showPermissions) {
             FamiliarPermissionsSheet(familiar: familiar)

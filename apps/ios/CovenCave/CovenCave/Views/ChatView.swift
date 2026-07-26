@@ -43,7 +43,11 @@ struct ChatView: View {
     @State private var modelPickerOptions: [ChatModelOption] = []
     @State private var modelPickerCurrent = ""
     @State private var sessionModelState: ChatModelState?
+    @State private var modelRequests = ChatModelRequestCoordinator()
+    @State private var modelMutationQueue = ChatModelMutationQueue()
     @State private var showTasks = false
+    @State private var permissionsFamiliar: Familiar?
+    @State private var showPermissionFamiliarPicker = false
     @State private var showSessionDetails = false
     @State private var atBottom = true
     /// Coalesces streaming auto-scroll: several text flushes can land inside
@@ -177,14 +181,14 @@ struct ChatView: View {
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 9) {
                     Circle()
-                        .fill(thread.isStreaming ? Color.orange : Color.green)
+                        .fill(chatPresence.color)
                         .frame(width: 7, height: 7)
                     Text(thread.title)
                         .font(.headline.weight(.semibold))
                         .lineLimit(1)
                 }
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(thread.title), \(thread.isStreaming ? "responding" : "ready")")
+                .accessibilityLabel("\(thread.title), \(chatPresence.label)")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -213,9 +217,8 @@ struct ChatView: View {
             CommandsSheet { command in prefill(command) }
         }
         .fullScreenCover(isPresented: $showPlugins) {
-            PluginsPanel {
-                showPlugins = false
-                composerFocused = true
+            PluginsPanel { plugin in
+                prefillPlugin(plugin)
             }
         }
         .sheet(isPresented: $showModelPicker) {
@@ -238,6 +241,18 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showTasks) {
             LinkedTasksSheet(thread: thread)
+        }
+        .sheet(item: $permissionsFamiliar) { familiar in
+            FamiliarPermissionsSheet(familiar: familiar)
+        }
+        .sheet(isPresented: $showPermissionFamiliarPicker) {
+            FamiliarPickerSheet(
+                title: "Choose a familiar",
+                familiarIds: thread.familiarIds
+            ) { familiar in
+                showPermissionFamiliarPicker = false
+                permissionsFamiliar = familiar
+            }
         }
         .sheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
@@ -363,9 +378,23 @@ struct ChatView: View {
     }
 
     private var sessionModelLabel: String {
+        if let pendingModelOverride = thread.pendingModelOverride {
+            return modelPickerOptions.first(where: { $0.id == pendingModelOverride })?.label
+                ?? conciseModelName(pendingModelOverride)
+        }
         guard let state = sessionModelState else { return thread.isGroup ? "Per familiar" : "Loading…" }
         return modelPickerOptions.first(where: { $0.id == state.effectiveModel })?.label
             ?? conciseModelName(state.effectiveModel)
+    }
+
+    private var chatPresence: (color: Color, label: String) {
+        if thread.isStreaming { return (Color.orange, "responding") }
+        switch app.connectionState {
+        case .connected: return (Color.green, "ready")
+        case .checking: return (Color.orange, "reconnecting")
+        case .unreachable: return (chrome.textSecondary, "offline")
+        case .unconfigured, .needsAuth: return (chrome.textSecondary, "offline")
+        }
     }
 
     private var sessionRuntimeLabel: String {
@@ -377,6 +406,11 @@ struct ChatView: View {
     private var modelStateLoadKey: String {
         guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return "group" }
         return "\(familiarId):\(modelSessionId(familiarId) ?? "new")"
+    }
+
+    private var currentModelRequestTarget: ChatModelRequestTarget? {
+        guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return nil }
+        return ChatModelRequestTarget(familiarId: familiarId, sessionId: modelSessionId(familiarId))
     }
 
     private var thinkingEffort: ChatThinkingEffort {
@@ -551,6 +585,8 @@ struct ChatView: View {
                             .overlay(Circle().strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
                             .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
                     }
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
                     .buttonStyle(.glassPress)
                     .padding(.trailing, 14)
                     .padding(.bottom, 10)
@@ -634,18 +670,30 @@ struct ChatView: View {
                     .font(.system(size: 26, weight: .medium, design: .serif))
                     .italic()
                     .foregroundStyle(.primary)
-                (
-                    Text("Speak your intent — a familiar answers from the desktop. Nothing is written to your repos until you lift the ")
-                        .foregroundStyle(.secondary)
-                    + Text("ward.")
-                        .foregroundStyle(chrome.accent)
-                        .underline()
-                )
+                Button {
+                    if thread.isGroup {
+                        showPermissionFamiliarPicker = true
+                        return
+                    }
+                    guard let familiar = permissionsTarget else { return }
+                    permissionsFamiliar = familiar
+                } label: {
+                    (
+                        Text("Speak your intent — a familiar answers from the desktop. Repo access follows \(wardScope) active ")
+                            .foregroundStyle(.secondary)
+                        + Text("ward.")
+                            .foregroundStyle(chrome.accent)
+                            .underline()
+                    )
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
                     .frame(maxWidth: 270)
                     .fixedSize(horizontal: false, vertical: true)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canInspectWard)
+                .accessibilityHint("Opens project and tool permissions")
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Conjure something")
@@ -709,8 +757,12 @@ struct ChatView: View {
     }
 
     private var emptySuggestions: [EmptyChatSuggestion] {
-        let pullRequests = app.tasks.flatMap(\.githubLinks)
-            .filter { $0.kind == "pr" || $0.kind == "review_request" }
+        let openPullRequestURLs = Set(app.tasks.flatMap(\.githubLinks)
+            .filter {
+                ($0.kind == "pr" || $0.kind == "review_request")
+                    && $0.state?.lowercased() == "open"
+            }
+            .map { $0.url.lowercased() })
         let active = app.tasks.filter { $0.status.isActive }
         let running = active.filter { $0.status == .running }.count
         let blocked = active.filter { $0.status == .blocked }.count
@@ -729,9 +781,9 @@ struct ChatView: View {
             EmptyChatSuggestion(
                 icon: "arrow.triangle.branch",
                 label: "Review my open PRs",
-                hint: pullRequests.isEmpty
+                hint: openPullRequestURLs.isEmpty
                     ? "Ask GitHub through your familiar"
-                    : "\(pullRequests.count) awaiting you"),
+                    : "\(openPullRequestURLs.count) open"),
             EmptyChatSuggestion(
                 icon: "checkmark.square",
                 label: "What's on the board?",
@@ -741,6 +793,22 @@ struct ChatView: View {
                 label: nextLabel,
                 hint: nextHint),
         ]
+    }
+
+    private var permissionsTarget: Familiar? {
+        guard !thread.isGroup else { return nil }
+        return thread.familiarIds.first.flatMap { app.familiar($0) }
+    }
+
+    private var canInspectWard: Bool {
+        if thread.isGroup {
+            return thread.familiarIds.contains { app.familiar($0) != nil }
+        }
+        return permissionsTarget != nil
+    }
+
+    private var wardScope: String {
+        thread.isGroup ? "each familiar’s" : "the familiar’s"
     }
 
     // MARK: - Composer
@@ -818,6 +886,7 @@ struct ChatView: View {
             FloatingAction(id: "camera", systemImage: "camera", label: "Camera") { showCamera = true },
             FloatingAction(id: "photos", systemImage: "photo.on.rectangle", label: "Photos") { showPhotosPicker = true },
             FloatingAction(id: "files", systemImage: "folder", label: "Files") { showFileImporter = true },
+            FloatingAction(id: "tasks", systemImage: "checklist", label: "Link a task") { showTasks = true },
             FloatingAction(id: "plugins", systemImage: "puzzlepiece.extension", label: "Plugins") { showPlugins = true },
             FloatingAction(id: "dictation", systemImage: "mic.fill", label: "Dictate") { startDictation() },
             FloatingAction(id: "commands", systemImage: "command", label: "Commands") { showCommands = true },
@@ -915,6 +984,8 @@ struct ChatView: View {
                         in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                     )
             }
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
             .buttonStyle(.glassPress)
             .accessibilityLabel(showActionMenu ? "Close attach menu" : "Attach or run a tool")
 
@@ -952,6 +1023,8 @@ struct ChatView: View {
                             .background(Color.red, in: Circle())
                             .symbolEffect(.pulse, isActive: true)
                     }
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
                     .buttonStyle(.glassPress)
                     .transition(.scale.combined(with: .opacity))
                     .accessibilityLabel("Stop dictation")
@@ -972,6 +1045,8 @@ struct ChatView: View {
                                 in: Circle()
                             )
                     }
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
                     .buttonStyle(.glassPress)
                     .disabled(!canSend)
                     .accessibilityLabel(isCommand ? "Run command" : "Send")
@@ -1050,7 +1125,8 @@ struct ChatView: View {
             if app.connectionState != .connected {
                 thread.enqueue(outgoing, attachments: attachments,
                                reasoningEffort: thinkingEffort,
-                               responseSpeed: responseSpeed)
+                               responseSpeed: responseSpeed,
+                               modelOverride: thread.pendingModelOverride)
                 app.touch(thread)
                 app.showToast("Queued — sends when reconnected", systemImage: "clock")
                 return
@@ -1058,6 +1134,7 @@ struct ChatView: View {
             thread.send(outgoing, attachments: attachments,
                         reasoningEffort: thinkingEffort,
                         responseSpeed: responseSpeed,
+                        modelOverride: thread.pendingModelOverride,
                         client: client) { app.touch(thread) }
         }
     }
@@ -1066,13 +1143,16 @@ struct ChatView: View {
     private func sendSuggestion(_ text: String) {
         guard let client = app.client else { return }
         if app.connectionState != .connected {
-            thread.enqueue(text, reasoningEffort: thinkingEffort, responseSpeed: responseSpeed)
+            thread.enqueue(text, reasoningEffort: thinkingEffort,
+                           responseSpeed: responseSpeed,
+                           modelOverride: thread.pendingModelOverride)
             app.touch(thread)
             app.showToast("Queued — sends when reconnected", systemImage: "clock")
             return
         }
         thread.send(text, reasoningEffort: thinkingEffort,
                     responseSpeed: responseSpeed,
+                    modelOverride: thread.pendingModelOverride,
                     client: client) { app.touch(thread) }
     }
 
@@ -1110,6 +1190,13 @@ struct ChatView: View {
     /// command land in the composer, then sends/edits it.
     private func prefill(_ command: SlashCommand) {
         draft = command.name + (command.argPlaceholder != nil ? " " : "")
+        composerFocused = true
+    }
+
+    private func prefillPlugin(_ plugin: MarketplacePlugin) {
+        let prompt = "Use \(plugin.displayName) to "
+        draft = draft.isEmpty ? prompt : "\(draft)\n\(prompt)"
+        showPlugins = false
         composerFocused = true
     }
 
@@ -1185,13 +1272,17 @@ struct ChatView: View {
             return
         }
         let sessionId = modelSessionId(familiarId)
+        let target = ChatModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+        guard let request = modelRequests.beginLoad(for: target) else { return }
         let resp: ChatModelStateResponse
         do {
             resp = try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
+            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget) else { return }
             sessionModelState = resp.state
             modelPickerOptions = resp.options ?? []
-            modelPickerCurrent = resp.state.effectiveModel
+            modelPickerCurrent = thread.pendingModelOverride ?? resp.state.effectiveModel
         } catch {
+            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget) else { return }
             thread.appendSystem("Couldn't load the model list. Is the desktop reachable?", isError: true)
             app.touch(thread)
             return
@@ -1206,7 +1297,7 @@ struct ChatView: View {
                 return
             }
             modelPickerOptions = options
-            modelPickerCurrent = resp.state.effectiveModel
+            modelPickerCurrent = thread.pendingModelOverride ?? resp.state.effectiveModel
             showModelPicker = true
             return
         }
@@ -1224,46 +1315,104 @@ struct ChatView: View {
         await applyModel(modelId, familiarId: familiarId, sessionId: sessionId)
     }
 
-    /// PATCH the chosen model (session scope when the chat has a server session,
-    /// else the familiar default) and confirm inline.
+    /// A pre-send choice rides on the first chat request as session intent.
+    /// Existing sessions can be patched directly. Neither path mutates the
+    /// familiar's default.
     private func applyModel(_ model: String, familiarId: String, sessionId: String?) async {
-        guard let client = app.client else { return }
-        let scope = sessionId != nil ? "session" : "familiar-default"
-        do {
-            let resp = try await client.setChatModel(
-                familiarId: familiarId, sessionId: sessionId, model: model, scope: scope)
-            sessionModelState = resp.state
-            modelPickerOptions = resp.options ?? []
-            modelPickerCurrent = resp.state.effectiveModel
-            let label = (resp.options ?? []).first { $0.id == resp.state.effectiveModel }?.label
-                ?? resp.state.effectiveModel
-            thread.appendSystem("Model set to \(label).")
+        let target = ChatModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+        guard sessionId != nil else {
+            modelRequests.beginIntent(for: target)
+            thread.pendingModelOverride = model
+            modelPickerCurrent = model
             app.touch(thread)
+            app.showToast("Model set for this chat", systemImage: "cpu", style: .info)
             Haptics.tap()
-        } catch {
+            return
+        }
+        let mutation = modelRequests.beginMutation(for: target)
+        guard let client = app.client else {
+            if let reconciliationTarget = modelRequests.finishMutation(mutation) {
+                _ = await loadSessionModelState(reconciling: reconciliationTarget)
+            }
+            return
+        }
+        var mutationError: Error?
+        let queuedMutation = modelMutationQueue.enqueue {
+            do {
+                _ = try await client.setChatModel(
+                    familiarId: familiarId, sessionId: sessionId, model: model, scope: "session")
+            } catch {
+                mutationError = error
+            }
+        }
+        await queuedMutation.value
+        guard let reconciliationTarget = modelRequests.finishMutation(mutation) else { return }
+        let reconciliation = await loadSessionModelState(reconciling: reconciliationTarget)
+        switch reconciliation.outcome.messageDisposition {
+        case .none:
+            return
+        case .failure:
             thread.appendSystem("Couldn't switch the model.", isError: true)
             app.touch(thread)
+            return
+        case .success:
+            break
         }
+        if mutationError != nil {
+            thread.appendSystem("Couldn't switch the model.", isError: true)
+            app.touch(thread)
+            return
+        }
+        guard let finalState = reconciliation.response,
+              finalState.state.effectiveModel == model else {
+            thread.appendSystem("Couldn't confirm the model change.", isError: true)
+            app.touch(thread)
+            return
+        }
+        let label = finalState.options?.first { $0.id == finalState.state.effectiveModel }?.label
+            ?? finalState.state.effectiveModel
+        thread.appendSystem("Model set to \(label).")
+        app.touch(thread)
+        Haptics.tap()
     }
 
-    private func loadSessionModelState() async {
+    @discardableResult
+    private func loadSessionModelState(
+        reconciling expectedTarget: ChatModelRequestTarget? = nil
+    ) async -> (outcome: ChatModelReconciliationOutcome, response: ChatModelStateResponse?) {
         guard !thread.isGroup,
               let client = app.client,
               let familiarId = thread.familiarIds.first else {
             sessionModelState = nil
             modelPickerOptions = []
-            return
+            return expectedTarget == nil ? (.failed, nil) : (.superseded, nil)
         }
+        let sessionId = modelSessionId(familiarId)
+        let target = ChatModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+        guard expectedTarget == nil || expectedTarget == target,
+              let request = modelRequests.beginLoad(for: target) else { return (.superseded, nil) }
         do {
             let response = try await client.chatModelState(
                 familiarId: familiarId,
-                sessionId: modelSessionId(familiarId))
+                sessionId: sessionId)
+            let outcome = modelRequests.reconciliationOutcome(
+                for: request, currentTarget: currentModelRequestTarget, failed: false)
+            guard outcome == .applied else { return (outcome, nil) }
             sessionModelState = response.state
             modelPickerOptions = response.options ?? []
-            modelPickerCurrent = response.state.effectiveModel
+            if sessionId != nil {
+                thread.pendingModelOverride = nil
+                app.touch(thread)
+            }
+            modelPickerCurrent = thread.pendingModelOverride ?? response.state.effectiveModel
+            return (.applied, response)
         } catch {
+            let outcome = modelRequests.reconciliationOutcome(
+                for: request, currentTarget: currentModelRequestTarget, failed: true)
+            guard outcome == .failed else { return (outcome, nil) }
             sessionModelState = nil
             modelPickerOptions = []
+            return (.failed, nil)
         }
     }
 
@@ -1283,6 +1432,7 @@ struct ChatView: View {
         guard let client = app.client else { return }
         thread.send(trimmed, reasoningEffort: thinkingEffort,
                     responseSpeed: responseSpeed,
+                    modelOverride: thread.pendingModelOverride,
                     client: client) { app.touch(thread) }
     }
 
@@ -1624,17 +1774,33 @@ struct ResponseReaderView: View {
 struct FamiliarPickerSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
-    var title: String = "Switch familiar"
+    let title: String
+    let familiarIds: [String]?
     let onPick: (Familiar) -> Void
+
+    init(
+        title: String = "Switch familiar",
+        familiarIds: [String]? = nil,
+        onPick: @escaping (Familiar) -> Void
+    ) {
+        self.title = title
+        self.familiarIds = familiarIds
+        self.onPick = onPick
+    }
+
+    private var familiars: [Familiar] {
+        guard let familiarIds else { return app.familiars }
+        return familiarIds.compactMap { app.familiar($0) }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                if app.familiars.isEmpty {
+                if familiars.isEmpty {
                     Text("No familiars found. Pull to refresh on the Chats screen.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                ForEach(app.familiars) { familiar in
+                ForEach(familiars) { familiar in
                     Button { onPick(familiar) } label: {
                         HStack(spacing: 12) {
                             AvatarView(familiar: familiar,

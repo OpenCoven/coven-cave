@@ -168,6 +168,7 @@ struct MainTabView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @State private var presentedOverlay: MainOverlay?
+    @State private var projectToOpen: ProjectInfo?
 
     var body: some View {
         @Bindable var app = app
@@ -190,7 +191,10 @@ struct MainTabView: View {
 
             CaveNavigationDrawer(
                 isOpen: $app.navigationDrawerOpen,
-                openProjects: { presentedOverlay = .projects },
+                openProjects: { project in
+                    projectToOpen = project
+                    presentedOverlay = .projects
+                },
                 openFamiliars: { presentedOverlay = .familiars },
                 openThread: { app.requestOpen($0) },
                 newChat: {
@@ -206,7 +210,11 @@ struct MainTabView: View {
         }
         .fullScreenCover(item: $presentedOverlay) { overlay in
             switch overlay {
-            case .projects: ProjectsPanel { presentedOverlay = nil }
+            case .projects:
+                ProjectsPanel(initialProject: projectToOpen) {
+                    presentedOverlay = nil
+                    projectToOpen = nil
+                }
             case .familiars: FamiliarsListView { familiar in
                 presentedOverlay = nil
                 app.requestOpen(app.directThread(for: familiar.id))

@@ -72,8 +72,13 @@ assert.match(
 assert.match(modelControl, /Section\("Current"\)/, "the picker names the current model at the top");
 assert.match(
   modelControl,
-  /var onSwitchFamiliar: \(\(\) -> Void\)\? = nil/,
+  /let onSwitchFamiliar: \(\(\) -> Void\)\?/,
   "the agent hop is optional so other call sites are unaffected",
+);
+assert.match(
+  modelControl,
+  /onSwitchFamiliar: \(\(\) -> Void\)\? = nil/,
+  "the agent hop defaults to nil at the explicit initializer boundary",
 );
 assert.match(modelControl, /Chat with another familiar/, "deeper agent configuration is reachable from the picker");
 assert.match(chatView, /onSwitchFamiliar: \{ showFamiliarPicker = true \}/, "the picker's agent hop opens the familiar picker");

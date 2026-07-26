@@ -29,7 +29,7 @@ assert.match(
 // --- Compose path: offline branches to enqueue, never to the network --------
 assert.match(
   chatView,
-  /if app\.connectionState != \.connected \{[\s\S]{0,260}?thread\.enqueue\(outgoing, attachments: attachments,\s*\n\s*reasoningEffort: thinkingEffort,\s*\n\s*responseSpeed: responseSpeed\)/,
+  /if app\.connectionState != \.connected \{[\s\S]{0,320}?thread\.enqueue\(outgoing, attachments: attachments,\s*\n\s*reasoningEffort: thinkingEffort,\s*\n\s*responseSpeed: responseSpeed,\s*\n\s*modelOverride: thread\.pendingModelOverride\)/,
   "ChatView.send parks prose on the thread when disconnected",
 );
 assert.match(
@@ -39,12 +39,12 @@ assert.match(
 );
 assert.match(
   chatView,
-  /if app\.connectionState != \.connected \{[\s\S]{0,180}?thread\.enqueue\(text, reasoningEffort: thinkingEffort, responseSpeed: responseSpeed\)/,
+  /if app\.connectionState != \.connected \{[\s\S]{0,260}?thread\.enqueue\(text, reasoningEffort: thinkingEffort,\s*\n\s*responseSpeed: responseSpeed,\s*\n\s*modelOverride: thread\.pendingModelOverride\)/,
   "suggestion chips queue offline too",
 );
 assert.match(
   thread,
-  /func enqueue\(_ text: String, attachments: \[CaveClient\.ChatAttachment\] = \[\],\s*\n\s*reasoningEffort: ChatThinkingEffort = \.high,\s*\n\s*responseSpeed: ChatResponseSpeed = \.fast\)/,
+  /func enqueue\(_ text: String, attachments: \[CaveClient\.ChatAttachment\] = \[\],\s*\n\s*reasoningEffort: ChatThinkingEffort = \.high,\s*\n\s*responseSpeed: ChatResponseSpeed = \.fast,\s*\n\s*modelOverride: String\? = nil\)/,
   "ChatThread.enqueue exists for offline compose",
 );
 

@@ -23,6 +23,9 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// controls shipped remain decodable and replay with current defaults.
     var reasoningEffort: ChatThinkingEffort?
     var responseSpeed: ChatResponseSpeed?
+    /// Explicit model selected for this turn. Persisted so offline replay and
+    /// retry preserve the user's choice.
+    var modelOverride: String?
     /// Agent working steps (tool calls / progress lines) surfaced while this
     /// assistant reply streamed. Optional so older persisted messages decode.
     var activity: [ActivityStep]?
@@ -38,6 +41,9 @@ struct ThreadSnapshot: Codable, Identifiable, Equatable {
     var familiarIds: [String]
     var sessionIds: [String: String]
     var messages: [DisplayMessage]
+    /// A model chosen before this thread has a server session. Optional so
+    /// snapshots written before model selection shipped still decode.
+    var pendingModelOverride: String?
     var updatedAt: Date
     /// Optional so snapshots written before archiving existed still decode.
     var archived: Bool?
@@ -61,6 +67,8 @@ final class ChatThread: Identifiable, Hashable {
     var title: String
     var familiarIds: [String]
     var sessionIds: [String: String]
+    /// Thread-owned so two unsent chats never share a view-local model choice.
+    var pendingModelOverride: String?
     /// Structural changes (append/insert/remove/replace — here or from
     /// AppModel) re-derive the transcript rows and id index. Streamed text
     /// deltas go through `mutate`, which updates one row in place instead.
@@ -87,19 +95,22 @@ final class ChatThread: Identifiable, Hashable {
          title: String,
          familiarIds: [String],
          sessionIds: [String: String] = [:],
-         messages: [DisplayMessage] = []) {
+         messages: [DisplayMessage] = [],
+         pendingModelOverride: String? = nil) {
         self.id = id
         self.title = title
         self.familiarIds = familiarIds
         self.sessionIds = sessionIds
         self.messages = messages
+        self.pendingModelOverride = pendingModelOverride
         self.updatedAt = Date()
         rebuildTranscript()  // didSet doesn't fire during init
     }
 
     convenience init(snapshot s: ThreadSnapshot) {
         self.init(id: s.id, title: s.title, familiarIds: s.familiarIds,
-                  sessionIds: s.sessionIds, messages: s.messages)
+                  sessionIds: s.sessionIds, messages: s.messages,
+                  pendingModelOverride: s.pendingModelOverride)
         self.updatedAt = s.updatedAt
         self.archived = s.archived ?? false
         self.pinned = s.pinned ?? false
@@ -109,6 +120,7 @@ final class ChatThread: Identifiable, Hashable {
     var snapshot: ThreadSnapshot {
         ThreadSnapshot(id: id, title: title, familiarIds: familiarIds,
                        sessionIds: sessionIds, messages: messages,
+                       pendingModelOverride: pendingModelOverride,
                        updatedAt: updatedAt, archived: archived, pinned: pinned, muted: muted)
     }
 
@@ -121,6 +133,7 @@ final class ChatThread: Identifiable, Hashable {
               attachments: [CaveClient.ChatAttachment] = [],
               reasoningEffort: ChatThinkingEffort = .high,
               responseSpeed: ChatResponseSpeed = .fast,
+              modelOverride: String? = nil,
               client: CaveClient, onChange: @escaping () -> Void) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // An image with no caption is a valid prompt (the familiar reads it).
@@ -132,7 +145,8 @@ final class ChatThread: Identifiable, Hashable {
         let userMessage = DisplayMessage(
             role: .user, familiarId: nil, text: shown,
             attachmentDataUrls: attachments.map(\.dataUrl),
-            reasoningEffort: reasoningEffort, responseSpeed: responseSpeed)
+            reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
+            modelOverride: modelOverride)
         messages.append(userMessage)
         updatedAt = Date()
         onChange()
@@ -147,6 +161,8 @@ final class ChatThread: Identifiable, Hashable {
                                      userMessageId: userMessage.id,
                                      reasoningEffort: reasoningEffort,
                                      responseSpeed: responseSpeed,
+                                     modelOverride: modelOverride,
+                                     modelOverrideScope: modelOverride == nil ? nil : .session,
                                      client: client, onChange: onChange) }
         }
     }
@@ -157,13 +173,15 @@ final class ChatThread: Identifiable, Hashable {
     /// reconnect. Prose only: slash commands never route here.
     func enqueue(_ text: String, attachments: [CaveClient.ChatAttachment] = [],
                  reasoningEffort: ChatThinkingEffort = .high,
-                 responseSpeed: ChatResponseSpeed = .fast) {
+                 responseSpeed: ChatResponseSpeed = .fast,
+                 modelOverride: String? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }
         var message = DisplayMessage(
             role: .user, familiarId: nil, text: trimmed,
             attachmentDataUrls: attachments.map(\.dataUrl),
-            reasoningEffort: reasoningEffort, responseSpeed: responseSpeed)
+            reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
+            modelOverride: modelOverride)
         message.queued = true
         messages.append(message)
         updatedAt = Date()
@@ -206,6 +224,8 @@ final class ChatThread: Identifiable, Hashable {
                              userMessageId: queuedId,
                              reasoningEffort: reasoningEffort,
                              responseSpeed: responseSpeed,
+                             modelOverride: queuedMessage.modelOverride,
+                             modelOverrideScope: queuedMessage.modelOverride == nil ? nil : .session,
                              client: client, onChange: onChange)
                 // Re-queued mid-replay (offline again) — stop; don't spin.
                 if messages.first(where: { $0.id == queuedId })?.isQueued == true { return }
@@ -238,6 +258,8 @@ final class ChatThread: Identifiable, Hashable {
                                  into: messageId,
                                  reasoningEffort: source?.reasoningEffort ?? .high,
                                  responseSpeed: source?.responseSpeed ?? .fast,
+                                 modelOverride: source?.modelOverride,
+                                 modelOverrideScope: source?.modelOverride == nil ? nil : .nextMessage,
                                  client: client, onChange: onChange) }
     }
 
@@ -316,6 +338,8 @@ final class ChatThread: Identifiable, Hashable {
                         userMessageId: String? = nil,
                         reasoningEffort: ChatThinkingEffort = .high,
                         responseSpeed: ChatResponseSpeed = .fast,
+                        modelOverride: String? = nil,
+                        modelOverrideScope: ChatModelOverrideScope? = nil,
                         client: CaveClient, onChange: @escaping () -> Void) async {
         // Per-send token: the server keys its resumable run buffer under this
         // (cave-h40l), so even a brand-new chat (no sessionId yet) can
@@ -328,7 +352,9 @@ final class ChatThread: Identifiable, Hashable {
                                        attachments: attachments.isEmpty ? nil : attachments,
                                        runId: runId,
                                        reasoningEffort: reasoningEffort,
-                                       responseSpeed: responseSpeed)
+                                       responseSpeed: responseSpeed,
+                                       modelOverride: modelOverride,
+                                       modelOverrideScope: modelOverrideScope)
         var receivedAnyEvent = false
         // Resume cursor: the last applied frame's SSE id (run-buffer seq).
         var cursor = 0
