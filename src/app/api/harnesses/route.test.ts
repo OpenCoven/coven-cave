@@ -22,8 +22,13 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(id === "hermes"\) \{[\s\S]*?const hermesLaunch = resolveHermesLaunch\(\{ env \}\);[\s\S]*?hermesLaunch,[\s\S]*?const hermesLaunch = runtime\.hermesLaunch;[\s\S]*?h\.id === "hermes" && hermesLaunch[\s\S]*?hermesLaunch\.command/,
+  /if \(id === "hermes"\) \{[\s\S]*?const hermesLaunch = resolveHermesLaunch\(\{ env \}\);[\s\S]*?hermesLaunch,[\s\S]*?const hermesLaunch = runtime\.hermesLaunch;[\s\S]*?h\.id === "hermes"\s*\?\s*hermesLaunch\?\.state === "ready" \? hermesLaunch\.command : null/,
   "Hermes status must use the same resolved native launch plan as chat instead of a generic which/where shim result",
+);
+assert.match(
+  source,
+  /h\.id === "hermes"\s*\?\s*hermesLaunch\?\.state === "ready" \? hermesLaunch\.command : null\s*:\s*await which\(h\.binary\)/,
+  "an unready Hermes plan must not fall back to which/where and turn a Windows shim into a status path",
 );
 assert.match(
   source,

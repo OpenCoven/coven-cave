@@ -297,9 +297,9 @@ export async function GET() {
             : null
           : h.id === "grok" && resolvedBinary !== h.binary
             ? resolvedBinary
-            : h.id === "hermes" && hermesLaunch?.state === "ready"
-              ? hermesLaunch.command
-            : await which(h.binary);
+            : h.id === "hermes"
+              ? hermesLaunch?.state === "ready" ? hermesLaunch.command : null
+              : await which(h.binary);
       const availability = runtime.availability;
       if (!path) {
         return { ...h, installed: false, path: null, version: null, availability };
