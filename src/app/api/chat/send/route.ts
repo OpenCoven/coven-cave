@@ -279,21 +279,6 @@ function createLocalRuntimePlan(input: {
   };
 }
 
-function familiarEnvWithCanonicalPath(
-  familiarId: string,
-  canonicalEnv: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv {
-  const env = harnessSpawnEnv(familiarId);
-  const canonicalPath =
-    canonicalEnv.PATH ?? canonicalEnv.Path ?? canonicalEnv.path;
-  if (canonicalPath !== undefined) {
-    env.PATH = canonicalPath;
-    delete env.Path;
-    delete env.path;
-  }
-  return env;
-}
-
 type SendBody = {
   familiarId: string;
   prompt?: string;
@@ -1089,13 +1074,15 @@ export async function POST(req: Request) {
       })
     : null;
 
-  // Copilot's exact command is resolved once. The capability phase consumes
-  // that passive plan and cannot resolve a different npm shim. Its probe env
-  // is credential-free; the eventual model env keeps familiar-scoped values
-  // but is pinned to this same canonical PATH.
+  // Resolve the direct plan in the exact familiar-scoped environment passed to
+  // the child. The capability probe scrubs credentials only for `--version`;
+  // it must never discover a different launcher than the model spawn uses.
+  const copilotSpawnEnv = copilotDirect ? harnessSpawnEnv(body.familiarId) : null;
   const copilotManifestStream = copilotDirect ? copilotStreamSpec() : null;
   const copilotRuntimeLaunch = copilotManifestStream
-    ? await resolveCopilotRuntimeLaunch(copilotManifestStream.executable)
+    ? await resolveCopilotRuntimeLaunch(copilotManifestStream.executable, {
+        spawnEnv: () => copilotSpawnEnv!,
+      })
     : null;
   const copilotCapability = copilotManifestStream && copilotRuntimeLaunch
     ? copilotRuntimeLaunch.availability.state === "ready"
@@ -1128,10 +1115,7 @@ export async function POST(req: Request) {
       localRuntimePlan = createLocalRuntimePlan({
         runner: "copilot",
         launch: copilotRuntimeLaunch,
-        env: familiarEnvWithCanonicalPath(
-          body.familiarId,
-          copilotRuntimeLaunch.env,
-        ),
+        env: copilotRuntimeLaunch.env,
         availability: copilotRouting.mode === "blocked"
           ? copilotRouting.failure
           : copilotRuntimeLaunch.availability,
@@ -3184,19 +3168,38 @@ export async function POST(req: Request) {
                     command: localPlan.command,
                     args: [...localPlan.fixedArgs, ...spawnArgs],
                   };
-                const child = spawn(command.command, command.args, {
-                  // Spawn IN the familiar's workspace when no project root was
-                  // supplied, so coven's project-root resolver picks that dir as
-                  // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
-                  // from the familiar's home. When a project root IS supplied,
-                  // honor that instead.
-                  cwd,
-                  stdio: openCodeLaunchCommand?.input === undefined
-                    ? ["ignore", "pipe", "pipe"]
-                    : ["pipe", "pipe", "pipe"],
-                  env: localPlan.env,
-                  shell: false,
-                }) as ChildProcessWithoutNullStreams;
+                let child: ChildProcessWithoutNullStreams;
+                try {
+                  child = spawn(command.command, command.args, {
+                    // Spawn IN the familiar's workspace when no project root was
+                    // supplied, so coven's project-root resolver picks that dir as
+                    // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
+                    // from the familiar's home. When a project root IS supplied,
+                    // honor that instead.
+                    cwd,
+                    stdio: openCodeLaunchCommand?.input === undefined
+                      ? ["ignore", "pipe", "pipe"]
+                      : ["pipe", "pipe", "pipe"],
+                    env: localPlan.env,
+                    shell: false,
+                  }) as ChildProcessWithoutNullStreams;
+                } catch (error) {
+                  const launchError = localRuntimeLaunchError(
+                    localPlan.runner,
+                    (error as NodeJS.ErrnoException).code,
+                  );
+                  result.is_error = true;
+                  launchFailure = launchError;
+                  pushProgress(
+                    "harness-start",
+                    `${binding.harness} failed to start`,
+                    "error",
+                    launchError.message,
+                    Date.now() - attemptStartedAt,
+                  );
+                  push({ kind: "error", code: launchError.code, message: launchError.message });
+                  return null;
+                }
                 if (openCodeLaunchCommand) {
                   writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
                 }

@@ -69,7 +69,7 @@ function assertNoFabricatedAssistantResponse(body, events) {
 }
 
 try {
-  const { covenLaunchCommand, refreshCovenBin } = await import("@/lib/coven-bin");
+  const { covenLaunchCommand, refreshCovenBin, refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
   refreshCovenBin();
   const { grokBin } = await import("@/lib/grok-bin");
   assert.equal(grokBin(), pinnedGrok, "the test pins Grok discovery to its isolated override");
@@ -266,6 +266,7 @@ try {
     const { clearCopilotCapabilityProbeCache } = await import("@/lib/server/copilot-capability-probe");
     process.env.PATH = "";
     refreshCovenBin();
+    refreshCovenSpawnEnv();
     clearCopilotCapabilityProbeCache();
     await saveConfig({ familiars: { opal: { harness: "copilot" } } });
     const response = await POST(new Request("http://localhost/api/chat/send", {
@@ -288,6 +289,8 @@ try {
   else process.env.GROK_BIN = previousGrokBin;
   if (previousPath === undefined) delete process.env.PATH;
   else process.env.PATH = previousPath;
+  const { refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
+  refreshCovenSpawnEnv();
   await rm(home, { recursive: true, force: true });
 }
 

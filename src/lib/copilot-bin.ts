@@ -16,7 +16,7 @@ const MAX_WINDOWS_WHERE_OUTPUT = 64 * 1024;
  * artifacts, never shell input: npm's Windows shim conversion yields
  * `node <absolute-entry.js>` and both parts must remain available. */
 export type CopilotLaunchCommand = CovenLaunchCommand & {
-  requiredFiles: string[];
+  requiredFiles?: string[];
 };
 
 async function withinTimeout<T>(work: Promise<T>, timeoutMs: number, fallback: T): Promise<{ value: T; timedOut: boolean }> {

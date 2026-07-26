@@ -292,13 +292,13 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const copilotManifestStream = copilotDirect \? copilotStreamSpec\(\) : null;[\s\S]*?resolveCopilotRuntimeLaunch\(copilotManifestStream\.executable\)[\s\S]*?probeCopilotCapability\(copilotManifestStream\.executable/,
-  "Copilot resolves and probes the manifest-declared executable instead of an independent default",
+  /const copilotSpawnEnv = copilotDirect \? harnessSpawnEnv\(body\.familiarId\) : null;[\s\S]*?resolveCopilotRuntimeLaunch\(copilotManifestStream\.executable, \{[\s\S]*?spawnEnv: \(\) => copilotSpawnEnv![\s\S]*?probeCopilotCapability\(copilotManifestStream\.executable/,
+  "Copilot resolves and probes the manifest-declared executable in the exact familiar-scoped spawn environment",
 );
-assert.match(
+assert.doesNotMatch(
   chatRoute,
-  /if \(\s*copilotCompatibilityDiagnostic &&\s*copilotRuntimeLaunch\?\.availability\.state === "ready"\s*\) \{[\s\S]*?copilot-client-compatibility/,
-  "a non-ready Copilot plan emits only the structured runtime error, not a duplicate compatibility notice",
+  /copilot-client-compatibility/,
+  "a blocked Copilot launch emits one structured runtime error rather than a duplicate compatibility notice",
 );
 
 assert.match(

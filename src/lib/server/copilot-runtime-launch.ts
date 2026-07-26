@@ -20,7 +20,7 @@ export type CopilotRuntimeLaunch = {
   command: string;
   fixedArgs: string[];
   /** Fixed argv artifacts required by the selected launch plan. */
-  requiredFiles: string[];
+  requiredFiles?: string[];
   /** Absolute deadline shared by env, launcher, and identity discovery. */
   deadline: number;
   availability: RuntimeAvailability;
