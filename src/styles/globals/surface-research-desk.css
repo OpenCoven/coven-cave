@@ -1,15 +1,13 @@
 /* ═══ Research Desk — tab-host shell (cave-dl74, Phase A) ═══
-   The five-tab research surface: tab strip row, engine-status line, checkpoint
-   dot badge, panel sizing, and the Phase A placeholder sections. Tab button
+   The five-tab research surface: tab strip row, checkpoint dot badge, panel
+   sizing, and the Phase A placeholder sections. Tab button
    visuals come from the shared Tabs component (src/components/ui/tabs.tsx).
    Desk-tab content styles still live in surface-role-workspaces.css:682–1154
-   until Phase C prunes what is dead. Semantic tokens only — 16 themes ×
-   dark/light must hold; the two oklch literals below are the desk's existing
-   ok/warn readings per the design→token mapping table. */
+   until Phase C prunes what is dead. Semantic tokens only — every palette and
+   mode combination must hold. */
 
-/* ── Tab strip: tabs left, engine status right, one hairline under both.
-   Design header is 48px (line 34); under the surface header a 40px strip
-   matches the app's compact-header band. ── */
+/* ── Tab strip: one hairline under the shared tabs. The strip matches the
+   app's compact-header band beneath the room header. ── */
 .research-desk__tabs {
   display: flex;
   align-items: stretch;
@@ -20,33 +18,12 @@
   border-bottom: 1px solid var(--border);
 }
 .research-desk__tabs [role="tablist"] {
+  flex: 1;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
 .research-desk__tabs [role="tablist"]::-webkit-scrollbar { display: none; }
-
-/* ── Engine status: "Engine ready · N runs live" (design line 45). Tone is
-   carried by the dot and the words — never color alone. ── */
-.research-desk__engine {
-  display: inline-flex;
-  align-items: center;
-  align-self: center;
-  gap: var(--space-2);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-.research-desk__engine-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-pill);
-  background: oklch(0.75 0.14 155); /* engine ready — existing desk ok */
-}
-.research-desk__engine[data-tone="warn"] .research-desk__engine-dot {
-  background: oklch(0.8 0.13 75); /* daemon offline — existing desk warn */
-}
 
 /* ── Checkpoint dot on the Desk tab label (sr-only text rides along). ── */
 .research-desk__tab-flag {

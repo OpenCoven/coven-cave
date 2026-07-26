@@ -16,7 +16,16 @@ const ledger = readFileSync(new URL("./research-evidence-ledger.tsx", import.met
 const hook = readFileSync(new URL("./use-research-missions.ts", import.meta.url), "utf8");
 const clientLib = readFileSync(new URL("../../lib/research-mission-client.ts", import.meta.url), "utf8");
 const missionsLib = readFileSync(new URL("../../lib/research-missions.ts", import.meta.url), "utf8");
-const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+const css = [
+  "../../styles/globals/surface-role-workspaces.css",
+  "../../styles/globals/surface-research-desk.css",
+  "../../styles/globals/surface-research-prompt.css",
+  "../../styles/globals/surface-research-library.css",
+  "../../styles/globals/surface-research-studio.css",
+  "../../styles/globals/surface-research-resources.css",
+]
+  .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
+  .join("\n");
 // The tab-strip/desk sheet rides with the surface (not the root bundle), so
 // strip-level selectors are asserted against the sheet itself.
 const deskCss = readFileSync(new URL("../../styles/globals/surface-research-desk.css", import.meta.url), "utf8");
@@ -64,15 +73,11 @@ test("default tab is desk when missions exist, else prompt — never persisted",
   assert.match(surface, /const selectTab = useCallback\(\(next: ResearchDeskTab\) => \{\s*setTab\(next\);/);
 });
 
-test("engine status derives honestly from the daemon and live missions", () => {
-  assert.match(surface, /context\.runtimeState\.daemonRunning/);
-  assert.match(surface, /new Set\(\["running", "planning", "queued"\]\)/);
-  assert.match(surface, /Engine ready · \$\{liveCount\} run\$\{liveCount === 1 \? "" : "s"\} live/);
-  // Daemon down degrades honestly instead of pretending readiness.
-  assert.match(surface, /Engine offline · runs stay retryable/);
-  assert.match(surface, /data-tone=\{daemonRunning \? "ok" : "warn"\}/);
-  // Tone is a class/dot + words, not color alone.
-  assert.match(deskCss, /\.research-desk__engine\[data-tone="warn"\] \.research-desk__engine-dot/);
+test("the room defers engine status to the shared host", () => {
+  assert.doesNotMatch(surface, /research-desk__engine/);
+  assert.doesNotMatch(surface, /Engine ready|Engine offline/);
+  assert.doesNotMatch(surface, /LIVE_STATUSES/);
+  assert.doesNotMatch(deskCss, /\.research-desk__engine/);
 });
 
 test("desk tab flags waiting checkpoints only while the desk is not active", () => {

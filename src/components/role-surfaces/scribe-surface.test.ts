@@ -80,6 +80,34 @@ test("the desk exposes errors and state accessibly", () => {
   assert.match(surface, /aria-label="Draft body"/);
 });
 
+test("source and vault failures stay retryable and distinct from empty data", () => {
+  assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /const \[sourcesError, setSourcesError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /const loadSources = useCallback\(async \(\) =>/);
+  assert.match(surface, /const \[journalError, setJournalError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /const loadJournal = useCallback\(async \(\) =>/);
+  assert.doesNotMatch(surface, /setJournalDays\(\[\]\)/);
+  assert.match(surface, /const \[worksError, setWorksError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /const loadWorks = useCallback\(async \(\) =>/);
+  assert.doesNotMatch(surface, /setWorks\(\[\]\)/);
+  assert.match(
+    surface,
+    /worksError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadWorks\}[\s\S]*?\)\s*:\s*works == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(surface, /works\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+});
+
+test("publishing announces outcomes and discard stays behind secondary disclosure", () => {
+  assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
+  assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
+  assert.match(surface, /announce\(`\$\{verb\} "\$\{title\}" to the Knowledge Vault\.`\)/);
+  assert.match(surface, /setPublishError\(message\)[\s\S]*?announce\(message, "assertive"\)/);
+  assert.match(surface, /<OverflowMenu ariaLabel="Draft actions">/);
+  assert.match(surface, /<PopoverItem[\s\S]*?danger[\s\S]*?onSelect=\{discardSelected\}[\s\S]*?>[\s\S]*?Discard draft/);
+  assert.doesNotMatch(surface, /<button[^>]*onClick=\{discardSelected\}[^>]*>[\s\S]*?Discard draft/);
+});
+
 test("registration names the Writing Desk with its own accent and drawer chrome", () => {
   assert.match(register, /id: SCRIBE_SURFACE_ID/);
   assert.match(register, /role: "scribe"/);

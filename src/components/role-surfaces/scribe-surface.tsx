@@ -16,6 +16,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem } from "@/components/ui/popover";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
@@ -23,7 +26,15 @@ import { invalidateIfDefined } from "@/lib/surface-warm-cache";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { relativeTime } from "@/lib/relative-time";
 import { countWords, deskSummary, parseTags, readingTimeLabel, type ScribeDraft } from "./scribe-craft";
-import { RailSection, SurfaceCanvas, SurfaceEmpty, SurfaceRail, SurfaceRoom } from "./surface-room";
+import {
+  RailSection,
+  SurfaceCanvas,
+  SurfaceEmpty,
+  SurfaceError,
+  SurfaceLoading,
+  SurfaceRail,
+  SurfaceRoom,
+} from "./surface-room";
 import { SCRIBE_SURFACE_ID } from "./ids";
 
 export type ScribeState = {
@@ -64,6 +75,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   const familiarId = context.activeFamiliar.id;
   const [state, patch] = useRoleSurfaceState<ScribeState>(familiarId, SCRIBE_SURFACE_ID, SCRIBE_INITIAL_STATE);
+  const { announce } = useAnnouncer();
 
   const selected = state.drafts.find((d) => d.id === state.selectedId) ?? null;
 
@@ -76,50 +88,59 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
 
   // ── Source material: the familiar's real memory inventory ─────────────────
   const [sources, setSources] = useState<SurfaceMemoryEntry[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    context.memory.listEntries().then((entries) => {
-      if (cancelled) return;
-      const recent = [...entries]
-        .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
-        .slice(0, 8);
-      setSources(recent);
-    });
-    return () => {
-      cancelled = true;
-    };
+  const [sourcesError, setSourcesError] = useState<string | null>(null);
+  const loadSources = useCallback(async () => {
+    setSourcesError(null);
+    try {
+      const entries = await context.memory.listEntries();
+      setSources(
+        [...entries]
+          .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
+          .slice(0, 8),
+      );
+    } catch {
+      setSourcesError("Couldn't load source material.");
+    }
   }, [context.memory]);
+  useEffect(() => {
+    setSources(null);
+    void loadSources();
+  }, [loadSources]);
 
   // ── Source material: recent journal days ──────────────────────────────────
   const [journalDays, setJournalDays] = useState<JournalDayWire[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/journal", { cache: "no-store" });
-        const json = res.ok ? ((await res.json()) as { ok?: boolean; days?: JournalDayWire[] }) : null;
-        if (!cancelled) setJournalDays((json?.days ?? []).slice(0, 5));
-      } catch {
-        if (!cancelled) setJournalDays([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const [journalError, setJournalError] = useState<string | null>(null);
+  const loadJournal = useCallback(async () => {
+    setJournalError(null);
+    try {
+      const res = await fetch("/api/journal", { cache: "no-store" });
+      const json = res.ok ? ((await res.json()) as { ok?: boolean; days?: JournalDayWire[] }) : null;
+      if (!json?.ok || !Array.isArray(json.days)) throw new Error("bad response");
+      setJournalDays(json.days.slice(0, 5));
+    } catch {
+      setJournalError("Couldn't load recent journal entries.");
+    }
   }, []);
+  useEffect(() => {
+    void loadJournal();
+  }, [loadJournal]);
 
   // ── Published works: real Knowledge Vault entries for this familiar ───────
   const [works, setWorks] = useState<KnowledgeEntryWire[] | null>(null);
+  const [worksError, setWorksError] = useState<string | null>(null);
   const loadWorks = useCallback(async () => {
+    setWorksError(null);
     try {
       const res = await fetch(`/api/knowledge?familiarId=${encodeURIComponent(familiarId)}`, { cache: "no-store" });
       const json = res.ok ? ((await res.json()) as { ok?: boolean; entries?: KnowledgeEntryWire[] }) : null;
-      setWorks(json?.entries ?? []);
+      if (!json?.ok || !Array.isArray(json.entries)) throw new Error("bad response");
+      setWorks(json.entries);
     } catch {
-      setWorks([]);
+      setWorksError("Couldn't load published works.");
     }
   }, [familiarId]);
   useEffect(() => {
+    setWorks(null);
     void loadWorks();
   }, [loadWorks]);
 
@@ -157,6 +178,8 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   const [publishError, setPublishError] = useState<string | null>(null);
   const publishSelected = async () => {
     if (!selected || publishing) return;
+    const verb = selected.publishedId ? "Republished" : "Published";
+    const title = selected.title.trim() || "Untitled";
     setPublishing(true);
     setPublishError(null);
     try {
@@ -181,8 +204,11 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
       invalidateIfDefined("grimoire:knowledge", "grimoire:collections");
       updateSelected({ publishedId: json.entry.id });
       await loadWorks();
+      announce(`${verb} "${title}" to the Knowledge Vault.`);
     } catch {
-      setPublishError("Publish failed — the Knowledge Vault didn't accept the entry.");
+      const message = "Publish failed — the Knowledge Vault didn't accept the entry.";
+      setPublishError(message);
+      announce(message, "assertive");
     } finally {
       setPublishing(false);
     }
@@ -200,8 +226,10 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
       drawer={
         <div className="role-surface-drawer-grid">
           <RailSection title="In the Knowledge Vault" iconName="ph:books">
-            {works == null ? (
-              <SurfaceEmpty title="Loading the vault…" />
+            {worksError ? (
+              <SurfaceError title={worksError} hint="Check the Cave connection, then retry." onRetry={loadWorks} />
+            ) : works == null ? (
+              <SurfaceLoading label="Loading published works…" />
             ) : works.length === 0 ? (
               <SurfaceEmpty
                 title="Nothing published yet."
@@ -260,8 +288,10 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
           )}
         </RailSection>
         <RailSection title="Source material" iconName="ph:books">
-          {sources == null ? (
-            <SurfaceEmpty title="Loading memory…" />
+          {sourcesError ? (
+            <SurfaceError title={sourcesError} hint="Check the memory source, then retry." onRetry={loadSources} />
+          ) : sources == null ? (
+            <SurfaceLoading label="Loading source material…" />
           ) : sources.length === 0 ? (
             <SurfaceEmpty title="No memory on file." hint="The familiar's memory inventory feeds this shelf." />
           ) : (
@@ -276,8 +306,10 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
           )}
         </RailSection>
         <RailSection title="Recent journal" iconName="ph:book-open">
-          {journalDays == null ? (
-            <SurfaceEmpty title="Loading journal…" />
+          {journalError ? (
+            <SurfaceError title={journalError} hint="Check the Cave connection, then retry." onRetry={loadJournal} />
+          ) : journalDays == null ? (
+            <SurfaceLoading label="Loading recent journal…" />
           ) : journalDays.length === 0 ? (
             <SurfaceEmpty title="No journal entries yet." />
           ) : (
@@ -408,9 +440,11 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
                 <dd>{selected.publishedId ?? "Not published"}</dd>
               </dl>
               <div className="role-surface-btn-row">
-                <button type="button" className="role-surface-chip focus-ring" onClick={discardSelected}>
-                  Discard draft
-                </button>
+                <OverflowMenu ariaLabel="Draft actions">
+                  <PopoverItem icon="ph:trash" danger onSelect={discardSelected}>
+                    Discard draft
+                  </PopoverItem>
+                </OverflowMenu>
               </div>
             </RailSection>
           </>

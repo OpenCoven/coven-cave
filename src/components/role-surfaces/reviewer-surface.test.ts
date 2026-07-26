@@ -215,3 +215,23 @@ test("parseDiffLines handles empties, CRLF, and the no-newline marker", () => {
   assert.equal(marker[0].kind, "add");
   assert.equal(marker[1].kind, "ctx");
 });
+
+test("working-tree and diff failures use shared retryable room states", () => {
+  assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(
+    surface,
+    /changesError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadChanges\}[\s\S]*?\)\s*:\s*changes == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(
+    surface,
+    /diffLoading\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?\)\s*:\s*diffError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{\(\) => openFile && void showDiff\(openFile\)\}/,
+  );
+});
+
+test("review verdicts announce success and assertively announce visible failures", () => {
+  assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
+  assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
+  assert.match(surface, /announce\(`\$\{verdictLabel\} \$\{prLabel\(selectedPr\)\}\.`\)/);
+  assert.match(surface, /setActionError\(message\)[\s\S]*?announce\(message, "assertive"\)/);
+});

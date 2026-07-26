@@ -21,6 +21,7 @@
 
 import "@/styles/review-deck.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
@@ -41,7 +42,7 @@ import {
   type ReviewReason,
   type Verdict,
 } from "./review-deck";
-import { SurfaceEmpty } from "./surface-room";
+import { SurfaceEmpty, SurfaceError, SurfaceLoading } from "./surface-room";
 import { REVIEWER_SURFACE_ID } from "./ids";
 
 export type ReviewerState = {
@@ -94,6 +95,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   const familiar = context.activeFamiliar;
   const familiarId = familiar.id;
   const [state, patch] = useRoleSurfaceState<ReviewerState>(familiarId, REVIEWER_SURFACE_ID, REVIEWER_INITIAL_STATE);
+  const { announce } = useAnnouncer();
 
   // Ephemeral view state — collapse, filter, verdicts, and the reviewer's note
   // live for the visit; only the selection and the checkpoints drawer persist.
@@ -252,7 +254,9 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         } else {
           const event = verdict === "approved" ? "APPROVE" : "REQUEST_CHANGES";
           if (event === "REQUEST_CHANGES" && !body) {
-            setActionError("Add a note for the familiar before requesting changes.");
+            const message = "Add a note for the familiar before requesting changes.";
+            setActionError(message);
+            announce(message, "assertive");
             setDispatching(null);
             return;
           }
@@ -265,13 +269,18 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
           if (!json?.ok) throw new Error(json?.error || "review failed");
         }
         setVerdicts((prev) => ({ ...prev, [selected.session.id]: verdict }));
+        const verdictLabel =
+          verdict === "approved" ? "Approved" : verdict === "changes" ? "Requested changes on" : "Merged";
+        announce(`${verdictLabel} ${prLabel(selectedPr)}.`);
       } catch (e) {
-        setActionError(e instanceof Error ? e.message : "Couldn't reach GitHub.");
+        const message = e instanceof Error ? e.message : "Couldn't reach GitHub.";
+        setActionError(message);
+        announce(message, "assertive");
       } finally {
         setDispatching(null);
       }
     },
-    [selected, selectedPr, note, dispatching],
+    [announce, dispatching, note, selected, selectedPr],
   );
 
   // ── Derived view models ────────────────────────────────────────────────────
@@ -455,16 +464,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
           </div>
 
           {/* diff body / empty state */}
-          {changesError ? (
-            <div className="rd-fill">
-              <div role="alert" className="role-surface-hint rd-error">
-                {changesError}{" "}
-                <button type="button" className="role-surface-chip focus-ring" onClick={() => void loadChanges()}>
-                  Try again
-                </button>
-              </div>
-            </div>
-          ) : !selected ? (
+          {!selected ? (
             <div className="rd-fill">
               <SurfaceEmpty
                 iconName="ph:git-diff"
@@ -472,9 +472,17 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
                 hint="Its project's real working-tree changes are read on selection."
               />
             </div>
+          ) : changesError ? (
+            <div className="rd-fill">
+              <SurfaceError
+                title={changesError}
+                hint="Check the project, then retry."
+                onRetry={loadChanges}
+              />
+            </div>
           ) : changes == null ? (
             <div className="rd-fill">
-              <SurfaceEmpty title="Reading the working tree…" />
+              <SurfaceLoading label="Reading the working tree…" />
             </div>
           ) : changes.ok && !changes.repo ? (
             <div className="rd-fill">
@@ -492,18 +500,13 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
             <div className="rd-diff rd-scroll">
               <div className="rd-diff-path">{openFile ?? ""}</div>
               {diffLoading ? (
-                <SurfaceEmpty title="Loading diff…" />
+                <SurfaceLoading label="Loading diff…" />
               ) : diffError ? (
-                <p className="rd-diff-path rd-error" role="alert">
-                  {diffError}{" "}
-                  <button
-                    type="button"
-                    className="role-surface-chip focus-ring"
-                    onClick={() => openFile && void showDiff(openFile)}
-                  >
-                    Try again
-                  </button>
-                </p>
+                <SurfaceError
+                  title={diffError}
+                  hint="Check the file, then retry."
+                  onRetry={() => openFile && void showDiff(openFile)}
+                />
               ) : diff && diff.text ? (
                 <>
                   {diff.truncated && (

@@ -25,7 +25,7 @@ import "@/styles/globals/surface-research-studio.css";
 import "@/styles/globals/surface-research-resources.css";
 import { useCallback, useEffect, useState } from "react";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-import type { ResearchMissionMode, ResearchMissionStatus } from "@/lib/research-missions";
+import type { ResearchMissionMode } from "@/lib/research-missions";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { ResearchTabDesk } from "./research-tab-desk";
 import { ResearchTabLibrary } from "./research-tab-library";
@@ -63,9 +63,6 @@ const TAB_LABELS: Record<ResearchDeskTab, string> = {
   studio: "Studio",
   resources: "Resources",
 };
-
-/** Missions the engine is actively working — the header's "N runs live". */
-const LIVE_STATUSES: ReadonlySet<ResearchMissionStatus> = new Set(["running", "planning", "queued"]);
 
 function isResearchDeskTab(value: string | null): value is ResearchDeskTab {
   return value !== null && (TAB_IDS as readonly string[]).includes(value);
@@ -125,13 +122,6 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
     if (activeTab === "prompt" && promptMode !== null) setPromptMode(null);
   }, [activeTab, promptMode]);
 
-  // Engine status, derived honestly from the daemon + live mission count.
-  const daemonRunning = context.runtimeState.daemonRunning;
-  const liveCount = research.missions.filter((mission) => LIVE_STATUSES.has(mission.status)).length;
-  const engineStatus = daemonRunning
-    ? `Engine ready · ${liveCount} run${liveCount === 1 ? "" : "s"} live`
-    : "Engine offline · runs stay retryable";
-
   // Checkpoint dot on the Desk tab label — only while the desk is not looking.
   const checkpointWaiting = research.missions.some((mission) => mission.status === "checkpoint");
   const deskBadge = checkpointWaiting && activeTab !== "desk";
@@ -159,14 +149,6 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
           size="sm"
           bordered={false}
         />
-        <span
-          className="research-desk__engine"
-          data-tone={daemonRunning ? "ok" : "warn"}
-          role="status"
-        >
-          <i className="research-desk__engine-dot" aria-hidden />
-          {engineStatus}
-        </span>
       </div>
 
       <div
