@@ -1,6 +1,8 @@
-# OpenClaw Gateway-dispatched tool activity
+# OpenClaw Gateway-dispatch implementation plan
 
-**GitHub:** #3865 (implementation), #3847 (parent compatibility work), supersedes the reverted observer-only approach in #3852.
+**GitHub:** #3865 (implementation issue), #3847 (parent compatibility work),
+and #3852 (the retained safe CLI/plain-chat stop point). This document is a
+planning contract only; it does not enable Gateway dispatch.
 
 ## Decision
 
@@ -37,8 +39,10 @@ reason to guess a field shape.
 
 1. Resolve the local OpenClaw runtime and Gateway endpoint without passing
    Gateway credentials to a fallback child process.
-2. Create or load a paired device identity; authenticate with the reference
-   Gateway client and validate `hello-ok` plus negotiated policy limits.
+2. Create or load a paired device identity from OS-backed secret storage;
+   authenticate with the reference Gateway client and validate `hello-ok` plus
+   negotiated policy limits. Never persist credentials in plaintext or include
+   them in logs, caches, SSE, or diagnostics.
 3. Establish `sessions.subscribe` and the selected canonical-session
    subscription before dispatching the turn.
 4. Send `chat.send` with the Cave message, canonical session key, agent ID,
@@ -50,9 +54,15 @@ reason to guess a field shape.
 6. On terminal chat state, persist the response and reconciled tool cards. On
    cancellation, abort the exact `runId`, close the stream, and settle only its
    unfinished cards.
-7. On authentication, dispatch, validation, sequence, disconnect, or protocol
-   failure, close the Gateway attempt. Fall back to CLI only if no Gateway run
-   was accepted; never execute both transports for one user turn.
+7. Before a `chat.send` acknowledgement, resolve an ambiguous dispatch using
+   its idempotency key and authoritative Gateway status/history. Start the CLI
+   fallback only after acceptance is disproven; a lost acknowledgement is not
+   permission to duplicate the turn.
+8. After acceptance, use the official keepalive/liveness policy. On reconnect,
+   restore both subscriptions, reconcile authoritative history and the active
+   run, then resume only validated frames for the accepted run. If recovery
+   fails, terminate and settle the Gateway-owned turn; never replace it with a
+   CLI invocation.
 
 ## Compatibility and upgrade policy
 
