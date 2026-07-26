@@ -32,8 +32,11 @@ const GROUPS = ["Panels & navigation", "Browser", "Composer", "Slash menu", "Oth
 test.describe("keyboard shortcuts sheet", () => {
   test("opens with ?, lists every catalog group, closes with Escape", async ({ page }) => {
     await gotoApp(page);
-    // Focus the page chrome (not a text field) so the `?` guard lets it through.
-    await page.mouse.click(5, 5);
+    // The Home-first shell keeps its top-bar search mounted. A coordinate click
+    // can leave that field focused, which correctly suppresses bare `?` as
+    // typing. Explicitly blur the current editable target before exercising the
+    // global shortcut.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("?");
 
     await expect(sheet(page)).toBeVisible();
