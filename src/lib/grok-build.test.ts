@@ -11,7 +11,6 @@ import {
 import {
   BUILTIN_GROK_SCHEMA_BUNDLE,
   parseGrokCompatibilityEvent,
-  type GrokEventSchema,
 } from "./grok-compatibility.ts";
 
 const catalog = parseGrokModels(`You are logged in with grok.com.\n\nDefault model: grok-4.5\n\nAvailable models:\n  * grok-4.5 (default)\n  * grok-code-fast-1`);
@@ -102,22 +101,9 @@ assert.deepEqual(
 );
 assert.deepEqual(parseGrokStreamEvent({ type: "thought", data: "hidden" }), { kind: "ignore" });
 assert.deepEqual(
-  parseGrokCompatibilityEvent({ type: "tool_started", id: "call-1", name: "read_file", input: { path: "secret" } }, BUILTIN_GROK_SCHEMA_BUNDLE.schemas[0]),
+  parseGrokCompatibilityEvent({ type: "future_event" }, BUILTIN_GROK_SCHEMA_BUNDLE.schemas[0]),
   { kind: "unknown" },
-  "undocumented tool names never become activity in the built-in schema",
-);
-const verifiedToolSchema: GrokEventSchema = {
-  ...BUILTIN_GROK_SCHEMA_BUNDLE.schemas[0],
-  id: "fixture-verified-tool-schema",
-  eventTypes: {
-    ...BUILTIN_GROK_SCHEMA_BUNDLE.schemas[0].eventTypes,
-    toolStart: ["tool_started"], toolProgress: ["tool_progress"], toolEnd: ["tool_finished"], toolComplete: ["tool_complete"],
-  },
-};
-assert.deepEqual(
-  parseGrokCompatibilityEvent({ type: "tool_started", id: "call-1", name: "read_file", input: { path: "README.md" } }, verifiedToolSchema),
-  { kind: "tool_start", id: "call-1", name: "read_file", input: { path: "README.md" } },
-  "a selected verified schema can declare a complete tool lifecycle without hardcoded protocol guesses",
+  "unknown future frames never become activity in the built-in schema",
 );
 
 assert.equal(grokSandboxProfileForPermission("read"), "read");

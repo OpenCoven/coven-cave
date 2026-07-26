@@ -2421,6 +2421,8 @@ export async function POST(req: Request) {
                 usage: parseStreamJsonUsage(event.usage),
                 costUsd: parseCostUsd(event.totalCostUsd),
               };
+              // Provider error frames are untrusted structured payloads; keep
+              // their values out of transcript diagnostics.
               recordStdoutErrorTail("Grok Build returned a structured error", true);
               return;
             case "tool_start": {

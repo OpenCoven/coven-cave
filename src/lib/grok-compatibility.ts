@@ -18,16 +18,69 @@ export type GrokRunCapabilities = {
   valueOptions: string[];
 };
 
+function optionStanza(help: string, option: string): string {
+  return help.match(new RegExp(`^\\s*(?:-[A-Za-z],?\\s+)?${option}\\b[^\\n]*(?:\\n(?!\\s*(?:-[A-Za-z],?\\s+)?--)[^\\n]*){0,2}`, "im"))?.[0] ?? "";
+}
+
+function optionTakesValue(help: string, option: string): boolean {
+  const stanza = optionStanza(help, option);
+  if (!stanza) return false;
+  const declaration = stanza.split(/\r?\n/, 1)[0].slice(stanza.indexOf(option) + option.length);
+  return /(?:^|\s)(?:<[^>]+>|\[[^\]]+\]|[A-Z][A-Z_-]*)(?:\s|$)/.test(declaration)
+    || /\[(?:string|number|boolean|array|count)\]/i.test(stanza);
+}
+
 export function grokRunCapabilitiesFromHelp(help: string, version: string | null = null): GrokRunCapabilities {
   const options = [...help.matchAll(/^\s*(--[a-z][a-z0-9-]*)\b/gim)].map((match) => match[1]);
   const unique = [...new Set(options)];
-  const valueOptions = unique.filter((option) => new RegExp(`${option.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s|=)+(?:<[^>]+>|\\[[^\\]]+\\]|[A-Z][A-Z_-]*)`, "i").test(help));
+  const valueOptions = unique.filter((option) => optionTakesValue(help, option));
   return {
     version,
-    streamingJson: /--output-format(?:\s|=)+(?:<[^>]+>|\[[^\]]+\]|[A-Z][A-Z_-]*)?[\s\S]{0,240}\bstreaming-json\b/i.test(help),
+    // The protocol must be documented in the output option's own stanza;
+    // a banner or another option mentioning JSON is not launch evidence.
+    streamingJson: unique.includes("--output-format")
+      && valueOptions.includes("--output-format")
+      && /\bstreaming-json\b/i.test(optionStanza(help, "--output-format")),
     options: unique,
     valueOptions,
   };
+}
+
+/** Help/version probes never receive API keys or other secret-bearing vars. */
+export function grokProbeEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const probeEnv = { ...env };
+  for (const key of Object.keys(probeEnv)) {
+    if (/(?:key|token|secret|password|credential|authorization|^xai_|^grok_.*(?:auth|api))/i.test(key)) delete probeEnv[key];
+  }
+  return probeEnv;
+}
+
+function terminateGrokProbeTree(child: ChildProcessWithoutNullStreams): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (grace) clearTimeout(grace);
+      resolve();
+    };
+    grace = setTimeout(finish, 1_000);
+    child.once("close", () => { clearTimeout(grace); finish(); });
+    try {
+      if (process.platform === "win32" && child.pid) {
+        const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+        killer.once("close", finish);
+        killer.once("error", () => { try { child.kill("SIGTERM"); } catch { /* best effort */ } });
+      } else if (child.pid) {
+        // Probes use their own process group on POSIX so a shim cannot leave
+        // a helper running after a capability timeout.
+        process.kill(-child.pid, "SIGTERM");
+      } else {
+        child.kill("SIGTERM");
+      }
+    } catch { try { child.kill("SIGTERM"); } catch { /* already exited */ } }
+  });
 }
 
 /** Bounded, credential-free local contract probe. It never invokes a run. */
@@ -40,12 +93,22 @@ export async function probeGrokRunCapabilities(
     let output = ""; let settled = false;
     const finish = (value: string | null) => { if (!settled) { settled = true; resolve(value); } };
     try {
-      const child = spawn(launch.command, [...launch.fixedArgs, ...args], { env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true }) as unknown as ChildProcessWithoutNullStreams;
-      const append = (chunk: Buffer) => { if (output.length < 64 * 1024) output += chunk.toString().slice(0, 64 * 1024 - output.length); };
+      const child = spawn(launch.command, [...launch.fixedArgs, ...args], {
+        env: grokProbeEnvironment(env),
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        detached: process.platform !== "win32",
+      }) as unknown as ChildProcessWithoutNullStreams;
+      let overflowed = false;
+      const append = (chunk: Buffer) => {
+        if (output.length >= 64 * 1024) { overflowed = true; return; }
+        output += chunk.toString().slice(0, 64 * 1024 - output.length);
+        if (output.length >= 64 * 1024) overflowed = true;
+      };
       child.stdout.on("data", append); child.stderr.on("data", append);
-      const timer = setTimeout(() => { try { child.kill("SIGTERM"); } catch { /* bounded best effort */ } finish(null); }, timeoutMs);
+      const timer = setTimeout(() => { void terminateGrokProbeTree(child).finally(() => finish(null)); }, timeoutMs);
       child.once("error", () => { clearTimeout(timer); finish(null); });
-      child.once("close", (code) => { clearTimeout(timer); finish(code === 0 ? output : null); });
+      child.once("close", (code) => { clearTimeout(timer); finish(code === 0 && !overflowed ? output : null); });
     } catch { finish(null); }
   });
   const [help, versionOutput] = await Promise.all([probe(["--help"]), probe(["--version"])]);
@@ -132,6 +195,9 @@ export type GrokParsedEvent =
 const MAX_BUNDLE_BYTES = 256 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
 const MAX_SCHEMAS = 32;
+const CACHE_LOCK_STALE_MS = 30_000;
+const CACHE_LOCK_WAIT_MS = 500;
+const CACHE_LOCK_POLL_MS = 20;
 const schemaQuarantine = new Map<string, string>();
 
 /** The only source-verified built-in Grok frame contract as of 2026-07-26. */
@@ -202,7 +268,11 @@ export function parseGrokCompatibilityEvent(raw: unknown, schema?: GrokEventSche
     return name === undefined ? { kind: "unknown" } : { kind: "tool_start", id, name, input: valueField(raw, fields.input) };
   }
   if ((schema.eventTypes.toolProgress ?? []).includes(type)) return { kind: "tool_progress", id, output: valueField(raw, fields.output) };
-  const isError = fields.errorStates.includes(stringField(raw, fields.state) ?? "") || valueField(raw, fields.error) === true;
+  const errorValue = valueField(raw, fields.error);
+  const isError = fields.errorStates.includes(stringField(raw, fields.state) ?? "")
+    || errorValue === true
+    || (typeof errorValue === "string" && errorValue.length > 0)
+    || (isRecord(errorValue) && Object.keys(errorValue).length > 0);
   if (schema.eventTypes.toolEnd.includes(type)) return { kind: "tool_end", id, output: valueField(raw, fields.output), isError };
   if (schema.eventTypes.toolComplete.includes(type)) {
     const name = stringField(raw, fields.name);
@@ -240,6 +310,11 @@ function validOptions(value: unknown): value is string[] {
 
 function validSchema(value: unknown): value is GrokEventSchema {
   if (!isRecord(value) || !validName(value.id) || !isRecord(value.requires) || value.requires.streamingJson !== true || !isRecord(value.eventTypes) || !isRecord(value.fields) || !isRecord(value.launch)) return false;
+  if (!Object.keys(value).every((key) => ["id", "priority", "requires", "eventTypes", "fields", "launch"].includes(key))) return false;
+  if (!Object.keys(value.requires).every((key) => key === "streamingJson" || key === "options")) return false;
+  if (!Object.keys(value.eventTypes).every((key) => ["ignored", "text", "end", "error", "toolStart", "toolProgress", "toolEnd", "toolComplete"].includes(key))) return false;
+  if (!Object.keys(value.fields).every((key) => ["type", "text", "sessionId", "message", "usage", "totalCostUsd", "id", "name", "input", "output", "state", "error", "terminalStates", "errorStates"].includes(key))) return false;
+  if (!Object.keys(value.launch).every((key) => key === "outputOption" || key === "outputValue")) return false;
   if (value.priority !== undefined && (typeof value.priority !== "number" || !Number.isSafeInteger(value.priority) || Math.abs(value.priority) > 1_000)) return false;
   if (value.requires.options !== undefined && !validOptions(value.requires.options)) return false;
   if (value.launch.outputOption !== "--output-format" || value.launch.outputValue !== "streaming-json") return false;
@@ -262,7 +337,7 @@ export function isGrokSchemaBundle(value: unknown, now = Date.now(), allowExpire
   if (issued === null || expires === null || issued > now || expires <= issued || (!allowExpired && expires <= now)) return false;
   if (value.keyId !== undefined && !validName(value.keyId)) return false;
   if (value.retiredSchemaIds !== undefined && (!validAliases(value.retiredSchemaIds, true) || !value.retiredSchemaIds.every((id) => BUILTIN_GROK_SCHEMA_BUNDLE.schemas.some((schema) => schema.id === id)))) return false;
-  if (value.signature !== undefined && (!isRecord(value.signature) || value.signature.algorithm !== "ed25519" || typeof value.signature.value !== "string")) return false;
+  if (value.signature !== undefined && (!isRecord(value.signature) || !Object.keys(value.signature).every((key) => key === "algorithm" || key === "value") || value.signature.algorithm !== "ed25519" || typeof value.signature.value !== "string")) return false;
   const ids = value.schemas.map((schema) => schema.id);
   return new Set(ids).size === ids.length;
 }
@@ -270,6 +345,7 @@ export function isGrokSchemaBundle(value: unknown, now = Date.now(), allowExpire
 export function verifyGrokSchemaBundle(value: unknown, publicKeys: string | GrokRegistryKeyring, now = Date.now()): value is GrokSchemaBundle {
   if (!isGrokSchemaBundle(value, now) || !value.signature) return false;
   const keys = typeof publicKeys === "string" ? { legacy: publicKeys } : publicKeys;
+  if (Object.keys(keys).length > 1 && value.keyId === undefined) return false;
   const candidates = Object.entries(keys).filter(([id, pem]) => validName(id) && typeof pem === "string" && (value.keyId === undefined || value.keyId === id));
   if (candidates.length === 0 || candidates.length > 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.signature.value)) return false;
   try {
@@ -284,7 +360,12 @@ export function verifyGrokSchemaBundle(value: unknown, publicKeys: string | Grok
 export function selectGrokSchema(schemas: GrokEventSchema[], capabilities: GrokRunCapabilities): GrokEventSchema | null {
   if (!capabilities.streamingJson) return null;
   const options = new Set(capabilities.options);
-  const matches = schemas.filter((schema) => schema.requires.options?.every((option) => options.has(option)) ?? true);
+  const valueOptions = new Set(capabilities.valueOptions);
+  const matches = schemas.filter((schema) =>
+    (schema.requires.options?.every((option) => options.has(option)) ?? true)
+    && options.has(schema.launch.outputOption)
+    && valueOptions.has(schema.launch.outputOption),
+  );
   if (!matches.length) return null;
   const specificity = Math.max(...matches.map((schema) => schema.requires.options?.length ?? 0));
   const preferred = matches.filter((schema) => (schema.requires.options?.length ?? 0) === specificity);
@@ -325,9 +406,39 @@ function defaultCachePath(): string {
 }
 
 function trustAnchorPath(file: string): string { return `${file}.anchor`; }
+function cacheLockPath(file: string): string { return `${file}.lock`; }
 
 function validTrustAnchor(value: unknown): value is TrustAnchor {
   return isRecord(value) && Object.keys(value).length === 2 && typeof value.sequence === "number" && Number.isSafeInteger(value.sequence) && value.sequence >= 1 && typeof value.payloadHash === "string" && /^[a-f0-9]{64}$/.test(value.payloadHash);
+}
+
+function isSafeRegistryUrl(value: string | undefined): value is string {
+  try {
+    const parsed = value ? new URL(value) : null;
+    return !!parsed && parsed.protocol === "https:" && !parsed.username && !parsed.password;
+  } catch { return false; }
+}
+
+async function readBoundedRegistryBody(response: Response): Promise<string> {
+  const declaredLength = response.headers.get("content-length");
+  if (declaredLength && (!/^\d+$/.test(declaredLength) || Number(declaredLength) > MAX_BUNDLE_BYTES)) throw new Error("oversized registry response");
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      total += part.value.byteLength;
+      if (total > MAX_BUNDLE_BYTES) throw new Error("oversized registry response");
+      chunks.push(part.value);
+    }
+  } finally { reader.releaseLock(); }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
 
 async function readTrustAnchor(file: string): Promise<TrustAnchor | null> {
@@ -348,24 +459,56 @@ async function readCache(file: string, keys: GrokRegistryKeyring, now: number, a
     const raw = await fs.readFile(file, "utf8");
     if (Buffer.byteLength(raw) > MAX_CACHE_BYTES) return null;
     const cached = JSON.parse(raw) as Cached;
-    return verifyGrokSchemaBundle(cached?.bundle, keys, now) && meetsTrustAnchor(cached.bundle, anchor) ? cached.bundle : null;
+    return isRecord(cached) && Object.keys(cached).length === 2 && Number.isSafeInteger(cached.checkedAt)
+      && verifyGrokSchemaBundle(cached.bundle, keys, now) && meetsTrustAnchor(cached.bundle, anchor)
+      ? cached.bundle
+      : null;
   } catch { return null; }
 }
 
-async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
+async function writeJsonAtomic(file: string, value: unknown): Promise<boolean> {
   const temporary = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   try {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(temporary, JSON.stringify(value), { mode: 0o600 });
     await fs.rename(temporary, file);
-  } catch { /* Cache is an optimization; a failed write never broadens parsing. */ }
+    return true;
+  } catch { return false; /* Cache is an optimization; a failed write never broadens parsing. */ }
 }
 
-async function writeCache(file: string, bundle: GrokSchemaBundle): Promise<void> {
+async function acquireCacheLock(file: string): Promise<(() => Promise<void>) | null> {
+  const lock = cacheLockPath(file);
+  const deadline = Date.now() + CACHE_LOCK_WAIT_MS;
+  while (Date.now() < deadline) {
+    try {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      const handle = await fs.open(lock, "wx", 0o600);
+      await handle.writeFile(`${process.pid}:${randomBytes(8).toString("hex")}`);
+      await handle.close();
+      return async () => { await fs.rm(lock, { force: true }); };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;
+      try {
+        const stat = await fs.stat(lock);
+        if (Date.now() - stat.mtimeMs > CACHE_LOCK_STALE_MS) await fs.rm(lock, { force: true });
+      } catch { /* another writer released or replaced the lock */ }
+      await new Promise((resolve) => setTimeout(resolve, CACHE_LOCK_POLL_MS));
+    }
+  }
+  return null;
+}
+
+/** Returns false when another process has already committed a newer anchor. */
+async function writeCache(file: string, bundle: GrokSchemaBundle): Promise<boolean> {
+  const release = await acquireCacheLock(file);
+  if (!release) return false;
+  try {
+    if (!meetsTrustAnchor(bundle, await readTrustAnchor(file))) return false;
   // Anchor first: an interruption can make the cache unavailable, never make
   // an older cache appear acceptable after a newer bundle was trusted.
-  await writeJsonAtomic(trustAnchorPath(file), { sequence: bundle.sequence, payloadHash: grokSchemaBundlePayloadHash(bundle) });
-  await writeJsonAtomic(file, { checkedAt: Date.now(), bundle });
+    if (!await writeJsonAtomic(trustAnchorPath(file), { sequence: bundle.sequence, payloadHash: grokSchemaBundlePayloadHash(bundle) })) return false;
+    return writeJsonAtomic(file, { checkedAt: Date.now(), bundle });
+  } finally { await release(); }
 }
 
 function trustedBundle(bundle: GrokSchemaBundle, checkpoint?: GrokRegistryCheckpoint): boolean {
@@ -385,12 +528,20 @@ export async function resolveGrokCompatibility(capabilities: GrokRunCapabilities
   if (cached && trustedBundle(cached, source.checkpoint)) { bundle = cached; bundleSource = "cache"; }
   if (source.url && Object.keys(keys).length) {
     try {
-      const response = await (source.fetch ?? fetch)(source.url, { signal: AbortSignal.timeout(5_000) });
-      const body = await response.text();
-      if (!response.ok || Buffer.byteLength(body) > MAX_BUNDLE_BYTES) throw new Error("untrusted registry response");
+      if (!isSafeRegistryUrl(source.url)) throw new Error("unsafe registry URL");
+      const response = await (source.fetch ?? fetch)(source.url, { signal: AbortSignal.timeout(5_000), credentials: "omit", redirect: "error" });
+      const body = await readBoundedRegistryBody(response);
+      if (!response.ok) throw new Error("untrusted registry response");
       const remote = JSON.parse(body);
       if (!verifyGrokSchemaBundle(remote, keys, now) || !trustedBundle(remote, source.checkpoint) || !meetsTrustAnchor(remote, anchor)) throw new Error("untrusted registry bundle");
-      bundle = remote; bundleSource = "remote"; await writeCache(cacheFile, remote);
+      if (await writeCache(cacheFile, remote)) {
+        bundle = remote; bundleSource = "remote";
+      } else {
+        const currentAnchor = await readTrustAnchor(cacheFile);
+        const currentCache = await readCache(cacheFile, keys, now, currentAnchor);
+        if (!currentCache || !trustedBundle(currentCache, source.checkpoint)) throw new Error("registry cache write rejected");
+        bundle = currentCache; bundleSource = "cache"; diagnostic = "schema-registry-refresh-rejected";
+      }
     } catch { diagnostic = "schema-registry-refresh-rejected"; }
   }
   const remoteById = new Map(bundle.schemas.map((schema) => [schema.id, schema]));
