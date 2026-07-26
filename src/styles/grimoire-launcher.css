@@ -51,19 +51,19 @@
   color: var(--text-primary);
 }
 
-/* The prototype's dashed "New stitch" chip — thread waiting to be sewn.
-   Control radius (not pill) so it rhymes with the adjacent Search documents
-   input; nowrap + flex:none keep the label on one line when the header band
-   gets cramped (cave-w3hu). */
+/* The prototype's dashed "New stitch" chip — thread waiting to be sewn. */
 .grimoire-newstitch {
   display: inline-flex;
-  flex: none;
   align-items: center;
   gap: var(--space-1);
+  flex: none;
   height: 26px;
   padding: 0 var(--space-3);
-  border-radius: var(--radius-control);
   white-space: nowrap;
+  /* Match the "Search documents…" input radius (--radius-control) rather than a
+     pill so the header actions read as one family and the label stays on a
+     single row when the bar is tight. */
+  border-radius: var(--radius-control);
   border: 1.5px dashed color-mix(in oklch, var(--accent-presence) 60%, transparent);
   background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
   font-size: var(--text-xs);

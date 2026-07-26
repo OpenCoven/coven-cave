@@ -44,12 +44,12 @@ const launcherCss = await readFile(
 );
 assert.match(
   launcherCss,
-  /\.grimoire-newstitch \{[^}]*flex: none;[^}]*border-radius: var\(--radius-control\);[^}]*white-space: nowrap;/,
+  /\.grimoire-newstitch \{[^}]*flex: none;[^}]*white-space: nowrap;[^}]*border-radius: var\(--radius-control\);/,
   "New stitch keeps control radius (matching the search input) and never wraps",
 );
 assert.match(
   view,
-  /flex-none[^"]*whitespace-nowrap[^"]*rounded-\[var\(--radius-control\)\][^>]*>\s*<Icon name="ph:plus"[\s\S]{0,80}Blank entry/,
+  /shrink-0[^"]*whitespace-nowrap[^"]*rounded-\[var\(--radius-control\)\][^>]*>\s*<Icon name="ph:plus"[\s\S]{0,80}Blank entry/,
   "Blank entry matches the search input's control radius and never wraps",
 );
 
