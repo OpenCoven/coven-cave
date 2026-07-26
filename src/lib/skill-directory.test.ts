@@ -10,7 +10,7 @@ import {
   stripFrontmatter,
   useCommand,
 } from "./skill-directory.ts";
-import type { SkillBrowserEntry } from "@/components/skill-browser";
+import type { SkillBrowserEntry } from "@/lib/skill-directory";
 
 // The helpers read a handful of identity fields off a directory entry; build
 // minimal fixtures rather than whole rows.
