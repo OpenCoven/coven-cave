@@ -240,6 +240,7 @@ const CHAT_DETACH_MAX_MS = Math.max(
 type LocalRuntimePlan = LocalRuntimeCapabilityPlan & {
   command: string;
   fixedArgs: string[];
+  requiredFiles?: string[];
   env: NodeJS.ProcessEnv;
   unresolvedWindowsShim?: boolean;
   powerShellHostedCommand?: string;
@@ -247,7 +248,9 @@ type LocalRuntimePlan = LocalRuntimeCapabilityPlan & {
 
 function createLocalRuntimePlan(input: {
   runner: DirectRunnerId;
-  launch: Pick<CovenLaunchCommand, "command" | "fixedArgs" | "unresolvedWindowsShim">;
+  launch: Pick<CovenLaunchCommand, "command" | "fixedArgs" | "unresolvedWindowsShim"> & {
+    requiredFiles?: string[];
+  };
   env: NodeJS.ProcessEnv;
   availability?: RuntimeAvailability;
   powerShellHostedCommand?: string;
@@ -256,6 +259,7 @@ function createLocalRuntimePlan(input: {
     runner: input.runner,
     command: input.launch.command,
     env: input.env,
+    requiredFiles: input.launch.requiredFiles,
     unresolvedWindowsShim: input.launch.unresolvedWindowsShim === true,
     powerShellHostedCommand: input.powerShellHostedCommand,
   });
@@ -263,6 +267,7 @@ function createLocalRuntimePlan(input: {
     runner: input.runner,
     command: input.launch.command,
     fixedArgs: input.launch.fixedArgs,
+    ...(input.launch.requiredFiles ? { requiredFiles: input.launch.requiredFiles } : {}),
     env: input.env,
     availability,
     ...(input.launch.unresolvedWindowsShim
@@ -3160,6 +3165,7 @@ export async function POST(req: Request) {
                         runner: localPlan.runner,
                         command: localPlan.command,
                         env: localPlan.env,
+                        requiredFiles: localPlan.requiredFiles,
                         unresolvedWindowsShim:
                           localPlan.unresolvedWindowsShim === true,
                         powerShellHostedCommand:

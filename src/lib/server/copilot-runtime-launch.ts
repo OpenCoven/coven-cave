@@ -19,6 +19,8 @@ export type CopilotRuntimeLaunch = {
   /** Exact command and fixed argv prefix selected by launcher resolution. */
   command: string;
   fixedArgs: string[];
+  /** Fixed argv artifacts required by the selected launch plan. */
+  requiredFiles: string[];
   /** Absolute deadline shared by env, launcher, and identity discovery. */
   deadline: number;
   availability: RuntimeAvailability;
@@ -60,11 +62,13 @@ function failedPlan(input: {
   reason: "timeout" | "failed";
   command?: string;
   fixedArgs?: string[];
+  requiredFiles?: string[];
 }): CopilotRuntimeLaunch {
   return {
     env: input.env,
     command: input.command ?? input.executable,
     fixedArgs: input.fixedArgs ?? [],
+    requiredFiles: input.requiredFiles ?? [],
     deadline: input.deadline,
     availability: copilotLaunchProbeFailureAvailability(input.reason),
     ...(input.reason === "timeout" ? { resolutionTimedOut: true as const } : {}),
@@ -144,6 +148,7 @@ export async function resolveCopilotRuntimeLaunch(
       reason: "timeout",
       command: launch.command,
       fixedArgs: launch.fixedArgs,
+      requiredFiles: launch.requiredFiles,
     });
   }
 
@@ -153,6 +158,7 @@ export async function resolveCopilotRuntimeLaunch(
     runner: "copilot",
     command: launch.command,
     env,
+    requiredFiles: launch.requiredFiles,
     unresolvedWindowsShim: launch.unresolvedWindowsShim === true,
     platform: options.platform,
   });
@@ -164,12 +170,14 @@ export async function resolveCopilotRuntimeLaunch(
       reason: "timeout",
       command: launch.command,
       fixedArgs: launch.fixedArgs,
+      requiredFiles: launch.requiredFiles,
     });
   }
   return {
     env,
     command: launch.command,
     fixedArgs: launch.fixedArgs,
+    requiredFiles: launch.requiredFiles,
     deadline: discoveryDeadline,
     availability,
     ...(launch.unresolvedWindowsShim

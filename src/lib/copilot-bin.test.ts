@@ -14,5 +14,10 @@ writeFileSync(shim, `@echo off\n"%~dp0\\node_modules\\@github\\copilot\\index.js
 const windowsShim = await resolveCopilotLaunchCommand(shim, { platform: "win32" });
 assert.equal(windowsShim.command, process.execPath, "a Windows npm shim runs through Node, never cmd.exe");
 assert.deepEqual(windowsShim.fixedArgs, [entry], "the npm shim entry point is kept separate from untrusted argv");
+assert.deepEqual(
+  windowsShim.requiredFiles,
+  [entry],
+  "the converted argv-list launch records its required entry artifact for preflight",
+);
 
 console.log("copilot-bin: ok");

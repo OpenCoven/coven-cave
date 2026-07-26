@@ -135,6 +135,33 @@ try {
     );
   }
 
+  // A direct Windows npm-shim plan is `node <entry.js>`: validating only the
+  // host must not mark a removed or unreadable fixed script as ready.
+  const requiredArtifactMissing = evaluateRuntimeAvailability({
+    runner: "copilot",
+    command: "node.exe",
+    requiredFiles: ["C:\\bin\\copilot-entry.js"],
+    env: { Path: "C:\\bin" },
+    platform: "win32",
+    statFile: (candidate) => candidate === "C:\\bin\\node.exe",
+  });
+  assert.equal(requiredArtifactMissing.state, "unlaunchable");
+  assert.doesNotMatch(
+    requiredArtifactMissing.state === "unlaunchable" ? requiredArtifactMissing.message : "",
+    /copilot-entry|C:\\bin/i,
+    "required-artifact diagnostics do not expose local path details",
+  );
+
+  const requiredArtifactReady = evaluateRuntimeAvailability({
+    runner: "copilot",
+    command: "node.exe",
+    requiredFiles: ["C:\\bin\\copilot-entry.js"],
+    env: { Path: "C:\\bin" },
+    platform: "win32",
+    statFile: (candidate) => candidate === "C:\\bin\\node.exe" || candidate === "C:\\bin\\copilot-entry.js",
+  });
+  assert.equal(requiredArtifactReady.state, "ready", "a complete direct launch plan is ready");
+
   // Verification matrix: binary absent from every discovery location →
   // missing, with per-runner install/PATH remediation.
   for (const runner of ["coven", "copilot", "grok", "hermes", "opencode"] as const) {
