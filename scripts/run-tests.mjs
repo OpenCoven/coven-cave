@@ -737,6 +737,7 @@ export const SUITES = {
     "src/lib/memory-source-context.test.ts",
     "src/lib/onboarding-familiars.test.ts",
     "src/lib/onboarding-gate.test.ts",
+    "src/lib/onboarding-prerequisites.test.ts",
     "src/lib/onboarding-install-queue.test.ts",
     "src/lib/onboarding-setup-failure.test.ts",
     "src/app/onboarding-install-route.test.ts",
