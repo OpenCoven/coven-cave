@@ -460,8 +460,8 @@ export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
                         </tr>
                       </thead>
                       <tbody>
-                        {autoresearchRows.map((row, index) => (
-                          <tr key={`${row.timestamp}:${row.iter}:${row.slug}:${index}`}>
+                        {autoresearchRows.map((row) => (
+                          <tr key={`${row.timestamp}:${row.iter}:${row.slug}`}>
                             <td className="research-library-autoloop__iter">{row.iter}</td>
                             <td>
                               <time dateTime={row.timestamp}>

@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  symlink,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -109,6 +116,53 @@ test("document reads are bounded to synthesis and staged-skill roots", async () 
     () => server.readAutoresearchDocument(outside, fx.home),
     /document path is not allowed/,
   );
+});
+
+test("fixed ledger, event, and index reads reject symlink escapes", async () => {
+  assert.ok(server);
+
+  const ledgerFx = await fixture();
+  const outsideLedger = path.join(ledgerFx.home, "outside-results.tsv");
+  await writeFile(
+    outsideLedger,
+    "2026-07-26T10:00:00Z\tsynthesis\t99\tescaped-ledger\t0\t30\t+30\tPROMOTE\tmain\tOutside\n",
+  );
+  const ledgerPath = path.join(ledgerFx.ledgerDir, "results.tsv");
+  await unlink(ledgerPath);
+  await symlink(outsideLedger, ledgerPath);
+  const escapedLedger = await server.loadAutoresearchSnapshot(ledgerFx.home);
+  assert.equal(escapedLedger.available, false);
+  assert.deepEqual(escapedLedger.rows, []);
+
+  const eventFx = await fixture();
+  const outsideEvent = path.join(eventFx.home, "outside-events.jsonl");
+  await writeFile(
+    outsideEvent,
+    `${JSON.stringify({
+      ts: "2026-07-26T10:01:00Z",
+      iter: 83,
+      slug: "verified-synthesis",
+      score: 28,
+      verdict: "PROMOTE",
+      synthesis: "synthesis/verified-synthesis-2026-07-26.md",
+      staged_skill: "skills/verified-skill/SKILL.md",
+    })}\n`,
+  );
+  await symlink(outsideEvent, path.join(eventFx.logsDir, "autoloop.jsonl"));
+  const escapedEvent = await server.loadAutoresearchSnapshot(eventFx.home);
+  assert.equal(escapedEvent.rows[0].stagedSkillPath, null);
+
+  const indexFx = await fixture();
+  const outsideIndex = path.join(indexFx.home, "outside-index.md");
+  await writeFile(
+    outsideIndex,
+    "| 2026-07-26 | [Verified](./verified-synthesis-2026-07-26.md) | synthesis | `verified-synthesis` |\n",
+  );
+  const indexPath = path.join(indexFx.synthesisDir, "INDEX.md");
+  await unlink(indexPath);
+  await symlink(outsideIndex, indexPath);
+  const escapedIndex = await server.loadAutoresearchSnapshot(indexFx.home);
+  assert.equal(escapedIndex.rows[0].synthesisPath, null);
 });
 
 test("file watching refreshes on ledger changes without a polling timer", async () => {

@@ -203,6 +203,8 @@ test("autoresearch iterations are a collapsed region above mission artifacts", (
   assert.match(tab, /row\.score === null \? "—" : `\$\{row\.score\}\/30`/);
   assert.match(tab, /data-verdict=\{row\.verdict\}/);
   assert.match(tab, /formatDate\(row\.timestamp, dateTimePrefs, \{ year: true \}\)/);
+  assert.match(tab, /key=\{`\$\{row\.timestamp\}:\$\{row\.iter\}:\$\{row\.slug\}`\}/);
+  assert.doesNotMatch(tab, /key=\{[^}]*index/);
 });
 
 test("autoresearch synthesis and staged skills open in an accessible Markdown reader", () => {

@@ -37,11 +37,20 @@ function autoresearchPaths(home: string): AutoresearchPaths {
   };
 }
 
-async function readBoundedIfPresent(filePath: string, maxBytes: number): Promise<string | null> {
+async function readBoundedWithinRoot(
+  filePath: string,
+  allowedRoot: string,
+  maxBytes: number,
+): Promise<string | null> {
   try {
-    const info = await stat(/* turbopackIgnore: true */ filePath);
+    const [realRoot, realTarget] = await Promise.all([
+      realpath(/* turbopackIgnore: true */ allowedRoot),
+      realpath(/* turbopackIgnore: true */ filePath),
+    ]);
+    if (!isWithinRoot(realTarget, realRoot)) return null;
+    const info = await stat(/* turbopackIgnore: true */ realTarget);
     if (!info.isFile() || info.size > maxBytes) return null;
-    return await readFile(/* turbopackIgnore: true */ filePath, "utf8");
+    return await readFile(/* turbopackIgnore: true */ realTarget, "utf8");
   } catch {
     return null;
   }
@@ -115,9 +124,21 @@ export async function loadAutoresearchSnapshot(
 ): Promise<AutoresearchSnapshot> {
   const paths = autoresearchPaths(home);
   const [ledgerRaw, eventRaw, indexRaw] = await Promise.all([
-    readBoundedIfPresent(paths.ledgerPath, MAX_LEDGER_BYTES),
-    readBoundedIfPresent(paths.eventPath, MAX_EVENT_BYTES),
-    readBoundedIfPresent(paths.synthesisIndexPath, MAX_INDEX_BYTES),
+    readBoundedWithinRoot(
+      paths.ledgerPath,
+      path.dirname(paths.ledgerPath),
+      MAX_LEDGER_BYTES,
+    ),
+    readBoundedWithinRoot(
+      paths.eventPath,
+      path.dirname(paths.eventPath),
+      MAX_EVENT_BYTES,
+    ),
+    readBoundedWithinRoot(
+      paths.synthesisIndexPath,
+      paths.synthesisRoot,
+      MAX_INDEX_BYTES,
+    ),
   ]);
   if (ledgerRaw === null) {
     return {
@@ -179,7 +200,11 @@ export async function readAutoresearchDocument(
     : await resolveAllowedDocument(requestedPath, paths.skillsRoot, paths);
   const resolved = synthesis ?? skill;
   if (!resolved) throw new Error("document path is not allowed");
-  const content = await readBoundedIfPresent(resolved, MAX_AUTORESEARCH_DOCUMENT_BYTES);
+  const content = await readBoundedWithinRoot(
+    resolved,
+    synthesis ? paths.synthesisRoot : paths.skillsRoot,
+    MAX_AUTORESEARCH_DOCUMENT_BYTES,
+  );
   if (content === null) throw new Error("document could not be read");
   return content;
 }
