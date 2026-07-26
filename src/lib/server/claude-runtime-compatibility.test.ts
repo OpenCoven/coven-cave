@@ -83,6 +83,21 @@ assert.deepEqual(
 );
 assert.match(claudeCompatibilityDiagnostic(helpProbeFailed) ?? "", /could not be verified/i);
 
+const removedStreamJson = await resolveInstalledClaudeCompatibility({
+  version: async () => "2.1.179 (Claude Code)",
+  help: async () => [
+    "The legacy stream-json protocol was removed.",
+    "  --output-format <format>  Output format: text or json",
+    "  --permission-mode <mode>  Permission mode",
+  ].join("\n"),
+  now: () => Date.parse("2026-07-24T00:00:00.000Z"),
+});
+assert.deepEqual(
+  removedStreamJson,
+  { kind: "fallback", reason: "missing-capability" },
+  "a stray stream-json mention outside the output-format option must not enable tool decoding",
+);
+
 await loadClaudeCompatibilityCache({ read: async () => "{not json" });
 let persisted: unknown = null;
 assert.equal(

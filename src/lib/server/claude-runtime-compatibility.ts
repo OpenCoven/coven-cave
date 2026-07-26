@@ -326,6 +326,16 @@ function runClaude(args: string[]): Promise<string | null> {
   });
 }
 
+function claudeAdvertisesStreamJson(help: string): boolean {
+  // Do not look for the two tokens anywhere in the help text: an unsupported
+  // CLI can mention a removed `stream-json` protocol in prose while separately
+  // offering an `--output-format` option that no longer accepts it. Restrict
+  // the match to the output-format option paragraph, which Claude's help keeps
+  // indented more narrowly than its wrapped description lines.
+  const outputFormatParagraph = /^(?: {0,8})(?:-\w,\s*)?--output-format\b[\s\S]*?(?=^(?: {0,8})(?:-\w,\s*)?--[a-z][\w-]*\b|$(?![\s\S]))/im.exec(help)?.[0];
+  return /\bstream-json\b/i.test(outputFormatParagraph ?? "");
+}
+
 /** Probe only documented local CLI metadata. Output is reduced to a version and
  * allowlisted capability names before it reaches compatibility selection. */
 export async function resolveInstalledClaudeCompatibility(
@@ -341,7 +351,7 @@ export async function resolveInstalledClaudeCompatibility(
   const version = versionOutput ? pickVersionLine(versionOutput) : null;
   const capabilities: RuntimeCapability[] = [];
   const help = helpOutput ?? "";
-  if (/--output-format[\s\S]*stream-json|stream-json[\s\S]*--output-format/i.test(help)) capabilities.push("stream-json");
+  if (claudeAdvertisesStreamJson(help)) capabilities.push("stream-json");
   // Profile selection proves the versioned message-envelope contract. The CLI
   // help has no independent documented tool-envelope capability, so do not
   // fabricate one from the generic stream-json flag.
