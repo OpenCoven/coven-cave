@@ -16,6 +16,7 @@ const routeSource = readFileSync(new URL("../app/api/vault/route.ts", import.met
 const githubPatRouteSource = readFileSync(new URL("../app/api/github/pat/route.ts", import.meta.url), "utf8");
 const panelSource = readFileSync(new URL("../components/vault-panel.tsx", import.meta.url), "utf8");
 const marketplaceConfigureSource = readFileSync(new URL("../components/marketplace/marketplace-configure.tsx", import.meta.url), "utf8");
+const themesSource = readFileSync(new URL("../styles/globals/themes.css", import.meta.url), "utf8");
 
 assert.match(vaultSource, /getLocalEncryptedSecret/, "vault resolver can load locally encrypted secrets");
 assert.match(vaultSource, /"encrypted"/, "vault statuses include encrypted local storage");
@@ -26,6 +27,26 @@ assert.match(githubPatRouteSource, /setLocalEncryptedSecret\(PAT_KEY, pat\)/, "G
 assert.doesNotMatch(githubPatRouteSource, /updates\[PAT_KEY\] = pat/, "GitHub PAT setup does not write tokens to .env.local");
 assert.match(panelSource, /Local encrypted/, "Vault panel exposes local encrypted storage as a first-class option");
 assert.match(panelSource, /type="password"/, "Vault panel uses a password input for raw local secrets");
+assert.match(
+  panelSource,
+  /unresolved:\s*\{[^}]*color:\s*"var\(--color-warning\)"[^}]*icon:\s*"ph:warning"/,
+  "Vault unresolved status uses the warning token",
+);
+assert.match(
+  panelSource,
+  /error:\s*\{[^}]*color:\s*"var\(--color-danger\)"/,
+  "Vault error status keeps the danger token",
+);
+assert.match(
+  themesSource,
+  /\.vault-row--warn\s*\{\s*border-color:\s*color-mix\(in oklch,\s*var\(--color-warning\)\s+35%,\s*transparent\);\s*\}/,
+  "Vault warning rows use the warning token",
+);
+assert.match(
+  themesSource,
+  /\.vault-row-error\s*\{[^}]*color:\s*var\(--color-danger\)/,
+  "Vault row errors keep the danger token",
+);
 assert.match(marketplaceConfigureSource, /storage: "encrypted", value: draft/, "Marketplace sensitive config can save raw values through the encrypted vault");
 
 assert.match(
