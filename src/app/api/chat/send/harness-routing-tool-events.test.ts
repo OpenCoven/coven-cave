@@ -555,6 +555,26 @@ assert.match(
   assert.equal(snapshot[0].input, '{"file_path":"/tmp/x"}', "late envelope input backfills the hook record");
 }
 
+// A delayed envelope with a different input is a distinct same-name call, not
+// a duplicate of an already completed hook. Preserve both records rather than
+// silently dropping the envelope's lifecycle.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  const first = tracker.hookStart("Read", '{"path":"first.md"}');
+  tracker.hookEnd("Read", "first contents", false);
+  const second = tracker.envelopeToolUse("toolu-second-late", "Read", '{"path":"second.md"}');
+  assert.ok(second, "a different-input delayed envelope must create its own tool record");
+  assert.equal(tracker.envelopeToolResult("toolu-second-late", "second contents", false)?.id, second.id);
+  assert.deepEqual(
+    tracker.snapshot().map(({ id, input, output }) => ({ id, input, output })),
+    [
+      { id: first.id, input: '{"path":"first.md"}', output: "first contents" },
+      { id: "toolu-second-late", input: '{"path":"second.md"}', output: "second contents" },
+    ],
+    "a completed same-name hook must not absorb a distinct delayed envelope",
+  );
+}
+
 // A late hook attached to an already settled envelope must not consume the
 // next concurrent call of the same name when its assistant frame arrives
 // before that hook's post line.

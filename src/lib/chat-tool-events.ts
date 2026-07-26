@@ -165,9 +165,13 @@ export class ToolCallTracker {
     this.settledHookCalls.set(call.name, queue);
   }
 
-  private takeSettledHookCall(name: string, unlinkedOnly = false): OpenCall | undefined {
+  private takeSettledHookCall(name: string, unlinkedOnly = false, input?: string): OpenCall | undefined {
     const queue = this.settledHookCalls.get(name);
-    const index = unlinkedOnly ? queue?.findIndex((call) => !call.envelopeId) ?? -1 : 0;
+    const index = unlinkedOnly
+      ? queue?.findIndex((call) =>
+          !call.envelopeId && (input === undefined || this.recorded.get(call.id)?.input === undefined || this.recorded.get(call.id)?.input === input),
+        ) ?? -1
+      : 0;
     const call = index >= 0 ? queue?.splice(index, 1)[0] : undefined;
     if (queue?.length === 0) this.settledHookCalls.delete(name);
     return call;
@@ -402,7 +406,7 @@ export class ToolCallTracker {
     // can flush a complete pre/post pair before the assistant tool_use frame.
     // The hook result/timing are already authoritative; attach the native id
     // and suppress its later tool_result instead of creating a second record.
-    const settledHookCall = this.takeSettledHookCall(name, true);
+    const settledHookCall = this.takeSettledHookCall(name, true, input);
     if (settledHookCall) {
       settledHookCall.envelopeId = id;
       this.settledEnvelopeIds.add(id);
