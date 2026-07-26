@@ -32,7 +32,7 @@ const shim = [
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === 'codex') {",
-  "  process.stderr.write('unsupported harness `codex`');",
+  "  process.stdout.write('unsupported harness `codex`');",
   "  process.exit(1);",
   "}",
   "process.exit(0);",
