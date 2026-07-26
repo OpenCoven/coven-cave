@@ -3126,6 +3126,10 @@ export async function POST(req: Request) {
 
           child.on("close", (code) => {
             const hermesProcessFailed = hermesDirect && code !== 0 && !runHandle.stopRequested;
+            captureHermesSessionFromStderr("", true);
+            if (!hermesProcessFailed && hermesDirect && !sessionId && pendingHermesSessionId) {
+              announceSession(pendingHermesSessionId);
+            }
             if (hermesProcessFailed) {
               // Discard buffered stdout. A non-zero Hermes process has no
               // verified assistant response, and its output may be an auth or
@@ -3143,10 +3147,6 @@ export async function POST(req: Request) {
               if (trailingOpenCodeText) handleStdoutChunk(trailingOpenCodeText);
               const trailingStdoutText = openCodeStdoutDecoder ? "" : stdoutDecoder.end();
               if (trailingStdoutText) handleStdoutChunk(trailingStdoutText);
-            }
-            captureHermesSessionFromStderr("", true);
-            if (!hermesProcessFailed && hermesDirect && !sessionId && pendingHermesSessionId) {
-              announceSession(pendingHermesSessionId);
             }
             // OpenCode normally emits a JSON error envelope, but older CLI
             // builds can exit non-zero with only stderr. Do not mistake that
