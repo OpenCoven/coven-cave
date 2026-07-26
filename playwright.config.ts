@@ -26,6 +26,7 @@ const E2E_PROJECTS_PATH = join(tmpdir(), `cave-e2e-projects-${E2E_RUN_ID}.json`)
 const E2E_QUEUE_PROJECT_PATH = join(tmpdir(), `cave-e2e-queue-project-${E2E_RUN_ID}.json`);
 const E2E_PROJECT_PERMISSIONS_PATH = join(tmpdir(), `cave-e2e-project-permissions-${E2E_RUN_ID}.json`);
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
+const SETUP_FOCUS_VISIBILITY_TEST = /keeps setup-header focus indicators visible inside the horizontal scroller$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 
 // Most existing specs exercise an already-onboarded workspace. Seed that
@@ -116,6 +117,13 @@ export default defineConfig({
       testMatch: /.*\.spec\.ts/,
       grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "setup-focus-webkit",
+      dependencies: ["preferences-iphone-13"],
+      testMatch: /onboarding-wizard\.spec\.ts/,
+      grep: SETUP_FOCUS_VISIBILITY_TEST,
+      use: { ...devices["Desktop Safari"] },
     },
     {
       name: "pixel-5",

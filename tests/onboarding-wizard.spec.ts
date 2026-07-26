@@ -141,6 +141,7 @@ test.describe("onboarding wizard", () => {
 
   test("keeps setup-header focus indicators visible inside the horizontal scroller", async ({
     page,
+    browserName,
   }) => {
     // Keep this assertion on the desktop-shell side of the responsive boundary;
     // the mobile project owns the narrower navigation layout.
@@ -151,9 +152,10 @@ test.describe("onboarding wizard", () => {
 
     const recheck = wizard(page).getByRole("button", { name: "Re-check" });
     // Enter through a real keyboard transition so Chromium/WebKit apply
-    // :focus-visible for the same modality this regression protects.
+    // :focus-visible for the same modality this regression protects. WebKit's
+    // macOS keyboard-access convention uses Option+Tab for control focus.
     await wizard(page).focus();
-    await page.keyboard.press("Tab");
+    await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
     await expect(recheck).toBeFocused();
 
     const focusStyle = await recheck.evaluate((button) => {
