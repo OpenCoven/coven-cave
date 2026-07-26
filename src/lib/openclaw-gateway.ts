@@ -155,6 +155,10 @@ export async function dispatchOpenClawGatewayTurn(args: {
   let helloResolve: (() => void) | undefined;
   let helloReject: ((error: Error) => void) | undefined;
   let connected = false;
+  // Each authenticated hello represents a new transport generation. A
+  // subscription completion from an older connection must never make the
+  // newest connection's stream trusted again.
+  let connectionGeneration = 0;
   let expectedRunId: string | undefined;
   let streamReady = false;
   let highestSequence = -1;
@@ -225,6 +229,15 @@ export async function dispatchOpenClawGatewayTurn(args: {
     settle("error", message);
   };
 
+  const subscribeToSession = async (generation: number): Promise<boolean> => {
+    if (generation === connectionGeneration) streamReady = false;
+    await client.request("sessions.messages.subscribe", { key: args.sessionKey, agentId: args.agentId });
+    if (generation !== connectionGeneration || settled) return false;
+    streamReady = true;
+    drainQueuedChatEvents();
+    return true;
+  };
+
   const hello = new Promise<void>((resolve, reject) => {
     helloResolve = resolve;
     helloReject = reject;
@@ -262,6 +275,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
       }
       if (!connected) {
         connected = true;
+        connectionGeneration += 1;
         helloResolve?.();
         return;
       }
@@ -270,14 +284,10 @@ export async function dispatchOpenClawGatewayTurn(args: {
       // that arrive during this window remain queued until that subscription
       // has succeeded, so a reconnect never turns an unverified stream into
       // accepted lifecycle state.
-      streamReady = false;
-      void client
-        .request("sessions.messages.subscribe", { key: args.sessionKey, agentId: args.agentId })
-        .then(() => {
-          streamReady = true;
-          drainQueuedChatEvents();
-        })
+      const generation = ++connectionGeneration;
+      void subscribeToSession(generation)
         .catch(() => {
+          if (generation !== connectionGeneration || settled) return;
           const message = "Gateway reconnect could not restore the session stream";
           args.onEvent({ kind: "error", message });
           settle("error", message);
@@ -308,8 +318,18 @@ export async function dispatchOpenClawGatewayTurn(args: {
   client.start();
   try {
     await withTimeout(hello, STARTUP_TIMEOUT_MS, "Gateway did not complete its authenticated hello");
-    await client.request("sessions.messages.subscribe", { key: args.sessionKey, agentId: args.agentId });
-    streamReady = true;
+    // A reconnect can arrive while the initial subscription is in flight.
+    // Retry until the completion belongs to the latest authenticated hello;
+    // an old socket's rejection is similarly irrelevant once a newer hello
+    // has already arrived.
+    for (;;) {
+      const generation = connectionGeneration;
+      try {
+        if (await subscribeToSession(generation)) break;
+      } catch (error) {
+        if (generation === connectionGeneration) throw error;
+      }
+    }
   } catch (error) {
     client.stop();
     return { kind: "unavailable", reason: error instanceof Error ? error.message : "Gateway is unavailable" };

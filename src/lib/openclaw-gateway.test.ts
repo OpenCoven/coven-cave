@@ -164,7 +164,8 @@ assert.deepEqual(
 // session subscription returns. The queued frame is accepted only after the
 // re-subscription succeeds.
 let reconnectOptions;
-let releaseResubscribe;
+let releaseFirstResubscribe;
+let releaseSecondResubscribe;
 let subscriptionCalls = 0;
 const reconnectEvents = [];
 const reconnectDispatch = await dispatchOpenClawGatewayTurn({
@@ -189,7 +190,8 @@ const reconnectDispatch = await dispatchOpenClawGatewayTurn({
           subscriptionCalls += 1;
           if (subscriptionCalls === 1) return { subscribed: true };
           return new Promise((resolve) => {
-            releaseResubscribe = () => resolve({ subscribed: true });
+            if (subscriptionCalls === 2) releaseFirstResubscribe = () => resolve({ subscribed: true });
+            else releaseSecondResubscribe = () => resolve({ subscribed: true });
           });
         }
         if (method === "chat.send") {
@@ -221,10 +223,15 @@ function helloOk() {
 
 assert.equal(reconnectDispatch.kind, "accepted");
 reconnectOptions.onHelloOk?.(helloOk());
+reconnectOptions.onHelloOk?.(helloOk());
 reconnectOptions.onEvent?.({ type: "event", event: "chat", payload: { ...delta, seq: 0 } });
 await Promise.resolve();
 assert.deepEqual(reconnectEvents, [], "a pre-subscription reconnect frame is not projected");
-releaseResubscribe();
+releaseFirstResubscribe();
+await Promise.resolve();
+await Promise.resolve();
+assert.deepEqual(reconnectEvents, [], "a stale reconnect subscription cannot reopen a newer connection's stream");
+releaseSecondResubscribe();
 await Promise.resolve();
 await Promise.resolve();
 assert.deepEqual(

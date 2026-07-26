@@ -52,6 +52,16 @@ assert.match(
   /gatewayDispatch\.kind === "indeterminate"[\s\S]*?openclaw_gateway_indeterminate[\s\S]*?return;/,
   "an ambiguous Gateway acknowledgement produces a terminal error instead of a duplicate CLI turn",
 );
+assert.match(
+  chatRoute,
+  /if \(event\.replace\) \{[\s\S]*?gatewayAssistantText = event\.text;[\s\S]*?kind: "assistant_replace"/,
+  "a published Gateway replacement delta corrects both the live stream and persisted transcript",
+);
+assert.match(
+  chatRoute,
+  /event\.kind === "final" && event\.text[\s\S]*?gatewayAssistantText !== event\.text[\s\S]*?kind: "assistant_replace"/,
+  "the terminal Gateway message reconciles divergent streamed text for connected clients",
+);
 // ── Tool-event fidelity (CHAT-D4-03 + CHAT-D4-04) ──────────────────────────
 // Source pins: the route must route BOTH tool-event sources through the
 // shared ToolCallTracker — hook lines and stream-json envelope blocks — and

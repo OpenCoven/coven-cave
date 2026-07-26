@@ -667,15 +667,21 @@ function openClawChatResponse(args: {
             return;
           }
           if (event.kind === "delta") {
-            // The published v4 delta schema is append-oriented. A future
-            // replace-capable UI must consume `replace` explicitly; we keep
-            // the complete terminal message authoritative for persistence.
+            if (event.replace) {
+              gatewayAssistantText = event.text;
+              gatewayAssistantTextEmitted = true;
+              push({ kind: "assistant_replace", text: event.text });
+              return;
+            }
             gatewayAssistantText += event.text;
             gatewayAssistantTextEmitted = true;
             push({ kind: "assistant_chunk", text: event.text });
             return;
           }
           if (event.kind === "final" && event.text) {
+            if (gatewayAssistantTextEmitted && gatewayAssistantText !== event.text) {
+              push({ kind: "assistant_replace", text: event.text });
+            }
             gatewayAssistantText = event.text;
           }
           if (event.kind === "error") {
