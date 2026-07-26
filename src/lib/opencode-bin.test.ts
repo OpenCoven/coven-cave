@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { openCodeCommand, openCodeLaunch, openCodeNeedsTmpRuntimeDir } from "./opencode-bin.ts";
+import { openCodeCommand, openCodeLaunch, openCodeNeedsTmpRuntimeDir, preferOpenCodeLaunchPath } from "./opencode-bin.ts";
 
 assert.equal(openCodeCommand(), "opencode", "OpenCode uses the same executable name on all desktop platforms");
 
@@ -25,5 +25,17 @@ assert.equal(openCodeNeedsTmpRuntimeDir("linux", { XDG_RUNTIME_DIR: "/run/user/1
 assert.equal(openCodeNeedsTmpRuntimeDir("linux", { WSL_DISTRO_NAME: "Ubuntu", XDG_RUNTIME_DIR: "/run/user/1000" }), true, "WSL replaces a stale inherited runtime directory");
 assert.equal(openCodeNeedsTmpRuntimeDir("darwin", {}), true, "headless macOS receives OpenCode's /tmp fallback");
 assert.equal(openCodeNeedsTmpRuntimeDir("darwin", { XDG_RUNTIME_DIR: "/var/folders/runtime" }), false, "native macOS preserves a valid runtime directory");
+
+
+assert.equal(
+  preferOpenCodeLaunchPath("C:\\older;C:\\fallback", "C:\\fresh;C:\\older", "win32"),
+  "C:\\fresh;C:\\older;C:\\fallback",
+  "OpenCode keeps the user launch PATH ahead of discovered harness fallbacks",
+);
+assert.equal(
+  preferOpenCodeLaunchPath("/fallback:/usr/bin", "/fresh:/usr/bin", "linux"),
+  "/fresh:/usr/bin:/fallback",
+  "POSIX launch entries retain their order while scoped fallbacks remain available",
+);
 
 console.log("opencode-bin.test.ts: ok");

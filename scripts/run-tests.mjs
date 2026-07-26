@@ -102,6 +102,7 @@ export const SUITES = {
     "scripts/codemods/tokenize-tsx-design.test.mjs",
     "scripts/eslint/design-system-plugin.test.mjs",
     "scripts/bundle-budget.test.mjs",
+    "scripts/check-opencode-registry-release.test.mjs",
     "src/components/open-coven-tools-update.test.ts",
     "src/lib/opencoven-tools-state.test.ts",
     "src/lib/opencoven-install-job-observer.test.ts",
@@ -475,6 +476,8 @@ export const SUITES = {
     "src/lib/slash-model.test.ts",
     "src/lib/opencode-models.test.ts",
     "src/lib/opencode-bin.test.ts",
+    "src/lib/chat-tool-events.test.ts",
+    "src/lib/opencode-compatibility.test.ts",
     "src/lib/opencode-stream.test.ts",
     "src/lib/use-runtime-model-options.test.ts",
     "src/lib/slash-skill.test.ts",
@@ -1026,6 +1029,8 @@ export const SUITES = {
     "src/app/api/chat/send/harness-routing-model-capabilities.test.ts",
     "src/app/api/chat/send/harness-routing-copilot-jsonl.test.ts",
     "src/app/api/chat/send/harness-routing-opencode.test.ts",
+    "src/app/api/chat/send/chat-send-capabilities.test.ts",
+    "src/app/api/chat/send/route-opencode.integration.test.ts",
     "src/app/api/chat/send/offline-queue.test.ts",
     "src/app/api/chat/send/first-turn-stub.test.ts",
     "src/app/api/onboarding/status/route.test.ts",
@@ -1288,6 +1293,11 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/opencode-compatibility.test.ts",
+  "src/lib/opencode-stream.test.ts",
+  "src/lib/cave-conversations.test.ts",
+  "src/app/api/chat/send/chat-send-capabilities.test.ts",
+  "src/app/api/chat/send/route-opencode.integration.test.ts",
   "src/lib/familiar-workspace-sessions.test.ts",
   "src/lib/use-projects-scope-transition.test.ts",
   "scripts/cave-home-migration-windows.test.ts",

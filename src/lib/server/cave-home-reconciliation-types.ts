@@ -134,6 +134,8 @@ export type ReconciliationOptions = {
   lockFenceRename?: typeof rename;
   /** Test-only acquisition deadline override. */
   lockTimeoutMs?: number;
+  /** Test-only monotonic clock override for deterministic lock retries. */
+  lockNow?: () => number;
   /** Test-only lock diagnostic observer. */
   lockDiagnostic?: (diagnostic: ReconciliationLockDiagnostic) => void;
   /** Test-only hook after an exclusive takeover claim is published. */
