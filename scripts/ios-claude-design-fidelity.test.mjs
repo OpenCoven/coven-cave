@@ -94,6 +94,11 @@ assert.match(
 );
 assert.match(
   appModel,
+  /var mostRecentThread: ChatThread\? \{[\s\S]{0,180}filter \{ !\$0\.archived \}[\s\S]{0,180}max \{ \$0\.updatedAt < \$1\.updatedAt \}/,
+  "the default chat is the newest active thread, independent of pin order",
+);
+assert.match(
+  appModel,
   /if let threadId = ChatNotifications\.threadId\(fromDeepLink: url\) \{[\s\S]{0,140}launchThreadId = threadId[\s\S]{0,140}selectedTab = \.chats/,
   "runtime chat links retain their thread id until hydration",
 );
@@ -109,8 +114,18 @@ assert.doesNotMatch(
 );
 assert.match(
   home,
-  /onChange\(of: app\.threads\.map\(\\\.id\)\)[\s\S]{0,120}consumeLaunchThreadIntent\(\)/,
-  "Chats retries a pending launch intent when hydration adds threads",
+  /\.onAppear \{\s*consumeLaunchThreadIntent\(\)\s*consumeGlobalRequests\(\)\s*selectMostRecentThreadIfNeeded\(\)\s*\}/,
+  "Chats selects the most recent thread after honoring explicit launch requests",
+);
+assert.match(
+  home,
+  /onChange\(of: app\.threads\.map\(\\\.id\)\)[\s\S]{0,160}consumeLaunchThreadIntent\(\)[\s\S]{0,160}selectMostRecentThreadIfNeeded\(\)/,
+  "Chats retries explicit and default selection when hydration adds threads",
+);
+assert.match(
+  home,
+  /private func selectMostRecentThreadIfNeeded\(\) \{[\s\S]{0,500}guard selection == nil,[\s\S]{0,500}!showNewChat,[\s\S]{0,500}app\.threadToOpen == nil,[\s\S]{0,500}app\.launchThreadId == nil,[\s\S]{0,500}!app\.newChatRequested,[\s\S]{0,500}let thread = app\.mostRecentThread[\s\S]{0,180}open\(\.thread\(thread\)\)/,
+  "the default never overrides an explicit destination or New Chat intent",
 );
 
 // Authored navigation and discovery surfaces.
@@ -144,7 +159,7 @@ assert.match(glass, /UINavigationBarAppearance\.glass/,
 
 // Quiet Portal keeps the cold connection state honest, themed, deterministic,
 // and accessible without inventing stages the runtime cannot prove.
-assert.match(root, /Text\("Opening the Cave"\)/, "connecting state uses the approved headline");
+assert.match(root, /Text\("Entering the Cave"\)/, "connecting state uses the approved headline");
 assert.match(root, /Text\("Connecting to your desktop"\)/, "connecting state names the live operation");
 assert.match(root, /if let host = app\.connection\?\.host/, "connecting state renders the real saved host");
 assert.match(

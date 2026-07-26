@@ -38,6 +38,11 @@ try {
       capturedResolveOptions = options;
       return { command: process.execPath, fixedArgs: [] };
     },
+    evaluateAvailability: (probe: { command: string }) => ({
+      state: "ready",
+      runner: "copilot",
+      resolvedPath: probe.command,
+    }),
   });
   assert.equal(capturedDeadline, 3_500, "environment discovery receives one absolute deadline");
   assert.equal(ready.deadline, capturedDeadline, "the launch plan owns that same absolute deadline");
@@ -124,6 +129,12 @@ try {
     now: () => 1_000,
     spawnEnv: () => ({ PATH: "" }),
     resolveLaunchCommand: async (executable: string) => ({ command: executable, fixedArgs: [] }),
+    evaluateAvailability: () => ({
+      state: "unlaunchable",
+      runner: "copilot",
+      code: "runtime_unlaunchable",
+      message: "fixture",
+    }),
   });
   assert.equal(
     unlaunchable.availability.state,
@@ -168,6 +179,11 @@ try {
     windowsPlan.fixedArgs,
     [shimEntry],
     "a Windows npm shim keeps the exact transformed fixed args",
+  );
+  assert.deepEqual(
+    windowsPlan.requiredFiles,
+    [shimEntry],
+    "a converted Windows npm shim preflights its fixed JavaScript entry",
   );
   assert.equal(
     evaluatedWindowsCommand,

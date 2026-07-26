@@ -81,5 +81,15 @@ assert.match(
   /const grantedVaultTokenKeys = new Set(?:<string>)?\([\s\S]*GITHUB_HARNESS_TOKEN_ENV_KEYS\.filter\([\s\S]*isVaultKeyGrantedTo\(map\[key\]\)[\s\S]*!grantedVaultTokenKeys\.has\(key\)/,
   "OpenClaw must retain a shared Vault-managed GitHub credential through its final secret scrub",
 );
+assert.match(
+  src,
+  /const GATEWAY_ENV_PREFIX = "OPENCLAW_GATEWAY_"/,
+  "the whole Gateway namespace has an explicit fallback-child denylist",
+);
+assert.match(
+  src,
+  /const mustNotReachFallback = key\.startsWith\(GATEWAY_ENV_PREFIX\);[\s\S]*if \([\s\S]*mustNotReachFallback \|\|[\s\S]*genericSecret && !allowed\.has\(key\)/,
+  "Gateway settings cannot be reintroduced by the generic OpenClaw credential allow-list",
+);
 
 console.log("openclaw-bin.test.ts: ok");

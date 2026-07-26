@@ -29,6 +29,7 @@ import {
   type PreparationProgress,
 } from "@/lib/native-update-preparation";
 import {
+  NativeUpdateCheckSequence,
   adoptNativeUpdateResult,
   nativeUpdateCoordinator,
 } from "@/lib/native-update-coordinator";
@@ -510,7 +511,7 @@ type LastKnownUpdate =
   | { kind: "available"; version: string; checkedAt: string };
 
 export type UpdateSettingsActionHandle = {
-  check: () => void;
+  check: () => boolean;
 };
 
 /**
@@ -519,8 +520,10 @@ export type UpdateSettingsActionHandle = {
  */
 export function UpdateSettingsRow({
   actionRef,
+  onCheckAvailabilityChange,
 }: {
   actionRef?: Ref<UpdateSettingsActionHandle>;
+  onCheckAvailabilityChange?: (available: boolean) => void;
 } = {}) {
   const [state, setState] = useState<RowState>({ phase: "checking" });
   const mounted = useRef(true);
@@ -528,38 +531,84 @@ export function UpdateSettingsRow({
   const preparedUpdate = useRef<NativeUpdateHandle | null>(null);
   const owner = useRef(Symbol("update-settings")).current;
   const lastKnown = useRef<LastKnownUpdate | null>(null);
-  const checkSequence = useRef(0);
+  const checkSequence = useRef(new NativeUpdateCheckSequence()).current;
+  const installInFlight = useRef(false);
 
   const check = useCallback(() => {
-    const sequence = ++checkSequence.current;
+    if (
+      checkSequence.inFlight ||
+      activeCancellation.current ||
+      preparedUpdate.current ||
+      installInFlight.current
+    )
+      return false;
+    const sequence = checkSequence.begin();
     setState({ phase: "checking" });
-    void resolveUpdate(owner).then((r) => {
-      if (sequence !== checkSequence.current) return;
-      if (!mounted.current) {
-        if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
-        return;
-      }
-      if (r.kind === "current") {
-        lastKnown.current = { kind: "current", checkedAt: r.checkedAt };
-        setState({ phase: "current", checkedAt: r.checkedAt, source: r.source });
-      } else if (r.kind === "unavailable") {
-        setState({ phase: "unavailable", message: r.message, stale: lastKnown.current });
-      } else if (r.kind === "native-unavailable") {
-        lastKnown.current = { kind: "available", version: r.version, checkedAt: new Date().toISOString() };
-        setState({ phase: "native-unavailable", r });
-      } else {
-        lastKnown.current = { kind: "available", version: r.version, checkedAt: new Date().toISOString() };
-        setState({ phase: "available", r });
-      }
-    });
-  }, []);
+    void resolveUpdate(owner)
+      .then((r) => {
+        const current = checkSequence.settle(sequence);
+        if (!mounted.current) {
+          if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
+          return;
+        }
+        if (!current) return;
+        if (r.kind === "current") {
+          lastKnown.current = { kind: "current", checkedAt: r.checkedAt };
+          setState({
+            phase: "current",
+            checkedAt: r.checkedAt,
+            source: r.source,
+          });
+        } else if (r.kind === "unavailable") {
+          setState({
+            phase: "unavailable",
+            message: r.message,
+            stale: lastKnown.current,
+          });
+        } else if (r.kind === "native-unavailable") {
+          lastKnown.current = {
+            kind: "available",
+            version: r.version,
+            checkedAt: new Date().toISOString(),
+          };
+          setState({ phase: "native-unavailable", r });
+        } else {
+          lastKnown.current = {
+            kind: "available",
+            version: r.version,
+            checkedAt: new Date().toISOString(),
+          };
+          setState({ phase: "available", r });
+        }
+      })
+      .catch((error) => {
+        if (!checkSequence.settle(sequence) || !mounted.current) return;
+        setState({
+          phase: "unavailable",
+          message: errorMessage(error, "Update check failed"),
+          stale: lastKnown.current,
+        });
+      });
+    return true;
+  }, [checkSequence, owner]);
 
   useImperativeHandle(actionRef, () => ({ check }), [check]);
+
+  useEffect(() => {
+    onCheckAvailabilityChange?.(
+      state.phase !== "checking" &&
+        state.phase !== "preparing" &&
+        state.phase !== "cancelling" &&
+        state.phase !== "prepared" &&
+        state.phase !== "installing",
+    );
+  }, [onCheckAvailabilityChange, state.phase]);
 
   useEffect(() => {
     mounted.current = true;
     const unsubscribe = nativeUpdateCoordinator.subscribe((snapshot) => {
       if (!mounted.current || activeCancellation.current || preparedUpdate.current) return;
+      checkSequence.supersede();
       if (snapshot.update) {
         lastKnown.current = {
           kind: "available",
@@ -588,7 +637,7 @@ export function UpdateSettingsRow({
         void nativeUpdateCoordinator.release(owner);
       }
     };
-  }, [check]);
+  }, [check, checkSequence, owner]);
 
   const prepare = (update: NativeUpdateHandle, version: string) => {
     if (activeCancellation.current || preparedUpdate.current) return;
@@ -646,8 +695,10 @@ export function UpdateSettingsRow({
   const install = (update: NativeUpdateHandle, version: string) => {
     if (preparedUpdate.current !== update) return;
     preparedUpdate.current = null;
+    installInFlight.current = true;
     setState({ phase: "installing", version });
     void installPreparedUpdate(update).catch(async (err) => {
+      installInFlight.current = false;
       await nativeUpdateCoordinator.finishAction(owner);
       await nativeUpdateCoordinator.invalidate(update);
       if (mounted.current) {
@@ -827,7 +878,9 @@ export function UpdateSettingsRow({
   return (
     <div className="settings-about-update-row flex items-center justify-between gap-4 px-4 py-3">
       <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">Updates</span>
-      <div className="flex items-center gap-2">{control}</div>
+      <div className="settings-about-update-actions flex items-center gap-2">
+        {control}
+      </div>
     </div>
   );
 }

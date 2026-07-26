@@ -26,7 +26,7 @@ try {
   assert.deepEqual(
     localRuntimeLaunchError("grok", "ENOENT"),
     {
-      code: "ENOENT",
+      code: "runtime_missing",
       message: missingRunnerMessage("grok"),
     },
     "a post-spawn missing-interpreter race retains the missing-runner contract",
@@ -44,38 +44,30 @@ try {
   const emptyDir = path.join(scratch, "empty");
   mkdirSync(binDir);
   mkdirSync(emptyDir);
-  const executable = path.join(binDir, "grok");
+  const nativePlatform = process.platform;
+  const nativeGrok = nativePlatform === "win32" ? "grok.exe" : "grok";
+  const executable = path.join(binDir, nativeGrok);
   writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   chmodSync(executable, 0o755);
-  // The following probes intentionally simulate Linux semantics. Native
-  // Windows paths contain `:`, so they cannot be used as colon-delimited
-  // Linux PATH entries when this suite runs on Windows.
-  const simulatedBinDir = process.platform === "win32" ? "/virtual/runtime/bin" : binDir;
-  const simulatedEmptyDir = process.platform === "win32" ? "/virtual/runtime/empty" : emptyDir;
-  const simulatedExecutable = process.platform === "win32" ? `${simulatedBinDir}/grok` : executable;
-  const simulatedStats = (candidate: string) => candidate === simulatedExecutable;
-
   // Verification matrix: binary resolves in the spawn env → ready.
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
-    command: "grok",
-    env: { PATH: `${simulatedEmptyDir}:${simulatedBinDir}` },
-    platform: "linux",
-    ...(process.platform === "win32" ? { statFile: simulatedStats } : {}),
+    command: nativeGrok,
+    env: { PATH: [emptyDir, binDir].join(path.delimiter) },
+    platform: nativePlatform,
   });
   assert.equal(ready.state, "ready", "a bare command on the spawn PATH is ready");
-  assert.equal(
-    ready.state === "ready" && ready.resolvedPath,
-    simulatedExecutable,
-    "ready reports where the exact spawn command resolved",
+  assert.match(
+    String(ready.state === "ready" && ready.resolvedPath),
+    /(?:^|[\\/])grok(?:\.exe)?$/,
+    "ready reports the exact executable name selected from the spawn PATH",
   );
 
   const absoluteReady = evaluateRuntimeAvailability({
     runner: "coven",
-    command: simulatedExecutable,
+    command: executable,
     env: { PATH: "" },
-    platform: "linux",
-    ...(process.platform === "win32" ? { statFile: simulatedStats } : {}),
+    platform: process.platform,
   });
   assert.equal(
     absoluteReady.state,
@@ -83,7 +75,7 @@ try {
     "a mode-0755 regular file is launchable on POSIX",
   );
 
-  if (process.platform !== "win32") {
+  if (nativePlatform !== "win32") {
     const directoryCandidate = path.join(binDir, "grok-directory");
     mkdirSync(directoryCandidate);
     const directoryResult = evaluateRuntimeAvailability({
@@ -141,19 +133,61 @@ try {
     );
     assert.equal(
       laterExecutableWins.state === "ready" && laterExecutableWins.resolvedPath,
-      executable,
+      path.posix.join(binDir, "grok"),
       "PATH resolution reports the exact later executable that won",
     );
   }
 
+  // A direct Windows npm-shim plan is `node <entry.js>`: validating only the
+  // host must not mark a removed or unreadable fixed script as ready.
+  const requiredArtifactMissing = evaluateRuntimeAvailability({
+    runner: "copilot",
+    command: "node.exe",
+    requiredFiles: ["C:\\bin\\copilot-entry.js"],
+    env: { Path: "C:\\bin" },
+    platform: "win32",
+    statFile: (candidate) => candidate === "C:\\bin\\node.exe",
+  });
+  assert.equal(requiredArtifactMissing.state, "unlaunchable");
+  assert.doesNotMatch(
+    requiredArtifactMissing.state === "unlaunchable" ? requiredArtifactMissing.message : "",
+    /copilot-entry|C:\\bin/i,
+    "required-artifact diagnostics do not expose local path details",
+  );
+
+  const requiredArtifactReady = evaluateRuntimeAvailability({
+    runner: "copilot",
+    command: "node.exe",
+    requiredFiles: ["C:\\bin\\copilot-entry.js"],
+    env: { Path: "C:\\bin" },
+    platform: "win32",
+    statFile: (candidate) => candidate === "C:\\bin\\node.exe" || candidate === "C:\\bin\\copilot-entry.js",
+  });
+  assert.equal(requiredArtifactReady.state, "ready", "a complete direct launch plan is ready");
+
+  const requiredArtifactUnreadable = evaluateRuntimeAvailability({
+    runner: "copilot",
+    command: "node.exe",
+    requiredFiles: ["C:\\bin\\copilot-entry.js"],
+    env: { Path: "C:\\bin" },
+    platform: "win32",
+    statFile: () => true,
+    readableFile: () => false,
+  });
+  assert.equal(
+    requiredArtifactUnreadable.state,
+    "unlaunchable",
+    "an unreadable fixed shim entry is not safe to launch through Node",
+  );
+
   // Verification matrix: binary absent from every discovery location →
   // missing, with per-runner install/PATH remediation.
-  for (const runner of ["coven", "copilot", "grok", "hermes", "opencode"] as const) {
+  for (const runner of ["coven", "codex", "copilot", "grok", "hermes", "opencode"] as const) {
     const missing = evaluateRuntimeAvailability({
       runner,
       command: runner === "coven" ? "coven" : runner,
       env: { PATH: emptyDir },
-      platform: "linux",
+      platform: nativePlatform,
     });
     assert.equal(missing.state, "missing", `${runner} nowhere on PATH is missing`);
     assert.equal(
@@ -185,7 +219,7 @@ try {
     runner: "hermes",
     command: "hermes",
     env: {},
-    platform: "linux",
+    platform: nativePlatform,
   });
   assert.equal(emptyPath.state, "missing", "an env without PATH resolves nothing");
 

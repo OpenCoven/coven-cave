@@ -233,7 +233,7 @@ const contracts: RouteContract[] = [
   { route: "/threads/[id]/audit", methods: ["GET"], kind: "json" },
   { route: "/threads/[id]/strands", methods: ["GET"], kind: "json" },
   { route: "/travel/client", methods: ["GET", "PATCH"], kind: "json", readsJson: true },
-  { route: "/vault", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
+  { route: "/vault", methods: ["GET", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/voice/elevenlabs/catalog", methods: ["GET"], kind: "json" },
   { route: "/voice/elevenlabs/tts", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/voice/engines", methods: ["GET"], kind: "json" },
@@ -433,8 +433,8 @@ for (const contract of contracts) {
   const runRegistrations = [...sendSource.matchAll(/= registerChatRun\(/g)];
   assert.equal(
     runRegistrations.length,
-    2,
-    "/chat/send: both adapter paths must register with the stop registry",
+    3,
+    "/chat/send: all three dispatch paths must register with the stop registry",
   );
   assert.match(
     sendSource,
@@ -462,7 +462,7 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /launchFailure \?\?= \{[\s\S]{0,180}?message: launchError,[\s\S]{0,400}?pushProgress\([\s\S]{0,220}?launchError,[\s\S]{0,300}?code: "ENOENT",\s*message: launchError/,
+    /const reportLaunchFailure = \(err: NodeJS\.ErrnoException\) => \{[\s\S]{0,500}?launchFailure \?\?= \{[\s\S]{0,180}?message: launchError,[\s\S]{0,400}?pushProgress\([\s\S]{0,220}?launchError,[\s\S]{0,300}?code: localLaunchError\.code/,
     "/chat/send: launch state, progress, and the post-spawn ENOENT race event must reuse one normalized message",
   );
   assert.match(
@@ -485,8 +485,8 @@ for (const contract of contracts) {
   ];
   assert.equal(
     cancelledFlags.length,
-    2,
-    "/chat/send: both adapter paths must persist cancelled: true on the assistant turn",
+    4,
+    "/chat/send: every adapter path must mark both its assistant turn and terminal event as cancelled",
   );
   assert.match(
     sendSource,

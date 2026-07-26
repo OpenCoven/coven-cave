@@ -19,7 +19,7 @@ import { harnessSpawnEnv } from "./harness-spawn-env.ts";
  * real output.
  */
 
-export type DirectRunnerId = "coven" | "copilot" | "grok" | "hermes" | "opencode";
+export type DirectRunnerId = "coven" | "codex" | "copilot" | "grok" | "hermes" | "opencode";
 
 export type RuntimeAvailabilityState =
   | "ready"
@@ -52,6 +52,8 @@ export type RuntimeAvailability =
       runner: DirectRunnerId;
       code: RuntimeAvailabilityErrorCode;
       message: string;
+      /** Present when a composite launch names the layer that failed. */
+      component?: "coven" | "adapter";
     };
 
 /** Wire-safe shape for status surfaces: state plus remediation copy, without
@@ -62,6 +64,11 @@ export type RuntimeAvailabilitySummary =
       state: Exclude<RuntimeAvailabilityState, "ready">;
       code: RuntimeAvailabilityErrorCode;
       message: string;
+      /**
+       * Which layer of a composite launch failed. Most direct runners leave
+       * this unset; Codex routes through Coven and names the failing layer.
+       */
+      component?: "coven" | "adapter";
     };
 
 export function summarizeRuntimeAvailability(
@@ -72,12 +79,18 @@ export function summarizeRuntimeAvailability(
     state: availability.state,
     code: availability.code,
     message: availability.message,
+    ...(availability.component ? { component: availability.component } : {}),
   };
 }
 
 /** Legacy injectable seam for filesystem simulations. The production probe
  * uses richer candidate inspection so POSIX execute permissions are checked. */
 export type StatFileFn = (candidate: string) => boolean;
+
+/** True when a fixed, non-executable argv artifact is readable by the child.
+ * A Windows npm shim becomes `node <entry.js>`, so the entry must remain
+ * readable in addition to the Node host being launchable. */
+export type ReadableFileFn = (candidate: string) => boolean;
 
 export type RuntimeAvailabilityProbe = {
   runner: DirectRunnerId;
@@ -87,6 +100,10 @@ export type RuntimeAvailabilityProbe = {
   env: Record<string, string | undefined>;
   /** Spawn cwd. Relative PATH entries resolve from this directory. */
   cwd?: string;
+  /** Files the exact argv-list launch requires in addition to `command`.
+   * For example, a safe Windows npm shim launch is `node <entry.js>` and the
+   * entry script must still exist when the child is spawned. */
+  requiredFiles?: string[];
   /** Coven/Grok launch resolution found a Windows shim it could not safely
    * convert into a runnable command (`CovenLaunchCommand.unresolvedWindowsShim`). */
   unresolvedWindowsShim?: boolean;
@@ -95,6 +112,7 @@ export type RuntimeAvailabilityProbe = {
   powerShellHostedCommand?: string;
   platform?: NodeJS.Platform;
   statFile?: StatFileFn;
+  readableFile?: ReadableFileFn;
 };
 
 /** A direct Hermes plan keeps the exact command, scoped environment, and
@@ -122,6 +140,8 @@ export type ResolveHermesLaunchOptions = {
 // PATH/i (src/components/chat-view.test.ts).
 const MISSING_RUNNER_MESSAGES: Record<DirectRunnerId, string> = {
   coven: "Coven CLI not found on PATH. Open Setup to install it, then try again.",
+  codex:
+    "Codex CLI not found on PATH. Install it with `npm install -g @openai/codex`, then try again.",
   copilot:
     "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again.",
   grok: "Grok Build CLI not found on PATH. Install Grok Build, sign in with `grok`, then try again.",
@@ -132,6 +152,7 @@ const MISSING_RUNNER_MESSAGES: Record<DirectRunnerId, string> = {
 
 const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
   coven: "Coven CLI failed to start. Check its installation and try again.",
+  codex: "Codex CLI failed to start. Check its installation and try again.",
   copilot: "copilot CLI failed to start. Check its installation and try again.",
   grok: "Grok Build CLI failed to start. Check its installation and try again.",
   hermes: "Hermes CLI failed to start. Check its installation and try again.",
@@ -140,6 +161,7 @@ const RUNTIME_LAUNCH_FAILED_MESSAGES: Record<DirectRunnerId, string> = {
 
 const RUNNER_LABELS: Record<DirectRunnerId, string> = {
   coven: "Coven CLI",
+  codex: "Codex CLI",
   copilot: "copilot CLI",
   grok: "Grok Build CLI",
   hermes: "Hermes CLI",
@@ -158,11 +180,11 @@ export function localRuntimeLaunchError(
   runner: DirectRunnerId,
   errorCode: string | undefined,
 ): {
-  code: "ENOENT" | "runtime_launch_failed";
+  code: "runtime_missing" | "runtime_launch_failed";
   message: string;
 } {
   return errorCode === "ENOENT"
-    ? { code: "ENOENT", message: missingRunnerMessage(runner) }
+    ? { code: "runtime_missing", message: missingRunnerMessage(runner) }
     : {
         code: "runtime_launch_failed",
         message: runtimeLaunchFailedMessage(runner),
@@ -221,6 +243,20 @@ function defaultInspectCandidate(
 
 function inspectWithStatFile(candidate: string, statFile: StatFileFn): CandidateInspection {
   return statFile(candidate) ? "launchable" : "missing";
+}
+
+function defaultReadableFile(candidate: string): boolean {
+  try {
+    if (!statSync(candidate).isFile()) return false;
+    accessSync(candidate, constants.R_OK);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT" || code === "ENOTDIR" || code === "EACCES" || code === "EPERM") {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function pathEntries(env: Record<string, string | undefined>, platform: NodeJS.Platform): string[] {
@@ -354,6 +390,8 @@ export function evaluateRuntimeAvailability(
   const inspectCandidate: InspectCandidateFn = probe.statFile
     ? (candidate) => inspectWithStatFile(candidate, probe.statFile!)
     : (candidate) => defaultInspectCandidate(candidate, platform);
+  const readableFile = probe.readableFile
+    ?? (probe.statFile ? probe.statFile : defaultReadableFile);
   const label = RUNNER_LABELS[runner];
   try {
     if (probe.unresolvedWindowsShim) {
@@ -395,6 +433,15 @@ export function evaluateRuntimeAvailability(
         }
       }
       return notReady(runner, "missing", missingRunnerMessage(runner));
+    }
+    for (const requiredFile of probe.requiredFiles ?? []) {
+      if (!readableFile(requiredFile)) {
+        return notReady(
+          runner,
+          "unlaunchable",
+          `${label} has a resolved launch command, but a required launch artifact is unavailable. Reinstall it, then try again.`,
+        );
+      }
     }
     if (probe.powerShellHostedCommand !== undefined) {
       const inner = resolveCommand(

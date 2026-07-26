@@ -12,7 +12,7 @@ import {
 // ── settings-sections catalog (pure) ─────────────────────────────────────────
 
 test("every section has full overview metadata + a highlight strip", () => {
-  const ids = ["profile", "general", "daemon", "familiars", "github", "mobile", "appearance", "about"];
+  const ids = ["profile", "general", "daemon", "familiars", "mobile", "appearance", "about"];
   assert.deepEqual(SECTIONS.map((s) => s.id), ids, "the section set matches the shell nav");
   for (const s of SECTIONS) {
     assert.ok(s.label && s.icon.startsWith("ph:") && s.description.length > 0, `${s.id} has label/icon/description`);
@@ -44,6 +44,7 @@ test("the overview header renders mark, kicker, title, description, and the stri
 // ── shell wiring (source-text) ───────────────────────────────────────────────
 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const daemon = readFileSync(new URL("./settings-daemon.tsx", import.meta.url), "utf8");
 const profile = readFileSync(new URL("./settings-profile.tsx", import.meta.url), "utf8");
 const about = readFileSync(new URL("./settings-about.tsx", import.meta.url), "utf8");
 
@@ -59,9 +60,10 @@ test("the shell sources sections from settings-sections and renders the overview
   assert.doesNotMatch(shell, /const SETTINGS_INDEX: SettingsIndexEntry\[\]/);
   // Each SettingsPage-based section opts into its overview header.
   assert.match(profile, /section="profile"/, "profile page passes its section from the split panel");
-  for (const id of ["general", "daemon", "mobile", "appearance"]) {
+  for (const id of ["general", "mobile", "appearance"]) {
     assert.match(shell, new RegExp(`section="${id}"`), `${id} page passes its section`);
   }
+  assert.match(daemon, /className="settings-daemon-hero"/, "daemon uses its approved control-sheet hero");
   assert.match(
     about,
     /aria-labelledby="settings-about-title"[\s\S]*<h1 id="settings-about-title">About<\/h1>/,

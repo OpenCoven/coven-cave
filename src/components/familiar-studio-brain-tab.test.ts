@@ -20,6 +20,11 @@ assert.match(
 );
 assert.match(
   source,
+  /h\.availability && h\.availability\.state !== "ready"[\s\S]*?h\.availability\.message/,
+  "Runtime picker should reuse server-provided launchability remediation instead of treating an installed but unlaunchable CLI as ready",
+);
+assert.match(
+  source,
   /modelOptions\.map/,
   "Brain tab should render a model select from the catalog options",
 );
@@ -83,8 +88,8 @@ assert.match(
 );
 assert.match(
   source,
-  /availability && h\.availability\.state !== "ready"[\s\S]{0,100}h\.availability\.message/,
-  "Runtime choices retain the shared launchability remediation instead of collapsing unlaunchable Hermes into generic not-installed copy",
+  /h\.availability && h\.availability\.state !== "ready"[\s\S]{0,180}" \(unavailable\)"[\s\S]{0,160}detail: h\.availability\?\.state !== "ready"/,
+  "Runtime picker labels a discovered-but-unlaunchable CLI as unavailable and shows the shared remediation",
 );
 assert.match(
   source,

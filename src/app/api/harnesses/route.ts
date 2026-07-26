@@ -14,6 +14,7 @@ import {
 } from "@/lib/harness-adapters";
 import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher, refreshCovenSpawnEnv, type CovenLaunchCommand } from "@/lib/coven-bin";
 import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/copilot-stream";
+import { probeCodexRuntimeAvailability } from "@/lib/codex-runtime-availability";
 import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
@@ -63,6 +64,8 @@ type AdapterAvailability = {
   copilotLaunch?: CopilotRuntimeLaunch;
   /** Internal-only Hermes plan shared by availability, path, and version. */
   hermesLaunch?: HermesLaunchResolution;
+  /** Internal-only environment used for a direct runner's availability check. */
+  spawnEnv?: NodeJS.ProcessEnv;
 };
 
 // Mirrors the send route's launch dispatch: copilot/grok/hermes/opencode use
@@ -70,10 +73,21 @@ type AdapterAvailability = {
 // Same commands, same spawn env shape (no familiar → shared keys only), and
 // bounded filesystem stats only — this endpoint stays probe-cheap.
 async function adapterAvailability(id: string): Promise<AdapterAvailability> {
+  const env = id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
+  if (id === "codex") {
+    return {
+      availability: summarizeRuntimeAvailability(await probeCodexRuntimeAvailability({
+        launch: covenLaunchCommand(),
+        env,
+      })),
+    };
+  }
   if (id === "copilot") {
     const stream = copilotStreamSpec();
     if (stream) {
-      const copilotLaunch = await resolveCopilotRuntimeLaunch(stream.executable);
+      const copilotLaunch = await resolveCopilotRuntimeLaunch(stream.executable, {
+        spawnEnv: () => harnessSpawnEnv(null),
+      });
       return {
         availability: summarizeRuntimeAvailability(copilotLaunch.availability),
         copilotLaunch,
@@ -81,8 +95,6 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
     }
     // No stream manifest → copilot chats fall back to `coven run` below.
   }
-  const env =
-    id === "opencode" ? openCodeSpawnEnv(null) : harnessSpawnEnv(null);
   if (id === "opencode") {
     const launch = openCodeLaunch([]);
     return {
@@ -103,6 +115,7 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
         env,
         unresolvedWindowsShim: launch.unresolvedWindowsShim === true,
       })),
+      spawnEnv: env,
     };
   }
   if (id === "hermes") {
@@ -186,11 +199,12 @@ function probeVersion(
 
 function probeGrokModels(
   launch: CovenLaunchCommand,
+  env: NodeJS.ProcessEnv = covenSpawnEnv(),
 ): Promise<{ models: RuntimeModelOption[]; defaultModel: string | null }> {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(launch.command, [...launch.fixedArgs, "--no-auto-update", "models"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn(launch.command, [...launch.fixedArgs, "--no-auto-update", "models"], { env, stdio: ["ignore", "pipe", "pipe"] });
     } catch {
       resolve({ models: [], defaultModel: null });
       return;
@@ -301,21 +315,27 @@ export async function GET() {
               ? hermesLaunch?.state === "ready" ? hermesLaunch.command : null
               : await which(h.binary);
       const availability = runtime.availability;
-      if (!path) {
+      if (!path || (h.id === "codex" && availability.state !== "ready")) {
         return { ...h, installed: false, path: null, version: null, availability };
       }
       const grokLaunch = h.id === "grok" ? grokLaunchCommandForBinary(path) : null;
-      const version = await probeVersion(
-        copilotLaunch?.command
-          ?? grokLaunch?.command
-          ?? (hermesLaunch?.state === "ready" ? hermesLaunch.command : h.binary),
-        copilotLaunch
-          ? [COPILOT_NO_AUTO_UPDATE_ARG, ...(h.versionArgs ?? ["--version"])]
-          : h.versionArgs ?? ["--version"],
-        copilotLaunch?.fixedArgs ?? grokLaunch?.fixedArgs,
-        copilotLaunch?.env ?? (hermesLaunch?.state === "ready" ? hermesLaunch.env : undefined),
-      );
-      const grokCatalog = grokLaunch ? await probeGrokModels(grokLaunch) : null;
+      const grokProbeEnv = h.id === "grok" ? runtime.spawnEnv : undefined;
+      const grokReady = h.id === "grok" && availability.state === "ready";
+      const readyGrokLaunch = grokReady ? grokLaunch : null;
+      const version = h.id === "grok" && !grokReady
+        ? null
+        : await probeVersion(
+            copilotLaunch?.command
+              ?? readyGrokLaunch?.command
+              ?? (hermesLaunch?.state === "ready" ? hermesLaunch.command : h.binary),
+            copilotLaunch
+              ? [COPILOT_NO_AUTO_UPDATE_ARG, ...(h.versionArgs ?? ["--version"])]
+              : h.versionArgs ?? ["--version"],
+            copilotLaunch?.fixedArgs ?? readyGrokLaunch?.fixedArgs,
+            (copilotLaunch?.env ?? grokProbeEnv)
+              ?? (hermesLaunch?.state === "ready" ? hermesLaunch.env : undefined),
+          );
+      const grokCatalog = readyGrokLaunch ? await probeGrokModels(readyGrokLaunch, grokProbeEnv) : null;
       return {
         ...h,
         installed: true,

@@ -1,7 +1,9 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { createHook } from "node:async_hooks";
+import childProcess from "node:child_process";
 import { chmod, mkdtemp, mkdir, rm, unlink, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -36,6 +38,7 @@ const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousCovenBin = process.env.COVEN_BIN;
 const previousGrokBin = process.env.GROK_BIN;
+const previousPath = process.env.PATH;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.GROK_BIN = pinnedGrok;
@@ -68,7 +71,7 @@ function assertNoFabricatedAssistantResponse(body, events) {
 }
 
 try {
-  const { covenLaunchCommand, refreshCovenBin } = await import("@/lib/coven-bin");
+  const { covenLaunchCommand, refreshCovenBin, refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
   refreshCovenBin();
   const { grokBin } = await import("@/lib/grok-bin");
   assert.equal(grokBin(), pinnedGrok, "the test pins Grok discovery to its isolated override");
@@ -233,8 +236,8 @@ try {
     } else {
       assert.equal(
         error.code,
-        "ENOENT",
-        "the missing shebang interpreter reaches the post-spawn ENOENT handler",
+        "runtime_missing",
+        "the missing shebang interpreter stays in the structured missing-runtime contract",
       );
       assert.equal(
         error.message,
@@ -258,6 +261,59 @@ try {
       new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
       "post-spawn diagnostics must never expose the runner path",
     );
+
+    const done = events.findLast((event) => event.kind === "done");
+    assert.equal(done?.isError, true, "the post-spawn ENOENT completes the stream as an error");
+  }
+
+  // Scenario 3 — Windows can throw synchronously for an invalid executable
+  // instead of returning a child that emits error. It must use the same
+  // structured, no-fabricated-response completion as an async launch race.
+  {
+    await writeFile(pinnedGrok, "present for synchronous spawn\n", { mode: 0o755 });
+    if (process.platform !== "win32") await chmod(pinnedGrok, 0o755);
+    const originalSpawn = childProcess.spawn;
+    childProcess.spawn = (() => {
+      throw Object.assign(new Error("synthetic synchronous spawn failure"), { code: "UNKNOWN" });
+    }) as typeof childProcess.spawn;
+    syncBuiltinESMExports();
+    try {
+      const response = await POST(new Request("http://localhost/api/chat/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ familiarId: "opal", prompt: "hello synchronous failure", projectRoot: familiarWorkspace }),
+      }));
+      const { body, events } = await readSse(response);
+      const error = events.find((event) => event.kind === "error");
+      assert.equal(error?.code, "runtime_launch_failed");
+      assert.equal(error?.message, runtimeLaunchFailedMessage("grok"));
+      assertNoFabricatedAssistantResponse(body, events);
+      const done = events.findLast((event) => event.kind === "done");
+      assert.equal(done?.isError, true, "a synchronous spawn failure completes the stream as an error");
+    } finally {
+      childProcess.spawn = originalSpawn;
+      syncBuiltinESMExports();
+    }
+  }
+  // A direct Copilot configuration never falls through to generic Coven when
+  // the exact local CLI plan is absent.
+  {
+    const { clearCopilotCapabilityProbeCache } = await import("@/lib/server/copilot-capability-probe");
+    process.env.PATH = "";
+    refreshCovenBin();
+    refreshCovenSpawnEnv();
+    clearCopilotCapabilityProbeCache();
+    await saveConfig({ familiars: { opal: { harness: "copilot" } } });
+    const response = await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "opal", prompt: "copilot preflight", projectRoot: familiarWorkspace }),
+    }));
+    const { body, events } = await readSse(response);
+    const error = events.find((event) => event.kind === "error");
+    assert.equal(error?.code, "runtime_missing");
+    assert.match(String(error?.message), /copilot CLI not found on PATH/i);
+    assertNoFabricatedAssistantResponse(body, events);
   }
 } finally {
   process.env.COVEN_HOME = previousHome;
@@ -266,6 +322,10 @@ try {
   else process.env.COVEN_BIN = previousCovenBin;
   if (previousGrokBin === undefined) delete process.env.GROK_BIN;
   else process.env.GROK_BIN = previousGrokBin;
+  if (previousPath === undefined) delete process.env.PATH;
+  else process.env.PATH = previousPath;
+  const { refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
+  refreshCovenSpawnEnv();
   await rm(home, { recursive: true, force: true });
 }
 

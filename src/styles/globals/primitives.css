@@ -879,6 +879,21 @@
   background: color-mix(in oklch, var(--color-danger) 12%, transparent);
 }
 
+/* Code's organization popover keeps desktop density while restoring the
+   44px interaction contract on devices where hover is unavailable. */
+@media (hover: none) and (pointer: coarse) {
+  .github-org-settings__trigger {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+
+  .github-org-settings__segments button,
+  .github-org-settings__row,
+  .github-org-settings__action {
+    min-height: var(--touch-target);
+  }
+}
+
 /* ---- EmptyState --------------------------------------------- */
 .ui-empty-state {
   display: flex;

@@ -840,15 +840,24 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         // per-familiar runtime choices.
                         options: harnesses
                           .filter((h) => isBindableRuntimeChoice(h.id))
-                          .map((h) => ({
-                            value: h.id,
-                            label: h.label,
-                            detail: h.availability && h.availability.state !== "ready"
+                          .map((h) => {
+                            const availabilityMessage = h.availability && h.availability.state !== "ready"
                               ? h.availability.message
-                              : h.installed
-                                ? undefined
-                                : "Runtime is not installed.",
-                          })),
+                              : undefined;
+                            return {
+                              value: h.id,
+                              label: `${h.label}${
+                                h.availability && h.availability.state !== "ready"
+                                  ? h.availability.state === "missing"
+                                    ? " (not installed)"
+                                    : " (unavailable)"
+                                  : h.installed ? "" : " (not installed)"
+                              }`,
+                              detail: h.availability?.state !== "ready"
+                                ? h.availability?.message
+                                : availabilityMessage,
+                            };
+                          }),
                       } satisfies StandardSelectGroup<string>,
                     ]}
                   />
