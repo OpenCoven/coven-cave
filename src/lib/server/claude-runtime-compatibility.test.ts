@@ -81,7 +81,7 @@ assert.deepEqual(
   { kind: "fallback", reason: "probe-failed" },
   "a failed capability probe must not be reported as a missing advertised capability",
 );
-assert.match(claudeCompatibilityDiagnostic(helpProbeFailed) ?? "", /could not be verified/i);
+assert.match(claudeCompatibilityDiagnostic(helpProbeFailed) ?? "", /could not be verified; tool bubbles are disabled/i);
 
 const removedStreamJson = await resolveInstalledClaudeCompatibility({
   version: async () => "2.1.179 (Claude Code)",

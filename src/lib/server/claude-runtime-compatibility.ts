@@ -390,7 +390,7 @@ export function claudeCompatibilityDiagnostic(resolution: CompatibilityResolutio
   }
   switch (resolution.reason) {
     case "probe-failed":
-      return "Claude Code compatibility could not be verified; tool activity may be unavailable. Run `claude --version` and `claude --help`, then try again.";
+      return "Claude Code compatibility could not be verified; tool bubbles are disabled. Run `claude --version` and `claude --help`, then try again.";
     case "unsupported-version":
       return "This Claude Code version has no trusted tool-activity profile yet; chat text will continue without tool bubbles.";
     case "missing-capability":
