@@ -154,11 +154,19 @@ try {
     releasedAt: new Date().toISOString(),
   }));
   let reclaimAttempts = 0;
+  let reclaimClock = 0;
   await assert.rejects(
     migrateCaveHome({
-      lockTimeoutMs: 150,
+      // Directory operations on GitHub's Windows runner can consume the
+      // original wall-clock budget before the retry loop reaches a second
+      // fence attempt. Drive the deadline from the injected monotonic clock,
+      // as the candidate-retry case above does, so this test asserts lock
+      // behavior instead of runner scheduling.
+      lockTimeoutMs: 500,
+      lockNow: () => reclaimClock,
       lockFenceRename: async () => {
         reclaimAttempts += 1;
+        reclaimClock += 100;
         const error = new Error("injected persistent Windows reclaim EPERM") as NodeJS.ErrnoException;
         error.code = "EPERM";
         throw error;
