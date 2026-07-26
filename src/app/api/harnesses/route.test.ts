@@ -56,4 +56,10 @@ assert.doesNotMatch(
   "the harness API never copies private Copilot launch-plan data onto availability",
 );
 
+assert.match(
+  source,
+  /resolveCopilotRuntimeLaunch\(stream\.executable,\s*\{\s*spawnEnv: \(\) => harnessSpawnEnv\(null\)/,
+  "Copilot status must resolve the same direct launcher in the shared harness environment as chat send",
+);
+
 console.log("harness route tests passed");
