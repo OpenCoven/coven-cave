@@ -46,18 +46,19 @@ struct TerminalView: View {
             .padding(.vertical, 10)
             .background(chrome.bgBase)
             // The xterm webview renders even when the PTY socket is down, so a
-            // failed connection otherwise looks like a frozen shell. Surface it.
-            if !terminal.connected, let err = terminal.error {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    Text(err).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    Spacer()
-                    Button("Reconnect") { connect() }
-                        .font(.caption.weight(.semibold)).buttonStyle(.borderless)
-                }
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
-                .background(.ultraThinMaterial)
+            // failed connection otherwise looks like a frozen shell. Surface it —
+            // and give an exited shell (typed `exit`, crashed job) a restart
+            // affordance instead of leaving a dead pane behind.
+            if terminal.exited {
+                statusBanner(
+                    icon: "flag.checkered", tint: .secondary,
+                    message: exitMessage, button: "Restart"
+                ) { connect() }
+            } else if !terminal.connected, let err = terminal.error {
+                statusBanner(
+                    icon: "exclamationmark.triangle.fill", tint: .orange,
+                    message: err, button: "Reconnect"
+                ) { connect() }
             }
             XtermWebView(
                 terminal: terminal,
@@ -77,7 +78,15 @@ struct TerminalView: View {
             if !terminal.connected && !terminal.exited { connect() }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active, !terminal.connected, !terminal.exited { connect() }
+            guard phase == .active else { return }
+            if !terminal.connected && !terminal.exited {
+                connect()
+            } else {
+                // iOS kills sockets during suspension without flipping
+                // `connected`; probe the link so a stale session reconnects
+                // instead of eating the first keystrokes.
+                terminal.verifyLiveness()
+            }
         }
         .confirmationDialog("New terminal", isPresented: $showingProjectPicker) {
             Button("Home") { switchCwd(nil) }
@@ -97,6 +106,29 @@ struct TerminalView: View {
         } message: {
             Text("This command is stored on this phone.")
         }
+    }
+
+    // MARK: - Status banner (connection lost / shell exited)
+
+    private var exitMessage: String {
+        if let code = terminal.exitCode, code != 0 {
+            return "Shell exited (code \(code))."
+        }
+        return "Shell session ended."
+    }
+
+    private func statusBanner(icon: String, tint: Color, message: String,
+                              button: String, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).foregroundStyle(tint)
+            Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Spacer()
+            Button(button, action: action)
+                .font(.caption.weight(.semibold)).buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(.ultraThinMaterial)
     }
 
     // MARK: - Key row (special keys the soft keyboard lacks → straight to the PTY)
