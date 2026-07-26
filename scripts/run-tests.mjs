@@ -294,6 +294,7 @@ export const SUITES = {
     "src/components/settings-appearance.test.ts",
     "src/components/settings-about.test.ts",
     "src/components/settings-phone.test.ts",
+    "src/lib/tailscale-failure.test.ts",
     "src/components/settings-github.test.ts",
     "src/components/settings-profile.test.ts",
     "src/components/settings-search.test.ts",

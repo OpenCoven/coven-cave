@@ -21,6 +21,7 @@ import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import { openExternalUrl } from "@/lib/open-external";
 import { relativeTime } from "@/lib/relative-time";
+import { classifyTailscaleFailureKind } from "@/lib/tailscale-failure";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 type MobileHandoffCardState = {
@@ -76,38 +77,32 @@ const WRITE_ACCESS_ROWS: Array<{
 /** Plain-language framing for handoff failures. Raw diagnostics stay behind a
  * disclosure while the headline tells a person what to do next. */
 export function classifyTailscaleFailure(raw: string): { headline: string; hint: string } {
-  const text = raw.toLowerCase();
-  if (text.includes("pnpm dev") || text.includes("access token") || text.includes("pairing secret")) {
+  const kind = classifyTailscaleFailureKind(raw);
+  if (kind === "pairing-secret") {
     return {
       headline: "Pairing secret unavailable",
       hint: "Cave provisions the pairing secret automatically — retry below. If this persists, restart Cave and check the app data folder’s permissions.",
     };
   }
-  if (text.includes("tailscale") && (text.includes("not installed") || text.includes("cli not found"))) {
+  if (kind === "not-installed") {
     return {
       headline: "Tailscale isn’t installed",
       hint: "Install Tailscale from tailscale.com/download and sign in — pairing resumes here automatically.",
     };
   }
-  if (text.includes("tailscale") && (text.includes("signed out") || text.includes("logged out"))) {
+  if (kind === "signed-out") {
     return {
       headline: "Tailscale is signed out",
       hint: "Open Tailscale and sign in — pairing resumes here automatically.",
     };
   }
-  if (
-    text.includes("tailscale") &&
-    (text.includes("not connected") ||
-      text.includes("not running") ||
-      text.includes("stopped") ||
-      text.includes("unreachable"))
-  ) {
+  if (kind === "not-running") {
     return {
       headline: "Tailscale isn’t running",
       hint: "Open Tailscale and sign in — pairing resumes here automatically.",
     };
   }
-  if (/\bserve\b/.test(text)) {
+  if (kind === "serve-failed") {
     return {
       headline: "Tailscale Serve couldn’t start",
       hint: "Retry below; if it keeps failing, quit and reopen Tailscale.",

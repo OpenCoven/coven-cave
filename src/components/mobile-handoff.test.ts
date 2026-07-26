@@ -11,6 +11,7 @@ const settings = `${settingsShell}\n${settingsPhone}`;
 const stepsList = await readFile(new URL("./pairing-steps-list.tsx", import.meta.url), "utf8");
 const mobileModePref = await readFile(new URL("../lib/mobile-mode-pref.ts", import.meta.url), "utf8");
 const mobileModeReconcile = await readFile(new URL("../lib/mobile-mode-reconcile.ts", import.meta.url), "utf8");
+const tailscaleFailure = await readFile(new URL("../lib/tailscale-failure.ts", import.meta.url), "utf8");
 const handoffRoute = await readFile(new URL("../app/api/mobile-handoff/route.ts", import.meta.url), "utf8");
 const desktopChromeCss = await readFile(
   new URL("../styles/globals/desktop-chrome.css", import.meta.url),
@@ -263,9 +264,9 @@ assert.match(
   "the one-string friendly fallback only renders when the route couldn't report its ladder",
 );
 assert.match(
-  settings,
+  tailscaleFailure,
   /text\.includes\("signed out"\)/,
-  "the fallback vocabulary understands the signed-out failure the classifier can now surface",
+  "the shared fallback vocabulary understands signed-out failures",
 );
 assert.match(
   settings,

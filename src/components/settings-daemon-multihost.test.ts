@@ -120,7 +120,16 @@ assert.match(shell, /fetch\("\/api\/daemon\/probe"/, "hub URL saves should probe
 assert.match(shell, /Save anyway/, "an unreachable hub should require an explicit override");
 assert.match(shell, /Configured but unreachable/, "hub status should distinguish configured from connected");
 assert.match(phone, /Use this device as hub/, "phone pairing should offer its known tailnet host to Server Hub");
-assert.match(shell, /classifyTailscaleFailure/, "discovery and pairing should share friendly Tailscale failure copy");
+assert.match(
+  daemon,
+  /import \{ classifyTailscaleFailureKind \} from "@\/lib\/tailscale-failure"/,
+  "device discovery should use the shared Tailscale failure classifier",
+);
+assert.match(
+  phone,
+  /import \{ classifyTailscaleFailureKind \} from "@\/lib\/tailscale-failure"/,
+  "phone pairing should use the shared Tailscale failure classifier",
+);
 
 assert.match(
   shell,
