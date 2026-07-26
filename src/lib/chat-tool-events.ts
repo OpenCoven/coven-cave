@@ -67,7 +67,9 @@ export function flattenToolResultContent(content: unknown): string | undefined {
       if (
         block &&
         typeof block === "object" &&
-        (block as { type?: unknown }).type === "text" &&
+        (["text", "input_text", "output_text"] as unknown[]).includes(
+          (block as { type?: unknown }).type,
+        ) &&
         typeof (block as { text?: unknown }).text === "string"
       ) {
         parts.push((block as { text: string }).text);
@@ -245,6 +247,49 @@ export class ToolCallTracker {
     const ev: ToolStreamEvent = { id, name, input, status: "running" };
     this.record(ev, textOffset);
     return ev;
+  }
+
+  /**
+   * Updates an already-announced native tool call as its input becomes
+   * available. Responses-style protocols may announce an empty function call
+   * and stream its arguments afterwards; keep the same UI/persistence id
+   * rather than creating a second bubble or retaining a partial payload.
+   */
+  envelopeToolInput(toolUseId: string, input: string | undefined): ToolStreamEvent | null {
+    if (input === undefined || this.settledEnvelopeIds.has(toolUseId)) return null;
+    const call = this.byEnvelopeId.get(toolUseId);
+    if (!call) return null;
+    const ev: ToolStreamEvent = { id: call.id, name: call.name, input, status: "running" };
+    const prev = this.recorded.get(call.id);
+    if (prev) {
+      this.recorded.set(call.id, { ...prev, ...ev, input });
+    } else {
+      this.record(ev);
+    }
+    return ev;
+  }
+
+  /**
+   * Settles every currently open call as interrupted. A stream can terminate
+   * after announcing a function call but before its execution/result event;
+   * emit final updates so the live UI never retains a permanent spinner and
+   * persistence matches what the user saw.
+   */
+  failOpenCalls(output = "[tool did not settle before the stream ended]"): ToolStreamEvent[] {
+    const calls = Array.from(this.open.values()).flat();
+    return calls.map((call) => {
+      const durationMs = this.now() - call.startedAt;
+      this.settle(call);
+      const ev: ToolStreamEvent = {
+        id: call.id,
+        name: call.name,
+        output,
+        status: "error",
+        durationMs,
+      };
+      this.record(ev);
+      return ev;
+    });
   }
 
   /**
