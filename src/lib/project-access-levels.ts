@@ -12,6 +12,11 @@ export type ProjectAccessLevel = "read" | "write";
 
 export const PROJECT_ACCESS_LEVELS: readonly ProjectAccessLevel[] = ["read", "write"];
 
+/** User-facing label shared by every familiar-scoped project picker. */
+export function projectAccessLabel(level: ProjectAccessLevel): "Read" | "Full" {
+  return level === "read" ? "Read" : "Full";
+}
+
 export type ProjectPermissionSurface =
   | "chat"
   | "session-launch"

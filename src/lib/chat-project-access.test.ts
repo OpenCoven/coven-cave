@@ -67,15 +67,12 @@ assert.equal(
     resumeCwd: codyWorkspace,
     resolvedCwd: codyWorkspace,
   }),
-  null,
-  "a resumed unregistered cwd is not an explicit project request",
+  `unregistered:${codyWorkspace}`,
+  "a resumed unregistered cwd fails closed instead of bypassing project access",
 );
 
-// REGRESSION (2026-07-01): a no-project chat boots in the familiar's own
-// workspace, the daemon records that dir as the session cwd, and the client
-// echoes it back as an explicit projectRoot on the next turn. That echo must
-// not fail closed — it denied the familiar its own home with a 403
-// "project access denied" on turn 2 of every no-project chat.
+// Chat project launch now requires a registered project. A familiar workspace
+// is no longer a project-free authorization bypass.
 assert.equal(
   chatProjectAccessId({
     projects,
@@ -83,8 +80,8 @@ assert.equal(
     resolvedCwd: codyWorkspace,
     familiarWorkspace: codyWorkspace,
   }),
-  null,
-  "a familiar chatting in its own workspace is allowed (no project scope)",
+  `unregistered:${codyWorkspace}`,
+  "an unregistered familiar workspace fails closed",
 );
 
 assert.equal(
@@ -94,8 +91,8 @@ assert.equal(
     resolvedCwd: codyWorkspace,
     familiarWorkspace: codyWorkspace,
   }),
-  null,
-  "the own-workspace exemption tolerates unnormalized paths",
+  `unregistered:${codyWorkspace}/`,
+  "a trailing slash cannot revive the retired workspace exemption",
 );
 
 assert.equal(
@@ -173,6 +170,16 @@ assert.equal(
   }),
   "proj-1",
   "a trailing slash on the worktree root still maps to the parent project",
+);
+
+assert.equal(
+  chatProjectAccessId({
+    projects,
+    resumeCwd: "/Users/me/dev/cave/.worktrees/feat-x",
+    resolvedCwd: "/Users/me/dev/cave/.worktrees/feat-x",
+  }),
+  "proj-1",
+  "a resumed worktree rechecks access through the registered parent project",
 );
 
 console.log("chat-project-access tests passed");

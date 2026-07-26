@@ -278,8 +278,8 @@ console.log("chat-projects.test.ts: ok");
 
   assert.deepEqual(
     resolveChatProjectSelection({ ...base, draftId: "gone", hasSession: true, sessionProjectRoot: "/work/beta" }),
-    { projectId: "gone", project: roster[0] },
-    "a stale draft id keeps the legacy first-project display fallback",
+    { projectId: "gone", project: null },
+    "a stale explicit project never silently substitutes the first project",
   );
 
   assert.deepEqual(
@@ -447,7 +447,8 @@ console.log("chat-projects.test.ts: ok");
   // registered project, so the resolver used to drop it and fall through to
   // the recent/first project — the chat silently ran in the shared checkout
   // the worktree was created to avoid. An explicit opener root now resolves
-  // to No-project WITH the root carried as unregisteredRoot.
+  // to its registered parent project, with the checkout root carried
+  // separately for runtime execution.
   const worktreeRoot = "/work/alpha/.worktrees/feat-x";
 
   assert.deepEqual(
@@ -458,8 +459,8 @@ console.log("chat-projects.test.ts: ok");
       fallbackProjectRoot: worktreeRoot,
       recentProjectRoot: "/work/beta",
     }),
-    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
-    "a new chat opened at a worktree root keeps that root — never the recent/first project",
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
+    "a new worktree chat keeps its runtime root and authorizes through the registered parent project",
   );
 
   assert.deepEqual(
@@ -469,7 +470,7 @@ console.log("chat-projects.test.ts: ok");
       sessionProjectRoot: undefined,
       fallbackProjectRoot: `${worktreeRoot}/`,
     }),
-    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
     "the opener root is normalized (trailing slash trimmed)",
   );
 
@@ -480,8 +481,8 @@ console.log("chat-projects.test.ts: ok");
       sessionProjectRoot: worktreeRoot,
       fallbackProjectRoot: worktreeRoot,
     }),
-    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
-    "the worktree root survives the first send (session recorded at the same root)",
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
+    "the worktree root and parent authorization survive the first send",
   );
 
   assert.deepEqual(
@@ -525,7 +526,8 @@ console.log("chat-projects.test.ts: ok");
   // Reopened later from the chat list, the view root differs (or is absent),
   // the resolver returned bare No-project, and the chat lost its home: git
   // chip hidden, enhance in "chat" mode. A recorded cwd under a registered
-  // project's `.worktrees/` dir now carries through as unregisteredRoot.
+  // project's `.worktrees/` dir now carries through as unregisteredRoot while
+  // the parent project remains the visible, access-bearing selection.
   assert.deepEqual(
     resolveChatProjectSelection({
       ...base,
@@ -533,8 +535,8 @@ console.log("chat-projects.test.ts: ok");
       sessionProjectRoot: worktreeRoot,
       fallbackProjectRoot: null,
     }),
-    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
-    "a worktree chat reopened without an opener root keeps its recorded worktree home",
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
+    "a reopened worktree chat keeps its runtime home and registered parent project",
   );
 
   assert.deepEqual(
@@ -545,7 +547,7 @@ console.log("chat-projects.test.ts: ok");
       fallbackProjectRoot: "/work/beta",
       recentProjectRoot: "/work/beta",
     }),
-    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
     "a mismatched view root never strips a worktree session of its recorded home",
   );
 
@@ -556,7 +558,7 @@ console.log("chat-projects.test.ts: ok");
       sessionProjectRoot: `${worktreeRoot}/`,
       fallbackProjectRoot: null,
     }),
-    { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: worktreeRoot },
+    { projectId: "p1", project: roster[0], unregisteredRoot: worktreeRoot },
     "the recorded worktree root is normalized (trailing slash trimmed)",
   );
 
@@ -591,6 +593,17 @@ console.log("chat-projects.test.ts: ok");
     }),
     { projectId: NO_PROJECT_ID, project: null },
     "only the literal .worktrees/ directory qualifies — sibling dirs sharing the prefix do not",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/work/alpha/.worktrees/feat-x/../../escape",
+      fallbackProjectRoot: null,
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "dot-segment traversal cannot claim a registered worktree parent",
   );
 }
 
