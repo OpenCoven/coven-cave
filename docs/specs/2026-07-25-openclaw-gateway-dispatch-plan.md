@@ -88,19 +88,25 @@ reason to guess a field shape.
 The only published protocol/client release is the `2026.7.2-beta.4` beta
 package pair, negotiating wire protocol v4. It publishes `HelloOkSchema`,
 `ChatEventSchema`, `chat.send`, `chat.abort`, and
-`sessions.messages.subscribe`, so Cave can support a strictly correlated
-chat-only Gateway turn for that exact profile.
+`sessions.messages.subscribe`. Cave validates that exact chat-only contract in
+its dispatcher, including the accepted `(sessionKey, agentId, runId)` tuple.
 
-It does **not** publish a `session.tool` event name, payload schema, or
-validator. Cave must therefore ignore those frames and emit no Gateway tool
-card for this release. A method/event capability string is not a substitute
-for a versioned payload contract. The CLI/plain-chat bridge remains the
-fallback when dispatch cannot prove its accepted run, while the direct path
-may render only validated `chat` lifecycle frames.
+Cave currently keeps the live route fail-closed **before client construction**:
+the reference client delegates device identity, challenge signing, and token
+lifecycle to host-owned `GatewayClientHostDeps`, and Cave does not yet have the
+required cross-platform OS-backed credential-store boundary. In particular,
+`OPENCLAW_GATEWAY_TOKEN` and `OPENCLAW_GATEWAY_DEVICE_TOKEN` cannot activate a
+write-capable direct turn; the existing CLI/plain-chat bridge remains the
+fallback. This is intentional until real paired-device storage is shipped.
 
-| Package profile | Wire protocol | Validated projection | Tool cards | Upgrade rule |
+The release also does **not** publish a `session.tool` event name, payload
+schema, or validator. Cave emits no Gateway tool card for this release and does
+not request an unpublished tool-event capability. A method/event capability
+string is not a substitute for a versioned payload contract.
+
+| Package profile | Wire protocol | Runtime projection | Tool cards | Upgrade rule |
 | --- | --- | --- | --- | --- |
-| `2026.7.2-beta.4` | v4 only | `chat` frames correlated by session, agent, and accepted run | Disabled: no published schema | Add a fixture and explicit profile only when OpenClaw publishes a stable tool payload validator. |
+| `2026.7.2-beta.4` | v4 only | None until Cave has OS-backed paired-device credentials; dispatcher tests validate only correlated `chat` frames | Disabled: no published schema | Add credential-store integration, then a fixture and explicit profile only when OpenClaw publishes a stable tool payload validator. |
 | Any other version/profile | Not assumed | None | Disabled | Keep CLI/plain chat with a visible compatibility diagnostic. |
 
 Before enabling tool cards, record the package release, exported validator,
