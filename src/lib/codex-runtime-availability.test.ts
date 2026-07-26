@@ -144,8 +144,11 @@ const covenProbe = {
 
 assert.equal(classifyCodexAdapterFailure("harness `codex` is not available"), "missing");
 assert.equal(classifyCodexAdapterFailure("Codex adapter is not installed"), "missing");
+assert.equal(classifyCodexAdapterFailure("Codex adapter isn't installed"), "missing");
 assert.equal(classifyCodexAdapterFailure("Codex adapter unavailable"), "missing");
 assert.equal(classifyCodexAdapterFailure("unsupported adapter codex"), "unlaunchable");
+assert.equal(classifyCodexAdapterFailure("Codex adapter is unsupported"), "unlaunchable");
+assert.equal(classifyCodexAdapterFailure("unknown adapter: codex"), "unlaunchable");
 assert.equal(classifyCodexAdapterFailure("unknown subcommand `adapter`"), "unlaunchable");
 assert.equal(classifyCodexAdapterFailure("codex adapter is not configured"), "unlaunchable");
 assert.equal(classifyCodexAdapterFailure("authentication required"), null);

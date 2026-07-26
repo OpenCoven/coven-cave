@@ -66,8 +66,8 @@ function covenUnavailable(availability: Exclude<RuntimeAvailability, { state: "r
 export function classifyCodexAdapterFailure(text: string): "missing" | "unlaunchable" | null {
   if (!text) return null;
   if (
-    /(?:(?:harness|adapter)\s+)?[`'"]?codex[`'"]?\s+(?:is\s+)?not\s+(?:available|installed|found)/i.test(text) ||
-    /codex\s+(?:harness|adapter)\s+(?:is\s+)?not\s+(?:available|installed|found)/i.test(text) ||
+    /(?:(?:harness|adapter)\s+)?[`'"]?codex[`'"]?\s+(?:is\s+not|isn't|not)\s+(?:available|installed|found)/i.test(text) ||
+    /codex\s+(?:harness|adapter)\s+(?:is\s+not|isn't|not)\s+(?:available|installed|found)/i.test(text) ||
     /(?:(?:harness|adapter)\s+)?[`'"]?codex[`'"]?\s+(?:is\s+)?unavailable/i.test(text) ||
     /codex\s+(?:harness|adapter)\s+(?:is\s+)?unavailable/i.test(text) ||
     /(?:spawn\s+codex\s+ENOENT|codex:\s*command not found|command not found[:\s]+[`'"]?codex)/i.test(text)
@@ -75,10 +75,12 @@ export function classifyCodexAdapterFailure(text: string): "missing" | "unlaunch
     return "missing";
   }
   if (
-    /(?:unsupported|unknown|unrecognized)\s+(?:harness|adapter)\s+[`'"]?codex/i.test(text) ||
+    /(?:unsupported|unknown|unrecognized)\s+(?:harness|adapter)(?:\s*[:=]\s*|\s+)[`'"]?codex/i.test(text) ||
     /(?:unsupported|unknown|unrecognized)\s+(?:subcommand|command)\s+[`'"]?adapter/i.test(text) ||
-    /(?:(?:harness|adapter)\s+)?[`'"]?codex[`'"]?\s+(?:is\s+)?not\s+configured/i.test(text) ||
-    /codex\s+(?:harness|adapter)\s+(?:is\s+)?not\s+configured/i.test(text)
+    /(?:(?:harness|adapter)\s+)?[`'"]?codex[`'"]?\s+(?:is\s+not|isn't|not)\s+configured/i.test(text) ||
+    /codex\s+(?:harness|adapter)\s+(?:is\s+not|isn't|not)\s+configured/i.test(text) ||
+    /(?:harness|adapter)\s+[`'"]?codex[`'"]?\s+(?:is\s+)?(?:unsupported|not\s+supported)/i.test(text) ||
+    /codex\s+(?:harness|adapter)\s+(?:is\s+)?(?:unsupported|not\s+supported)/i.test(text)
   ) {
     return "unlaunchable";
   }
