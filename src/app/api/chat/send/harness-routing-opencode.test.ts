@@ -219,8 +219,8 @@ assert.match(
 );
 assert.match(
   route,
-  /persistedOpenCodeDiagnostics[\s\S]*?id === "opencode-compatibility"[\s\S]*?progress: persistedOpenCodeDiagnostics/,
-  "safe OpenCode compatibility diagnostics persist with the completed assistant turn",
+  /persistedCompatibilityDiagnostics[\s\S]*?id === "opencode-compatibility" \|\| id === "grok-compatibility"[\s\S]*?progress: persistedCompatibilityDiagnostics/,
+  "safe OpenCode and Grok compatibility diagnostics persist with the completed assistant turn",
 );
 assert.match(
   route,
