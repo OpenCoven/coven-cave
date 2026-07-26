@@ -287,6 +287,15 @@ alphabetical list); `scripts/cave-backup.mjs` for cron/headless; a Settings
 the chosen destination (iCloud folder first — no credentials; S3/R2 behind
 user keys stored in the existing vault); retention of N snapshots;
 freshness surfaced in Settings.
+**Shipped (#3812 / cave-clyh):** `backup-sync.ts` scheduler (15-min tick,
+daily cadence with startup catch-up, production-only bounded on-quit push
+inside the desktop shell's 5 s stop window); destination defaults to the
+iCloud Drive `Coven Cave Backups` folder when present, else `~/Documents`,
+with destinations inside a Coven home rejected; passphrase kept in the local
+encrypted vault for unattended runs (restore stays manual); retention prune;
+`/api/backup/sync` (+`/run`) and a Settings → Backup "Scheduled sync" card
+with freshness + Back up now. S3/R2 user-keyed destinations remain follow-up
+pending open question 2.
 
 **Phase P3 — availability:** harden/document hub mode as the durable home;
 iOS read-only cache seeded from last-known data (separate, larger effort).
