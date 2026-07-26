@@ -1234,10 +1234,6 @@ export class CodexJsonlDecoder {
         const parsed = JSON.parse(line) as unknown;
         const frame = record(parsed);
         const rawType = typeof frame?.type === "string" ? frame.type : null;
-        // A registry may add accepted outer event names. Once the marker has
-        // armed this transport, consume every selected-schema frame instead
-        // of leaking a harmless new control event as assistant JSON.
-        const protocolType = !!rawType && schema.eventTypes.includes(rawType);
         // Keep protocol families reserved once a trusted thread preamble has
         // selected this stream. In particular, a newer Codex can add a
         // `response.*` control frame before Cave has a schema for it; that
