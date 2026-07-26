@@ -53,9 +53,12 @@ struct ChatModelBar: View {
         chip
             .task(id: sessionId) { await load() }
             .sheet(isPresented: $showPicker) {
-                ModelPickerSheet(options: options, current: state?.effectiveModel ?? "") { id in
-                    Task { await choose(id) }
-                }
+                ModelPickerSheet(
+                    options: options,
+                    current: state?.effectiveModel ?? "",
+                    onSelect: { id in Task { await choose(id) } },
+                    application: sessionId == nil ? .familiarDefault : .chat
+                )
             }
     }
 
@@ -119,15 +122,44 @@ struct ChatModelBar: View {
     }
 }
 
+enum ModelPickerApplication {
+    case chat
+    case familiarDefault
+
+    var footer: String {
+        switch self {
+        case .chat:
+            return "Applies to this chat. The familiar uses the chosen model for its next replies."
+        case .familiarDefault:
+            return "Sets this familiar’s default for new chats and chats without a model override."
+        }
+    }
+}
+
 struct ModelPickerSheet: View {
     let options: [ChatModelOption]
     let current: String
     let onSelect: (String) -> Void
+    let application: ModelPickerApplication
     /// Optional deeper-configuration hop: shown as a chevron row that hands
     /// off to the familiar picker (the "agent" half of the model/agent pill).
-    var onSwitchFamiliar: (() -> Void)? = nil
+    let onSwitchFamiliar: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
+
+    init(
+        options: [ChatModelOption],
+        current: String,
+        onSelect: @escaping (String) -> Void,
+        application: ModelPickerApplication = .chat,
+        onSwitchFamiliar: (() -> Void)? = nil
+    ) {
+        self.options = options
+        self.current = current
+        self.onSelect = onSelect
+        self.application = application
+        self.onSwitchFamiliar = onSwitchFamiliar
+    }
 
     private var currentOption: ChatModelOption? {
         options.first(where: { $0.id == current }) ?? (current.isEmpty ? nil : ChatModelOption(id: current, label: current))
@@ -178,7 +210,7 @@ struct ModelPickerSheet: View {
                 } header: {
                     Text("Models")
                 } footer: {
-                    Text("Applies to this chat. The familiar uses the chosen model for its next replies.")
+                    Text(application.footer)
                 }
                 if let onSwitchFamiliar {
                     Section("Agent") {

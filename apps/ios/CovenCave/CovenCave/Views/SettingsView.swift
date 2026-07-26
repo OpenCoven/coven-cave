@@ -38,6 +38,14 @@ struct SettingsView: View {
             .readableListWidth(680)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { app.navigationDrawerOpen = true } label: {
+                        Image(systemName: "line.3.horizontal")
+                    }
+                    .accessibilityLabel("Open navigation")
+                }
+            }
             .onAppear {
                 pushMode = (app.publishedMode ?? (chrome.colorScheme == .light ? "light" : "dark")) == "light" ? .light : .dark
             }

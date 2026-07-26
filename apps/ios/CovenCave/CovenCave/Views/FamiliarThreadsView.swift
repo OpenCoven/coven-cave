@@ -313,7 +313,7 @@ struct FamiliarThreadsView: View {
     }
 
     private func startNewChat() {
-        let thread = app.startFreshThread(familiarIds: [familiar.id], title: familiar.displayName)
+        let thread = app.startFreshThread(familiarIds: [familiar.id])
         Haptics.tap()
         path.append(.thread(thread))
     }

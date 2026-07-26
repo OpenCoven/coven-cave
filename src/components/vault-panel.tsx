@@ -31,7 +31,7 @@ const STATUS_META: Record<VaultStatus, { label: string; color: string; icon: str
   resolved:   { label: "1Password",   color: "var(--color-success)", icon: "ph:vault" },
   encrypted:  { label: "encrypted",   color: "var(--accent-presence)", icon: "ph:lock-key" },
   "env-only": { label: "env only",    color: "oklch(0.75 0.15 80)", icon: "ph:file-text" },
-  unresolved: { label: "unresolved",  color: "var(--color-danger)", icon: "ph:warning" },
+  unresolved: { label: "unresolved",  color: "var(--color-warning)", icon: "ph:warning" },
   error:      { label: "error",       color: "var(--color-danger)", icon: "ph:x-circle" },
   "no-ref":   { label: "no ref",      color: "var(--text-muted)", icon: "ph:minus" },
 };

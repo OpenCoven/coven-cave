@@ -3,10 +3,22 @@ import UserNotifications
 
 @main
 struct CovenCaveApp: App {
-    @State private var app = AppModel()
-    @State private var notificationDelegate = CaveNotificationDelegate()
+    @State private var app: AppModel
+    @State private var notificationDelegate: CaveNotificationDelegate
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @Environment(\.scenePhase) private var scenePhase
+
+    @MainActor
+    init() {
+        let app = AppModel()
+        let notificationDelegate = CaveNotificationDelegate()
+        notificationDelegate.onOpen = { app.handleDeepLink($0) }
+        // Register before SwiftUI mounts a view or starts a task. A cold-launch
+        // notification response can otherwise arrive before any delegate exists.
+        UNUserNotificationCenter.current().delegate = notificationDelegate
+        _app = State(initialValue: app)
+        _notificationDelegate = State(initialValue: notificationDelegate)
+    }
 
     var body: some Scene {
         // Mirror the desktop appearance by default; a fixed Light/Dark override
@@ -30,11 +42,10 @@ struct CovenCaveApp: App {
                 .tint(resolved.chrome.accent)
                 .preferredColorScheme(resolved.scheme)
                 .task {
+                    #if DEBUG
+                    guard !app.isConnectingPreview else { return }
+                    #endif
                     app.startConnectionSupervisor()
-                    // Route notification taps (reminders, chat replies) to the
-                    // deep-link handler, and show banners while foregrounded.
-                    notificationDelegate.onOpen = { app.handleDeepLink($0) }
-                    UNUserNotificationCenter.current().delegate = notificationDelegate
                     if app.connection != nil {
                         await app.connectWithRetry()
                     }
@@ -58,7 +69,7 @@ struct CovenCaveApp: App {
                     }
                 }
                 // Deep links from the home-screen widget (covencave://…) route to
-                // the matching tab/sheet. Handled even before connect — the tab is
+                // the matching destination/sheet. Handled even before connect — the destination is
                 // set so the right surface shows once the desktop is reached.
                 .onOpenURL { app.handleDeepLink($0) }
         }

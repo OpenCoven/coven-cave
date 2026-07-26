@@ -11,6 +11,7 @@ import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
 
 const CONV_DIR = path.join(caveHome(), "conversations");
+const conversationLockTails = new Map<string, Promise<void>>();
 
 export type ChatTurn = {
   id: string;
@@ -58,6 +59,11 @@ export type ChatTurn = {
   usage?: import("./usage-format").TurnUsage;
   /** Total cost in USD from the harness result event (CHAT-D12-02). */
   costUsd?: number;
+  /** Response controls resolved for this user turn. Persisted so clients can
+   *  refresh/duplicate a transcript and still retry with the original intent. */
+  reasoningEffort?: "low" | "medium" | "high";
+  responseSpeed?: "fast" | "balanced" | "careful";
+  modelOverride?: string;
   responseMetadata?: ChatResponseMetadata;
   origin?: "chat" | "voice";
   voiceCallId?: string;
@@ -245,6 +251,32 @@ export async function loadConversation(sessionId: string): Promise<ConversationF
   }
 }
 
+/** Serialize read-modify-write operations for one conversation. Atomic file
+ * replacement prevents torn JSON; this lock additionally prevents two valid
+ * snapshots (for example model PATCH and turn completion) losing each other. */
+export async function withConversationLock<T>(
+  sessionId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!isSafeConversationSessionId(sessionId)) throw new Error("invalid session id");
+  const previous = conversationLockTails.get(sessionId) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.catch(() => undefined).then(() => current);
+  conversationLockTails.set(sessionId, tail);
+  await previous.catch(() => undefined);
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (conversationLockTails.get(sessionId) === tail) {
+      conversationLockTails.delete(sessionId);
+    }
+  }
+}
+
 export async function saveConversation(conv: ConversationFile): Promise<void> {
   await ensureDir();
   conv.updatedAt = new Date().toISOString();
@@ -274,6 +306,7 @@ export type ConversationStubSeed = {
   runtime?: string;
   title?: string;
   origin?: SessionOrigin;
+  modelIntent?: ConversationModelIntent;
   /** The in-flight user turn. Its id must be reused by the end-of-stream save
    *  (after stripConversationStubTurn) so the turn identity is stable across
    *  the stub → authoritative transition. */
@@ -281,6 +314,9 @@ export type ConversationStubSeed = {
     id: string;
     text: string;
     attachments?: import("./chat-attachments").ChatAttachment[];
+    reasoningEffort?: ChatTurn["reasoningEffort"];
+    responseSpeed?: ChatTurn["responseSpeed"];
+    modelOverride?: string;
   };
 };
 
@@ -297,34 +333,46 @@ export type ConversationStubSeed = {
  * then leaves any live daemon status untouched.
  */
 export async function createConversationStub(seed: ConversationStubSeed): Promise<boolean> {
-  if (await loadConversation(seed.sessionId)) return false;
-  const now = new Date().toISOString();
-  await saveConversation({
-    sessionId: seed.sessionId,
-    familiarId: seed.familiarId,
-    harness: seed.harness,
-    ...(seed.model ? { model: seed.model } : {}),
-    ...(seed.runtime ? { runtime: seed.runtime } : {}),
-    ...(seed.title ? { title: seed.title } : {}),
-    ...(seed.origin ? { origin: seed.origin } : {}),
-    createdAt: now,
-    updatedAt: now,
-    turns: [
-      {
-        id: seed.userTurn.id,
-        role: "user",
-        text: seed.userTurn.text,
-        ...(seed.userTurn.attachments?.length
-          ? { attachments: seed.userTurn.attachments }
-          : {}),
-        createdAt: now,
-        parentId: null,
-      },
-    ],
-    activeLeafId: seed.userTurn.id,
-    pendingUserTurnId: seed.userTurn.id,
+  return withConversationLock(seed.sessionId, async () => {
+    if (await loadConversation(seed.sessionId)) return false;
+    const now = new Date().toISOString();
+    await saveConversation({
+      sessionId: seed.sessionId,
+      familiarId: seed.familiarId,
+      harness: seed.harness,
+      ...(seed.model ? { model: seed.model } : {}),
+      ...(seed.runtime ? { runtime: seed.runtime } : {}),
+      ...(seed.title ? { title: seed.title } : {}),
+      ...(seed.origin ? { origin: seed.origin } : {}),
+      ...(seed.modelIntent ? { modelIntent: seed.modelIntent } : {}),
+      createdAt: now,
+      updatedAt: now,
+      turns: [
+        {
+          id: seed.userTurn.id,
+          role: "user",
+          text: seed.userTurn.text,
+          ...(seed.userTurn.attachments?.length
+            ? { attachments: seed.userTurn.attachments }
+            : {}),
+          ...(seed.userTurn.reasoningEffort
+            ? { reasoningEffort: seed.userTurn.reasoningEffort }
+            : {}),
+          ...(seed.userTurn.responseSpeed
+            ? { responseSpeed: seed.userTurn.responseSpeed }
+            : {}),
+          ...(seed.userTurn.modelOverride
+            ? { modelOverride: seed.userTurn.modelOverride }
+            : {}),
+          createdAt: now,
+          parentId: null,
+        },
+      ],
+      activeLeafId: seed.userTurn.id,
+      pendingUserTurnId: seed.userTurn.id,
+    });
+    return true;
   });
-  return true;
 }
 
 /**

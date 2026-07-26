@@ -35,6 +35,8 @@ export type CovenGroup = {
   familiarIds: string[];
   /** Per-familiar resumed session ids so each thread survives reloads. */
   sessions: Record<string, string>;
+  /** Registered project every participant can access. Required before launch. */
+  projectId?: string;
   /** How a multi-recipient human turn is dispatched. */
   responseMode: CovenResponseMode;
   /** Familiar that should lead the next multi-recipient round-robin turn. */
@@ -423,6 +425,26 @@ export function setGroupSession(
   if (sessionId) sessions[familiarId] = sessionId;
   else delete sessions[familiarId];
   return { ...group, sessions, updatedAt: now };
+}
+
+/**
+ * Change the group's project context. Existing harness session ids are
+ * cwd-scoped, so a project change must start fresh participant sessions rather
+ * than resuming those tokens in a different root.
+ */
+export function setGroupProject(
+  group: CovenGroup,
+  projectId: string | null,
+  now: string,
+): CovenGroup {
+  const nextProjectId = projectId?.trim() || undefined;
+  if (nextProjectId === group.projectId) return group;
+  return {
+    ...group,
+    projectId: nextProjectId,
+    sessions: {},
+    updatedAt: now,
+  };
 }
 
 /** Update a group's participant roster, dropping orphaned session pins. */
@@ -830,5 +852,9 @@ function normalizeCovenGroup(group: CovenGroup): CovenGroup {
     // the details drawer.
     subject: typeof group.subject === "string" ? group.subject : undefined,
     summary: typeof group.summary === "string" ? group.summary : undefined,
+    projectId:
+      typeof group.projectId === "string" && group.projectId.trim()
+        ? group.projectId.trim()
+        : undefined,
   };
 }

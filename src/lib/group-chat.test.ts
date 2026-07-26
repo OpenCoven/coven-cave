@@ -8,6 +8,7 @@ import {
   upsertGroup,
   removeGroup,
   setGroupSession,
+  setGroupProject,
   setGroupParticipants,
   setGroupResponseMode,
   setGroupDetails,
@@ -179,6 +180,20 @@ test("setGroupSession: pins and clears a familiar's session id", () => {
   assert.equal(g.updatedAt, "2026-06-24T01:00:00.000Z");
   g = setGroupSession(g, "a", null, "2026-06-24T02:00:00.000Z");
   assert.equal(g.sessions.a, undefined);
+});
+
+test("setGroupProject: persists the choice and clears session pins when it changes", () => {
+  let g = makeGroup("X", ["a", "b"], "2026-06-24T00:00:00.000Z", "g1");
+  g = setGroupSession(g, "a", "sess-a", "2026-06-24T00:30:00.000Z");
+  const selected = setGroupProject(g, "project-1", "2026-06-24T01:00:00.000Z");
+  assert.equal(selected.projectId, "project-1");
+  assert.deepEqual(selected.sessions, {});
+  assert.equal(selected.updatedAt, "2026-06-24T01:00:00.000Z");
+  assert.equal(
+    setGroupProject(selected, "project-1", "2026-06-24T02:00:00.000Z"),
+    selected,
+    "reselecting the current project is a no-op",
+  );
 });
 
 test("setGroupParticipants: drops session pins for removed familiars", () => {
