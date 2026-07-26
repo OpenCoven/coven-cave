@@ -1,10 +1,52 @@
 // Shared, pure helpers for the skills directory — derived from a registry or
-// locally-scanned skill entry. Extracted from skill-browser.tsx so the
-// Marketplace "Explore" grid (skill-explore-card / skill-explore-drawer) and
-// the skill browser render the same source strings, install/use commands, and
-// frontmatter handling.
+// locally-scanned skill entry. These + the SkillBrowserEntry type feed the
+// Marketplace "Explore" grid (skill-explore-card / skill-explore-drawer): one
+// source of truth for the entry shape, source strings, install/use commands,
+// and frontmatter handling.
 
-import type { SkillBrowserEntry } from "@/components/skill-browser";
+/** A registry-directory or locally-scanned skill entry. Canonical home for the
+ *  type after the standalone SkillBrowser surface was retired (cave-vewe). */
+export type SkillBrowserEntry = {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  kind?: string;
+  slug?: string;
+  owner?: string;
+  repo?: string;
+  packageName?: string;
+  tags?: string[];
+  topics?: string[];
+  agents?: string[];
+  trust?: {
+    official?: boolean;
+    audited?: boolean;
+    source?: "registry" | "local" | "daemon" | "fallback";
+  };
+  installed?: boolean;
+  installsAllTime?: number;
+  weeklyInstalls?: number[];
+  trendScore?: number;
+  hotScore?: number;
+  registryUrl?: string;
+  sourceUrl?: string;
+  source?: "registry" | "local" | "daemon" | "fallback";
+  local?: {
+    installed: boolean;
+    path?: string;
+    version?: string;
+    scope?: "coven" | "claude-user" | "codex-user" | "agents-project" | "agents-user" | "other-local";
+    source?: "local-match" | "local-scan";
+  };
+  /** Absolute path to the skill's SKILL.md (local entries only). */
+  path?: string;
+  /** Scan scope: "user" (~/.claude/skills), "codex-user" (~/.codex/skills),
+   * "agents-project"/"agents-user" (.agents/skills), "global" (Coven shared),
+   * or omitted for directory-only entries.
+   */
+  familiar?: string;
+};
 
 /** The `owner/repo`, package, or slug the `skills` CLI installs from. */
 export function sourceTarget(skill: SkillBrowserEntry): string {

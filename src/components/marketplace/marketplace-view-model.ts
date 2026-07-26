@@ -1,5 +1,5 @@
 import type { IconName } from "@/lib/icon";
-import type { SkillBrowserEntry } from "@/components/skill-browser";
+import type { SkillBrowserEntry } from "@/lib/skill-directory";
 import type { SkillEntry as SkillDetailEntry } from "@/components/skill-detail-drawer";
 import type { KindFilter, SortKey } from "@/lib/marketplace-catalog";
 
