@@ -29,9 +29,28 @@ await mkdir(familiarWorkspace, { recursive: true });
 const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousGrokBin = process.env.GROK_BIN;
+const previousCovenBin = process.env.COVEN_BIN;
+const previousPath = process.env.PATH;
+const previousUserHome = process.env.HOME;
+const previousShell = process.env.SHELL;
+const previousAppData = process.env.APPDATA;
+const previousNpmPrefix = process.env.npm_config_prefix;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
+process.env.HOME = home;
+process.env.SHELL = path.join(bin, "no-login-shell");
+process.env.PATH = bin;
+process.env.APPDATA = home;
+process.env.npm_config_prefix = home;
 delete process.env.GROK_BIN;
+const fakeCoven = path.join(bin, process.platform === "win32" ? "coven.exe" : "coven");
+await writeFile(fakeCoven, "not a real Coven executable\n", { mode: 0o755 });
+process.env.COVEN_BIN = fakeCoven;
+
+function restoreEnv(key, value) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
 
 async function readSse(response) {
   assert.equal(response.status, 200, await response.clone().text());
@@ -73,16 +92,48 @@ assert.match(
 );
 
 try {
-  const { refreshCovenBin } = await import("@/lib/coven-bin");
+  const { refreshCovenBin, refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
   refreshCovenBin();
+  refreshCovenSpawnEnv();
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
-  await saveConfig({ familiars: { opal: { harness: "grok" } } });
   const project = await createProject({ name: "Availability fixture", root: familiarWorkspace });
   await grantProjectToFamiliar({ familiarId: "opal", projectId: project.id, source: "human", access: "write" });
+
+  // The fixture supplies only the fake outer Coven command. The composite
+  // preflight must detect the missing inner `claude` before it can spawn.
+  {
+    await saveConfig({ familiars: { opal: { harness: "claude" } } });
+    const response = await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "opal", prompt: "claude availability", projectRoot: familiarWorkspace }),
+    }));
+    const { body, events } = await readSse(response);
+
+    const error = events.find((event) => event.kind === "error");
+    assert.ok(error, "missing Claude produces a structured error before a model turn");
+    assert.equal(error.code, "runtime_claude_missing");
+    assert.match(error.message, /Claude Code CLI not found on PATH/);
+    assertNoFabricatedAssistantResponse(body, events);
+
+    const done = events.findLast((event) => event.kind === "done");
+    assert.ok(done, "the unavailable Claude stream still completes");
+    assert.equal(done.isError, true, "the unavailable Claude done event is errored");
+    if (done.sessionId) {
+      const conversation = await loadConversation(done.sessionId);
+      assert.equal(
+        (conversation?.turns ?? []).filter((turn) => turn.role === "assistant").length,
+        0,
+        "missing Claude never persists a fabricated assistant turn",
+      );
+    }
+  }
+
+  await saveConfig({ familiars: { opal: { harness: "grok" } } });
 
   // Scenario 1 — missing: no spawn, structured error, clean done, nothing
   // persisted as an assistant turn.
@@ -154,10 +205,15 @@ try {
     assert.ok(failedStart, "the failed launch is reported through the progress strip");
   }
 } finally {
-  process.env.COVEN_HOME = previousHome;
-  process.env.COVEN_CAVE_HOME = previousCaveHome;
-  if (previousGrokBin === undefined) delete process.env.GROK_BIN;
-  else process.env.GROK_BIN = previousGrokBin;
+  restoreEnv("COVEN_HOME", previousHome);
+  restoreEnv("COVEN_CAVE_HOME", previousCaveHome);
+  restoreEnv("GROK_BIN", previousGrokBin);
+  restoreEnv("COVEN_BIN", previousCovenBin);
+  restoreEnv("PATH", previousPath);
+  restoreEnv("HOME", previousUserHome);
+  restoreEnv("SHELL", previousShell);
+  restoreEnv("APPDATA", previousAppData);
+  restoreEnv("npm_config_prefix", previousNpmPrefix);
   await rm(home, { recursive: true, force: true });
 }
 
