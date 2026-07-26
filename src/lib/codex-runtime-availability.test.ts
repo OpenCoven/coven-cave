@@ -7,7 +7,7 @@ import {
 } from "./codex-runtime-availability.ts";
 
 const launch = { command: "/opt/coven", fixedArgs: ["/opt/coven.js"] };
-const env: NodeJS.ProcessEnv = { PATH: "/opt" };
+const env = { PATH: "/opt" } as unknown as NodeJS.ProcessEnv;
 const covenProbe = {
   platform: "linux" as const,
   statFile: (candidate: string) => candidate === "/opt/coven",

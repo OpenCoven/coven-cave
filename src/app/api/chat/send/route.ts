@@ -64,6 +64,10 @@ import {
 import { grokLaunchCommand } from "@/lib/grok-bin";
 import { openCodeCommand, openCodeLaunch, openCodeSpawnEnv, writeOpenCodeLaunchInput } from "@/lib/opencode-bin";
 import {
+  codexAdapterFailureAvailability,
+  probeCodexRuntimeAvailability,
+} from "@/lib/codex-runtime-availability";
+import {
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
   type DirectRunnerId,
@@ -3233,6 +3237,36 @@ export async function POST(req: Request) {
       // First attempt — uses --continue if body.sessionId was set.
       };
       const turnSpawnStartMs = Date.now();
+      // Codex's native-chat route is a two-layer launch: Cave starts Coven,
+      // then Coven starts Codex. Preflight with the exact command, fixed args,
+      // and familiar-scoped environment that the local plan will spawn.
+      const codexLaunchPlan =
+        !sshRuntime && binding.harness === "codex" && localRuntimePlan?.runner === "coven"
+          ? {
+              command: localRuntimePlan.command,
+              fixedArgs: localRuntimePlan.fixedArgs,
+              ...(localRuntimePlan.unresolvedWindowsShim ? { unresolvedWindowsShim: true as const } : {}),
+            }
+          : null;
+      if (codexLaunchPlan && localRuntimePlan) {
+        const availability = await probeCodexRuntimeAvailability({
+          launch: codexLaunchPlan,
+          env: localRuntimePlan.env,
+        });
+        if (availability.state !== "ready") {
+          launchFailure = { code: availability.code, message: availability.message };
+          result.is_error = true;
+          pushProgress(
+            "harness-start",
+            "codex failed to start",
+            "error",
+            availability.message,
+            Date.now() - turnSpawnStartMs,
+          );
+          push({ kind: "error", code: availability.code, message: availability.message });
+        }
+      }
+      if (!launchFailure) {
       // A compatibility decision is meaningful even when the CLI exits before
       // stdout. Announce it before spawning instead of relying on handleLine.
       if (openCodeDirect && !openCodeCompatibilityHealthNoticeSent && openCodeCompatibility?.diagnostic) {
@@ -3378,6 +3412,7 @@ export async function POST(req: Request) {
           "done",
         );
         await runAttempt(buildArgs(null, retry.prompt), retry.prompt);
+      }
       }
 
       // User cancel (CHAT-D5-02): when the client stops the response

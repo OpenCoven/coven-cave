@@ -22,6 +22,16 @@ assert.match(
 );
 assert.match(
   source,
+  /if \(id === "codex"\) \{[\s\S]*?await probeCodexRuntimeAvailability\(\{[\s\S]*?launch: covenLaunchCommand\(\),[\s\S]*?env,[\s\S]*?\}\)/,
+  "Codex status uses the resolved Coven launch plan and its scoped spawn environment",
+);
+assert.match(
+  source,
+  /h\.id === "codex" && availability\.state !== "ready"/,
+  "a generic executable discovery result cannot mark an unavailable Codex-through-Coven route as installed",
+);
+assert.match(
+  source,
   /const resolvedBinary = h\.id === "grok" \? grokBin\(\) : h\.binary;[\s\S]*?h\.id === "grok" && resolvedBinary !== h\.binary[\s\S]*?: await which\(h\.binary\)/,
   "WSL must report a Windows grok.exe discovered by the native launcher even though Linux which does not use PATHEXT",
 );

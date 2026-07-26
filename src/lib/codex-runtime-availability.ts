@@ -80,6 +80,15 @@ export function classifyCodexAdapterFailure(text: string): "missing" | "unlaunch
   return null;
 }
 
+/** Map an error emitted by a started Coven process onto the same Codex
+ * remediation used by preflight. Returns null for provider/auth failures. */
+export function codexAdapterFailureAvailability(text: string): CodexUnavailable | null {
+  const classified = classifyCodexAdapterFailure(text);
+  if (classified === "missing") return unavailable("missing", "adapter", CODEX_MISSING_MESSAGE);
+  if (classified === "unlaunchable") return unavailable("unlaunchable", "adapter", CODEX_ADAPTER_MESSAGE);
+  return null;
+}
+
 /**
  * Bounded, non-interactive inspection of the Codex adapter through the exact
  * Coven launch plan that native chat will use. No prompt is passed and no
@@ -169,9 +178,8 @@ export async function probeCodexRuntimeAvailability(
 
   const output = `${result.stdout}\n${result.stderr}`;
   if (result.exitCode !== 0) {
-    const classified = classifyCodexAdapterFailure(output);
-    if (classified === "missing") return unavailable("missing", "adapter", CODEX_MISSING_MESSAGE);
-    if (classified === "unlaunchable") return unavailable("unlaunchable", "adapter", CODEX_ADAPTER_MESSAGE);
+    const adapterFailure = codexAdapterFailureAvailability(output);
+    if (adapterFailure) return adapterFailure;
     return unavailable("probe_failed", "adapter", CODEX_PROBE_MESSAGE);
   }
 

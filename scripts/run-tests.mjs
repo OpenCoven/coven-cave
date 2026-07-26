@@ -1033,6 +1033,7 @@ export const SUITES = {
     "src/app/api/chat/send/harness-routing-copilot-jsonl.test.ts",
     "src/app/api/chat/send/harness-routing-opencode.test.ts",
     "src/app/api/chat/send/chat-send-models.test.ts",
+    "src/app/api/chat/send/harness-routing-codex-preflight.test.ts",
     "src/app/api/chat/send/chat-send-capabilities.test.ts",
     "src/app/api/chat/send/route-opencode.integration.test.ts",
     "src/app/api/chat/send/route-runtime-availability.integration.test.ts",

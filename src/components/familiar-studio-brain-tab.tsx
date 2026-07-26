@@ -71,6 +71,10 @@ type HarnessReport = {
   id: string;
   label: string;
   installed: boolean;
+  availability?: {
+    state?: string;
+    message?: string;
+  };
   models?: RuntimeModelOption[];
   defaultModel?: string | null;
 };
@@ -840,7 +844,10 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                           .filter((h) => isBindableRuntimeChoice(h.id))
                           .map((h) => ({
                             value: h.id,
-                            label: `${h.label}${h.installed ? "" : " (not installed)"}`,
+                            label: h.label,
+                            detail: h.availability?.state && h.availability.state !== "ready"
+                              ? h.availability.message
+                              : h.installed ? undefined : "not installed",
                           })),
                       } satisfies StandardSelectGroup<string>,
                     ]}
