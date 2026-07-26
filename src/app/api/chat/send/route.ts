@@ -1008,12 +1008,13 @@ export async function POST(req: Request) {
         ? openCodeCompatibility?.capabilities.model ?? false
         : binding.harness === "grok" ||
           (binding.harness !== "openclaw" && (await covenRunSupportsModel()));
-  // Grok and OpenCode are direct integrations, so neither may wait on coven
-  // capability probes for flags it does not execute.
+  // Hermes, Grok, and OpenCode are direct integrations, so none may wait on
+  // coven capability probes for flags they do not execute.
   const permissionForwardingEnabled =
     !openCodeDirect &&
     binding.harness !== "openclaw" &&
     binding.harness !== "grok" &&
+    binding.harness !== "hermes" &&
     (await covenRunSupportsPermission());
   // Same gating for directory grants (`--add-dir`). Without forwarding, the
   // granted roots listed in the runtime-scope preamble are prompt-text-only
@@ -1022,6 +1023,7 @@ export async function POST(req: Request) {
     !openCodeDirect &&
     binding.harness !== "openclaw" &&
     binding.harness !== "grok" &&
+    binding.harness !== "hermes" &&
     (await covenRunSupportsAddDir());
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
@@ -2816,11 +2818,11 @@ export async function POST(req: Request) {
             // OpenCode launch errors can include the PowerShell shim's
             // absolute path (and platform error details). Keep compatibility
             // diagnostics value-free rather than surfacing local filesystem
-            // information. Hermes probe failures retain the contract's
-            // actionable, path-free remediation copy.
+            // information. Any non-ready Hermes recheck retains the shared
+            // contract's actionable, path-free remediation copy.
             const launchError = openCodeDirect
               ? "OpenCode failed to start. Check its installation and try again."
-              : hermesSpawnAvailability?.state === "probe_failed"
+              : hermesSpawnAvailability && hermesSpawnAvailability.state !== "ready"
                 ? hermesSpawnAvailability.message
                 : hermesDirect
                   ? "Hermes failed to start. Check its installation and try again."

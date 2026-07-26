@@ -105,8 +105,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /binding\.harness !== "grok" &&\s*\n\s*\(await covenRunSupportsAddDir\(\)\)/,
-  "Grok's native direct path must not wait for an unrelated coven run --add-dir probe",
+  /binding\.harness !== "grok" &&\s*\n\s*binding\.harness !== "hermes" &&\s*\n\s*\(await covenRunSupportsAddDir\(\)\)/,
+  "Direct Hermes and Grok paths must not wait for an unrelated coven run --add-dir probe",
 );
 assert.match(
   chatRoute,
