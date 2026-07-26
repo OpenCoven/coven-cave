@@ -160,4 +160,92 @@ assert.deepEqual(
   "only the accepted run reaches Cave output; a foreign same-session run is rejected",
 );
 
+// A reconnect is not an excuse to trust an event before the documented
+// session subscription returns. The queued frame is accepted only after the
+// re-subscription succeeds.
+let reconnectOptions;
+let releaseResubscribe;
+let subscriptionCalls = 0;
+const reconnectEvents = [];
+const reconnectDispatch = await dispatchOpenClawGatewayTurn({
+  sessionKey: expected.sessionKey,
+  agentId: expected.agentId,
+  message: "hello again",
+  idempotencyKey: "cave-request-reconnect",
+  env: {
+    OPENCLAW_GATEWAY_DISPATCH: "1",
+    OPENCLAW_GATEWAY_URL: "ws://127.0.0.1:18789",
+  },
+  onEvent: (event) => reconnectEvents.push(event),
+  clientFactory: (options) => {
+    reconnectOptions = options;
+    return {
+      start() {
+        queueMicrotask(() => options.onHelloOk?.(helloOk()));
+      },
+      stop() {},
+      async request(method, _params, requestOptions) {
+        if (method === "sessions.messages.subscribe") {
+          subscriptionCalls += 1;
+          if (subscriptionCalls === 1) return { subscribed: true };
+          return new Promise((resolve) => {
+            releaseResubscribe = () => resolve({ subscribed: true });
+          });
+        }
+        if (method === "chat.send") {
+          requestOptions?.onSent?.();
+          return { runId: expected.runId };
+        }
+        return {};
+      },
+    };
+  },
+});
+
+function helloOk() {
+  return {
+    type: "hello-ok",
+    protocol: 4,
+    server: { version: "2026.7.2-beta.4", connId: "reconnect-connection" },
+    features: { methods: ["chat.send", "sessions.messages.subscribe"], events: ["chat"] },
+    snapshot: {
+      presence: [],
+      health: {},
+      stateVersion: { presence: 0, health: 0 },
+      uptimeMs: 0,
+    },
+    auth: { role: "operator", scopes: ["operator.read", "operator.write"] },
+    policy: { maxPayload: 1024, maxBufferedBytes: 1024, tickIntervalMs: 1000 },
+  };
+}
+
+assert.equal(reconnectDispatch.kind, "accepted");
+reconnectOptions.onHelloOk?.(helloOk());
+reconnectOptions.onEvent?.({ type: "event", event: "chat", payload: { ...delta, seq: 0 } });
+await Promise.resolve();
+assert.deepEqual(reconnectEvents, [], "a pre-subscription reconnect frame is not projected");
+releaseResubscribe();
+await Promise.resolve();
+await Promise.resolve();
+assert.deepEqual(
+  reconnectEvents,
+  [{ kind: "delta", text: "Hello", replace: false }],
+  "the queued frame is projected after re-subscription succeeds",
+);
+reconnectOptions.onEvent?.({
+  type: "event",
+  event: "chat",
+  payload: {
+    runId: expected.runId,
+    sessionKey: expected.sessionKey,
+    agentId: expected.agentId,
+    seq: 1,
+    state: "final",
+    message: { text: "done" },
+  },
+});
+if (reconnectDispatch.kind === "accepted") {
+  assert.deepEqual(await reconnectDispatch.done, { state: "final", message: "done" });
+}
+
 console.log("openclaw Gateway run correlation tests passed");

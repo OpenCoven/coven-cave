@@ -156,6 +156,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
   let helloReject: ((error: Error) => void) | undefined;
   let connected = false;
   let expectedRunId: string | undefined;
+  let streamReady = false;
   let highestSequence = -1;
   let dispatchSent = false;
   let settled = false;
@@ -171,8 +172,13 @@ export async function dispatchOpenClawGatewayTurn(args: {
     doneResolve({ state, ...(message ? { message } : {}) });
   };
 
+  const drainQueuedChatEvents = () => {
+    if (!expectedRunId || !streamReady || settled) return;
+    for (const queued of queuedChatEvents.splice(0)) processChatEvent(queued);
+  };
+
   const processChatEvent = (payload: unknown) => {
-    if (!expectedRunId || settled) {
+    if (!expectedRunId || !streamReady || settled) {
       if (queuedChatEvents.length < 128) queuedChatEvents.push(payload);
       return;
     }
@@ -260,9 +266,17 @@ export async function dispatchOpenClawGatewayTurn(args: {
         return;
       }
       // The official client reconnects after a transport loss. Restore the
-      // documented session stream before accepting resumed chat frames.
+      // documented session stream before accepting resumed chat frames. Frames
+      // that arrive during this window remain queued until that subscription
+      // has succeeded, so a reconnect never turns an unverified stream into
+      // accepted lifecycle state.
+      streamReady = false;
       void client
         .request("sessions.messages.subscribe", { key: args.sessionKey, agentId: args.agentId })
+        .then(() => {
+          streamReady = true;
+          drainQueuedChatEvents();
+        })
         .catch(() => {
           const message = "Gateway reconnect could not restore the session stream";
           args.onEvent({ kind: "error", message });
@@ -275,6 +289,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
       else if (!settled) {
         args.onEvent({ kind: "error", message: "Gateway connection failed after dispatch" });
         settle("error", "Gateway connection failed after dispatch");
+        client.stop();
       }
     },
     onEvent: (frame) => {
@@ -294,6 +309,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
   try {
     await withTimeout(hello, STARTUP_TIMEOUT_MS, "Gateway did not complete its authenticated hello");
     await client.request("sessions.messages.subscribe", { key: args.sessionKey, agentId: args.agentId });
+    streamReady = true;
   } catch (error) {
     client.stop();
     return { kind: "unavailable", reason: error instanceof Error ? error.message : "Gateway is unavailable" };
@@ -331,7 +347,7 @@ export async function dispatchOpenClawGatewayTurn(args: {
     };
   }
   expectedRunId = runId;
-  for (const queued of queuedChatEvents.splice(0)) processChatEvent(queued);
+  drainQueuedChatEvents();
 
   return {
     kind: "accepted",
