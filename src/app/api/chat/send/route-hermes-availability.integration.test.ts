@@ -94,18 +94,20 @@ try {
   }
 
   // A CLI that starts but exits with an auth/config-style failure is distinct
-  // from a missing executable. It must emit a structured error rather than the
-  // generic successful-looking "produced no output" assistant fallback.
+  // from a missing executable. Use Node as a portable native executable and
+  // have its `chat` script write to stdout: failed Hermes output must not leak
+  // as an assistant reply before the structured runtime error.
   {
     const executable = path.join(bin, process.platform === "win32" ? "hermes.exe" : "hermes");
     await unlink(executable);
-    const failingExecutable = process.platform === "win32"
-      ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.exe")
-      : "/bin/false";
+    await writeFile(
+      path.join(familiarWorkspace, "chat"),
+      'process.stdout.write("Hermes authentication failed\\n"); process.exit(1);\\n',
+    );
     try {
-      await link(failingExecutable, executable);
+      await link(process.execPath, executable);
     } catch {
-      await copyFile(failingExecutable, executable);
+      await copyFile(process.execPath, executable);
     }
     const response = await POST(new Request("http://localhost/api/chat/send", {
       method: "POST",
@@ -117,6 +119,7 @@ try {
     assert.equal(error?.code, "runtime_process_failed", "a started Hermes failure has its own structured code");
     assert.match(error?.message ?? "", /Hermes exited with an error/);
     assertNoFabricatedAssistantResponse(body, events);
+    assert.ok(!body.includes("Hermes authentication failed"), "failed Hermes stdout is never rendered as an assistant reply");
     assert.ok(!body.includes(bin), "started Hermes failure does not expose the local executable path");
   }
 } finally {

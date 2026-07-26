@@ -2739,6 +2739,7 @@ export async function POST(req: Request) {
         return new Promise((resolve) => {
           const attemptStartedAt = Date.now();
           let discardingOpenCodeFrame = false;
+          let terminalFailureReported = false;
           pushProgress(
             "harness-start",
             `Starting ${binding.harness}`,
@@ -2751,6 +2752,8 @@ export async function POST(req: Request) {
               : openCodeDirect ? undefined : familiarCwd ?? cwd,
           );
           const reportLaunchFailure = (err: NodeJS.ErrnoException) => {
+            if (terminalFailureReported) return;
+            terminalFailureReported = true;
             // OpenCode launch errors can include the PowerShell shim's
             // absolute path (and platform error details). Keep compatibility
             // diagnostics value-free rather than surfacing local filesystem
@@ -2818,6 +2821,8 @@ export async function POST(req: Request) {
             }
           };
           const reportHermesProcessFailure = () => {
+            if (terminalFailureReported) return;
+            terminalFailureReported = true;
             // A non-zero exit means Hermes did start, so it is neither a
             // missing executable nor a preflight failure. Keep the actual
             // runner output out of the assistant transcript: it can contain
@@ -2959,6 +2964,12 @@ export async function POST(req: Request) {
           }
 
           currentChild = child;
+          // Hermes's CLI reports provider/authentication failures through the
+          // same stdout channel as successful replies. Hold its bytes until
+          // the exit status is known so a failed process can never stream an
+          // error-looking line as an assistant answer before the structured
+          // runtime error below. Other harnesses retain their live streaming.
+          const hermesStdout = hermesDirect ? [] as Buffer[] : null;
           const onAbort = () => {
             // Transport drop, not Stop — arm the detach cap and let the turn
             // finish. Deliberate stops kill through the registry instead.
@@ -3026,6 +3037,10 @@ export async function POST(req: Request) {
           };
 
           child.stdout.on("data", (data: Buffer) => {
+            if (hermesStdout) {
+              hermesStdout.push(data);
+              return;
+            }
             const chunk = openCodeStdoutDecoder ? openCodeStdoutDecoder.write(data) : stdoutDecoder.write(data);
             if (chunk) handleStdoutChunk(chunk);
           });
@@ -3053,19 +3068,31 @@ export async function POST(req: Request) {
           });
 
           child.on("close", (code) => {
-            const trailingOpenCodeText = openCodeStdoutDecoder?.end();
-            if (trailingOpenCodeText) handleStdoutChunk(trailingOpenCodeText);
-            const trailingStdoutText = openCodeStdoutDecoder ? "" : stdoutDecoder.end();
-            if (trailingStdoutText) handleStdoutChunk(trailingStdoutText);
+            const hermesProcessFailed = hermesDirect && code !== 0 && !runHandle.stopRequested;
+            if (hermesProcessFailed) {
+              // Discard buffered stdout. A non-zero Hermes process has no
+              // verified assistant response, and its output may be an auth or
+              // configuration error that must stay out of the transcript.
+              reportHermesProcessFailure();
+            } else if (hermesStdout) {
+              for (const chunk of hermesStdout) {
+                const decoded = stdoutDecoder.write(chunk);
+                if (decoded) handleStdoutChunk(decoded);
+              }
+              const trailingHermesText = stdoutDecoder.end();
+              if (trailingHermesText) handleStdoutChunk(trailingHermesText);
+            } else {
+              const trailingOpenCodeText = openCodeStdoutDecoder?.end();
+              if (trailingOpenCodeText) handleStdoutChunk(trailingOpenCodeText);
+              const trailingStdoutText = openCodeStdoutDecoder ? "" : stdoutDecoder.end();
+              if (trailingStdoutText) handleStdoutChunk(trailingStdoutText);
+            }
             captureHermesSessionFromStderr("", true);
             // OpenCode normally emits a JSON error envelope, but older CLI
             // builds can exit non-zero with only stderr. Do not mistake that
             // failed invocation for a successful model application below.
             if ((openCodeDirect || copilotStream) && code !== 0) {
               result = { ...result, is_error: true };
-            }
-            if (hermesDirect && code !== 0 && !runHandle.stopRequested) {
-              reportHermesProcessFailure();
             }
             // Copilot JSONL stderr can contain raw prompt or tool payloads on
             // a successful malformed stream too. Its only user-facing
@@ -3080,8 +3107,8 @@ export async function POST(req: Request) {
             pushProgress(
               "harness-start",
               `${binding.harness} exited`,
-              "done",
-              undefined,
+              hermesProcessFailed ? "error" : "done",
+              hermesProcessFailed ? launchFailure?.message : undefined,
               Date.now() - attemptStartedAt,
             );
             if (jsonBuf) handleLine(jsonBuf);
