@@ -31,12 +31,18 @@ assert.equal(
 );
 assert.equal(checkout.with["persist-credentials"], false);
 
-const enforcement = job.steps.find((step) => step.run === "node scripts/enforce-branch-cap.mjs");
+const enforcement = job.steps.find((step) => step.name === "Enforce 40-branch cap");
 assert.ok(enforcement, "workflow executes the tested enforcement module");
 assert.equal(enforcement.env.MAX_BRANCHES, "40");
 assert.equal(enforcement.env.CREATED_BRANCH, "${{ github.event.ref }}");
 assert.equal(enforcement.env.DEFAULT_BRANCH, "${{ github.event.repository.default_branch }}");
 assert.equal(enforcement.env.GITHUB_API_URL, "${{ github.api_url }}");
 assert.equal(enforcement.env.GITHUB_TOKEN, "${{ github.token }}");
+assert.match(
+  enforcement.run,
+  /if \[\[ ! -f scripts\/enforce-branch-cap\.mjs \]\]; then/,
+  "the workflow allows only its one-time pre-merge bootstrap when main lacks the module",
+);
+assert.match(enforcement.run, /node scripts\/enforce-branch-cap\.mjs/);
 
 console.log("branch-cap-workflow.test.mjs: ok");

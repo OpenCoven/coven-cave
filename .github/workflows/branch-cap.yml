@@ -31,4 +31,9 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ github.token }}
           MAX_BRANCHES: "40"
-        run: node scripts/enforce-branch-cap.mjs
+        run: |
+          if [[ ! -f scripts/enforce-branch-cap.mjs ]]; then
+            echo "::notice::Branch-cap enforcement is not installed on the default branch yet; allowing the bootstrap event."
+            exit 0
+          fi
+          node scripts/enforce-branch-cap.mjs
