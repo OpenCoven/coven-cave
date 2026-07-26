@@ -2351,6 +2351,10 @@ export async function POST(req: Request) {
           pushProgress("grok-compatibility", label, "error", grokCompatibility.diagnostic);
         }
         if (grokCompatibility?.mode === "plain") {
+          // Plain output is safe only while it is prose. A changed client can
+          // still emit an unverified JSON envelope even after capability
+          // probing failed; never turn that possible tool payload into a
+          // persisted assistant message or diagnostic.
           let unverifiedStructuredOutput = false;
           if (isJson) {
             try {

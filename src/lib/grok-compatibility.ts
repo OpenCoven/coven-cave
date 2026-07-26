@@ -553,7 +553,18 @@ export async function resolveGrokCompatibility(capabilities: GrokRunCapabilities
         if (!currentCache || !trustedBundle(currentCache, source.checkpoint)) throw new Error("registry cache write rejected");
         bundle = currentCache; bundleSource = "cache"; diagnostic = "schema-registry-refresh-rejected";
       }
-    } catch { diagnostic = "schema-registry-refresh-rejected"; }
+    } catch {
+      // `writeCache` commits the high-water anchor before its cache record.
+      // If the process loses the cache write after that point, the bundle that
+      // was read before the refresh is now below the durable anchor and cannot
+      // remain selected for this turn.
+      const currentAnchor = await readTrustAnchor(cacheFile);
+      if (bundleSource !== "built-in" && !meetsTrustAnchor(bundle, currentAnchor)) {
+        bundle = BUILTIN_GROK_SCHEMA_BUNDLE;
+        bundleSource = "built-in";
+      }
+      diagnostic = "schema-registry-refresh-rejected";
+    }
   }
   const remoteById = new Map(bundle.schemas.map((schema) => [schema.id, schema]));
   const candidates = bundleSource === "built-in" ? bundle.schemas : [...bundle.schemas, ...BUILTIN_GROK_SCHEMA_BUNDLE.schemas.filter((schema) => !bundle.retiredSchemaIds?.includes(schema.id) && !remoteById.has(schema.id))];

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -71,6 +71,28 @@ try {
   const rollback = await resolveGrokCompatibility(supported, { publicKeys: keyring, cachePath, url: "https://registry.example/grok.json", fetch: async () => new Response(JSON.stringify(signed)) });
   assert.equal(rollback.bundleSource, "cache", "a lower signed sequence cannot replace the local high-water contract");
   assert.equal(rollback.diagnostic, "schema-registry-refresh-rejected");
+
+  // Simulate an interruption after the high-water anchor is committed but
+  // before the replacement cache file can be installed. The prior cache was
+  // selected before fetch, so this verifies the current turn drops it too.
+  const interruptedBundle = structuredClone(highWater);
+  interruptedBundle.sequence = 4;
+  interruptedBundle.signature = {
+    algorithm: "ed25519",
+    value: sign(null, Buffer.from(grokSchemaBundleSigningPayload(interruptedBundle)), privateKey).toString("base64"),
+  };
+  const interruptedRefresh = await resolveGrokCompatibility(supported, {
+    publicKeys: keyring,
+    cachePath,
+    url: "https://registry.example/grok.json",
+    fetch: async () => {
+      await rm(cachePath, { force: true });
+      await mkdir(cachePath);
+      return new Response(JSON.stringify(interruptedBundle));
+    },
+  });
+  assert.equal(interruptedRefresh.bundleSource, "built-in", "a cache below a newly committed high-water anchor is not selected in the interrupted refresh turn");
+  assert.equal(interruptedRefresh.diagnostic, "schema-registry-refresh-rejected");
 } finally {
   await rm(cacheDirectory, { recursive: true, force: true });
 }

@@ -28,9 +28,10 @@ const executable = process.platform === "win32" ? "grok.cmd" : "grok";
 const windowsShimTarget = path.join(bin, "grok-launcher.js");
 const windowsShimProgram = [
   "const [command] = process.argv.slice(2);",
-  "if (command === '--help') { if (process.env.XAI_API_KEY) process.exit(12); console.log(process.env.GROK_TEST_MODE === 'plain' ? '  --output-format <format>  Output format: text' : '  --output-format <format>  Output format: text, streaming-json'); process.exit(0); }",
+  "if (command === '--help') { if (process.env.XAI_API_KEY) process.exit(12); console.log(['plain', 'plain-structured'].includes(process.env.GROK_TEST_MODE ?? '') ? '  --output-format <format>  Output format: text' : '  --output-format <format>  Output format: text, streaming-json'); process.exit(0); }",
   "if (command === '--version') { if (process.env.XAI_API_KEY) process.exit(12); console.log('1.0.0'); process.exit(0); }",
   "if (process.env.GROK_TEST_MODE === 'plain') console.log('plain fallback reply');",
+  "else if (process.env.GROK_TEST_MODE === 'plain-structured') console.log('{\\\"type\\\":\\\"tool_started\\\",\\\"input\\\":\\\"private tool payload\\\"}');",
   "else if (process.env.GROK_TEST_MODE === 'malformed') console.log('unframed private tool payload');",
   "else console.log('{\\\"type\\\":\\\"text\\\",\\\"data\\\":\\\"verified route reply\\\"}\\n{\\\"type\\\":\\\"end\\\",\\\"sessionId\\\":\\\"native_grok_session\\\"}');",
 ].join("\n");
@@ -43,11 +44,12 @@ const launcher = process.platform === "win32"
       "#!/bin/sh",
       "if [ \"$1\" = \"--help\" ]; then",
       "  [ -z \"$XAI_API_KEY\" ] || exit 12",
-      "  if [ \"$GROK_TEST_MODE\" = \"plain\" ]; then printf '%s\\n' '  --output-format <format>  Output format: text'; else printf '%s\\n' '  --output-format <format>  Output format: text, streaming-json'; fi",
+      "  if [ \"$GROK_TEST_MODE\" = \"plain\" ] || [ \"$GROK_TEST_MODE\" = \"plain-structured\" ]; then printf '%s\\n' '  --output-format <format>  Output format: text'; else printf '%s\\n' '  --output-format <format>  Output format: text, streaming-json'; fi",
       "  exit 0",
       "fi",
       "if [ \"$1\" = \"--version\" ]; then [ -z \"$XAI_API_KEY\" ] || exit 12; printf '%s\\n' '1.0.0'; exit 0; fi",
       "if [ \"$GROK_TEST_MODE\" = \"plain\" ]; then printf '%s\\n' 'plain fallback reply'; exit 0; fi",
+      "if [ \"$GROK_TEST_MODE\" = \"plain-structured\" ]; then printf '%s\\n' '{\"type\":\"tool_started\",\"input\":\"private tool payload\"}'; exit 0; fi",
       "if [ \"$GROK_TEST_MODE\" = \"malformed\" ]; then printf '%s\\n' 'unframed private tool payload'; exit 0; fi",
       "printf '%s\\n' '{\"type\":\"text\",\"data\":\"verified route reply\"}' '{\"type\":\"end\",\"sessionId\":\"native_grok_session\"}'",
     ].join("\n");
@@ -92,6 +94,14 @@ try {
   })));
   assert.match(plain.body, /"kind":"assistant_chunk","text":"plain fallback reply\\n"/, "an unverified output format remains safe plain assistant text");
   assert.match(plain.body, /without tool activity/, "plain fallback provides an accessible compatibility diagnostic");
+
+  process.env.GROK_TEST_MODE = "plain-structured";
+  const unverifiedStructured = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "unsafe fallback", projectRoot: familiarWorkspace }),
+  })));
+  assert.match(unverifiedStructured.body, /unverified-structured-output/, "plain fallback reports an accessible fixed diagnostic for raw structured output");
+  assert.doesNotMatch(unverifiedStructured.body, /private tool payload/, "plain fallback never persists unverified structured payload values as assistant text or diagnostics");
 
   process.env.GROK_TEST_MODE = "malformed";
   const malformed = await readSse(await POST(new Request("http://localhost/api/chat/send", {
