@@ -130,7 +130,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-24 (local Whisper STT): the local-origin transcription endpoint
   // and its sidecar runner trace at 5,694 on Linux and 5,696 on Windows.
   // Retain the established ten-file cross-platform buffer.
-  fileCount: 5_706,
+  // 2026-07-26 (scheduled backup sync): the /backup/sync (+/run) routes and
+  // the backup-sync scheduler trace at 5,718 on Linux and 5,720 on Windows.
+  // Retain the established ten-file cross-platform buffer.
+  fileCount: 5_730,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
