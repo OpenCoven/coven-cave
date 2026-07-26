@@ -31,6 +31,7 @@ import {
   scrubSidecarInternalEnv,
   vaultFreeDiscoveryEnv,
 } from "./child-spawn-env.ts";
+import { managedNodePaths, managedNodeSpawnEnv } from "./server/managed-node-toolchain.ts";
 import { loadVaultMap } from "./vault.ts";
 
 export { scrubSidecarInternalEnv } from "./child-spawn-env.ts";
@@ -214,7 +215,12 @@ function windowsNpmBinDirs(discovery: DiscoveryOptions): string[] {
 }
 
 function candidateDirs(discovery = discoveryOptions()): string[] {
+  const managed = managedNodePaths();
   return [
+    // Cave's verified user-scoped Node/npm lane precedes opportunistic host
+    // managers. It never edits system PATH; this only affects Cave children.
+    managed?.npmBin,
+    managed ? path.dirname(managed.node) : null,
     ...nodeNvmBinDirs(discovery),
     ...fnmBinDirs(discovery),
     ...windowsNpmBinDirs(discovery),
@@ -231,7 +237,7 @@ function candidateDirs(discovery = discoveryOptions()): string[] {
     // ~/.cargo/bin last: often holds a stale `cargo install` of coven that's
     // missing flags. Prefer the npm-published binary when both exist.
     path.join(/* turbopackIgnore: true */ HOME, ".cargo", "bin"),
-  ].filter((d) => existsSync(/* turbopackIgnore: true */ d));
+  ].filter((d): d is string => !!d && existsSync(/* turbopackIgnore: true */ d));
 }
 
 function candidateBinNames(): string[] {
@@ -498,7 +504,14 @@ function augmentedSpawnPath(
   const fromSystem = process.platform === "win32"
     ? windowsRegistryPath(discovery)
     : loginShellPath(discovery);
-  const launchPath = discovery.env.PATH ? discovery.env.PATH.split(path.delimiter) : [];
+  // Windows retains the casing it inherited for environment keys (normally
+  // `Path`). After copying the environment, `env.PATH` therefore cannot be
+  // relied on even though `process.env.PATH` is case-insensitive. Read it
+  // case-insensitively so a desktop launch PATH remains first for Queue tools.
+  const launchPathValue = discovery.env.PATH ?? Object.entries(discovery.env).find(
+    ([key]) => key.toUpperCase() === "PATH",
+  )?.[1];
+  const launchPath = launchPathValue ? launchPathValue.split(path.delimiter) : [];
   const systemPath = fromSystem ? fromSystem.split(path.delimiter) : [];
   const candidates = candidateDirs(discovery);
   // `coven` intentionally prefers its managed install locations over a stale
@@ -511,8 +524,12 @@ function augmentedSpawnPath(
   return parts.filter((part) => !!part && !seen.has(part) && (seen.add(part), true)).join(path.delimiter);
 }
 
-function spawnEnv(pathValue: string): NodeJS.ProcessEnv {
+function spawnEnv(pathValue: string, includeManagedNode = true): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, PATH: pathValue };
+  if (includeManagedNode) {
+    const managed = managedNodeSpawnEnv(env);
+    if (managed) Object.assign(env, managed);
+  }
   env.COVEN_HARNESS_ADAPTER_DIRS = covenAdapterDirsEnvValue(
     process.env.COVEN_HARNESS_ADAPTER_DIRS,
     process.env.COVEN_HOME,
@@ -549,7 +566,7 @@ export function covenSpawnEnv(options: CovenSpawnEnvOptions = {}): NodeJS.Proces
  */
 export function caveToolSpawnEnv(): NodeJS.ProcessEnv {
   cachedToolPath ??= augmentedSpawnPath(true, discoveryOptions());
-  return spawnEnv(cachedToolPath);
+  return spawnEnv(cachedToolPath, false);
 }
 
 export function refreshCovenSpawnEnv(

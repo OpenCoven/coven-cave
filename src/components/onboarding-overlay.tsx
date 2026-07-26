@@ -27,7 +27,6 @@ import {
 } from "@/lib/onboarding-setup-failure";
 import {
   openCovenToolActionTargets,
-  openCovenToolsInstallCommand,
   openCovenToolsPrimaryActionLabel,
 } from "@/lib/opencoven-tools-install";
 import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
@@ -54,6 +53,7 @@ import {
   type MultiHostMode,
   type NpmLaneState,
   type OnboardingStatus,
+  type OnboardingPrerequisite,
   type OnboardingUpdatePayload,
   type PlatformId,
   type PortPreflightResult,
@@ -95,6 +95,7 @@ export function OnboardingOverlay({
   autoFinishWhenComplete = false,
 }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  const [prerequisites, setPrerequisites] = useState<OnboardingPrerequisite[]>([]);
   const [updateTools, setUpdateTools] = useState<OpenCovenToolStatus[]>([]);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateStale, setUpdateStale] = useState(false);
@@ -296,6 +297,18 @@ export function OnboardingOverlay({
     }
   }, []);
 
+  const loadPrerequisites = useCallback(async () => {
+    try {
+      const res = await fetch("/api/onboarding/prerequisites?capabilities=local-familiar,runtime", { cache: "no-store" });
+      const json = (await res.json()) as { ok?: boolean; prerequisites?: OnboardingPrerequisite[] };
+      if (res.ok && json.ok) setPrerequisites(json.prerequisites ?? []);
+    } catch {
+      // Status remains useful even if the advisory preflight endpoint is not
+      // reachable during sidecar startup. The normal status heartbeat retries
+      // actionable onboarding state separately.
+    }
+  }, []);
+
   // One-shot loads when the wizard opens; the recurring heartbeat below owns
   // the 2s cadence.
   useEffect(() => {
@@ -303,8 +316,9 @@ export function OnboardingOverlay({
     void refresh();
     void loadUpdates();
     void loadHarnesses();
+    void loadPrerequisites();
     void refreshNpmLane();
-  }, [open, refresh, loadUpdates, loadHarnesses, refreshNpmLane]);
+  }, [open, refresh, loadUpdates, loadHarnesses, loadPrerequisites, refreshNpmLane]);
 
   // The 2s status/npm-lane heartbeat runs only while something can still
   // change underneath the wizard: an incomplete required step, a running or
@@ -461,7 +475,7 @@ export function OnboardingOverlay({
         status?: string;
         elapsedMs?: number;
         tail?: string;
-        npmMissing?: boolean;
+        managedNodeMissing?: boolean;
         hint?: string;
         error?: string;
         npmBusy?: boolean;
@@ -478,16 +492,16 @@ export function OnboardingOverlay({
           label: json.npmBusyLabel ?? json.npmBusyTarget,
         });
       }
-      if (json.npmMissing) {
+      if (json.managedNodeMissing) {
         setNodeHint(
           json.hint ??
-            "Install Node.js LTS from https://nodejs.org, then try again.",
+            "Install Cave-managed Node.js and npm first, then try again.",
         );
         setInstallResults((prev) => ({
           ...prev,
           [target]: {
             ok: false,
-            detail: "npm not found — Node.js setup needed first.",
+            detail: "Cave-managed Node.js/npm setup is needed first.",
           },
         }));
         return;
@@ -1206,6 +1220,7 @@ export function OnboardingOverlay({
         ) : null}
 
         <main className="flex flex-1 flex-col gap-3 py-5">
+          <PrerequisiteSummary prerequisites={prerequisites} />
           <ol className="flex flex-col gap-3" aria-label="Setup steps">
             {steps.map((step, index) => {
               const expanded = openStepKey === step.key;
@@ -1287,7 +1302,6 @@ export function OnboardingOverlay({
                             npmBusyLabel={npmLane?.label ?? "another npm update"}
                             onInstall={(target) => void runInstall(target)}
                             onCheckUpdates={() => void loadUpdates(true)}
-                            onCopy={copyText}
                           />
                         ) : step.key === "covenHome" ? (
                           <div className="flex flex-col gap-3">
@@ -1313,7 +1327,6 @@ export function OnboardingOverlay({
                         ) : step.key === "adapters" ? (
                           <StepRuntimes
                             chatHarnesses={chatHarnesses}
-                            platform={platform}
                             installJobs={installJobs}
                             installResults={installResults}
                             nodeHint={nodeHint}
@@ -1630,6 +1643,54 @@ function CommandRow({
   );
 }
 
+function PrerequisiteSummary({ prerequisites }: { prerequisites: OnboardingPrerequisite[] }) {
+  if (prerequisites.length === 0) return null;
+  const tiers: Array<[OnboardingPrerequisite["tier"], string]> = [
+    ["native-launch", "Native launch"],
+    ["local-runtime", "Local runtime"],
+    ["feature", "Optional capabilities"],
+  ];
+  return (
+    <section className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3" aria-label="Prerequisite preflight">
+      <h2 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">Prerequisite preflight</h2>
+      <p className="mt-1 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
+        Native launch, local runtime, and optional capabilities are checked separately. Optional tools never block basic onboarding.
+      </p>
+      <div className="mt-3 grid gap-3">
+        {tiers.map(([tier, title]) => {
+          const entries = prerequisites.filter((entry) => entry.tier === tier);
+          if (entries.length === 0) return null;
+          return (
+            <div key={tier}>
+              <h3 className="text-[length:var(--text-xs)] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{title}</h3>
+              <ul className="mt-1 grid gap-1.5">
+                {entries.map((entry) => {
+                  const passed = entry.state === "pass";
+                  const unknown = entry.state === "unknown";
+                  return (
+                    <li key={entry.id} className="flex items-start gap-2 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
+                      <Icon
+                        name={passed ? "ph:check-circle-fill" : unknown ? "ph:question" : "ph:warning-fill"}
+                        className={passed ? "mt-0.5 shrink-0 text-[var(--color-success)]" : "mt-0.5 shrink-0 text-[var(--color-warning)]"}
+                        aria-hidden={true}
+                      />
+                      <span>
+                        <strong className="font-medium text-[var(--text-primary)]">{entry.label}:</strong>{" "}
+                        {entry.detail}
+                        {!passed ? ` Recovery: ${entry.manualRecovery}` : ""}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function NodeSetupNotice({
   hint,
   nodeSetup,
@@ -1720,7 +1781,6 @@ function StepCovenCli({
   npmBusyLabel,
   onInstall,
   onCheckUpdates,
-  onCopy,
 }: {
   platformCopy: (typeof PLATFORM_COPY)[PlatformId];
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
@@ -1733,25 +1793,45 @@ function StepCovenCli({
   nodeHint: string | null;
   npmBusy: boolean;
   npmBusyLabel: string;
-  onInstall: (target: "coven-cli") => void;
+  onInstall: (target: InstallTarget) => void;
   onCheckUpdates: () => void;
-  onCopy: (text: string) => Promise<boolean>;
 }) {
   const job = installJobs["coven-cli"];
+  const managedNodeJob = installJobs["managed-node"];
   const busy = job?.status === "running";
+  const managedNodeBusy = managedNodeJob?.status === "running";
   const actionTargets = openCovenToolActionTargets(tools);
-  const manualInstallCommand = openCovenToolsInstallCommand(tools);
   const primaryActionLabel = openCovenToolsPrimaryActionLabel(tools);
-  const ownInstallBusy = busy;
+  const ownInstallBusy = busy || managedNodeBusy;
   const installBusy = ownInstallBusy || npmBusy;
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
         Cave needs one tool — the <strong>Coven CLI</strong> powers everything.
         Use the main action to install or update it — Cave runs npm installs
-        one after another so they never collide — or copy the matching command
-        to run it yourself.
+        one after another so they never collide.
       </p>
+      <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/45 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">Cave-managed Node.js and npm</p>
+            <p className="mt-1 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
+              Source: nodejs.org · Node 22.18.0 · SHA-256 verified · user-scoped · no elevation · no restart.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={managedNodeBusy}
+            onClick={() => onInstall("managed-node")}
+            disabled={installBusy}
+          >
+            {managedNodeBusy ? "Installing…" : "Install Node/npm"}
+          </Button>
+        </div>
+        {managedNodeBusy && managedNodeJob ? <InstallLiveTail tail={managedNodeJob.tail} /> : null}
+        <InstallResultNote result={installResults["managed-node"]} />
+      </div>
       {npmBusy && !ownInstallBusy ? (
         <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {npmBusyLabel} is updating the shared global npm directory. Other npm updates are disabled until it finishes.
@@ -1781,15 +1861,7 @@ function StepCovenCli({
         >
           {updateChecking ? "Checking…" : "Check for updates"}
         </Button>
-        {actionTargets.length > 0 ? (
-          <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
-            or run it yourself:
-          </span>
-        ) : null}
       </div>
-      {actionTargets.length > 0 ? (
-        <CommandRow command={manualInstallCommand} onCopy={onCopy} />
-      ) : null}
       {busy && job ? <InstallLiveTail tail={job.tail} /> : null}
       <InstallResultNote result={installResults["coven-cli"]} />
       {tools.length > 0 ? (
@@ -1906,7 +1978,6 @@ function StepCovenCli({
 
 function StepRuntimes({
   chatHarnesses,
-  platform,
   installJobs,
   installResults,
   nodeHint,
@@ -1921,7 +1992,6 @@ function StepRuntimes({
   onCodexPortPreflight,
 }: {
   chatHarnesses: HarnessReport[];
-  platform: PlatformId;
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   nodeHint: string | null;
@@ -2110,11 +2180,7 @@ function StepRuntimes({
                           : `Install ${adapter.label}`}
                       </Button>
                       <CommandRow
-                        command={
-                          platform === "windows" && oneClick.windowsCommand
-                            ? oneClick.windowsCommand
-                            : oneClick.command
-                        }
+                        command={oneClick.command}
                         onCopy={onCopy}
                       />
                       {busy && job ? <InstallLiveTail tail={job.tail} /> : null}
@@ -2192,7 +2258,7 @@ function StepRuntimes({
       </div>
       {nodeHint ? (
         <p className="text-[length:var(--text-xs)] leading-4 text-[var(--color-warning)]">
-          npm-based one-click installs need Node.js — see step 1 for the setup notice. (Hermes brings its own toolchain.)
+          Runtime installs use Cave-managed Node.js and npm. Install that user-scoped toolchain in step 1, then retry.
         </p>
       ) : null}
     </div>
