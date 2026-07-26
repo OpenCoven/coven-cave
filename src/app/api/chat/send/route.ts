@@ -2678,8 +2678,15 @@ export async function POST(req: Request) {
       // persisted assistant turn so they survive reload. `cleanedAssistantText`
       // is the marker-free text that gets persisted (the client also strips
       // markers from the live-streamed text for parity — see chat-view).
+      // Plain compatibility fallback has no structured boundary that permits
+      // us to normalize provider text. Preserve its leading indentation and
+      // trailing blank lines in the durable transcript as well as the live
+      // stream; other harnesses retain their established trim behavior.
+      const assistantTextForPersistence = openCodeDirect && openCodeCompatibility?.mode === "plain"
+        ? assistantText
+        : assistantText.trim();
       const { text: cleanedAssistantText, attachments: agentAttachments } =
-        parseAgentAttachments(assistantText.trim(), {
+        parseAgentAttachments(assistantTextForPersistence, {
           allowedRoots: sshRuntime ? [] : [familiarCwd ?? cwd, ...grantedProjectRoots],
         });
       for (const attachment of agentAttachments) {

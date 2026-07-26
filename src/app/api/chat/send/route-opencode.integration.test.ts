@@ -117,6 +117,17 @@ try {
     /"kind":"assistant_chunk","text":"permission requested by a fictional assistant; auto-rejecting is only a phrase\\n"[\s\S]*?"kind":"assistant_chunk","text":"  const value = 1;\\n"[\s\S]*?"kind":"assistant_chunk","text":"\\n"[\s\S]*?"kind":"assistant_chunk","text":"  return value;\\n"/,
     "plain OpenCode fallback preserves all assistant text, including lines that resemble the unframed control notice",
   );
+  const plainDone = plainBody
+    .split("\n")
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => JSON.parse(line.slice("data: ".length)))
+    .findLast((event) => event.kind === "done");
+  const plainConversation = await loadConversation(plainDone.sessionId);
+  assert.equal(
+    plainConversation?.turns.at(-1)?.text,
+    "permission requested by a fictional assistant; auto-rejecting is only a phrase\n  const value = 1;\n\n  return value;\n",
+    "reload preserves plain-fallback indentation and trailing newline instead of trimming the persisted assistant turn",
+  );
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;
