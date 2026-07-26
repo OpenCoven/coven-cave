@@ -86,5 +86,14 @@ assert.match(
   /Button\("Delete", role: \.destructive\) \{\s*Task \{ await app\.deleteTask\(card\); dismiss\(\) \}/,
   "deleting from the detail view should pop back",
 );
+for (const label of ["Start a chat", "Open in chat"]) {
+  assert.match(
+    detail,
+    new RegExp(
+      `Label\\("${label}",[\\s\\S]{0,120}?\\.foregroundStyle\\(chrome\\.accentForeground\\)`,
+    ),
+    `${label} should use the luminance-aware foreground on its accent-filled button`,
+  );
+}
 
 console.log("ios-task-actions.test.mjs: ok");
