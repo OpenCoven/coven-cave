@@ -1,22 +1,24 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { readFileSync } from "node:fs";
 
 import {
   evaluateRuntimeAvailability,
   missingRunnerMessage,
+  resolveHermesLaunch,
   summarizeRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
 } from "./runtime-availability.ts";
 
-const scratch = mkdtempSync(path.join(tmpdir(), "runtime-availability-"));
-try {
-  const binDir = path.join(scratch, "bin");
-  const emptyDir = path.join(scratch, "empty");
-  mkdirSync(binDir);
-  mkdirSync(emptyDir);
-  writeFileSync(path.join(binDir, "grok"), "#!/bin/sh\n", { mode: 0o755 });
+{
+  // Keep Linux/macOS launch resolution virtual so this contract test behaves
+  // the same on a native Windows test host (where `C:\\...` cannot be split
+  // with POSIX PATH semantics).
+  const binDir = "/virtual/runtime/bin";
+  const emptyDir = "/virtual/runtime/empty";
+  const posixStats = (present: string[]) => {
+    const set = new Set(present);
+    return (candidate: string) => set.has(candidate);
+  };
 
   // Verification matrix: binary resolves in the spawn env → ready.
   const ready = evaluateRuntimeAvailability({
@@ -24,19 +26,21 @@ try {
     command: "grok",
     env: { PATH: `${emptyDir}:${binDir}` },
     platform: "linux",
+    statFile: posixStats([`${binDir}/grok`]),
   });
   assert.equal(ready.state, "ready", "a bare command on the spawn PATH is ready");
   assert.equal(
     ready.state === "ready" && ready.resolvedPath,
-    path.join(binDir, "grok"),
+    `${binDir}/grok`,
     "ready reports where the exact spawn command resolved",
   );
 
   const absoluteReady = evaluateRuntimeAvailability({
     runner: "coven",
-    command: path.join(binDir, "grok"),
+    command: `${binDir}/grok`,
     env: { PATH: "" },
     platform: "linux",
+    statFile: posixStats([`${binDir}/grok`]),
   });
   assert.equal(absoluteReady.state, "ready", "an absolute launch command is stat'd directly");
 
@@ -200,6 +204,49 @@ try {
     "an explicit .exe with no install at all remains missing",
   );
 
+  // Hermes owns a launch plan rather than reusing a bare string after
+  // preflight. The ready plan is the exact native executable and the exact
+  // scoped environment that the chat route must hand to spawn.
+  const hermesEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: undefined,
+    Path: "C:\\bin",
+    HERMES_API_KEY: "scoped-only",
+  };
+  const hermesReady = resolveHermesLaunch({
+    env: hermesEnv,
+    platform: "win32",
+    statFile: winStats(["C:\\bin\\hermes.exe"]),
+  });
+  assert.equal(hermesReady.state, "ready", "a native Windows Hermes executable is ready");
+  if (hermesReady.state === "ready") {
+    assert.equal(hermesReady.command, "C:\\bin\\hermes.exe", "the ready plan pins the resolved executable");
+    assert.equal(hermesReady.env, hermesEnv, "the ready plan retains the exact scoped spawn environment");
+  }
+
+  const hermesCmdOnly = resolveHermesLaunch({
+    env: { ...process.env, PATH: undefined, ...winEnv },
+    platform: "win32",
+    statFile: winStats(["C:\\bin\\hermes.cmd"]),
+  });
+  assert.equal(hermesCmdOnly.state, "unlaunchable", "a Hermes .cmd-only install is never spawned directly");
+  assert.doesNotMatch(
+    hermesCmdOnly.message,
+    /authenticat/i,
+    "a shim-only Hermes install is not presented as an authentication problem",
+  );
+
+  for (const platform of ["linux", "darwin"] as const) {
+    const missingHermes = resolveHermesLaunch({ env: { ...process.env, PATH: emptyDir }, platform });
+    assert.equal(missingHermes.state, "missing", `Hermes absent on ${platform} is missing before launch`);
+  }
+  const failedHermesProbe = resolveHermesLaunch({
+    env: { ...process.env, PATH: binDir },
+    platform: "linux",
+    statFile: () => { throw new Error("EACCES"); },
+  });
+  assert.equal(failedHermesProbe.state, "probe_failed", "a Hermes stat failure is not reported as missing");
+
   // OpenCode's Windows launch is PowerShell-hosted: the host must exist and
   // the inner `opencode` command must resolve with PATHEXT semantics.
   const psHost = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
@@ -269,8 +316,6 @@ try {
     code: RUNTIME_AVAILABILITY_ERROR_CODES.unlaunchable,
     message: shim.state === "unlaunchable" ? shim.message : "",
   });
-} finally {
-  rmSync(scratch, { recursive: true, force: true });
 }
 
 console.log("runtime-availability.test.ts: ok");

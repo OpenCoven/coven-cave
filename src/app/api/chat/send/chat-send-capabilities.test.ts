@@ -8,8 +8,12 @@ import {
   openCodeProbeSpawnOptions,
   openCodeProbeTreeKillCommand,
   openCodeRunCapabilities,
+  hermesHelpSupportsModel,
   parseOpenCodeRunCapabilitiesHelp,
 } from "./chat-send-capabilities.ts";
+
+assert.equal(hermesHelpSupportsModel("  --query <prompt>\n"), false, "a launchable Hermes without --model remains a capability-only limitation");
+assert.equal(hermesHelpSupportsModel("  --model <id>\n"), true, "Hermes model forwarding requires the documented flag");
 
 assert.equal(openCodeCapabilityProbeTimeoutMs("linux"), 2_500, "non-Windows capability probes retain the short bounded deadline");
 assert.equal(openCodeCapabilityProbeTimeoutMs("win32"), 6_000, "Windows PowerShell/npm launchers receive a bounded cold-start allowance");

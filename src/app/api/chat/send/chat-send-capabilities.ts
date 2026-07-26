@@ -12,7 +12,7 @@ import type { OpenCodeRunCapabilities } from "@/lib/opencode-compatibility";
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
-let hermesModelFlagProbe: Promise<boolean> | null = null;
+const hermesModelFlagProbes = new Map<string, Promise<boolean>>();
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
 const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 2_500;
 const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
@@ -441,13 +441,27 @@ export function covenRunSupportsAddDir(): Promise<boolean> {
 }
 
 /** Hermes runs directly, so probe its own CLI rather than coven run. */
-export function hermesChatSupportsModel(): Promise<boolean> {
-  const command = process.platform === "win32" ? "hermes.exe" : "hermes";
-  return (hermesModelFlagProbe ??= probeHelp(
-    command,
+export function hermesHelpSupportsModel(help: string): boolean {
+  return /(^|\s)--model(?![\w-])/m.test(help);
+}
+
+/** The resolved launch plan owns both command and scoped environment. Cache by
+ * exact command, never as availability evidence: a false capability probe only
+ * disables `--model` forwarding for an otherwise launchable CLI. */
+export function hermesChatSupportsModel(launch: {
+  command: string;
+  env: NodeJS.ProcessEnv;
+}): Promise<boolean> {
+  const cached = hermesModelFlagProbes.get(launch.command);
+  if (cached) return cached;
+  const probe = probeHelp(
+    launch.command,
     ["chat", "--help"],
-    (help) => /(^|\s)--model(?![\w-])/m.test(help),
-  ));
+    hermesHelpSupportsModel,
+    launch.env,
+  );
+  hermesModelFlagProbes.set(launch.command, probe);
+  return probe;
 }
 
 /** OpenCode is direct-spawned so its own documented capability is authoritative. */

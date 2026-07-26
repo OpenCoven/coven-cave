@@ -1,5 +1,6 @@
 import { statSync } from "node:fs";
 import path from "node:path";
+import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 
 /**
  * Shared native-chat runtime availability contract (#3856).
@@ -89,6 +90,29 @@ export type RuntimeAvailabilityProbe = {
   /** OpenCode on Windows launches through a PowerShell host whose script
    * invokes this inner command; PowerShell resolves it via PATHEXT. */
   powerShellHostedCommand?: string;
+  platform?: NodeJS.Platform;
+  statFile?: StatFileFn;
+};
+
+/** A ready-to-spawn Hermes CLI plan. Its command and environment are created
+ * together and must be handed to `spawn()` unchanged. The resolved path stays
+ * server-only; status surfaces use `summarizeRuntimeAvailability()` instead. */
+export type HermesLaunchPlan = Extract<RuntimeAvailability, {
+  state: "ready";
+}> & {
+  command: string;
+  env: NodeJS.ProcessEnv;
+};
+
+export type HermesLaunchResolution = HermesLaunchPlan | Exclude<RuntimeAvailability, {
+  state: "ready";
+}>;
+
+export type ResolveHermesLaunchOptions = {
+  familiarId?: string | null;
+  /** Injectable for status checks and focused tests. Chat callers leave this
+   * unset so the resolver owns the scoped environment it returns. */
+  env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   statFile?: StatFileFn;
 };
@@ -291,4 +315,33 @@ export function evaluateRuntimeAvailability(
       `Could not verify the ${label} launch command before starting it, so this turn was not run. Check file permissions on its install location, then try again.`,
     );
   }
+}
+
+/**
+ * Resolve Hermes's direct native launch plan. Windows deliberately targets
+ * `hermes.exe`: CreateProcess cannot safely execute npm's `.cmd`/`.bat`
+ * launchers, and `evaluateRuntimeAvailability()` classifies a shim-only
+ * installation as `unlaunchable` rather than falling back to cmd.exe.
+ *
+ * This is the Hermes-specific extension of the shared availability contract.
+ * It does not inspect auth state or CLI feature flags; those are post-start
+ * and capability concerns respectively.
+ */
+export function resolveHermesLaunch(
+  options: ResolveHermesLaunchOptions = {},
+): HermesLaunchResolution {
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? harnessSpawnEnv(options.familiarId);
+  const availability = evaluateRuntimeAvailability({
+    runner: "hermes",
+    command: platform === "win32" ? "hermes.exe" : "hermes",
+    env,
+    platform,
+    statFile: options.statFile,
+  });
+  if (availability.state !== "ready") return availability;
+
+  // Pin the resolved native executable instead of re-spawning the bare name:
+  // PATH changes between preflight and spawn must not make the two diverge.
+  return { ...availability, command: availability.resolvedPath, env };
 }
