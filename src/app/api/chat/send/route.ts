@@ -2361,7 +2361,8 @@ export async function POST(req: Request) {
               const candidate = JSON.parse(line);
               unverifiedStructuredOutput = !!candidate && typeof candidate === "object";
             } catch {
-              // Plain prose can begin with a brace or bracket.
+              // Plain prose can begin with a brace or bracket. It has no
+              // parseable structured boundary, so preserve it as text.
             }
           }
           if (unverifiedStructuredOutput) {
@@ -2378,6 +2379,9 @@ export async function POST(req: Request) {
             return;
           }
           const text = `${resolveBackspaces(stripAnsi(line))}\n`;
+           // Plain mode has no native session event. Once actual assistant
+           // prose arrives, the launched UUID is safe to retain for persistence
+           // and the next resume; do not manufacture it for raw envelopes.
           if (!grokSessionId && grokSessionHint) grokSessionId = grokSessionHint;
           if (!sessionId && grokSessionHint) announceSession(grokSessionHint);
           assistantText += text;

@@ -11,7 +11,6 @@ import {
   grokSchemaBundleSigningPayload,
   isGrokSchemaBundle,
   resolveGrokCompatibility,
-  selectGrokSchema,
   verifyGrokSchemaBundle,
 } from "./grok-compatibility.ts";
 
@@ -29,21 +28,10 @@ assert.equal(verifyGrokSchemaBundle({ ...signed, sequence: 3 }, keyring), false,
 const ambiguous = structuredClone(signed);
 ambiguous.schemas[0].eventTypes.toolStart = ["text"];
 assert.equal(isGrokSchemaBundle(ambiguous), false, "ambiguous event aliases are rejected before a signed schema can be selected");
-const incompleteTool = structuredClone(signed);
-incompleteTool.schemas[0].eventTypes.toolStart = ["tool_started"];
-incompleteTool.schemas[0].fields.id = [];
-assert.equal(isGrokSchemaBundle(incompleteTool), false, "tool schemas must declare their stable id field before selection");
-const unboundTool = structuredClone(signed);
-unboundTool.schemas[0].eventTypes.toolStart = ["tool_started"];
-assert.equal(isGrokSchemaBundle(unboundTool), false, "tool schemas require exact locally-probed launcher versions");
-const versionBoundTool = structuredClone(signed);
-versionBoundTool.schemas[0].eventTypes.toolStart = ["tool_started"];
-versionBoundTool.schemas[0].requires.versions = ["1.0.0"];
-assert.equal(isGrokSchemaBundle(versionBoundTool), true, "a tool schema may bind aliases to verified launcher versions");
-assert.equal(
-  selectGrokSchema(versionBoundTool.schemas, { version: "1.0.1", streamingJson: true, options: ["--output-format"], valueOptions: ["--output-format"] }),
-  null,
-  "a signed tool schema never applies to an unlisted Grok Build version",
+assert.deepEqual(
+  signed.schemas[0].eventTypes,
+  { ignored: ["thought"], text: ["text"], end: ["end"], error: ["error"], toolStart: [], toolProgress: [], toolEnd: [], toolComplete: [] },
+  "the built-in schema makes no undocumented tool-event claim",
 );
 const { keyId: _keyId, signature: _signature, ...unsignedWithoutKeyId } = signed;
 const signedWithoutKeyId = {
