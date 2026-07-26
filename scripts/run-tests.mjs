@@ -77,6 +77,7 @@ export const SUITES = {
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",
     "src/lib/mcp-doctor.test.ts",
+    "src/lib/settings-profile-form.test.ts",
     "src/lib/user-profile-shared.test.ts",
     "src/lib/user-profile.test.ts",
     "src/lib/legacy-svg-avatar-hint.test.ts",
