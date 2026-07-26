@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import type { Readable } from "node:stream";
+import type { Readable, Writable } from "node:stream";
 import { covenLaunchCommand } from "@/lib/coven-bin";
 import {
   covenRunSupportsAddDirFlag,
@@ -23,7 +23,6 @@ import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 let modelFlagProbe: Promise<boolean> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
-let hermesModelFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
 const DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS = 2_500;
 const WINDOWS_CAPABILITY_PROBE_TIMEOUT_MS = 6_000;
@@ -166,6 +165,9 @@ function probeHelp(
   args: string[],
   matches: (help: string) => boolean,
   env = harnessSpawnEnv(),
+  input?: string,
+  acceptNonZeroExit = true,
+  cwd?: string,
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let output = "";
@@ -178,9 +180,11 @@ function probeHelp(
     try {
       const child = spawn(command, args, {
         env,
-        stdio: ["ignore", "pipe", "pipe"],
+        cwd,
+        stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
         ...openCodeProbeSpawnOptions(),
-      });
+      }) as ChildProcessByStdio<Writable, Readable, Readable>;
+      if (input !== undefined) child.stdin.end(input, "utf8");
       child.stdout.on("data", (chunk) => (output += chunk.toString()));
       child.stderr.on("data", (chunk) => (output += chunk.toString()));
       const timeout = setTimeout(() => {
@@ -191,9 +195,9 @@ function probeHelp(
         }
         done(false);
       }, openCodeCapabilityProbeTimeoutMs());
-      child.on("close", () => {
+      child.on("close", (code) => {
         clearTimeout(timeout);
-        done(matches(output));
+        done((acceptNonZeroExit || code === 0) && matches(output));
       });
       child.on("error", () => {
         clearTimeout(timeout);
@@ -603,13 +607,28 @@ export function covenRunSupportsAddDir(): Promise<boolean> {
 }
 
 /** Hermes runs directly, so probe its own CLI rather than coven run. */
-export function hermesChatSupportsModel(): Promise<boolean> {
-  const command = process.platform === "win32" ? "hermes.exe" : "hermes";
-  return (hermesModelFlagProbe ??= probeHelp(
-    command,
+export function hermesHelpSupportsModel(help: string): boolean {
+  return /(^|\s)--model(?![\w-])/m.test(help);
+}
+
+/** The resolved launch plan owns both command and scoped environment. Probe
+ * that exact plan each turn so a familiar's scoped launcher environment never
+ * reuses another familiar's capability result. A false probe only disables
+ * `--model` forwarding for an otherwise launchable CLI. */
+export function hermesChatSupportsModel(launch: {
+  command: string;
+  env: NodeJS.ProcessEnv;
+  cwd: string;
+}): Promise<boolean> {
+  return probeHelp(
+    launch.command,
     ["chat", "--help"],
-    (help) => /(^|\s)--model(?![\w-])/m.test(help),
-  ));
+    hermesHelpSupportsModel,
+    launch.env,
+    undefined,
+    false,
+    launch.cwd,
+  );
 }
 
 /** OpenCode is direct-spawned so its own documented capability is authoritative. */
