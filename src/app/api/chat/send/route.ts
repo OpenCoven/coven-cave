@@ -2829,8 +2829,9 @@ export async function POST(req: Request) {
                 }
                 const command = openCodeLaunchCommand
                   ?? { command: launch.command, args: [...launch.fixedArgs, ...spawnArgs] };
+                let child: ChildProcessWithoutNullStreams;
                 try {
-                  const child = spawn(command.command, command.args, {
+                  child = spawn(command.command, command.args, {
                     // Spawn IN the familiar's workspace when no project root was
                     // supplied, so coven's project-root resolver picks that dir as
                     // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
@@ -2842,10 +2843,6 @@ export async function POST(req: Request) {
                       : ["pipe", "pipe", "pipe"],
                     env: spawnEnv,
                   }) as ChildProcessWithoutNullStreams;
-                  if (openCodeLaunchCommand) {
-                    writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
-                  }
-                  return child;
                 } catch (error) {
                   // Windows may synchronously throw for an existing malformed
                   // executable (for example, a race after the stat-only gate)
@@ -2883,6 +2880,10 @@ export async function POST(req: Request) {
                   });
                   return null;
                 }
+                if (openCodeLaunchCommand) {
+                  writeOpenCodeLaunchInput(child, openCodeLaunchCommand);
+                }
+                return child;
               })();
 
           if (!child) {
