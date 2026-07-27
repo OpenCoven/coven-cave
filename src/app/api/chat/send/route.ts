@@ -3282,7 +3282,7 @@ export async function POST(req: Request) {
               authorization: `Bearer ${hermesApi.apiKey}`,
             },
             body: JSON.stringify({
-              model: hermesLaunchModel,
+              ...(hermesLaunchModel ? { model: hermesLaunchModel } : {}),
               input: apiPrompt,
               stream: true,
               ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),

@@ -114,8 +114,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /body: JSON\.stringify\(\{[\s\S]*?model: hermesLaunchModel,/,
-  "Hermes native API payload uses the transformed launch value",
+  /body: JSON\.stringify\(\{[\s\S]*?\.\.\.\(hermesLaunchModel \? \{ model: hermesLaunchModel \} : \{\}\)/,
+  "Hermes native API payload omits model field when hermesLaunchModel is null",
 );
 assert.match(
   chatRoute,
