@@ -296,7 +296,10 @@ try {
     }
   }
   // A direct Copilot configuration never falls through to generic Coven when
-  // the exact local CLI plan is absent.
+  // the exact local CLI plan is absent. Pin the registry entry to a unique
+  // missing executable: Cave intentionally rebuilds desktop PATH from
+  // Homebrew/login-shell candidates, so clearing process.env.PATH alone does
+  // not isolate this scenario on machines that have Copilot installed.
   {
     const { clearCopilotCapabilityProbeCache } = await import("@/lib/server/copilot-capability-probe");
     const { REGISTRY_RUNTIMES } = await import("@/lib/runtime-registry.gen");

@@ -343,7 +343,7 @@ export function HomeComposer({
     text,
     setText,
     modelHarness,
-    modelOptionsOverride: modelHarness === "opencode" ? runtimeModelOptions : undefined,
+    modelOptionsOverride: runtimeModelOptions,
     onPickModel: (id) => { handleSelectModel(id); onToast(`Model set to ${id}.`); setText(""); },
     onPickSkill: (s) => invokeSkill(s),
     onInsertPrompt: (p) => insertPromptTemplate(p),
@@ -543,7 +543,7 @@ export function HomeComposer({
         const id = resolveModelArg(
           args,
           modelHarness,
-          modelHarness === "opencode" ? runtimeModelOptions : undefined,
+          runtimeModelOptions,
         );
         if (!id) {
           onToast(`Unknown model "${args.trim()}".`);

@@ -43,6 +43,9 @@ export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   "openai/gpt-5.1-codex-mini": 400_000,
   "openai/gpt-5.1": 400_000,
   // Anthropic (claude runtime) — from the Claude models catalog.
+  "anthropic/claude-opus-5": 1_000_000,
+  // Claude Code's native Opus alias is what the canonical id maps to at launch.
+  "anthropic/opus": 1_000_000,
   "anthropic/claude-fable-5": 1_000_000,
   "anthropic/claude-opus-4-8": 1_000_000,
   "anthropic/claude-opus-4-7": 1_000_000,

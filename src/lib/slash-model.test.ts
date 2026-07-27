@@ -21,6 +21,15 @@ const discovered = [
   { id: "openai/gpt-5.6", label: "OpenAI GPT 5.6" },
   { id: "opencode/big-pickle", label: "OpenCode Big Pickle" },
 ];
+const dynamicClaude = [
+  { id: "anthropic/claude-opus-5", label: "Claude Opus 5" },
+  ...(all ?? []),
+];
+assert.equal(
+  resolveModelArg("Claude Opus 5", "claude", dynamicClaude),
+  "anthropic/claude-opus-5",
+  "the dynamic Claude inventory participates in slash resolution",
+);
 assert.deepEqual(
   modelSlashOptions("/model ", "opencode", discovered),
   discovered,

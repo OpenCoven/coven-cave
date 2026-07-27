@@ -187,6 +187,7 @@ const contracts: RouteContract[] = [
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/roles/crafts", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/runtime-models/[runtime]", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/runtime-models/opencode", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/document", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/stream", methods: ["GET"], kind: "stream", localOriginGuard: true },

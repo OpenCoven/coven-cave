@@ -91,6 +91,10 @@ import {
   type RuntimeAvailability,
 } from "@/lib/runtime-availability";
 import {
+  modelForCaveFromRuntimeEcho,
+  modelForRuntimeLaunch,
+} from "@/lib/runtime-models";
+import {
   quarantineOpenCodeSchema,
   redactedOpenCodeEventFingerprint,
   resolveOpenCodeCompatibility,
@@ -1787,8 +1791,11 @@ export async function POST(req: Request) {
   // Model parity: forward the resolved model only when forwarding is enabled
   // (the installed `coven run` advertises `--model`) and the id is well-formed.
   // Emitted BEFORE the `--` separator for the same reason every other flag is.
+  const selectedModel = cleanModelId(desiredModel);
   const forwardModel =
-    modelForwardingEnabled && cleanModelId(desiredModel) ? desiredModel : null;
+    modelForwardingEnabled && selectedModel
+      ? modelForRuntimeLaunch(binding.harness, selectedModel)
+      : null;
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
   // Directory grants: forward every granted project root — plus the familiar's
@@ -2515,7 +2522,15 @@ export async function POST(req: Request) {
             }
             if (!confirmedModel && ev.kind !== "result") {
               const echoed = cleanModelId(ev.model);
-              if (echoed) confirmedModel = echoed;
+              if (echoed) {
+                confirmedModel = selectedModel
+                  ? modelForCaveFromRuntimeEcho(
+                      binding.harness,
+                      selectedModel,
+                      echoed,
+                    )
+                  : echoed;
+              }
             }
             // Copilot only echoes the session id on the final result frame;
             // announce the id Cave launched with as soon as the stream is
@@ -3027,7 +3042,15 @@ export async function POST(req: Request) {
             // the first one seen so the turn can report `applied` honestly.
             if (!confirmedModel && (ev.type === "system" || ev.subtype === "init")) {
               const echoed = cleanModelId(ev.model);
-              if (echoed) confirmedModel = echoed;
+              if (echoed) {
+                confirmedModel = selectedModel
+                  ? modelForCaveFromRuntimeEcho(
+                      binding.harness,
+                      selectedModel,
+                      echoed,
+                    )
+                  : echoed;
+              }
             }
             if (ev.session_id && !sessionId) {
               // Same contract as announceSession (stable-id announce, default
@@ -4237,7 +4260,9 @@ export async function POST(req: Request) {
         ? cleanModelId(desiredModel)
         : grokDirect
           ? grokForwardModel
-          : forwardModel;
+          : forwardModel && forwardModel !== desiredModel
+            ? desiredModel
+            : forwardModel;
       responseMetadata.retryModel = turnRetryModel({
         requestedModel: body.modelOverride,
         confirmedModel: responseMetadata.confirmedModel,

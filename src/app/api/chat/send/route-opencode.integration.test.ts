@@ -22,7 +22,15 @@ const previousPath = process.env.PATH;
 const previousOpenCodeTestMode = process.env.OPENCODE_TEST_MODE;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
-process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`;
+const fixtureSystemDirs = process.platform === "win32" ? [] : ["/usr/bin", "/bin"];
+process.env.PATH = [
+  bin,
+  ...fixtureSystemDirs,
+  ...Array.from(
+    { length: 511 - fixtureSystemDirs.length },
+    (_, index) => `__cave_opencode_fixture_path_${index}__`,
+  ),
+].join(path.delimiter);
 
 const executable = process.platform === "win32" ? "opencode.cmd" : "opencode";
 const expectedReply = process.platform === "win32" ? "route reply" : "split 😀";

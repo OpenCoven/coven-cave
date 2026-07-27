@@ -2939,7 +2939,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     text: input,
     setText: setInput,
     modelHarness,
-    modelOptionsOverride: modelHarness === "opencode" ? composerModelOptions : undefined,
+    modelOptionsOverride: composerModelOptions,
     onPickModel: (id) => {
       handleSelectModel(id);
       appendSystem(`Model set to ${id}.`);
@@ -3877,7 +3877,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           formatModelList(
             modelHarness,
             current,
-            modelHarness === "opencode" ? composerModelOptions : undefined,
+            composerModelOptions,
           ),
         );
         setInput("");
@@ -3886,7 +3886,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       const id = resolveModelArg(
         args,
         modelHarness,
-        modelHarness === "opencode" ? composerModelOptions : undefined,
+        composerModelOptions,
       );
       if (!id) {
         appendSystem(`Unknown model "${args.trim()}". Type /model to list the options.`);

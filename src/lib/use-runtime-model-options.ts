@@ -5,9 +5,9 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime, type RuntimeModelOption } from "@/lib/runtime-models";
 
 type ModelResponse = { ok?: boolean; models?: RuntimeModelOption[] };
-type OpenCodeInventory = {
-  familiarId: string | null;
-  models: RuntimeModelOption[];
+type RuntimeInventory = {
+  key: string | null;
+  models: RuntimeModelOption[] | null;
 };
 type HarnessesResponse = {
   ok?: boolean;
@@ -18,7 +18,9 @@ type HarnessInventory = {
   models: RuntimeModelOption[];
 };
 
-/** Static catalogs stay synchronous; OpenCode reads its authenticated local inventory. */
+const DYNAMIC_INVENTORY_RUNTIMES = new Set(["claude", "copilot", "opencode"]);
+
+/** Static seeds stay synchronous while capable runtimes replace them live. */
 export function useRuntimeModelOptions(
   runtime: string,
   familiarId?: string | null,
@@ -32,36 +34,46 @@ export function useRuntimeModelOptions(
     () => catalogForRuntime(canonicalRuntime)?.models ?? [],
     [canonicalRuntime],
   );
-  const [openCodeInventory, setOpenCodeInventory] = useState<OpenCodeInventory>({
-    familiarId: null,
-    models: [],
+  const [runtimeInventory, setRuntimeInventory] = useState<RuntimeInventory>({
+    key: null,
+    models: null,
   });
   const [harnessInventory, setHarnessInventory] = useState<HarnessInventory>({
     runtime: null,
     models: [],
   });
   const inventoryFamiliarId = familiarId ?? null;
+  const inventoryKey = `${canonicalRuntime}\u0000${inventoryFamiliarId ?? ""}`;
 
   useEffect(() => {
-    if (canonicalRuntime !== "opencode") return;
+    if (!DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime)) return;
     let cancelled = false;
+    setRuntimeInventory({ key: inventoryKey, models: null });
     const params = new URLSearchParams();
     if (inventoryFamiliarId) params.set("familiarId", inventoryFamiliarId);
-    const url = params.size
-      ? `/api/runtime-models/opencode?${params.toString()}`
-      : "/api/runtime-models/opencode";
+    const base = `/api/runtime-models/${encodeURIComponent(canonicalRuntime)}`;
+    const url = params.size ? `${base}?${params.toString()}` : base;
     void fetch(url, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((json: ModelResponse | null) => {
         if (!cancelled && json?.ok && Array.isArray(json.models)) {
-          setOpenCodeInventory({ familiarId: inventoryFamiliarId, models: json.models });
+          setRuntimeInventory({ key: inventoryKey, models: json.models });
+        } else if (!cancelled) {
+          setRuntimeInventory({ key: inventoryKey, models: staticModels });
         }
       })
       .catch(() => {
-        if (!cancelled) setOpenCodeInventory({ familiarId: inventoryFamiliarId, models: [] });
+        if (!cancelled) {
+          setRuntimeInventory({ key: inventoryKey, models: staticModels });
+        }
       });
     return () => { cancelled = true; };
-  }, [canonicalRuntime, inventoryFamiliarId]);
+  }, [
+    canonicalRuntime,
+    inventoryFamiliarId,
+    inventoryKey,
+    staticModels,
+  ]);
 
   // Grok's model list is authenticated and installation-specific. Reuse the
   // same local harness inventory that Familiar Studio uses instead of falling
@@ -84,10 +96,12 @@ export function useRuntimeModelOptions(
 
   // A selected familiar can have a different vault scope. Do not briefly show
   // its predecessor's inventory while this scope's request is in flight.
-  if (canonicalRuntime === "opencode") {
-    return openCodeInventory.familiarId === inventoryFamiliarId
-      ? openCodeInventory.models
-      : staticModels;
+  if (
+    DYNAMIC_INVENTORY_RUNTIMES.has(canonicalRuntime) &&
+    runtimeInventory.key === inventoryKey &&
+    runtimeInventory.models !== null
+  ) {
+    return runtimeInventory.models;
   }
   if (canonicalRuntime === "grok" && harnessInventory.runtime === canonicalRuntime) {
     return harnessInventory.models;
