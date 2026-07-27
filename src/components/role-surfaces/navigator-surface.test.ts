@@ -195,6 +195,25 @@ test("card details wait for the board source before exposing move controls", () 
   );
 });
 
+test("compact Course and Card details rails stay mutually exclusive", () => {
+  assert.match(
+    surface,
+    /const setCourseRailExpanded = \(next: boolean\) => \{\s*setCourseExpanded\(next\);\s*if \(next\) setDetailsExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /const setDetailsRailExpanded = \(next: boolean\) => \{\s*setDetailsExpanded\(next\);\s*if \(next\) setCourseExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="left"\s+label="Course"\s+expanded=\{courseExpanded\}\s+onExpandedChange=\{setCourseRailExpanded\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="right"\s+label="Card details"\s+expanded=\{detailsExpanded\}\s+onExpandedChange=\{setDetailsRailExpanded\}/,
+  );
+});
+
 test("registration names the Chart Room with its own accent and drawer chrome", () => {
   assert.match(register, /id: NAVIGATOR_SURFACE_ID/);
   assert.match(register, /role: "navigator"/);

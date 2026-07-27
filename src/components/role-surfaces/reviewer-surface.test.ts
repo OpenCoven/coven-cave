@@ -21,6 +21,7 @@ import {
 const surface = readFileSync(new URL("./reviewer-surface.tsx", import.meta.url), "utf8");
 const register = readFileSync(new URL("./register.tsx", import.meta.url), "utf8");
 const docs = readFileSync(new URL("../../../docs/role-surfaces.md", import.meta.url), "utf8");
+const reviewDeckCss = readFileSync(new URL("../../styles/review-deck.css", import.meta.url), "utf8");
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -199,6 +200,21 @@ test("registration names the Review Deck with its own accent and drawer chrome",
 
 test("the Review Deck is documented as an initial room", () => {
   assert.match(docs, /\*\*Review Deck\*\* \(`reviewer-review-deck`, role `reviewer`\)/);
+});
+
+test("the Review Deck stacks its tri-pane layout before verdict actions clip", () => {
+  assert.match(
+    reviewDeckCss,
+    /@container role-surface-host \(max-width: 1080px\) \{[\s\S]*?\.rd-stage \{[\s\S]*?overflow-y: auto;/,
+  );
+  assert.match(
+    reviewDeckCss,
+    /@container role-surface-host \(max-width: 1080px\) \{[\s\S]*?\.rd-grid[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
+  );
+  assert.match(
+    reviewDeckCss,
+    /@container role-surface-host \(max-width: 1080px\) \{[\s\S]*?\.rd-verdict-bar \{[\s\S]*?flex-wrap: wrap;/,
+  );
 });
 
 // ── Type, lifecycle & verdict derivation ─────────────────────────────────────

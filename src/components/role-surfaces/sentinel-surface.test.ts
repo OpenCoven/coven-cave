@@ -251,6 +251,25 @@ test("alert details wait for the source before exposing triage controls", () => 
   );
 });
 
+test("compact Watch status and Alert details rails stay mutually exclusive", () => {
+  assert.match(
+    surface,
+    /const setWatchRailExpanded = \(next: boolean\) => \{\s*setWatchExpanded\(next\);\s*if \(next\) setDetailsExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /const setDetailsRailExpanded = \(next: boolean\) => \{\s*setDetailsExpanded\(next\);\s*if \(next\) setWatchExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="left"\s+label="Watch status"\s+expanded=\{watchExpanded\}\s+onExpandedChange=\{setWatchRailExpanded\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="right"\s+label="Alert details"\s+expanded=\{detailsExpanded\}\s+onExpandedChange=\{setDetailsRailExpanded\}/,
+  );
+});
+
 test("registration names the Watchtower with its own accent and drawer chrome", () => {
   assert.match(register, /id: SENTINEL_SURFACE_ID/);
   assert.match(register, /role: "sentinel"/);

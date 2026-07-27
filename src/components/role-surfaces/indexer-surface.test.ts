@@ -75,3 +75,22 @@ test("memory details wait for the inventory source before exposing selection con
     /entriesError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*entries == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*!selected/,
   );
 });
+
+test("compact Collections and Memory details rails stay mutually exclusive", () => {
+  assert.match(
+    surface,
+    /const setCollectionsRailExpanded = \(next: boolean\) => \{\s*setCollectionsExpanded\(next\);\s*if \(next\) setDetailsExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /const setDetailsRailExpanded = \(next: boolean\) => \{\s*setDetailsExpanded\(next\);\s*if \(next\) setCollectionsExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="left"\s+label="Collections"\s+expanded=\{collectionsExpanded\}\s+onExpandedChange=\{setCollectionsRailExpanded\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="right"\s+label="Memory details"\s+expanded=\{detailsExpanded\}\s+onExpandedChange=\{setDetailsRailExpanded\}/,
+  );
+});
