@@ -41,10 +41,15 @@ if (process.platform === "win32") {
     "if (args[0] === \"--version\") { console.log(plain ? \"1.2.4\" : \"1.2.3\"); process.exit(0); }",
     "if (args[0] === \"run\" && args[1] === \"--help\") {",
     "  console.log(plain ? \"  --format <format>  Output format: text, json-v2\" : \"  --format <format>  Output format: text, json\");",
+    "  console.log(\"  --model <model>    Model to use\");",
     "  if (!plain) console.log(\"  --session <id>     Session to continue\");",
     "  process.exit(0);",
     "}",
     "if (args[0] !== \"run\") process.exit(9);",
+    "if (!plain) {",
+    "  const modelIndex = args.indexOf(\"--model\");",
+    "  if (modelIndex < 0 || args[modelIndex + 1] !== \"openai/gpt-5.6-sol\") process.exit(7);",
+    "}",
     "let input = \"\";",
     "process.stdin.setEncoding(\"utf8\");",
     "for await (const chunk of process.stdin) input += chunk;",
@@ -73,10 +78,11 @@ const launcher = process.platform === "win32"
       "#!/bin/sh",
       "if [ \"$1\" = \"--version\" ]; then if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then echo 1.2.4; else echo 1.2.3; fi; exit 0; fi",
       "if [ \"$1\" = \"run\" ] && [ \"$2\" = \"--help\" ]; then",
-      "  if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf '%s\\n' '  --format <format>  Output format: text, json-v2'; else printf '%s\\n' '  --format <format>  Output format: text, json' '  --session <id>     Session to continue'; fi",
+      "  if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf '%s\\n' '  --format <format>  Output format: text, json-v2' '  --model <model>    Model to use'; else printf '%s\\n' '  --format <format>  Output format: text, json' '  --model <model>    Model to use' '  --session <id>     Session to continue'; fi",
       "  exit 0",
       "fi",
       "if [ \"$1\" != \"run\" ]; then exit 9; fi",
+      "if [ \"$OPENCODE_TEST_MODE\" != \"plain\" ]; then case \" $* \" in *' --model openai/gpt-5.6-sol '*) ;; *) exit 7 ;; esac; fi",
       "input=$(cat)",
       "if [ \"$OPENCODE_TEST_MODE\" = \"plain\" ]; then printf 'permission requested by a fictional assistant; auto-rejecting is only a phrase\\n  const value = 1;\\n\\n  return value;\\nSession not found in the documentation.\\n```coven:attachment\\n{\"path\":\"/not-an-attachment\"}\\n```\\n'; exit 0; fi",
       "if [ \"$2\" != \"--format\" ] || [ \"$3\" != \"json\" ] || [ \"$4\" = \"--\" ]; then exit 9; fi",
@@ -105,10 +111,18 @@ try {
   const project = await createProject({ name: "Route fixture", root: familiarWorkspace });
   await grantProjectToFamiliar({ familiarId: "opal", projectId: project.id, source: "human", access: "write" });
 
+  // The successful end-to-end route run also proves OpenCode's preserve
+  // transform reaches the actual child argv as the complete provider/model id.
   const response = await POST(new Request("http://localhost/api/chat/send", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ familiarId: "opal", prompt: "--format text", projectRoot: familiarWorkspace }),
+    body: JSON.stringify({
+      familiarId: "opal",
+      prompt: "--format text",
+      projectRoot: familiarWorkspace,
+      modelOverride: "openai/gpt-5.6-sol",
+      modelOverrideScope: "next-message",
+    }),
   }));
   assert.equal(response.status, 200, await response.clone().text());
   const body = await response.text();

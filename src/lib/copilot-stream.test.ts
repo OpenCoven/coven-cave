@@ -139,6 +139,20 @@ const flagShapedModelArgs = buildCopilotStreamArgs({
 });
 assert.ok(!flagShapedModelArgs.includes("--model"), "a provider prefix cannot turn a model value into a Copilot flag");
 assert.ok(!flagShapedModelArgs.includes("--allow-all-tools"), "stripped flag-shaped model values never reach spawn argv");
+const nestedModelArgs = buildCopilotStreamArgs({
+  spec,
+  prompt: "safe prompt",
+  resumeSessionId: null,
+  newSessionId: null,
+  model: "provider/team/model",
+  permissionMode: "read",
+  addDirs: [],
+});
+assert.deepEqual(
+  nestedModelArgs.slice(nestedModelArgs.indexOf("--model"), nestedModelArgs.indexOf("--model") + 2),
+  ["--model", "team/model"],
+  "Copilot strips only the first provider segment and preserves a nested model id",
+);
 assert.deepEqual(
   runtimeEventProtocolSchemas([{ ...V2_SCHEMA, fields: { data: ["payload"] } }]),
   [],

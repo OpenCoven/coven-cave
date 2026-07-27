@@ -93,6 +93,7 @@ import {
 import {
   modelForCaveFromRuntimeEcho,
   modelForRuntimeLaunch,
+  runtimeModelIdForLaunch,
 } from "@/lib/runtime-models";
 import {
   quarantineOpenCodeSchema,
@@ -1258,7 +1259,7 @@ export async function POST(req: Request) {
   const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
   // Grok Build is a direct local integration. Do not silently send it through
   // `coven run --stream-json` on SSH: its native JSONL/session protocol is
-  // different and the proposed registry manifest is not accepted upstream.
+  // different and Cave does not yet have an equivalent direct SSH bridge.
   if (binding.harness === "grok" && sshRuntime) {
     return new Response(
       JSON.stringify({
@@ -1660,6 +1661,9 @@ export async function POST(req: Request) {
     modelSource: modelState.source,
     globalDefaultModel: config.defaults.model,
   }) ? null : cleanModelId(desiredModel);
+  const grokLaunchModel = grokDirect
+    ? runtimeModelIdForLaunch("grok", grokForwardModel)
+    : null;
   const grantedProjectRoots = sshRuntime
     ? []
     : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
@@ -1796,6 +1800,15 @@ export async function POST(req: Request) {
     modelForwardingEnabled && selectedModel
       ? modelForRuntimeLaunch(binding.harness, selectedModel)
       : null;
+  // Direct native transports apply the same registry-owned model transform as
+  // Coven. Keep `forwardModel` provider-qualified for SSH/generic delegation
+  // and for persisted requested/confirmed/retry metadata below.
+  const hermesLaunchModel = hermesDirect
+    ? runtimeModelIdForLaunch("hermes", forwardModel)
+    : null;
+  const openCodeLaunchModel = openCodeDirect
+    ? runtimeModelIdForLaunch("opencode", forwardModel)
+    : null;
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
   // Directory grants: forward every granted project root — plus the familiar's
@@ -1817,12 +1830,10 @@ export async function POST(req: Request) {
       )
     : [];
   const forwardAddDirs = addDirForwardingEnabled && !sshRuntime ? grantDirs : [];
-  // Hermes has a documented one-shot API (`hermes chat -Q -q <prompt>`), but
-  // its Coven adapter convention requires a POSIX shell shim to translate the
-  // positional prompt that `coven run` appends. The shim cannot be installed
-  // beside Hermes's Windows executable, which left Cave showing only a timer.
-  // Spawn Hermes directly for native local chats, as we already do for the
-  // Copilot JSONL adapter, and keep SSH runtimes on their remote Coven path.
+  // The accepted Hermes 1.0.3 adapter binds prompts natively with `--query`.
+  // Cave still spawns Hermes directly for local chats because this path owns
+  // richer local streaming, session, and optional API behavior than the
+  // generic Coven transport. SSH runtimes remain on their remote Coven path.
   // Grok Build has a documented streaming-json headless protocol. It is a
   // direct local integration, deliberately independent of coven's generic
   // `run --stream-json` adapter protocol.
@@ -1890,9 +1901,7 @@ export async function POST(req: Request) {
     if (hermesDirect) {
       const a = ["chat", "--source", "coven", "-Q"];
       if (resumeSessionId) a.push("--resume", resumeSessionId);
-      // Hermes uses the provider-qualified model ID (for example
-      // `openai/gpt-5.6-sol`) to select the provider as well as the model.
-      if (forwardModel) a.push("--model", forwardModel);
+      if (hermesLaunchModel) a.push("--model", hermesLaunchModel);
       a.push("--query", prompt);
       return a;
     }
@@ -1948,7 +1957,7 @@ export async function POST(req: Request) {
           openCodeNativeResumeUsed = true;
         }
       }
-      if (forwardModel) a.push("--model", forwardModel);
+      if (openCodeLaunchModel) a.push("--model", openCodeLaunchModel);
       // OpenCode reads non-TTY stdin verbatim. Keep the full Cave prompt out
       // of argv so Windows' command-line ceiling and positional-message
       // quoting cannot truncate or rewrite it. runAttempt() writes the exact
@@ -2739,7 +2748,7 @@ export async function POST(req: Request) {
               if (!sessionId && event.sessionId) announceSession(event.sessionId);
               // Grok's end event does not echo model, but successful native
               // launch means its --model contract accepted the selected id.
-              if (!confirmedModel && grokForwardModel) confirmedModel = desiredModel;
+              if (!confirmedModel && grokLaunchModel) confirmedModel = desiredModel;
               result = {
                 is_error: false,
                 usage: parseStreamJsonUsage(event.usage),
@@ -3299,7 +3308,7 @@ export async function POST(req: Request) {
               authorization: `Bearer ${hermesApi.apiKey}`,
             },
             body: JSON.stringify({
-              model: forwardModel ?? desiredModel,
+              ...(hermesLaunchModel ? { model: hermesLaunchModel } : {}),
               input: apiPrompt,
               stream: true,
               ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
@@ -4231,7 +4240,7 @@ export async function POST(req: Request) {
       // direct argv proves the selection was forwarded, while a successful
       // exit is the only confirmation it was applied. Preserve an explicit
       // model rejection as failed rather than incorrectly reporting applied.
-      if (openCodeDirect && forwardModel) {
+      if (openCodeDirect && openCodeLaunchModel && forwardModel) {
         const application = modelApplicationForHarness(
           modelApplicationFromRun({
             confirmedModel: forwardModel,
@@ -4259,10 +4268,20 @@ export async function POST(req: Request) {
       const routedTurnModel = copilotStream
         ? cleanModelId(desiredModel)
         : grokDirect
-          ? grokForwardModel
-          : forwardModel && forwardModel !== desiredModel
-            ? desiredModel
-            : forwardModel;
+          ? grokLaunchModel
+            ? grokForwardModel
+            : null
+          : openCodeDirect
+            ? openCodeLaunchModel
+              ? forwardModel
+              : null
+            : hermesDirect
+              ? hermesLaunchModel
+                ? forwardModel
+                : null
+              : forwardModel && forwardModel !== desiredModel
+                ? desiredModel
+                : forwardModel;
       responseMetadata.retryModel = turnRetryModel({
         requestedModel: body.modelOverride,
         confirmedModel: responseMetadata.confirmedModel,

@@ -27,7 +27,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?const launch = openCodeCompatibility\.schema!\.launch;[\s\S]*?a\.push\([\s\S]*?launch\.structuredOutput\.option,[\s\S]*?launch\.requiredFlags[\s\S]*?launch\.sessionOption[\s\S]*?options\.includes\("--session"\)[\s\S]*?options\.includes\("--resume"\)[\s\S]*?if \(forwardModel\)/,
+  /const a = \["run"\];[\s\S]*?openCodeCompatibility\?\.mode === "structured"[\s\S]*?const launch = openCodeCompatibility\.schema!\.launch;[\s\S]*?a\.push\([\s\S]*?launch\.structuredOutput\.option,[\s\S]*?launch\.requiredFlags[\s\S]*?launch\.sessionOption[\s\S]*?options\.includes\("--session"\)[\s\S]*?options\.includes\("--resume"\)[\s\S]*?if \(openCodeLaunchModel\)/,
   "OpenCode uses selected structured syntax and only a help-confirmed plain-mode resume option rather than a version threshold",
 );
 assert.match(
@@ -37,7 +37,7 @@ assert.match(
 );
 assert.match(
   route,
-  /if \(openCodeDirect\) \{[\s\S]*?const a = \["run"\];[\s\S]*?if \(forwardModel\) a\.push\("--model", forwardModel\);[\s\S]*?OpenCode reads non-TTY stdin verbatim[\s\S]*?return a;/,
+  /if \(openCodeDirect\) \{[\s\S]*?const a = \["run"\];[\s\S]*?if \(openCodeLaunchModel\) a\.push\("--model", openCodeLaunchModel\);[\s\S]*?OpenCode reads non-TTY stdin verbatim[\s\S]*?return a;/,
   "OpenCode builds an option-only run argv and leaves the full prompt for the stdin transport",
 );
 assert.doesNotMatch(
@@ -139,7 +139,7 @@ assert.match(
 );
 assert.match(
   route,
-  /openCodeDirect && forwardModel[\s\S]*?modelApplicationFromRun\([\s\S]*?isError: result\.is_error === true,[\s\S]*?errorText: openCodeModelRejected \? "model unavailable" : \[\.\.\.stderrTail, \.\.\.stdoutErrTail\]\.join\("\\n"\)/,
+  /openCodeDirect && openCodeLaunchModel && forwardModel[\s\S]*?modelApplicationFromRun\([\s\S]*?isError: result\.is_error === true,[\s\S]*?errorText: openCodeModelRejected \? "model unavailable" : \[\.\.\.stderrTail, \.\.\.stdoutErrTail\]\.join\("\\n"\)/,
   "OpenCode marks model-specific failed runs as rejected without retaining raw JSON error messages",
 );
 assert.match(

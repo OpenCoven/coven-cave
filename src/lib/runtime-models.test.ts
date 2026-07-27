@@ -7,6 +7,8 @@ import {
   isModelInCatalog,
   modelForCaveFromRuntimeEcho,
   modelForRuntimeLaunch,
+  runtimeModelIdForLaunch,
+  transformModelIdForRuntime,
 } from "./runtime-models.ts";
 
 // Every bundled chat runtime has a catalog entry.
@@ -219,5 +221,63 @@ assert.equal(isModelInCatalog("hermes", "openai/gpt-5.6-terra"), true);
 assert.equal(isModelInCatalog("hermes", "nous/hermes-4"), false);
 assert.equal(isModelInCatalog("openclaw", "anything"), false);
 assert.equal(isModelInCatalog("nonexistent", "openai/gpt-5.5"), false);
+
+// Cave's supported runtime set follows the registry contract. Strip removes
+// only the first non-empty provider segment; preserve forwards the stored
+// provider-qualified id unchanged.
+for (const runtime of ["codex", "claude", "copilot", "grok"]) {
+  assert.equal(
+    transformModelIdForRuntime(runtime, "provider/team/model"),
+    "team/model",
+    `${runtime} strips exactly one provider segment`,
+  );
+}
+for (const runtime of ["hermes", "opencode"]) {
+  assert.equal(
+    transformModelIdForRuntime(runtime, "provider/team/model"),
+    "provider/team/model",
+    `${runtime} preserves the provider-qualified model id`,
+  );
+}
+
+for (const unchanged of ["bare-model", "/model", "provider/", "openai//gpt"]) {
+  assert.equal(
+    transformModelIdForRuntime("copilot", unchanged),
+    unchanged,
+    `${unchanged} has no two non-empty segments to strip`,
+  );
+}
+
+// Metadata, not runtime-name conditionals, controls future runtimes. Missing
+// and unknown transform values retain the Rust adapter's strip-provider
+// default for compatibility with older generated registries.
+const futureRuntimes = [
+  { id: "future-preserve", modelIdTransform: "preserve" },
+  { id: "future-default" },
+  { id: "future-unknown", modelIdTransform: "later-transform" },
+];
+assert.equal(
+  transformModelIdForRuntime("future-preserve", "provider/team/model", futureRuntimes),
+  "provider/team/model",
+);
+assert.equal(
+  transformModelIdForRuntime("future-default", "provider/team/model", futureRuntimes),
+  "team/model",
+);
+assert.equal(
+  transformModelIdForRuntime("future-unknown", "provider/team/model", futureRuntimes),
+  "team/model",
+);
+assert.equal(
+  transformModelIdForRuntime("missing-runtime", "provider/team/model", futureRuntimes),
+  "team/model",
+);
+
+// Revalidate the transformed argv value so stripping cannot expose a CLI flag;
+// nested ids remain valid after their first provider segment is removed.
+assert.equal(runtimeModelIdForLaunch("copilot", "provider/team/model"), "team/model");
+assert.equal(runtimeModelIdForLaunch("copilot", "provider/--allow-all-tools"), null);
+assert.equal(runtimeModelIdForLaunch("copilot", "provider/../escape"), null);
+assert.equal(runtimeModelIdForLaunch("copilot", null), null);
 
 console.log("runtime-models.test.ts: ok");

@@ -28,6 +28,7 @@
 // ignores. The final `result` frame is top-level (no `data` envelope).
 
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+import { runtimeModelIdForLaunch } from "./runtime-models.ts";
 import type { CopilotLaunchCommand } from "./copilot-bin.ts";
 import type { RuntimeToolAdapter, ToolAction } from "./runtime-tool-adapter.ts";
 
@@ -449,7 +450,7 @@ export type CopilotStreamLaunch = {
   resumeSessionId: string | null;
   /** Pre-assigned id for a fresh session (ignored when resuming). */
   newSessionId: string | null;
-  /** Cleaned model id; a `provider/` namespace is stripped for copilot. */
+  /** Cleaned, provider-qualified model id; registry metadata controls launch transformation. */
   model: string | null;
   /**
    * `full` — interactive chat turns: access stays implicit (no widening args;
@@ -494,15 +495,8 @@ export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
     args.push(spec.sessionIdFlag, launch.newSessionId);
   }
   if (launch.model && spec.modelFlag) {
-    // Cave model ids may be namespaced (`openai/gpt-5.5`); copilot expects
-    // the bare id, matching how coven strips the provider prefix.
-    const bare = launch.model.includes("/")
-      ? launch.model.slice(launch.model.lastIndexOf("/") + 1)
-      : launch.model;
-    // The provider-qualified id was already validated by the request path,
-    // but stripping its namespace can expose a flag-shaped bare value such
-    // as `openai/--allow-all-tools`. Validate the argv value itself.
-    if (/^[A-Za-z0-9][A-Za-z0-9._:@+-]*$/.test(bare)) args.push(spec.modelFlag, bare);
+    const model = runtimeModelIdForLaunch("copilot", launch.model);
+    if (model) args.push(spec.modelFlag, model);
   }
   // Trust each granted root at the harness level; repeatable native flag.
   // Emitted for read AND full turns so the grant list stays the declared
