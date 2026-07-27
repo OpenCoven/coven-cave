@@ -1,7 +1,11 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import {
+  buildProfileCardViewModel,
+  loadProfileCardData,
+} from "./profile-card-data.ts";
+import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources.ts";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
@@ -84,13 +88,56 @@ describe("Profile card wiring (cave-ujbr)", () => {
   it("stretches the card to fill the page height and width (no 1200px island)", () => {
     const css = readFileSync(new URL("../styles/profile-card.css", import.meta.url), "utf8");
     // The page is a flex column so the card can absorb the remaining height…
-    assert.match(css, /\.pfc-page \{[^}]*display: flex;[^}]*flex-direction: column;/s);
+    assert.match(css, /\.pfc-page \{[\s\S]*?display: flex;[\s\S]*?flex-direction: column;/);
     // …and the card takes it, pinning the footer row to the card's bottom edge.
-    assert.match(css, /\.pfc-card \{[^}]*flex: 1;/s);
-    assert.match(css, /\.pfc-card \{[^}]*grid-template-rows: 1fr auto;/s);
+    assert.match(css, /\.pfc-card \{[\s\S]*?flex: 1;/);
+    assert.match(css, /\.pfc-card \{[\s\S]*?grid-template-rows: 1fr auto;/);
     // The metric panels absorb vertical growth inside the main column.
-    assert.match(css, /\.pfc-panels \{[^}]*flex: 1;/s);
+    assert.match(css, /\.pfc-panels \{[\s\S]*?flex: 1;/);
     // No fixed width caps anywhere — the card, topnav and callout track the page.
     assert.doesNotMatch(css, /max-width: 1200px/);
+  });
+
+  it("renders canonical memory as unavailable instead of a confirmed zero", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      const value = String(url);
+      const body =
+        value === "/api/familiars"
+          ? {
+              ok: true,
+              familiars: [
+                { id: "cody", display_name: "Cody", role: "agent" },
+              ],
+            }
+          : value === "/api/sessions/list"
+            ? { ok: true, sessions: [] }
+            : {
+                ok: false,
+                code: "canonical_memory_unavailable",
+              };
+      return {
+        ok: value !== "/api/coven-memory",
+        status: value === "/api/coven-memory" ? 503 : 200,
+        json: async () => body,
+      } as Response;
+    }) as typeof fetch;
+
+    try {
+      const data = await loadProfileCardData("familiar", "cody");
+      const viewModel = buildProfileCardViewModel(data);
+      const memoryTile = viewModel.model.statTiles.find(
+        (tile) => tile.label === "memories",
+      );
+
+      assert.equal(data.memoryAvailability, "unavailable");
+      assert.equal(memoryTile?.value, "—");
+      assert.ok(
+        viewModel.errors.some((message) => message.includes("memory unavailable")),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearCanonicalMemoryResources();
+    }
   });
 });

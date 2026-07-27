@@ -13,10 +13,15 @@ const familiarWorkspace = path.join(home, "familiars", "ember");
 const bin = path.join(familiarWorkspace, "bin");
 await mkdir(familiarWorkspace, { recursive: true });
 await mkdir(bin, { recursive: true });
+const hermesExecutable = path.join(
+  bin,
+  process.platform === "win32" ? "hermes.exe" : "hermes",
+);
 
 const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousOsHome = process.env.HOME;
+const previousHermesBin = process.env.HERMES_BIN;
 const previousPath = process.env.PATH;
 const previousPathCase = process.env.Path;
 const previousShell = process.env.SHELL;
@@ -25,6 +30,7 @@ const previousHermesApiKey = process.env.HERMES_API_KEY;
 const previousHermesArgvCapture = process.env.HERMES_ARGV_CAPTURE;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
+process.env.HERMES_BIN = hermesExecutable;
 // Cave deliberately augments desktop-app PATH from HOME and the login shell.
 // Isolate both so a real host Hermes install cannot defeat the missing case.
 process.env.HOME = home;
@@ -54,8 +60,6 @@ function assertNoFabricatedAssistantResponse(body, events) {
   assert.ok(!events.some((event) => event.kind === "assistant_chunk"));
 }
 
-const hermesExecutable = path.join(bin, process.platform === "win32" ? "hermes.exe" : "hermes");
-
 async function installHermesFixture(posixScript, windowsChatScript) {
   await rm(hermesExecutable, { force: true });
   if (process.platform === "win32") {
@@ -73,7 +77,13 @@ async function installHermesFixture(posixScript, windowsChatScript) {
 try {
   const { refreshCovenBin, refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
   refreshCovenBin();
-  refreshCovenSpawnEnv();
+  const spawnEnv = refreshCovenSpawnEnv();
+  const { resolveHermesLaunch } = await import("@/lib/runtime-availability");
+  assert.equal(
+    resolveHermesLaunch({ env: spawnEnv, cwd: familiarWorkspace }).state,
+    "missing",
+    "the explicit Hermes fixture isolates discovery from every host PATH fallback",
+  );
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
@@ -108,9 +118,8 @@ try {
   // launched. The direct native command differs by platform, yet neither
   // failure may become a generic authentication/no-output assistant message.
   {
-    const brokenName = process.platform === "win32" ? "hermes.exe" : "hermes";
     await writeFile(
-      path.join(bin, brokenName),
+      hermesExecutable,
       process.platform === "win32"
         ? "not an executable\n"
         : `#!${path.join(home, "missing-interpreter")}\nexit 0\n`,
@@ -282,6 +291,8 @@ try {
   else process.env.COVEN_CAVE_HOME = previousCaveHome;
   if (previousOsHome === undefined) delete process.env.HOME;
   else process.env.HOME = previousOsHome;
+  if (previousHermesBin === undefined) delete process.env.HERMES_BIN;
+  else process.env.HERMES_BIN = previousHermesBin;
   if (previousPath === undefined) delete process.env.PATH;
   else process.env.PATH = previousPath;
   if (previousPathCase === undefined) delete process.env.Path;

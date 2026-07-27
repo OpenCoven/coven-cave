@@ -1,4 +1,3 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -47,7 +46,7 @@ assert.match(
 
 assert.match(
   source,
-  /const \[sortMode, setSortMode\] = useSurfacePreference\(surfacePreferenceSpecs\.familiarMemory\.sort\);/,
+  /const \[sortMode, setSortMode\] = useSurfacePreference\(\s*surfacePreferenceSpecs\.familiarMemory\.sort,\s*\);/,
   "Files must retain the recency-default sort preference through the Workspace registry",
 );
 // Sort now lives in the management controls bar (group/sort/stale-only).
@@ -55,7 +54,7 @@ assert.match(source, /value=\{sortMode\}/, "Sort control must be bound to sortMo
 for (const opt of ["recent", "name", "size"]) {
   assert.ok(source.includes(`{ value: "${opt}",`), `Sort option ${opt} must be offered`);
 }
-assert.match(source, /\.sort\(cmp\[sortMode\]\)/, "visibleFiles must sort by the active mode");
+assert.match(source, /\.sort\(compare\[sortMode\]\)/, "visibleFiles must sort by the active mode");
 
 // ───────── #9 search a11y + clear ─────────
 

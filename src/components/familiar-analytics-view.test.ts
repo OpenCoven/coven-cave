@@ -5,6 +5,7 @@ import {
   buildFamiliarAnalyticsModel,
   loadFamiliarAnalyticsData,
 } from "./familiar-analytics-data.ts";
+import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources.ts";
 
 const source = [
   readFileSync(new URL("./familiar-analytics-view.tsx", import.meta.url), "utf8"),
@@ -13,6 +14,7 @@ const source = [
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  clearCanonicalMemoryResources();
 });
 
 const originalFetch = globalThis.fetch;
@@ -82,10 +84,14 @@ function mockFetchFor(score: "low" | "trusted") {
           ? [
               {
                 id: "memory-1",
-                familiar_id: "cody",
+                familiarId: "cody",
                 title: "Recent memory",
-                path: "memory.md",
-                updated_at: "2026-06-25T12:00:00.000Z",
+                updatedAt: "2026-06-25T12:00:00.000Z",
+                relativeUpdatedAt: "recently",
+                excerpt: "A recent verified memory",
+                source: { kind: "familiar-memory", label: "Familiar memory" },
+                privacy: { classification: null, revealRequired: null },
+                verification: { state: "verified" },
               },
             ]
           : [],
@@ -382,6 +388,36 @@ describe("FamiliarAnalyticsView", () => {
     assert.ok(model.errors.some((message) => message.includes("HTTP 500")));
     assert.equal(model.familiar?.id, "cody");
     assert.equal(model.contractReport, null);
+  });
+
+  it("keeps an unavailable canonical list distinct from a confirmed zero", async () => {
+    mockFetchFor("trusted");
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      if (String(url) === "/api/coven-memory") {
+        return {
+          ok: false,
+          status: 503,
+          json: async () => ({
+            ok: false,
+            code: "canonical_memory_unavailable",
+          }),
+        } as unknown as Response;
+      }
+      return realFetch(url);
+    }) as typeof fetch;
+
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data);
+
+    assert.equal(data.covenEntries.length, 0);
+    assert.equal(data.memoryAvailability, "unavailable");
+    assert.ok(model.errors.some((message) => message.includes("memory unavailable")));
+    assert.equal(model.progression?.memoryAvailability, "unavailable");
+    assert.ok(
+      !model.growthReport?.signals.some((signal) => signal.kind === "no-memory"),
+      "a failed list must not invent a no-memory growth signal",
+    );
   });
 
   it("renders the heal request count and keeps thread analytics present", async () => {

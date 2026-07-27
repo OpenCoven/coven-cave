@@ -136,8 +136,20 @@ test("buildAskSalemContext scores corpora against the question", () => {
       { title: "Water the plants", status: "todo", priority: "low", labels: [] },
     ],
     covenMemory: [
-      { title: "Release ritual notes", familiar_id: "ada", path: "notes/release.md" },
-      { title: "Unrelated lore", familiar_id: "bo", path: "lore.md" },
+      {
+        title: "Release ritual notes",
+        familiarId: "ada",
+        excerpt: "Release checklist and verification",
+        sourceLabel: "Familiar memory",
+        verificationState: "verified",
+      },
+      {
+        title: "Unrelated lore",
+        familiarId: "bo",
+        excerpt: "Garden notes",
+        sourceLabel: "Familiar memory",
+        verificationState: "needs-review",
+      },
     ],
     fsMemory: [
       { relPath: "docs/release-checklist.md", rootLabel: "workspace" },
@@ -153,6 +165,29 @@ test("buildAskSalemContext scores corpora against the question", () => {
   assert.ok(titles.includes("docs/release-checklist.md"));
   assert.ok(!titles.includes("Water the plants"), "zero-overlap rows are excluded");
   assert.ok(!titles.includes("recipes/soup.md"));
+  const canonical = context.matches.find((match) => match.title === "Release ritual notes");
+  assert.equal(
+    canonical?.detail,
+    "ada · Familiar memory · verified",
+    "canonical display detail is summary-only and path-free",
+  );
+  assert.doesNotMatch(JSON.stringify(canonical), /\bpath\b/i);
+});
+
+test("canonical scoring uses familiar, source, excerpt, and verification metadata", () => {
+  const context = buildAskSalemContext("cody incident needs-review", {
+    covenMemory: [
+      {
+        title: "Weekly note",
+        familiarId: "cody",
+        excerpt: "Incident response follow-up",
+        sourceLabel: "Familiar memory",
+        verificationState: "needs-review",
+      },
+    ],
+  });
+  assert.ok(context);
+  assert.equal(context.matches[0].title, "Weekly note");
 });
 
 test("conversation hits are always included and rank by matchCount", () => {

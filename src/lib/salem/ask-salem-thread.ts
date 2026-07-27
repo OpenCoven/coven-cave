@@ -7,6 +7,7 @@
 // via `formatSearchContextForPrompt` — one context format, two producers.
 
 import type { SalemSearchContext } from "@/lib/command-palette-salem-context";
+import type { CanonicalMemoryVerificationState } from "@/lib/canonical-memory";
 
 export type AskSalemRole = "user" | "salem";
 
@@ -119,9 +120,10 @@ export type AskSalemCard = {
 
 export type AskSalemCovenMemory = {
   title: string;
-  familiar_id?: string;
-  path?: string;
-  excerpt?: string;
+  familiarId: string;
+  excerpt: string;
+  sourceLabel: string;
+  verificationState: CanonicalMemoryVerificationState;
 };
 
 export type AskSalemFsMemory = {
@@ -194,13 +196,23 @@ export function buildAskSalemContext(
       if (!entry.title) continue;
       const score = overlapScore(
         queryTokens,
-        `${entry.title} ${entry.path ?? ""} ${entry.excerpt ?? ""}`,
+        [
+          entry.title,
+          entry.excerpt,
+          entry.familiarId,
+          entry.sourceLabel,
+          entry.verificationState,
+        ].join(" "),
       );
       if (score > 0) {
         scored.push({
           type: "memory",
           title: entry.title,
-          detail: [entry.familiar_id, entry.path].filter(Boolean).join(" · "),
+          detail: [
+            entry.familiarId,
+            entry.sourceLabel,
+            entry.verificationState,
+          ].join(" · "),
           score,
         });
       }

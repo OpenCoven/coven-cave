@@ -32,7 +32,11 @@ assert.match(bento, /\/api\/board/, "board panel pulls the live board");
 assert.match(bento, /\/api\/familiars/, "roster pulls the familiar list");
 assert.match(bento, /\/api\/inbox/, "needs-you pulls the live inbox");
 assert.match(bento, /\/api\/sessions\/list/, "stats/heatmap/carousel pull sessions");
-assert.match(bento, /\/api\/coven-memory/, "familiar card stats pull coven memory");
+assert.match(
+  bento,
+  /loadCanonicalMemoryList\(\)/,
+  "familiar card stats pull coven memory through the shared canonical loader",
+);
 assert.match(bento, /\/api\/projects/, "the projects stat pulls the project registry");
 assert.match(bento, /\/api\/github\/activity/, "github rail pulls activity");
 assert.match(bento, /\/api\/github\/assigned/, "github rail merges assigned items");

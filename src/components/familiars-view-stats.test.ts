@@ -1,6 +1,6 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { ACTIVITY_DAYS, buildFamiliarCardStats } from "./familiars-view-stats.ts";
+import type { CanonicalMemorySummary } from "../lib/canonical-memory.ts";
 
 const NOW = Date.parse("2026-06-08T12:00:00.000Z");
 const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
@@ -21,17 +21,43 @@ const sessions = [
   { id: "s4", familiarId: "f2", updated_at: daysAgo(3), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(3) },
 ];
 
+function memory(
+  id: string,
+  familiarId: string,
+  title: string,
+  updatedAt: string,
+): CanonicalMemorySummary {
+  return {
+    id,
+    familiarId,
+    title,
+    updatedAt,
+    relativeUpdatedAt: "recently",
+    excerpt: `${title} excerpt`,
+    source: { kind: "familiar-memory", label: "Familiar memory" },
+    privacy: { classification: null, revealRequired: null },
+    verification: { state: "verified" },
+  };
+}
+
 const covenEntries = [
-  { id: "m1", familiar_id: "f1", title: "Older f1 memory", path: "/a.md", updated_at: minutesAgo(60) },
-  { id: "m2", familiar_id: "f1", title: "Latest f1 memory", path: "/b.md", updated_at: minutesAgo(5) },
-  { id: "m3", familiar_id: "f2", title: "Only f2 memory", path: "/c.md", updated_at: minutesAgo(120) },
+  memory("m1", "f1", "Older f1 memory", minutesAgo(60)),
+  memory("m2", "f1", "Latest f1 memory", minutesAgo(5)),
+  memory("m3", "f2", "Only f2 memory", minutesAgo(120)),
 ];
 
-const stats = buildFamiliarCardStats({ familiars, sessions, covenEntries, now: NOW });
+const stats = buildFamiliarCardStats({
+  familiars,
+  sessions,
+  covenEntries,
+  memoryAvailability: "ready",
+  now: NOW,
+});
 
 // f1
 const f1 = stats.get("f1");
 assert.equal(f1?.memoryCount, 2, "f1 has 2 memories");
+assert.equal(f1?.memoryAvailability, "ready");
 assert.equal(f1?.latestMemory?.title, "Latest f1 memory", "f1 latest memory is the most-recent one");
 assert.equal(f1?.lastSessionAt, sessions[0].created_at, "f1 last session uses the newest non-archived session start");
 assert.equal(f1?.sessionsLast7d, 2, "f1 has 2 sessions in the last 7d (s1 and s2; s3 is excluded at 8d)");
@@ -60,6 +86,7 @@ assert.equal(f2?.streakDays, 0, "a 3-day-old session holds no streak — and the
 // f3 — nothing
 const f3 = stats.get("f3");
 assert.equal(f3?.memoryCount, 0);
+assert.equal(f3?.memoryAvailability, "ready", "a successful empty list is a confirmed zero");
 assert.equal(f3?.latestMemory, null);
 assert.equal(f3?.lastSessionAt, null);
 assert.equal(f3?.sessionsLast7d, 0);
@@ -73,6 +100,7 @@ const edge7d = buildFamiliarCardStats({
   familiars: [{ id: "x", display_name: "X", role: "" }],
   sessions: [{ id: "z", familiarId: "x", updated_at: daysAgo(7), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: daysAgo(7) }],
   covenEntries: [],
+  memoryAvailability: "ready",
   now: NOW,
 });
 assert.equal(edge7d.get("x")?.sessionsLast7d, 0, "session at exactly 7d ago is excluded");
@@ -82,6 +110,7 @@ const edge5m = buildFamiliarCardStats({
   familiars: [{ id: "y", display_name: "Y", role: "" }],
   sessions: [{ id: "z", familiarId: "y", updated_at: minutesAgo(5), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: minutesAgo(5) }],
   covenEntries: [],
+  memoryAvailability: "ready",
   now: NOW,
 });
 assert.equal(edge5m.get("y")?.hasActiveSession, false, "session at exactly 5min ago is not active");
@@ -90,12 +119,33 @@ const activeCreated = buildFamiliarCardStats({
   familiars: [{ id: "a", display_name: "A", role: "" }],
   sessions: [{ id: "recent", familiarId: "a", updated_at: minutesAgo(1), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: minutesAgo(1) }],
   covenEntries: [],
+  memoryAvailability: "ready",
   now: NOW,
 });
 assert.equal(activeCreated.get("a")?.hasActiveSession, true, "recent non-archived session start is active");
 
+const unavailable = buildFamiliarCardStats({
+  familiars: [{ id: "u", display_name: "Unavailable", role: "" }],
+  sessions: [],
+  covenEntries: [],
+  memoryAvailability: "unavailable",
+  now: NOW,
+}).get("u");
+assert.equal(unavailable?.memoryCount, 0, "renown math keeps its conservative numeric fallback");
+assert.equal(
+  unavailable?.memoryAvailability,
+  "unavailable",
+  "callers can distinguish an unavailable list from a confirmed zero",
+);
+
 // Empty inputs
-const empty = buildFamiliarCardStats({ familiars: [], sessions: [], covenEntries: [], now: NOW });
+const empty = buildFamiliarCardStats({
+  familiars: [],
+  sessions: [],
+  covenEntries: [],
+  memoryAvailability: "ready",
+  now: NOW,
+});
 assert.equal(empty.size, 0);
 
 console.log("familiars-view-stats: all assertions passed");

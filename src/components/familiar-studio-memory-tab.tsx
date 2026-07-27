@@ -12,9 +12,14 @@ import type { Familiar } from "@/lib/types";
 type Props = {
   familiar: ResolvedFamiliar;
   allFamiliars: Familiar[];
+  localDaemonReady: boolean;
 };
 
-export function FamiliarStudioMemoryTab({ familiar, allFamiliars }: Props) {
+export function FamiliarStudioMemoryTab({
+  familiar,
+  allFamiliars,
+  localDaemonReady,
+}: Props) {
   const [noteOpen, setNoteOpen] = useState(false);
 
   return (
@@ -34,6 +39,7 @@ export function FamiliarStudioMemoryTab({ familiar, allFamiliars }: Props) {
         <FamiliarsMemoryView
           familiars={allFamiliars}
           activeFamiliar={familiar}
+          localDaemonReady={localDaemonReady}
           lockToFamiliar
         />
       </div>

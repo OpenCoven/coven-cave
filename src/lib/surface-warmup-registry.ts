@@ -21,7 +21,7 @@ export const surfaceWarmupResources = {
   board: ["board:cards"],
   schedules: ["schedules:inbox", "schedules:automations"],
   grimoire: ["grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal"],
-  agents: ["agents:coven-memory", "memory:list"],
+  agents: ["memory:list"],
 } as const satisfies Record<SurfaceWarmupSurface, readonly string[]>;
 
 async function json(
@@ -71,7 +71,6 @@ defineResource("grimoire:knowledge", (signal) => json(signal, "/api/knowledge"),
 defineResource("grimoire:collections", (signal) => json(signal, "/api/knowledge/collections"), 45_000);
 defineResource("memory:list", (signal) => json(signal, "/api/memory"), 30_000);
 defineResource("grimoire:journal", (signal) => json(signal, "/api/journal"), 45_000);
-defineResource("agents:coven-memory", (signal) => json(signal, "/api/coven-memory"), 30_000);
 
 export async function readSurfaceResource<T>(key: string, force = false): Promise<SurfaceWarmCacheRead<T>> {
   const result = await read<T>(key, { force });

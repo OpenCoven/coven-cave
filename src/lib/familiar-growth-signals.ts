@@ -163,20 +163,22 @@ export function deriveGrowthReport(args: {
     });
   }
 
-  if (args.stats.memoryCount === 0) {
-    signals.push({
-      kind: "no-memory",
-      label: "No memory recorded",
-      detail: "No memory recorded. Consider whether this familiar's context should be captured.",
-      severity: "warn",
-    });
-  } else if (latestMemoryGapDays != null && latestMemoryGapDays >= GROWTH_THRESHOLDS.staleMemoryDays) {
-    signals.push({
-      kind: "stale-memory",
-      label: "Memory is stale",
-      detail: `Latest memory update is ${latestMemoryGapDays} days old. Review whether the familiar's context is still current.`,
-      severity: "warn",
-    });
+  if (args.stats.memoryAvailability === "ready") {
+    if (args.stats.memoryCount === 0) {
+      signals.push({
+        kind: "no-memory",
+        label: "No memory recorded",
+        detail: "No memory recorded. Consider whether this familiar's context should be captured.",
+        severity: "warn",
+      });
+    } else if (latestMemoryGapDays != null && latestMemoryGapDays >= GROWTH_THRESHOLDS.staleMemoryDays) {
+      signals.push({
+        kind: "stale-memory",
+        label: "Memory is stale",
+        detail: `Latest memory update is ${latestMemoryGapDays} days old. Review whether the familiar's context is still current.`,
+        severity: "warn",
+      });
+    }
   }
 
   if (runs.length < GROWTH_THRESHOLDS.lowRetroVolumeRuns) {
