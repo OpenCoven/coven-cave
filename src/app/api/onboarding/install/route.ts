@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { promisify } from "node:util";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
@@ -10,6 +12,7 @@ import {
 } from "@/lib/server/global-npm-install-lane";
 import {
   covenBin,
+  caveToolSpawnEnv,
   covenSpawnEnv,
   pickWindowsLauncher,
   refreshCovenBin,
@@ -17,6 +20,7 @@ import {
 } from "@/lib/coven-bin";
 import {
   verifyOpenCovenToolInstall,
+  npmLaunchCommandForPath,
   type OpenCovenToolVerification,
 } from "@/lib/opencoven-tools-status";
 import { invalidateOpenCovenToolUpdateCache } from "@/lib/opencoven-tools-update-cache";
@@ -66,8 +70,9 @@ function reviewedPackage(id: Extract<PrerequisiteId, "runtime-codex" | "runtime-
  * a shell:
  *
  *   - kind "managed-node": Cave-owned, exact Node/npm archive installation
- *   - kind "npm":            `node npm-cli.js install -g <allowlisted package>`
- *                              from that managed toolchain, never host PATH.
+ *   - Coven CLI self-update: fixed global install of the package's latest tag
+ *                            through npm beside the detected CLI.
+ *   - other kind "npm":      pinned package through Cave-managed Node/npm.
  */
 const INSTALL_TARGETS = {
   "managed-node": {
@@ -165,7 +170,9 @@ function isInstallTarget(value: unknown): value is InstallTarget {
 type SpawnPlan = {
   command: string;
   args: string[];
+  env: NodeJS.ProcessEnv;
   shell: boolean;
+  verificationPath?: string;
   /** Sanitized, path-free facts retained independently from npm output. */
   traceLines: string[];
 };
@@ -174,17 +181,63 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-/** Resolve the fixed spawn plan for a reviewed npm target. The managed
- * Node/npm probe is deliberately the only prerequisite: a host Node/npm,
- * Corepack, pnpm, or global PATH entry is never consulted. */
+function npmBesideDetectedCoven(detected: string): { npmPath: string; prefix: string } | null {
+  const binDir = path.dirname(detected);
+  const names = process.platform === "win32" ? ["npm.cmd", "npm.exe", "npm"] : ["npm"];
+  const npmPath = names.map((name) => path.join(binDir, name)).find((candidate) => existsSync(candidate));
+  if (!npmPath) return null;
+  return {
+    npmPath,
+    prefix: process.platform === "win32" ? binDir : path.dirname(binDir),
+  };
+}
+
+function hostNpmSpawnEnv(npmPath: string, prefix: string): NodeJS.ProcessEnv {
+  const env = caveToolSpawnEnv();
+  for (const key of Object.keys(env)) {
+    if (/^npm_/i.test(key)) delete env[key];
+  }
+  env.PATH = [path.dirname(npmPath), env.PATH].filter(Boolean).join(path.delimiter);
+  env.NPM_CONFIG_LOGLEVEL = "error";
+  env.NPM_CONFIG_PREFIX = prefix;
+  env.npm_config_prefix = prefix;
+  return env;
+}
+
+/** Resolve a fixed spawn plan. Only the Coven CLI self-update follows the
+ * detected global npm installation; prerequisite tools stay on the reviewed,
+ * pinned Cave-managed toolchain. */
 async function spawnPlanFor(
+  targetName: InstallTarget,
   target: (typeof INSTALL_TARGETS)[InstallTarget],
 ): Promise<
   | SpawnPlan
   | { managedNodeMissing: true }
+  | { npmMissing: true }
   | null
 > {
   if (target.kind === "npm") {
+    if (targetName === "coven-cli") {
+      const detected = covenBin();
+      if (path.isAbsolute(detected)) {
+        const adjacent = npmBesideDetectedCoven(detected);
+        if (!adjacent) return { npmMissing: true };
+        const launch = npmLaunchCommandForPath(adjacent.npmPath);
+        if (!launch) return { npmMissing: true };
+        return {
+          command: launch.command,
+          args: [...launch.fixedArgs, "install", "--global", target.packageName],
+          env: hostNpmSpawnEnv(adjacent.npmPath, adjacent.prefix),
+          shell: false,
+          verificationPath: detected,
+          traceLines: [
+            "npm discovery: launcher beside the detected Coven CLI.",
+            "Installer launch: host npm with fixed argv; shell disabled.",
+          ],
+        };
+      }
+    }
+
     const managed = await probeManagedNodeToolchain();
     if (managed.status !== "ready") return { managedNodeMissing: true };
     const launch = managedNpmLaunch(managed.paths);
@@ -193,6 +246,7 @@ async function spawnPlanFor(
     return {
       command: launch.command,
       args: [...launch.args, "install", "--global", target.packageName],
+      env: covenSpawnEnv(),
       shell: false,
       traceLines: [
         "Managed Node/npm probe: ready in Cave user data.",
@@ -472,6 +526,7 @@ function installerOutcomeError(
 async function finishInstallJob(
   targetName: InstallTarget,
   target: (typeof INSTALL_TARGETS)[InstallTarget],
+  plan: SpawnPlan,
   job: InstallJob,
   {
     code,
@@ -500,10 +555,16 @@ async function finishInstallJob(
 
     if (shouldVerifyOpenCovenTool) {
       try {
-        verification = await verifyOpenCovenToolInstall(targetName);
+        verification = await verifyOpenCovenToolInstall(targetName, {
+          binaryPath: plan.verificationPath,
+          env: plan.env,
+        });
         installed = { path: verification.path };
         let resolutionHint: string | null = null;
-        if (!isVerifiedOpenCovenInstallSuccess(code, verification)) {
+        if (
+          !plan.verificationPath &&
+          !isVerifiedOpenCovenInstallSuccess(code, verification)
+        ) {
           // npm succeeded but PATH still resolves something that fails
           // verification — usually a stale launcher shadowing the fresh
           // npm-prefix copy. Try the identity-gated cleanup so the Update
@@ -636,6 +697,7 @@ async function runInstallJob(
     await finishInstallJob(
       targetName,
       target,
+      plan,
       job,
       { code, signal, launchError },
       npmLease,
@@ -694,7 +756,7 @@ async function runInstallJob(
 
     child = spawn(plan.command, plan.args, {
       stdio: ["ignore", "pipe", "pipe"],
-      env: covenSpawnEnv(),
+      env: plan.env,
       shell: plan.shell,
     });
     child.stdout?.on("data", (d) => appendOutput(job, d.toString()));
@@ -870,7 +932,18 @@ export async function POST(req: Request) {
     );
   }
 
-  const plan = await spawnPlanFor(target);
+  const plan = await spawnPlanFor(targetName, target);
+  if (plan && "npmMissing" in plan) {
+    return NextResponse.json(
+      {
+        ok: false,
+        npmMissing: true,
+        error: "npm is not available beside the detected Coven CLI",
+        hint: "Reinstall Coven CLI with Node.js and npm, restart Cave, then retry the update.",
+      },
+      { status: 422 },
+    );
+  }
   if (plan && "managedNodeMissing" in plan) {
     return NextResponse.json(
       {
