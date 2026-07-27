@@ -51,8 +51,8 @@ export type SurfaceMemoryEntry = {
 };
 
 /** Read access to the familiar's memory inventory. Backed by `/api/memory`;
- *  adapters resolve to empty results (never fakes) when the backing API is
- *  unavailable. */
+ *  absent familiar scope and valid empty responses resolve to `[]`, while
+ *  transport or protocol failures reject so consumers can show a real error. */
 export type MemoryAccess = {
   listEntries(): Promise<SurfaceMemoryEntry[]>;
   readFile(path: string): Promise<{ content: string; mtimeMs: number | null } | null>;

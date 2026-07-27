@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import * as reviewDeck from "./review-deck.ts";
 import {
   diffStatLabel,
   needsHuman,
@@ -20,6 +21,14 @@ import {
 const surface = readFileSync(new URL("./reviewer-surface.tsx", import.meta.url), "utf8");
 const register = readFileSync(new URL("./register.tsx", import.meta.url), "utf8");
 const docs = readFileSync(new URL("../../../docs/role-surfaces.md", import.meta.url), "utf8");
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((onResolve) => {
+    resolve = onResolve;
+  });
+  return { promise, resolve };
+}
 
 // ── Queue rules (behavioral, real module) ────────────────────────────────────
 
@@ -82,6 +91,62 @@ test("reviewDeckStatus reads ok when clear and busy with a queue", () => {
   assert.deepEqual(reviewDeckStatus({ queue: 3, pullRequests: 1 }), { label: "3 to review · 1 PR", tone: "busy" });
 });
 
+test("latest review request keeps project B when project A resolves last", async () => {
+  assert.equal(typeof reviewDeck.createReviewRequestGate, "function");
+  const gate = reviewDeck.createReviewRequestGate();
+  const projectA = gate.begin("reviewer:session-a:/repo/a");
+  const projectB = gate.begin("reviewer:session-b:/repo/b");
+  const projectAResponse = deferred<void>();
+  const projectBResponse = deferred<void>();
+  const committed: string[] = [];
+
+  const finishA = projectAResponse.promise.then(() => {
+    if (gate.isCurrent(projectA, "reviewer:session-b:/repo/b")) committed.push("project-a");
+  });
+  const finishB = projectBResponse.promise.then(() => {
+    if (gate.isCurrent(projectB, "reviewer:session-b:/repo/b")) committed.push("project-b");
+  });
+
+  projectBResponse.resolve();
+  await finishB;
+  projectAResponse.resolve();
+  await finishA;
+  assert.deepEqual(committed, ["project-b"]);
+  assert.equal(gate.isCurrent(projectB, "reviewer:session-a:/repo/a"), false);
+});
+
+test("reset invalidates an in-flight diff without needing a replacement request", async () => {
+  assert.equal(typeof reviewDeck.createReviewRequestGate, "function");
+  const gate = reviewDeck.createReviewRequestGate();
+  const oldDiff = gate.begin("reviewer:session-a:/repo/a:a.ts");
+  gate.invalidate();
+
+  let committed = false;
+  await Promise.resolve().then(() => {
+    if (gate.isCurrent(oldDiff, "reviewer:session-a:/repo/a:a.ts")) committed = true;
+  });
+
+  assert.equal(committed, false);
+});
+
+test("checkpoint envelopes preserve a valid empty list", () => {
+  assert.equal(typeof reviewDeck.parseCheckpointEnvelope, "function");
+  assert.deepEqual(reviewDeck.parseCheckpointEnvelope({ ok: true, checkpoints: [] }), []);
+});
+
+test("checkpoint envelopes reject failed, missing, and malformed payloads", () => {
+  assert.equal(typeof reviewDeck.parseCheckpointEnvelope, "function");
+  assert.throws(() => reviewDeck.parseCheckpointEnvelope({ ok: false, checkpoints: [] }));
+  assert.throws(() => reviewDeck.parseCheckpointEnvelope({ checkpoints: [] }));
+  assert.throws(() => reviewDeck.parseCheckpointEnvelope({ ok: true }));
+  assert.throws(() =>
+    reviewDeck.parseCheckpointEnvelope({
+      ok: true,
+      checkpoints: [{ name: "saved.patch", savedAt: "now", bytes: "four" }],
+    }),
+  );
+});
+
 // ── Surface wiring (source pins) ─────────────────────────────────────────────
 
 test("the deck reads real working trees through the changes API", () => {
@@ -93,6 +158,21 @@ test("the deck reads real working trees through the changes API", () => {
   assert.match(surface, /never edits the working tree/);
 });
 
+test("working-tree and diff loaders scope request gates to the selected session and reset them", () => {
+  assert.match(surface, /latestSelectedRequestScope\.current = selectedRequestScope/);
+  assert.match(surface, /const changesRequests = useRef\(createReviewRequestGate\(\)\)/);
+  assert.match(surface, /changesRequests\.current\.begin\(selectedRequestScope\)/);
+  assert.match(
+    surface,
+    /changesRequests\.current\.isCurrent\(request, latestSelectedRequestScope\.current\)/,
+  );
+  assert.match(surface, /return \(\) => changesRequests\.current\.invalidate\(\)/);
+  assert.match(surface, /const diffRequests = useRef\(createReviewRequestGate\(\)\)/);
+  assert.match(surface, /diffRequests\.current\.begin\(selectedRequestScope\)/);
+  assert.match(surface, /diffRequests\.current\.isCurrent\(request, latestSelectedRequestScope\.current\)/);
+  assert.match(surface, /diffRequests\.current\.invalidate\(\)[\s\S]*?setOpenFile\(null\)/);
+});
+
 test("the queue derives from the familiar's real sessions", () => {
   assert.match(surface, /reviewQueue\(context\.runtimeState\.sessions\)/);
   assert.match(surface, /context\.openSession\(selected\.session\.id, familiarId\)/);
@@ -102,7 +182,7 @@ test("the queue derives from the familiar's real sessions", () => {
 });
 
 test("the deck exposes errors and expansion state accessibly", () => {
-  assert.match(surface, /role="alert"/);
+  assert.match(surface, /\bSurfaceError\b/);
   assert.match(surface, /aria-current=\{item\.session\.id === state\.selectedSessionId/);
   assert.match(surface, /aria-expanded=\{openFile === file\.path\}/);
 });
@@ -214,4 +294,36 @@ test("parseDiffLines handles empties, CRLF, and the no-newline marker", () => {
   const marker = parseDiffLines("+last line\n\\ No newline at end of file");
   assert.equal(marker[0].kind, "add");
   assert.equal(marker[1].kind, "ctx");
+});
+
+test("working-tree and diff failures use shared retryable room states", () => {
+  assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(
+    surface,
+    /changesError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadChanges\}[\s\S]*?\)\s*:\s*changes == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(
+    surface,
+    /diffLoading\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?\)\s*:\s*diffError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{\(\) => openFile && void showDiff\(openFile\)\}/,
+  );
+});
+
+test("checkpoint failures stay retryable and distinct from valid empty data", () => {
+  assert.match(surface, /const \[checkpointError, setCheckpointError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /const loadCheckpoints = useCallback\(async \(\) =>/);
+  assert.match(
+    surface,
+    /checkpointError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadCheckpoints\}[\s\S]*?\)\s*:\s*checkpoints == null\s*\?/,
+  );
+  assert.match(surface, /checkpoints\.length === 0[\s\S]*?No checkpoints saved/);
+});
+
+test("the announcer owns assertive verdict failures while visible error copy stays passive", () => {
+  assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
+  assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
+  assert.match(surface, /announce\(`\$\{verdictLabel\} \$\{prLabel\(selectedPr\)\}\.`\)/);
+  assert.match(surface, /setActionError\(message\)[\s\S]*?announce\(message, "assertive"\)/);
+  assert.match(surface, /actionError && \([\s\S]*?<span className="rd-verdict-pending rd-error">/);
+  assert.doesNotMatch(surface, /actionError && \([\s\S]*?<span role="alert" className="rd-verdict-pending rd-error">/);
 });

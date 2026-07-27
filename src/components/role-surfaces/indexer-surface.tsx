@@ -14,11 +14,22 @@
  * have no backing services yet — those panels say so instead of pretending.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { SearchInput } from "@/components/ui/search-input";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
-import { RailSection, SurfaceCanvas, SurfaceEmpty, SurfaceRail, SurfaceRoom } from "./surface-room";
+import { useLatestAsyncData } from "@/lib/use-role-surfaces";
+import {
+  RailSection,
+  SurfaceCanvas,
+  SurfaceEmpty,
+  SurfaceError,
+  SurfaceLoading,
+  SurfaceRail,
+  SurfaceRoom,
+  useActiveSelectionRail,
+} from "./surface-room";
 import { INDEXER_SURFACE_ID } from "./ids";
 
 export type IndexerState = {
@@ -58,16 +69,15 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
   const familiarId = context.activeFamiliar.id;
   const [state, patch] = useRoleSurfaceState<IndexerState>(familiarId, INDEXER_SURFACE_ID, INDEXER_INITIAL_STATE);
 
-  const [entries, setEntries] = useState<SurfaceMemoryEntry[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    context.memory.listEntries().then((loaded) => {
-      if (!cancelled) setEntries(loaded);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [context.memory]);
+  const {
+    data: entries,
+    error: entriesError,
+    reload: loadEntries,
+  } = useLatestAsyncData<SurfaceMemoryEntry[]>({
+    scopeKey: familiarId,
+    load: context.memory.listEntries,
+    errorMessage: "Couldn't load memory inventory.",
+  });
 
   const collections = useMemo(() => groupMemoryCollections(entries ?? []), [entries]);
 
@@ -84,20 +94,25 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
     () => (entries ?? []).find((e) => e.fullPath === state.selectedPath) ?? null,
     [entries, state.selectedPath],
   );
+  const [detailsExpanded, setDetailsExpanded] = useActiveSelectionRail(state.selectedPath);
 
   // Selected memory content, read through the shared adapter (redacted).
-  const [content, setContent] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setContent(null);
-    if (!selected) return;
-    context.memory.readFile(selected.fullPath).then((file) => {
-      if (!cancelled) setContent(file?.content ?? null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [selected, context.memory]);
+  const fetchContent = useCallback(async () => {
+    if (!selected) throw new Error("no selected memory");
+    const file = await context.memory.readFile(selected.fullPath);
+    if (!file) throw new Error("missing file");
+    return file.content;
+  }, [context.memory, selected]);
+  const {
+    data: content,
+    error: contentError,
+    reload: loadContent,
+  } = useLatestAsyncData<string>({
+    scopeKey: `${familiarId}:${selected?.fullPath ?? ""}`,
+    load: fetchContent,
+    errorMessage: selected ? `Couldn't read ${selected.relPath}.` : "Couldn't read memory content.",
+    enabled: selected != null,
+  });
 
   const [tagDraft, setTagDraft] = useState("");
   const selectedTags = selected ? (state.tags[selected.fullPath] ?? []) : [];
@@ -146,7 +161,16 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
             />
           </RailSection>
           <RailSection title="Recent changes" iconName="ph:clock">
-            {recentChanges.length === 0 ? (
+            {entriesError ? (
+              <SurfaceError
+                title={entriesError}
+                hint="Check the memory source, then retry."
+                onRetry={loadEntries}
+                live={false}
+              />
+            ) : entries == null ? (
+              <SurfaceLoading label="Loading recent memory changes…" live={false} />
+            ) : recentChanges.length === 0 ? (
               <SurfaceEmpty title="No recorded changes." />
             ) : (
               <ul className="role-surface-list">
@@ -164,8 +188,15 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
     >
       <SurfaceRail side="left" label="Collections">
         <RailSection title="Knowledge collections" iconName="ph:folder">
-          {entries == null ? (
-            <SurfaceEmpty title="Loading inventory…" />
+          {entriesError ? (
+            <SurfaceError
+              title={entriesError}
+              hint="Check the memory source, then retry."
+              onRetry={loadEntries}
+              live={false}
+            />
+          ) : entries == null ? (
+            <SurfaceLoading label="Loading memory inventory…" live={false} />
           ) : collections.length === 0 ? (
             <SurfaceEmpty title="No memory on file for this familiar." />
           ) : (
@@ -203,10 +234,11 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
       <SurfaceCanvas label="Clustering workspace">
         <div className="role-surface-canvas-stack">
           <div className="role-surface-inline-form">
-            <input
+            <SearchInput
               value={state.filter}
-              onChange={(e) => patch({ filter: e.target.value })}
+              onValueChange={(next) => patch({ filter: next })}
               placeholder="Filter memories…"
+              onClear={() => patch({ filter: "" })}
               aria-label="Filter memories"
             />
           </div>
@@ -221,8 +253,10 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
               ))}
             </div>
           )}
-          {entries == null ? (
-            <SurfaceEmpty title="Loading inventory…" />
+          {entriesError ? (
+            <SurfaceError title={entriesError} hint="Check the memory source, then retry." onRetry={loadEntries} />
+          ) : entries == null ? (
+            <SurfaceLoading label="Loading memory inventory…" />
           ) : filtered.length === 0 ? (
             <SurfaceEmpty
               iconName="ph:tree-structure"
@@ -236,7 +270,10 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
                   <button
                     type="button"
                     className={`role-surface-card focus-ring${entry.fullPath === state.selectedPath ? " role-surface-card--active" : ""}`}
-                    onClick={() => patch({ selectedPath: entry.fullPath })}
+                    onClick={() => {
+                      patch({ selectedPath: entry.fullPath });
+                      setDetailsExpanded(true);
+                    }}
                   >
                     <span className="role-surface-memory-path">{entry.relPath}</span>
                     {entry.excerpt && <span className="role-surface-memory-excerpt">{entry.excerpt}</span>}
@@ -255,8 +292,26 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       </SurfaceCanvas>
 
-      <SurfaceRail side="right" label="Memory details">
-        {!selected ? (
+      <SurfaceRail
+        side="right"
+        label="Memory details"
+        expanded={detailsExpanded}
+        onExpandedChange={setDetailsExpanded}
+      >
+        {entriesError ? (
+          <RailSection title="Details" iconName="ph:note">
+            <SurfaceError
+              title={entriesError}
+              hint="Check the memory source, then retry."
+              onRetry={loadEntries}
+              live={false}
+            />
+          </RailSection>
+        ) : entries == null ? (
+          <RailSection title="Details" iconName="ph:note">
+            <SurfaceLoading label="Loading memory details…" live={false} />
+          </RailSection>
+        ) : !selected ? (
           <RailSection title="Details" iconName="ph:note">
             <SurfaceEmpty title="Select a memory to inspect it." />
           </RailSection>
@@ -325,8 +380,14 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
               )}
             </RailSection>
             <RailSection title="Content" iconName="ph:files">
-              {content == null ? (
-                <SurfaceEmpty title="Loading…" hint="Content is shown redacted." />
+              {contentError ? (
+                <SurfaceError
+                  title={contentError}
+                  hint="Check the memory source, then retry."
+                  onRetry={loadContent}
+                />
+              ) : content == null ? (
+                <SurfaceLoading label="Loading memory content…" />
               ) : (
                 <pre className="role-surface-content">{content.slice(0, 4000)}</pre>
               )}

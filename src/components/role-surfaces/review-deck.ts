@@ -13,6 +13,61 @@ import type { SessionRow } from "@/lib/types";
 
 export type ReviewReason = "pull-request" | "working-changes" | "branch";
 
+export type ReviewRequest = {
+  sequence: number;
+  scope: string;
+};
+
+/** Monotonic ownership for Review Deck reads. A newer request or reset makes
+ * every older token stale, regardless of which response settles first. */
+export function createReviewRequestGate() {
+  let sequence = 0;
+  return {
+    begin(scope: string): ReviewRequest {
+      sequence += 1;
+      return { sequence, scope };
+    },
+    invalidate(): void {
+      sequence += 1;
+    },
+    isCurrent(request: ReviewRequest, scope: string): boolean {
+      return request.sequence === sequence && request.scope === scope;
+    },
+  };
+}
+
+export type ReviewCheckpoint = {
+  name: string;
+  savedAt: string;
+  bytes: number;
+};
+
+function isReviewCheckpoint(value: unknown): value is ReviewCheckpoint {
+  if (value == null || typeof value !== "object") return false;
+  const checkpoint = value as Partial<ReviewCheckpoint>;
+  return (
+    typeof checkpoint.name === "string" &&
+    typeof checkpoint.savedAt === "string" &&
+    typeof checkpoint.bytes === "number" &&
+    Number.isFinite(checkpoint.bytes)
+  );
+}
+
+/** Checkpoint reads distinguish a successful empty list from transport and
+ * protocol failures so the footer never reports a false empty state. */
+export function parseCheckpointEnvelope(value: unknown): ReviewCheckpoint[] {
+  if (value == null || typeof value !== "object") throw new Error("malformed checkpoint response");
+  const envelope = value as { ok?: unknown; checkpoints?: unknown };
+  if (
+    envelope.ok !== true ||
+    !Array.isArray(envelope.checkpoints) ||
+    !envelope.checkpoints.every(isReviewCheckpoint)
+  ) {
+    throw new Error("malformed checkpoint response");
+  }
+  return envelope.checkpoints;
+}
+
 export type ReviewItem<T> = {
   session: T;
   /** Why this session is on the deck. */

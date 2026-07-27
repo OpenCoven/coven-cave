@@ -21,6 +21,7 @@
 
 import "@/styles/review-deck.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
@@ -28,8 +29,10 @@ import { relativeTime } from "@/lib/relative-time";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Segmented } from "@/components/ui/settings-controls";
 import {
+  createReviewRequestGate,
   diffStatLabel,
   needsHuman,
+  parseCheckpointEnvelope,
   parseDiffLines,
   prLabel,
   prUrl,
@@ -38,10 +41,11 @@ import {
   reviewTypeMeta,
   sessionLifecycle,
   verdictMeta,
+  type ReviewCheckpoint,
   type ReviewReason,
   type Verdict,
 } from "./review-deck";
-import { SurfaceEmpty } from "./surface-room";
+import { SurfaceEmpty, SurfaceError, SurfaceLoading } from "./surface-room";
 import { REVIEWER_SURFACE_ID } from "./ids";
 
 export type ReviewerState = {
@@ -69,8 +73,6 @@ type ChangesWire =
   | { ok: true; repo: true; repoRoot: string; branch: string | null; worktree: string | null; files: ChangedFileWire[] }
   | { ok: true; repo: false; error?: string };
 
-type CheckpointWire = { name: string; savedAt: string; bytes: number };
-
 type QueueFilter = "all" | ReviewReason;
 
 const FILTER_OPTIONS: readonly QueueFilter[] = ["all", "pull-request", "working-changes", "branch"];
@@ -94,6 +96,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   const familiar = context.activeFamiliar;
   const familiarId = familiar.id;
   const [state, patch] = useRoleSurfaceState<ReviewerState>(familiarId, REVIEWER_SURFACE_ID, REVIEWER_INITIAL_STATE);
+  const { announce } = useAnnouncer();
 
   // Ephemeral view state — collapse, filter, verdicts, and the reviewer's note
   // live for the visit; only the selection and the checkpoints drawer persist.
@@ -125,6 +128,9 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     [fullQueue, state.selectedSessionId],
   );
   const projectRoot = selected?.session.project_root ?? null;
+  const selectedRequestScope = `${familiarId}:${selected?.session.id ?? "none"}:${projectRoot ?? "none"}`;
+  const latestSelectedRequestScope = useRef(selectedRequestScope);
+  latestSelectedRequestScope.current = selectedRequestScope;
   const selectedVerdict = selected ? verdicts[selected.session.id] ?? null : null;
 
   // The reviewer's note and any dispatch error are scoped to the selected
@@ -138,22 +144,27 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   // ── Working-tree changes for the selected session's project root ──────────
   const [changes, setChanges] = useState<ChangesWire | null>(null);
   const [changesError, setChangesError] = useState<string | null>(null);
+  const changesRequests = useRef(createReviewRequestGate());
   const loadChanges = useCallback(async () => {
+    const request = changesRequests.current.begin(selectedRequestScope);
     setChangesError(null);
     setChanges(null);
     if (!projectRoot) return;
     try {
       const res = await fetch(`/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`, { cache: "no-store" });
       const json = res.ok ? ((await res.json()) as ChangesWire) : null;
+      if (!changesRequests.current.isCurrent(request, latestSelectedRequestScope.current)) return;
       if (!json?.ok) throw new Error("bad response");
       setChanges(json);
     } catch {
+      if (!changesRequests.current.isCurrent(request, latestSelectedRequestScope.current)) return;
       setChangesError("Couldn't read the working tree.");
       setChanges(null);
     }
-  }, [projectRoot]);
+  }, [projectRoot, selectedRequestScope]);
   useEffect(() => {
     void loadChanges();
+    return () => changesRequests.current.invalidate();
   }, [loadChanges]);
 
   // ── One file's unified diff, on demand ─────────────────────────────────────
@@ -163,11 +174,11 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   const [diffError, setDiffError] = useState<string | null>(null);
   // Monotonic request id — a fast A→B tab switch must not let A's slower
   // response overwrite B's diff. Only the latest request may commit state.
-  const diffReq = useRef(0);
+  const diffRequests = useRef(createReviewRequestGate());
   const showDiff = useCallback(
     async (relPath: string) => {
       if (!projectRoot) return;
-      const req = ++diffReq.current;
+      const request = diffRequests.current.begin(selectedRequestScope);
       setOpenFile(relPath);
       setDiff(null);
       setDiffError(null);
@@ -180,54 +191,63 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         const json = res.ok
           ? ((await res.json()) as { ok?: boolean; diff?: string; truncated?: boolean })
           : null;
-        if (req !== diffReq.current) return; // a newer file was opened — drop this stale result
+        if (!diffRequests.current.isCurrent(request, latestSelectedRequestScope.current)) return;
         if (!json?.ok || typeof json.diff !== "string") throw new Error("bad response");
         setDiff({ text: json.diff, truncated: json.truncated === true });
       } catch {
-        if (req !== diffReq.current) return;
+        if (!diffRequests.current.isCurrent(request, latestSelectedRequestScope.current)) return;
         setDiff(null);
         setDiffError(`Couldn't load the diff for ${relPath}.`);
       } finally {
-        if (req === diffReq.current) setDiffLoading(false);
+        if (diffRequests.current.isCurrent(request, latestSelectedRequestScope.current)) setDiffLoading(false);
       }
     },
-    [projectRoot],
+    [projectRoot, selectedRequestScope],
   );
 
   const repoFiles = changes?.ok && changes.repo ? changes.files : [];
   // Reset the open file whenever the project root changes, then auto-open the
   // first changed file so the center pane is never awkwardly blank.
   useEffect(() => {
+    diffRequests.current.invalidate();
     setOpenFile(null);
     setDiff(null);
     setDiffError(null);
-  }, [projectRoot]);
+    setDiffLoading(false);
+    return () => diffRequests.current.invalidate();
+  }, [familiarId, projectRoot, selected?.session.id]);
   useEffect(() => {
     if (openFile == null && repoFiles.length > 0) void showDiff(repoFiles[0].path);
   }, [openFile, repoFiles, showDiff]);
 
   // ── Saved checkpoints for the selected root (footer) ───────────────────────
-  const [checkpoints, setCheckpoints] = useState<CheckpointWire[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
+  const [checkpoints, setCheckpoints] = useState<ReviewCheckpoint[] | null>(null);
+  const [checkpointError, setCheckpointError] = useState<string | null>(null);
+  const checkpointRequests = useRef(createReviewRequestGate());
+  const loadCheckpoints = useCallback(async () => {
+    const request = checkpointRequests.current.begin(selectedRequestScope);
     setCheckpoints(null);
+    setCheckpointError(null);
     if (!projectRoot || !state.drawerOpen) return;
-    (async () => {
-      try {
-        const res = await fetch(
-          `/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&checkpoints=1`,
-          { cache: "no-store" },
-        );
-        const json = res.ok ? ((await res.json()) as { ok?: boolean; checkpoints?: CheckpointWire[] }) : null;
-        if (!cancelled) setCheckpoints(json?.checkpoints ?? []);
-      } catch {
-        if (!cancelled) setCheckpoints([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [projectRoot, state.drawerOpen]);
+    try {
+      const res = await fetch(
+        `/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&checkpoints=1`,
+        { cache: "no-store" },
+      );
+      if (!res.ok) throw new Error("checkpoint request failed");
+      const json = await res.json();
+      if (!checkpointRequests.current.isCurrent(request, latestSelectedRequestScope.current)) return;
+      setCheckpoints(parseCheckpointEnvelope(json));
+    } catch {
+      if (!checkpointRequests.current.isCurrent(request, latestSelectedRequestScope.current)) return;
+      setCheckpointError("Couldn't load checkpoints.");
+      setCheckpoints(null);
+    }
+  }, [projectRoot, selectedRequestScope, state.drawerOpen]);
+  useEffect(() => {
+    void loadCheckpoints();
+    return () => checkpointRequests.current.invalidate();
+  }, [loadCheckpoints]);
 
   // ── Verdict dispatch — real GitHub review + merge routes ───────────────────
   const selectedPr = selected?.session.pullRequest ?? null;
@@ -252,7 +272,9 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         } else {
           const event = verdict === "approved" ? "APPROVE" : "REQUEST_CHANGES";
           if (event === "REQUEST_CHANGES" && !body) {
-            setActionError("Add a note for the familiar before requesting changes.");
+            const message = "Add a note for the familiar before requesting changes.";
+            setActionError(message);
+            announce(message, "assertive");
             setDispatching(null);
             return;
           }
@@ -265,13 +287,18 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
           if (!json?.ok) throw new Error(json?.error || "review failed");
         }
         setVerdicts((prev) => ({ ...prev, [selected.session.id]: verdict }));
+        const verdictLabel =
+          verdict === "approved" ? "Approved" : verdict === "changes" ? "Requested changes on" : "Merged";
+        announce(`${verdictLabel} ${prLabel(selectedPr)}.`);
       } catch (e) {
-        setActionError(e instanceof Error ? e.message : "Couldn't reach GitHub.");
+        const message = e instanceof Error ? e.message : "Couldn't reach GitHub.";
+        setActionError(message);
+        announce(message, "assertive");
       } finally {
         setDispatching(null);
       }
     },
-    [selected, selectedPr, note, dispatching],
+    [announce, dispatching, note, selected, selectedPr],
   );
 
   // ── Derived view models ────────────────────────────────────────────────────
@@ -455,16 +482,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
           </div>
 
           {/* diff body / empty state */}
-          {changesError ? (
-            <div className="rd-fill">
-              <div role="alert" className="role-surface-hint rd-error">
-                {changesError}{" "}
-                <button type="button" className="role-surface-chip focus-ring" onClick={() => void loadChanges()}>
-                  Try again
-                </button>
-              </div>
-            </div>
-          ) : !selected ? (
+          {!selected ? (
             <div className="rd-fill">
               <SurfaceEmpty
                 iconName="ph:git-diff"
@@ -472,9 +490,17 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
                 hint="Its project's real working-tree changes are read on selection."
               />
             </div>
+          ) : changesError ? (
+            <div className="rd-fill">
+              <SurfaceError
+                title={changesError}
+                hint="Check the project, then retry."
+                onRetry={loadChanges}
+              />
+            </div>
           ) : changes == null ? (
             <div className="rd-fill">
-              <SurfaceEmpty title="Reading the working tree…" />
+              <SurfaceLoading label="Reading the working tree…" />
             </div>
           ) : changes.ok && !changes.repo ? (
             <div className="rd-fill">
@@ -492,18 +518,13 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
             <div className="rd-diff rd-scroll">
               <div className="rd-diff-path">{openFile ?? ""}</div>
               {diffLoading ? (
-                <SurfaceEmpty title="Loading diff…" />
+                <SurfaceLoading label="Loading diff…" />
               ) : diffError ? (
-                <p className="rd-diff-path rd-error" role="alert">
-                  {diffError}{" "}
-                  <button
-                    type="button"
-                    className="role-surface-chip focus-ring"
-                    onClick={() => openFile && void showDiff(openFile)}
-                  >
-                    Try again
-                  </button>
-                </p>
+                <SurfaceError
+                  title={diffError}
+                  hint="Check the file, then retry."
+                  onRetry={() => openFile && void showDiff(openFile)}
+                />
               ) : diff && diff.text ? (
                 <>
                   {diff.truncated && (
@@ -539,7 +560,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
                 <span className="rd-verdict-pending">{canDispatch ? "pending — your call" : "no linked PR"}</span>
               )}
               {actionError && (
-                <span role="alert" className="rd-verdict-pending rd-error">
+                <span className="rd-verdict-pending rd-error">
                   {actionError}
                 </span>
               )}
@@ -760,6 +781,12 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
             <div className="rd-cp-list rd-scroll">
               {!projectRoot ? (
                 <span className="rd-cp-summary">Select a session to see its project's checkpoints.</span>
+              ) : checkpointError ? (
+                <SurfaceError
+                  title={checkpointError}
+                  hint="Check the project, then retry."
+                  onRetry={loadCheckpoints}
+                />
               ) : checkpoints == null ? (
                 <span className="rd-cp-summary">Loading checkpoints…</span>
               ) : checkpoints.length === 0 ? (

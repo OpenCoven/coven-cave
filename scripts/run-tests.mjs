@@ -12,7 +12,8 @@
 //
 // To add a test: append its repo-relative path to the right suite array. The
 // `check:tests-wired` guard imports SUITES from here and fails CI if any
-// `*.test.ts` / `*.test.mjs` on disk is not listed (or allowlisted there).
+// `*.test.ts` / `*.test.tsx` / `*.test.mjs` on disk is not listed (or
+// allowlisted there).
 
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -43,6 +44,7 @@ export const SUITES = {
     "src/components/workspace-surface-warmup.test.ts",
     "src/lib/workspace-github-task-context.test.ts",
     "src/lib/role-surfaces.test.ts",
+    "src/lib/use-role-surfaces-loader.test.ts",
     "src/lib/familiar-types.test.ts",
     "src/lib/research-missions.test.ts",
     "src/lib/research-autoloop.test.ts",
@@ -51,7 +53,11 @@ export const SUITES = {
     "src/lib/research-artifact-contract.test.ts",
     "src/lib/research-findings-doc.test.ts",
     "src/lib/role-surface-state.test.ts",
+    "src/components/role-surface-host-state.test.ts",
     "src/components/role-surface-shell.test.ts",
+    "src/components/role-surfaces/surface-room.test.ts",
+    "src/components/role-surfaces/researcher-status.test.ts",
+    "src/components/role-surfaces/familiar-room-interactions.test.tsx",
     "src/components/role-surfaces/researcher-surface.test.ts",
     "src/components/role-surfaces/research-evidence-ledger.test.ts",
     "src/components/role-surfaces/research-artifact-actions.test.ts",
@@ -62,9 +68,11 @@ export const SUITES = {
     "src/components/role-surfaces/research-tab-studio.test.ts",
     "src/components/role-surfaces/research-tab-resources.test.ts",
     "src/lib/research-generations.test.ts",
+    "src/components/role-surfaces/messenger-surface.test.ts",
     "src/components/role-surfaces/sentinel-surface.test.ts",
     "src/components/role-surfaces/scribe-surface.test.ts",
     "src/components/role-surfaces/navigator-surface.test.ts",
+    "src/components/role-surfaces/indexer-surface.test.ts",
     "src/components/role-surfaces/reviewer-surface.test.ts",
     "src/components/chat-view-render-cap.test.ts",
     "src/components/chat-view-transcript-memo.test.ts",
@@ -1324,6 +1332,8 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/use-role-surfaces-loader.test.ts",
+  "src/components/role-surfaces/researcher-status.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-compatibility.test.ts",
   "src/lib/opencode-stream.test.ts",
@@ -1481,6 +1491,12 @@ const RAW_CSS_SCANNER_TESTS = new Set([
   "src/lib/design-token-drift.test.ts",
 ]);
 
+// Rendered TSX interaction tests run through Vitest's Vite transform rather
+// than Node's type stripper, which intentionally does not transform JSX.
+const VITEST_TESTS = new Set([
+  "src/components/role-surfaces/familiar-room-interactions.test.tsx",
+]);
+
 /** Build the `node` argv (flags + file) for a single test path. */
 export function nodeArgsFor(file) {
   const args = RAW_CSS_SCANNER_TESTS.has(file)
@@ -1509,7 +1525,10 @@ function main(argv) {
   console.log(`running ${list.length} test file(s) [${names.join(", ")}]`);
   let passed = 0;
   for (const file of list) {
-    const res = spawnSync(process.execPath, nodeArgsFor(file), { stdio: "inherit", cwd: root });
+    const args = VITEST_TESTS.has(file)
+      ? ["./node_modules/vitest/vitest.mjs", "run", file]
+      : nodeArgsFor(file);
+    const res = spawnSync(process.execPath, args, { stdio: "inherit", cwd: root });
     if (res.status !== 0) {
       console.error(`\n✗ FAILED: ${file}  (${passed} passed before it)`);
       process.exit(res.status ?? 1);
