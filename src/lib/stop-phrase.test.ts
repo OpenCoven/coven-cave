@@ -116,6 +116,11 @@ test("removeStopPhraseAt removes one normalized option without truncating siblin
   assert.equal(removeStopPhraseAt("stop, cancel", 99), "stop, cancel");
 });
 
+test("removeStopPhraseAt names its filter position as an index", () => {
+  const source = readFileSync(new URL("./stop-phrase.ts", import.meta.url), "utf8");
+  assert.match(source, /filter\(\(_,\s*optionIndex\)\s*=>\s*optionIndex !== index\)/);
+});
+
 // ── Preference schema plumbing ────────────────────────────────────────────────
 
 test("preferences default stopPhrase and survive normalize/patch round-trips", () => {

@@ -165,7 +165,6 @@ export function VoiceEngineSettings() {
   return (
     <SettingsGroup
       label="Local speech"
-      description="Downloaded voices stay on this device and are verified before Piper can use them."
       variant="ruled"
       meta={`${readyCount}/${models.length}`}
       panel
@@ -202,8 +201,13 @@ export function VoiceEngineSettings() {
           <div key={model.id} className="settings-voice-model">
             <div className="settings-voice-model__copy">
               <p className="settings-voice-model__name">{model.name}</p>
-              <p className="settings-voice-model__meta">{formatVoiceModelMetadata(model)}</p>
-              <p className="settings-voice-model__state">{downloadLabel(job) ?? (ready ? "Downloaded and verified." : "Not downloaded.")}</p>
+              <p className="settings-voice-model__details">
+                <span className="settings-voice-model__meta">{formatVoiceModelMetadata(model)}</span>
+                <span aria-hidden="true"> · </span>
+                <span className="settings-voice-model__state">
+                  {downloadLabel(job) ?? (ready ? "Downloaded and verified." : "Not downloaded.")}
+                </span>
+              </p>
             </div>
             {ready || downloadRunning ? (
               <Button size="xs" variant="danger-ghost" loading={busy} disabled={busy} onClick={() => void manage(model.id, "remove")} leadingIcon="ph:trash">{downloadRunning ? "Cancel download" : "Remove"}</Button>

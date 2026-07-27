@@ -72,6 +72,7 @@ import {
 import { readableTextColor } from "@/lib/readable-text-color";
 import { openExternalUrl } from "@/lib/open-external";
 import { copyText } from "@/lib/clipboard";
+import { getBackupPassphraseStrength } from "@/lib/backup-passphrase-strength";
 import { BackdropSettings } from "@/components/backdrop-settings";
 import { VoiceEngineSettings } from "@/components/voice-engine-settings";
 import {
@@ -440,7 +441,7 @@ function GeneralSection() {
           <WorkspacePathField />
         </SettingsRow>
       </SettingsGroup>
-      <SettingsGroup label="Chat" variant="ruled">
+      <SettingsGroup label="Chat" variant="ruled" panel={false}>
         <StopPhraseField />
       </SettingsGroup>
       <VoiceEngineSettings />
@@ -600,6 +601,7 @@ function BackupSettingsGroup() {
   const [status, setStatus] = useState<string>("");
 
   const canSubmit = passphrase.length >= 8;
+  const backupPassphraseStrength = getBackupPassphraseStrength(passphrase);
 
   const exportBackup = async () => {
     setBusy("export");
@@ -669,15 +671,15 @@ function BackupSettingsGroup() {
 
   return (
     <SettingsGroup label="Backup" variant="ruled" panel={false}>
+      <div className="settings-backup-intro">
+        <h3 id="settings-backup-manual-title">Encrypted export</h3>
+        <p>Tier-1 state and the vault key, wrapped with your passphrase.</p>
+      </div>
       <div className="settings-backup-grid">
         <section
-          className="settings-backup-card settings-backup-manual"
+          className="settings-backup-manual"
           aria-labelledby="settings-backup-manual-title"
         >
-          <div>
-            <h3 id="settings-backup-manual-title">Encrypted export</h3>
-            <p>Tier-1 state and the vault key, wrapped with your passphrase.</p>
-          </div>
           <input
             type="password"
             value={passphrase}
@@ -686,8 +688,19 @@ function BackupSettingsGroup() {
             aria-label="Backup passphrase"
             className="settings-backup-input focus-ring"
           />
+          <div className="settings-backup-strength" aria-live="polite">
+            <span className="settings-backup-strength__track" aria-hidden="true">
+              <span
+                className={`settings-backup-strength__fill is-${backupPassphraseStrength.score}`}
+              />
+            </span>
+            <span className={`settings-backup-strength__label is-${backupPassphraseStrength.score}`}>
+              {backupPassphraseStrength.label}
+            </span>
+          </div>
           <div className="settings-backup-actions">
             <Button
+              variant="primary"
               size="sm"
               onClick={exportBackup}
               disabled={!canSubmit || busy !== null}
@@ -705,6 +718,7 @@ function BackupSettingsGroup() {
               />
             </label>
             <Button
+              variant="ghost"
               size="sm"
               onClick={restoreBackup}
               disabled={!canSubmit || !restoreFile || busy !== null}
@@ -842,7 +856,7 @@ function ScheduledSyncSettings() {
 
   if (syncLoadState === "error" || !overview) {
     return (
-      <section className="settings-backup-card settings-backup-sync">
+      <section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">
         <ErrorState
           compact
           headline="Couldn't load scheduled sync"
@@ -877,7 +891,9 @@ function ScheduledSyncSettings() {
           <span className="settings-switch__knob" aria-hidden />
         </button>
         <h3 id="settings-backup-sync-title">Scheduled sync</h3>
-        <span className="settings-backup-sync__state">{enabled ? "On" : "Off"}</span>
+        <span className={`settings-backup-sync__state${enabled ? " is-on" : ""}`}>
+          {enabled ? "On" : "Off"}
+        </span>
       </div>
       <p>Pushes an encrypted snapshot to a folder you own and again when Cave quits.</p>
       <p className="settings-backup-sync__freshness">{freshness}</p>

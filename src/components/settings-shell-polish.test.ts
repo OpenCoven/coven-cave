@@ -376,6 +376,68 @@ assert.match(
 );
 assert.match(
   dashboardCss,
+  /\.settings-general\s*\{[\s\S]*?gap:\s*var\(--space-3\)/,
+  "General preserves the compact 12px group rhythm from the Claude Design source",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-group__rule\s*\{[\s\S]*?margin-bottom:\s*var\(--space-1\)/,
+  "ruled headings stay attached to their controls",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-group__rule-label\s*\{[\s\S]*?color:\s*var\(--text-secondary\)/,
+  "ruled labels use the source's secondary text tier",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-group__rule-line\s*\{[\s\S]*?background:\s*var\(--border-hairline\)/,
+  "ruled headings use a hairline rather than a strong divider",
+);
+const controlSheetOverviewCss =
+  dashboardCss.match(/\.settings-overview--control-sheet\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+assert.match(
+  controlSheetOverviewCss,
+  /padding:\s*var\(--space-2\) var\(--space-3\)/,
+  "General's overview uses the compact source padding",
+);
+assert.match(
+  controlSheetOverviewCss,
+  /background:\s*var\(--bg-panel\)/,
+  "General's overview uses the quiet panel surface",
+);
+assert.doesNotMatch(
+  controlSheetOverviewCss,
+  /min-height|linear-gradient/,
+  "General's overview does not reintroduce the oversized gradient hero",
+);
+assert.match(
+  source,
+  /<SettingsGroup label="Chat" variant="ruled" panel=\{false\}>/,
+  "Chat stays an unboxed ruled row like the source",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-stop-phrases\s*\{[\s\S]*?background:\s*var\(--bg-sunken\)/,
+  "the phrase chip editor uses the source's sunken input surface",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-progression-card\s*\{[\s\S]*?background:\s*var\(--bg-panel\)/,
+  "the progression card uses the quiet panel surface",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-startup-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*150px\),\s*1fr\)\)[\s\S]*?gap:\s*var\(--space-2\)/,
+  "startup cells preserve the source's responsive two-cell grid and compact gap",
+);
+assert.equal(
+  dashboardCss.match(/\.settings-startup-grid\s*\{/g)?.length,
+  1,
+  "startup auto-fit behavior is not replaced by a premature one-column breakpoint",
+);
+assert.match(
+  dashboardCss,
   /@container settings-general \(max-width:/,
   "narrow General layout uses a container query",
 );
@@ -401,8 +463,8 @@ assert.match(
 );
 assert.match(
   dashboardCss,
-  /\.settings-startup-cell\s*\{[\s\S]*border:\s*1px dashed var\(--border-strong\)/,
-  "Soon cells use the dashed affordance language",
+  /\.settings-startup-cell\s*\{[\s\S]*border:\s*1px dashed var\(--border-hairline\)/,
+  "Soon cells use the quiet dashed affordance language",
 );
 assert.match(
   source,
@@ -416,8 +478,33 @@ assert.match(
 );
 assert.match(
   source,
+  /settings-backup-strength[\s\S]*backupPassphraseStrength\.label/,
+  "manual backup shows the source's passphrase-strength feedback",
+);
+assert.match(
+  source,
+  /variant="primary"[\s\S]{0,260}Export backup/,
+  "manual export keeps the source's primary action hierarchy",
+);
+assert.match(
+  source,
+  /variant="ghost"[\s\S]{0,260}\{busy === "restore" \? "Restoring…" : "Restore"\}/,
+  "Restore remains the quiet tertiary action",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-backup-manual\s*\{[\s\S]*?padding:\s*0[\s\S]*?border:\s*0[\s\S]*?background:\s*transparent/,
+  "manual backup remains unboxed beside the scheduled-sync card",
+);
+assert.match(
+  source,
   /syncLoadState === "error"[\s\S]*Couldn't load scheduled sync[\s\S]*Retry/,
   "scheduled sync does not disguise request failures as an empty panel",
+);
+assert.match(
+  source,
+  /syncLoadState === "error"[\s\S]{0,240}<section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">/,
+  "scheduled sync retains an accessible section name when loading fails",
 );
 assert.match(
   source,
@@ -426,13 +513,19 @@ assert.match(
 );
 assert.match(
   dashboardCss,
-  /\.settings-backup-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/,
-  "wide Backup is a balanced two-column grid",
+  /\.settings-backup-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*240px\),\s*1fr\)\)/,
+  "Backup uses the source's responsive two-column grid",
+);
+assert.equal(
+  dashboardCss.match(/\.settings-backup-grid\s*\{/g)?.length,
+  1,
+  "Backup auto-fit behavior is not replaced by a premature one-column breakpoint",
 );
 for (const token of [
   "--bg-base",
+  "--bg-panel",
   "--bg-raised",
-  "--bg-subtle",
+  "--bg-sunken",
   "--text-primary",
   "--text-secondary",
   "--text-muted",

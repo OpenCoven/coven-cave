@@ -89,7 +89,7 @@ export function removeStopPhraseAt(current: string, index: number): string {
   if (!Number.isInteger(index) || index < 0 || index >= options.length) {
     return serializeStopPhraseOptions(options);
   }
-  return serializeStopPhraseOptions(options.filter((_, candidate) => candidate !== index));
+  return serializeStopPhraseOptions(options.filter((_, optionIndex) => optionIndex !== index));
 }
 
 /**
