@@ -76,7 +76,7 @@ import {
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
-import { DESTINATIONS, PLACEHOLDERS, type Destination } from "@/components/home/home-destinations";
+import { DESTINATIONS, placeholderFor, type Destination } from "@/components/home/home-destinations";
 import { resolveHomeComposerFamiliar, resolveHomeComposerProject } from "@/lib/home-composer-context";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 
@@ -937,7 +937,7 @@ export function HomeComposer({
         <textarea
           ref={textareaRef}
           className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
-          placeholder={PLACEHOLDERS[destination]}
+          placeholder={placeholderFor(destination, selectedFamiliar?.display_name ?? null)}
           rows={1}
           value={text}
           readOnly={!draftRestored}
