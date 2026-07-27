@@ -2,7 +2,7 @@ type MarkdownPreviewModule = typeof import("@create-markdown/preview");
 
 let previewPromise: Promise<MarkdownPreviewModule> | null = null;
 
-/** Load the browser-only serializer once for every Chat message. */
+/** Load the browser-only serializer once per app runtime. */
 export function loadMarkdownPreview(): Promise<MarkdownPreviewModule> {
   if (!previewPromise) {
     previewPromise = import("@create-markdown/preview").catch((error) => {

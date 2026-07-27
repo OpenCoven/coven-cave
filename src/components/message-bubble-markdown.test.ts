@@ -55,6 +55,16 @@ assert.match(
 );
 assert.match(
   markdownPreview,
+  /Load the browser-only serializer once per app runtime/,
+  "the loader comment documents its module-level lifetime accurately",
+);
+assert.doesNotMatch(
+  markdownPreview,
+  /once for every Chat message/,
+  "the loader comment must not imply a separate chunk load for each message",
+);
+assert.match(
+  markdownPreview,
   /previewPromise = import\("@create-markdown\/preview"\)\.catch\(\(error\) => \{[\s\S]*?previewPromise = null;[\s\S]*?throw error;/,
   "a failed preview chunk clears the memoized promise so a later render can retry",
 );
@@ -182,18 +192,43 @@ assert.match(
 // commits if newer than the last applied stamp.
 assert.match(
   markdownContent,
-  /\+\+renderStampRef\.current/,
+  /const stamp = renderGate\.issue\(\)/,
   "Each render takes a monotonically increasing stamp",
 );
 assert.match(
   markdownContent,
-  /if \(stamp <= appliedStampRef\.current\) return;/,
+  /if \(!renderGate\.apply\(stamp\)\) return;/,
   "A render result only commits if its stamp is newer than the last applied one",
 );
 assert.match(
   markdownContent,
-  /if \(stamp < settledBarrierRef\.current\) return;[\s\S]*?settledBarrierRef\.current = plainStamp;/,
-  "settling a turn invalidates older transient renders before the final async pass resolves",
+  /if \(wasPendingRef\.current && !pending\) \{\s*renderGate\.settle\(\);\s*\}[\s\S]*?useEffect\(\(\) =>/,
+  "the pending-to-settled render boundary invalidates transient work before the passive effect runs",
+);
+assert.match(
+  markdownContent,
+  /useLayoutEffect\(\(\) => \{\s*wasPendingRef\.current = Boolean\(pending\);\s*\}, \[pending\]\);/,
+  "the previous pending marker updates only after React commits the render",
+);
+assert.doesNotMatch(
+  markdownContent,
+  /\}\s*wasPendingRef\.current = Boolean\(pending\);\s*\/\/ Throttle bookkeeping/,
+  "render must not mutate the commit-owned previous pending marker",
+);
+assert.match(
+  markdownContent,
+  /mdToHtml\(closeTrailingFence\(text\), \{ transient: true, highlightCode: false \}\)[\s\S]*?if \(!renderGate\.apply\(stamp\)\) return;/,
+  "transient promises consult the shared render gate before committing HTML",
+);
+assert.match(
+  markdownContent,
+  /const stamp = renderGate\.issue\(\);\s*const run = \(\) => \{[\s\S]*?setTimeout\(run, wait\)/,
+  "a trailing render takes its stamp when scheduled, before its timer can cross settlement",
+);
+assert.doesNotMatch(
+  markdownContent,
+  /const run = \(\) => \{[\s\S]{0,160}?const stamp = renderGate\.issue\(\)/,
+  "a delayed render must not issue a fresh post-settlement stamp when its timer fires",
 );
 
 // Streaming cursor: with rendered HTML during pending, the ▌ affordance must
@@ -245,6 +280,11 @@ assert.match(
   source,
   /class="shiki mood-c-dark cave-code-plain" tabindex="0"/,
   "the pre-highlight code pass paints a keyboard-scrollable fixed-dark code body",
+);
+assert.match(
+  source,
+  /const focusableOpen = open\.includes\("tabindex="\)[\s\S]*?open\.replace\("<pre", '<pre tabindex="0"'\)/,
+  "the shared frame keeps highlighted and plain code bodies keyboard-scrollable",
 );
 assert.match(
   source,

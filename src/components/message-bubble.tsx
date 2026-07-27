@@ -27,6 +27,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -51,8 +52,10 @@ import { loadMarkdownPreview } from "@/lib/markdown-preview";
 import {
   cacheRenderedMarkdown as renderCacheSet,
   closeTrailingFence,
+  createMarkdownRenderGate,
   getRenderedMarkdown as renderCacheGet,
   scanFenceFilenames,
+  type MarkdownRenderGate,
 } from "@/lib/message-markdown-stream";
 import { FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
 export { FileLinkResolverContext } from "./message-dom-wiring";
@@ -133,6 +136,9 @@ function renderCodeBlockFrame({
   const lineWrapped = highlighted.replace(
     /(<pre[^>]*>)([\s\S]*)(<\/pre>)/,
     (_match, open, inner, close) => {
+      const focusableOpen = open.includes("tabindex=")
+        ? open
+        : open.replace("<pre", '<pre tabindex="0"');
       const codeInner = inner.replace(/(<code[^>]*>)([\s\S]*)(<\/code>)/, (_m2: string, co: string, codeContent: string, cc: string) => {
         const rawLines = codeContent.split("\n");
         // Remove trailing empty line Shiki adds.
@@ -178,7 +184,7 @@ function renderCodeBlockFrame({
         });
         return `${co}${wrappedLines.join("")}${cc}`;
       });
-      return `${open}${codeInner}${close}`;
+      return `${focusableOpen}${codeInner}${close}`;
     },
   );
 
@@ -693,18 +699,19 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
   // under the session's project root. No resolver ⇒ refs stay plain text.
   const fileLinkResolver = useContext(FileLinkResolverContext);
   const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver);
-  // Out-of-order guard: mdToHtml is async and during streaming several
-  // renders can be in flight at once. Every render takes a monotonically
-  // increasing stamp, and a result only commits if it is newer than the
-  // last committed one — a slower earlier render never overwrites a newer
-  // one (including the final settled render).
-  const renderStampRef = useRef(0);
-  const appliedStampRef = useRef(0);
-  // Once a turn settles, transient work that started during streaming must
-  // not paint while the final plain/highlighted pass is still resolving.
-  // This separate barrier preserves progressive streaming: newer pending
-  // renders do not invalidate older in-flight ones and cause starvation.
-  const settledBarrierRef = useRef(0);
+  // mdToHtml is async and several streaming renders can be in flight at once.
+  // The gate orders their commits and invalidates pre-settle work synchronously
+  // during render, before React runs passive-effect cleanup or the final pass.
+  const renderGateRef = useRef<MarkdownRenderGate | null>(null);
+  if (!renderGateRef.current) renderGateRef.current = createMarkdownRenderGate();
+  const renderGate = renderGateRef.current;
+  const wasPendingRef = useRef(Boolean(pending));
+  if (wasPendingRef.current && !pending) {
+    renderGate.settle();
+  }
+  useLayoutEffect(() => {
+    wasPendingRef.current = Boolean(pending);
+  }, [pending]);
   // Throttle bookkeeping for streaming renders. Lives in a ref because the
   // effect re-fires on every streamed chunk: a per-effect trailing debounce
   // would be reset by each chunk and never fire under a steady stream.
@@ -732,14 +739,12 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
       // commits and nothing would paint until the turn settles (starvation).
       // The stamp guard above provides ordering safety instead; a commit
       // after unmount is a no-op state update that React drops.
+      const stamp = renderGate.issue();
       const run = () => {
         lastStreamRenderRef.current = Date.now();
-        const stamp = ++renderStampRef.current;
         mdToHtml(closeTrailingFence(text), { transient: true, highlightCode: false })
           .then((h) => {
-            if (stamp < settledBarrierRef.current) return;
-            if (stamp <= appliedStampRef.current) return; // stale out-of-order render
-            appliedStampRef.current = stamp;
+            if (!renderGate.apply(stamp)) return;
             setHtml(h);
           })
           .catch((err) => { console.error("[MarkdownContent] mdToHtml failed", err); });
@@ -759,30 +764,22 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
     let cancelled = false;
     const cached = renderCacheGet(text);
     if (cached !== undefined) {
-      const stamp = ++renderStampRef.current;
-      settledBarrierRef.current = stamp;
-      if (stamp > appliedStampRef.current) {
-        appliedStampRef.current = stamp;
-        setHtml(cached);
-      }
+      const stamp = renderGate.issue();
+      if (renderGate.apply(stamp)) setHtml(cached);
       return () => { cancelled = true; };
     }
 
-    const plainStamp = ++renderStampRef.current;
-    settledBarrierRef.current = plainStamp;
+    const plainStamp = renderGate.issue();
     mdToHtml(text, { highlightCode: false })
       .then((plainHtml) => {
         if (cancelled) return;
-        if (plainStamp > appliedStampRef.current) {
-          appliedStampRef.current = plainStamp;
-          setHtml(plainHtml);
-        }
+        if (!renderGate.apply(plainStamp)) return;
+        setHtml(plainHtml);
 
-        const highlightedStamp = ++renderStampRef.current;
+        const highlightedStamp = renderGate.issue();
         return mdToHtml(text).then((highlightedHtml) => {
           if (cancelled) return;
-          if (highlightedStamp <= appliedStampRef.current) return;
-          appliedStampRef.current = highlightedStamp;
+          if (!renderGate.apply(highlightedStamp)) return;
           setHtml(highlightedHtml);
         });
       })
