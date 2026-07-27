@@ -411,8 +411,7 @@ export function evaluateRuntimeAvailability(
   const inspectCandidate: InspectCandidateFn = probe.statFile
     ? (candidate) => inspectWithStatFile(candidate, probe.statFile!)
     : (candidate) => defaultInspectCandidate(candidate, platform);
-  const readableFile = probe.readableFile
-    ?? (probe.statFile ? probe.statFile : defaultReadableFile);
+  const readableFile = probe.readableFile ?? defaultReadableFile;
   const label = RUNNER_LABELS[runner];
   try {
     if (probe.resolutionFailed) {
