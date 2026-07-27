@@ -241,7 +241,10 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                     <button
                       type="button"
                       className="role-surface-row-btn focus-ring-inset"
-                      onClick={() => patch({ selectedId: card.id, lane: "blocked" })}
+                      onClick={() => {
+                        patch({ selectedId: card.id, lane: "blocked" });
+                        setDetailsRailExpanded(true);
+                      }}
                     >
                       {card.title}
                       <span className="role-surface-tag">{card.priority}</span>
@@ -341,7 +344,10 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                   <button
                     type="button"
                     className="role-surface-row-btn focus-ring-inset"
-                    onClick={() => patch({ selectedId: leg.card.id })}
+                    onClick={() => {
+                      patch({ selectedId: leg.card.id });
+                      setDetailsRailExpanded(true);
+                    }}
                   >
                     {leg.card.title}
                     <span className={leg.overdue ? "role-surface-tag role-surface-metric-warn" : "role-surface-tag"}>

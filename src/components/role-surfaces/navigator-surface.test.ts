@@ -212,6 +212,16 @@ test("compact Course and Card details rails stay mutually exclusive", () => {
     surface,
     /<SurfaceRail\s+side="right"\s+label="Card details"\s+expanded=\{detailsExpanded\}\s+onExpandedChange=\{setDetailsRailExpanded\}/,
   );
+  assert.match(
+    surface,
+    /onClick=\{\(\) => \{\s*patch\(\{(?=[^}]*\bselectedId:\s*card\.id)(?=[^}]*\blane:\s*"blocked")[^}]*\}\);\s*setDetailsRailExpanded\(true\);\s*\}\}/,
+    "blocked-card selection closes Course before opening Card details",
+  );
+  assert.match(
+    surface,
+    /onClick=\{\(\) => \{\s*patch\(\{(?=[^}]*\bselectedId:\s*leg\.card\.id)[^}]*\}\);\s*setDetailsRailExpanded\(true\);\s*\}\}/,
+    "upcoming-leg selection closes Course before opening Card details",
+  );
 });
 
 test("registration names the Chart Room with its own accent and drawer chrome", () => {
