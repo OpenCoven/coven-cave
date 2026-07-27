@@ -5,11 +5,18 @@ import { readFileSync } from "node:fs";
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
 const group = readFileSync(new URL("./ui/settings-group.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const foundations = readFileSync(
+  new URL("../styles/globals/foundations.css", import.meta.url),
+  "utf8",
+);
 
 // SettingsGroup exposes a stable, label-derived id so search can scroll to it.
 assert.match(group, /export function settingsGroupId\(label: string\): string/, "settings-group exports settingsGroupId");
-assert.match(group, /id=\{settingsGroupId\(label\)\} data-settings-group/, "SettingsGroup renders the derived id");
+assert.match(
+  group,
+  /id=\{settingsGroupId\(label\)\}\s+data-settings-group/,
+  "SettingsGroup renders the derived id",
+);
 
 // The shell builds a search index and a SearchInput over it.
 assert.match(shell, /import \{ SearchInput \}/, "settings-shell imports SearchInput");
@@ -32,7 +39,11 @@ assert.match(shell, /prefersReducedMotion\(\) \? "auto" : "smooth"/, "scroll hon
 assert.match(shell, /No settings match/, "search shows a no-match message");
 
 // Highlight style ships.
-assert.match(css, /\.settings-group--found/, "globals styles the search highlight");
+assert.match(
+  foundations,
+  /\.settings-group--found/,
+  "global foundations style the search highlight",
+);
 
 // ── Search reaches inside the Familiars studio panel (2026-07-06) ────────────
 // Each studio tab is indexed with a familiarTab target, so "voice" or
