@@ -146,11 +146,19 @@ test("compact discard reopens Drafts before restoring focus", () => {
   );
   assert.match(
     surface,
-    /patch\(\{ drafts: \[draft, \.\.\.state\.drafts\], selectedId: draft\.id \}\);\s*setRightRailExpanded\(true\)/,
+    /const setDraftsExpanded = \(next: boolean\) => \{\s*setLeftRailExpanded\(next\);\s*if \(next\) setRightRailExpanded\(false\);\s*\}/,
   );
   assert.match(
     surface,
-    /const discardSelected = \(\) => \{[\s\S]*?const title = selected\.title\.trim\(\) \|\| "Untitled";[\s\S]*?setRightRailExpanded\(false\);[\s\S]*?setLeftRailExpanded\(true\);[\s\S]*?restoreDraftFocusRef\.current = true;[\s\S]*?patch\([\s\S]*?announce\(`Discarded draft "\$\{title\}"\.`\)/,
+    /const setPublishingExpanded = \(next: boolean\) => \{\s*setRightRailExpanded\(next\);\s*if \(next\) setLeftRailExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /patch\(\{ drafts: \[draft, \.\.\.state\.drafts\], selectedId: draft\.id \}\);\s*setPublishingExpanded\(true\)/,
+  );
+  assert.match(
+    surface,
+    /const discardSelected = \(\) => \{[\s\S]*?const title = selected\.title\.trim\(\) \|\| "Untitled";[\s\S]*?setPublishingExpanded\(false\);[\s\S]*?setDraftsExpanded\(true\);[\s\S]*?restoreDraftFocusRef\.current = true;[\s\S]*?patch\([\s\S]*?announce\(`Discarded draft "\$\{title\}"\.`\)/,
   );
   assert.match(
     surface,
@@ -162,11 +170,11 @@ test("compact discard reopens Drafts before restoring focus", () => {
   );
   assert.match(
     surface,
-    /<SurfaceRail\s+side="left"\s+label="Drafts and sources"\s+expanded=\{leftRailExpanded\}\s+onExpandedChange=\{setLeftRailExpanded\}/,
+    /<SurfaceRail\s+side="left"\s+label="Drafts and sources"\s+expanded=\{leftRailExpanded\}\s+onExpandedChange=\{setDraftsExpanded\}/,
   );
   assert.match(
     surface,
-    /<SurfaceRail\s+side="right"\s+label="Publishing"\s+expanded=\{rightRailExpanded\}\s+onExpandedChange=\{setRightRailExpanded\}/,
+    /<SurfaceRail\s+side="right"\s+label="Publishing"\s+expanded=\{rightRailExpanded\}\s+onExpandedChange=\{setPublishingExpanded\}/,
   );
 });
 

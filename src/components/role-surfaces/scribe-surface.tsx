@@ -158,6 +158,14 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   const restoreDraftFocusRef = useRef(false);
   const [leftRailExpanded, setLeftRailExpanded] = useState(false);
   const [rightRailExpanded, setRightRailExpanded] = useActiveSelectionRail(state.selectedId);
+  const setDraftsExpanded = (next: boolean) => {
+    setLeftRailExpanded(next);
+    if (next) setRightRailExpanded(false);
+  };
+  const setPublishingExpanded = (next: boolean) => {
+    setRightRailExpanded(next);
+    if (next) setLeftRailExpanded(false);
+  };
   const newDraft = () => {
     const now = new Date().toISOString();
     const draft: ScribeDraft = {
@@ -170,7 +178,7 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
       publishedId: null,
     };
     patch({ drafts: [draft, ...state.drafts], selectedId: draft.id });
-    setRightRailExpanded(true);
+    setPublishingExpanded(true);
   };
 
   const updateSelected = (update: Partial<ScribeDraft>) => {
@@ -185,8 +193,8 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   const discardSelected = () => {
     if (!selected) return;
     const title = selected.title.trim() || "Untitled";
-    setRightRailExpanded(false);
-    setLeftRailExpanded(true);
+    setPublishingExpanded(false);
+    setDraftsExpanded(true);
     restoreDraftFocusRef.current = true;
     patch({ drafts: state.drafts.filter((d) => d.id !== selected.id), selectedId: null });
     announce(`Discarded draft "${title}".`);
@@ -286,7 +294,7 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
         side="left"
         label="Drafts and sources"
         expanded={leftRailExpanded}
-        onExpandedChange={setLeftRailExpanded}
+        onExpandedChange={setDraftsExpanded}
       >
         <RailSection
           title="Drafts"
@@ -314,7 +322,7 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
                     aria-current={draft.id === state.selectedId ? "true" : undefined}
                     onClick={() => {
                       patch({ selectedId: draft.id });
-                      setRightRailExpanded(true);
+                      setPublishingExpanded(true);
                     }}
                   >
                     {draft.title.trim() || "Untitled"}
@@ -413,7 +421,7 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
         side="right"
         label="Publishing"
         expanded={rightRailExpanded}
-        onExpandedChange={setRightRailExpanded}
+        onExpandedChange={setPublishingExpanded}
       >
         {!selected ? (
           <RailSection title="Publish" iconName="ph:book-open-bold">

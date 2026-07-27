@@ -207,6 +207,12 @@ function rightRail(renderer: ReactTestRenderer, label: string): ReactTestInstanc
     .find((rail) => rail.props.side === "right" && rail.props.label === label)!;
 }
 
+function leftRail(renderer: ReactTestRenderer, label: string): ReactTestInstance {
+  return renderer.root
+    .findAllByType(SurfaceRail)
+    .find((rail) => rail.props.side === "left" && rail.props.label === label)!;
+}
+
 function liveLoadingCount(renderer: ReactTestRenderer): number {
   return renderer.root.findAll(
     (node) =>
@@ -325,14 +331,23 @@ describe("active selections control compact inspectors", () => {
     const renderer = await renderSurface(MessengerSurface, context("messenger-selection"));
 
     expect(rightRail(renderer, "Dispatch").props.expanded).toBe(false);
+    await act(async () => leftRail(renderer, "Traffic").props.onExpandedChange(true));
+    expect(leftRail(renderer, "Traffic").props.expanded).toBe(true);
     await act(async () => buttonContaining(renderer, "New").props.onClick());
+    expect(leftRail(renderer, "Traffic").props.expanded).toBe(false);
     expect(rightRail(renderer, "Dispatch").props.expanded).toBe(true);
 
     await act(async () => rightRail(renderer, "Dispatch").props.onExpandedChange(false));
     expect(rightRail(renderer, "Dispatch").props.expanded).toBe(false);
 
+    await act(async () => leftRail(renderer, "Traffic").props.onExpandedChange(true));
     await act(async () => buttonContaining(renderer, "New").props.onClick());
+    expect(leftRail(renderer, "Traffic").props.expanded).toBe(false);
     expect(rightRail(renderer, "Dispatch").props.expanded).toBe(true);
+
+    await act(async () => leftRail(renderer, "Traffic").props.onExpandedChange(true));
+    expect(leftRail(renderer, "Traffic").props.expanded).toBe(true);
+    expect(rightRail(renderer, "Dispatch").props.expanded).toBe(false);
     await act(async () => renderer.unmount());
   });
 
@@ -346,14 +361,29 @@ describe("active selections control compact inspectors", () => {
     const renderer = await renderSurface(ScribeSurface, context("scribe-selection"));
 
     expect(rightRail(renderer, "Publishing").props.expanded).toBe(false);
+    await act(async () =>
+      leftRail(renderer, "Drafts and sources").props.onExpandedChange(true),
+    );
+    expect(leftRail(renderer, "Drafts and sources").props.expanded).toBe(true);
     await act(async () => buttonContaining(renderer, "New").props.onClick());
+    expect(leftRail(renderer, "Drafts and sources").props.expanded).toBe(false);
     expect(rightRail(renderer, "Publishing").props.expanded).toBe(true);
 
     await act(async () => rightRail(renderer, "Publishing").props.onExpandedChange(false));
     expect(rightRail(renderer, "Publishing").props.expanded).toBe(false);
 
+    await act(async () =>
+      leftRail(renderer, "Drafts and sources").props.onExpandedChange(true),
+    );
     await act(async () => buttonContaining(renderer, "New").props.onClick());
+    expect(leftRail(renderer, "Drafts and sources").props.expanded).toBe(false);
     expect(rightRail(renderer, "Publishing").props.expanded).toBe(true);
+
+    await act(async () =>
+      leftRail(renderer, "Drafts and sources").props.onExpandedChange(true),
+    );
+    expect(leftRail(renderer, "Drafts and sources").props.expanded).toBe(true);
+    expect(rightRail(renderer, "Publishing").props.expanded).toBe(false);
     await act(async () => renderer.unmount());
   });
 });

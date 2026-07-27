@@ -14,7 +14,7 @@
  * and the delivery panel says so honestly.
  */
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
@@ -109,6 +109,15 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
 
   const selected = state.drafts.find((d) => d.id === state.selectedDraftId) ?? null;
   const [dispatchExpanded, setDispatchExpanded] = useActiveSelectionRail(state.selectedDraftId);
+  const [trafficExpanded, setTrafficExpanded] = useState(false);
+  const setTrafficRailExpanded = (next: boolean) => {
+    setTrafficExpanded(next);
+    if (next) setDispatchExpanded(false);
+  };
+  const setDispatchRailExpanded = (next: boolean) => {
+    setDispatchExpanded(next);
+    if (next) setTrafficExpanded(false);
+  };
 
   const newDraft = (channel: MessageChannel = "email") => {
     const draft: Draft = {
@@ -122,7 +131,7 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
       createdAt: new Date().toISOString(),
     };
     patch({ drafts: [draft, ...state.drafts], selectedDraftId: draft.id });
-    setDispatchExpanded(true);
+    setDispatchRailExpanded(true);
   };
 
   const updateSelected = (update: Partial<Draft>) => {
@@ -199,7 +208,12 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       }
     >
-      <SurfaceRail side="left" label="Traffic">
+      <SurfaceRail
+        side="left"
+        label="Traffic"
+        expanded={trafficExpanded}
+        onExpandedChange={setTrafficRailExpanded}
+      >
         <RailSection
           title="Drafts"
           iconName="ph:pencil-simple"
@@ -221,7 +235,7 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
                     className={`role-surface-row-btn focus-ring-inset${draft.id === state.selectedDraftId ? " role-surface-row-btn--active" : ""}`}
                     onClick={() => {
                       patch({ selectedDraftId: draft.id });
-                      setDispatchExpanded(true);
+                      setDispatchRailExpanded(true);
                     }}
                   >
                     <span className="role-surface-tag">{CHANNEL_CONVENTIONS[draft.channel].label}</span>
@@ -266,7 +280,7 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
                     className="role-surface-row-btn focus-ring-inset"
                     onClick={() => {
                       patch({ selectedDraftId: draft.id });
-                      setDispatchExpanded(true);
+                      setDispatchRailExpanded(true);
                     }}
                   >
                     {draft.subject || draft.body.slice(0, 40) || "(empty draft)"}
@@ -349,7 +363,7 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
         side="right"
         label="Dispatch"
         expanded={dispatchExpanded}
-        onExpandedChange={setDispatchExpanded}
+        onExpandedChange={setDispatchRailExpanded}
       >
         {!selected ? (
           <RailSection title="Dispatch" iconName="ph:paper-plane-tilt">

@@ -46,3 +46,22 @@ test("scheduled deliveries do not turn inbox loading or failure into an empty sc
     "the scheduled loading copy is also non-live",
   );
 });
+
+test("compact Traffic and Dispatch rails stay mutually exclusive", () => {
+  assert.match(
+    surface,
+    /const setTrafficRailExpanded = \(next: boolean\) => \{\s*setTrafficExpanded\(next\);\s*if \(next\) setDispatchExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /const setDispatchRailExpanded = \(next: boolean\) => \{\s*setDispatchExpanded\(next\);\s*if \(next\) setTrafficExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="left"\s+label="Traffic"\s+expanded=\{trafficExpanded\}\s+onExpandedChange=\{setTrafficRailExpanded\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="right"\s+label="Dispatch"\s+expanded=\{dispatchExpanded\}\s+onExpandedChange=\{setDispatchRailExpanded\}/,
+  );
+});
