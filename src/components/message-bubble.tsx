@@ -966,7 +966,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
         ) : (
           <MarkdownContent text={cited.body} pending={pending} onOpenUrl={onOpenUrl} />
         )}
-        {cited.citations.length > 0 ? <CitationSources citations={cited.citations} /> : null}
+        {cited.citations.length > 0 ? <CitationSources citations={cited.citations} showHoverPreview /> : null}
       </div>
       {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
           actions are reachable by keyboard (Tab), screen readers, and touch. */}
