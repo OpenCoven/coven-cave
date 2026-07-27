@@ -374,20 +374,103 @@ export function mentionSuggestionAuthor(suggestion: string, displayName: string)
   return `@${displayName.trim()} ${suggestion.trim()}`.trim();
 }
 
+/** A picker-confirmed mention token in the current composer draft. */
+export type MentionCompletion = {
+  start: number;
+  end: number;
+  name: string;
+};
+
+function isMentionCompletionValid(
+  text: string,
+  completion: MentionCompletion,
+): boolean {
+  const name = completion.name.trim();
+  return (
+    name.length > 0 &&
+    completion.start >= 0 &&
+    completion.end === completion.start + name.length + 1 &&
+    text.slice(completion.start, completion.end) === `@${name}` &&
+    isMentionBoundary(completion.start === 0 ? "" : text[completion.start - 1]) &&
+    !isWordChar(text[completion.end])
+  );
+}
+
+/**
+ * Carry picker-confirmed mention spans across one textarea edit. Spans after
+ * the edit shift with the text; a span is discarded only when the edit touches
+ * its token or makes that token cease to be a valid standalone mention.
+ */
+export function reconcileMentionCompletions(
+  previousText: string,
+  nextText: string,
+  completions: readonly MentionCompletion[],
+): MentionCompletion[] {
+  let changeStart = 0;
+  const sharedLength = Math.min(previousText.length, nextText.length);
+  while (
+    changeStart < sharedLength &&
+    previousText[changeStart] === nextText[changeStart]
+  ) {
+    changeStart++;
+  }
+
+  let previousEnd = previousText.length;
+  let nextEnd = nextText.length;
+  while (
+    previousEnd > changeStart &&
+    nextEnd > changeStart &&
+    previousText[previousEnd - 1] === nextText[nextEnd - 1]
+  ) {
+    previousEnd--;
+    nextEnd--;
+  }
+
+  const delta = nextText.length - previousText.length;
+  const reconciled: MentionCompletion[] = [];
+  for (const completion of completions) {
+    let nextCompletion = completion;
+    if (previousEnd <= completion.start) {
+      nextCompletion = {
+        ...completion,
+        start: completion.start + delta,
+        end: completion.end + delta,
+      };
+    } else if (changeStart < completion.end) {
+      continue;
+    }
+    if (isMentionCompletionValid(nextText, nextCompletion)) {
+      reconciled.push(nextCompletion);
+    }
+  }
+  return reconciled;
+}
+
 /**
  * Locate the `@mention` token the caret is currently editing, for autocomplete.
  * Returns the `@`'s index and the partial query typed after it, or `null` when
  * the caret is not inside a mention. The token starts at an `@` preceded by
- * whitespace/start and does not span an `@` or newline.
+ * whitespace/start and does not span an `@` or newline. Picker-confirmed token
+ * spans stay complete while ordinary prose around them changes.
  */
 export function findActiveMention(
   text: string,
   caret: number,
+  completions: readonly MentionCompletion[] = [],
 ): { start: number; query: string } | null {
   let i = caret - 1;
   while (i >= 0 && text[i] !== "@" && text[i] !== "\n") i--;
   if (i < 0 || text[i] !== "@") return null;
   if (!isMentionBoundary(i === 0 ? "" : text[i - 1])) return null;
+  if (
+    completions.some(
+      (completion) =>
+        completion.start === i &&
+        isMentionCompletionValid(text, completion),
+    )
+  ) {
+    return null;
+  }
   return { start: i, query: text.slice(i + 1, caret) };
 }
 
@@ -413,10 +496,19 @@ export function applyMention(
   start: number,
   query: string,
   name: string,
-): { text: string; caret: number } {
-  const insert = `@${name} `;
+): { text: string; caret: number; completion: MentionCompletion } {
+  const completedName = name.trim();
+  const insert = `@${completedName} `;
   const end = start + 1 + query.length;
-  return { text: text.slice(0, start) + insert + text.slice(end), caret: start + insert.length };
+  return {
+    text: text.slice(0, start) + insert + text.slice(end),
+    caret: start + insert.length,
+    completion: {
+      start,
+      end: start + completedName.length + 1,
+      name: completedName,
+    },
+  };
 }
 
 export function makeGroup(
@@ -600,6 +692,7 @@ export function renderCovenRoster(
     'You are in a group chat ("coven") with these participants:',
     ...lines,
     "When asked who is present or how many are in this chat, count everyone listed above (including yourself and the human).",
+    "When addressing another familiar in this coven, tag them with @ followed by their exact display name as listed above.",
     "</coven_roster>",
   ].join("\n");
 }
