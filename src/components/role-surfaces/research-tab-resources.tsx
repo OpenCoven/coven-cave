@@ -211,8 +211,9 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const onSave = async (event: FormEvent) => {
     event.preventDefault();
     if (saving || !intake.canSubmit) return;
+    const submittedDraft = draft;
     setSaving(true);
-    const result = await save(draft);
+    const result = await save(submittedDraft);
     setSaving(false);
 
     let message: string;
@@ -234,7 +235,9 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
             }`
           : ""
       }.`;
-      if (result.added > 0) setDraft("");
+      if (result.added > 0) {
+        setDraft((current) => current === submittedDraft ? "" : current);
+      }
     }
     setSaveStatus(message);
     announce(message, result.ok ? "polite" : "assertive");
@@ -315,7 +318,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
         </div>
         <textarea
           id="research-resource-intake"
-          className="research-res__paste"
+          className="research-res__paste focus-ring"
           rows={3}
           value={draft}
           onChange={(event) => {
@@ -325,6 +328,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
           onKeyDown={onIntakeKeyDown}
           placeholder="e.g., https://docs.example.com, https://arxiv.org/…"
           aria-describedby="research-resource-intake-help research-resource-intake-preview"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
         />
         <div className="research-res__intake-footer">
           <div

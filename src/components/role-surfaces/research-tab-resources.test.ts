@@ -120,7 +120,22 @@ test("resources expose a labeled multiline batch intake with truthful preview", 
   assert.match(source, /<textarea[\s\S]*id="research-resource-intake"/);
   assert.match(
     source,
+    /className="research-res__paste focus-ring"/,
+    "the new textarea uses the shared focus-ring contract",
+  );
+  assert.doesNotMatch(
+    styles,
+    /\.research-res__paste:focus-visible/,
+    "surface CSS must not override the shared focus-ring token",
+  );
+  assert.match(
+    source,
     /aria-describedby="research-resource-intake-help research-resource-intake-preview"/,
+  );
+  assert.match(
+    source,
+    /aria-keyshortcuts="Meta\+Enter Control\+Enter"/,
+    "the advertised submit shortcut is exposed to assistive technology",
   );
   assert.match(
     source,
@@ -133,11 +148,15 @@ test("resources expose a labeled multiline batch intake with truthful preview", 
 });
 
 test("batch save feedback uses resource vocabulary and preserves duplicate-only drafts", () => {
-  assert.match(source, /const result = await save\(draft\)/);
+  assert.match(source, /const submittedDraft = draft;\s*setSaving\(true\);\s*const result = await save\(submittedDraft\)/);
   assert.match(source, /No links found\. Paste full http:\/\/ or https:\/\/ URLs\./);
   assert.match(source, /All \$\{result\.duplicates\}[\s\S]{0,160}already saved/);
   assert.match(source, /Saved \$\{result\.added\}[\s\S]{0,160}resource/);
-  assert.match(source, /if \(result\.added > 0\)[\s\S]*setDraft\(""\)/);
+  assert.match(
+    source,
+    /if \(result\.added > 0\)[\s\S]*setDraft\(\(current\) => current === submittedDraft \? "" : current\)/,
+    "a completed save only clears the batch that was actually submitted",
+  );
   assert.match(source, /role="status"/);
 });
 

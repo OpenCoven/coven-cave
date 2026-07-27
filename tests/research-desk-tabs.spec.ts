@@ -89,6 +89,13 @@ const CHECKPOINT_MISSION = {
       status: "used",
     },
     {
+      id: "s-resource-selected",
+      title: "Qdrant guide",
+      url: "https://docs.qdrant.tech/guide",
+      sourceType: "web",
+      status: "used",
+    },
+    {
       id: "s-conflict-1",
       title: "Vendor benchmarks blog",
       url: "https://example.com/benchmarks",
@@ -216,6 +223,13 @@ const COMPLETED_MISSION = {
       id: "s-done-1",
       title: "DuckDB embedded guide",
       url: "https://example.com/duckdb-embedded",
+      sourceType: "web",
+      status: "used",
+    },
+    {
+      id: "s-resource-other",
+      title: "Efficient ANN search",
+      url: "https://arxiv.org/abs/2401.01234",
       sourceType: "web",
       status: "used",
     },
@@ -490,7 +504,7 @@ test.describe("research desk tabs", () => {
     await expect(viewer.locator(".research-studio__code")).toContainText("graph TD;");
   });
 
-  test("Resources groups links by category and the detail overlay opens and closes with focus handling", async ({ page }) => {
+  test("Resources previews URL batches, groups by workflow, filters by type, and restores detail focus", async ({ page }) => {
     await openResearchDesk(page);
     await deskTab(page, /^Resources/).click();
 
@@ -498,15 +512,46 @@ test.describe("research desk tabs", () => {
     await expect(res).toBeVisible();
     await expect(res.getByText("3 saved", { exact: false })).toBeVisible();
 
-    // Category groups in shelf order, each with its own links.
-    const github = res.getByRole("region", { name: "GitHub resources" });
-    await expect(github).toBeVisible();
-    await expect(github.getByRole("button", { name: /acme\/vector-bench/ })).toBeVisible();
-    await expect(res.getByRole("region", { name: "Docs resources" })).toContainText("Qdrant guide");
-    await expect(res.getByRole("region", { name: "Papers resources" })).toContainText("Efficient ANN search");
+    // Comma/newline batches get one live, categorized preview before saving.
+    const intake = res.getByLabel("Add resources");
+    await expect(intake).toHaveClass(/focus-ring/);
+    await expect(intake).toHaveAttribute("aria-keyshortcuts", "Meta+Enter Control+Enter");
+    await intake.fill([
+      "https://github.com/OpenCoven/coven-cave,https://arxiv.org/abs/2404.12345",
+      "https://example.com/article",
+    ].join("\n"));
+    const preview = res.locator("#research-resource-intake-preview");
+    await expect(preview).toContainText("3 resources ready.");
+    await expect(preview).toContainText("GitHub 1");
+    await expect(preview).toContainText("Papers 1");
+    await expect(preview).toContainText("Articles 1");
+    await intake.fill("");
+
+    // Workflow shelves are exclusive and ordered around the selected run.
+    const groups = res.locator(".research-res__group");
+    await expect(groups).toHaveCount(3);
+    await expect(groups.nth(0)).toHaveAttribute("aria-label", "In this run resources");
+    await expect(groups.nth(1)).toHaveAttribute("aria-label", "Uncited resources");
+    await expect(groups.nth(2)).toHaveAttribute("aria-label", "Used in other runs resources");
+
+    const selected = res.getByRole("region", { name: "In this run resources" });
+    const uncited = res.getByRole("region", { name: "Uncited resources" });
+    const usedElsewhere = res.getByRole("region", { name: "Used in other runs resources" });
+    await expect(selected).toContainText("Qdrant guide");
+    await expect(uncited.getByRole("button", { name: /acme\/vector-bench/ })).toBeVisible();
+    await expect(usedElsewhere).toContainText("Efficient ANN search");
+
+    // Source-type filtering narrows the workflow shelves without changing
+    // their meaning, and All restores the complete workflow view.
+    await res.getByRole("button", { name: /^Docs 1$/ }).click();
+    await expect(selected).toContainText("Qdrant guide");
+    await expect(uncited).toHaveCount(0);
+    await expect(usedElsewhere).toHaveCount(0);
+    await res.getByRole("button", { name: /^All 3$/ }).click();
+    await expect(uncited).toBeVisible();
 
     // Detail overlay: opens focus-trapped, closes back to the trigger.
-    const opener = github.getByRole("button", { name: /acme\/vector-bench — open details/ });
+    const opener = uncited.getByRole("button", { name: /acme\/vector-bench — open details/ });
     await opener.click();
     const overlay = page.getByRole("dialog", { name: "acme/vector-bench" });
     await expect(overlay).toBeVisible();
@@ -522,6 +567,56 @@ test.describe("research desk tabs", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     // Focus returns to the card title that opened it.
     await expect(opener).toBeFocused();
+  });
+
+  test("Resources preserves a new batch typed while the previous save is in flight", async ({ page }) => {
+    await openResearchDesk(page);
+
+    let postedDraft: string | null = null;
+    let releaseSaveResponse!: () => void;
+    const saveResponse = new Promise<void>((resolve) => {
+      releaseSaveResponse = resolve;
+    });
+    await page.route("**/api/research/links", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+      postedDraft = (route.request().postDataJSON() as { text?: string }).text ?? null;
+      await saveResponse;
+      await route.fulfill({
+        json: {
+          ok: true,
+          added: [
+            {
+              id: "l-new",
+              url: postedDraft,
+              category: "other",
+              title: "First batch",
+              addedAt: iso(0),
+              source: "desk",
+            },
+          ],
+          duplicates: [],
+        },
+      });
+    });
+
+    await deskTab(page, /^Resources/).click();
+    const res = page.locator(".research-res");
+    const intake = res.getByLabel("Add resources");
+    const firstBatch = "https://example.com/first-batch";
+    const nextBatch = "https://example.com/next-batch";
+
+    await intake.fill(firstBatch);
+    await res.getByRole("button", { name: "Save resources" }).click();
+    await expect.poll(() => postedDraft).toBe(firstBatch);
+
+    await intake.fill(nextBatch);
+    releaseSaveResponse();
+
+    await expect(res.getByRole("status").filter({ hasText: "Saved 1 resource." })).toBeVisible();
+    await expect(intake).toHaveValue(nextBatch);
   });
 
   test("Prompt shows the composer, opens the slash palette on '/', and mode cards track typed intent", async ({ page }) => {

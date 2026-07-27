@@ -90,10 +90,6 @@
 .research-res__paste::placeholder {
   color: var(--text-muted);
 }
-.research-res__paste:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
-}
 .research-res__intake-preview {
   display: flex;
   flex: 1;
