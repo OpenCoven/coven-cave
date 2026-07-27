@@ -119,41 +119,50 @@ test("@mentions target a subset of the coven", () => {
   assert.match(view, /targetFamiliarIds: targeted \? targetIds : undefined/, "records targeted ids on the user turn");
   assert.match(view, /replies: GroupReply\[\] = orderedTargetIds\.map/, "only the targets reply, in the selected mode's order");
   // Composer autocomplete reuses the tested pure helpers.
-  assert.match(view, /findActiveMention\(el\.value/, "detects the active mention token");
+  assert.match(view, /findActiveMention\(\s*el\.value/, "detects the active mention token");
   assert.match(view, /matchMentions\(mention\.query, mentionable\)/, "filters the roster by the query");
-  assert.match(view, /applyMention\(draft, mention\.start, mention\.query/, "inserts the chosen familiar");
+  assert.match(
+    view,
+    /applyMention\(\s*draft,\s*mention\.start,\s*mention\.query/,
+    "inserts the chosen familiar",
+  );
 });
 
 test("completed @mentions close autocomplete and render as standout targets", () => {
   assert.match(
     view,
-    /const completedMentionNameRef = useRef<string \| null>\(null\)/,
-    "tracks the picker-confirmed familiar separately from routing state",
+    /const completedMentionsRef = useRef<MentionCompletion\[]>\(\[\]\)/,
+    "tracks every picker-confirmed token separately from routing state",
   );
   assert.match(
     view,
-    /const completedMentionsByGroupRef = useRef\(new Map<string, string>\(\)\)/,
+    /const completedMentionsByGroupRef = useRef\(\s*new Map<string, MentionCompletion\[]>\(\),?\s*\)/,
     "keeps picker-confirmed completion state with each coven draft",
   );
   assert.match(
     view,
-    /completedMentionsByGroupRef\.current\.set\(outgoingGroupId, completedName\)/,
+    /completedMentionsByGroupRef\.current\.set\(outgoingGroupId, completions\)/,
     "stashes the outgoing coven's completion state",
   );
   assert.match(
     view,
-    /completedMentionNameRef\.current = activeId[\s\S]{0,180}completedMentionsByGroupRef\.current\.get\(activeId\)/,
+    /completedMentionsRef\.current = activeId[\s\S]{0,180}completedMentionsByGroupRef\.current\.get\(activeId\)/,
     "restores the incoming coven's completion state",
   );
   assert.match(
     view,
-    /findActiveMention\([\s\S]*completedMentionNameRef\.current \?\? undefined/,
-    "suppresses autocomplete for the picker-confirmed mention",
+    /findActiveMention\([\s\S]{0,180}completedMentionsRef\.current/,
+    "suppresses autocomplete for every picker-confirmed token",
   );
   assert.match(
     view,
-    /completedMentionNameRef\.current = f\.name\.trim\(\)/,
-    "records the exact selected display name",
+    /reconcileMentionCompletions\(\s*draftRef\.current,\s*nextDraft,\s*completedMentionsRef\.current,\s*\)/,
+    "carries unaffected completions across textarea edits",
+  );
+  assert.match(
+    view,
+    /completedMentionsRef\.current = \[[\s\S]{0,260}\.\.\.reconcileMentionCompletions\([\s\S]{0,260}completion/,
+    "adds each selected token without discarding prior completions",
   );
   assert.match(view, /announce\(`Tagged \$\{f\.name\}\.`\)/, "announces the selected familiar");
 
@@ -481,7 +490,7 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   }
   assert.match(
     view,
-    /const outgoingGroupId = draftOwnerRef\.current;[\s\S]{0,180}?draftsByGroupRef\.current\.set\(outgoingGroupId, draftRef\.current\);[\s\S]{0,520}?setDraft\(activeId \? draftsByGroupRef\.current\.get\(activeId\) \?\? "" : ""\);/,
+    /const outgoingGroupId = draftOwnerRef\.current;[\s\S]{0,180}?draftsByGroupRef\.current\.set\(outgoingGroupId, draftRef\.current\);[\s\S]{0,700}?const incomingDraft = activeId[\s\S]{0,160}?draftsByGroupRef\.current\.get\(activeId\)[\s\S]{0,160}?setDraft\(incomingDraft\);/,
     "switching covens stashes the outgoing draft and restores the incoming one (no cross-coven bleed)",
   );
   assert.match(

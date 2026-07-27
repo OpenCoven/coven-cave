@@ -71,6 +71,7 @@ import {
   runCovenReplySchedule,
   COVEN_RESPONSE_MODES,
   findActiveMention,
+  reconcileMentionCompletions,
   matchMentions,
   applyMention,
   loadGroups,
@@ -81,6 +82,7 @@ import {
   type GroupTurn,
   type GroupUserTurn,
   type GroupReply,
+  type MentionCompletion,
   type MentionableFamiliar,
   type RosterParticipant,
   type CovenResponseMode,
@@ -175,9 +177,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   // Caret to restore after we programmatically rewrite the draft (mention insert).
   const pendingCaretRef = useRef<number | null>(null);
-  // Picker-confirmed names stay complete while the user continues ordinary
-  // prose. This is autocomplete state only; visible text remains authoritative.
-  const completedMentionNameRef = useRef<string | null>(null);
+  // Picker-confirmed token spans stay complete while the user continues
+  // ordinary prose. This is autocomplete state only; visible text remains
+  // authoritative.
+  const completedMentionsRef = useRef<MentionCompletion[]>([]);
   const groupsRef = useRef<CovenGroup[]>(groups);
   groupsRef.current = groups;
   // Live mirror of the transcript so retry can read the answered user turn
@@ -190,7 +193,9 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const draftsByGroupRef = useRef(new Map<string, string>());
-  const completedMentionsByGroupRef = useRef(new Map<string, string>());
+  const completedMentionsByGroupRef = useRef(
+    new Map<string, MentionCompletion[]>(),
+  );
   const draftOwnerRef = useRef<string | null>(null);
   // Which group the in-memory transcript belongs to (set by the swap effect).
   // The persist effect must not save until the swap has caught up, or the
@@ -272,19 +277,23 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       const outgoingGroupId = draftOwnerRef.current;
       if (outgoingGroupId) {
         draftsByGroupRef.current.set(outgoingGroupId, draftRef.current);
-        const completedName = completedMentionNameRef.current;
-        if (completedName) {
-          completedMentionsByGroupRef.current.set(outgoingGroupId, completedName);
+        const completions = completedMentionsRef.current;
+        if (completions.length > 0) {
+          completedMentionsByGroupRef.current.set(outgoingGroupId, completions);
         } else {
           completedMentionsByGroupRef.current.delete(outgoingGroupId);
         }
       }
       draftOwnerRef.current = activeId;
-      setDraft(activeId ? draftsByGroupRef.current.get(activeId) ?? "" : "");
+      const incomingDraft = activeId
+        ? draftsByGroupRef.current.get(activeId) ?? ""
+        : "";
+      draftRef.current = incomingDraft;
+      setDraft(incomingDraft);
       setMention(null);
-      completedMentionNameRef.current = activeId
-        ? completedMentionsByGroupRef.current.get(activeId) ?? null
-        : null;
+      completedMentionsRef.current = activeId
+        ? [...(completedMentionsByGroupRef.current.get(activeId) ?? [])]
+        : [];
     }
     if (!activeId) {
       setTranscript([]);
@@ -449,7 +458,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       completedMentionsByGroupRef.current.delete(id);
       if (draftOwnerRef.current === id) {
         draftOwnerRef.current = null;
-        completedMentionNameRef.current = null;
+        completedMentionsRef.current = [];
       }
       if (typeof localStorage !== "undefined") {
         try {
@@ -709,9 +718,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
       stickToBottomRef.current = true;
       setShowJump(false);
       setTranscript((prev) => [...prev, userTurn, ...replies]);
+      draftRef.current = "";
       setDraft("");
       setMention(null);
-      completedMentionNameRef.current = null;
+      completedMentionsRef.current = [];
       setBusy(true);
       const controller = new AbortController();
       abortRef.current = controller;
@@ -1020,15 +1030,11 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
     const el = textareaRef.current;
     if (!el) return;
     const caret = el.selectionStart ?? el.value.length;
-    const raw = findActiveMention(el.value, caret);
     const next = findActiveMention(
       el.value,
       caret,
-      completedMentionNameRef.current ?? undefined,
+      completedMentionsRef.current,
     );
-    if (raw && next && completedMentionNameRef.current) {
-      completedMentionNameRef.current = null;
-    }
     setMention(next);
     setMentionIndex(0);
   }, []);
@@ -1036,8 +1042,21 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
   const chooseMention = useCallback(
     (f: MentionableFamiliar) => {
       if (!mention) return;
-      const { text, caret } = applyMention(draft, mention.start, mention.query, f.name);
-      completedMentionNameRef.current = f.name.trim();
+      const { text, caret, completion } = applyMention(
+        draft,
+        mention.start,
+        mention.query,
+        f.name,
+      );
+      completedMentionsRef.current = [
+        ...reconcileMentionCompletions(
+          draftRef.current,
+          text,
+          completedMentionsRef.current,
+        ),
+        completion,
+      ].sort((a, b) => a.start - b.start);
+      draftRef.current = text;
       pendingCaretRef.current = caret;
       setDraft(text);
       setMention(null);
@@ -1629,7 +1648,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                     ref={textareaRef}
                     value={draft}
                     onChange={(e) => {
-                      setDraft(e.target.value);
+                      const nextDraft = e.target.value;
+                      completedMentionsRef.current = reconcileMentionCompletions(
+                        draftRef.current,
+                        nextDraft,
+                        completedMentionsRef.current,
+                      );
+                      draftRef.current = nextDraft;
+                      setDraft(nextDraft);
                       syncMention();
                     }}
                     onKeyUp={syncMention}

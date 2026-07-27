@@ -37,13 +37,15 @@ targets do not read as distinct tokens, and the coven prompt only explains
 
 ### Completed mention state
 
-The group composer records the display name confirmed through the picker. Its
-active-mention synchronization suppresses the same `@Display Name` query after
-selection, including later prose separated by the inserted space. Moving back
-into and editing the selected name clears that completion guard. A different
-active `@` token also clears it and opens the picker normally.
+The group composer records every picker-confirmed `@Display Name` token as a
+span in its coven-specific draft. Text edits reconcile those spans: tokens
+after an edit shift with the text, while editing a confirmed token removes only
+that token's completion. Starting or canceling another `@` therefore cannot
+make an earlier confirmed mention absorb ordinary prose and reopen the picker.
+A different active `@` token opens the picker normally without discarding prior
+completions.
 
-The guard is an interaction detail, not routing state. `parseMentions` continues
+The spans are interaction details, not routing state. `parseMentions` continues
 to derive recipients from visible text at send time.
 
 ### Standout targets
@@ -83,8 +85,9 @@ whether an `@` mention may dispatch follow-up work.
 
 ## Verification
 
-- Pure tests reproduce selection followed by ordinary prose and a subsequent
-  fresh `@`.
+- Pure tests reproduce selection followed by ordinary prose, canceling a
+  subsequent `@`, preserving two confirmed mentions through prose edits, and
+  invalidating only the confirmed token that is edited.
 - Prompt tests require exact `@display name` guidance.
 - Group-view contract tests pin the persistent hint, plain placeholder,
   completion guard, announcement, and composer/transcript pills.

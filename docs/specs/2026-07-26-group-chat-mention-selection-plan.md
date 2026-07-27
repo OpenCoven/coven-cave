@@ -4,7 +4,7 @@
 
 **Goal:** Make desktop group-chat mentions finish cleanly after picker selection, visibly identify tagged familiars, and teach coven familiars to address one another with exact `@Display Name` tags.
 
-**Architecture:** Keep visible message text as the sole routing/persistence authority. Extend the pure active-mention helper with an optional picker-confirmed name guard, derive visual pills from existing mention parsing, and add one identity-safe instruction to the coven roster prompt. The accessible textarea, Popover, and delegation validator remain unchanged.
+**Architecture:** Keep visible message text as the sole routing/persistence authority. Track picker-confirmed token spans per draft, reconcile unaffected spans across text edits, derive visual pills from existing mention parsing, and add one identity-safe instruction to the coven roster prompt. The accessible textarea, Popover, and delegation validator remain unchanged.
 
 **Tech Stack:** TypeScript, React 19, Node test runner, CSS design tokens, Next.js/Tauri desktop shell.
 
@@ -25,20 +25,38 @@ Add focused cases beside the existing `findActiveMention` tests:
 ```ts
 test("findActiveMention: picker-confirmed mention stays complete while prose continues", () => {
   const selected = applyMention("hello @sa", 6, "sa", "Sage");
-  assert.equal(findActiveMention(selected.text, selected.caret, "Sage"), null);
+  assert.equal(findActiveMention(selected.text, selected.caret, [selected.completion]), null);
 
   const continued = `${selected.text}what do you think?`;
-  assert.equal(findActiveMention(continued, continued.length, "Sage"), null);
+  const completions = reconcileMentionCompletions(
+    selected.text,
+    continued,
+    [selected.completion],
+  );
+  assert.equal(findActiveMention(continued, continued.length, completions), null);
 });
 
-test("findActiveMention: a new @ starts a fresh search after a completed mention", () => {
-  const text = "hello @Sage what do you think? @";
-  assert.deepEqual(findActiveMention(text, text.length, "Sage"), {
-    start: text.length - 1,
+test("mention completions: canceling a second token preserves the first completion", () => {
+  const first = applyMention("hello @sa", 6, "sa", "Sage");
+  const withSecondToken = `${first.text}review this @`;
+  let completions = reconcileMentionCompletions(
+    first.text,
+    withSecondToken,
+    [first.completion],
+  );
+  assert.deepEqual(findActiveMention(withSecondToken, withSecondToken.length, completions), {
+    start: withSecondToken.length - 1,
     query: "",
   });
+
+  const canceled = withSecondToken.slice(0, -1);
+  completions = reconcileMentionCompletions(withSecondToken, canceled, completions);
+  assert.equal(findActiveMention(canceled, canceled.length, completions), null);
 });
 ```
+
+Add lifecycle cases that preserve two confirmed tokens through prose edits and
+discard only the confirmed token whose own text is edited.
 
 Extend the roster prompt test:
 
@@ -56,32 +74,36 @@ node --experimental-strip-types --test src/lib/group-chat.test.ts
 
 Expected: FAIL because a picker-confirmed `@Sage ` still returns an active query and the roster lacks general `@` addressing guidance.
 
-- [x] **Step 3: Add the minimal completion guard**
+- [x] **Step 3: Add token-specific completion state**
 
-Extend `findActiveMention` without changing its existing callers:
+Represent picker-confirmed tokens by their draft spans and pass all valid
+completions to `findActiveMention`:
 
 ```ts
+export type MentionCompletion = {
+  start: number;
+  end: number;
+  name: string;
+};
+
 export function findActiveMention(
   text: string,
   caret: number,
-  completedName?: string,
+  completions: readonly MentionCompletion[] = [],
 ): { start: number; query: string } | null {
   let i = caret - 1;
   while (i >= 0 && text[i] !== "@" && text[i] !== "\n") i--;
   if (i < 0 || text[i] !== "@") return null;
   if (!isMentionBoundary(i === 0 ? "" : text[i - 1])) return null;
-  const query = text.slice(i + 1, caret);
-  const completed = completedName?.trim().toLocaleLowerCase();
-  const normalizedQuery = query.toLocaleLowerCase();
-  if (
-    completed &&
-    (normalizedQuery === completed || normalizedQuery.startsWith(`${completed} `))
-  ) {
-    return null;
-  }
-  return { start: i, query };
+  if (completions.some((completion) => completion.start === i)) return null;
+  return { start: i, query: text.slice(i + 1, caret) };
 }
 ```
+
+Add `reconcileMentionCompletions(previousText, nextText, completions)` to shift
+unaffected spans and discard a completion only when its own token is edited or
+ceases to be a standalone mention. `applyMention` returns the new completion
+alongside its rewritten text and caret.
 
 Add this line to `renderCovenRoster` after the participant-count instruction:
 
@@ -115,9 +137,9 @@ const covenStyles = readFileSync(new URL("../styles/coven-tab.css", import.meta.
 Add a focused test that requires:
 
 ```ts
-assert.match(view, /const completedMentionNameRef = useRef<string \| null>\(null\)/);
-assert.match(view, /findActiveMention\([\s\S]*completedMentionNameRef\.current \?\? undefined/);
-assert.match(view, /completedMentionNameRef\.current = f\.name\.trim\(\)/);
+assert.match(view, /const completedMentionsRef = useRef<MentionCompletion\[]>\(\[\]\)/);
+assert.match(view, /findActiveMention\([\s\S]*completedMentionsRef\.current/);
+assert.match(view, /reconcileMentionCompletions\(/);
 assert.match(view, /announce\(`Tagged \$\{f\.name\}\.`\)/);
 assert.match(view, /Use @ to tag a familiar/);
 assert.match(view, /<CovenMentionPills[\s\S]*familiars=\{composerTargets\}/);
@@ -186,36 +208,42 @@ function CovenMentionPills({
 Add the ref near the existing textarea refs:
 
 ```ts
-const completedMentionNameRef = useRef<string | null>(null);
+const completedMentionsRef = useRef<MentionCompletion[]>([]);
 ```
 
-Update `syncMention` to compare the raw active token with the guarded result:
+Update `syncMention` to pass every valid picker-confirmed token:
 
 ```ts
-const raw = findActiveMention(el.value, el.selectionStart ?? el.value.length);
 const next = findActiveMention(
   el.value,
   el.selectionStart ?? el.value.length,
-  completedMentionNameRef.current ?? undefined,
+  completedMentionsRef.current,
 );
-if (raw && next && completedMentionNameRef.current) {
-  completedMentionNameRef.current = null;
-}
 setMention(next);
 ```
 
-Before rewriting the draft in `chooseMention`, record and announce selection:
+Before rewriting the draft in `chooseMention`, reconcile earlier completions,
+record the new token, and announce selection:
 
 ```ts
-completedMentionNameRef.current = f.name.trim();
+const { text, caret, completion } = applyMention(
+  draft,
+  mention.start,
+  mention.query,
+  f.name,
+);
+completedMentionsRef.current = [
+  ...reconcileMentionCompletions(draft, text, completedMentionsRef.current),
+  completion,
+];
 announce(`Tagged ${f.name}.`);
 ```
 
 Include `announce` in that callback’s dependency list.
 
-Clear `completedMentionNameRef.current` when a message is sent and when the
-active coven swaps, alongside the existing `setDraft` / `setMention` resets, so
-picker state never leaks across drafts or covens.
+Reconcile the spans from the old draft to `e.target.value` in `onChange`. Stash
+and restore the span list with each coven draft, and clear it when a message is
+sent, so picker state never leaks across drafts or covens.
 
 - [x] **Step 3: Derive current composer and reply targets**
 
