@@ -155,6 +155,8 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   // ── Draft editing (local until published) ─────────────────────────────────
   const newDraftButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreDraftFocusRef = useRef(false);
+  const [leftRailExpanded, setLeftRailExpanded] = useState(false);
+  const [rightRailExpanded, setRightRailExpanded] = useState(false);
   const newDraft = () => {
     const now = new Date().toISOString();
     const draft: ScribeDraft = {
@@ -181,6 +183,8 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   const discardSelected = () => {
     if (!selected) return;
     const title = selected.title.trim() || "Untitled";
+    setRightRailExpanded(false);
+    setLeftRailExpanded(true);
     restoreDraftFocusRef.current = true;
     patch({ drafts: state.drafts.filter((d) => d.id !== selected.id), selectedId: null });
     announce(`Discarded draft "${title}".`);
@@ -276,7 +280,12 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       }
     >
-      <SurfaceRail side="left" label="Drafts and sources">
+      <SurfaceRail
+        side="left"
+        label="Drafts and sources"
+        expanded={leftRailExpanded}
+        onExpandedChange={setLeftRailExpanded}
+      >
         <RailSection
           title="Drafts"
           iconName="ph:pencil-line-bold"
@@ -395,7 +404,12 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
         )}
       </SurfaceCanvas>
 
-      <SurfaceRail side="right" label="Publishing">
+      <SurfaceRail
+        side="right"
+        label="Publishing"
+        expanded={rightRailExpanded}
+        onExpandedChange={setRightRailExpanded}
+      >
         {!selected ? (
           <RailSection title="Publish" iconName="ph:book-open-bold">
             <SurfaceEmpty title="Select a draft to publish it." />
@@ -423,7 +437,7 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
                 </button>
               </div>
               {publishError ? (
-                <p role="alert" className="role-surface-hint">
+                <p className="role-surface-hint">
                   {publishError}
                 </p>
               ) : null}

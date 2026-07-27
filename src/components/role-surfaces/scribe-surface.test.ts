@@ -74,7 +74,12 @@ test("source material comes from real memory and journal, published works from t
 });
 
 test("the desk exposes errors and state accessibly", () => {
-  assert.match(surface, /role="alert"/);
+  assert.doesNotMatch(
+    surface,
+    /<p role="alert" className="role-surface-hint">\s*\{publishError\}/,
+    "the global assertive announcer owns publish failures",
+  );
+  assert.match(surface, /<p className="role-surface-hint">\s*\{publishError\}/);
   assert.match(surface, /aria-current=\{draft\.id === state\.selectedId/);
   assert.match(surface, /aria-pressed=\{state\.scope === "familiar"\}/);
   assert.match(surface, /aria-label="Draft body"/);
@@ -131,12 +136,14 @@ test("publishing announces outcomes and discard stays behind secondary disclosur
   assert.doesNotMatch(surface, /<button[^>]*onClick=\{discardSelected\}[^>]*>[\s\S]*?Discard draft/);
 });
 
-test("discard announces the named draft and restores focus after commit to the persistent New control", () => {
+test("compact discard reopens Drafts before restoring focus", () => {
   assert.match(surface, /const newDraftButtonRef = useRef<HTMLButtonElement \| null>\(null\)/);
   assert.match(surface, /const restoreDraftFocusRef = useRef\(false\)/);
+  assert.match(surface, /const \[leftRailExpanded, setLeftRailExpanded\] = useState\(false\)/);
+  assert.match(surface, /const \[rightRailExpanded, setRightRailExpanded\] = useState\(false\)/);
   assert.match(
     surface,
-    /const discardSelected = \(\) => \{[\s\S]*?const title = selected\.title\.trim\(\) \|\| "Untitled";[\s\S]*?restoreDraftFocusRef\.current = true;[\s\S]*?patch\([\s\S]*?announce\(`Discarded draft "\$\{title\}"\.`\)/,
+    /const discardSelected = \(\) => \{[\s\S]*?const title = selected\.title\.trim\(\) \|\| "Untitled";[\s\S]*?setRightRailExpanded\(false\);[\s\S]*?setLeftRailExpanded\(true\);[\s\S]*?restoreDraftFocusRef\.current = true;[\s\S]*?patch\([\s\S]*?announce\(`Discarded draft "\$\{title\}"\.`\)/,
   );
   assert.match(
     surface,
@@ -145,6 +152,14 @@ test("discard announces the named draft and restores focus after commit to the p
   assert.match(
     surface,
     /<button\s+ref=\{newDraftButtonRef\}\s+type="button"\s+className="role-surface-chip focus-ring"\s+onClick=\{newDraft\}\s*>/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="left"\s+label="Drafts and sources"\s+expanded=\{leftRailExpanded\}\s+onExpandedChange=\{setLeftRailExpanded\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="right"\s+label="Publishing"\s+expanded=\{rightRailExpanded\}\s+onExpandedChange=\{setRightRailExpanded\}/,
   );
 });
 
