@@ -111,7 +111,6 @@ test("room aliases cover the live navigation and memory role labels", () => {
   const navigator = familiarRoleIds({
     id: "astra",
     role: "Strategy / Navigation",
-    familiarType: "planning",
   });
   assert.ok(
     surfaceMatchesRoles(
@@ -123,7 +122,6 @@ test("room aliases cover the live navigation and memory role labels", () => {
   const indexer = familiarRoleIds({
     id: "echo",
     role: "Memory / Reflection",
-    familiarType: "indexing",
   });
   assert.ok(
     surfaceMatchesRoles(
