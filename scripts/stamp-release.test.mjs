@@ -78,7 +78,7 @@ assert.match(yml, /process\.argv\[2\], process\.argv\[3\]\) >= 0/, "daemon gate 
 assert.match(yml, /build:[\s\S]{0,100}needs: daemon-package/, "desktop builds wait for the daemon package gate");
 assert.match(
   yml,
-  /updater-manifest:[\s\S]{0,900}if: \$\{\{ !cancelled\(\) && needs\.build\.result != 'cancelled' \}\}/,
+  /updater-manifest:[\s\S]{0,900}if: \$\{\{ !cancelled\(\) && needs\.build\.result != 'cancelled' && needs\.build\.result != 'skipped' \}\}/,
   "updater-manifest runs even when a build leg failed (a flake must not 404 the updater)",
 );
 assert.match(yml, /PLATFORM_COUNT=\$count.*GITHUB_ENV/, "platform count exported for the body note");
