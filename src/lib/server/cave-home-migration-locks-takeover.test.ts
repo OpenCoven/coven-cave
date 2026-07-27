@@ -43,7 +43,7 @@ async function denySymlink() {
 
 const RETRY_TEST_TIMEOUT_MS = 500;
 const RETRY_TEST_STEP_MS = 100;
-const RETRY_TEST_ATTEMPTS = RETRY_TEST_TIMEOUT_MS / RETRY_TEST_STEP_MS;
+const RETRY_TEST_ATTEMPTS = Math.ceil(RETRY_TEST_TIMEOUT_MS / RETRY_TEST_STEP_MS);
 
 const baseState = () => ({
   sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {},

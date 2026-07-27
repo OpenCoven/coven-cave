@@ -107,10 +107,10 @@ try {
   assert.deepEqual(JSON.parse(await readFile(path.join(reusedPidCave, "config.json"), "utf8")), { windows: true });
 
   // Persistent Windows EPERM while publishing candidate directories must stop
-  // at the documented deadline and remove every contender-owned candidate.
+  // at the injected deadline and remove every contender-owned candidate.
   const retryTimeoutMs = 500;
   const retryStepMs = 100;
-  const expectedRetryAttempts = retryTimeoutMs / retryStepMs;
+  const expectedRetryAttempts = Math.ceil(retryTimeoutMs / retryStepMs);
   const candidateFailureHome = path.join(root, "candidate-eperm", ".coven");
   process.env.COVEN_HOME = candidateFailureHome;
   const candidateFailureCave = path.join(candidateFailureHome, "cave");
