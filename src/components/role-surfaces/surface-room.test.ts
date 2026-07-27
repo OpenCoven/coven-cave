@@ -52,7 +52,12 @@ const emptyState = extractExport(surfaceRoom, "SurfaceEmpty");
 assert.match(surfaceRoom, /export function SurfaceLoading\b/, "surface-room exports SurfaceLoading");
 assert.match(surfaceRoom, /export function SurfaceError\b/, "surface-room exports SurfaceError");
 assert.match(loadingState, /<SkeletonRows\b/, "SurfaceLoading renders shared skeleton rows");
-assert.match(loadingState, /role="status"/, "shared loading state uses role=status");
+assert.match(loadingState, /live\?: boolean/, "SurfaceLoading exposes the shared live-region opt-out");
+assert.match(
+  loadingState,
+  /role=\{live \? "status" : undefined\}/,
+  "shared loading state can suppress duplicate status announcements",
+);
 assert.match(loadingState, /aria-label=\{label\}/, "shared loading state is named for the object being loaded");
 assert.match(loadingState, />\{label\}<\/span>/, "shared loading state keeps its object label visible");
 assert.match(roomErrorState, /<ErrorState[\s\S]*?\bcompact\b/, "SurfaceError renders compact shared ErrorState");
@@ -89,8 +94,9 @@ assert.match(surfaceRail, /aria-controls=\{railId\}/, "control identifies its ow
 assert.match(surfaceRail, /id=\{railId\}/, "rail owns the target id referenced by its control");
 assert.match(surfaceRail, /role-surface-rail--expanded/, "SurfaceRail exposes its expanded presentation state");
 assert.ok(
-  /useRef<HTMLButtonElement \| null>\(null\)/.test(surfaceRail) &&
+    /useRef<HTMLButtonElement \| null>\(null\)/.test(surfaceRail) &&
     /useRef<HTMLElement \| null>\(null\)/.test(surfaceRail) &&
+    /getComputedStyle\(disclosureTarget\)\.display === "none"/.test(surfaceRail) &&
     /useEffect\([\s\S]*?requestAnimationFrame\([\s\S]*?querySelector<HTMLElement>[\s\S]*?\.focus\(\)/.test(surfaceRail) &&
     /e\.key !== "Escape"/.test(surfaceRail) &&
     /setExpanded\(false\)/.test(surfaceRail) &&

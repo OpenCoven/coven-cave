@@ -16,7 +16,7 @@
  * say so instead of pretending.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
@@ -39,6 +39,7 @@ import {
   SurfaceLoading,
   SurfaceRail,
   SurfaceRoom,
+  useActiveSelectionRail,
 } from "./surface-room";
 import { SENTINEL_SURFACE_ID } from "./ids";
 
@@ -86,6 +87,7 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
   const familiarId = context.activeFamiliar.id;
   const [state, patch] = useRoleSurfaceState<SentinelState>(familiarId, SENTINEL_SURFACE_ID, SENTINEL_INITIAL_STATE);
   const { announce } = useAnnouncer();
+  const selectedInspectorRef = useRef<HTMLParagraphElement | null>(null);
 
   // ── Alerts: the Cave's real escalations ────────────────────────────────────
   const fetchAlerts = useCallback(async () => {
@@ -135,6 +137,7 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
     () => (alerts ?? []).find((a) => a.id === state.selectedId) ?? null,
     [alerts, state.selectedId],
   );
+  const [detailsExpanded, setDetailsExpanded] = useActiveSelectionRail(state.selectedId);
   const watch = useMemo(() => watchSessions(context.runtimeState.sessions), [context.runtimeState.sessions]);
   const recentlyClosed = useMemo(
     () =>
@@ -161,7 +164,8 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
-        await loadAlerts();
+        await loadAlerts({ retainData: true });
+        requestAnimationFrame(() => selectedInspectorRef.current?.focus());
         if (nextState === "resolved") {
           announce(`Resolved "${title}".`);
         } else if (nextState) {
@@ -242,7 +246,7 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
                 live={false}
               />
             ) : alerts == null ? (
-              <SurfaceLoading label="Loading recently closed alerts…" />
+              <SurfaceLoading label="Loading recently closed alerts…" live={false} />
             ) : recentlyClosed.length === 0 ? (
               <SurfaceEmpty title="Nothing closed yet." />
             ) : (
@@ -298,7 +302,7 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
               live={false}
             />
           ) : alerts == null ? (
-            <SurfaceLoading label="Loading alert queues…" />
+            <SurfaceLoading label="Loading alert queues…" live={false} />
           ) : (
             <ul className="role-surface-list">
               {SCOPES.map((scope) => (
@@ -374,7 +378,14 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
               <Icon name="ph:arrow-clockwise" width={12} height={12} aria-hidden /> Sweep again
             </button>
           </div>
-          {alertsError ? (
+          {alertsError && alerts != null ? (
+            <SurfaceError
+              title={alertsError}
+              hint="Showing the last completed sweep. Retry when the Cave connection returns."
+              onRetry={loadAlerts}
+            />
+          ) : null}
+          {alertsError && alerts == null ? (
             <SurfaceError
               title={alertsError}
               hint="Check the Cave connection, then retry the sweep."
@@ -400,7 +411,10 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
                     type="button"
                     className={`role-surface-card focus-ring${item.id === state.selectedId ? " role-surface-card--active" : ""}`}
                     aria-current={item.id === state.selectedId ? "true" : undefined}
-                    onClick={() => patch({ selectedId: item.id })}
+                    onClick={() => {
+                      patch({ selectedId: item.id });
+                      setDetailsExpanded(true);
+                    }}
                   >
                     <span className="role-surface-card-tags">
                       <span className={item.severity === "critical" ? "role-surface-tag role-surface-metric-warn" : "role-surface-tag"}>
@@ -422,8 +436,13 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       </SurfaceCanvas>
 
-      <SurfaceRail side="right" label="Alert details">
-        {alertsError ? (
+      <SurfaceRail
+        side="right"
+        label="Alert details"
+        expanded={detailsExpanded}
+        onExpandedChange={setDetailsExpanded}
+      >
+        {alertsError && alerts == null ? (
           <RailSection title="Details" iconName="ph:note">
             <SurfaceError
               title={alertsError}
@@ -434,7 +453,7 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
           </RailSection>
         ) : alerts == null ? (
           <RailSection title="Details" iconName="ph:note">
-            <SurfaceLoading label="Loading alert details…" />
+            <SurfaceLoading label="Loading alert details…" live={false} />
           </RailSection>
         ) : !selected ? (
           <RailSection title="Details" iconName="ph:note">
@@ -443,7 +462,9 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
         ) : (
           <>
             <RailSection title="Selected alert" iconName="ph:note">
-              <p className="role-surface-memory-path">{selected.title}</p>
+              <p ref={selectedInspectorRef} className="role-surface-memory-path focus-ring" tabIndex={-1}>
+                {selected.title}
+              </p>
               {selected.excerpt && <p className="role-surface-memory-excerpt">{selected.excerpt}</p>}
               <dl className="role-surface-facts">
                 <dt>Severity</dt>

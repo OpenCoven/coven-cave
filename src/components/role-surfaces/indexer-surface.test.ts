@@ -69,9 +69,9 @@ test("recent changes do not turn inventory loading or failure into an empty hist
 });
 
 test("memory details wait for the inventory source before exposing selection controls", () => {
-  const details = section('<SurfaceRail side="right" label="Memory details"', "</SurfaceRail>");
+  const details = section('label="Memory details"', "</SurfaceRail>");
   assert.match(
     details,
-    /entriesError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*entries == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?\)\s*:\s*!selected/,
+    /entriesError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*entries == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*!selected/,
   );
 });

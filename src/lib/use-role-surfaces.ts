@@ -105,12 +105,13 @@ type LatestAsyncDataOptions<T> = {
 type LatestAsyncData<T> = {
   data: T | null;
   error: string | null;
-  reload(): Promise<boolean>;
+  reload(options?: { retainData?: boolean }): Promise<boolean>;
 };
 
 /**
  * Own one async value for the latest scope/request only. Every load starts
- * from an honest loading state; effect cleanup invalidates in-flight work.
+ * from an honest loading state unless a caller explicitly retains same-scope
+ * data while revalidating; effect cleanup invalidates in-flight work.
  */
 export function useLatestAsyncData<T>({
   scopeKey,
@@ -124,10 +125,16 @@ export function useLatestAsyncData<T>({
     data: T | null;
     error: string | null;
   }>({ scopeKey, data: null, error: null });
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (options?: { retainData?: boolean }) => {
     const sequence = ++requestSequence.current;
-    setState({ scopeKey, data: null, error: null });
+    const retainedData =
+      options?.retainData === true && stateRef.current.scopeKey === scopeKey
+        ? stateRef.current.data
+        : null;
+    setState({ scopeKey, data: retainedData, error: null });
     if (!enabled) return true;
     try {
       const data = await load();
@@ -136,7 +143,7 @@ export function useLatestAsyncData<T>({
       return true;
     } catch {
       if (sequence !== requestSequence.current) return false;
-      setState({ scopeKey, data: null, error: errorMessage });
+      setState({ scopeKey, data: retainedData, error: errorMessage });
       return false;
     }
   }, [enabled, errorMessage, load, scopeKey]);

@@ -114,7 +114,7 @@ test("the room exposes errors and selection accessibly", () => {
 });
 
 test("board failures stay retryable and distinct from loading and empty data", () => {
-  const chartedCards = section('<SurfaceCanvas label="Charted cards"', '<SurfaceRail side="right"');
+  const chartedCards = section('<SurfaceCanvas label="Charted cards"', 'label="Card details"');
   assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /const fetchBoard = useCallback\(async \(\) =>/);
@@ -124,14 +124,19 @@ test("board failures stay retryable and distinct from loading and empty data", (
   );
   assert.match(
     chartedCards,
-    /boardError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadBoard\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+    /boardError && cards == null\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadBoard\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(
+    chartedCards,
+    /boardError && cards != null\s*\?\s*\([\s\S]*?Showing the last loaded board/,
+    "a failed revalidation keeps the last usable board visible",
   );
   assert.match(chartedCards, /visible\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
 });
 
 test("board load failures use one canonical live error", () => {
   assert.doesNotMatch(surface, /announce\("Couldn't load the board\.", "assertive"\)/);
-  const chartedCards = section('<SurfaceCanvas label="Charted cards"', '<SurfaceRail side="right"');
+  const chartedCards = section('<SurfaceCanvas label="Charted cards"', 'label="Card details"');
   assert.doesNotMatch(chartedCards, /<SurfaceError[\s\S]*?live=\{false\}/, "the main board error stays live");
 });
 
@@ -183,10 +188,10 @@ test("board mutations announce success and assertively announce visible failures
 });
 
 test("card details wait for the board source before exposing move controls", () => {
-  const details = section('<SurfaceRail side="right" label="Card details"', "</SurfaceRail>");
+  const details = section('label="Card details"', "</SurfaceRail>");
   assert.match(
     details,
-    /boardError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?\)\s*:\s*!selected/,
+    /boardError && cards == null\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*!selected/,
   );
 });
 

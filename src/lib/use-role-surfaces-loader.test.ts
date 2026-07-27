@@ -101,7 +101,7 @@ test("memory access keeps a missing familiar as an honest empty without fetching
 type ProbeProps<T> = {
   scope: string;
   request(scope: string): Promise<T>;
-  exposeReload?(reload: () => Promise<boolean>): void;
+  exposeReload?(reload: (options?: { retainData?: boolean }) => Promise<boolean>): void;
 };
 
 function LoaderProbe<T>({ scope, request, exposeReload }: ProbeProps<T>) {
@@ -196,5 +196,41 @@ test("retry clears successful data while the fresh request is pending", async ()
   assert.deepEqual(output(renderer), { data: null, error: null });
   await act(async () => requests[1].resolve("second"));
   assert.deepEqual(output(renderer), { data: "second", error: null });
+  await act(async () => renderer.unmount());
+});
+
+test("retained revalidation keeps usable data while pending and when refresh fails", async () => {
+  const requests: Deferred<string>[] = [];
+  const request = () => {
+    const next = deferred<string>();
+    requests.push(next);
+    return next.promise;
+  };
+  let reload!: (options?: { retainData?: boolean }) => Promise<boolean>;
+  let renderer!: ReactTestRenderer;
+
+  await act(async () => {
+    renderer = create(
+      createElement(LoaderProbe, {
+        scope: "same-scope",
+        request,
+        exposeReload: (nextReload) => {
+          reload = nextReload;
+        },
+      }),
+    );
+  });
+  await act(async () => requests[0].resolve("first"));
+  assert.deepEqual(output(renderer), { data: "first", error: null });
+
+  let refresh!: Promise<boolean>;
+  await act(async () => {
+    refresh = reload({ retainData: true });
+  });
+  assert.deepEqual(output(renderer), { data: "first", error: null });
+
+  await act(async () => requests[1].reject(new Error("refresh failed")));
+  assert.equal(await refresh, false);
+  assert.deepEqual(output(renderer), { data: "first", error: "Couldn't load probe." });
   await act(async () => renderer.unmount());
 });

@@ -28,6 +28,7 @@ import {
   SurfaceLoading,
   SurfaceRail,
   SurfaceRoom,
+  useActiveSelectionRail,
 } from "./surface-room";
 import { INDEXER_SURFACE_ID } from "./ids";
 
@@ -93,6 +94,7 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
     () => (entries ?? []).find((e) => e.fullPath === state.selectedPath) ?? null,
     [entries, state.selectedPath],
   );
+  const [detailsExpanded, setDetailsExpanded] = useActiveSelectionRail(state.selectedPath);
 
   // Selected memory content, read through the shared adapter (redacted).
   const fetchContent = useCallback(async () => {
@@ -167,7 +169,7 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
                 live={false}
               />
             ) : entries == null ? (
-              <SurfaceLoading label="Loading recent memory changes…" />
+              <SurfaceLoading label="Loading recent memory changes…" live={false} />
             ) : recentChanges.length === 0 ? (
               <SurfaceEmpty title="No recorded changes." />
             ) : (
@@ -194,7 +196,7 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
               live={false}
             />
           ) : entries == null ? (
-            <SurfaceLoading label="Loading memory inventory…" />
+            <SurfaceLoading label="Loading memory inventory…" live={false} />
           ) : collections.length === 0 ? (
             <SurfaceEmpty title="No memory on file for this familiar." />
           ) : (
@@ -268,7 +270,10 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
                   <button
                     type="button"
                     className={`role-surface-card focus-ring${entry.fullPath === state.selectedPath ? " role-surface-card--active" : ""}`}
-                    onClick={() => patch({ selectedPath: entry.fullPath })}
+                    onClick={() => {
+                      patch({ selectedPath: entry.fullPath });
+                      setDetailsExpanded(true);
+                    }}
                   >
                     <span className="role-surface-memory-path">{entry.relPath}</span>
                     {entry.excerpt && <span className="role-surface-memory-excerpt">{entry.excerpt}</span>}
@@ -287,7 +292,12 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       </SurfaceCanvas>
 
-      <SurfaceRail side="right" label="Memory details">
+      <SurfaceRail
+        side="right"
+        label="Memory details"
+        expanded={detailsExpanded}
+        onExpandedChange={setDetailsExpanded}
+      >
         {entriesError ? (
           <RailSection title="Details" iconName="ph:note">
             <SurfaceError
@@ -299,7 +309,7 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
           </RailSection>
         ) : entries == null ? (
           <RailSection title="Details" iconName="ph:note">
-            <SurfaceLoading label="Loading memory details…" />
+            <SurfaceLoading label="Loading memory details…" live={false} />
           </RailSection>
         ) : !selected ? (
           <RailSection title="Details" iconName="ph:note">

@@ -117,14 +117,20 @@ export function SurfaceRail({
   const toggleExpanded = () => setExpanded(!isExpanded);
 
   useEffect(() => {
-    if (!isExpanded) return;
+    if (
+      !isExpanded ||
+      disclosureTarget == null ||
+      getComputedStyle(disclosureTarget).display === "none"
+    ) {
+      return;
+    }
     const focusFrame = requestAnimationFrame(() => {
       const rail = railRef.current;
       const focusTarget = rail?.querySelector<HTMLElement>(RAIL_FOCUSABLE_SELECTOR) ?? rail;
       focusTarget?.focus();
     });
     return () => cancelAnimationFrame(focusFrame);
-  }, [isExpanded]);
+  }, [disclosureTarget, isExpanded]);
 
   const onRailKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== "Escape" || !isExpanded) return;
@@ -167,6 +173,27 @@ export function SurfaceRail({
       </aside>
     </>
   );
+}
+
+/**
+ * Keep a responsive inspector aligned with selection changes without fighting
+ * an explicit user close. A new (or restored) selection opens the rail; once
+ * the user toggles it, it stays in that state until the selection key changes.
+ */
+export function useActiveSelectionRail(selectionKey: string | null): readonly [
+  expanded: boolean,
+  setExpanded: (next: boolean) => void,
+] {
+  const previousSelection = useRef(selectionKey);
+  const [expanded, setExpanded] = useState(selectionKey != null);
+
+  useEffect(() => {
+    if (previousSelection.current === selectionKey) return;
+    previousSelection.current = selectionKey;
+    setExpanded(selectionKey != null);
+  }, [selectionKey]);
+
+  return [expanded, setExpanded] as const;
 }
 
 export function SurfaceCanvas({ label, children }: { label: string; children: ReactNode }) {
@@ -225,9 +252,14 @@ export function SurfaceEmpty({
   );
 }
 
-export function SurfaceLoading({ label }: { label: string }) {
+export function SurfaceLoading({ label, live = true }: { label: string; live?: boolean }) {
   return (
-    <div className="role-surface-state role-surface-loading" role="status" aria-label={label} aria-busy="true">
+    <div
+      className="role-surface-state role-surface-loading"
+      role={live ? "status" : undefined}
+      aria-label={label}
+      aria-busy="true"
+    >
       <span className="role-surface-state-label">{label}</span>
       <SkeletonRows count={3} />
     </div>

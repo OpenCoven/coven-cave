@@ -158,7 +158,7 @@ test("surface exposes errors and selection state accessibly", () => {
 });
 
 test("surface keeps alert and host failures retryable and distinct from empty data", () => {
-  const alertBoard = section('<SurfaceCanvas label="Alert board"', '<SurfaceRail side="right"');
+  const alertBoard = section('<SurfaceCanvas label="Alert board"', 'label="Alert details"');
   assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /const fetchAlerts = useCallback\(async \(\) =>/);
@@ -168,7 +168,12 @@ test("surface keeps alert and host failures retryable and distinct from empty da
   );
   assert.match(
     alertBoard,
-    /alertsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadAlerts\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+    /alertsError && alerts == null\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadAlerts\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(
+    alertBoard,
+    /alertsError && alerts != null\s*\?\s*\([\s\S]*?Showing the last completed sweep/,
+    "a failed revalidation keeps the last usable sweep visible",
   );
   assert.match(alertBoard, /filtered\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
 
@@ -235,10 +240,10 @@ test("surface announces mutations without duplicating source-load announcements"
 });
 
 test("alert details wait for the source before exposing triage controls", () => {
-  const details = section('<SurfaceRail side="right" label="Alert details"', "</SurfaceRail>");
+  const details = section('label="Alert details"', "</SurfaceRail>");
   assert.match(
     details,
-    /alertsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?\)\s*:\s*!selected/,
+    /alertsError && alerts == null\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*!selected/,
   );
 });
 

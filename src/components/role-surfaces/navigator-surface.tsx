@@ -14,7 +14,7 @@
  * tasks are real writes to it. Panels with nothing to show say so.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
@@ -38,6 +38,7 @@ import {
   SurfaceLoading,
   SurfaceRail,
   SurfaceRoom,
+  useActiveSelectionRail,
 } from "./surface-room";
 import { NAVIGATOR_SURFACE_ID } from "./ids";
 
@@ -73,6 +74,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     NAVIGATOR_INITIAL_STATE,
   );
   const { announce } = useAnnouncer();
+  const selectedInspectorRef = useRef<HTMLParagraphElement | null>(null);
 
   // ── The real board ─────────────────────────────────────────────────────────
   const fetchBoard = useCallback(async () => {
@@ -110,6 +112,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     () => (cards ?? []).find((c) => c.id === state.selectedId) ?? null,
     [cards, state.selectedId],
   );
+  const [detailsExpanded, setDetailsExpanded] = useActiveSelectionRail(state.selectedId);
   const today = new Date().toISOString().slice(0, 10);
   const legs = useMemo(() => upcomingLegs(cards ?? [], today), [cards, today]);
   const recentlyDone = useMemo(
@@ -167,7 +170,8 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       });
       if (!res.ok) throw new Error(`status ${res.status}`);
       publishBoardChanged();
-      await loadBoard();
+      await loadBoard({ retainData: true });
+      requestAnimationFrame(() => selectedInspectorRef.current?.focus());
       announce(`Moved "${title}" to ${LANE_LABELS[status]}.`);
     } catch {
       const message = "Move failed — the board didn't accept the change.";
@@ -195,7 +199,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                 live={false}
               />
             ) : cards == null ? (
-              <SurfaceLoading label="Loading recently completed tasks…" />
+              <SurfaceLoading label="Loading recently completed tasks…" live={false} />
             ) : recentlyDone.length === 0 ? (
               <SurfaceEmpty title="Nothing completed yet." />
             ) : (
@@ -218,7 +222,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                 live={false}
               />
             ) : cards == null ? (
-              <SurfaceLoading label="Loading blocked tasks…" />
+              <SurfaceLoading label="Loading blocked tasks…" live={false} />
             ) : blocked.length === 0 ? (
               <SurfaceEmpty title="No blocked cards." />
             ) : (
@@ -276,7 +280,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
               live={false}
             />
           ) : cards == null ? (
-            <SurfaceLoading label="Loading course lanes…" />
+            <SurfaceLoading label="Loading course lanes…" live={false} />
           ) : (
             <ul className="role-surface-list">
               <li>
@@ -313,7 +317,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
               live={false}
             />
           ) : cards == null ? (
-            <SurfaceLoading label="Loading charts…" />
+            <SurfaceLoading label="Loading charts…" live={false} />
           ) : legs.length === 0 ? (
             <SurfaceEmpty title="No dated legs." hint="Cards with start or end dates chart the voyage here." />
           ) : (
@@ -339,7 +343,14 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
 
       <SurfaceCanvas label="Charted cards">
         <div className="role-surface-canvas-stack">
-          {boardError ? (
+          {boardError && cards != null ? (
+            <SurfaceError
+              title={boardError}
+              hint="Showing the last loaded board. Retry when the Cave connection returns."
+              onRetry={loadBoard}
+            />
+          ) : null}
+          {boardError && cards == null ? (
             <SurfaceError
               title={boardError}
               hint="Check the Cave connection, then retry."
@@ -363,7 +374,10 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                       type="button"
                       className={`role-surface-card focus-ring${card.id === state.selectedId ? " role-surface-card--active" : ""}`}
                       aria-current={card.id === state.selectedId ? "true" : undefined}
-                      onClick={() => patch({ selectedId: card.id })}
+                      onClick={() => {
+                        patch({ selectedId: card.id });
+                        setDetailsExpanded(true);
+                      }}
                     >
                       <span className="role-surface-card-tags">
                         <span className="role-surface-tag">{LANE_LABELS[card.status]}</span>
@@ -391,8 +405,13 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       </SurfaceCanvas>
 
-      <SurfaceRail side="right" label="Card details">
-        {boardError ? (
+      <SurfaceRail
+        side="right"
+        label="Card details"
+        expanded={detailsExpanded}
+        onExpandedChange={setDetailsExpanded}
+      >
+        {boardError && cards == null ? (
           <RailSection title="Details" iconName="ph:note">
             <SurfaceError
               title={boardError}
@@ -403,7 +422,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
           </RailSection>
         ) : cards == null ? (
           <RailSection title="Details" iconName="ph:note">
-            <SurfaceLoading label="Loading card details…" />
+            <SurfaceLoading label="Loading card details…" live={false} />
           </RailSection>
         ) : !selected ? (
           <RailSection title="Details" iconName="ph:note">
@@ -412,7 +431,9 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         ) : (
           <>
             <RailSection title="Selected card" iconName="ph:note">
-              <p className="role-surface-memory-path">{selected.title}</p>
+              <p ref={selectedInspectorRef} className="role-surface-memory-path focus-ring" tabIndex={-1}>
+                {selected.title}
+              </p>
               {selected.notes && <p className="role-surface-memory-excerpt">{selected.notes}</p>}
               <dl className="role-surface-facts">
                 <dt>Lane</dt>
