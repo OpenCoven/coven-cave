@@ -6,7 +6,7 @@ import { IconButton, type IconButtonProps } from "./icon-button";
 import { Popover, PopoverBody, type PopoverProps } from "./popover";
 
 const ENABLED_MENU_ITEM_SELECTOR =
-  '[role="menuitem"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemradio"]:not(:disabled):not([aria-disabled="true"])';
+  '[role="menuitem"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemradio"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemcheckbox"]:not(:disabled):not([aria-disabled="true"])';
 
 export type OverflowMenuProps = {
   /** Accessible name for both the trigger and the menu (e.g. "More actions"). */
@@ -108,7 +108,7 @@ export function OverflowMenu({
   // consumer to thread a close() through their onSelect handlers.
   const onBodyClick = useCallback((e: React.MouseEvent) => {
     const item = (e.target as Element).closest?.(
-      '[role="menuitem"], [role="menuitemradio"]',
+      '[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]',
     );
     if (
       item &&
