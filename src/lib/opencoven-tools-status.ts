@@ -549,6 +549,7 @@ export function composeOpenCovenToolReadinessStatus(
 
 export async function verifyOpenCovenToolInstall(
   id: OpenCovenToolId,
+  options: { binaryPath?: string; env?: NodeJS.ProcessEnv } = {},
 ): Promise<OpenCovenToolVerification<OpenCovenToolId>> {
   const tool = OPEN_COVEN_TOOLS.find((candidate) => candidate.id === id);
   if (!tool) throw new Error("unknown OpenCoven tool");
@@ -556,9 +557,11 @@ export async function verifyOpenCovenToolInstall(
   // Rebuild PATH before both discovery and registry lookup. This is the
   // authoritative post-install check: it must not inherit the pre-install
   // cache that made a stale launcher look like a successful update.
-  const env = refreshCovenSpawnEnv();
+  const env = options.env ?? refreshCovenSpawnEnv();
   const [probe, latestCheck] = await Promise.all([
-    discoverOpenCovenTool(tool, { env }),
+    options.binaryPath
+      ? probeOpenCovenBinaryAt(tool, options.binaryPath, env)
+      : discoverOpenCovenTool(tool, { env }),
     checkNpmLatestVersion(tool, { env: () => env, refreshEnv: () => env }),
   ]);
   const latest = latestCheck.status === "verified" ? latestCheck.latest : null;

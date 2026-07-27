@@ -542,34 +542,6 @@ export function Workspace() {
     }
   }, []);
 
-  // ── Mode-transition crossfade ──────────────────────────────────────────
-  // The `.cave-mode-fade` CSS animation only plays on the wrapper's *initial*
-  // mount. Re-firing it on a mode switch would need `key={mode}` on the
-  // wrapper, which is deliberately forbidden — the key remounts keepalive
-  // surfaces (it once killed the terminal's PTYs on every switch; pinned in
-  // comux-view-terminal.test.ts). Instead, replay a short opacity fade on the
-  // (persistent) wrapper via WAAPI whenever `mode` changes. Opacity-only, so it
-  // never applies a transform and therefore never becomes the containing block
-  // for position:fixed descendants (the cave-cco trap that forced 4 portal
-  // workarounds). Skips the first run (initial entrance is the CSS animation)
-  // and honors prefers-reduced-motion.
-  const detailFadeRef = useRef<HTMLDivElement>(null);
-  const modeFadeAnimRef = useRef<Animation | null>(null);
-  const modeFadeReadyRef = useRef(false);
-  useLayoutEffect(() => {
-    if (!modeFadeReadyRef.current) {
-      modeFadeReadyRef.current = true;
-      return;
-    }
-    const el = detailFadeRef.current;
-    if (!el || typeof el.animate !== "function") return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    modeFadeAnimRef.current?.cancel();
-    modeFadeAnimRef.current = el.animate(
-      [{ opacity: 0 }, { opacity: 1 }],
-      { duration: 120, easing: "ease-out" },
-    );
-  }, [mode]);
   // Drag-to-split: up to three secondary surfaces opened beside the primary
   // one (four visible pages total). Targets are draggable pages or companion
   // surfaces (Salem / Memory / Browser) re-homed from the removed right rail.
@@ -3056,10 +3028,7 @@ export function Workspace() {
 
   const detailContent = renderSurface(mode);
   const detail = (
-    <div
-      ref={detailFadeRef}
-      className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden"
-    >
+    <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
       <h1 className="sr-only">
         {(isRoleSurfaceMode(mode)
           ? getRoleSurface(parseRoleSurfaceMode(mode) ?? "")?.title

@@ -391,8 +391,8 @@ export function findActiveMention(
   if (i < 0 || text[i] !== "@") return null;
   if (!isMentionBoundary(i === 0 ? "" : text[i - 1])) return null;
   const query = text.slice(i + 1, caret);
-  const completed = completedName?.trim().toLocaleLowerCase();
-  const normalizedQuery = query.toLocaleLowerCase();
+  const completed = completedName?.trim().toLowerCase();
+  const normalizedQuery = query.toLowerCase();
   if (
     completed &&
     normalizedQuery.startsWith(completed) &&

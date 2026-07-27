@@ -310,11 +310,14 @@ assert.doesNotMatch(
   "The tool clamp must not introduce a second scroll container — the wrap already scrolls",
 );
 
-const renderCodeBlockFn = /async function renderCodeBlock\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const frameStart = source.indexOf("function renderCodeBlockFrame");
+const frameEnd = source.indexOf("\nasync function renderCodeBlock", frameStart);
+const renderCodeBlockFrameFn =
+  frameStart >= 0 && frameEnd > frameStart ? source.slice(frameStart, frameEnd) : "";
 assert.match(
-  renderCodeBlockFn,
+  renderCodeBlockFrameFn,
   /cave-code-expand-btn/,
-  "renderCodeBlock must emit the Show more footer button for clamp-height blocks",
+  "the shared plain/highlighted code frame must emit the Show more footer for clamp-height blocks",
 );
 assert.match(
   source,

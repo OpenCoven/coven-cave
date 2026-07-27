@@ -118,3 +118,4 @@ ds-bundle/
 .design-sync/node_modules
 /.worktrees
 /.cave-trash
+/.opencode

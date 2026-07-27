@@ -523,6 +523,20 @@ test("findActiveMention: picker-confirmed mention stays complete before punctuat
   });
 });
 
+test("findActiveMention: picker completion uses locale-independent case folding", () => {
+  const originalToLocaleLowerCase = String.prototype.toLocaleLowerCase;
+  String.prototype.toLocaleLowerCase = function (this: string): string {
+    return originalToLocaleLowerCase.call(this, "tr");
+  };
+
+  try {
+    const text = "@iris ";
+    assert.equal(findActiveMention(text, text.length, "IRIS"), null);
+  } finally {
+    String.prototype.toLocaleLowerCase = originalToLocaleLowerCase;
+  }
+});
+
 test("findActiveMention: a new @ starts a fresh search after a completed mention", () => {
   const text = "hello @Sage what do you think? @";
   assert.deepEqual(findActiveMention(text, text.length, "Sage"), {
