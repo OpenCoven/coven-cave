@@ -164,6 +164,7 @@ export type DaemonRequest = {
   path: string;
   body?: unknown;
   timeoutMs?: number;
+  maxResponseBytes?: number;
 };
 
 export type DaemonResponse<T = unknown> = {
@@ -178,9 +179,16 @@ export async function callDaemon<T = unknown>({
   path: reqPath,
   body,
   timeoutMs = 4000,
+  maxResponseBytes,
 }: DaemonRequest): Promise<DaemonResponse<T>> {
   const target = await loadDaemonTarget();
-  return callDaemonTarget<T>(target, { method, path: reqPath, body, timeoutMs });
+  return callDaemonTarget<T>(target, {
+    method,
+    path: reqPath,
+    body,
+    timeoutMs,
+    maxResponseBytes,
+  });
 }
 
 export async function callDaemonTarget<T = unknown>(
@@ -190,6 +198,7 @@ export async function callDaemonTarget<T = unknown>(
     path: reqPath,
     body,
     timeoutMs = 4000,
+    maxResponseBytes,
   }: DaemonRequest,
 ): Promise<DaemonResponse<T>> {
   if (target.mode === "unconfigured-hub") {
@@ -201,14 +210,26 @@ export async function callDaemonTarget<T = unknown>(
     };
   }
 
-  const first = await callDaemonTargetOnce<T>(target, { method, path: reqPath, body, timeoutMs });
+  const first = await callDaemonTargetOnce<T>(target, {
+    method,
+    path: reqPath,
+    body,
+    timeoutMs,
+    maxResponseBytes,
+  });
   // Retry transport-level failures (status 0: timeout/reset/refused) once for
   // reads — a briefly-busy daemon must not surface a hard error for a GET
   // (the /api/familiars 503 flake). Mutations never retry: a timed-out POST
   // may have been applied. HTTP-level errors (a real status) never retry.
   if (!first.ok && first.status === 0 && method === "GET") {
     await new Promise((resolve) => setTimeout(resolve, GET_RETRY_DELAY_MS));
-    return callDaemonTargetOnce<T>(target, { method, path: reqPath, body, timeoutMs });
+    return callDaemonTargetOnce<T>(target, {
+      method,
+      path: reqPath,
+      body,
+      timeoutMs,
+      maxResponseBytes,
+    });
   }
   return first;
 }
@@ -222,6 +243,7 @@ function callDaemonTargetOnce<T = unknown>(
     path: reqPath,
     body,
     timeoutMs = 4000,
+    maxResponseBytes,
   }: DaemonRequest,
 ): Promise<DaemonResponse<T>> {
   return new Promise((resolve) => {
@@ -274,7 +296,25 @@ function callDaemonTargetOnce<T = unknown>(
       requestOptions,
       (res) => {
         const chunks: Buffer[] = [];
-        res.on("data", (c) => chunks.push(c));
+        let responseBytes = 0;
+        res.on("data", (chunk: Buffer | string) => {
+          const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          responseBytes += bytes.byteLength;
+          if (
+            maxResponseBytes !== undefined &&
+            responseBytes > maxResponseBytes
+          ) {
+            settle({
+              ok: false,
+              status: res.statusCode ?? 502,
+              data: null,
+              error: "daemon response exceeded size limit",
+            });
+            res.destroy();
+            return;
+          }
+          chunks.push(bytes);
+        });
         // A response that errors mid-body (daemon crash, connection reset)
         // never emits "end" — without this handler the promise would hang.
         res.on("error", (err) => {

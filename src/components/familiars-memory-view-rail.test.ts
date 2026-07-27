@@ -1,4 +1,3 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -46,8 +45,8 @@ assert.match(
 
 assert.match(
   source,
-  /\{compact\s*&&\s*loaded\s*&&(?:\s*!error\s*&&)?\s*visibleCoven\.length\s*===\s*0\s*&&\s*visibleFiles\.length\s*===\s*0\s*\?/,
-  "Shared empty state must only render in compact mode when both lists are empty after load (optional !error guard)",
+  /const listPresentation = memoryListPresentation\(\{[\s\S]*?canonicalState: canonicalState\.state,[\s\S]*?filesState: filesState\.state,[\s\S]*?rowCount: unifiedRows\.length,[\s\S]*?\}\);[\s\S]*?\{listPresentation === "empty" \?/,
+  "Shared empty state renders only after both independent feeds settle successfully with no rows",
 );
 
 // ───────── Task 5: vertical stack / balanced columns ─────────

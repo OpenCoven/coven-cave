@@ -14,7 +14,12 @@ import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useUserProfile, userAvatarUrl, userDisplayName } from "@/lib/user-profile";
 import { useFamiliarContracts } from "@/lib/use-familiar-contracts";
-import { buildFamiliarCardStats, type CovenMemoryEntry } from "@/components/familiars-view-stats";
+import {
+  buildFamiliarCardStats,
+  type CanonicalMemoryAvailability,
+} from "@/components/familiars-view-stats";
+import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
+import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { useHeatTip } from "@/components/ui/heat-tip";
 import { formatHeatTip } from "@/lib/heat-tip";
@@ -47,7 +52,8 @@ type BentoData = {
   github: GitHubItem[];
   inbox: InboxItem[];
   sessions: SessionRow[];
-  memory: CovenMemoryEntry[];
+  memory: CanonicalMemorySummary[];
+  memoryAvailability: CanonicalMemoryAvailability;
   projects: number | null;
 };
 
@@ -58,6 +64,7 @@ const EMPTY: BentoData = {
   inbox: [],
   sessions: [],
   memory: [],
+  memoryAvailability: "unavailable",
   projects: null,
 };
 
@@ -104,7 +111,14 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
       if (r?.items) put("inbox", r.items);
     });
     void getJson<{ sessions: SessionRow[] }>("/api/sessions/list").then((r) => put("sessions", r?.sessions ?? []));
-    void getJson<{ entries: CovenMemoryEntry[] }>("/api/coven-memory").then((r) => put("memory", r?.entries ?? []));
+    void loadCanonicalMemoryList().then((memory) => {
+      if (memory.state === "ready") {
+        put("memory", memory.entries);
+        put("memoryAvailability", "ready");
+      } else {
+        put("memoryAvailability", "unavailable");
+      }
+    });
     void getJson<{ ok: boolean; projects: unknown[] }>("/api/projects").then((r) =>
       put("projects", Array.isArray(r?.projects) ? r.projects.length : null),
     );
@@ -169,8 +183,14 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
   );
 
   const famStats = useMemo(
-    () => buildFamiliarCardStats({ familiars: data.familiars, sessions: data.sessions, covenEntries: data.memory, now: nowMs }),
-    [data.familiars, data.sessions, data.memory, nowMs],
+    () => buildFamiliarCardStats({
+      familiars: data.familiars,
+      sessions: data.sessions,
+      covenEntries: data.memory,
+      memoryAvailability: data.memoryAvailability,
+      now: nowMs,
+    }),
+    [data.familiars, data.memory, data.memoryAvailability, data.sessions, nowMs],
   );
 
   const carousel = useMemo(

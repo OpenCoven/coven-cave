@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { copyFile, link, mkdtemp, mkdir, rm, unlink, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdtemp, mkdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -13,13 +13,19 @@ const familiarWorkspace = path.join(home, "familiars", "ember");
 const bin = path.join(familiarWorkspace, "bin");
 await mkdir(familiarWorkspace, { recursive: true });
 await mkdir(bin, { recursive: true });
+const hermesExecutable = path.join(
+  bin,
+  process.platform === "win32" ? "hermes.exe" : "hermes",
+);
 
 const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
+const previousHermesBin = process.env.HERMES_BIN;
 const previousPath = process.env.PATH;
 const previousPathCase = process.env.Path;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
+process.env.HERMES_BIN = hermesExecutable;
 // A relative PATH entry must resolve from the familiar workspace used by the
 // preflight, model probe, and direct child — not from the test/server cwd.
 if (process.platform === "win32") delete process.env.Path;
@@ -46,7 +52,13 @@ function assertNoFabricatedAssistantResponse(body, events) {
 try {
   const { refreshCovenBin, refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
   refreshCovenBin();
-  refreshCovenSpawnEnv();
+  const spawnEnv = refreshCovenSpawnEnv();
+  const { resolveHermesLaunch } = await import("@/lib/runtime-availability");
+  assert.equal(
+    resolveHermesLaunch({ env: spawnEnv, cwd: familiarWorkspace }).state,
+    "missing",
+    "the explicit Hermes fixture isolates discovery from every host PATH fallback",
+  );
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
@@ -81,9 +93,8 @@ try {
   // launched. The direct native command differs by platform, yet neither
   // failure may become a generic authentication/no-output assistant message.
   {
-    const brokenName = process.platform === "win32" ? "hermes.exe" : "hermes";
     await writeFile(
-      path.join(bin, brokenName),
+      hermesExecutable,
       process.platform === "win32"
         ? "not an executable\n"
         : `#!${path.join(home, "missing-interpreter")}\nexit 0\n`,
@@ -108,16 +119,22 @@ try {
   // have its `chat` script write to stdout: failed Hermes output must not leak
   // as an assistant reply before the structured runtime error.
   {
-    const executable = path.join(bin, process.platform === "win32" ? "hermes.exe" : "hermes");
-    await unlink(executable);
+    await unlink(hermesExecutable);
     await writeFile(
       path.join(familiarWorkspace, "chat"),
       'process.stderr.write("session_id: failed-hermes-session\\n"); process.stdout.write("Hermes authentication failed\\n"); process.exit(1);\\n',
     );
-    try {
-      await link(process.execPath, executable);
-    } catch {
-      await copyFile(process.execPath, executable);
+    if (process.platform === "win32") {
+      try {
+        await link(process.execPath, hermesExecutable);
+      } catch {
+        await copyFile(process.execPath, hermesExecutable);
+      }
+    } else {
+      // Homebrew Node loads libnode relative to the original executable.
+      // A hard link or copy relocated under this fixture exits in dyld before
+      // it can execute `chat`; a symlink preserves the real loader location.
+      await symlink(process.execPath, hermesExecutable);
     }
     const response = await POST(new Request("http://localhost/api/chat/send", {
       method: "POST",
@@ -189,6 +206,8 @@ try {
   else process.env.COVEN_HOME = previousHome;
   if (previousCaveHome === undefined) delete process.env.COVEN_CAVE_HOME;
   else process.env.COVEN_CAVE_HOME = previousCaveHome;
+  if (previousHermesBin === undefined) delete process.env.HERMES_BIN;
+  else process.env.HERMES_BIN = previousHermesBin;
   if (previousPath === undefined) delete process.env.PATH;
   else process.env.PATH = previousPath;
   if (previousPathCase === undefined) delete process.env.Path;

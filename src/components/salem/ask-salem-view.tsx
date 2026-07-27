@@ -17,6 +17,7 @@ import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { SalemCat, type SalemMood } from "./salem-cat";
 import {
   clearThread,
@@ -53,10 +54,10 @@ async function fetchJson(url: string): Promise<unknown | null> {
 
 /** Gather the local Cave index corpora for a question (best-effort). */
 async function gatherLocalCorpora(query: string) {
-  const [search, board, coven, fs] = await Promise.all([
+  const [search, board, canonical, fs] = await Promise.all([
     fetchJson(`/api/chat/search?q=${encodeURIComponent(query)}`),
     fetchJson("/api/board"),
-    fetchJson("/api/coven-memory"),
+    loadCanonicalMemoryList(),
     fetchJson("/api/memory"),
   ]);
   const hits = (search as { ok?: boolean; hits?: unknown })?.ok
@@ -65,16 +66,19 @@ async function gatherLocalCorpora(query: string) {
   const cards = (board as { ok?: boolean; cards?: unknown })?.ok
     ? (board as { cards?: unknown }).cards
     : null;
-  const covenEntries = (coven as { ok?: boolean; entries?: unknown })?.ok
-    ? (coven as { entries?: unknown }).entries
-    : null;
   const fsEntries = (fs as { ok?: boolean; entries?: unknown })?.ok
     ? (fs as { entries?: unknown }).entries
     : null;
   return {
     conversationHits: Array.isArray(hits) ? hits : [],
     cards: Array.isArray(cards) ? cards : [],
-    covenMemory: Array.isArray(covenEntries) ? covenEntries : [],
+    covenMemory: canonical.state === "ready" ? canonical.entries.map((entry) => ({
+      title: entry.title,
+      familiarId: entry.familiarId,
+      excerpt: entry.excerpt,
+      sourceLabel: entry.source.label,
+      verificationState: entry.verification.state,
+    })) : [],
     fsMemory: Array.isArray(fsEntries) ? fsEntries : [],
   };
 }

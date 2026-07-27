@@ -1,4 +1,3 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -11,7 +10,7 @@ const source = [
 
 assert.match(
   source,
-  /const \[sourceFilter, setSourceFilter\] = useSurfacePreference\(surfacePreferenceSpecs\.familiarMemory\.source\);/,
+  /const \[sourceFilter, setSourceFilter\] = useSurfacePreference\(\s*surfacePreferenceSpecs\.familiarMemory\.source,\s*\);/,
   "FamiliarsMemoryView must persist its source-kind filter through the Workspace registry",
 );
 
@@ -22,7 +21,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const next = activeFamiliar\?\.id && familiarIds\.has\(activeFamiliar\.id\)/,
+  /const next =\s*activeFamiliar\?\.id && familiarIds\.has\(activeFamiliar\.id\)/,
   "the active familiar remains a fallback when no valid Memory preference exists",
 );
 
@@ -45,8 +44,11 @@ assert.match(
 );
 
 for (const wired of ["coven-origin", "external-harness", "runtime"]) {
-  assert.ok(
-    source.includes(`s === "${wired}" ? "all" : "${wired}"`),
+  assert.match(
+    source,
+    new RegExp(
+      `current === "${wired}"\\s*\\?\\s*"all"\\s*:\\s*"${wired}"`,
+    ),
     `Clicking the ${wired} chip must toggle the filter on/off`,
   );
 }
@@ -73,14 +75,14 @@ assert.match(
 
 assert.match(
   source,
-  /setFileLimit\(\(n\) => n \+ FILE_PAGE\)/,
+  /setFileLimit\(\(current\) => current \+ FILE_PAGE\)/,
   "Show-more must grow the file render cap incrementally",
 );
 
 // Pagination resets when the result set changes underneath the user.
 assert.match(
   source,
-  /useEffect\(\(\) => \{ setFileLimit\(FILE_PAGE\); \}, \[q, sourceFilter, effectiveFamiliarFilter, staleOnly, sortMode\]\);/,
+  /useEffect\(\(\) => \{\s*setFileLimit\(FILE_PAGE\);\s*\}, \[\s*effectiveFamiliarFilter,\s*normalizedQuery,\s*sortMode,\s*sourceFilter,\s*staleOnly,\s*\]\);/,
   "File pagination must reset on query / filter / familiar change",
 );
 

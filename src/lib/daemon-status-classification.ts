@@ -44,7 +44,7 @@ type DaemonStatusPayload = {
 };
 
 export type DaemonStatusPollResult =
-  | { kind: "running" }
+  | { kind: "running"; targetMode: "local" | "hub" }
   | { kind: "offline"; targetMode: "local" }
   | { kind: "auth-expired" }
   | { kind: "unavailable"; reason: string };
@@ -89,7 +89,13 @@ export function classifyDaemonStatusPoll(input: {
   if (!payload || typeof payload.running !== "boolean") {
     return { kind: "unavailable", reason: "status service returned an invalid response" };
   }
-  if (payload.running) return { kind: "running" };
+  if (payload.running) {
+    const targetMode = payload.target?.mode;
+    if (targetMode === "local" || targetMode === "hub") {
+      return { kind: "running", targetMode };
+    }
+    return { kind: "unavailable", reason: "status service returned an invalid target" };
+  }
 
   const reason = payloadReason(payload);
   const availability = payloadAvailability(payload);

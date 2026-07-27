@@ -29,7 +29,11 @@ assert.match(
 assert.match(lib, /window\.history\.replaceState/, "the hash is written before the mode switch");
 
 assert.match(reader, /openGrimoireDoc\("memory", row\.contentPath/, "memory reader links its file to the Grimoire");
-assert.match(reader, /row\.contentPath \?/, "reader only offers the link when the file path resolved");
+assert.match(
+  reader,
+  /row: FileMemoryRow \| null/,
+  "the Grimoire link is confined to the file-only reader",
+);
 assert.match(inspector, /openGrimoireDoc\("memory", path\)/, "chat inspector's memory file view links to the Grimoire");
 assert.match(inspector, /aria-label="Open in Memories"/, "inspector link is labelled");
 

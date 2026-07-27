@@ -80,6 +80,43 @@ assert.deepEqual(
   "an older status route's exact local-offline payload remains compatible",
 );
 
+assert.deepEqual(
+  classifyDaemonStatusPoll({
+    responseStatus: 200,
+    responseOk: true,
+    payload: { running: true, target: { mode: "local" } },
+  }),
+  { kind: "running", targetMode: "local" },
+  "a healthy local target preserves its mode",
+);
+
+assert.deepEqual(
+  classifyDaemonStatusPoll({
+    responseStatus: 200,
+    responseOk: true,
+    payload: { running: true, target: { mode: "hub" } },
+  }),
+  { kind: "running", targetMode: "hub" },
+  "a healthy hub target preserves its mode",
+);
+
+for (const [name, target] of [
+  ["missing target", undefined],
+  ["missing target mode", {}],
+  ["unknown target mode", { mode: "remote" }],
+  ["unconfigured hub target", { mode: "unconfigured-hub" }],
+]) {
+  assert.equal(
+    classifyDaemonStatusPoll({
+      responseStatus: 200,
+      responseOk: true,
+      payload: { running: true, ...(target === undefined ? {} : { target }) },
+    }).kind,
+    "unavailable",
+    name,
+  );
+}
+
 for (const [name, input] of [
   ["route HTTP failure", { responseStatus: 500, responseOk: false, payload: null }],
   ["malformed payload", { responseStatus: 200, responseOk: true, payload: { nope: true } }],

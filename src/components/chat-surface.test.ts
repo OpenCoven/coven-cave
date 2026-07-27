@@ -137,14 +137,14 @@ assert.doesNotMatch(
 
 assert.match(
   agentsMemoryView,
-  /fetch\("\/api\/coven-memory"/,
-  "Agents memory view should load daemon-backed Coven memory",
+  /loadCanonicalMemoryList\(\)[\s\S]*loadCanonicalMemoryOverview\(\)/,
+  "Familiars memory should load daemon-backed canonical landing resources",
 );
 
 assert.match(
   agentsMemoryView,
-  /fetch\("\/api\/memory"/,
-  "Agents memory view should load filesystem memory indexes",
+  /readSurfaceResource<FileMemoryResponse>\(\s*"memory:list",\s*force,\s*\)/,
+  "Familiars memory should load filesystem memory through the shared resource",
 );
 
 assert.match(
