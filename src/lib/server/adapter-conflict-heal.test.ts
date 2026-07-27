@@ -15,10 +15,31 @@ import {
   SHADOWED_MANIFEST_SUFFIX,
 } from "./adapter-conflict-heal.ts";
 import { ensureAdapterManifestScaffold } from "./adapter-manifest-scaffold.ts";
-import { adapterManifestScaffoldForHarness } from "../harness-adapters.ts";
 
 const CLI_ERROR =
   "Error: external harness adapter `copilot` in /Users/buns/.coven/adapters/copilot.json conflicts with a built-in harness";
+
+function legacyHermesShimManifest(): string {
+  return `${JSON.stringify({
+    adapters: [{
+      id: "hermes",
+      label: "Hermes Agent",
+      executable: "hermes-coven",
+      interactive_prompt_prefix_args: ["chat", "--source", "coven"],
+      non_interactive_prompt_prefix_args: ["chat", "--source", "coven", "-Q"],
+      install_hint: "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
+      model_flag: "--model",
+      capabilities: {
+        stream: false,
+        preassigned_session_id: false,
+        think: false,
+        speed: false,
+      },
+      version: "1.0.2",
+      description: "Hermes adapter with native model forwarding. Uses the hermes-coven shim so the harness trailing positional prompt is remapped to hermes chat -q/--query without changing model arguments.",
+    }],
+  }, null, 2)}\n`;
+}
 
 test("detectBuiltinAdapterConflict parses the released CLI error line", () => {
   const conflict = detectBuiltinAdapterConflict(CLI_ERROR);
@@ -107,10 +128,8 @@ test("marker suffix keeps quarantined files off the CLI's .json dir scan", () =>
 test("Hermes manifest repair uses the active COVEN_HOME adapters directory", async () => {
   const covenHome = await mkdtemp(path.join(tmpdir(), "coven-home-"));
   const manifestPath = path.join(covenHome, "adapters", "hermes.json");
-  const legacyManifest = adapterManifestScaffoldForHarness("hermes", "linux");
-  assert.ok(legacyManifest);
   await mkdir(path.dirname(manifestPath), { recursive: true });
-  await writeFile(manifestPath, legacyManifest.contents, "utf8");
+  await writeFile(manifestPath, legacyHermesShimManifest(), "utf8");
   const previous = process.env.COVEN_HOME;
   process.env.COVEN_HOME = covenHome;
   try {
@@ -120,7 +139,7 @@ test("Hermes manifest repair uses the active COVEN_HOME adapters directory", asy
     );
     const manifest = JSON.parse(await readFileFs(manifestPath, "utf8"));
     assert.equal(manifest.adapters[0].executable, "hermes");
-    assert.equal(manifest.adapters[0].prompt_flag, "-q");
+    assert.equal(manifest.adapters[0].prompt_flag, "--query");
   } finally {
     if (previous === undefined) delete process.env.COVEN_HOME;
     else process.env.COVEN_HOME = previous;
@@ -130,9 +149,7 @@ test("Hermes manifest repair uses the active COVEN_HOME adapters directory", asy
 test("Hermes manifest repair preserves a formatting-only user manifest", async () => {
   const covenHome = await mkdtemp(path.join(tmpdir(), "coven-home-"));
   const manifestPath = path.join(covenHome, "adapters", "hermes.json");
-  const legacyManifest = adapterManifestScaffoldForHarness("hermes", "linux");
-  assert.ok(legacyManifest);
-  const userContents = JSON.stringify(JSON.parse(legacyManifest.contents));
+  const userContents = JSON.stringify(JSON.parse(legacyHermesShimManifest()));
   await mkdir(path.dirname(manifestPath), { recursive: true });
   await writeFile(manifestPath, userContents, "utf8");
 

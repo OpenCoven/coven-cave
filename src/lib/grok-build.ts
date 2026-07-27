@@ -1,14 +1,14 @@
 // Native Grok Build headless integration.
 //
-// This deliberately does not read the coven-runtimes registry: Grok's
-// proposed registry adapter is not merged, while Cave needs the CLI's real
-// streaming/session contract to drive a local chat safely.
+// Cave owns Grok's native streaming/session integration while the synced
+// registry supplies shared launch metadata such as model-id transformation.
 
 import {
   BUILTIN_GROK_SCHEMA_BUNDLE,
   parseGrokCompatibilityEvent,
   type GrokEventSchema,
 } from "./grok-compatibility.ts";
+import { runtimeModelIdForLaunch } from "./runtime-models.ts";
 
 export type RuntimeModelOption = { id: string; label: string };
 export type GrokSandboxProfile = "full" | "read";
@@ -44,12 +44,6 @@ export function parseGrokModels(output: string): {
     models.set(defaultModel, { id: defaultModel, label: `${defaultModel} (default)` });
   }
   return { models: [...models.values()], defaultModel };
-}
-
-function bareModel(model: string | null): string | null {
-  if (!model) return null;
-  const slash = model.lastIndexOf("/");
-  return slash >= 0 ? model.slice(slash + 1) || null : model;
 }
 
 /**
@@ -119,7 +113,7 @@ export function buildGrokBuildArgs(input: {
   if (input.outputFormat === "streaming-json") args.push("--output-format", input.outputFormat);
   if (input.resumeSessionId) args.push("--resume", input.resumeSessionId);
   else if (input.newSessionId) args.push("--session-id", input.newSessionId);
-  const model = bareModel(input.model);
+  const model = runtimeModelIdForLaunch("grok", input.model);
   if (model) args.push("--model", model);
   // Headless runs cannot wait for an interactive approval prompt. Full access
   // is an explicit user selection; read uses Grok's native read-only sandbox

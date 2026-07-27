@@ -19,6 +19,14 @@ const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
   "utf8",
 );
+const copilotStream = await readFile(
+  new URL("../../../../lib/copilot-stream.ts", import.meta.url),
+  "utf8",
+);
+const grokBuild = await readFile(
+  new URL("../../../../lib/grok-build.ts", import.meta.url),
+  "utf8",
+);
 const capabilityProbes = await readFile(
   new URL("./chat-send-capabilities.ts", import.meta.url),
   "utf8",
@@ -73,6 +81,60 @@ assert.match(
   chatRoute,
   /buildSshSpawnArgs\(\{[\s\S]*?model: forwardModel,[\s\S]*?\}\)/,
   "SSH spawn args should forward the same gated model",
+);
+
+// Direct native launches consume registry-owned model-id transforms. Copilot
+// and Grok apply them in their focused argv builders; Hermes and OpenCode do
+// so at the route's direct transport boundary. Generic Coven/SSH delegation
+// retains the provider-qualified id because Coven applies the transform.
+assert.match(
+  copilotStream,
+  /runtimeModelIdForLaunch\("copilot", launch\.model\)/,
+  "Copilot direct argv must consume its registry model-id transform",
+);
+assert.match(
+  grokBuild,
+  /runtimeModelIdForLaunch\("grok", input\.model\)/,
+  "Grok direct argv must consume its registry model-id transform",
+);
+assert.match(
+  chatRoute,
+  /const hermesLaunchModel = hermesDirect\s*\?\s*runtimeModelIdForLaunch\("hermes", forwardModel\)\s*:\s*null;/,
+  "Hermes direct transports must derive their launch-only model from registry metadata",
+);
+assert.match(
+  chatRoute,
+  /const openCodeLaunchModel = openCodeDirect\s*\?\s*runtimeModelIdForLaunch\("opencode", forwardModel\)\s*:\s*null;/,
+  "OpenCode direct argv must derive its launch-only model from registry metadata",
+);
+assert.match(
+  chatRoute,
+  /if \(hermesLaunchModel\) a\.push\("--model", hermesLaunchModel\);/,
+  "Hermes native CLI argv uses the transformed launch value",
+);
+assert.match(
+  chatRoute,
+  /body: JSON\.stringify\(\{[\s\S]*?model: hermesLaunchModel,/,
+  "Hermes native API payload uses the transformed launch value",
+);
+assert.match(
+  chatRoute,
+  /if \(openCodeLaunchModel\) a\.push\("--model", openCodeLaunchModel\);/,
+  "OpenCode native argv uses the transformed launch value",
+);
+const genericCovenArgvBlock = chatRoute.match(
+  /const a = \["run", binding\.harness, "--stream-json"\];[\s\S]*?return a;/,
+);
+assert.ok(genericCovenArgvBlock, "generic Coven argv builder block should be present");
+assert.match(
+  genericCovenArgvBlock[0],
+  /if \(forwardModel\) a\.push\("--model", forwardModel\);/,
+  "Codex/Claude Coven delegation must retain the provider-qualified model id",
+);
+assert.match(
+  chatRoute,
+  /confirmedModel: forwardModel,[\s\S]*?responseMetadata\.confirmedModel = forwardModel;/,
+  "OpenCode confirmation metadata keeps the original provider-qualified model id",
 );
 
 // --model is emitted before the `--` separator, never after (the prompt is a
