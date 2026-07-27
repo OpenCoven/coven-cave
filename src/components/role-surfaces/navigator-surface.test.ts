@@ -214,12 +214,12 @@ test("compact Course and Card details rails stay mutually exclusive", () => {
   );
   assert.match(
     surface,
-    /onClick=\{\(\) => \{\s*patch\(\{ selectedId: card\.id, lane: "blocked" \}\);\s*setDetailsRailExpanded\(true\);\s*\}\}/,
+    /onClick=\{\(\) => \{\s*patch\(\{(?=[^}]*\bselectedId:\s*card\.id)(?=[^}]*\blane:\s*"blocked")[^}]*\}\);\s*setDetailsRailExpanded\(true\);\s*\}\}/,
     "blocked-card selection closes Course before opening Card details",
   );
   assert.match(
     surface,
-    /onClick=\{\(\) => \{\s*patch\(\{ selectedId: leg\.card\.id \}\);\s*setDetailsRailExpanded\(true\);\s*\}\}/,
+    /onClick=\{\(\) => \{\s*patch\(\{(?=[^}]*\bselectedId:\s*leg\.card\.id)[^}]*\}\);\s*setDetailsRailExpanded\(true\);\s*\}\}/,
     "upcoming-leg selection closes Course before opening Card details",
   );
 });
