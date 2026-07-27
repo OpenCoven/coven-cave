@@ -193,7 +193,8 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
       try {
         const res = await fetch(action.target, { method: "POST" });
         if (!res.ok) throw new Error(`status ${res.status}`);
-        await loadAlerts();
+        await loadAlerts({ retainData: true });
+        requestAnimationFrame(() => selectedInspectorRef.current?.focus());
         announce(`Ran "${action.label}".`);
       } catch {
         const message = `"${action.label}" failed.`;

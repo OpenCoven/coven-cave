@@ -40,4 +40,9 @@ test("scheduled deliveries do not turn inbox loading or failure into an empty sc
   );
   assert.match(scheduled, /scheduled\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
   assert.match(scheduled, /<SurfaceError[\s\S]*?live=\{false\}/, "the scheduled duplicate is non-live");
+  assert.match(
+    scheduled,
+    /<SurfaceLoading label="Loading scheduled messages…" live=\{false\}/,
+    "the scheduled loading copy is also non-live",
+  );
 });

@@ -4,13 +4,22 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from "rea
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { LiveRegionProvider } from "@/components/ui/live-region";
-import { clearRoleSurfaceStateForTest } from "@/lib/role-surface-state";
+import {
+  clearRoleSurfaceStateForTest,
+  writeRoleSurfaceState,
+} from "@/lib/role-surface-state";
 import type { Card } from "@/lib/cave-board-types";
 import type { Escalation } from "@/lib/escalations-types";
 import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
 import { IndexerSurface } from "./indexer-surface";
+import {
+  MESSENGER_INITIAL_STATE,
+  MessengerSurface,
+} from "./messenger-surface";
 import { NavigatorSurface } from "./navigator-surface";
+import { ScribeSurface } from "./scribe-surface";
 import { SentinelSurface } from "./sentinel-surface";
+import { MESSENGER_SURFACE_ID } from "./ids";
 import { SurfaceLoading, SurfaceRail } from "./surface-room";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -144,7 +153,12 @@ function memoryEntry(path: string): SurfaceMemoryEntry {
 }
 
 async function renderSurface(
-  component: typeof IndexerSurface | typeof NavigatorSurface | typeof SentinelSurface,
+  component:
+    | typeof IndexerSurface
+    | typeof MessengerSurface
+    | typeof NavigatorSurface
+    | typeof ScribeSurface
+    | typeof SentinelSurface,
   surfaceContext: RoleSurfaceContext,
   createNodeMock?: Parameters<typeof create>[1]["createNodeMock"],
 ): Promise<ReactTestRenderer> {
@@ -236,6 +250,18 @@ describe("SurfaceLoading live ownership", () => {
     expect(liveLoadingCount(renderer)).toBe(2);
     await act(async () => renderer.unmount());
   });
+
+  test("Messenger gives its shared inbox request one live loading owner", async () => {
+    const familiarId = "messenger-loading";
+    writeRoleSurfaceState(familiarId, MESSENGER_SURFACE_ID, {
+      ...MESSENGER_INITIAL_STATE,
+      drawerOpen: true,
+    });
+    globalThis.fetch = vi.fn(() => pending());
+    const renderer = await renderSurface(MessengerSurface, context(familiarId));
+    expect(liveLoadingCount(renderer)).toBe(1);
+    await act(async () => renderer.unmount());
+  });
 });
 
 describe("active selections control compact inspectors", () => {
@@ -288,6 +314,46 @@ describe("active selections control compact inspectors", () => {
 
     await act(async () => buttonContaining(renderer, "Second watch").props.onClick());
     expect(rightRail(renderer, "Alert details").props.expanded).toBe(true);
+    await act(async () => renderer.unmount());
+  });
+
+  test("Messenger opens Dispatch when a new draft becomes active", async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      if (String(input) === "/api/inbox") return response({ items: [] });
+      throw new Error(`unexpected fetch ${String(input)}`);
+    });
+    const renderer = await renderSurface(MessengerSurface, context("messenger-selection"));
+
+    expect(rightRail(renderer, "Dispatch").props.expanded).toBe(false);
+    await act(async () => buttonContaining(renderer, "New").props.onClick());
+    expect(rightRail(renderer, "Dispatch").props.expanded).toBe(true);
+
+    await act(async () => rightRail(renderer, "Dispatch").props.onExpandedChange(false));
+    expect(rightRail(renderer, "Dispatch").props.expanded).toBe(false);
+
+    await act(async () => buttonContaining(renderer, "New").props.onClick());
+    expect(rightRail(renderer, "Dispatch").props.expanded).toBe(true);
+    await act(async () => renderer.unmount());
+  });
+
+  test("Scribe opens Publishing when a new draft becomes active", async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "/api/journal") return response({ ok: true, days: [] });
+      if (url.startsWith("/api/knowledge?")) return response({ ok: true, entries: [] });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const renderer = await renderSurface(ScribeSurface, context("scribe-selection"));
+
+    expect(rightRail(renderer, "Publishing").props.expanded).toBe(false);
+    await act(async () => buttonContaining(renderer, "New").props.onClick());
+    expect(rightRail(renderer, "Publishing").props.expanded).toBe(true);
+
+    await act(async () => rightRail(renderer, "Publishing").props.onExpandedChange(false));
+    expect(rightRail(renderer, "Publishing").props.expanded).toBe(false);
+
+    await act(async () => buttonContaining(renderer, "New").props.onClick());
+    expect(rightRail(renderer, "Publishing").props.expanded).toBe(true);
     await act(async () => renderer.unmount());
   });
 });
@@ -403,6 +469,67 @@ describe("mutation revalidation keeps the selected inspector usable", () => {
     expect(focusTarget.props.tabIndex).toBe(-1);
     expect(focusTarget.props.className).toContain("focus-ring");
     expect(focused).toEqual(["Keep watch"]);
+    await act(async () => renderer.unmount());
+  });
+
+  test("Sentinel retains the alert and restores focus after a custom RPC action", async () => {
+    const initial = {
+      ...alert("alert-rpc", "Inspect source"),
+      actions: [
+        {
+          id: "recheck",
+          label: "Re-check source",
+          kind: "rpc" as const,
+          target: "/api/escalation-actions/recheck",
+        },
+      ],
+    };
+    const refresh = deferred<Response>();
+    let escalationReads = 0;
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/escalations") {
+        escalationReads += 1;
+        return escalationReads === 1
+          ? response({ ok: true, items: [initial] })
+          : refresh.promise;
+      }
+      if (url === "/api/hosts") return response({ ok: true, hosts: [] });
+      if (url === "/api/escalation-actions/recheck" && init?.method === "POST") {
+        return response({ ok: true });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    const focused: string[] = [];
+    const renderer = await renderSurface(
+      SentinelSurface,
+      context("sentinel-rpc-focus"),
+      (element) => {
+        if (element.type === "p" && element.props.className?.includes("role-surface-memory-path")) {
+          return {
+            focus: () => focused.push(String(element.props.children)),
+          };
+        }
+        return null;
+      },
+    );
+    await act(async () => buttonContaining(renderer, "Inspect source").props.onClick());
+
+    await act(async () => {
+      buttonContaining(renderer, "Re-check source").props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(buttonContaining(renderer, "Inspect source")).toBeDefined();
+    expect(rightRail(renderer, "Alert details").props.expanded).toBe(true);
+    expect(buttonContaining(renderer, "Re-check source").props.disabled).toBe(true);
+    expect(
+      renderer.root.findAllByType(SurfaceLoading).some((node) => node.props.label === "Loading alert details…"),
+    ).toBe(false);
+
+    await act(async () => refresh.resolve(response({ ok: true, items: [initial] })));
+    expect(focused).toEqual(["Inspect source"]);
     await act(async () => renderer.unmount());
   });
 });

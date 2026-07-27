@@ -231,6 +231,10 @@ test("surface announces mutations without duplicating source-load announcements"
   assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
   assert.match(surface, /announce\(`Resolved "\$\{title\}"\.`\)/);
   assert.match(surface, /announce\(`Moved "\$\{title\}" to \$\{STATE_LABELS\[nextState\]\}\.`\)/);
+  assert.match(
+    surface,
+    /const runAlertAction = useCallback\([\s\S]*?await loadAlerts\(\{ retainData: true \}\);[\s\S]*?selectedInspectorRef\.current\?\.focus\(\)/,
+  );
   assert.equal(
     surface.match(/announce\(message, "assertive"\)/g)?.length,
     2,

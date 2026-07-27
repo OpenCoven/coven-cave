@@ -34,6 +34,7 @@ import {
   SurfaceLoading,
   SurfaceRail,
   SurfaceRoom,
+  useActiveSelectionRail,
 } from "./surface-room";
 import { SCRIBE_SURFACE_ID } from "./ids";
 
@@ -156,7 +157,7 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   const newDraftButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreDraftFocusRef = useRef(false);
   const [leftRailExpanded, setLeftRailExpanded] = useState(false);
-  const [rightRailExpanded, setRightRailExpanded] = useState(false);
+  const [rightRailExpanded, setRightRailExpanded] = useActiveSelectionRail(state.selectedId);
   const newDraft = () => {
     const now = new Date().toISOString();
     const draft: ScribeDraft = {
@@ -169,6 +170,7 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
       publishedId: null,
     };
     patch({ drafts: [draft, ...state.drafts], selectedId: draft.id });
+    setRightRailExpanded(true);
   };
 
   const updateSelected = (update: Partial<ScribeDraft>) => {
@@ -310,7 +312,10 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
                     type="button"
                     className={`role-surface-row-btn focus-ring-inset${draft.id === state.selectedId ? " role-surface-row-btn--active" : ""}`}
                     aria-current={draft.id === state.selectedId ? "true" : undefined}
-                    onClick={() => patch({ selectedId: draft.id })}
+                    onClick={() => {
+                      patch({ selectedId: draft.id });
+                      setRightRailExpanded(true);
+                    }}
                   >
                     {draft.title.trim() || "Untitled"}
                     {draft.publishedId != null && <span className="role-surface-tag">published</span>}

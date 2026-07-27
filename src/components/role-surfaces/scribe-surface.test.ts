@@ -140,7 +140,14 @@ test("compact discard reopens Drafts before restoring focus", () => {
   assert.match(surface, /const newDraftButtonRef = useRef<HTMLButtonElement \| null>\(null\)/);
   assert.match(surface, /const restoreDraftFocusRef = useRef\(false\)/);
   assert.match(surface, /const \[leftRailExpanded, setLeftRailExpanded\] = useState\(false\)/);
-  assert.match(surface, /const \[rightRailExpanded, setRightRailExpanded\] = useState\(false\)/);
+  assert.match(
+    surface,
+    /const \[rightRailExpanded, setRightRailExpanded\] = useActiveSelectionRail\(state\.selectedId\)/,
+  );
+  assert.match(
+    surface,
+    /patch\(\{ drafts: \[draft, \.\.\.state\.drafts\], selectedId: draft\.id \}\);\s*setRightRailExpanded\(true\)/,
+  );
   assert.match(
     surface,
     /const discardSelected = \(\) => \{[\s\S]*?const title = selected\.title\.trim\(\) \|\| "Untitled";[\s\S]*?setRightRailExpanded\(false\);[\s\S]*?setLeftRailExpanded\(true\);[\s\S]*?restoreDraftFocusRef\.current = true;[\s\S]*?patch\([\s\S]*?announce\(`Discarded draft "\$\{title\}"\.`\)/,

@@ -27,6 +27,7 @@ import {
   SurfaceLoading,
   SurfaceRail,
   SurfaceRoom,
+  useActiveSelectionRail,
 } from "./surface-room";
 import { MESSENGER_SURFACE_ID } from "./ids";
 
@@ -107,6 +108,7 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
   });
 
   const selected = state.drafts.find((d) => d.id === state.selectedDraftId) ?? null;
+  const [dispatchExpanded, setDispatchExpanded] = useActiveSelectionRail(state.selectedDraftId);
 
   const newDraft = (channel: MessageChannel = "email") => {
     const draft: Draft = {
@@ -120,6 +122,7 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
       createdAt: new Date().toISOString(),
     };
     patch({ drafts: [draft, ...state.drafts], selectedDraftId: draft.id });
+    setDispatchExpanded(true);
   };
 
   const updateSelected = (update: Partial<Draft>) => {
@@ -176,7 +179,7 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
                 live={false}
               />
             ) : inbox == null ? (
-              <SurfaceLoading label="Loading scheduled messages…" />
+              <SurfaceLoading label="Loading scheduled messages…" live={false} />
             ) : scheduled.length === 0 ? (
               <SurfaceEmpty title="No scheduled messages." />
             ) : (
@@ -216,7 +219,10 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
                   <button
                     type="button"
                     className={`role-surface-row-btn focus-ring-inset${draft.id === state.selectedDraftId ? " role-surface-row-btn--active" : ""}`}
-                    onClick={() => patch({ selectedDraftId: draft.id })}
+                    onClick={() => {
+                      patch({ selectedDraftId: draft.id });
+                      setDispatchExpanded(true);
+                    }}
                   >
                     <span className="role-surface-tag">{CHANNEL_CONVENTIONS[draft.channel].label}</span>
                     {draft.subject || draft.body.slice(0, 40) || "(empty draft)"}
@@ -258,7 +264,10 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
                   <button
                     type="button"
                     className="role-surface-row-btn focus-ring-inset"
-                    onClick={() => patch({ selectedDraftId: draft.id })}
+                    onClick={() => {
+                      patch({ selectedDraftId: draft.id });
+                      setDispatchExpanded(true);
+                    }}
                   >
                     {draft.subject || draft.body.slice(0, 40) || "(empty draft)"}
                   </button>
@@ -336,7 +345,12 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
         )}
       </SurfaceCanvas>
 
-      <SurfaceRail side="right" label="Dispatch">
+      <SurfaceRail
+        side="right"
+        label="Dispatch"
+        expanded={dispatchExpanded}
+        onExpandedChange={setDispatchExpanded}
+      >
         {!selected ? (
           <RailSection title="Dispatch" iconName="ph:paper-plane-tilt">
             <SurfaceEmpty title="Select a draft to manage dispatch." />
