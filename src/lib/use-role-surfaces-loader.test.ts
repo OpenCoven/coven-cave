@@ -34,7 +34,7 @@ function response(ok: boolean, body: unknown): Response {
 test("memory access preserves a successful empty inventory", async () => {
   assert.equal(typeof roleSurfaceHooks.createMemoryAccess, "function");
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => response(true, { entries: [] });
+  globalThis.fetch = async () => response(true, { ok: true, entries: [] });
   try {
     const memory = roleSurfaceHooks.createMemoryAccess("salem");
     assert.deepEqual(await memory.listEntries(), []);
@@ -43,7 +43,7 @@ test("memory access preserves a successful empty inventory", async () => {
   }
 });
 
-test("memory access rejects network, non-OK, and malformed inventory failures", async () => {
+test("memory access rejects network, non-OK, failed, and malformed inventory responses", async () => {
   assert.equal(typeof roleSurfaceHooks.createMemoryAccess, "function");
   const originalFetch = globalThis.fetch;
   const memory = roleSurfaceHooks.createMemoryAccess("salem");
@@ -56,7 +56,26 @@ test("memory access rejects network, non-OK, and malformed inventory failures", 
     globalThis.fetch = async () => response(false, { entries: [] });
     await assert.rejects(memory.listEntries());
 
-    globalThis.fetch = async () => response(true, { entries: "not-an-array" });
+    globalThis.fetch = async () => response(true, { ok: false, entries: [] });
+    await assert.rejects(memory.listEntries());
+
+    globalThis.fetch = async () => response(true, { entries: [] });
+    await assert.rejects(memory.listEntries());
+
+    globalThis.fetch = async () =>
+      response(true, {
+        ok: true,
+        entries: [
+          {
+            relPath: "MEMORY.md",
+            fullPath: "/tmp/MEMORY.md",
+            rootLabel: "Familiar",
+            sourceKindLabel: "Memory",
+            size: "not-a-number",
+            modified: "2026-07-26T00:00:00.000Z",
+          },
+        ],
+      });
     await assert.rejects(memory.listEntries());
   } finally {
     globalThis.fetch = originalFetch;

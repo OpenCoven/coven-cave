@@ -64,8 +64,8 @@ export function createMemoryAccess(familiarId: string | null): MemoryAccess {
       if (!familiarId) return [];
       const res = await fetch(`/api/memory?familiarId=${encodeURIComponent(familiarId)}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`memory inventory request failed with status ${res.status}`);
-      const json = (await res.json()) as { entries?: unknown };
-      if (!Array.isArray(json?.entries) || !json.entries.every(isMemoryEntryWire)) {
+      const json = (await res.json()) as { ok?: unknown; entries?: unknown };
+      if (json?.ok !== true || !Array.isArray(json.entries) || !json.entries.every(isMemoryEntryWire)) {
         throw new Error("memory inventory response was malformed");
       }
       return json.entries.map((entry) => ({
