@@ -11,8 +11,10 @@
  * role-specific behavior lives behind this one component.
  */
 
-import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import {
   getRoleSurface,
   matchesShortcutCombo,
@@ -20,10 +22,11 @@ import {
   type RoleSurfaceContext,
   type RoleSurfaceContribution,
 } from "@/lib/role-surfaces";
+import { useRoleSurfaceStateSnapshot } from "@/lib/role-surface-state";
 
 /** A broken surface must never take the shell down with it. */
 class SurfaceErrorBoundary extends Component<
-  { surfaceTitle: string; children: ReactNode },
+  { surfaceTitle: string; onLeave: () => void; children: ReactNode },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -35,7 +38,10 @@ class SurfaceErrorBoundary extends Component<
       return (
         <div className="role-surface-unavailable" role="alert">
           <Icon name="ph:warning" width={20} height={20} aria-hidden />
-          <p>{this.props.surfaceTitle} hit an error and was unloaded.</p>
+          <p>{this.props.surfaceTitle} couldn't finish loading. Return to the Cave and reopen the room to try again.</p>
+          <button type="button" className="role-surface-chip focus-ring" onClick={this.props.onLeave}>
+            Back to the Cave
+          </button>
         </div>
       );
     }
@@ -63,6 +69,10 @@ export function RoleSurfaceHost({
 }) {
   const surface = getRoleSurface(surfaceId);
   const available = surface != null && context != null && visibleSurfaces.some((s) => s.id === surface.id);
+  const roleStateSnapshot = useRoleSurfaceStateSnapshot(
+    context?.activeFamiliar.id ?? null,
+    surface?.id ?? null,
+  );
 
   const contributions: RoleSurfaceContribution | null = useMemo(() => {
     if (!surface || !context || !available) return null;
@@ -71,7 +81,7 @@ export function RoleSurfaceHost({
     } catch {
       return null;
     }
-  }, [surface, context, available]);
+  }, [surface, context, available, roleStateSnapshot]);
 
   // Contributed keyboard shortcuts, active only while the room is open.
   const shortcutsRef = useRef(contributions?.keyboardShortcuts);
@@ -97,14 +107,15 @@ export function RoleSurfaceHost({
     return () => window.removeEventListener("keydown", onKey);
   }, [available]);
 
-  const [commandsOpen, setCommandsOpen] = useState(false);
-
   if (!context) {
     return (
       <div className="role-surface-unavailable">
         <Icon name="ph:user-circle" width={22} height={22} aria-hidden />
-        <p>Role surfaces are rooms built for one familiar at a time.</p>
-        <p className="role-surface-unavailable-hint">Choose a familiar to enter their rooms.</p>
+        <p>Choose a familiar before entering a room.</p>
+        <p className="role-surface-unavailable-hint">Each room is available through a familiar's roles.</p>
+        <button type="button" className="role-surface-chip focus-ring" onClick={onLeave}>
+          Back to the Cave
+        </button>
       </div>
     );
   }
@@ -132,68 +143,75 @@ export function RoleSurfaceHost({
   const statusIndicators = contributions?.statusIndicators ?? [];
   const toolbarActions = contributions?.toolbarActions ?? [];
   const commands = contributions?.commands ?? [];
+  const directActions = toolbarActions.slice(0, 2);
+  const overflowActions = toolbarActions.slice(2);
 
   return (
     <div className="role-surface-host">
       <header className="role-surface-header">
-        <span className="role-surface-header-title">
+        <span
+          className="role-surface-header-title"
+          role="group"
+          aria-label={`${surface.title}. ${surface.role} role. ${surface.description}`}
+          title={`${surface.role} · ${surface.description}`}
+        >
           <Icon name={surface.iconName} width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} aria-hidden />
           <h2>{surface.title}</h2>
-          <span className="role-surface-header-role">{surface.role}</span>
         </span>
         <span className="role-surface-header-status">
           {statusIndicators.map((indicator) => (
-            <span key={indicator.id} className="role-surface-status" title={indicator.detail}>
+            <span
+              key={indicator.id}
+              className="role-surface-status"
+              role="group"
+              title={indicator.detail}
+              aria-label={`${indicator.label}${indicator.detail ? `: ${indicator.detail}` : ""}`}
+            >
               <StatusDot tone={indicator.tone} />
               {indicator.label}
             </span>
           ))}
         </span>
         <span className="role-surface-header-actions">
-          {toolbarActions.map((action) => (
+          {directActions.map((action) => (
             <button
               key={action.id}
               type="button"
               className="role-surface-chip focus-ring"
               title={action.title}
+              aria-label={action.title}
               onClick={() => action.run(context)}
             >
               {action.iconName && <Icon name={action.iconName} width={14} height={14} aria-hidden />}
               {action.title}
             </button>
           ))}
-          {commands.length > 0 && (
-            <span className="role-surface-commands">
-              <button
-                type="button"
-                className="role-surface-chip focus-ring"
-                aria-expanded={commandsOpen}
-                aria-haspopup="menu"
-                onClick={() => setCommandsOpen((open) => !open)}
-              >
-                <Icon name="ph:list" width={14} height={14} aria-hidden />
-                Commands
-              </button>
-              {commandsOpen && (
-                <span className="role-surface-commands-menu" role="menu">
-                  {commands.map((command) => (
-                    <button
-                      key={command.id}
-                      type="button"
-                      role="menuitem"
-                      className="role-surface-command focus-ring-inset"
-                      onClick={() => {
-                        setCommandsOpen(false);
-                        command.run(context);
-                      }}
-                    >
-                      <span>{command.title}</span>
-                      {command.hint && <span className="role-surface-command-hint">{command.hint}</span>}
-                    </button>
-                  ))}
-                </span>
-              )}
-            </span>
+          {(overflowActions.length > 0 || commands.length > 0) && (
+            <OverflowMenu ariaLabel={`${surface.title} actions`}>
+              {overflowActions.map((action) => (
+                <PopoverItem
+                  key={action.id}
+                  icon={action.iconName}
+                  title={action.title}
+                  onSelect={() => action.run(context)}
+                >
+                  {action.title}
+                </PopoverItem>
+              ))}
+              {overflowActions.length > 0 && commands.length > 0 ? <PopoverSeparator /> : null}
+              {commands.map((command) => (
+                <PopoverItem
+                  key={command.id}
+                  title={command.hint}
+                  onSelect={() => command.run(context)}
+                >
+                  <span className="role-surface-overflow-label">
+                    <span>{command.title}</span>
+                    {command.hint && <span className="role-surface-overflow-hint">{command.hint}</span>}
+                  </span>
+                </PopoverItem>
+              ))}
+            </OverflowMenu>
           )}
         </span>
       </header>
@@ -207,7 +225,13 @@ export function RoleSurfaceHost({
         </div>
       )}
       <div className="role-surface-body">
-        <SurfaceErrorBoundary surfaceTitle={surface.title}>{surface.render(context)}</SurfaceErrorBoundary>
+        <SurfaceErrorBoundary
+          key={`${surface.id}:${context.activeFamiliar.id}`}
+          surfaceTitle={surface.title}
+          onLeave={onLeave}
+        >
+          {surface.render(context)}
+        </SurfaceErrorBoundary>
       </div>
     </div>
   );

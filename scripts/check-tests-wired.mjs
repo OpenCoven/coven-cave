@@ -1,4 +1,4 @@
-// CI guard: every `*.test.ts` / `*.test.mjs` under src/ and scripts/ must be
+// CI guard: every `*.test.ts` / `*.test.tsx` / `*.test.mjs` under src/ and scripts/ must be
 // wired into a CI-run test suite (the SUITES map in scripts/run-tests.mjs,
 // which `test:app` / `test:api` / `test:mobile` execute), so an authored test
 // can't silently never run. (110 of 243 tests were orphaned this way before
@@ -36,7 +36,7 @@ function walk(dir, acc) {
     if (entry.name === "node_modules" || entry.name === ".next" || entry.name === "target" || entry.name === "gen" || entry.name.startsWith(".")) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, acc);
-    else if (/\.test\.(ts|mjs)$/.test(entry.name)) acc.push(path.relative(root, full).split(path.sep).join("/"));
+    else if (/\.test\.(tsx?|mjs)$/.test(entry.name)) acc.push(path.relative(root, full).split(path.sep).join("/"));
   }
   return acc;
 }

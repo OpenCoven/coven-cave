@@ -25,13 +25,16 @@ import "@/styles/globals/surface-research-studio.css";
 import "@/styles/globals/surface-research-resources.css";
 import { useCallback, useEffect, useState } from "react";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-import type { ResearchMissionMode, ResearchMissionStatus } from "@/lib/research-missions";
+import type { ResearchMissionMode } from "@/lib/research-missions";
+import { useRoleSurfaceState } from "@/lib/role-surface-state";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
+import { RESEARCHER_SURFACE_ID } from "./ids";
 import { ResearchTabDesk } from "./research-tab-desk";
 import { ResearchTabLibrary } from "./research-tab-library";
 import { ResearchTabPrompt } from "./research-tab-prompt";
 import { ResearchTabResources } from "./research-tab-resources";
 import { ResearchTabStudio } from "./research-tab-studio";
+import { researchLiveRunCount } from "./researcher-status";
 import { useResearchMissions } from "./use-research-missions";
 
 export type ResearchDeskTab = "prompt" | "desk" | "library" | "studio" | "resources";
@@ -64,8 +67,13 @@ const TAB_LABELS: Record<ResearchDeskTab, string> = {
   resources: "Resources",
 };
 
-/** Missions the engine is actively working — the header's "N runs live". */
-const LIVE_STATUSES: ReadonlySet<ResearchMissionStatus> = new Set(["running", "planning", "queued"]);
+type ResearcherState = {
+  lastLiveRunCount: number | null;
+};
+
+const RESEARCHER_STATUS_INITIAL_STATE: ResearcherState = {
+  lastLiveRunCount: null,
+};
 
 function isResearchDeskTab(value: string | null): value is ResearchDeskTab {
   return value !== null && (TAB_IDS as readonly string[]).includes(value);
@@ -85,8 +93,21 @@ function readStoredTab(): ResearchDeskTab | null {
 
 export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) {
   const research = useResearchMissions(context.activeFamiliar.id);
+  const [, patch] = useRoleSurfaceState<ResearcherState>(
+    context.activeFamiliar.id,
+    RESEARCHER_SURFACE_ID,
+    RESEARCHER_STATUS_INITIAL_STATE,
+  );
   const [tab, setTab] = useState<ResearchDeskTab | null>(readStoredTab);
   const [promptMode, setPromptMode] = useState<ResearchMissionMode | null>(null);
+  const liveRunCount = researchLiveRunCount(research.missions);
+
+  // Publish only settled reads. Loading and failed refreshes retain the last
+  // known count instead of turning unavailable data into a convincing zero.
+  useEffect(() => {
+    if (research.loading || research.error) return;
+    patch({ lastLiveRunCount: liveRunCount });
+  }, [research.loading, research.error, liveRunCount, patch]);
 
   // No stored preference: land on the desk when missions exist (or are still
   // loading — the desk shows its own loading state), otherwise start at the
@@ -125,13 +146,6 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
     if (activeTab === "prompt" && promptMode !== null) setPromptMode(null);
   }, [activeTab, promptMode]);
 
-  // Engine status, derived honestly from the daemon + live mission count.
-  const daemonRunning = context.runtimeState.daemonRunning;
-  const liveCount = research.missions.filter((mission) => LIVE_STATUSES.has(mission.status)).length;
-  const engineStatus = daemonRunning
-    ? `Engine ready · ${liveCount} run${liveCount === 1 ? "" : "s"} live`
-    : "Engine offline · runs stay retryable";
-
   // Checkpoint dot on the Desk tab label — only while the desk is not looking.
   const checkpointWaiting = research.missions.some((mission) => mission.status === "checkpoint");
   const deskBadge = checkpointWaiting && activeTab !== "desk";
@@ -159,14 +173,6 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
           size="sm"
           bordered={false}
         />
-        <span
-          className="research-desk__engine"
-          data-tone={daemonRunning ? "ok" : "warn"}
-          role="status"
-        >
-          <i className="research-desk__engine-dot" aria-hidden />
-          {engineStatus}
-        </span>
       </div>
 
       <div
