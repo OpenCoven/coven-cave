@@ -121,9 +121,13 @@ test.describe("mobile code-rail slide-over sheet", () => {
     await toggle.click();
     const sheet = page.getByRole("dialog", { name: "Code rail" });
     await expect(sheet).toBeVisible();
+<<<<<<< HEAD
     // WorkspaceRail is code-split; wait for an in-rail control that appears
     // only after the lazy chunk mounts inside the already-open dialog.
     await expect(sheet.getByRole("button", { name: "Collapse code rail" })).toBeVisible({ timeout: 15_000 });
+=======
+    await expect(sheet.getByRole("button", { name: "Changes" })).toBeVisible();
+>>>>>>> origin/fix/release-linux-espeak-ng
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     // The pin control is meaningless in a transient sheet → hidden.
     await expect(sheet.getByRole("button", { name: /Pin code rail/ })).toHaveCount(0);
