@@ -18,7 +18,10 @@ export function extractLinks(text: string): string[] {
     .replace(IMAGE_TARGET, " ")
     .replace(INLINE_CODE, " ");
 
-  const found = cleaned.match(URL_RE) ?? [];
+  // A pasted batch may place the next URL directly after a comma. Split only
+  // that boundary so commas inside a path or query remain part of the URL.
+  const separated = cleaned.replace(/,(?=\s*https?:\/\/)/gi, " ");
+  const found = separated.match(URL_RE) ?? [];
 
   const out: string[] = [];
   const seen = new Set<string>();
