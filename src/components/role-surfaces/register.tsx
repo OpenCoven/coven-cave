@@ -336,7 +336,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: NAVIGATOR_SURFACE_ID,
   role: "navigator",
-  aliases: ["planner", "planning"],
+  aliases: ["planner", "planning", "navigation"],
   title: "Chart Room",
   iconName: "ph:compass",
   description: "Course lanes, scheduled legs, and real board moves",
@@ -462,7 +462,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: INDEXER_SURFACE_ID,
   role: "indexer",
-  aliases: ["archivist", "indexing"],
+  aliases: ["archivist", "indexing", "memory", "reflection"],
   title: "The Archive",
   iconName: "ph:tree-structure",
   description: "Long-term knowledge, memory, indexes, and provenance",
