@@ -2,13 +2,16 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// Workspace mode-transition crossfade + no-terminal-subtree pins. Formerly
-// part of comux-view-terminal.test.ts; the ComuxView host was deleted
-// (cave-c3yt) and these live workspace pins moved here — this behavior has
-// silently regressed TWICE, keep it pinned.
+// Workspace detail stability + no-terminal-subtree pins. Formerly part of
+// comux-view-terminal.test.ts; the ComuxView host was deleted (cave-c3yt) and
+// these live workspace pins moved here.
 
 const workspace = readFileSync(
   new URL("./workspace.tsx", import.meta.url),
+  "utf8",
+);
+const primitives = readFileSync(
+  new URL("../styles/globals/primitives.css", import.meta.url),
   "utf8",
 );
 
@@ -18,26 +21,30 @@ assert.doesNotMatch(
   /<div key=\{mode\} className="cave-mode-fade/,
   "Workspace detail must not force a full remount on every surface switch",
 );
-// ...but the mode-transition crossfade must STILL fire on every switch. The
-// `.cave-mode-fade` CSS animation only plays on the wrapper's initial mount, so
-// a mode change replays an opacity-only fade via WAAPI on the *persistent*
-// wrapper (no remount, no transform → no containing-block trap; cave-cco).
-// This has silently regressed twice (UX-004 added it via key={mode}; the
-// terminal-keepalive PR removed the key and killed the switch fade) — pin it.
 assert.match(
   workspace,
-  /ref=\{detailFadeRef\}/,
-  "detail wrapper wires the mode-fade ref so switches can re-fire the fade",
+  /className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden"/,
+  "Workspace keeps the stable detail wrapper required by shell layout selectors",
 );
 assert.match(
   workspace,
-  /el\.animate\(\s*\[\{ opacity: 0 \}, \{ opacity: 1 \}\],\s*\{ duration: 120, easing: "ease-out" \}/,
-  "a mode switch replays a 120ms opacity-only fade on the detail wrapper",
+  /const detailContent = renderSurface\(mode\);[\s\S]*?\{detailContent\}/,
+  "surface content swaps inside the persistent detail wrapper",
 );
-assert.match(
+assert.doesNotMatch(
   workspace,
-  /prefers-reduced-motion: reduce/,
-  "the mode-fade retrigger honors prefers-reduced-motion",
+  /detailFadeRef|modeFadeAnimRef|modeFadeReadyRef/,
+  "surface switches must not drive the whole detail pane through opacity zero",
+);
+assert.doesNotMatch(
+  workspace,
+  /\.animate\(\s*\[\{ opacity: 0 \}, \{ opacity: 1 \}\]/,
+  "Workspace must not replay a blank-to-visible full-pane animation",
+);
+assert.doesNotMatch(
+  primitives,
+  /@keyframes\s+cave-mode-in|\.cave-mode-fade\s*\{[\s\S]*?(?:animation|opacity|transform)\s*:/,
+  ".cave-mode-fade must stay continuously visible and must not become a containing block",
 );
 
 console.log("workspace-mode-fade.test.ts: ok");
