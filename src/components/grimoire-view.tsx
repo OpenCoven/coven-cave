@@ -392,6 +392,7 @@ function NavRow({
 // ── Navigator section (collapsible) ──────────────────────────────────────────
 
 const RAIL_COLLAPSED_STORAGE_KEY = "cave:grimoire:rail-collapsed";
+const NAVIGATOR_COLLAPSED_STORAGE_KEY = "cave:grimoire:navigator-collapsed:v1";
 
 type RailSectionId = "knowledge" | "memory" | "journal";
 
@@ -429,6 +430,15 @@ function readCollapsedSections(): Record<RailSectionId, boolean> {
     };
   } catch {
     return none;
+  }
+}
+
+function readNavigatorCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(NAVIGATOR_COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
   }
 }
 
@@ -734,6 +744,7 @@ export function GrimoireView({
   const [collapsedSections, setCollapsedSections] = useState<Record<RailSectionId, boolean>>(
     readCollapsedSections,
   );
+  const [navigatorCollapsed, setNavigatorCollapsed] = useState(readNavigatorCollapsed);
   const firstLoadDoneRef = useRef(false);
   const toggleSection = useCallback((id: RailSectionId) => {
     setCollapsedSections((prev) => {
@@ -748,6 +759,38 @@ export function GrimoireView({
   }, []);
   const confirm = useConfirm();
   const { announce } = useAnnouncer();
+  const setNavigatorCollapsedPreference = useCallback(
+    (next: boolean) => {
+      setNavigatorCollapsed(next);
+      try {
+        window.localStorage.setItem(NAVIGATOR_COLLAPSED_STORAGE_KEY, String(next));
+      } catch {
+        /* private mode — collapse stays session-only */
+      }
+      announce(next ? "Memories sidebar collapsed" : "Memories sidebar expanded", "polite");
+    },
+    [announce],
+  );
+  const toggleNavigator = useCallback(
+    () => setNavigatorCollapsedPreference(!navigatorCollapsed),
+    [navigatorCollapsed, setNavigatorCollapsedPreference],
+  );
+  const revealNavigatorSection = useCallback(
+    (id: RailSectionId) => {
+      setNavigatorCollapsedPreference(false);
+      setCollapsedSections((prev) => {
+        if (!prev[id]) return prev;
+        const next = { ...prev, [id]: false };
+        try {
+          window.localStorage.setItem(RAIL_COLLAPSED_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          /* private mode — collapse stays session-only */
+        }
+        return next;
+      });
+    },
+    [setNavigatorCollapsedPreference],
+  );
   const dateTimePrefs = useDateTimePrefs();
   // Selection evicted by an over-cap openDoc, announced post-commit.
   const evictedRef = useRef<GrimoireSelection | null>(null);
@@ -1458,7 +1501,9 @@ export function GrimoireView({
       </header>
       <div className="flex min-h-0 flex-1 gap-3 p-3">
       <aside
-        className={`flex h-full min-h-0 w-full flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 @min-[880px]/grimoire:w-[300px] @min-[880px]/grimoire:shrink-0 ${
+        className={`flex h-full min-h-0 w-full flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 @min-[880px]/grimoire:shrink-0 ${
+          navigatorCollapsed ? "@min-[880px]/grimoire:w-[44px]" : "@min-[880px]/grimoire:w-[300px]"
+        } ${
           // On a narrow container the rail and the main pane both go full-width,
           // so only one may show. Hide the rail when a doc is open OR the graph
           // is up — otherwise the rail wins the width and the graph is pushed
@@ -1468,6 +1513,48 @@ export function GrimoireView({
       >
         {/* Title, surface verbs, and the doc search all live in the compact
             band above — the rail is purely the grouped navigator now. */}
+        <div className={`flex shrink-0 ${navigatorCollapsed ? "justify-center p-1" : "justify-end p-1.5"}`}>
+          <button
+            type="button"
+            onClick={toggleNavigator}
+            aria-label={navigatorCollapsed ? "Expand Memories sidebar" : "Collapse Memories sidebar"}
+            title={navigatorCollapsed ? "Expand Memories sidebar" : "Collapse Memories sidebar"}
+            className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:sidebar-simple" width={14} aria-hidden />
+          </button>
+        </div>
+        {navigatorCollapsed ? (
+          <nav aria-label="Collapsed Memories navigator" className="flex min-h-0 flex-1 flex-col items-center gap-1 px-1 pb-2">
+            <button
+              type="button"
+              onClick={() => revealNavigatorSection("knowledge")}
+              aria-label="Open Stitches navigator"
+              title="Open Stitches navigator"
+              className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:book-open" width={14} aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={() => revealNavigatorSection("memory")}
+              aria-label="Open Memory files navigator"
+              title="Open Memory files navigator"
+              className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:brain" width={14} aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={() => revealNavigatorSection("journal")}
+              aria-label="Open Journal navigator"
+              title="Open Journal navigator"
+              className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:calendar-blank" width={14} aria-hidden />
+            </button>
+          </nav>
+        ) : (
         <div ref={railListRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
           {loadError ? (
             <ErrorState compact headline="Couldn't load documents" subtitle={loadError} />
@@ -1683,6 +1770,7 @@ export function GrimoireView({
             </>
           )}
         </div>
+        )}
       </aside>
       <main
         className={`h-full min-h-0 min-w-0 flex-1 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 ${
