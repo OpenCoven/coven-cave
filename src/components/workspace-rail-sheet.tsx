@@ -1,6 +1,6 @@
 "use client";
 
-import { WorkspaceRail } from "@/components/lazy-surfaces";
+import { WorkspaceRail } from "@/components/workspace-rail";
 import type { Familiar } from "@/lib/types";
 import type { WorkspaceRailController } from "@/lib/use-workspace-rail-controller";
 
