@@ -1661,6 +1661,9 @@ export async function POST(req: Request) {
     modelSource: modelState.source,
     globalDefaultModel: config.defaults.model,
   }) ? null : cleanModelId(desiredModel);
+  const grokLaunchModel = grokDirect
+    ? runtimeModelIdForLaunch("grok", grokForwardModel)
+    : null;
   const grantedProjectRoots = sshRuntime
     ? []
     : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
@@ -2745,7 +2748,7 @@ export async function POST(req: Request) {
               if (!sessionId && event.sessionId) announceSession(event.sessionId);
               // Grok's end event does not echo model, but successful native
               // launch means its --model contract accepted the selected id.
-              if (!confirmedModel && grokForwardModel) confirmedModel = desiredModel;
+              if (!confirmedModel && grokLaunchModel) confirmedModel = desiredModel;
               result = {
                 is_error: false,
                 usage: parseStreamJsonUsage(event.usage),
@@ -4237,7 +4240,7 @@ export async function POST(req: Request) {
       // direct argv proves the selection was forwarded, while a successful
       // exit is the only confirmation it was applied. Preserve an explicit
       // model rejection as failed rather than incorrectly reporting applied.
-      if (openCodeDirect && forwardModel) {
+      if (openCodeDirect && openCodeLaunchModel && forwardModel) {
         const application = modelApplicationForHarness(
           modelApplicationFromRun({
             confirmedModel: forwardModel,
@@ -4265,10 +4268,20 @@ export async function POST(req: Request) {
       const routedTurnModel = copilotStream
         ? cleanModelId(desiredModel)
         : grokDirect
-          ? grokForwardModel
-          : forwardModel && forwardModel !== desiredModel
-            ? desiredModel
-            : forwardModel;
+          ? grokLaunchModel
+            ? grokForwardModel
+            : null
+          : openCodeDirect
+            ? openCodeLaunchModel
+              ? forwardModel
+              : null
+            : hermesDirect
+              ? hermesLaunchModel
+                ? forwardModel
+                : null
+              : forwardModel && forwardModel !== desiredModel
+                ? desiredModel
+                : forwardModel;
       responseMetadata.retryModel = turnRetryModel({
         requestedModel: body.modelOverride,
         confirmedModel: responseMetadata.confirmedModel,

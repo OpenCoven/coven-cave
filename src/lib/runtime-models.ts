@@ -43,9 +43,8 @@ export function transformModelIdForRuntime(
   if (transform === "preserve") return modelId;
 
   const slash = modelId.indexOf("/");
-  return slash > 0 && slash < modelId.length - 1
-    ? modelId.slice(slash + 1)
-    : modelId;
+  const remainder = slash > 0 ? modelId.slice(slash + 1) : "";
+  return remainder && !remainder.startsWith("/") ? remainder : modelId;
 }
 
 /**

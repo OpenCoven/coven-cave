@@ -222,15 +222,25 @@ assert.equal(isModelInCatalog("hermes", "nous/hermes-4"), false);
 assert.equal(isModelInCatalog("openclaw", "anything"), false);
 assert.equal(isModelInCatalog("nonexistent", "openai/gpt-5.5"), false);
 
-// Direct native launches follow the registry's model-id transform. Strip
-// removes only the first non-empty provider segment; preserve forwards the
-// stored provider-qualified id unchanged.
-assert.equal(transformModelIdForRuntime("copilot", "a/b/c"), "b/c");
-assert.equal(transformModelIdForRuntime("grok", "xai/grok-4.5"), "grok-4.5");
-assert.equal(transformModelIdForRuntime("hermes", "openai/gpt-5.6-sol"), "openai/gpt-5.6-sol");
-assert.equal(transformModelIdForRuntime("opencode", "openai/gpt-5.6-sol"), "openai/gpt-5.6-sol");
+// Cave's supported runtime set follows the registry contract. Strip removes
+// only the first non-empty provider segment; preserve forwards the stored
+// provider-qualified id unchanged.
+for (const runtime of ["codex", "claude", "copilot", "grok"]) {
+  assert.equal(
+    transformModelIdForRuntime(runtime, "provider/team/model"),
+    "team/model",
+    `${runtime} strips exactly one provider segment`,
+  );
+}
+for (const runtime of ["hermes", "opencode"]) {
+  assert.equal(
+    transformModelIdForRuntime(runtime, "provider/team/model"),
+    "provider/team/model",
+    `${runtime} preserves the provider-qualified model id`,
+  );
+}
 
-for (const unchanged of ["bare-model", "/model", "provider/"]) {
+for (const unchanged of ["bare-model", "/model", "provider/", "openai//gpt"]) {
   assert.equal(
     transformModelIdForRuntime("copilot", unchanged),
     unchanged,

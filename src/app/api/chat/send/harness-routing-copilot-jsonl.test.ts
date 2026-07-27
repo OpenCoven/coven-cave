@@ -215,8 +215,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /if \(!confirmedModel && grokForwardModel\) confirmedModel = desiredModel;/,
-  "Cave must not claim an inherited fallback model was applied when it deliberately used Grok's CLI default",
+  /if \(!confirmedModel && grokLaunchModel\) confirmedModel = desiredModel;/,
+  "Cave must confirm a Grok model only when the post-transform argv guard forwarded it",
 );
 assert.match(
   chatRoute,

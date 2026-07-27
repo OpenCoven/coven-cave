@@ -119,6 +119,11 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /const grokLaunchModel = grokDirect\s*\?\s*runtimeModelIdForLaunch\("grok", grokForwardModel\)\s*:\s*null;/,
+  "Grok confirmation metadata must share the post-transform launch guard",
+);
+assert.match(
+  chatRoute,
   /if \(hermesLaunchModel\) a\.push\("--model", hermesLaunchModel\);/,
   "Hermes native CLI argv uses the transformed launch value",
 );
@@ -143,8 +148,8 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /confirmedModel: forwardModel,[\s\S]*?responseMetadata\.confirmedModel = forwardModel;/,
-  "OpenCode confirmation metadata keeps the original provider-qualified model id",
+  /if \(openCodeDirect && openCodeLaunchModel && forwardModel\)[\s\S]*?confirmedModel: forwardModel,[\s\S]*?responseMetadata\.confirmedModel = forwardModel;/,
+  "OpenCode confirms the original provider-qualified id only when its launch guard forwarded a model",
 );
 
 // --model is emitted before the `--` separator, never after (the prompt is a
