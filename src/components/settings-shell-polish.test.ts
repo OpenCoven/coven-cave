@@ -2,10 +2,13 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
-const source = readFileSync(
+const shellSource = readFileSync(
   new URL("./settings-shell.tsx", import.meta.url),
   "utf8",
 );
+const daemonUrl = new URL("./settings-daemon.tsx", import.meta.url);
+const daemonSource = existsSync(daemonUrl) ? readFileSync(daemonUrl, "utf8") : "";
+const source = `${shellSource}\n${daemonSource}`;
 const sectionsUrl = new URL("./settings-sections.ts", import.meta.url);
 const overviewUrl = new URL("./settings-overview.tsx", import.meta.url);
 const sections = existsSync(sectionsUrl) ? readFileSync(sectionsUrl, "utf8") : "";
@@ -14,8 +17,28 @@ const globals = readFileSync(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const shellResponsiveCss = readFileSync(
+  new URL("../styles/globals/shell-responsive.css", import.meta.url),
+  "utf8",
+);
 const dashboardCssUrl = new URL("../styles/dashboard.css", import.meta.url);
 const dashboardCss = existsSync(dashboardCssUrl) ? readFileSync(dashboardCssUrl, "utf8") : "";
+const aboutSource = readFileSync(
+  new URL("./settings-about.tsx", import.meta.url),
+  "utf8",
+);
+const aboutCss = readFileSync(
+  new URL("../styles/settings-about.css", import.meta.url),
+  "utf8",
+);
+const phoneSource = readFileSync(
+  new URL("./settings-phone.tsx", import.meta.url),
+  "utf8",
+);
+const phoneCss = readFileSync(
+  new URL("../styles/settings-phone.css", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -63,7 +86,7 @@ assert.match(
   "Settings back control should expose a mobile hit-area hook",
 );
 assert.match(
-  globals,
+  shellResponsiveCss,
   /@media \(max-width: 767px\) \{[\s\S]*\.settings-back-button\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Settings mobile back control should meet the shared touch target",
 );
@@ -132,24 +155,24 @@ assert.match(
   "Settings text actions should share the native touch-target floor",
 );
 assert.match(
-  dashboardCss,
-  /\.settings-mobile-switch\s*\{[\s\S]*?min-width:\s*64px[\s\S]*?min-height:\s*var\(--touch-target\)/,
-  "Mobile mode switch should meet the native touch-target floor",
+  phoneSource,
+  /className=\{`settings-switch focus-ring/,
+  "Phone controls should use the shared track-and-knob switch",
 );
 assert.match(
-  source,
-  /className=\{`settings-mobile-switch/,
-  "Mobile mode switch should use the dedicated touch-target switch class",
+  phoneSource,
+  /<Button[\s\S]*size="sm"[\s\S]*Setup guide/,
+  "Mobile setup guide should use the shared Button primitive",
 );
 assert.match(
-  source,
-  /className="settings-touch-action[\s\S]*Setup guide/,
-  "Mobile setup guide link should use the shared Settings action touch target",
+  aboutSource,
+  /settings-about-link-card[\s\S]*focus-ring/,
+  "About external cards should keep the shared keyboard focus treatment",
 );
 assert.match(
-  source,
-  /className="settings-touch-action[\s\S]*\{l\.label\}/,
-  "About external links should use the shared Settings action touch target",
+  aboutCss,
+  /@media \(hover: none\) and \(pointer: coarse\)[\s\S]*\.settings-about-link-card[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "About external cards should meet the shared touch-target floor on coarse pointers",
 );
 // Settings section nav exposes the active section to assistive tech.
 assert.match(
@@ -323,26 +346,36 @@ assert.match(source, /aria-label="Workspace path"/, "the workspace path field is
 assert.match(source, /aria-label="Server hub URL"/, "the hub URL input is labelled");
 assert.match(source, /aria-label="Executor addresses, one per line"/, "the executor textarea is labelled");
 assert.match(source, /focusTarget\.focus\(\{ preventScroll: true \}\)/, "a search/deep-link jump moves focus to the target group");
-assert.match(source, /connectionError && <span role="alert"/, "the daemon save error is a live alert");
+assert.match(source, /connectionError (?:&&|\?) <span role="alert"/, "the daemon save error is a live alert");
 
 // (cave-rj0z) var(--danger) is NOT a defined token — only --color-danger
 // exists. Uses of the phantom variable silently resolved to nothing, so
 // error text/borders rendered unstyled. Keep it out of the settings sources.
 {
   const profile = readFileSync(new URL("./settings-profile.tsx", import.meta.url), "utf8");
-  for (const [name, src] of [["settings-shell", source], ["settings-profile", profile]]) {
+  for (const [name, src] of [["settings-shell", source], ["settings-profile", profile], ["settings-phone", phoneSource]]) {
     assert.doesNotMatch(src, /var\(--danger\)/, `${name} must use var(--color-danger), not the undefined var(--danger)`);
   }
 }
 
-// (cave-9yll, then user-revised) The Mobile-mode On/Off switch matches the
-// shared button shape — a --radius-control rectangle (.ui-btn), not a pill.
-// Other settings switches use the minimal track/knob treatment.
-assert.ok(
-  (source.match(/settings-mobile-switch rounded-\[var\(--radius-control\)\]/g) ?? []).length === 1,
-  "the Mobile mode On/Off switch uses the shared control radius",
+// The Phone handoff uses the same minimal track/knob control as the rest of
+// Settings. Its label carries meaning and the shared pseudo-element preserves
+// the generous pointer target.
+assert.doesNotMatch(
+  phoneSource,
+  /settings-mobile-switch/,
+  "Phone should not reintroduce the old labeled On/Off rectangle",
 );
-assert.doesNotMatch(source, /settings-mobile-switch rounded-full/, "the pill shape stays gone from the labeled switch");
+assert.doesNotMatch(
+  dashboardCss,
+  /\.settings-mobile-switch/,
+  "the unused dedicated mobile switch chrome stays removed",
+);
+assert.match(
+  phoneCss,
+  /@media \(hover: none\) and \(pointer: coarse\)[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Phone disclosures preserve native touch targets on coarse pointers",
+);
 assert.match(
   dashboardCss,
   /\.settings-switch \{[\s\S]{0,400}?border-radius: var\(--radius-pill\)/,

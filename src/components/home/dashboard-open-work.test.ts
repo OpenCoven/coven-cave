@@ -2,6 +2,7 @@
 // Pure derivations for the Home dashboard's Open-work board (launcher 3a).
 import assert from "node:assert/strict";
 import {
+  filterFamiliarOwned,
   filterOpenWork,
   openWorkCounts,
   openWorkPriorityLabel,
@@ -19,6 +20,22 @@ const card = (over = {}) => ({
   updatedAt: "2026-07-24T00:00:00Z",
   ...over,
 });
+
+// ── familiar ownership: exact match; foreign + unassigned work stay out ──
+const owned = filterFamiliarOwned(
+  [
+    { id: "sage", familiarId: "sage" },
+    { id: "nova", familiarId: "nova" },
+    { id: "unassigned", familiarId: null },
+    { id: "missing" },
+  ],
+  "sage",
+);
+assert.deepEqual(
+  owned.map((item) => item.id),
+  ["sage"],
+  "only exact familiar ownership should survive",
+);
 
 // ── openWorkRows: maps columns, drops done + untitled, orders by kind/priority
 {

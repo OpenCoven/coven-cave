@@ -31,11 +31,12 @@ assert.doesNotMatch(
 );
 
 // The panel toggles are hoisted into the top bar (a flex row wrapping the
-// rendered top bar), desktop-only — they're built only when !isMobile.
+// rendered top bar). They remain in hydration-stable markup and CSS hides them
+// below the desktop breakpoint.
 assert.match(
   shell,
-  /const navToggle = !isMobile/,
-  "shell builds the nav toggle on desktop only",
+  /const navToggle = \(/,
+  "shell keeps the nav toggle in hydration-stable markup",
 );
 assert.match(
   shell,
@@ -52,8 +53,8 @@ assert.match(
 // explicit remote-scoped grant; without it start_dragging is silently denied).
 assert.equal(
   shell.match(/<div className="shell-top" data-tauri-drag-region="deep">/g)?.length,
-  2,
-  "both shell top bars (placeholder + desktop) should expose the deep Tauri drag region on the titlebar container",
+  1,
+  "the hydration-stable shell should expose one deep Tauri drag region on the titlebar container",
 );
 assert.doesNotMatch(
   shell,
@@ -62,8 +63,8 @@ assert.doesNotMatch(
 );
 assert.equal(
   shell.match(/<div className="shell-top__bar" data-tauri-drag-region="deep">/g)?.length,
-  2,
-  "both rendered top-bar wrappers should remain draggable when their empty chrome is clicked",
+  1,
+  "the hydration-stable top-bar wrapper should remain draggable when its empty chrome is clicked",
 );
 assert.match(
   shell,
@@ -228,8 +229,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*togglePanel\(navRef\.current\)/,
-  "left panel toggles from the resolved left-panel shortcut",
+  /const toggleDesktopNav = \(\) => \{[\s\S]*?panel\.isCollapsed\(\)[\s\S]*?panel\.expand\(\);[\s\S]*?setNavOpen\(true\);[\s\S]*?panel\.collapse\(\);[\s\S]*?setNavOpen\(false\);[\s\S]*?matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*?else toggleDesktopNav\(\)/,
+  "left panel shortcut toggles the resolved panel and synchronizes its visible state",
 );
 assert.doesNotMatch(
   shell,

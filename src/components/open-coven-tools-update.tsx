@@ -21,9 +21,9 @@ import {
 import { relativeTime } from "@/lib/relative-time";
 import { createOpenCovenInstallJobObserver } from "@/lib/opencoven-install-job-observer";
 
-type InstallTarget = "coven-cli";
+export type InstallTarget = "coven-cli";
 
-type ToolStatus = {
+export type ToolStatus = {
   id: InstallTarget;
   label: string;
   packageName: string;
@@ -57,7 +57,7 @@ type InstallVerification = {
   error?: string;
 };
 
-type InstallJobView = {
+export type InstallJobView = {
   status: "running" | "done";
   elapsedMs: number;
   tail: string;
@@ -84,7 +84,7 @@ type InstallJobView = {
   action?: OpenCovenToolAction;
 };
 
-type InstallResult = {
+export type InstallResult = {
   ok: boolean;
   detail: string;
   tail?: string;
@@ -93,6 +93,15 @@ type InstallResult = {
 type NpmLaneState = {
   target: string;
   label: string;
+};
+
+export type OpenCovenToolsDiagnosticsSnapshot = {
+  tools: ToolStatus[];
+  checking: boolean;
+  error: string | null;
+  lastSuccessfulCheckedAt: string | null;
+  installJobs: Partial<Record<InstallTarget, InstallJobView>>;
+  installResults: Partial<Record<InstallTarget, InstallResult>>;
 };
 
 const SIDECAR_TOKEN_STORAGE_KEY = "coven-cave:sidecar-auth-token";
@@ -326,7 +335,13 @@ export function OpenCovenToolsBannerTrigger() {
   return null;
 }
 
-export function OpenCovenToolsUpdate() {
+export function OpenCovenToolsUpdate({
+  showDiagnosticsAction = true,
+  onSnapshotChange,
+}: {
+  showDiagnosticsAction?: boolean;
+  onSnapshotChange?: (snapshot: OpenCovenToolsDiagnosticsSnapshot) => void;
+} = {}) {
   const { dismissBanner } = useShellBanners();
   const [tools, setTools] = useState<ToolStatus[]>([]);
   const [checking, setChecking] = useState(true);
@@ -462,6 +477,25 @@ export function OpenCovenToolsUpdate() {
     void installObserver.current?.pollNow();
   }, []);
   usePausablePoll(() => void refreshNpmLane(), 2000);
+
+  useEffect(() => {
+    onSnapshotChange?.({
+      tools,
+      checking,
+      error,
+      lastSuccessfulCheckedAt,
+      installJobs,
+      installResults,
+    });
+  }, [
+    checking,
+    error,
+    installJobs,
+    installResults,
+    lastSuccessfulCheckedAt,
+    onSnapshotChange,
+    tools,
+  ]);
 
   const updateTool = async (target: InstallTarget, action: OpenCovenToolAction) => {
     setError(null);
@@ -727,27 +761,29 @@ export function OpenCovenToolsUpdate() {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <Button
-            variant="secondary"
-            size="xs"
-            onClick={() => void copyDiagnostics()}
-            className={`${ghostBtn} cave-fill-btn`}
-            data-state={diagnosticsStatus}
-            aria-live="polite"
-            leadingIcon={
-              diagnosticsStatus === "copied"
-                ? "ph:check-bold"
+          {showDiagnosticsAction ? (
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={() => void copyDiagnostics()}
+              className={`${ghostBtn} cave-fill-btn`}
+              data-state={diagnosticsStatus}
+              aria-live="polite"
+              leadingIcon={
+                diagnosticsStatus === "copied"
+                  ? "ph:check-bold"
+                  : diagnosticsStatus === "failed"
+                    ? "ph:warning"
+                    : "ph:copy"
+              }
+            >
+              {diagnosticsStatus === "copied"
+                ? "Copied"
                 : diagnosticsStatus === "failed"
-                  ? "ph:warning"
-                  : "ph:copy"
-            }
-          >
-            {diagnosticsStatus === "copied"
-              ? "Copied"
-              : diagnosticsStatus === "failed"
-                ? "Copy failed"
-                : "Copy diagnostics (safe)"}
-          </Button>
+                  ? "Copy failed"
+                  : "Copy diagnostics (safe)"}
+            </Button>
+          ) : null}
           <Button variant="secondary" size="xs" onClick={() => void load(true)} className={ghostBtn} disabled={checking}>
             Check tools
           </Button>

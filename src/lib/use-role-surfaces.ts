@@ -10,7 +10,7 @@
  * shell consumes only this hook's generic output; it never names a role.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import {
   familiarRoleIds,
@@ -42,6 +42,122 @@ type MemoryEntryWire = {
   excerpt?: string;
   familiarId?: string;
 };
+
+function isMemoryEntryWire(value: unknown): value is MemoryEntryWire {
+  if (value == null || typeof value !== "object") return false;
+  const entry = value as Partial<MemoryEntryWire>;
+  return (
+    typeof entry.relPath === "string" &&
+    typeof entry.fullPath === "string" &&
+    typeof entry.rootLabel === "string" &&
+    typeof entry.sourceKindLabel === "string" &&
+    typeof entry.size === "number" &&
+    typeof entry.modified === "string" &&
+    (entry.excerpt == null || typeof entry.excerpt === "string") &&
+    (entry.familiarId == null || typeof entry.familiarId === "string")
+  );
+}
+
+export function createMemoryAccess(familiarId: string | null): MemoryAccess {
+  return {
+    async listEntries(): Promise<SurfaceMemoryEntry[]> {
+      if (!familiarId) return [];
+      const res = await fetch(`/api/memory?familiarId=${encodeURIComponent(familiarId)}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`memory inventory request failed with status ${res.status}`);
+      const json = (await res.json()) as { ok?: unknown; entries?: unknown };
+      if (json?.ok !== true || !Array.isArray(json.entries) || !json.entries.every(isMemoryEntryWire)) {
+        throw new Error("memory inventory response was malformed");
+      }
+      return json.entries.map((entry) => ({
+        relPath: entry.relPath,
+        fullPath: entry.fullPath,
+        rootLabel: entry.rootLabel,
+        sourceKindLabel: entry.sourceKindLabel,
+        size: entry.size,
+        modified: entry.modified,
+        excerpt: entry.excerpt,
+        familiarId: entry.familiarId,
+      }));
+    },
+    async readFile(path: string) {
+      try {
+        const res = await fetch(`/api/memory/file?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+        const json = res.ok
+          ? ((await res.json()) as { ok?: boolean; text?: string; mtimeMs?: number | null })
+          : null;
+        if (!json?.ok || typeof json.text !== "string") return null;
+        // Redacted text by default — surfaces never bypass the redaction pass.
+        return { content: json.text, mtimeMs: json.mtimeMs ?? null };
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+type LatestAsyncDataOptions<T> = {
+  scopeKey: string;
+  load(): Promise<T>;
+  errorMessage: string;
+  enabled?: boolean;
+};
+
+type LatestAsyncData<T> = {
+  data: T | null;
+  error: string | null;
+  reload(options?: { retainData?: boolean }): Promise<boolean>;
+};
+
+/**
+ * Own one async value for the latest scope/request only. Every load starts
+ * from an honest loading state unless a caller explicitly retains same-scope
+ * data while revalidating; effect cleanup invalidates in-flight work.
+ */
+export function useLatestAsyncData<T>({
+  scopeKey,
+  load,
+  errorMessage,
+  enabled = true,
+}: LatestAsyncDataOptions<T>): LatestAsyncData<T> {
+  const requestSequence = useRef(0);
+  const [state, setState] = useState<{
+    scopeKey: string;
+    data: T | null;
+    error: string | null;
+  }>({ scopeKey, data: null, error: null });
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const reload = useCallback(async (options?: { retainData?: boolean }) => {
+    const sequence = ++requestSequence.current;
+    const retainedData =
+      options?.retainData === true && stateRef.current.scopeKey === scopeKey
+        ? stateRef.current.data
+        : null;
+    setState({ scopeKey, data: retainedData, error: null });
+    if (!enabled) return true;
+    try {
+      const data = await load();
+      if (sequence !== requestSequence.current) return false;
+      setState({ scopeKey, data, error: null });
+      return true;
+    } catch {
+      if (sequence !== requestSequence.current) return false;
+      setState({ scopeKey, data: retainedData, error: errorMessage });
+      return false;
+    }
+  }, [enabled, errorMessage, load, scopeKey]);
+
+  useEffect(() => {
+    void reload();
+    return () => {
+      requestSequence.current += 1;
+    };
+  }, [reload]);
+
+  const current = state.scopeKey === scopeKey ? state : { scopeKey, data: null, error: null };
+  return { data: current.data, error: current.error, reload };
+}
 
 export type RoleSurfaceSession = {
   /** Null until a familiar is active — role surfaces are per-familiar rooms. */
@@ -91,43 +207,7 @@ export function useRoleSurfaceSession(input: {
     };
   }, [familiarId]);
 
-  const memory: MemoryAccess = useMemo(
-    () => ({
-      async listEntries(): Promise<SurfaceMemoryEntry[]> {
-        if (!familiarId) return [];
-        try {
-          const res = await fetch(`/api/memory?familiarId=${encodeURIComponent(familiarId)}`, { cache: "no-store" });
-          const json = res.ok ? ((await res.json()) as { entries?: MemoryEntryWire[] }) : null;
-          return (json?.entries ?? []).map((entry) => ({
-            relPath: entry.relPath,
-            fullPath: entry.fullPath,
-            rootLabel: entry.rootLabel,
-            sourceKindLabel: entry.sourceKindLabel,
-            size: entry.size,
-            modified: entry.modified,
-            excerpt: entry.excerpt,
-            familiarId: entry.familiarId,
-          }));
-        } catch {
-          return [];
-        }
-      },
-      async readFile(path: string) {
-        try {
-          const res = await fetch(`/api/memory/file?path=${encodeURIComponent(path)}`, { cache: "no-store" });
-          const json = res.ok
-            ? ((await res.json()) as { ok?: boolean; text?: string; mtimeMs?: number | null })
-            : null;
-          if (!json?.ok || typeof json.text !== "string") return null;
-          // Redacted text by default — surfaces never bypass the redaction pass.
-          return { content: json.text, mtimeMs: json.mtimeMs ?? null };
-        } catch {
-          return null;
-        }
-      },
-    }),
-    [familiarId],
-  );
+  const memory = useMemo(() => createMemoryAccess(familiarId), [familiarId]);
 
   const activeManifests = useMemo(
     () => manifests.filter((m) => m.active && m.familiar === familiarId),

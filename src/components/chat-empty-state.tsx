@@ -281,7 +281,6 @@ export function ChatEmptyState({
                 projects={projects}
                 value={projectId ?? null}
                 onChange={onProjectChange}
-                allowNoProject
                 familiarId={familiar.id}
                 createProject={createProject}
                 ariaLabel="Project for this chat"

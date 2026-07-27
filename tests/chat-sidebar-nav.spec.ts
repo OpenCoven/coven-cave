@@ -30,10 +30,20 @@ const SESSIONS = [
 async function ensureChatSurface(page: Page) {
   await page.waitForSelector(".shell-frame", { timeout: 30_000 });
   const surface = page.locator(".chat-surface");
-  if (!(await surface.isVisible().catch(() => false))) {
-    await page.locator('aside[aria-label="Sidebar"]').getByRole("button", { name: /^Chat\b/ }).first().click();
+  try {
+    await surface.waitFor({ state: "visible", timeout: 10_000 });
+  } catch {
+    const chatDestination = page
+      .locator('aside[aria-label="Sidebar"]')
+      .getByRole("button", { name: /^Chat\b/ })
+      .first();
+    if (!(await chatDestination.isVisible().catch(() => false))) {
+      const openNav = page.getByRole("button", { name: "Open navigation (⌘B)" });
+      if (await openNav.isVisible().catch(() => false)) await openNav.click();
+    }
+    await chatDestination.click();
+    await surface.waitFor({ state: "visible", timeout: 30_000 });
   }
-  await page.waitForSelector(".chat-surface", { timeout: 30_000 });
   await page.waitForSelector('aside[aria-label="Sidebar"] .chat-sidebar', { timeout: 30_000 });
 }
 

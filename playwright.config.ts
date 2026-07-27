@@ -24,7 +24,9 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
 const E2E_RUN_ID = randomUUID();
 const E2E_PROJECTS_PATH = join(tmpdir(), `cave-e2e-projects-${E2E_RUN_ID}.json`);
 const E2E_QUEUE_PROJECT_PATH = join(tmpdir(), `cave-e2e-queue-project-${E2E_RUN_ID}.json`);
+const E2E_PROJECT_PERMISSIONS_PATH = join(tmpdir(), `cave-e2e-project-permissions-${E2E_RUN_ID}.json`);
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
+const SETUP_FOCUS_VISIBILITY_TEST = /keeps setup-header focus indicators visible inside the horizontal scroller$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 
 // Most existing specs exercise an already-onboarded workspace. Seed that
@@ -41,6 +43,22 @@ writeFileSync(
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     }],
+  }),
+);
+writeFileSync(
+  E2E_PROJECT_PERMISSIONS_PATH,
+  JSON.stringify({
+    version: 2,
+    projectGrants: [{
+      familiarId: "nova",
+      projectId: "e2e-project",
+      access: "write",
+      source: "human",
+      grantedAt: "2026-01-01T00:00:00.000Z",
+    }],
+    accessGroups: [],
+    grantProposals: [],
+    permissionAudit: [],
   }),
 );
 // Queue selection is a separate durable preference. Seed it alongside the
@@ -101,6 +119,13 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      name: "setup-focus-webkit",
+      dependencies: ["preferences-iphone-13"],
+      testMatch: /onboarding-wizard\.spec\.ts/,
+      grep: SETUP_FOCUS_VISIBILITY_TEST,
+      use: { ...devices["Desktop Safari"] },
+    },
+    {
       name: "pixel-5",
       dependencies: ["preferences-iphone-13"],
       testMatch: /mobile\/.*\.spec\.ts/,
@@ -133,6 +158,7 @@ export default defineConfig({
       // every request in this run.
       COVEN_PREFERENCES_PATH: join(tmpdir(), `cave-e2e-preferences-${E2E_RUN_ID}.json`),
       CAVE_PROJECTS_PATH_OVERRIDE: E2E_PROJECTS_PATH,
+      CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: E2E_PROJECT_PERMISSIONS_PATH,
       CAVE_QUEUE_PROJECT_PATH_OVERRIDE: E2E_QUEUE_PROJECT_PATH,
       COVEN_BACKDROP_PATH: join(tmpdir(), `cave-e2e-backdrop-${E2E_RUN_ID}.jpg`),
       COVEN_THEME_PATH: join(tmpdir(), `cave-e2e-theme-${E2E_RUN_ID}.json`),

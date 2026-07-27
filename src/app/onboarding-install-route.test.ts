@@ -55,14 +55,14 @@ assert.doesNotMatch(
 
 assert.match(
   route,
-  /Do not elevate from this API route:[\s\S]*?Require the[\s\S]*?operator to run the sudo command manually instead/,
-  "install route should require manual sudo when global npm dirs are not writable",
+  /Coven CLI self-update:[\s\S]*?npm beside the detected CLI/,
+  "the CLI update must use the npm installation that owns the detected CLI",
 );
 
 assert.match(
   route,
   /"coven-cli": \{[\s\S]*?packageName: "@opencoven\/cli@latest"/,
-  "Coven install only accepts the fixed allowlisted @opencoven/cli package",
+  "the Coven CLI button installs the latest published package",
 );
 assert.doesNotMatch(
   route,
@@ -90,20 +90,20 @@ assert.match(
 
 assert.match(
   route,
-  /npmMissing: true,[\s\S]*?hint: nodeInstallHint\(\)/,
-  "missing npm returns an actionable Node installation hint",
+  /managedNodeMissing: true,[\s\S]*?hint: managedNodeInstallHint\(\)/,
+  "a missing managed toolchain returns an actionable Node installation hint",
 );
 
 assert.match(
   route,
-  /sudoRequired: true,[\s\S]*?global npm directory from this API route[\s\S]*?plan\.packageName/,
-  "global-prefix permission failures return a copyable manual recovery command",
+  /const launch = managedNpmLaunch\(managed\.paths\);[\s\S]*?args: \[\.\.\.launch\.args, "install", "--global", target\.packageName\]/,
+  "pinned prerequisite installs use the managed Node.js/npm launch plan",
 );
 
-assert.match(
+assert.doesNotMatch(
   route,
-  /\(EACCES\|EPERM\|EROFS\|permission denied\)[\s\S]*?npm couldn't write to the global directory/,
-  "late npm permission failures remain actionable after an install attempt",
+  /sudoRequired: true|global npm directory from this API route|npm couldn't write to the global directory/,
+  "managed installs do not surface stale host-global npm recovery guidance",
 );
 
 console.log("onboarding-install-route.test.ts OK");

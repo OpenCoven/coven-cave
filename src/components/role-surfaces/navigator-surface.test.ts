@@ -15,6 +15,13 @@ const surface = readFileSync(new URL("./navigator-surface.tsx", import.meta.url)
 const register = readFileSync(new URL("./register.tsx", import.meta.url), "utf8");
 const docs = readFileSync(new URL("../../../docs/role-surfaces.md", import.meta.url), "utf8");
 
+const section = (start: string, end: string) => {
+  const from = surface.indexOf(start);
+  const to = surface.indexOf(end, from + start.length);
+  assert.ok(from >= 0 && to > from, `${start} section missing`);
+  return surface.slice(from, to);
+};
+
 // ── Charting rules (behavioral, real module) ─────────────────────────────────
 
 test("scopeCards keeps this familiar's cards and unassigned ones only", () => {
@@ -101,9 +108,120 @@ test("the room derives legs and progress from real card data", () => {
 });
 
 test("the room exposes errors and selection accessibly", () => {
-  assert.match(surface, /role="alert"/);
+  assert.match(surface, /SurfaceError/);
   assert.match(surface, /aria-current=\{card\.id === state\.selectedId/);
   assert.match(surface, /aria-label="Move card to lane"/);
+});
+
+test("board failures stay retryable and distinct from loading and empty data", () => {
+  const chartedCards = section('<SurfaceCanvas label="Charted cards"', 'label="Card details"');
+  assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /const fetchBoard = useCallback\(async \(\) =>/);
+  assert.match(
+    surface,
+    /useLatestAsyncData<Card\[\]>\(\{[\s\S]*?scopeKey: familiarId[\s\S]*?load: fetchBoard[\s\S]*?errorMessage: "Couldn't load the board\."/,
+  );
+  assert.match(
+    chartedCards,
+    /boardError && cards == null\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadBoard\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(
+    chartedCards,
+    /boardError && cards != null\s*\?\s*\([\s\S]*?Showing the last loaded board/,
+    "a failed revalidation keeps the last usable board visible",
+  );
+  assert.match(chartedCards, /visible\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+});
+
+test("board load failures use one canonical live error", () => {
+  assert.doesNotMatch(surface, /announce\("Couldn't load the board\.", "assertive"\)/);
+  const chartedCards = section('<SurfaceCanvas label="Charted cards"', 'label="Card details"');
+  assert.doesNotMatch(chartedCards, /<SurfaceError[\s\S]*?live=\{false\}/, "the main board error stays live");
+});
+
+test("card-derived drawers and lane counts stay truthful while the board loads or fails", () => {
+  const recentlyDoneStart = surface.indexOf('<RailSection title="Recently completed"');
+  const blockedStart = surface.indexOf('<RailSection title="Blocked"', recentlyDoneStart);
+  const drawerEnd = surface.indexOf("</div>", blockedStart);
+  assert.ok(recentlyDoneStart >= 0 && blockedStart > recentlyDoneStart && drawerEnd > blockedStart);
+  const recentlyDone = surface.slice(recentlyDoneStart, blockedStart);
+  const blocked = surface.slice(blockedStart, drawerEnd);
+  for (const panel of [recentlyDone, blocked]) {
+    assert.match(
+      panel,
+      /boardError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadBoard\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+    );
+    assert.match(panel, /<SurfaceError[\s\S]*?live=\{false\}/);
+  }
+  assert.match(recentlyDone, /recentlyDone\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+  assert.match(blocked, /blocked\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+
+  const lanesStart = surface.indexOf('<RailSection title="Course lanes"');
+  const lanesEnd = surface.indexOf('<RailSection title="Upcoming legs"', lanesStart);
+  assert.ok(lanesStart >= 0 && lanesEnd > lanesStart);
+  const courseLanes = surface.slice(lanesStart, lanesEnd);
+  assert.match(
+    courseLanes,
+    /boardError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadBoard\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(courseLanes, /<SurfaceError[\s\S]*?live=\{false\}/);
+  assert.match(
+    courseLanes,
+    /cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?\)\s*:\s*\([\s\S]*?<ul className="role-surface-list"/,
+    "successful board data renders the course lane list",
+  );
+});
+
+test("board mutations announce success and assertively announce visible failures", () => {
+  assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
+  assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
+  assert.match(surface, /announce\(`Charted "\$\{title\}" in \$\{LANE_LABELS\.backlog\}\.`\)/);
+  assert.match(surface, /announce\(`Moved "\$\{title\}" to \$\{LANE_LABELS\[status\]\}\.`\)/);
+  assert.match(surface, /const \[chartError, setChartError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /setChartError\(message\)[\s\S]*?announce\(message, "assertive"\)/);
+  assert.match(surface, /const \[moveError, setMoveError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /setMoveError\(message\)[\s\S]*?announce\(message, "assertive"\)/);
+  assert.doesNotMatch(surface, /<p role="alert" className="role-surface-hint">/);
+  assert.match(surface, /\{chartError \? \([\s\S]*?<p className="role-surface-hint">[\s\S]*?\{chartError\}/);
+  assert.match(surface, /\{moveError \? \([\s\S]*?<p className="role-surface-hint">[\s\S]*?\{moveError\}/);
+});
+
+test("card details wait for the board source before exposing move controls", () => {
+  const details = section('label="Card details"', "</SurfaceRail>");
+  assert.match(
+    details,
+    /boardError && cards == null\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*cards == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*!selected/,
+  );
+});
+
+test("compact Course and Card details rails stay mutually exclusive", () => {
+  assert.match(
+    surface,
+    /const setCourseRailExpanded = \(next: boolean\) => \{\s*setCourseExpanded\(next\);\s*if \(next\) setDetailsExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /const setDetailsRailExpanded = \(next: boolean\) => \{\s*setDetailsExpanded\(next\);\s*if \(next\) setCourseExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="left"\s+label="Course"\s+expanded=\{courseExpanded\}\s+onExpandedChange=\{setCourseRailExpanded\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="right"\s+label="Card details"\s+expanded=\{detailsExpanded\}\s+onExpandedChange=\{setDetailsRailExpanded\}/,
+  );
+  assert.match(
+    surface,
+    /onClick=\{\(\) => \{\s*patch\(\{(?=[^}]*\bselectedId:\s*card\.id)(?=[^}]*\blane:\s*"blocked")[^}]*\}\);\s*setDetailsRailExpanded\(true\);\s*\}\}/,
+    "blocked-card selection closes Course before opening Card details",
+  );
+  assert.match(
+    surface,
+    /onClick=\{\(\) => \{\s*patch\(\{(?=[^}]*\bselectedId:\s*leg\.card\.id)[^}]*\}\);\s*setDetailsRailExpanded\(true\);\s*\}\}/,
+    "upcoming-leg selection closes Course before opening Card details",
+  );
 });
 
 test("registration names the Chart Room with its own accent and drawer chrome", () => {

@@ -599,7 +599,19 @@ console.log("cave-conversations.test.ts: ok");
     model: "claude-4",
     runtime: "local:/tmp/project",
     title: "Fix the flaky test",
-    userTurn: { id: "pending-user-turn", text: "fix the flaky test please" },
+    modelIntent: {
+      model: "anthropic/claude-opus-4-6",
+      source: "session",
+      applicationState: "saved",
+      reason: "Saved for this chat.",
+    },
+    userTurn: {
+      id: "pending-user-turn",
+      text: "fix the flaky test please",
+      reasoningEffort: "medium",
+      responseSpeed: "careful",
+      modelOverride: "anthropic/claude-opus-4-6",
+    },
   });
   assert.equal(created, true, "a brand-new chat gets a stub conversation");
 
@@ -608,6 +620,10 @@ console.log("cave-conversations.test.ts: ok");
   assert.equal(stub?.turns[0]?.id, "pending-user-turn");
   assert.equal(stub?.turns[0]?.role, "user");
   assert.equal(stub?.turns[0]?.text, "fix the flaky test please");
+  assert.equal(stub?.turns[0]?.reasoningEffort, "medium");
+  assert.equal(stub?.turns[0]?.responseSpeed, "careful");
+  assert.equal(stub?.turns[0]?.modelOverride, "anthropic/claude-opus-4-6");
+  assert.equal(stub?.modelIntent?.model, "anthropic/claude-opus-4-6");
   assert.equal(stub?.activeLeafId, "pending-user-turn");
   assert.equal(stub?.title, "Fix the flaky test");
 
@@ -766,3 +782,62 @@ console.log("cave-conversations cache test OK");
   await deleteConversation("stub-crashed");
 }
 console.log("cave-conversations pending-marker test OK");
+
+// ── First-turn stub / mid-stream model PATCH serialization ──────────────────
+// The client receives a session id immediately and can PATCH its model while
+// the stub is still being written. Both mutations must queue by conversation
+// id so the PATCH sees the stub and the later transcript save sees the PATCH.
+{
+  const { createConversationStub, withConversationLock } = await import(
+    "./cave-conversations.ts"
+  );
+  const sessionId = "stub-model-lock";
+  let releaseHold;
+  let markEntered;
+  const entered = new Promise((resolve) => {
+    markEntered = resolve;
+  });
+  const hold = withConversationLock(sessionId, async () => {
+    markEntered();
+    await new Promise((resolve) => {
+      releaseHold = resolve;
+    });
+  });
+  await entered;
+
+  const stubWrite = createConversationStub({
+    sessionId,
+    familiarId: "nyx",
+    harness: "claude",
+    modelIntent: {
+      model: "anthropic/claude-opus-4-6",
+      source: "session",
+      applicationState: "saved",
+      reason: "Saved for this chat.",
+    },
+    userTurn: { id: "pending-model-turn", text: "Use the selected model." },
+  });
+  const modelPatch = withConversationLock(sessionId, async () => {
+    const conversation = await loadConversation(sessionId);
+    assert.ok(conversation, "the queued PATCH runs after first-turn stub persistence");
+    conversation.modelIntent = {
+      model: "anthropic/claude-haiku-4-5",
+      source: "session",
+      applicationState: "saved",
+      reason: "Saved for this chat.",
+    };
+    await saveConversation(conversation);
+  });
+
+  releaseHold();
+  await hold;
+  assert.equal(await stubWrite, true);
+  await modelPatch;
+  assert.equal(
+    (await loadConversation(sessionId))?.modelIntent?.model,
+    "anthropic/claude-haiku-4-5",
+    "a newer queued model PATCH wins without a transient 404 or lost update",
+  );
+  await deleteConversation(sessionId);
+}
+console.log("cave-conversations model-lock test OK");

@@ -65,6 +65,16 @@ struct CardStep: Identifiable, Codable, Hashable {
     var doneAt: String?
 }
 
+struct CardGitHubLink: Identifiable, Codable, Hashable {
+    let id: String
+    var kind: String
+    var repo: String
+    var number: Int?
+    var title: String
+    var url: String
+    var state: String?
+}
+
 struct BoardCard: Identifiable, Codable, Hashable {
     let id: String
     var title: String
@@ -81,13 +91,14 @@ struct BoardCard: Identifiable, Codable, Hashable {
     var updatedAt: String?
     var needsHuman: Bool?
     var steps: [CardStep]?
+    var github: [CardGitHubLink]?
 
     enum CodingKeys: String, CodingKey {
         case id, title, notes
         case statusRaw = "status"
         case priorityRaw = "priority"
         case familiarId, projectId, sessionId, labels, startDate, endDate
-        case createdAt, updatedAt, needsHuman, steps
+        case createdAt, updatedAt, needsHuman, steps, github
     }
 
     var status: CardStatus { CardStatus(rawValue: statusRaw) ?? .backlog }
@@ -98,6 +109,7 @@ struct BoardCard: Identifiable, Codable, Hashable {
     var hasSteps: Bool { stepCount > 0 }
     var stepFraction: Double { stepCount == 0 ? 0 : Double(doneStepCount) / Double(stepCount) }
     var labelList: [String] { labels ?? [] }
+    var githubLinks: [CardGitHubLink] { github ?? [] }
 }
 
 struct BoardResponse: Codable {

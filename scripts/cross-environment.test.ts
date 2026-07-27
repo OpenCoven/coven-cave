@@ -17,7 +17,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -184,10 +184,91 @@ function skip(reason: string): void {
 // ---------------------------------------------------------------------------
 {
   assert.equal(openCodeCommand(), "opencode", "OpenCode keeps one executable name across desktop platforms");
-  const windowsLaunch = openCodeLaunch(["run", "safe & literal"], "win32", { SystemRoot: "C:\\Windows" });
-  assert.match(windowsLaunch.command, /WindowsPowerShell\\v1\.0\\powershell\.exe$/i, "Windows runs npm's opencode.cmd shim through PowerShell");
-  assert.equal(windowsLaunch.input, JSON.stringify(["run", "safe & literal"]), "Windows shell wrapper keeps chat input out of command syntax");
-  assert.match(windowsLaunch.args.at(-1) ?? "", /\[Console\]::In\.ReadToEnd\(\)/, "Windows reads OpenCode argv from stdin so long prompts do not exceed its command-line limit");
+  const hostileArgs = ["run", "--format", "json"];
+  const hostileInput = `${"x".repeat(40_000)}
+review 😀
+quotes: "double" 'single'
+slashes: C:\\Program Files\\OpenCode\\bin
+shell: ; rm -rf ~ | $(evil) && echo "%PATH%" > pwned <'quote\``;
+  const simulatedShim = "C:\\npm\\opencode.cmd";
+  const simulatedTarget = "C:\\npm\\node_modules\\opencode-ai\\bin\\opencode.exe";
+  const windowsLaunch = openCodeLaunch(
+    hostileArgs,
+    "win32",
+    { Path: "C:\\npm", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
+    {
+      statFile: (candidate) => candidate === simulatedShim,
+      resolveWindowsShim: (candidate) => {
+        assert.equal(candidate, simulatedShim);
+        return { command: simulatedTarget, fixedArgs: [] };
+      },
+    },
+  );
+  assert.equal(
+    windowsLaunch.command,
+    simulatedTarget,
+    "Windows resolves the npm command shim to its native package target",
+  );
+  assert.deepEqual(
+    windowsLaunch.args,
+    hostileArgs,
+    "Windows keeps the complete option argv as direct child-process data",
+  );
+  assert.doesNotMatch(
+    windowsLaunch.command,
+    /\.(?:cmd|bat|ps1)$/i,
+    "Windows never executes a shell shim between Cave and OpenCode stdin",
+  );
+
+  if (process.platform === "win32") {
+    // Execute the REAL npm .cmd resolution → direct native process chain. Cave
+    // reads the shim only to prove its package target, then bypasses every
+    // shell re-parse boundary while a >40K prompt travels over stdin.
+    const openCodeDir = mkdtempSync(path.join(os.tmpdir(), "opencode-conf-launch-"));
+    try {
+      writeFileSync(
+        path.join(openCodeDir, "opencode-shim.mjs"),
+        [
+          "let input = \"\";",
+          "process.stdin.setEncoding(\"utf8\");",
+          "for await (const chunk of process.stdin) input += chunk;",
+          "console.log(JSON.stringify({ args: process.argv.slice(2), input }));",
+        ].join("\n"),
+      );
+      writeFileSync(
+        path.join(openCodeDir, "opencode.cmd"),
+        '"%dp0%\\node.exe" "%dp0%\\opencode-shim.mjs" %*\r\n',
+      );
+      const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "Path";
+      const inheritedPath = process.env[pathKey] ?? "";
+      const env = {
+        ...process.env,
+        [pathKey]: `${openCodeDir};${inheritedPath}`,
+      };
+      const realLaunch = openCodeLaunch(hostileArgs, process.platform, env);
+      const result = spawnSync(realLaunch.command, realLaunch.args, {
+        env,
+        encoding: "utf8",
+        input: hostileInput,
+        windowsHide: true,
+      });
+      assert.equal(
+        result.status,
+        0,
+        `Windows OpenCode launch failed:\n${result.stderr}\n${result.stdout}`,
+      );
+      assert.deepEqual(
+        JSON.parse(result.stdout.trim()),
+        { args: hostileArgs, input: hostileInput },
+        "the resolved direct process preserves option argv and >40K multiline Unicode stdin exactly",
+      );
+    } finally {
+      rmSync(openCodeDir, { recursive: true, force: true });
+    }
+  } else {
+    skip("OpenCode Windows shim resolution: requires a Windows host (matrix runs it on windows-latest)");
+  }
+
   assert.equal(openCodeNeedsTmpRuntimeDir("win32", {}), false, "Windows does not receive an XDG runtime directory");
   assert.equal(openCodeNeedsTmpRuntimeDir("linux", {}), true, "headless Linux receives /tmp for OpenCode runtime files");
   assert.equal(openCodeNeedsTmpRuntimeDir("linux", { XDG_RUNTIME_DIR: "/run/user/1000" }), false, "native Linux preserves its XDG runtime directory");

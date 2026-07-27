@@ -139,6 +139,40 @@ test.describe("onboarding wizard", () => {
     }
   });
 
+  test("keeps setup-header focus indicators visible inside the horizontal scroller", async ({
+    page,
+    browserName,
+  }) => {
+    // Keep this assertion on the desktop-shell side of the responsive boundary;
+    // the mobile project owns the narrower navigation layout.
+    await page.setViewportSize({ width: 1024, height: 700 });
+    await gotoApp(page, FRESH_STATUS);
+    await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
+    await openWizardManually(page);
+
+    const recheck = wizard(page).getByRole("button", { name: "Re-check" });
+    // Enter through a real keyboard transition so Chromium/WebKit apply
+    // :focus-visible for the same modality this regression protects. WebKit's
+    // macOS keyboard-access convention uses Option+Tab for control focus.
+    await wizard(page).focus();
+    await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
+    await expect(recheck).toBeFocused();
+
+    const focusStyle = await recheck.evaluate((button) => {
+      const style = getComputedStyle(button);
+      return {
+        visible: button.matches(":focus-visible"),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: style.outlineWidth,
+        outlineOffset: Number.parseFloat(style.outlineOffset),
+      };
+    });
+    expect(focusStyle.visible).toBe(true);
+    expect(focusStyle.outlineStyle).toBe("solid");
+    expect(Number.parseFloat(focusStyle.outlineWidth)).toBeGreaterThan(0);
+    expect(focusStyle.outlineOffset).toBeLessThanOrEqual(0);
+  });
+
   test("marks the first incomplete step as the current step", async ({ page }) => {
     await gotoApp(page, FRESH_STATUS);
     await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
@@ -211,10 +245,10 @@ test.describe("onboarding wizard", () => {
     await expect(page.getByRole("dialog", { name: "Summoning circle" })).toBeVisible({ timeout: 15_000 });
   });
 
-  test("a failed CLI install (npm missing) shows the hint and stays retryable", async ({ page }) => {
-    // The install route's npm-missing shape: the wizard must surface the hint
-    // (NodeSetupNotice + per-tool failure note) and keep the install button
-    // enabled — a machine without Node can never be a dead end.
+  test("a failed CLI install (managed Node missing) shows the hint and stays retryable", async ({ page }) => {
+    // The install route's managed-node-missing shape: the wizard must surface
+    // the hint (NodeSetupNotice + per-tool failure note) and keep the install
+    // button enabled — a machine without its managed toolchain can never be a dead end.
     let installCalls = 0;
     await page.route("**/api/onboarding/install", (r) => {
       if (r.request().method() !== "POST") return r.fallback();
@@ -223,9 +257,9 @@ test.describe("onboarding wizard", () => {
         status: 422,
         json: {
           ok: false,
-          npmMissing: true,
-          error: "npm is not available on PATH",
-          hint: "Install Node.js LTS from https://nodejs.org, then try again.",
+          managedNodeMissing: true,
+          error: "Cave-managed Node.js and npm are not ready",
+          hint: "Install Cave-managed Node.js and npm first. Cave keeps this toolchain in its user data and does not modify your system PATH.",
         },
       });
     });
@@ -235,7 +269,7 @@ test.describe("onboarding wizard", () => {
     const install = wizard(page).getByRole("button", { name: "Install the Coven CLI", exact: true });
     await install.click();
     await expect(
-      wizard(page).getByText("Install Node.js LTS from https://nodejs.org, then try again."),
+      wizard(page).getByText("Install Cave-managed Node.js and npm first. Cave keeps this toolchain in its user data and does not modify your system PATH."),
     ).toBeVisible({ timeout: 10_000 });
     expect(installCalls).toBeGreaterThanOrEqual(1);
 

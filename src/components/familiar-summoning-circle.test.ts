@@ -28,6 +28,11 @@ assert.match(
   /fetch\("\/api\/familiars",\s*\{[\s\S]*?method:\s*"POST"/,
   "the circle should POST to /api/familiars",
 );
+assert.match(
+  source,
+  /vessel !== "local" \|\| h\.availability\?\.state === undefined \|\| h\.availability\.state === "ready"/,
+  "Local runtime choices must exclude installed runners the shared preflight says are not launchable",
+);
 assert.doesNotMatch(
   source,
   /onboarding\/setup/,
@@ -44,6 +49,16 @@ assert.match(
   source,
   /fetch\("\/api\/harnesses"/,
   "local/SSH vessels list installed runtimes from /api/harnesses",
+);
+assert.match(
+  source,
+  /h\.installed &&[\s\S]{0,120}\(h\.availability\?\.state \?\? "ready"\) === "ready"/,
+  "the familiar picker excludes runners that the shared availability contract cannot launch",
+);
+assert.match(
+  source,
+  /const unavailableHarness = \(harnesses \?\? \[\]\)\.find\([\s\S]*?h\.availability !== undefined[\s\S]*?h\.availability\.state !== "ready"[\s\S]*?const unavailableAvailability = unavailableHarness\?\.availability;[\s\S]*?unavailableAvailability\.message/,
+  "the familiar picker surfaces shared availability remediation for both missing and unlaunchable runtimes",
 );
 assert.match(
   harnessesRoute,

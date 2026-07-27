@@ -107,6 +107,30 @@ test("surfaceMatchesRoles honors alias roles with the same normalization", () =>
   assert.ok(!surfaceMatchesRoles({ role: "navigator", aliases: ["editor"] }, planner));
 });
 
+test("room aliases cover the live navigation and memory role labels", () => {
+  const navigator = familiarRoleIds({
+    id: "astra",
+    role: "Strategy / Navigation",
+  });
+  assert.ok(
+    surfaceMatchesRoles(
+      { role: "navigator", aliases: ["planner", "planning", "navigation"] },
+      navigator,
+    ),
+  );
+
+  const indexer = familiarRoleIds({
+    id: "echo",
+    role: "Memory / Reflection",
+  });
+  assert.ok(
+    surfaceMatchesRoles(
+      { role: "indexer", aliases: ["archivist", "indexing", "memory", "reflection"] },
+      indexer,
+    ),
+  );
+});
+
 test("familiarRoleIds grants the explicit familiar Type's tokens (cave-cc5r)", () => {
   const ids = familiarRoleIds({ id: "f", role: "Orchestrator", familiarType: "coding" });
   assert.ok(ids.has("coding"));
@@ -230,17 +254,20 @@ test("matchesShortcutCombo honors mod aliasing and rejects extra modifiers", () 
   assert.ok(!matchesShortcutCombo({ ...base, key: "f", metaKey: true }, "mod+e")); // wrong key
 });
 
-test("registry keeps retired familiar-type words as aliases (cave-lgcb)", () => {
+test("registry keeps retired types and their live role labels reachable (cave-lgcb)", () => {
   // The vocabulary reduction removed watch/planning/writing/indexing from the
-  // Type picker; their rooms stay reachable through Role labels only because
-  // register.tsx carries these alias words. Pin them so the continuity story
-  // can't silently drift from the shapes asserted in familiar-types.test.ts.
+  // Type picker. Their rooms stay reachable through free-text Role labels only
+  // because register.tsx carries both retired vocabulary and the labels used by
+  // the production familiars. Pin both so continuity cannot silently drift.
   const source = readFileSync(
     new URL("../components/role-surfaces/register.tsx", import.meta.url),
     "utf8",
   );
   assert.match(source, /aliases:\s*\["watch",\s*"guardian"\]/);
-  assert.match(source, /aliases:\s*\["planner",\s*"planning"\]/);
+  assert.match(source, /aliases:\s*\["planner",\s*"planning",\s*"navigation"\]/);
   assert.match(source, /aliases:\s*\["editor",\s*"writer",\s*"writing"\]/);
-  assert.match(source, /aliases:\s*\["archivist",\s*"indexing"\]/);
+  assert.match(
+    source,
+    /aliases:\s*\["archivist",\s*"indexing",\s*"memory",\s*"reflection"\]/,
+  );
 });

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const surface = readFileSync(new URL("./researcher-surface.tsx", import.meta.url), "utf8");
+const register = readFileSync(new URL("./register.tsx", import.meta.url), "utf8");
 const deskTab = readFileSync(new URL("./research-tab-desk.tsx", import.meta.url), "utf8");
 const promptTab = readFileSync(new URL("./research-tab-prompt.tsx", import.meta.url), "utf8");
 const libraryTab = readFileSync(new URL("./research-tab-library.tsx", import.meta.url), "utf8");
@@ -16,7 +17,17 @@ const ledger = readFileSync(new URL("./research-evidence-ledger.tsx", import.met
 const hook = readFileSync(new URL("./use-research-missions.ts", import.meta.url), "utf8");
 const clientLib = readFileSync(new URL("../../lib/research-mission-client.ts", import.meta.url), "utf8");
 const missionsLib = readFileSync(new URL("../../lib/research-missions.ts", import.meta.url), "utf8");
-const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+const surfaceCss = [
+  "../../styles/globals/surface-role-workspaces.css",
+  "../../styles/globals/surface-research-desk.css",
+  "../../styles/globals/surface-research-prompt.css",
+  "../../styles/globals/surface-research-library.css",
+  "../../styles/globals/surface-research-studio.css",
+  "../../styles/globals/surface-research-resources.css",
+]
+  .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
+  .join("\n");
+const rootCss = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
 // The tab-strip/desk sheet rides with the surface (not the root bundle), so
 // strip-level selectors are asserted against the sheet itself.
 const deskCss = readFileSync(new URL("../../styles/globals/surface-research-desk.css", import.meta.url), "utf8");
@@ -64,15 +75,29 @@ test("default tab is desk when missions exist, else prompt — never persisted",
   assert.match(surface, /const selectTab = useCallback\(\(next: ResearchDeskTab\) => \{\s*setTab\(next\);/);
 });
 
-test("engine status derives honestly from the daemon and live missions", () => {
-  assert.match(surface, /context\.runtimeState\.daemonRunning/);
-  assert.match(surface, /new Set\(\["running", "planning", "queued"\]\)/);
-  assert.match(surface, /Engine ready · \$\{liveCount\} run\$\{liveCount === 1 \? "" : "s"\} live/);
-  // Daemon down degrades honestly instead of pretending readiness.
-  assert.match(surface, /Engine offline · runs stay retryable/);
-  assert.match(surface, /data-tone=\{daemonRunning \? "ok" : "warn"\}/);
-  // Tone is a class/dot + words, not color alone.
-  assert.match(deskCss, /\.research-desk__engine\[data-tone="warn"\] \.research-desk__engine-dot/);
+test("the room defers engine status to the shared host", () => {
+  assert.doesNotMatch(surface, /research-desk__engine/);
+  assert.doesNotMatch(surface, /Engine ready|Engine offline/);
+  assert.doesNotMatch(surface, /LIVE_STATUSES/);
+  assert.doesNotMatch(deskCss, /\.research-desk__engine/);
+});
+
+test("the room publishes successful live-run counts for the reactive host status", () => {
+  assert.match(surface, /useRoleSurfaceState<ResearcherState>/);
+  assert.match(surface, /researchLiveRunCount\(research\.missions\)/);
+  assert.match(surface, /if \(research\.loading \|\| research\.error\) return/);
+  assert.match(surface, /patch\(\{ lastLiveRunCount: liveRunCount \}\)/);
+  assert.match(
+    register,
+    /readRoleSurfaceState<\{ lastLiveRunCount\?: number \| null \}>[\s\S]*?RESEARCHER_SURFACE_ID/,
+  );
+  assert.match(
+    register,
+    /researchEngineStatus\(\s*context\.runtimeState\.daemonRunning,\s*state\?\.lastLiveRunCount \?\? null,\s*\)/,
+  );
+  // Run status moved into the one generic room header; local engine chrome
+  // remains absent per the quiet-chrome contract above.
+  assert.doesNotMatch(surface, /research-desk__engine/);
 });
 
 test("desk tab flags waiting checkpoints only while the desk is not active", () => {
@@ -97,7 +122,7 @@ test("all five tab CSS modules ride with the surface, not the root bundle", () =
   for (const name of ["desk", "prompt", "library", "studio", "resources"]) {
     assert.match(surface, new RegExp(`import "@/styles/globals/surface-research-${name}\\.css"`));
     assert.ok(
-      !css.includes(`surface-research-${name}.css`),
+      !rootCss.includes(`surface-research-${name}.css`),
       `surface-research-${name}.css must not enter the root globals.css bundle`,
     );
   }
@@ -172,7 +197,7 @@ test("composer enforces the shared minimum intent requirement", () => {
   assert.match(composer, /id="research-intent-minimum"/);
   assert.match(composer, /aria-invalid=\{Boolean\(error\) \|\| intentTooShort\}/);
   assert.match(composer, /"research-intent-minimum"\s*:\s*"research-plan-review"/);
-  assert.match(css, /\.research-intent-minimum/);
+  assert.match(surfaceCss, /\.research-intent-minimum/);
 });
 
 test("the plan summary pill is the bounds toggle — honest, labeled, focusing", () => {
@@ -191,9 +216,9 @@ test("the plan summary pill is the bounds toggle — honest, labeled, focusing",
     assert.match(composer, new RegExp(`id="${id}"`));
   }
   // The toggle must look pressable and expose focus + expanded states.
-  assert.match(css, /\.research-plan-summary \{[^}]*cursor: pointer/);
-  assert.match(css, /\.research-plan-summary:focus-visible/);
-  assert.match(css, /\.research-plan-summary\[aria-expanded="true"\]/);
+  assert.match(surfaceCss, /\.research-plan-summary \{[^}]*cursor: pointer/);
+  assert.match(surfaceCss, /\.research-plan-summary:focus-visible/);
+  assert.match(surfaceCss, /\.research-plan-summary\[aria-expanded="true"\]/);
 });
 
 
@@ -223,7 +248,7 @@ test("archived missions collapse into a disclosure group below active work", () 
   assert.match(list, /archivedMissions\.some\(\(mission\) => mission\.id === selectedId\)[\s\S]{0,80}setArchivedOpen\(true\)/);
   // An all-archived ledger says so instead of claiming there are no missions.
   assert.match(list, /No active missions\./);
-  assert.match(css, /\.research-mission-nav__group-toggle/);
+  assert.match(surfaceCss, /\.research-mission-nav__group-toggle/);
   // Auto-selection never lands inside the collapsed group.
   assert.match(clientLib, /mission\.status !== "archived"/);
 });
@@ -269,8 +294,8 @@ test("timestamps are relative and schedules read as prose, not raw data", () => 
   assert.match(detail, /import \{ useMinuteTick \} from "@\/lib\/use-minute-tick"/);
   assert.match(detail, /useMinuteTick\(\)/);
   // Uppercase/capitalize chrome must not distort the relative-time text.
-  assert.match(css, /\.research-mission-row__meta time \{[^}]*text-transform: none/);
-  assert.match(css, /\.research-mission-detail__eyebrow time \{[^}]*text-transform: none/);
+  assert.match(surfaceCss, /\.research-mission-row__meta time \{[^}]*text-transform: none/);
+  assert.match(surfaceCss, /\.research-mission-detail__eyebrow time \{[^}]*text-transform: none/);
 });
 
 test("ledger errors stay visible regardless of the active output tab", () => {
@@ -317,7 +342,7 @@ test("retry adapts to project-root failures with a visible config", () => {
   // …and the root is editable with an honest workspace fallback.
   assert.match(detail, /id="research-retry-root"/);
   assert.match(detail, /Leave empty to run in the mission workspace/);
-  assert.match(css, /\.research-retry-config input/);
+  assert.match(surfaceCss, /\.research-retry-config input/);
 });
 
 test("autoresearch schedules use standard paused Automation controls", () => {
@@ -346,16 +371,16 @@ test("bound meter over/met states are visible beyond color alone", () => {
   assert.match(detail, /<span className="sr-only"> — \{reading\.detail\}<\/span>/);
   // …and the badge word makes over/met legible without color.
   assert.match(detail, /research-bound-badge/);
-  assert.match(css, /\.research-bound--over dd/);
-  assert.match(css, /\.research-bound--met dd/);
-  assert.match(css, /\.research-bound-badge/);
+  assert.match(surfaceCss, /\.research-bound--over dd/);
+  assert.match(surfaceCss, /\.research-bound--met dd/);
+  assert.match(surfaceCss, /\.research-bound-badge/);
 });
 
 test("polling is abortable, foreground-aware, and container responsive", () => {
   assert.match(hook, /AbortController/);
   assert.match(hook, /usePausablePoll/);
-  assert.match(css, /\.research-desk\s*\{[\s\S]*?container-type:\s*inline-size/);
-  assert.match(css, /@container research-desk/);
+  assert.match(surfaceCss, /\.research-desk\s*\{[\s\S]*?container-type:\s*inline-size/);
+  assert.match(surfaceCss, /@container research-desk/);
 });
 
 test("stale poll responses never clobber fresher state (loadSeq guard)", () => {
@@ -408,8 +433,8 @@ test("forms expose errors and narrow outputs become keyboard tabs", () => {
   assert.match(composer, /role="alert"/);
   assert.match(detail, /<Tabs<ResearchOutputTab>/);
   assert.match(ledger, /role="tabpanel"/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(css, /@container research-desk \(max-width: 760px\)/);
+  assert.match(surfaceCss, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(surfaceCss, /@container research-desk \(max-width: 760px\)/);
 });
 
 test("no-preference default tab latches once loading settles", () => {

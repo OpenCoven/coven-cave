@@ -400,7 +400,7 @@ assert.match(
 // line map must be dropped there or markers would be attached twice.
 assert.match(
   bubbleSource,
-  /highlighted = `<pre><code>\$\{escHtml\(code\)\}<\/code><\/pre>`;\s*\n\s*diffLines = null/,
+  /highlighted = plainCodeHtml\(code\);\s*\n\s*diffLines = null/,
   "highlight-failure fallback clears diffLines so markers are not doubled",
 );
 

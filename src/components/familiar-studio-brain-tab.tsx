@@ -9,6 +9,7 @@ import {
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
 import { isBindableRuntimeChoice } from "@/lib/harness-adapters";
+import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import type { RuntimeModelOption } from "@/lib/grok-build";
 import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
@@ -71,6 +72,7 @@ type HarnessReport = {
   id: string;
   label: string;
   installed: boolean;
+  availability?: RuntimeAvailabilitySummary;
   models?: RuntimeModelOption[];
   defaultModel?: string | null;
 };
@@ -273,6 +275,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const defaultHarnessId = familiar.defaultHarness ?? familiar.harness ?? "";
   const defaultHarnessLabel = runtimeLabel(defaultHarnessId, harnesses);
   const harnessId = draftHarness || defaultHarnessId;
+  const selectedHarnessAvailability = harnesses.find((item) => item.id === harnessId)?.availability;
 
   // Model parity: source the per-familiar model menu from the same runtime →
   // provider catalog the chat picker uses. allowCustom keeps the free-text
@@ -838,13 +841,32 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         // per-familiar runtime choices.
                         options: harnesses
                           .filter((h) => isBindableRuntimeChoice(h.id))
-                          .map((h) => ({
-                            value: h.id,
-                            label: `${h.label}${h.installed ? "" : " (not installed)"}`,
-                          })),
+                          .map((h) => {
+                            const availabilityMessage = h.availability && h.availability.state !== "ready"
+                              ? h.availability.message
+                              : undefined;
+                            return {
+                              value: h.id,
+                              label: `${h.label}${
+                                h.availability && h.availability.state !== "ready"
+                                  ? h.availability.state === "missing"
+                                    ? " (not installed)"
+                                    : " (unavailable)"
+                                  : h.installed ? "" : " (not installed)"
+                              }`,
+                              detail: h.availability?.state !== "ready"
+                                ? h.availability?.message
+                                : availabilityMessage,
+                            };
+                          }),
                       } satisfies StandardSelectGroup<string>,
                     ]}
                   />
+                  {selectedHarnessAvailability?.state !== undefined && selectedHarnessAvailability.state !== "ready" && selectedHarnessAvailability.message ? (
+                    <p className="familiar-studio-brain__hint familiar-studio-brain__hint--warn" role="status">
+                      {selectedHarnessAvailability.message}
+                    </p>
+                  ) : null}
                 </div>
               </label>
 

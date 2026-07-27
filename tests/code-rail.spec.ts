@@ -26,6 +26,14 @@ const mkSession = (over: Record<string, unknown>) => ({
 // A repo-linked session (rail available) and a plain session (no project_root).
 const REPO_SESSION = mkSession({ id: "s-repo", title: "Refactor auth flow", project_root: "/repo/alpha" });
 const PLAIN_SESSION = mkSession({ id: "s-plain", title: "Brainstorm ideas", project_root: "" });
+const REPO_PROJECT = {
+  id: "repo-alpha",
+  name: "alpha",
+  root: "/repo/alpha",
+  access: "write",
+  createdAt: ISO,
+  updatedAt: ISO,
+};
 
 async function base(page: Page, sessions: unknown[]) {
   await page.addInitScript(() => {
@@ -44,6 +52,9 @@ async function base(page: Page, sessions: unknown[]) {
   );
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions } }),
+  );
+  await page.route("**/api/projects**", (route) =>
+    route.fulfill({ json: { ok: true, projects: [REPO_PROJECT] } }),
   );
   await page.route("**/api/chat/conversation/**", (route) =>
     route.fulfill({

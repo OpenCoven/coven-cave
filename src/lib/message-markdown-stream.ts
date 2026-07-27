@@ -1,6 +1,37 @@
 const RENDER_CACHE_MAX = 200;
 const renderCache = new Map<string, string>();
 
+export interface MarkdownRenderGate {
+  issue(): number;
+  settle(): void;
+  apply(stamp: number): boolean;
+}
+
+/**
+ * Orders async Markdown renders and synchronously invalidates work issued
+ * before a pending turn settles.
+ */
+export function createMarkdownRenderGate(): MarkdownRenderGate {
+  let issuedStamp = 0;
+  let appliedStamp = 0;
+  let settledBarrier = 0;
+
+  return {
+    issue() {
+      issuedStamp += 1;
+      return issuedStamp;
+    },
+    settle() {
+      settledBarrier = Math.max(settledBarrier, issuedStamp + 1);
+    },
+    apply(stamp) {
+      if (stamp < settledBarrier || stamp <= appliedStamp) return false;
+      appliedStamp = stamp;
+      return true;
+    },
+  };
+}
+
 /** Small LRU keyed by final markdown snapshots; transient stream frames never enter it. */
 export function getRenderedMarkdown(key: string): string | undefined {
   const value = renderCache.get(key);

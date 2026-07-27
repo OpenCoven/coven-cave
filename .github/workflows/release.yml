@@ -95,24 +95,6 @@ jobs:
             exit 1
           fi
           VERSION="${TAG#v}"
-          if ! PUBLISHED_JSON=$(npm view "@opencoven/cli@${VERSION}" version --json); then
-            echo "::error::Coven Cave $VERSION requires @opencoven/cli@$VERSION, but that package version is not published."
-            echo "::error::Publish the signed OpenCoven/coven v$VERSION release before retrying this Cave release."
-            exit 1
-          fi
-          PUBLISHED=$(printf '%s' "$PUBLISHED_JSON" | node -e '
-            let input = "";
-            process.stdin.on("data", chunk => input += chunk);
-            process.stdin.on("end", () => {
-              const value = JSON.parse(input);
-              process.stdout.write(Array.isArray(value) ? String(value.at(-1) ?? "") : String(value));
-            });
-          ')
-          if [ "$PUBLISHED" != "$VERSION" ]; then
-            echo "::error::Coven Cave $VERSION requires @opencoven/cli@$VERSION, but npm returned '${PUBLISHED:-nothing}'."
-            echo "::error::Publish the signed OpenCoven/coven v$VERSION release before retrying this Cave release."
-            exit 1
-          fi
           LATEST=$(npm view "@opencoven/cli@latest" version)
           if ! node - "$LATEST" "$VERSION" <<'NODE'
           const parse = value => {
@@ -143,11 +125,11 @@ jobs:
           process.exit(compare(process.argv[2], process.argv[3]) >= 0 ? 0 : 1);
           NODE
           then
-            echo "::error::@opencoven/cli@$VERSION exists, but the updater installs npm latest '${LATEST:-nothing}', which is older."
-            echo "::error::Promote @opencoven/cli@$VERSION (or newer) to latest before retrying this Cave release."
+            echo "::error::Coven Cave $VERSION requires an @opencoven/cli release >= $VERSION, but npm latest is '${LATEST:-nothing}'."
+            echo "::error::Promote @opencoven/cli $VERSION (or newer) to latest before retrying this Cave release."
             exit 1
           fi
-          echo "Verified @opencoven/cli@$PUBLISHED is the package installed by the Cave daemon update."
+          echo "Verified @opencoven/cli@latest ($LATEST) satisfies the Cave daemon update for version $VERSION."
 
   build:
     name: Build ${{ matrix.label }}
@@ -250,6 +232,26 @@ jobs:
             printf '%s\n' "$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS"
             echo "COVEN_OPENCODE_KEYS_EOF"
             echo "NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_CHECKPOINT=$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_CHECKPOINT"
+          } >> "$GITHUB_ENV"
+
+      - name: Require signed Grok compatibility registry
+        shell: bash
+        env:
+          NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_URL: ${{ secrets.GROK_SCHEMA_REGISTRY_URL }}
+          NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEY: ${{ secrets.GROK_SCHEMA_REGISTRY_PUBLIC_KEY }}
+          NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEYS: ${{ secrets.GROK_SCHEMA_REGISTRY_PUBLIC_KEYS }}
+          NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT: ${{ secrets.GROK_SCHEMA_REGISTRY_CHECKPOINT }}
+        run: |
+          node scripts/check-grok-registry-release.mjs
+          {
+            echo "NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_URL=$NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_URL"
+            echo "NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEY<<COVEN_GROK_KEY_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEY"
+            echo "COVEN_GROK_KEY_EOF"
+            echo "NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEYS<<COVEN_GROK_KEYS_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEYS"
+            echo "COVEN_GROK_KEYS_EOF"
+            echo "NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT=$NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT"
           } >> "$GITHUB_ENV"
 
       # Decode the App Store Connect API key onto the runner for the custom

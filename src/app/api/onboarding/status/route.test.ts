@@ -48,8 +48,8 @@ assert.match(
 
 assert.match(
   source,
-  /npm i -g @opencoven\/cli@latest/,
-  "onboarding status should return the npm-published Coven CLI install command",
+  /COVEN_CLI_INSTALL_GUIDANCE/,
+  "onboarding status directs users through the Cave-managed toolchain",
 );
 
 assert.match(
@@ -66,8 +66,8 @@ assert.match(
 
 assert.match(
   source,
-  /if \(!tool\.compatible\)[\s\S]{0,320}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_COMMAND/,
-  "startup requires a locally compatible Coven CLI without waiting for npm latest",
+  /if \(!tool\.compatible\)[\s\S]{0,320}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_GUIDANCE/,
+  "startup requires a locally compatible Coven CLI without host npm guidance",
 );
 
 assert.doesNotMatch(
@@ -100,18 +100,18 @@ assert.doesNotMatch(
   "onboarding status should not return stale repo-source CLI install guidance",
 );
 
-// Queue project selection is a Git-repository boundary, so missing Git blocks
-// onboarding with an actionable installation hint.
+// Queue project selection is a Git-repository boundary, but basic onboarding
+// remains available until the Queue capability is selected.
 assert.match(source, /async function checkGit\(\): Promise<Step>/, "preflight checks for git");
 assert.match(
   source,
   /Git is required to select and use a Queue project/,
   "git failure explains the required Queue prerequisite",
 );
-assert.doesNotMatch(
+assert.match(
   source,
-  /if \(found\) return \{ ok: true, optional: true, detail: found \}/,
-  "git is not marked optional when Queue project selection is required",
+  /git: \{ \.\.\.git, optional: true \}/,
+  "git is advisory in base onboarding and remains a Queue capability gate",
 );
 
 // Familiar creation lives in the in-app Summoning Circle now: the familiars

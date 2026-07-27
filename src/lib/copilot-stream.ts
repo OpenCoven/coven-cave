@@ -28,6 +28,7 @@
 // ignores. The final `result` frame is top-level (no `data` envelope).
 
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+import type { CopilotLaunchCommand } from "./copilot-bin.ts";
 import type { RuntimeToolAdapter, ToolAction } from "./runtime-tool-adapter.ts";
 
 /**
@@ -239,7 +240,7 @@ export type RuntimeProtocolDiagnostic = {
 export type CopilotStreamSpec = {
   executable: string;
   /** Resolved during the capability probe; direct spawns must reuse it. */
-  launchCommand?: { command: string; fixedArgs: string[] };
+  launchCommand?: CopilotLaunchCommand;
   /** Selected, versioned JSONL event contract for this local CLI. */
   protocol: RuntimeEventProtocolSchema;
   /** JSONL stream launch args; ends with the prompt flag (`-p`). */
@@ -281,6 +282,15 @@ function stringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   if (!value.every((entry) => typeof entry === "string")) return null;
   return value as string[];
+}
+
+/** Whether the synced registry explicitly opts local Copilot into Cave's
+ * direct JSONL transport. When it does not, callers retain the established
+ * generic `coven run` route; when it does, a malformed/incompatible direct
+ * plan must fail closed rather than silently changing transports. */
+export function copilotDirectStreamConfigured(): boolean {
+  const runtime = REGISTRY_RUNTIMES.find((entry) => entry.id === "copilot");
+  return runtime?.capabilities.stream === true;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -350,7 +360,7 @@ export function runtimeEventProtocolSchemas(value: unknown): RuntimeEventProtoco
 export function copilotStreamSpec(
   clientVersion?: string | null,
   compatibleEventProtocols?: unknown,
-  launchCommand?: { command: string; fixedArgs: string[] },
+  launchCommand?: CopilotLaunchCommand,
 ): CopilotStreamSpec | null {
   const runtime = REGISTRY_RUNTIMES.find((entry) => entry.id === "copilot");
   if (!runtime || !runtime.capabilities.stream) return null;

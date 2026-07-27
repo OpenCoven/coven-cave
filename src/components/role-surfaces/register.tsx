@@ -25,6 +25,7 @@ import { readRoleSurfaceState, writeRoleSurfaceState } from "@/lib/role-surface-
 import { watchtowerStatus } from "./sentinel-watch";
 import { deskSummary, scribeStatus } from "./scribe-craft";
 import { chartRoomStatus } from "./navigator-charts";
+import { researchEngineStatus } from "./researcher-status";
 import { reviewDeckStatus } from "./review-deck";
 import {
   CODE_SURFACE_ID,
@@ -103,13 +104,21 @@ registerRoleSurface({
   priority: 30,
   shouldDisplay: () => true,
   getContributions(context) {
+    const state = readRoleSurfaceState<{ lastLiveRunCount?: number | null }>(
+      context.activeFamiliar.id,
+      RESEARCHER_SURFACE_ID,
+    );
+    const status = researchEngineStatus(
+      context.runtimeState.daemonRunning,
+      state?.lastLiveRunCount ?? null,
+    );
     return {
       notifications: daemonNotices(context),
       statusIndicators: [
         {
           id: "researcher.engine",
-          label: context.runtimeState.daemonRunning ? "research engine ready" : "research engine offline",
-          tone: context.runtimeState.daemonRunning ? "ok" : "warn",
+          label: status.label,
+          tone: status.tone,
           detail: "Missions run through the familiar's real Flow sessions",
         },
       ],
@@ -327,7 +336,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: NAVIGATOR_SURFACE_ID,
   role: "navigator",
-  aliases: ["planner", "planning"],
+  aliases: ["planner", "planning", "navigation"],
   title: "Chart Room",
   iconName: "ph:compass",
   description: "Course lanes, scheduled legs, and real board moves",
@@ -453,7 +462,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: INDEXER_SURFACE_ID,
   role: "indexer",
-  aliases: ["archivist", "indexing"],
+  aliases: ["archivist", "indexing", "memory", "reflection"],
   title: "The Archive",
   iconName: "ph:tree-structure",
   description: "Long-term knowledge, memory, indexes, and provenance",

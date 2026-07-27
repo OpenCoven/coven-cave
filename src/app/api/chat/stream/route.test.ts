@@ -81,7 +81,7 @@ test("send route tees both harness stream paths through the run buffer", () => {
   const seqEmits = send.match(/controller\.enqueue\(chatSse\(e(?:vent)?, seq\)\)/g);
   assert.equal(seqEmits?.length, 2, "both paths emit the seq as the SSE id — live clients always hold a resume cursor");
   const opens = send.match(/openRunBuffer\(\[/g);
-  assert.equal(opens?.length, 2, "both paths open a buffer under runId + conversation keys");
+  assert.equal(opens?.length, 3, "all three dispatch paths (harness, OpenClaw CLI, OpenClaw Gateway) open a buffer under runId + conversation keys");
   const finishes = send.match(/runBuffer\?\.finish\(\)/g);
   assert.ok((finishes?.length ?? 0) >= 3, "every stream exit (error + close paths) finishes the buffer");
 });
@@ -93,5 +93,5 @@ test("re-attach disarms the detach-cap kill; the last tail re-arms only after th
     "attach hook cancels the pending kill",
   );
   const rearms = send.match(/detach: \(\) => \{\s*if \((?:args\.)?req\.signal\.aborted\) armDetachKill\(\);/g);
-  assert.equal(rearms?.length, 2, "detach hooks re-arm only when the original request is gone — a resume tail closing can't kill a still-attached turn");
+  assert.equal(rearms?.length, 3, "detach hooks re-arm only when the original request is gone — a resume tail closing can't kill a still-attached turn");
 });

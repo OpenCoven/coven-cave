@@ -50,6 +50,16 @@ struct LinkedTasksSheet: View {
                 Section("Assign a task") {
                     if !app.tasksLoaded {
                         HStack { ProgressView(); Text("Loading tasks…").foregroundStyle(.secondary) }
+                    } else if let error = app.tasksError, assignable.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Couldn’t refresh tasks", systemImage: "exclamationmark.triangle")
+                                .font(.footnote.weight(.semibold))
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            Button("Retry") { Task { await app.loadTasks() } }
+                                .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                        }
                     } else if assignable.isEmpty {
                         Text(query.isEmpty ? "No other tasks to assign." : "No matches.")
                             .font(.footnote).foregroundStyle(.secondary)

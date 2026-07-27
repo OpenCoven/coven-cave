@@ -14,17 +14,28 @@
  * (`attach-source` action) so triage semantics stay identical.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { SearchInput } from "@/components/ui/search-input";
 import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
 import {
+  groupSavedLinksByUsage,
   linkCategoryMeta,
   LINK_CATEGORY_ORDER,
-  groupSavedLinks,
+  MAX_LINKS_PER_SAVE,
   normalizeLinkUrl,
+  summarizeLinkIntake,
   type LinkCategory,
   type SavedLink,
 } from "@/lib/link-organizer";
@@ -46,17 +57,6 @@ function readStoredView(): ResourceView {
     return "grid";
   }
 }
-
-/** Group blurbs per the design, adapted to the repo's real link categories. */
-const CATEGORY_DESCRIPTIONS: Record<LinkCategory, string> = {
-  github: "repositories & issues",
-  docs: "official documentation",
-  paper: "academic papers",
-  article: "posts & essays",
-  video: "talks & recordings",
-  social: "community threads",
-  other: "everything else",
-};
 
 function linkDomain(rawUrl: string): string {
   try {
@@ -80,6 +80,9 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [copied, setCopied] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
+  const selectedMission = research.selected;
+  const act = research.act;
+  const intake = useMemo(() => summarizeLinkIntake(draft, links), [draft, links]);
 
   const selectView = useCallback((next: ResourceView) => {
     setView(next);
@@ -139,14 +142,31 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
       (!q || `${link.title} ${link.url}`.toLowerCase().includes(q)));
   }, [links, trimmedQuery, activeFilter]);
 
-  const groups = useMemo(() => groupSavedLinks(visibleLinks), [visibleLinks]);
+  const groups = useMemo(
+    () => groupSavedLinksByUsage(visibleLinks, citedByIndex, selectedMission?.id),
+    [visibleLinks, citedByIndex, selectedMission?.id],
+  );
+  const intakeMessage = !draft.trim()
+    ? "Paste links to preview the batch."
+    : intake.detectedCount === 0
+      ? "No links found. Paste full http:// or https:// URLs."
+      : intake.overLimit
+        ? `${intake.detectedCount} links detected · maximum ${MAX_LINKS_PER_SAVE}.`
+        : intake.ready.length === 0
+          ? `All ${intake.duplicates.length} ${
+              intake.duplicates.length === 1 ? "resource is" : "resources are"
+            } already saved.`
+          : `${intake.ready.length} ${
+              intake.ready.length === 1 ? "resource" : "resources"
+            } ready${
+              intake.duplicates.length > 0
+                ? ` · ${intake.duplicates.length} already saved`
+                : ""
+            }.`;
 
   // ── Add to run: same mechanism as the evidence ledger's manual attach —
   // an `attach-source` action landing the link as a candidate source on the
   // currently selected mission.
-  const selectedMission = research.selected;
-  const act = research.act;
-
   const attachedToSelected = useCallback((link: SavedLink) => {
     if (!selectedMission) return false;
     const key = normalizeLinkUrl(link.url);
@@ -186,30 +206,48 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
         ? "Already a source on the selected run"
         : `Add to “${selectedMission.title}” as a candidate source`;
 
-  // ── Save row: the dashed paste target is a real input; the result line
-  // reports exactly what the server extracted (added / duplicates / nothing).
+  // ── Batch intake: the client preview is advisory; this result line reports
+  // exactly what the authoritative server accepted or skipped.
   const onSave = async (event: FormEvent) => {
     event.preventDefault();
-    if (saving || !draft.trim()) return;
+    if (saving || !intake.canSubmit) return;
+    const submittedDraft = draft;
     setSaving(true);
-    const result = await save(draft);
+    const result = await save(submittedDraft);
     setSaving(false);
+
     let message: string;
     if (!result.ok) {
-      message = result.error ?? "Couldn’t save.";
-    } else if (result.added === 0 && result.duplicates === 0) {
-      message = "No links found in that text.";
+      message = result.error ?? "Couldn’t save resources.";
+    } else if (result.added === 0 && result.duplicates > 0) {
+      message = `All ${result.duplicates} ${
+        result.duplicates === 1 ? "resource was" : "resources were"
+      } already saved.`;
+    } else if (result.added === 0) {
+      message = "No links found. Paste full http:// or https:// URLs.";
     } else {
-      const parts: string[] = [];
-      if (result.added > 0) parts.push(`Saved ${result.added} link${result.added === 1 ? "" : "s"}`);
-      if (result.duplicates > 0) {
-        parts.push(`skipped ${result.duplicates} duplicate${result.duplicates === 1 ? "" : "s"}`);
+      message = `Saved ${result.added} ${
+        result.added === 1 ? "resource" : "resources"
+      }${
+        result.duplicates > 0
+          ? ` · skipped ${result.duplicates} ${
+              result.duplicates === 1 ? "duplicate" : "duplicates"
+            }`
+          : ""
+      }.`;
+      if (result.added > 0) {
+        setDraft((current) => current === submittedDraft ? "" : current);
       }
-      message = `${parts.join(" · ")}.`;
-      setDraft("");
     }
     setSaveStatus(message);
     announce(message, result.ok ? "polite" : "assertive");
+  };
+
+  const onIntakeKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    const submitsBatch = event.key === "Enter" && (event.metaKey || event.ctrlKey);
+    if (!submitsBatch) return;
+    event.preventDefault();
+    if (intake.canSubmit && !saving) event.currentTarget.form?.requestSubmit();
   };
 
   // ── Detail overlay: focus-trapped dialog over the open link.
@@ -268,31 +306,73 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
         </span>
       </header>
 
-      <form className="research-res__saverow" onSubmit={onSave}>
-        <input
-          className="research-res__search"
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search resources…"
-          aria-label="Search resources"
-        />
-        <input
-          className="research-res__paste"
+      <form className="research-res__intake" onSubmit={onSave}>
+        <div className="research-res__intake-head">
+          <div>
+            <label htmlFor="research-resource-intake">Add resources</label>
+            <p id="research-resource-intake-help">
+              Paste up to {MAX_LINKS_PER_SAVE} links, separated by commas or line breaks.
+            </p>
+          </div>
+          <kbd>⌘/Ctrl + Enter</kbd>
+        </div>
+        <textarea
+          id="research-resource-intake"
+          className="research-res__paste focus-ring"
+          rows={3}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Paste a link or a block of text — every URL is extracted, titled, and filed automatically"
-          aria-label="Paste links to save"
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setSaveStatus(null);
+          }}
+          onKeyDown={onIntakeKeyDown}
+          placeholder="e.g., https://docs.example.com, https://arxiv.org/…"
+          aria-describedby="research-resource-intake-help research-resource-intake-preview"
+          aria-keyshortcuts="Meta+Enter Control+Enter"
         />
-        <Button type="submit" size="sm" variant="primary" loading={saving} disabled={saving || !draft.trim()}>
-          Save
-        </Button>
+        <div className="research-res__intake-footer">
+          <div
+            id="research-resource-intake-preview"
+            className="research-res__intake-preview"
+            role="status"
+          >
+            <span>{intakeMessage}</span>
+            {intake.detectedCount > 0 ? (
+              <span className="research-res__intake-types">
+                {LINK_CATEGORY_ORDER.filter((category) => intake.categoryCounts[category]).map(
+                  (category) => (
+                    <span key={category}>
+                      {linkCategoryMeta(category).label} {intake.categoryCounts[category]}
+                    </span>
+                  ),
+                )}
+              </span>
+            ) : null}
+          </div>
+          <Button
+            type="submit"
+            size="sm"
+            variant="primary"
+            loading={saving}
+            disabled={saving || !intake.canSubmit}
+          >
+            Save resources
+          </Button>
+        </div>
       </form>
       {saveStatus ? (
         <p className="research-res__save-status" role="status">{saveStatus}</p>
       ) : null}
 
       <div className="research-res__toolbar">
+        <SearchInput
+          value={query}
+          onValueChange={setQuery}
+          onClear={() => setQuery("")}
+          placeholder="Search resources…"
+          aria-label="Search resources"
+          containerClassName="research-res__search"
+        />
         <div className="research-res__chips" role="group" aria-label="Filter resources by category">
           <button
             type="button"
@@ -338,21 +418,31 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
           Nothing saved yet — paste a link above, or use /save in chat.
         </p>
       ) : groups.length === 0 ? (
-        <p className="research-res__empty">
-          Nothing matches “{trimmedQuery}” — try a different term or clear the filter.
-        </p>
+        <div className="research-res__empty research-res__empty--filtered">
+          <span>Nothing matches “{trimmedQuery}” — try a different term or clear the filter.</span>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => {
+              setQuery("");
+              setFilter("all");
+            }}
+          >
+            Clear filters
+          </Button>
+        </div>
       ) : (
         groups.map((group) => (
           <section
-            key={group.category}
+            key={group.id}
             className="research-res__group"
             aria-label={`${group.label} resources`}
           >
             <header className="research-res__group-head">
-              <i className="research-res__group-mark" data-category={group.category} aria-hidden />
+              <i className="research-res__group-mark" data-group={group.id} aria-hidden />
               <h3>{group.label}</h3>
               <span className="research-res__group-count">{group.links.length}</span>
-              <span className="research-res__group-desc">{CATEGORY_DESCRIPTIONS[group.category]}</span>
+              <span className="research-res__group-desc">{group.description}</span>
             </header>
             <div className="research-res__items" data-view={view}>
               {group.links.map((link) => {
@@ -370,11 +460,9 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                         <Icon name={linkCategoryMeta(link.category).icon} width={11} height={11} aria-hidden />
                         {linkCategoryMeta(link.category).label}
                       </span>
-                      {view === "grid" ? (
-                        <span className="research-res-card__saved">
-                          saved <RelativeTime iso={link.addedAt} fallback="just now" />
-                        </span>
-                      ) : null}
+                      <span className="research-res-card__saved">
+                        saved <RelativeTime iso={link.addedAt} fallback="just now" />
+                      </span>
                     </div>
                     <button
                       type="button"
@@ -388,26 +476,41 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                       <span className="sr-only"> — open details</span>
                     </button>
                     <span className="research-res-card__sub">{linkDomain(link.url)}</span>
-                    <div className="research-res-card__actions">
-                      <button
-                        type="button"
-                        className="research-res-card__add"
-                        disabled={!selectedMission || attachBusy || inRun}
-                        title={addHint(link)}
-                        onClick={() => void attachToRun(link)}
-                      >
-                        <Icon name="ph:plus" width={11} height={11} aria-hidden />
-                        {inRun ? "In run" : "Add to run"}
-                        <span className="sr-only"> — {addHint(link)}</span>
-                      </button>
+                    <div className="research-res-card__footer">
                       <span className="research-res-card__meta">
-                        {cited.length > 0 ? (
-                          <span>cited by {cited.length} run{cited.length === 1 ? "" : "s"}</span>
-                        ) : null}
-                        {view === "rows" ? (
-                          <span>saved <RelativeTime iso={link.addedAt} fallback="just now" /></span>
-                        ) : null}
+                        {cited.length > 0
+                          ? `Cited by ${cited.length} ${cited.length === 1 ? "run" : "runs"}`
+                          : "Not cited yet"}
                       </span>
+                      <div className="research-res-card__buttons">
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          trailingIcon="ph:arrow-square-out"
+                          onClick={() => context.openUrl(link.url)}
+                        >
+                          Open link
+                        </Button>
+                        {inRun ? (
+                          <span className="research-res-card__state">
+                            <Icon name="ph:check" width={11} height={11} aria-hidden />
+                            In this run
+                          </span>
+                        ) : selectedMission ? (
+                          <Button
+                            size="xs"
+                            variant="secondary"
+                            leadingIcon="ph:plus"
+                            disabled={attachBusy}
+                            title={addHint(link)}
+                            onClick={() => void attachToRun(link)}
+                          >
+                            Add to run
+                          </Button>
+                        ) : (
+                          <span className="research-res-card__hint">Select a run to add</span>
+                        )}
+                      </div>
                     </div>
                   </article>
                 );
@@ -484,14 +587,6 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 <Icon name={copied ? "ph:check" : "ph:copy"} width={11} height={11} aria-hidden />
                 {copied ? "Copied" : "Copy"}
               </button>
-              <button
-                type="button"
-                className="research-res-overlay__source-btn"
-                onClick={() => context.openUrl(openLink.url)}
-              >
-                Open
-                <Icon name="ph:arrow-square-out" width={11} height={11} aria-hidden />
-              </button>
             </div>
 
             <div className="research-res-overlay__body">
@@ -541,21 +636,6 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
             </div>
 
             <footer className="research-res-overlay__actions">
-              <Button
-                size="sm"
-                variant="primary"
-                leadingIcon="ph:plus"
-                disabled={!selectedMission || attachBusy || attachedToSelected(openLink)}
-                title={addHint(openLink)}
-                onClick={() => void attachToRun(openLink)}
-              >
-                {attachedToSelected(openLink) ? "In run" : "Add to run"}
-              </Button>
-              {!selectedMission ? (
-                <span className="research-res-overlay__hint">
-                  Select a run on the Desk to attach sources.
-                </span>
-              ) : null}
               <div className="research-res-overlay__remove">
                 {confirmingRemove ? (
                   <>
@@ -574,6 +654,38 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                     Remove from saves
                   </Button>
                 )}
+              </div>
+              <div className="research-res-overlay__primary-actions">
+                {!selectedMission ? (
+                  <span className="research-res-overlay__hint">
+                    Select a run to add this resource.
+                  </span>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  trailingIcon="ph:arrow-square-out"
+                  onClick={() => context.openUrl(openLink.url)}
+                >
+                  Open link
+                </Button>
+                {attachedToSelected(openLink) ? (
+                  <span className="research-res-card__state">
+                    <Icon name="ph:check" width={11} height={11} aria-hidden />
+                    In this run
+                  </span>
+                ) : selectedMission ? (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    leadingIcon="ph:plus"
+                    disabled={attachBusy}
+                    title={addHint(openLink)}
+                    onClick={() => void attachToRun(openLink)}
+                  >
+                    Add to run
+                  </Button>
+                ) : null}
               </div>
             </footer>
           </div>

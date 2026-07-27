@@ -103,11 +103,21 @@ function FamiliarIdentityHero({
     // daemon reports (Coven Code) aren't per-familiar runtime choices.
     ...harnesses
       .filter((h) => isBindableRuntimeChoice(h.id))
-      .map((h) => ({
-        value: h.id,
-        label: h.label,
-        detail: [h.version, h.installed ? null : "not installed"].filter(Boolean).join(" · ") || undefined,
-      })),
+      .map((h) => {
+        const availability = h.availability;
+        if (availability && availability.state !== "ready") {
+          return {
+            value: h.id,
+            label: `${h.label}${availability.state === "missing" ? " (not installed)" : " (unavailable)"}`,
+            detail: availability.message,
+          };
+        }
+        return {
+          value: h.id,
+          label: h.label,
+          detail: [h.version, h.installed ? null : "not installed"].filter(Boolean).join(" · ") || undefined,
+        };
+      }),
   ];
 
   // Model select: sourced from the same runtime → provider catalog the chat
@@ -342,6 +352,7 @@ function familiarCapabilitySummary(familiar: ResolvedFamiliar, snapshot: Capabil
     capabilityCount: enabledPlugins,
     runtime: [harness?.label ?? harnessId, familiar.model].filter(Boolean).join(" · "),
     installed: harness?.installed,
+    availability: harness?.availability,
   };
 }
 
@@ -421,7 +432,7 @@ function FamiliarScopeOverview({
                     <span>{summary.skillCount} skill{summary.skillCount === 1 ? "" : "s"}</span>
                     <span>{summary.capabilityCount} runtime capabilit{summary.capabilityCount === 1 ? "y" : "ies"}</span>
                     {activeSessions > 0 ? <span>{activeSessions} active</span> : null}
-                    {summary.installed === false ? <span className="text-[var(--color-warning)]">runtime unavailable</span> : null}
+                    {summary.installed === false || (summary.availability && summary.availability.state !== "ready") ? <span className="text-[var(--color-warning)]">runtime unavailable</span> : null}
                   </span>
                 </span>
                 <Icon name="ph:caret-right" width={14} className="familiar-scope-overview__caret text-[var(--text-muted)] transition-transform group-hover:translate-x-0.5" aria-hidden />

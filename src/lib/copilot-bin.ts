@@ -12,6 +12,13 @@ import { covenLaunchCommandForBinary, pickWindowsLauncher, type CovenLaunchComma
 
 const MAX_WINDOWS_WHERE_OUTPUT = 64 * 1024;
 
+/** The exact argv-list Copilot launch. `requiredFiles` are passive preflight
+ * artifacts, never shell input: npm's Windows shim conversion yields
+ * `node <absolute-entry.js>` and both parts must remain available. */
+export type CopilotLaunchCommand = CovenLaunchCommand & {
+  requiredFiles?: string[];
+};
+
 async function withinTimeout<T>(work: Promise<T>, timeoutMs: number, fallback: T): Promise<{ value: T; timedOut: boolean }> {
   if (timeoutMs <= 0) return { value: fallback, timedOut: true };
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -91,7 +98,7 @@ async function windowsCopilotLauncher(binary: string, timeoutMs: number, env?: N
 export async function resolveCopilotLaunchCommand(
   binary: string,
   options: { platform?: NodeJS.Platform; timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
-): Promise<CovenLaunchCommand> {
+): Promise<CopilotLaunchCommand> {
   const platform = options.platform ?? process.platform;
   const timeoutMs = options.timeoutMs ?? 1_500;
   const resolveLauncher = platform === "win32"
@@ -102,8 +109,13 @@ export async function resolveCopilotLaunchCommand(
     timeoutMs,
     binary,
   );
+  const launch = covenLaunchCommandForBinary(resolved.value, platform);
   return {
-    ...covenLaunchCommandForBinary(resolved.value, platform),
+    ...launch,
+    // A converted shim's first fixed argv item is the absolute script whose
+    // existence made the conversion safe. Native launches have no required
+    // artifact beyond their command.
+    requiredFiles: launch.fixedArgs.length === 1 ? [launch.fixedArgs[0]!] : [],
     ...(resolved.timedOut ? { resolutionTimedOut: true as const } : {}),
   };
 }

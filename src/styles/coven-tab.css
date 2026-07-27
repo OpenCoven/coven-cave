@@ -381,6 +381,45 @@ textarea.coven-tab__field-input {
 
 /* ── Composer ────────────────────────────────────────────────────────────── */
 
+.coven-tab__composer-field {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.coven-tab__mention-strip {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.coven-tab__mention-strip--end {
+  justify-content: flex-end;
+}
+
+.coven-tab__mention-guidance {
+  margin-inline-end: var(--space-1);
+}
+
+.coven-tab__mention-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--space-6);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--accent-presence);
+  font-weight: 600;
+  line-height: 1;
+}
+
 /* Stop keeps the mock's accent stop mark on a quiet secondary button. */
 .coven-tab__stop svg {
   color: var(--accent-presence);

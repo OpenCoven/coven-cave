@@ -941,11 +941,6 @@
     0 10px 22px color-mix(in oklch, var(--accent-presence) 24%, transparent);
 }
 
-.settings-mobile-switch {
-  min-width: 64px;
-  min-height: var(--touch-target);
-}
-
 /* Minimal track/knob switch (News headlines) — user-requested slim replacement
    for the 64px On/Off rectangle. The row label carries the meaning; an inset
    negative-hit-area keeps the small control comfortably tappable. */

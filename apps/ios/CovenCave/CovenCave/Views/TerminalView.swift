@@ -11,8 +11,8 @@ struct TerminalView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("cave.terminal.shorthands") private var storedShorthands = "git status|pnpm test:mobile"
 
-    @State private var terminal = PtyTerminal()
-    @State private var cwd: String?      // nil = Home
+    @Bindable var terminal: PtyTerminal
+    @Binding var cwd: String?      // nil = Home
     @State private var cols = 80
     @State private var rows = 24
     @State private var showingNewShorthand = false
@@ -32,6 +32,10 @@ struct TerminalView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
+                CircularIconButton(systemImage: "line.3.horizontal",
+                                   label: "Open navigation") {
+                    app.navigationDrawerOpen = true
+                }
                 Text("Terminal")
                     .font(.largeTitle.weight(.bold))
                 cwdMenu
@@ -75,7 +79,13 @@ struct TerminalView: View {
         }
         .task { if !app.projectsLoaded { await app.loadProjects() } }
         .onAppear {
-            if !terminal.connected && !terminal.exited { connect() }
+            if terminal.connected {
+                // The renderer was remounted after drawer navigation. Reattach
+                // the one retained transport so server scrollback repaints it.
+                terminal.reattach()
+            } else if !terminal.exited {
+                connect()
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }

@@ -6,6 +6,10 @@ const settings = await readFile(
   new URL("./settings-shell.tsx", import.meta.url),
   "utf8",
 );
+const about = await readFile(
+  new URL("./settings-about.tsx", import.meta.url),
+  "utf8",
+);
 const themeBootScript = await readFile(
   new URL("../../public/scripts/theme-init.js", import.meta.url),
   "utf8",
@@ -144,20 +148,20 @@ assert.match(
 );
 
 assert.match(
-  settings,
+  about,
   /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
   "About settings must import the shared app version source",
 );
 
 assert.match(
-  settings,
-  /<SettingsKV label="App version" value=\{APP_VERSION\} \/>/,
+  about,
+  /settings-about-row__label">App version<[\s\S]*v\{APP_VERSION\}/,
   "About settings must render the shared app version instead of a literal",
 );
 
 assert.doesNotMatch(
-  settings,
-  /<SettingsKV label="App version" value="[\d.]+"/,
+  about,
+  /settings-about-row__label">App version<[\s\S]{0,180}>\s*v?[\d.]+\s*</,
   "About settings must not hardcode an app version literal",
 );
 

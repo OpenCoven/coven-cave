@@ -22,7 +22,26 @@ assert.doesNotMatch(
 assert.match(listRoute, /export async function GET\(req: Request\)/, "projects route should expose GET");
 assert.match(listRoute, /searchParams\.get\("familiarId"\)/, "GET /api/projects should accept familiar-scoped listing");
 assert.match(listRoute, /isValidFamiliarId\(familiarId\)/, "GET /api/projects should validate familiar id before scoping");
-assert.match(listRoute, /filterProjectsForFamiliar\(projects, familiarId\)/, "GET /api/projects should filter projects server-side for familiars");
+assert.match(
+  listRoute,
+  /listAccessibleProjects\(projects, familiarId\)/,
+  "GET /api/projects should resolve the familiar's effective access level server-side",
+);
+assert.match(
+  listRoute,
+  /validateCaveProjectRoot\(project\.root\)/,
+  "familiar-scoped project choices should omit roots that no longer resolve to directories",
+);
+assert.match(
+  listRoute,
+  /\{\s*\.\.\.project,\s*access\s*\}/,
+  "familiar-scoped project choices should carry their effective Read or Full access level",
+);
+assert.doesNotMatch(
+  listRoute,
+  /filterProjectsForFamiliar\(projects, familiarId\)/,
+  "the familiar-scoped route must not discard effective access metadata",
+);
 assert.match(listRoute, /export async function POST\(req: Request\)/, "projects route should expose POST");
 assert.match(listRoute, /name and root are required/, "POST /api/projects should validate required fields");
 assert.match(listRoute, /isAllowedNewProjectRoot\(root\)/, "POST /api/projects should validate roots before persisting them");

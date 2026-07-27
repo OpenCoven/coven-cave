@@ -12,7 +12,8 @@
 //
 // To add a test: append its repo-relative path to the right suite array. The
 // `check:tests-wired` guard imports SUITES from here and fails CI if any
-// `*.test.ts` / `*.test.mjs` on disk is not listed (or allowlisted there).
+// `*.test.ts` / `*.test.tsx` / `*.test.mjs` on disk is not listed (or
+// allowlisted there).
 
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -43,6 +44,7 @@ export const SUITES = {
     "src/components/workspace-surface-warmup.test.ts",
     "src/lib/workspace-github-task-context.test.ts",
     "src/lib/role-surfaces.test.ts",
+    "src/lib/use-role-surfaces-loader.test.ts",
     "src/lib/familiar-types.test.ts",
     "src/lib/research-missions.test.ts",
     "src/lib/research-autoloop.test.ts",
@@ -51,7 +53,11 @@ export const SUITES = {
     "src/lib/research-artifact-contract.test.ts",
     "src/lib/research-findings-doc.test.ts",
     "src/lib/role-surface-state.test.ts",
+    "src/components/role-surface-host-state.test.ts",
     "src/components/role-surface-shell.test.ts",
+    "src/components/role-surfaces/surface-room.test.ts",
+    "src/components/role-surfaces/researcher-status.test.ts",
+    "src/components/role-surfaces/familiar-room-interactions.test.tsx",
     "src/components/role-surfaces/researcher-surface.test.ts",
     "src/components/role-surfaces/research-evidence-ledger.test.ts",
     "src/components/role-surfaces/research-artifact-actions.test.ts",
@@ -62,9 +68,11 @@ export const SUITES = {
     "src/components/role-surfaces/research-tab-studio.test.ts",
     "src/components/role-surfaces/research-tab-resources.test.ts",
     "src/lib/research-generations.test.ts",
+    "src/components/role-surfaces/messenger-surface.test.ts",
     "src/components/role-surfaces/sentinel-surface.test.ts",
     "src/components/role-surfaces/scribe-surface.test.ts",
     "src/components/role-surfaces/navigator-surface.test.ts",
+    "src/components/role-surfaces/indexer-surface.test.ts",
     "src/components/role-surfaces/reviewer-surface.test.ts",
     "src/components/chat-view-render-cap.test.ts",
     "src/components/chat-view-transcript-memo.test.ts",
@@ -77,6 +85,7 @@ export const SUITES = {
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",
     "src/lib/mcp-doctor.test.ts",
+    "src/lib/settings-profile-form.test.ts",
     "src/lib/user-profile-shared.test.ts",
     "src/lib/user-profile.test.ts",
     "src/lib/legacy-svg-avatar-hint.test.ts",
@@ -103,7 +112,10 @@ export const SUITES = {
     "scripts/codemods/tokenize-tsx-design.test.mjs",
     "scripts/eslint/design-system-plugin.test.mjs",
     "scripts/bundle-budget.test.mjs",
+    "scripts/enforce-branch-cap.test.mjs",
+    "scripts/branch-cap-workflow.test.mjs",
     "scripts/check-opencode-registry-release.test.mjs",
+    "scripts/check-grok-registry-release.test.mjs",
     "src/components/open-coven-tools-update.test.ts",
     "src/lib/opencoven-tools-state.test.ts",
     "src/lib/opencoven-install-job-observer.test.ts",
@@ -130,6 +142,7 @@ export const SUITES = {
     "src/lib/cave-inbox-prefs.test.ts",
     "src/lib/cave-inbox-bulk.test.ts",
     "src/lib/project-permissions.test.ts",
+    "src/lib/project-access-levels.test.ts",
     "src/lib/project-icon-prompt.test.ts",
     "src/lib/project-icon-image-provider.test.ts",
     "src/lib/permissions-console.test.ts",
@@ -288,6 +301,9 @@ export const SUITES = {
     "src/lib/app-preferences-runtime.test.ts",
     "src/lib/app-preferences-paint-bootstrap.test.ts",
     "src/components/settings-appearance.test.ts",
+    "src/components/settings-about.test.ts",
+    "src/components/settings-phone.test.ts",
+    "src/lib/tailscale-failure.test.ts",
     "src/components/settings-github.test.ts",
     "src/components/settings-profile.test.ts",
     "src/components/settings-search.test.ts",
@@ -295,6 +311,7 @@ export const SUITES = {
     "src/lib/server/daemon-probe.test.ts",
     "src/lib/server/tailscale-devices.test.ts",
     "src/components/settings-familiars-section.test.ts",
+    "src/components/settings-familiars-control-sheet.test.ts",
     "src/components/familiar-studio-projects-tab.test.ts",
     "src/components/access-groups-section.test.ts",
     "src/lib/theme-token-hex.test.ts",
@@ -350,6 +367,7 @@ export const SUITES = {
     "src/components/chat-rail-modern-redesign.test.ts",
     "src/components/message-bubble-markdown.test.ts",
     "src/components/citation.test.ts",
+    "src/lib/citation-preview.test.ts",
     "src/lib/message-markdown-stream.test.ts",
     "src/lib/markdown-preview-shell.test.ts",
     "src/lib/markdown-table-cells.test.ts",
@@ -411,6 +429,7 @@ export const SUITES = {
     "src/components/recent-activity-rollup.test.ts",
     "src/components/sidebar-familiar-filter.test.ts",
     "src/components/shell-edge-rails.test.ts",
+    "src/components/shell-first-paint.test.ts",
     "src/components/shell-left-panels-fit.test.ts",
     "src/components/shell-nav-memory.test.ts",
     "src/components/workflows-view.test.ts",
@@ -507,6 +526,7 @@ export const SUITES = {
     "src/lib/reply-recommendation.test.ts",
     "src/lib/comux-projects.test.ts",
     "src/lib/code-lang.test.ts",
+    "src/lib/shiki-highlighter.test.ts",
     "src/lib/session-title.test.ts",
     "src/lib/home-suggestions.test.ts",
     "src/lib/project-search.test.ts",
@@ -643,11 +663,14 @@ export const SUITES = {
     "src/components/chat-task-create-button-wiring.test.ts",
     "src/lib/chat-task-autofill.test.ts",
     "src/components/group-chat-view.test.ts",
+    "src/lib/group-chat-projects.test.ts",
     "src/lib/group-chat-transcript.test.ts",
     "src/lib/group-chat.test.ts",
+    "src/lib/use-group-projects.test.ts",
     "src/components/chat-send-routes-links.test.ts",
     "src/components/chat-surface-polish.test.ts",
     "src/components/project-picker.test.ts",
+    "src/components/chat-project-launch-gate.test.ts",
     "src/components/project-setup-modal.test.ts",
     "src/components/directory-picker.test.ts",
     "src/components/first-project-gate.test.ts",
@@ -659,6 +682,7 @@ export const SUITES = {
     "src/components/familiar-glyph-picker-panel.test.ts",
     "src/components/familiar-glyph-loading.test.ts",
     "src/components/familiar-studio-brain-tab.test.ts",
+    "src/components/chat-familiar-capabilities.test.ts",
     "src/components/journal-redirect.test.ts",
     "src/components/familiar-studio-identity-tab.test.ts",
     "src/components/familiar-lifecycle-section.test.ts",
@@ -733,6 +757,8 @@ export const SUITES = {
     "src/lib/memory-source-context.test.ts",
     "src/lib/onboarding-familiars.test.ts",
     "src/lib/onboarding-gate.test.ts",
+    "src/lib/onboarding-prerequisites.test.ts",
+    "src/lib/server/managed-node-toolchain.test.ts",
     "src/lib/onboarding-install-queue.test.ts",
     "src/lib/onboarding-setup-failure.test.ts",
     "src/app/onboarding-install-route.test.ts",
@@ -960,6 +986,8 @@ export const SUITES = {
     "src/app/api/queue/readiness/route.test.ts",
     "src/lib/server/agent-attachments.test.ts",
     "src/lib/server/voice-chat-create.test.ts",
+    "src/lib/server/chat-project-launch.test.ts",
+    "src/app/api/chat/conversation/route.test.ts",
     "src/app/api/chat/conversation/[id]/route.test.ts",
     "src/app/api/canvas/route.test.ts",
     "src/app/api/api-contracts.test.ts",
@@ -983,6 +1011,7 @@ export const SUITES = {
     "src/lib/app-update-daemon.test.ts",
     "src/app/api/opencoven-tools/status/route.test.ts",
     "src/app/api/onboarding/update/route.test.ts",
+    "src/app/api/onboarding/prerequisites/route.test.ts",
     "src/lib/opencoven-tools-status.test.ts",
     "src/lib/opencoven-tools-latest-check.test.ts",
     "src/app/api/daemon/status/route.test.ts",
@@ -1001,16 +1030,25 @@ export const SUITES = {
     "src/lib/hermes-responses-stream.test.ts",
     "src/lib/openclaw-bin.test.ts",
     "src/lib/openclaw-bridge.test.ts",
+    "src/lib/openclaw-gateway.test.ts",
     "src/lib/coven-identity-canon.test.ts",
     "src/lib/familiar-runtime.test.ts",
     "src/lib/harness-adapters.test.ts",
     "src/lib/grok-bin.test.ts",
     "src/lib/grok-build.test.ts",
     "src/lib/runtime-availability.test.ts",
+    "src/lib/grok-compatibility.test.ts",
+    "src/lib/codex-runtime-availability.test.ts",
     "src/app/api/harnesses/route.test.ts",
+    "src/lib/claude-stream.test.ts",
+    "src/lib/runtime-compatibility.test.ts",
+    "src/lib/server/claude-runtime-compatibility.test.ts",
     "src/lib/copilot-stream.test.ts",
+    "src/lib/codex-compatibility.test.ts",
     "src/lib/copilot-bin.test.ts",
+    "src/lib/server/copilot-runtime-launch.test.ts",
     "src/lib/server/copilot-capability-probe.test.ts",
+    "src/lib/server/local-runtime-capability-gate.test.ts",
     "src/lib/server/runtime-compatibility-registry.test.ts",
     "src/app/api/board/enrich-steps/route.test.ts",
     "src/app/api/board/route.test.ts",
@@ -1023,9 +1061,15 @@ export const SUITES = {
     "src/app/api/chat/send/harness-routing-model-capabilities.test.ts",
     "src/app/api/chat/send/harness-routing-copilot-jsonl.test.ts",
     "src/app/api/chat/send/harness-routing-opencode.test.ts",
+    "src/app/api/chat/send/chat-send-models.test.ts",
+    "src/app/api/chat/send/harness-routing-codex-preflight.test.ts",
     "src/app/api/chat/send/chat-send-capabilities.test.ts",
     "src/app/api/chat/send/route-opencode.integration.test.ts",
+    "src/app/api/chat/send/route-grok-compatibility.integration.test.ts",
+    "src/app/api/chat/send/route-opencode-preflight.integration.test.ts",
     "src/app/api/chat/send/route-runtime-availability.integration.test.ts",
+    "src/app/api/chat/send/route-hermes-availability.integration.test.ts",
+    "src/app/api/chat/send/route-codex-runtime-availability.integration.test.ts",
     "src/app/api/chat/send/offline-queue.test.ts",
     "src/app/api/chat/send/first-turn-stub.test.ts",
     "src/app/api/onboarding/status/route.test.ts",
@@ -1202,6 +1246,7 @@ export const SUITES = {
     "src/lib/mobile-token-refresh.test.ts",
     "scripts/ios-app-store-assets.test.mjs",
     "scripts/ios-chat-restyle.test.mjs",
+    "scripts/ios-claude-design-fidelity.test.mjs",
     "scripts/ios-modern-polish.test.mjs",
     "scripts/ios-hide-generated-sessions.test.mjs",
     "scripts/ios-library-isolation.test.mjs",
@@ -1253,7 +1298,7 @@ export const SUITES = {
     "scripts/ios-motion-polish.test.mjs",
     "scripts/ios-chat-draft-lag.test.mjs",
     "scripts/ios-chat-thread-no-search.test.mjs",
-    "scripts/ios-chat-hides-tab-bar.test.mjs",
+    "scripts/ios-chat-tab-free.test.mjs",
     "scripts/ios-development-terminal-chrome.test.mjs",
     "scripts/ios-surface-failures.test.mjs",
     "scripts/ios-surface-load-discipline.test.mjs",
@@ -1289,13 +1334,20 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/use-role-surfaces-loader.test.ts",
+  "src/components/role-surfaces/researcher-status.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-compatibility.test.ts",
   "src/lib/opencode-stream.test.ts",
   "src/lib/cave-conversations.test.ts",
+  "src/app/api/chat/send/chat-send-models.test.ts",
   "src/app/api/chat/send/chat-send-capabilities.test.ts",
   "src/app/api/chat/send/route-opencode.integration.test.ts",
+  "src/app/api/chat/send/route-grok-compatibility.integration.test.ts",
+  "src/app/api/chat/send/route-opencode-preflight.integration.test.ts",
   "src/app/api/chat/send/route-runtime-availability.integration.test.ts",
+  "src/app/api/chat/send/route-hermes-availability.integration.test.ts",
+  "src/app/api/chat/send/route-codex-runtime-availability.integration.test.ts",
   "src/lib/familiar-workspace-sessions.test.ts",
   "src/lib/use-projects-scope-transition.test.ts",
   "scripts/cave-home-migration-windows.test.ts",
@@ -1441,6 +1493,12 @@ const RAW_CSS_SCANNER_TESTS = new Set([
   "src/lib/design-token-drift.test.ts",
 ]);
 
+// Rendered TSX interaction tests run through Vitest's Vite transform rather
+// than Node's type stripper, which intentionally does not transform JSX.
+const VITEST_TESTS = new Set([
+  "src/components/role-surfaces/familiar-room-interactions.test.tsx",
+]);
+
 /** Build the `node` argv (flags + file) for a single test path. */
 export function nodeArgsFor(file) {
   const args = RAW_CSS_SCANNER_TESTS.has(file)
@@ -1469,7 +1527,10 @@ function main(argv) {
   console.log(`running ${list.length} test file(s) [${names.join(", ")}]`);
   let passed = 0;
   for (const file of list) {
-    const res = spawnSync(process.execPath, nodeArgsFor(file), { stdio: "inherit", cwd: root });
+    const args = VITEST_TESTS.has(file)
+      ? ["./node_modules/vitest/vitest.mjs", "run", file]
+      : nodeArgsFor(file);
+    const res = spawnSync(process.execPath, args, { stdio: "inherit", cwd: root });
     if (res.status !== 0) {
       console.error(`\n✗ FAILED: ${file}  (${passed} passed before it)`);
       process.exit(res.status ?? 1);

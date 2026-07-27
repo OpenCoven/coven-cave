@@ -89,6 +89,26 @@ function subscribe(key: string, listener: () => void): () => void {
 }
 
 /**
+ * Subscribe to one room's raw stored state without supplying defaults or a
+ * writer. The generic host uses this to invalidate contribution reads when a
+ * child room publishes summary state.
+ */
+export function useRoleSurfaceStateSnapshot<T>(
+  familiarId: string | null,
+  surfaceId: string | null,
+): T | undefined {
+  const key = familiarId && surfaceId ? stateKey(familiarId, surfaceId) : null;
+  return useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => (key ? subscribe(key, listener) : () => {}),
+      [key],
+    ),
+    () => (key ? load(key) as T | undefined : undefined),
+    () => undefined,
+  );
+}
+
+/**
  * React binding: `[state, patch]` for one familiar+surface pair. `initial` is
  * returned until something is written; `patch` shallow-merges into the stored
  * object so independent pieces of room state don't clobber each other.
@@ -98,12 +118,7 @@ export function useRoleSurfaceState<T extends object>(
   surfaceId: string,
   initial: T,
 ): [T, (patch: Partial<T>) => void] {
-  const key = stateKey(familiarId, surfaceId);
-  const stored = useSyncExternalStore(
-    useCallback((listener: () => void) => subscribe(key, listener), [key]),
-    () => load(key) as T | undefined,
-    () => undefined,
-  );
+  const stored = useRoleSurfaceStateSnapshot<T>(familiarId, surfaceId);
   const patch = useCallback(
     (partial: Partial<T>) => {
       const current = (readRoleSurfaceState<T>(familiarId, surfaceId) ?? initial) as T;

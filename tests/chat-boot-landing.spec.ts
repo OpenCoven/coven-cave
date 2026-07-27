@@ -36,7 +36,7 @@ const SESSION_S1 = {
   updated_at: iso(2),
 };
 
-// Unassigned inbox card — fair game for this familiar's resume pills.
+// Familiar-owned inbox card — this landing must only surface Nova's work.
 const BOARD = {
   ok: true,
   cards: [
@@ -45,7 +45,7 @@ const BOARD = {
       title: "Fix login flow",
       status: "inbox",
       priority: "medium",
-      familiarId: null,
+      familiarId: "nova",
       projectId: null,
       cwd: null,
       createdAt: iso(6),
@@ -149,7 +149,17 @@ test.describe("chat boot landing", () => {
       return route.fulfill({ json: { ok: true, conversation: { turns: [] }, context: { task: null, github: [] } } });
     });
 
+    const scopedProjectsLoaded = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/api/projects" &&
+        url.searchParams.get("familiarId") === "nova" &&
+        response.request().method() === "GET" &&
+        response.ok()
+      );
+    });
     await page.goto("/?mode=chat");
+    await scopedProjectsLoaded;
     const dash = page.getByTestId("chat-new-dashboard");
     await expect(dash).toBeVisible({ timeout: 45_000 });
 

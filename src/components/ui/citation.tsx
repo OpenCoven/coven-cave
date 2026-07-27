@@ -10,9 +10,10 @@
  * tokens (accent-presence for the citation hue, the type scale for sizing).
  */
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { Popover, PopoverBody } from "@/components/ui/popover";
+import { createCitationPreviewCoordinator } from "@/lib/citation-preview";
 import type { Citation } from "@/lib/citations";
 
 function CitationCard({ citation }: { citation: Citation }) {
@@ -83,14 +84,126 @@ export function CitationMarker({ citation }: { citation: Citation }) {
 }
 
 /** The "Sources" list rendered under a cited body. Anchor targets for markers. */
+function CitationSourceRow({
+  citation,
+  showHoverPreview,
+}: {
+  citation: Citation;
+  showHoverPreview: boolean;
+}) {
+  const anchorRef = useRef<HTMLElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const preview = useMemo(() => createCitationPreviewCoordinator(setOpen), [setOpen]);
+  const previewTitleIsButton = showHoverPreview && !citation.url;
+  const setAnchorRef = useCallback((element: HTMLElement | null) => {
+    anchorRef.current = element;
+  }, []);
+
+  useEffect(() => () => preview.dispose(), [preview]);
+
+  const leaveRowFocus = (event: FocusEvent<HTMLLIElement>) => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
+    preview.leave("row-focus");
+  };
+  const leavePreviewFocus = (event: FocusEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
+    preview.leave("preview-focus");
+  };
+
+  return (
+    <li
+      id={citation.id}
+      className="flex scroll-mt-4 items-start gap-2"
+      onMouseEnter={showHoverPreview ? () => preview.enter("row-hover") : undefined}
+      onMouseLeave={showHoverPreview ? () => preview.leave("row-hover") : undefined}
+      onFocusCapture={showHoverPreview ? () => preview.enter("row-focus") : undefined}
+      onBlurCapture={showHoverPreview ? leaveRowFocus : undefined}
+    >
+      <span
+        aria-hidden
+        className="mt-0.5 flex h-4 min-w-4 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] px-1 text-[length:var(--text-2xs)] font-semibold text-[var(--accent-presence)]"
+      >
+        {citation.n}
+      </span>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          {citation.url ? (
+            <a
+              ref={setAnchorRef}
+              href={citation.url}
+              target="_blank"
+              rel="noreferrer"
+              className="focus-ring inline-flex items-center gap-1 text-[length:var(--text-sm)] font-medium text-[var(--text-primary)] hover:text-[var(--accent-presence)]"
+            >
+              {citation.title}
+              <Icon name="ph:arrow-square-out" width={11} height={11} className="shrink-0" aria-hidden />
+            </a>
+          ) : previewTitleIsButton ? (
+            <button
+              ref={setAnchorRef}
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={open}
+              onClick={() => (open ? preview.dismiss() : preview.enter("row-focus"))}
+              className="focus-ring text-left text-[length:var(--text-sm)] font-medium text-[var(--text-primary)] hover:text-[var(--accent-presence)]"
+            >
+              {citation.title}
+            </button>
+          ) : (
+            <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
+              {citation.title}
+            </span>
+          )}
+          {citation.domain ? (
+            <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">{citation.domain}</span>
+          ) : null}
+        </div>
+        {citation.snippet ? (
+          <p className="mt-0.5 line-clamp-2 text-[length:var(--text-xs)] leading-relaxed text-[var(--text-muted)]">
+            {citation.snippet}
+          </p>
+        ) : null}
+      </div>
+      {showHoverPreview ? (
+        <Popover
+          open={open}
+          onOpenChange={(nextOpen) => {
+            if (nextOpen) setOpen(true);
+            else preview.dismiss();
+          }}
+          anchorRef={anchorRef}
+          placement="top-start"
+          ariaLabel={`Source ${citation.n} preview`}
+          minWidth={260}
+        >
+          <PopoverBody>
+            <div
+              onMouseEnter={() => preview.enter("preview-hover")}
+              onMouseLeave={() => preview.leave("preview-hover")}
+              onFocusCapture={() => preview.enter("preview-focus")}
+              onBlurCapture={leavePreviewFocus}
+            >
+              <CitationCard citation={citation} />
+            </div>
+          </PopoverBody>
+        </Popover>
+      ) : null}
+    </li>
+  );
+}
+
 export function CitationSources({
   citations,
   className = "",
   label = "Sources",
+  showHoverPreview = false,
 }: {
   citations: readonly Citation[];
   className?: string;
   label?: string;
+  showHoverPreview?: boolean;
 }) {
   if (citations.length === 0) return null;
   return (
@@ -103,41 +216,7 @@ export function CitationSources({
       </div>
       <ol className="flex flex-col gap-1.5">
         {citations.map((citation) => (
-          <li key={citation.id} id={citation.id} className="flex scroll-mt-4 items-start gap-2">
-            <span
-              aria-hidden
-              className="mt-0.5 flex h-4 min-w-4 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] px-1 text-[length:var(--text-2xs)] font-semibold text-[var(--accent-presence)]"
-            >
-              {citation.n}
-            </span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                {citation.url ? (
-                  <a
-                    href={citation.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="focus-ring inline-flex items-center gap-1 text-[length:var(--text-sm)] font-medium text-[var(--text-primary)] hover:text-[var(--accent-presence)]"
-                  >
-                    {citation.title}
-                    <Icon name="ph:arrow-square-out" width={11} height={11} className="shrink-0" aria-hidden />
-                  </a>
-                ) : (
-                  <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
-                    {citation.title}
-                  </span>
-                )}
-                {citation.domain ? (
-                  <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">{citation.domain}</span>
-                ) : null}
-              </div>
-              {citation.snippet ? (
-                <p className="mt-0.5 line-clamp-2 text-[length:var(--text-xs)] leading-relaxed text-[var(--text-muted)]">
-                  {citation.snippet}
-                </p>
-              ) : null}
-            </div>
-          </li>
+          <CitationSourceRow key={citation.id} citation={citation} showHoverPreview={showHoverPreview} />
         ))}
       </ol>
     </section>

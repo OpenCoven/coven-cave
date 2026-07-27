@@ -34,6 +34,15 @@ export type OpenWorkRow = {
   timeoutMs?: number;
 };
 
+/** Keep only work explicitly owned by one familiar. Unassigned work is not
+ *  part of a selected familiar's New Chat dashboard. */
+export function filterFamiliarOwned<T extends { familiarId?: string | null }>(
+  items: readonly T[],
+  familiarId: string,
+): T[] {
+  return items.filter((item) => item.familiarId === familiarId);
+}
+
 /** Board columns that count as open work, in the order they should read. */
 const KIND_RANK: Record<OpenWorkKind, number> = {
   running: 0,

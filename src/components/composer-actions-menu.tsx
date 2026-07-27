@@ -192,7 +192,11 @@ export function ComposerActionsMenu({
             onClose={closePanel}
             attach={attach}
             projects={{
-              projects: context.sortedProjects.map((p) => ({ id: p.id, name: p.name })),
+              projects: context.sortedProjects.map((p) => ({
+                id: p.id,
+                name: p.name,
+                access: p.access,
+              })),
               selectedId: selectedProjectId,
               onPick: contextProps.onProjectChange,
               noProjectId: contextProps.allowNoProject ? NO_PROJECT_ID : undefined,

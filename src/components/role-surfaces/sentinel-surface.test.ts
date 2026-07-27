@@ -16,6 +16,13 @@ const surface = readFileSync(new URL("./sentinel-surface.tsx", import.meta.url),
 const register = readFileSync(new URL("./register.tsx", import.meta.url), "utf8");
 const docs = readFileSync(new URL("../../../docs/role-surfaces.md", import.meta.url), "utf8");
 
+const section = (start: string, end: string) => {
+  const from = surface.indexOf(start);
+  const to = surface.indexOf(end, from + start.length);
+  assert.ok(from >= 0 && to > from, `${start} section missing`);
+  return surface.slice(from, to);
+};
+
 // ── Alert semantics (behavioral, real module) ────────────────────────────────
 
 const NOW = Date.parse("2026-07-14T12:00:00Z");
@@ -145,9 +152,122 @@ test("surface watches real perimeter and session state", () => {
 });
 
 test("surface exposes errors and selection state accessibly", () => {
-  assert.match(surface, /role="alert"/);
+  assert.match(surface, /SurfaceError/);
   assert.match(surface, /aria-current=\{item\.id === state\.selectedId/);
   assert.match(surface, /aria-pressed=\{state\.severity === severity\}/);
+});
+
+test("surface keeps alert and host failures retryable and distinct from empty data", () => {
+  const alertBoard = section('<SurfaceCanvas label="Alert board"', 'label="Alert details"');
+  assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /const fetchAlerts = useCallback\(async \(\) =>/);
+  assert.match(
+    surface,
+    /useLatestAsyncData<Escalation\[\]>\(\{[\s\S]*?scopeKey: "escalations"[\s\S]*?load: fetchAlerts[\s\S]*?errorMessage: "Couldn't load escalations\."/,
+  );
+  assert.match(
+    alertBoard,
+    /alertsError && alerts == null\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadAlerts\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(
+    alertBoard,
+    /alertsError && alerts != null\s*\?\s*\([\s\S]*?Showing the last completed sweep/,
+    "a failed revalidation keeps the last usable sweep visible",
+  );
+  assert.match(alertBoard, /filtered\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+
+  assert.match(surface, /const fetchHosts = useCallback\(async \(\) =>/);
+  assert.match(
+    surface,
+    /useLatestAsyncData<HostWire\[\]>\(\{[\s\S]*?scopeKey: "registered-hosts"[\s\S]*?load: fetchHosts[\s\S]*?errorMessage: "Couldn't probe registered hosts\."/,
+  );
+  assert.doesNotMatch(
+    surface,
+    /catch\s*\{[\s\S]*?setHosts\(\[\]\)[\s\S]*?\}/,
+    "a host failure must not masquerade as no registered hosts",
+  );
+  assert.match(
+    surface,
+    /hostsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadHosts\}[\s\S]*?\)\s*:\s*hosts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(surface, /hosts\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+});
+
+test("alert-derived secondary panels stay truthful while alerts load or fail", () => {
+  const recentlyClosedStart = surface.indexOf('<RailSection title="Recently closed alerts"');
+  const drawerEnd = surface.indexOf("</div>", recentlyClosedStart);
+  assert.ok(recentlyClosedStart >= 0 && drawerEnd > recentlyClosedStart);
+  const recentlyClosed = surface.slice(recentlyClosedStart, drawerEnd);
+  assert.match(
+    recentlyClosed,
+    /alertsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadAlerts\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(recentlyClosed, /recentlyClosed\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+
+  const queuesStart = surface.indexOf('<RailSection title="Alert queues"');
+  const queuesEnd = surface.indexOf('<RailSection title="Perimeter"', queuesStart);
+  assert.ok(queuesStart >= 0 && queuesEnd > queuesStart);
+  const queues = surface.slice(queuesStart, queuesEnd);
+  assert.match(
+    queues,
+    /alertsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadAlerts\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(
+    queues,
+    /alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?\)\s*:\s*\([\s\S]*?<ul className="role-surface-list"/,
+    "successful alert data renders the queue list",
+  );
+
+  assert.match(
+    surface,
+    /\{alerts == null \|\| alertsError \? "—" : summary\.decisionsRequired\}/,
+    "watch status uses a neutral placeholder until alert data succeeds",
+  );
+});
+
+test("surface announces mutations without duplicating source-load announcements", () => {
+  assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
+  assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
+  assert.match(surface, /announce\(`Resolved "\$\{title\}"\.`\)/);
+  assert.match(surface, /announce\(`Moved "\$\{title\}" to \$\{STATE_LABELS\[nextState\]\}\.`\)/);
+  assert.match(
+    surface,
+    /const runAlertAction = useCallback\([\s\S]*?await loadAlerts\(\{ retainData: true \}\);[\s\S]*?selectedInspectorRef\.current\?\.focus\(\)/,
+  );
+  assert.equal(
+    surface.match(/announce\(message, "assertive"\)/g)?.length,
+    2,
+    "only triage writes and alert RPCs use the mutation announcer",
+  );
+  assert.doesNotMatch(surface, /<p role="alert" className="role-surface-hint">/);
+});
+
+test("alert details wait for the source before exposing triage controls", () => {
+  const details = section('label="Alert details"', "</SurfaceRail>");
+  assert.match(
+    details,
+    /alertsError && alerts == null\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*!selected/,
+  );
+});
+
+test("compact Watch status and Alert details rails stay mutually exclusive", () => {
+  assert.match(
+    surface,
+    /const setWatchRailExpanded = \(next: boolean\) => \{\s*setWatchExpanded\(next\);\s*if \(next\) setDetailsExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /const setDetailsRailExpanded = \(next: boolean\) => \{\s*setDetailsExpanded\(next\);\s*if \(next\) setWatchExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="left"\s+label="Watch status"\s+expanded=\{watchExpanded\}\s+onExpandedChange=\{setWatchRailExpanded\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="right"\s+label="Alert details"\s+expanded=\{detailsExpanded\}\s+onExpandedChange=\{setDetailsRailExpanded\}/,
+  );
 });
 
 test("registration names the Watchtower with its own accent and drawer chrome", () => {

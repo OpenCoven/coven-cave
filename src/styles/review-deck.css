@@ -801,6 +801,96 @@
 .rd-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .rd-scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-pill); }
 
+/* The fixed tri-pane furniture needs more width than a narrow workspace can
+   offer. Stack it before the center viewer collapses under the two rails, and
+   let the room itself own the resulting vertical scroll. */
+@container role-surface-host (max-width: 1080px) {
+  .rd-stage {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .rd-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rd-grid {
+    flex: none;
+    min-height: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rd-queue {
+    min-height: 320px;
+    max-height: 420px;
+  }
+
+  .rd-viewer {
+    min-height: 480px;
+  }
+
+  .rd-context {
+    max-height: 360px;
+  }
+
+  .rd-collapsed {
+    min-height: var(--touch-target);
+    flex-direction: row;
+    justify-content: flex-start;
+    padding: var(--space-2);
+  }
+
+  .rd-collapsed-label {
+    flex: none;
+    writing-mode: horizontal-tb;
+    transform: none;
+  }
+
+  .rd-verdict-bar {
+    flex-wrap: wrap;
+  }
+
+  .rd-verdict-lead {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+
+  .rd-verdict-bar > .rd-spacer {
+    display: none;
+  }
+
+  .rd-verdict-bar > .rd-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+@container role-surface-host (max-width: 680px) {
+  .rd-stage {
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .rd-stat {
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .rd-stat-label {
+    white-space: normal;
+  }
+
+  .rd-verdict-bar {
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .rd-verdict-bar > .rd-btn {
+    min-height: var(--touch-target);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rd-grid,
   .rd-row,

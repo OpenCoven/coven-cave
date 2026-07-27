@@ -1343,7 +1343,7 @@
   left: 0;
   right: 0;
   z-index: 150;
-  display: flex;
+  display: none;
   align-items: stretch;
   justify-content: space-around;
   gap: 0;
@@ -1356,6 +1356,16 @@
   backdrop-filter: blur(18px) saturate(145%);
   border-top: 1px solid color-mix(in oklch, var(--border-hairline) 88%, transparent);
   box-shadow: 0 -14px 32px color-mix(in oklch, black 18%, transparent);
+}
+@media (max-width: 1023px) {
+  .shell-top > .shell-top-toggle--nav,
+  .shell-top > .shell-top-history {
+    display: none;
+  }
+
+  .mobile-bottom-tabs {
+    display: flex;
+  }
 }
 .mobile-bottom-tab {
   position: relative;

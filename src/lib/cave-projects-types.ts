@@ -6,11 +6,15 @@
  * to avoid pulling node:fs/promises into the browser bundle.
  */
 
+import type { ProjectAccessLevel } from "./project-access-levels.ts";
+
 export type CaveProject = {
   id: string;
   name: string;
   root: string;
   color?: string;
+  /** Effective familiar access on familiar-scoped reads; absent on the operator registry view. */
+  access?: ProjectAccessLevel;
   /** Canonical GitHub repository link (https://github.com/owner/repo), when tied to one. */
   repoUrl?: string;
   createdAt: string;
@@ -60,4 +64,28 @@ export function dedupeProjectsByRoot(
 
 export function sortProjectsAlphabetically(projects: CaveProject[]): CaveProject[] {
   return dedupeProjectsByRoot(projects).sort(compareProjectsAlphabetically);
+}
+
+/**
+ * Resolve a manually typed picker query to one project. Exact project names
+ * win; otherwise the first alphabetized name/root match mirrors the visible
+ * picker order. Blank or unmatched queries select nothing.
+ */
+export function projectForPickerQuery(
+  projects: CaveProject[],
+  query: string,
+): CaveProject | null {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return null;
+
+  const visible = sortProjectsAlphabetically(projects).filter(
+    (project) =>
+      project.name.toLowerCase().includes(normalizedQuery) ||
+      project.root.toLowerCase().includes(normalizedQuery),
+  );
+  return (
+    visible.find((project) => project.name.trim().toLowerCase() === normalizedQuery) ??
+    visible[0] ??
+    null
+  );
 }
