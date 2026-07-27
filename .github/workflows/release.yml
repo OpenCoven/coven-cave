@@ -756,7 +756,10 @@ jobs:
     # someone reruns the failed leg. Run whenever the build ran at all and
     # publish entries for the platforms that DID produce signed artifacts;
     # zero platforms stays fatal (see the verify step below).
-    if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
+    # cave-updater: also guard against build being *skipped* (upstream job
+    # failure, e.g. daemon-package gate), which means no release was ever
+    # created — gh release view would return "release not found" in that case.
+    if: ${{ !cancelled() && needs.build.result != 'cancelled' && needs.build.result != 'skipped' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
