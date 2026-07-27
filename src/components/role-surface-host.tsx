@@ -22,6 +22,7 @@ import {
   type RoleSurfaceContext,
   type RoleSurfaceContribution,
 } from "@/lib/role-surfaces";
+import { useRoleSurfaceStateSnapshot } from "@/lib/role-surface-state";
 
 /** A broken surface must never take the shell down with it. */
 class SurfaceErrorBoundary extends Component<
@@ -68,6 +69,10 @@ export function RoleSurfaceHost({
 }) {
   const surface = getRoleSurface(surfaceId);
   const available = surface != null && context != null && visibleSurfaces.some((s) => s.id === surface.id);
+  const roleStateSnapshot = useRoleSurfaceStateSnapshot(
+    context?.activeFamiliar.id ?? null,
+    surface?.id ?? null,
+  );
 
   const contributions: RoleSurfaceContribution | null = useMemo(() => {
     if (!surface || !context || !available) return null;
@@ -76,7 +81,7 @@ export function RoleSurfaceHost({
     } catch {
       return null;
     }
-  }, [surface, context, available]);
+  }, [surface, context, available, roleStateSnapshot]);
 
   // Contributed keyboard shortcuts, active only while the room is open.
   const shortcutsRef = useRef(contributions?.keyboardShortcuts);

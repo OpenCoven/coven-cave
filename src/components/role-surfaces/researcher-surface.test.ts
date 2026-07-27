@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const surface = readFileSync(new URL("./researcher-surface.tsx", import.meta.url), "utf8");
+const register = readFileSync(new URL("./register.tsx", import.meta.url), "utf8");
 const deskTab = readFileSync(new URL("./research-tab-desk.tsx", import.meta.url), "utf8");
 const promptTab = readFileSync(new URL("./research-tab-prompt.tsx", import.meta.url), "utf8");
 const libraryTab = readFileSync(new URL("./research-tab-library.tsx", import.meta.url), "utf8");
@@ -79,6 +80,24 @@ test("the room defers engine status to the shared host", () => {
   assert.doesNotMatch(surface, /Engine ready|Engine offline/);
   assert.doesNotMatch(surface, /LIVE_STATUSES/);
   assert.doesNotMatch(deskCss, /\.research-desk__engine/);
+});
+
+test("the room publishes successful live-run counts for the reactive host status", () => {
+  assert.match(surface, /useRoleSurfaceState<ResearcherState>/);
+  assert.match(surface, /researchLiveRunCount\(research\.missions\)/);
+  assert.match(surface, /if \(research\.loading \|\| research\.error\) return/);
+  assert.match(surface, /patch\(\{ lastLiveRunCount: liveRunCount \}\)/);
+  assert.match(
+    register,
+    /readRoleSurfaceState<\{ lastLiveRunCount\?: number \| null \}>[\s\S]*?RESEARCHER_SURFACE_ID/,
+  );
+  assert.match(
+    register,
+    /researchEngineStatus\(\s*context\.runtimeState\.daemonRunning,\s*state\?\.lastLiveRunCount \?\? null,\s*\)/,
+  );
+  // Run status moved into the one generic room header; local engine chrome
+  // remains absent per the quiet-chrome contract above.
+  assert.doesNotMatch(surface, /research-desk__engine/);
 });
 
 test("desk tab flags waiting checkpoints only while the desk is not active", () => {

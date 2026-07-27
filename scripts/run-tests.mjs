@@ -52,8 +52,10 @@ export const SUITES = {
     "src/lib/research-artifact-contract.test.ts",
     "src/lib/research-findings-doc.test.ts",
     "src/lib/role-surface-state.test.ts",
+    "src/components/role-surface-host-state.test.ts",
     "src/components/role-surface-shell.test.ts",
     "src/components/role-surfaces/surface-room.test.ts",
+    "src/components/role-surfaces/researcher-status.test.ts",
     "src/components/role-surfaces/researcher-surface.test.ts",
     "src/components/role-surfaces/research-evidence-ledger.test.ts",
     "src/components/role-surfaces/research-artifact-actions.test.ts",
@@ -1328,6 +1330,7 @@ const STRIP_TYPES_MJS = new Set([
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
   "src/lib/use-role-surfaces-loader.test.ts",
+  "src/components/role-surfaces/researcher-status.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-compatibility.test.ts",
   "src/lib/opencode-stream.test.ts",
