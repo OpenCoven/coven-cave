@@ -358,6 +358,7 @@ export const SUITES = {
     "src/components/chat-rail-modern-redesign.test.ts",
     "src/components/message-bubble-markdown.test.ts",
     "src/components/citation.test.ts",
+    "src/lib/citation-preview.test.ts",
     "src/lib/message-markdown-stream.test.ts",
     "src/lib/markdown-preview-shell.test.ts",
     "src/lib/markdown-table-cells.test.ts",
