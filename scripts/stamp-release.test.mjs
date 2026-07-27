@@ -78,8 +78,8 @@ assert.match(yml, /process\.argv\[2\], process\.argv\[3\]\) >= 0/, "daemon gate 
 assert.match(yml, /build:[\s\S]{0,100}needs: daemon-package/, "desktop builds wait for the daemon package gate");
 assert.match(
   yml,
-  /updater-manifest:[\s\S]{0,900}if: \$\{\{ !cancelled\(\) && needs\.build\.result != 'cancelled' \}\}/,
-  "updater-manifest runs even when a build leg failed (a flake must not 404 the updater)",
+  /updater-manifest:[\s\S]{0,900}if: \$\{\{ !cancelled\(\) && needs\.build\.result != 'cancelled' && needs\.build\.result != 'skipped' \}\}/,
+  "updater-manifest runs after partial build failures but not when the build was skipped entirely",
 );
 assert.match(yml, /PLATFORM_COUNT=\$count.*GITHUB_ENV/, "platform count exported for the body note");
 assert.match(yml, /Flag partial updater coverage in the release body/, "partial coverage is flagged on the release itself");
