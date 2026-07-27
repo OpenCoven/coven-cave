@@ -95,6 +95,15 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
     [entries, state.selectedPath],
   );
   const [detailsExpanded, setDetailsExpanded] = useActiveSelectionRail(state.selectedPath);
+  const [collectionsExpanded, setCollectionsExpanded] = useState(false);
+  const setCollectionsRailExpanded = (next: boolean) => {
+    setCollectionsExpanded(next);
+    if (next) setDetailsExpanded(false);
+  };
+  const setDetailsRailExpanded = (next: boolean) => {
+    setDetailsExpanded(next);
+    if (next) setCollectionsExpanded(false);
+  };
 
   // Selected memory content, read through the shared adapter (redacted).
   const fetchContent = useCallback(async () => {
@@ -186,7 +195,12 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       }
     >
-      <SurfaceRail side="left" label="Collections">
+      <SurfaceRail
+        side="left"
+        label="Collections"
+        expanded={collectionsExpanded}
+        onExpandedChange={setCollectionsRailExpanded}
+      >
         <RailSection title="Knowledge collections" iconName="ph:folder">
           {entriesError ? (
             <SurfaceError
@@ -272,7 +286,7 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
                     className={`role-surface-card focus-ring${entry.fullPath === state.selectedPath ? " role-surface-card--active" : ""}`}
                     onClick={() => {
                       patch({ selectedPath: entry.fullPath });
-                      setDetailsExpanded(true);
+                      setDetailsRailExpanded(true);
                     }}
                   >
                     <span className="role-surface-memory-path">{entry.relPath}</span>
@@ -296,7 +310,7 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
         side="right"
         label="Memory details"
         expanded={detailsExpanded}
-        onExpandedChange={setDetailsExpanded}
+        onExpandedChange={setDetailsRailExpanded}
       >
         {entriesError ? (
           <RailSection title="Details" iconName="ph:note">

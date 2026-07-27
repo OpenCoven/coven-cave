@@ -113,6 +113,15 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     [cards, state.selectedId],
   );
   const [detailsExpanded, setDetailsExpanded] = useActiveSelectionRail(state.selectedId);
+  const [courseExpanded, setCourseExpanded] = useState(false);
+  const setCourseRailExpanded = (next: boolean) => {
+    setCourseExpanded(next);
+    if (next) setDetailsExpanded(false);
+  };
+  const setDetailsRailExpanded = (next: boolean) => {
+    setDetailsExpanded(next);
+    if (next) setCourseExpanded(false);
+  };
   const today = new Date().toISOString().slice(0, 10);
   const legs = useMemo(() => upcomingLegs(cards ?? [], today), [cards, today]);
   const recentlyDone = useMemo(
@@ -245,7 +254,12 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       }
     >
-      <SurfaceRail side="left" label="Course">
+      <SurfaceRail
+        side="left"
+        label="Course"
+        expanded={courseExpanded}
+        onExpandedChange={setCourseRailExpanded}
+      >
         <RailSection title="Chart a task" iconName="ph:compass">
           <form
             className="role-surface-inline-form"
@@ -376,7 +390,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                       aria-current={card.id === state.selectedId ? "true" : undefined}
                       onClick={() => {
                         patch({ selectedId: card.id });
-                        setDetailsExpanded(true);
+                        setDetailsRailExpanded(true);
                       }}
                     >
                       <span className="role-surface-card-tags">
@@ -409,7 +423,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         side="right"
         label="Card details"
         expanded={detailsExpanded}
-        onExpandedChange={setDetailsExpanded}
+        onExpandedChange={setDetailsRailExpanded}
       >
         {boardError && cards == null ? (
           <RailSection title="Details" iconName="ph:note">
