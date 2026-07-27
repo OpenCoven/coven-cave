@@ -164,6 +164,12 @@
   background: transparent !important;
 }
 
+/* Stable first pass while the encountered Shiki grammar loads. It uses the
+   exact highlighted block geometry; only token colors arrive later. */
+.cave-code-wrap pre.cave-code-plain {
+  color: var(--code-chrome-ink);
+}
+
 .cave-code-wrap pre::-webkit-scrollbar { height: 4px; }
 .cave-code-wrap pre::-webkit-scrollbar-track { background: transparent; }
 .cave-code-wrap pre::-webkit-scrollbar-thumb {

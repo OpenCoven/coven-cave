@@ -525,6 +525,7 @@ export const SUITES = {
     "src/lib/reply-recommendation.test.ts",
     "src/lib/comux-projects.test.ts",
     "src/lib/code-lang.test.ts",
+    "src/lib/shiki-highlighter.test.ts",
     "src/lib/session-title.test.ts",
     "src/lib/home-suggestions.test.ts",
     "src/lib/project-search.test.ts",
