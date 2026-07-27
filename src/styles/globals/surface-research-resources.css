@@ -1,7 +1,7 @@
 /* ═══ Research Desk — Resources tab (cave-dl74, Phase B5 owns this file) ═══
    Saved-links browser: save row, category filter chips, grid/rows layouts,
    grouped shelves, uncited nudge, and the focus-trapped detail overlay.
-   Semantic tokens only — 16 themes × dark/light must hold. --research-accent
+   Semantic tokens only — 21 palettes × dark/light must hold. --research-accent
    is scoped on .research-desk (surface-role-workspaces.css:683). Layout
    numbers follow the design (lines 623–762) adapted to the desk's container
    breakpoints (760/560). */
@@ -35,36 +35,87 @@
   color: var(--text-muted);
 }
 
-/* ── Save row: search + dashed paste target (a real input) + Save. ── */
-.research-res__saverow {
+/* ── Batch intake: explicit multiline target + live advisory preview. ── */
+.research-res__intake {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-raised);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+}
+.research-res__intake-head,
+.research-res__intake-footer,
+.research-res-card__footer,
+.research-res-card__buttons,
+.research-res-overlay__primary-actions {
+  display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  gap: var(--space-2);
 }
-.research-res__search,
-.research-res__paste {
-  min-height: 32px;
-  padding: 0 var(--space-3);
-  font-size: var(--text-base);
+.research-res__intake-head {
+  justify-content: space-between;
+}
+.research-res__intake-head label {
+  display: block;
+  font-size: var(--text-md);
+  font-weight: 600;
   color: var(--text-primary);
-  background: transparent;
-  border: 1px solid var(--input, var(--border));
-  border-radius: var(--radius-md);
 }
-.research-res__search { flex: none; width: min(300px, 100%); }
+.research-res__intake-head p,
+.research-res__intake-head kbd,
+.research-res-card__hint,
+.research-res-overlay__hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.research-res__intake-head kbd {
+  flex: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
 .research-res__paste {
-  flex: 1;
-  min-width: 220px;
-  font-size: var(--text-sm);
-  border-style: dashed; /* dashed = invitation: this field takes the paste */
+  min-block-size: calc(var(--space-10) + var(--space-10));
+  padding: var(--space-3);
+  resize: vertical;
+  font: inherit;
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
 }
-.research-res__search::placeholder,
-.research-res__paste::placeholder { color: var(--text-muted); }
-.research-res__search:focus-visible,
+.research-res__paste::placeholder {
+  color: var(--text-muted);
+}
 .research-res__paste:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
+}
+.research-res__intake-preview {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.research-res__intake-types {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.research-res__intake-types > span,
+.research-res-card__state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
 }
 .research-res__save-status {
   margin: 0;
@@ -78,6 +129,10 @@
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+.research-res__search {
+  flex: 1 1 var(--shell-list-width);
+  max-width: calc(var(--shell-list-width) + var(--space-10));
 }
 .research-res__chips {
   display: flex;
@@ -133,6 +188,12 @@
   font-size: var(--text-base);
   color: var(--text-muted);
 }
+.research-res__empty--filtered {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
 .research-res__error {
   display: flex;
   align-items: center;
@@ -166,12 +227,9 @@
   border-radius: 2px;
   background: var(--text-muted);
 }
-.research-res__group-mark[data-category="github"] { background: var(--text-secondary); }
-.research-res__group-mark[data-category="paper"],
-.research-res__group-mark[data-category="video"] { background: var(--research-accent); }
-.research-res__group-mark[data-category="docs"] {
-  background: color-mix(in oklch, var(--research-accent) 55%, var(--text-secondary));
-}
+.research-res__group-mark[data-group="selected"] { background: var(--research-accent); }
+.research-res__group-mark[data-group="uncited"] { background: var(--text-muted); }
+.research-res__group-mark[data-group="cited"] { background: var(--text-secondary); }
 .research-res__group-count { font-size: var(--text-xs); color: var(--text-muted); }
 .research-res__group-desc {
   overflow: hidden;
@@ -256,37 +314,23 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.research-res-card__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-top: 2px;
+.research-res-card__footer {
+  margin-top: auto;
+  justify-content: space-between;
   font-size: var(--text-xs);
 }
-.research-res-card__add {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex: none;
-  padding: 3px var(--space-3);
-  font-size: var(--text-xs);
-  color: var(--research-accent);
-  background: transparent;
-  border: 1px solid color-mix(in oklch, var(--research-accent) 45%, transparent);
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-}
-.research-res-card__add:hover:not(:disabled) {
-  background: var(--research-accent-soft);
-  border-color: var(--research-accent);
-}
-.research-res-card__add:disabled { opacity: 0.55; cursor: default; }
-.research-res-card__meta {
-  display: inline-flex;
-  gap: var(--space-2);
+.research-res-card__buttons {
   margin-left: auto;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.research-res-card__meta {
   color: var(--text-muted);
   white-space: nowrap;
+}
+.research-res-card__state {
+  flex: none;
+  color: var(--research-accent);
 }
 
 /* Rows variant: one horizontal line per resource. */
@@ -305,7 +349,7 @@
   white-space: nowrap;
 }
 .research-res-card[data-view="rows"] .research-res-card__sub { flex: 1; }
-.research-res-card[data-view="rows"] .research-res-card__actions {
+.research-res-card[data-view="rows"] .research-res-card__footer {
   flex: none;
   margin-top: 0;
   margin-left: auto;
@@ -405,7 +449,7 @@
 }
 .research-res-overlay__close:hover { color: var(--text-primary); background: var(--bg-subtle); }
 
-/* Source bar: url + Copy / Open. */
+/* Source bar: URL + its local copy action. */
 .research-res-overlay__source {
   display: flex;
   align-items: center;
@@ -524,7 +568,7 @@
   background: color-mix(in oklch, var(--research-accent) 7%, transparent);
 }
 
-/* Action bar: add-to-run + two-step remove confirm. */
+/* Action bar: destructive management left, workflow actions right. */
 .research-res-overlay__actions {
   display: flex;
   align-items: center;
@@ -539,17 +583,20 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-left: auto;
+  margin-right: auto;
   flex-wrap: wrap;
-  justify-content: flex-end;
 }
 .research-res-overlay__remove-warn { font-size: var(--text-xs); color: var(--destructive); }
+.research-res-overlay__primary-actions {
+  margin-left: auto;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
 
 /* Focus visibility for the custom (non-Button) controls. */
 .research-res__chip:focus-visible,
 .research-res__seg button:focus-visible,
 .research-res-card__title:focus-visible,
-.research-res-card__add:focus-visible,
 .research-res-overlay__close:focus-visible,
 .research-res-overlay__source-btn:focus-visible,
 .research-res-overlay__runs-chips button:focus-visible {
@@ -564,14 +611,38 @@
 /* ── Responsive: follow the desk's container breakpoints. ── */
 @container research-desk (max-width: 760px) {
   .research-res { padding: 16px 18px 24px; }
-  .research-res__search { width: 100%; }
+  .research-res__search {
+    flex-basis: 100%;
+    max-width: none;
+    width: 100%;
+  }
   .research-res-card[data-view="rows"] .research-res-card__title { max-width: 220px; }
 }
 
 @container research-desk (max-width: 560px) {
   .research-res { padding: 14px 12px 20px; }
+  .research-res__intake-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .research-res__intake-footer,
+  .research-res-card__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .research-res__intake-footer .ui-btn { width: 100%; }
   .research-res__items[data-view="grid"] { grid-template-columns: 1fr; }
   .research-res-card[data-view="rows"] { flex-wrap: wrap; }
   .research-res-card[data-view="rows"] .research-res-card__sub { flex-basis: 100%; order: 3; }
+  .research-res-card[data-view="rows"] .research-res-card__footer {
+    flex-basis: 100%;
+    margin-left: 0;
+    order: 4;
+  }
+  .research-res-card__buttons,
+  .research-res-overlay__primary-actions {
+    width: 100%;
+    margin-left: 0;
+  }
   .research-res-overlay__actions { align-items: flex-start; }
 }
