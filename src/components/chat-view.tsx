@@ -203,6 +203,12 @@ import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { AttachmentList, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
+import { preloadMarkdownPreview } from "@/lib/markdown-preview";
+
+// Chat history commonly arrives before syntax highlighting is needed. Warm the
+// lightweight browser-only serializer while that request is in flight so
+// settled messages do not first paint as raw Markdown.
+preloadMarkdownPreview();
 
 // CHAT-D3-07 perf: `replyFor` runs for every row on every render and parses the
 // turn text (strip reasoning + Next paths) to decide whether the Reply action
@@ -2933,7 +2939,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     text: input,
     setText: setInput,
     modelHarness,
-    modelOptionsOverride: modelHarness === "opencode" ? composerModelOptions : undefined,
+    modelOptionsOverride: composerModelOptions,
     onPickModel: (id) => {
       handleSelectModel(id);
       appendSystem(`Model set to ${id}.`);
@@ -3871,7 +3877,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           formatModelList(
             modelHarness,
             current,
-            modelHarness === "opencode" ? composerModelOptions : undefined,
+            composerModelOptions,
           ),
         );
         setInput("");
@@ -3880,7 +3886,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       const id = resolveModelArg(
         args,
         modelHarness,
-        modelHarness === "opencode" ? composerModelOptions : undefined,
+        composerModelOptions,
       );
       if (!id) {
         appendSystem(`Unknown model "${args.trim()}". Type /model to list the options.`);

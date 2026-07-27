@@ -4,6 +4,7 @@ import { modelLabel, modelIcon } from "./model-label.ts";
 
 // ── modelLabel ──
 assert.equal(modelLabel("claude-opus-4-8"), "Opus 4.8", "Claude family + version");
+assert.equal(modelLabel("github/claude-opus-5"), "Opus 5", "Copilot's Opus 5 id stays readable");
 assert.equal(modelLabel("claude-opus-4-8[1m]"), "Opus 4.8", "bracket suffix is ignored");
 assert.equal(modelLabel("claude-sonnet-4-6"), "Sonnet 4.6", "Sonnet family");
 assert.equal(modelLabel("claude-haiku-4-5-20251001"), "Haiku 4.5", "build date is ignored");

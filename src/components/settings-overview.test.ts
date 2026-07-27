@@ -41,6 +41,78 @@ test("the overview header renders mark, kicker, title, description, and the stri
   assert.match(overview, /SECTION_HIGHLIGHTS\[section\]\.map/, "renders the highlight strip");
 });
 
+test("General can opt into the control-sheet overview without changing other sections", () => {
+  assert.match(
+    overview,
+    /variant = "default"[\s\S]*variant === "control-sheet"/,
+    "overview exposes an explicit opt-in variant",
+  );
+  assert.match(
+    overview,
+    /settings-overview--control-sheet/,
+    "the reference treatment has a stable style hook",
+  );
+  assert.match(
+    shell,
+    /section="general"[\s\S]{0,160}variant="control-sheet"/,
+    "General opts into the reference treatment",
+  );
+  for (const id of ["daemon", "mobile", "appearance", "about"]) {
+    assert.doesNotMatch(
+      shell,
+      new RegExp(`section="${id}"[^>]*variant="control-sheet"`),
+      `${id} retains the default settings treatment`,
+    );
+  }
+});
+
+test("the General control-sheet overview uses real summary sources and stable anchors", () => {
+  assert.match(overview, /fetch\("\/api\/daemon\/status"/);
+  assert.match(overview, /fetch\("\/api\/voice\/engines"/);
+  assert.match(overview, /fetch\("\/api\/backup\/sync"/);
+  assert.match(
+    overview,
+    /usePausablePoll\([\s\S]*loadSummary[\s\S]*30_000[\s\S]*enabled:\s*active/,
+    "the live summary refreshes while General remains open",
+  );
+  assert.match(
+    overview,
+    /addEventListener\("cave:voice-engines-refresh", refreshSummary\)[\s\S]*addEventListener\("cave:backup-sync-refresh", refreshSummary\)/,
+    "voice and backup mutations refresh the live summary immediately",
+  );
+  assert.match(
+    overview,
+    /summaryStatus === "partial"[\s\S]*Some General settings details couldn't refresh/,
+    "partial summary loads are explicit",
+  );
+  assert.match(
+    overview,
+    /summaryHasProblem[\s\S]*role=\{summaryHasProblem \? "alert" : "status"\}[\s\S]*Retry/,
+    "partial and failed summary loads expose a retry action",
+  );
+  assert.match(overview, /settingsGroupId\("Workspace"\)/);
+  assert.match(overview, /settingsGroupId\("Backup"\)/);
+  assert.match(overview, /settingsGroupId\("Startup"\)/);
+  assert.match(overview, /scrollIntoView\(\{[\s\S]*prefersReducedMotion/);
+  assert.match(
+    overview,
+    /target\.focus\(\{\s*preventScroll:\s*true\s*\}\)/,
+    "jump controls transfer focus to the destination group",
+  );
+  assert.match(overview, /settings-overview-anchor focus-ring/);
+  assert.match(overview, /voices ready/);
+  assert.match(overview, /sync \$\{summary\.syncEnabled \? "on" : "off"\}/);
+  const settingsGroup = readFileSync(
+    new URL("./ui/settings-group.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    settingsGroup,
+    /tabIndex=\{-1\}[\s\S]*role="group"[\s\S]*aria-label=\{label\}[\s\S]*focus-ring/,
+    "settings groups are programmatically focusable and named",
+  );
+});
+
 // ── shell wiring (source-text) ───────────────────────────────────────────────
 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");

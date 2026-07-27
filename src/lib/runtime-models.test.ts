@@ -5,6 +5,8 @@ import {
   catalogForRuntime,
   defaultModelForRuntime,
   isModelInCatalog,
+  modelForCaveFromRuntimeEcho,
+  modelForRuntimeLaunch,
   runtimeModelIdForLaunch,
   transformModelIdForRuntime,
 } from "./runtime-models.ts";
@@ -25,6 +27,10 @@ assert.ok(catalogForRuntime("claude").models.length > 0, "claude should seed a m
 assert.ok(
   catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-opus-4-8"),
   "claude catalog should seed Claude Opus 4.8",
+);
+assert.ok(
+  !catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-opus-5"),
+  "the static Claude seed must not advertise Opus 5 without a runtime capability probe",
 );
 assert.ok(
   catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-sonnet-5"),
@@ -109,6 +115,53 @@ assert.ok(
 );
 assert.equal(catalogForRuntime("copilot").allowCustom, true, "copilot accepts unlisted model ids");
 assert.equal(defaultModelForRuntime("copilot"), "github/auto");
+assert.ok(
+  !catalogForRuntime("copilot").models.some((m) => m.id === "github/claude-opus-5"),
+  "the static Copilot seed must not bypass account rollout or administrator policy",
+);
+
+assert.equal(
+  modelForRuntimeLaunch("claude", "anthropic/claude-opus-5"),
+  "anthropic/opus",
+  "Cave keeps a canonical Opus 5 id while Claude Code receives its provider-portable selector",
+);
+assert.equal(
+  modelForRuntimeLaunch("claude-code", "anthropic/claude-opus-5"),
+  "anthropic/opus",
+  "legacy Claude runtime aliases use the same native selector",
+);
+assert.equal(
+  modelForRuntimeLaunch("copilot", "github/claude-opus-5"),
+  "github/claude-opus-5",
+  "non-Claude runtimes retain their canonical selected id",
+);
+assert.equal(
+  modelForCaveFromRuntimeEcho(
+    "claude",
+    "anthropic/claude-opus-5",
+    "anthropic/opus",
+  ),
+  "anthropic/claude-opus-5",
+  "Claude Code's portable Opus alias maps back to the stable Cave id",
+);
+assert.equal(
+  modelForCaveFromRuntimeEcho(
+    "copilot",
+    "github/claude-opus-5",
+    "claude-opus-5",
+  ),
+  "github/claude-opus-5",
+  "Copilot's bare native echo maps back to the stable Cave id",
+);
+assert.equal(
+  modelForCaveFromRuntimeEcho(
+    "claude",
+    "anthropic/claude-opus-5",
+    "claude-opus-5-20260701",
+  ),
+  "claude-opus-5-20260701",
+  "an unexpected resolved model remains authoritative instead of being rewritten",
+);
 
 // Namespaced model id convention (`provider/model`) holds across the seed.
 for (const catalog of Object.values(RUNTIME_MODEL_CATALOG)) {

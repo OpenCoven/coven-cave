@@ -27,6 +27,7 @@ import {
   loadGroups,
   saveGroups,
   findActiveMention,
+  reconcileMentionCompletions,
   matchMentions,
   applyMention,
   capTranscript,
@@ -504,6 +505,144 @@ test("findActiveMention: bare @ has an empty query", () => {
   assert.deepEqual(findActiveMention(text, text.length), { start: 4, query: "" });
 });
 
+test("findActiveMention: picker-confirmed mention stays complete while prose continues", () => {
+  const selected = applyMention("hello @sa", 6, "sa", "Sage");
+  assert.equal(findActiveMention(selected.text, selected.caret, [selected.completion]), null);
+
+  const continued = `${selected.text}what do you think?`;
+  const completions = reconcileMentionCompletions(
+    selected.text,
+    continued,
+    [selected.completion],
+  );
+  assert.equal(findActiveMention(continued, continued.length, completions), null);
+});
+
+test("findActiveMention: picker-confirmed mention stays complete before punctuation", () => {
+  const selected = applyMention("@sa", 0, "sa", "Sage");
+  const punctuated = "@Sage, what do you think?";
+  const completions = reconcileMentionCompletions(
+    selected.text,
+    punctuated,
+    [selected.completion],
+  );
+  assert.equal(findActiveMention(punctuated, punctuated.length, completions), null);
+
+  const longerName = "@Sagebrush";
+  const editedCompletions = reconcileMentionCompletions(
+    punctuated,
+    longerName,
+    completions,
+  );
+  assert.deepEqual(findActiveMention(longerName, longerName.length, editedCompletions), {
+    start: 0,
+    query: "Sagebrush",
+  });
+});
+
+test("findActiveMention: picker completion never uses locale-sensitive case folding", () => {
+  const originalToLocaleLowerCase = String.prototype.toLocaleLowerCase;
+  let localeFoldCalls = 0;
+  String.prototype.toLocaleLowerCase = function (this: string): string {
+    localeFoldCalls++;
+    return originalToLocaleLowerCase.call(this, "tr");
+  };
+
+  try {
+    const selected = applyMention("@ir", 0, "ir", "IRIS");
+    assert.equal(
+      findActiveMention(selected.text, selected.text.length, [selected.completion]),
+      null,
+    );
+    assert.equal(localeFoldCalls, 0);
+  } finally {
+    String.prototype.toLocaleLowerCase = originalToLocaleLowerCase;
+  }
+});
+
+test("findActiveMention: a new @ starts a fresh search after a completed mention", () => {
+  const selected = applyMention("hello @sa", 6, "sa", "Sage");
+  const text = `${selected.text}what do you think? @`;
+  const completions = reconcileMentionCompletions(
+    selected.text,
+    text,
+    [selected.completion],
+  );
+  assert.deepEqual(findActiveMention(text, text.length, completions), {
+    start: text.length - 1,
+    query: "",
+  });
+});
+
+test("mention completions: canceling a second token preserves the first completion", () => {
+  const first = applyMention("hello @sa", 6, "sa", "Sage");
+  const withSecondToken = `${first.text}review this @`;
+  let completions = reconcileMentionCompletions(
+    first.text,
+    withSecondToken,
+    [first.completion],
+  );
+  assert.deepEqual(findActiveMention(withSecondToken, withSecondToken.length, completions), {
+    start: withSecondToken.length - 1,
+    query: "",
+  });
+
+  const canceled = withSecondToken.slice(0, -1);
+  completions = reconcileMentionCompletions(withSecondToken, canceled, completions);
+  assert.deepEqual(completions, [first.completion]);
+  assert.equal(findActiveMention(canceled, canceled.length, completions), null);
+});
+
+test("mention completions: prose edits preserve two confirmed tokens", () => {
+  const first = applyMention("@sa", 0, "sa", "Sage");
+  const secondDraft = `${first.text}asks @no`;
+  let completions = reconcileMentionCompletions(
+    first.text,
+    secondDraft,
+    [first.completion],
+  );
+  const second = applyMention(
+    secondDraft,
+    secondDraft.lastIndexOf("@"),
+    "no",
+    "Nova",
+  );
+  completions = [
+    ...reconcileMentionCompletions(secondDraft, second.text, completions),
+    second.completion,
+  ];
+
+  const edited = second.text.replace("asks", "politely asks");
+  completions = reconcileMentionCompletions(second.text, edited, completions);
+  assert.equal(completions.length, 2);
+  assert.equal(findActiveMention(edited, edited.indexOf("@Nova"), completions), null);
+  assert.equal(findActiveMention(edited, edited.length, completions), null);
+});
+
+test("mention completions: editing one confirmed token preserves the other", () => {
+  const first = applyMention("@sa", 0, "sa", "Sage");
+  const secondDraft = `${first.text}@no`;
+  const second = applyMention(
+    secondDraft,
+    secondDraft.lastIndexOf("@"),
+    "no",
+    "Nova",
+  );
+  const completions = [
+    ...reconcileMentionCompletions(first.text, second.text, [first.completion]),
+    second.completion,
+  ];
+
+  const edited = second.text.replace("@Sage", "@Stage");
+  const reconciled = reconcileMentionCompletions(second.text, edited, completions);
+  assert.deepEqual(reconciled.map(({ name }) => name), ["Nova"]);
+  assert.deepEqual(findActiveMention(edited, "@Stage".length, reconciled), {
+    start: 0,
+    query: "Stage",
+  });
+  assert.equal(findActiveMention(edited, edited.length, reconciled), null);
+});
+
 test("findActiveMention: not in a token returns null", () => {
   assert.equal(findActiveMention("plain text", 5), null);
 });
@@ -533,6 +672,7 @@ test("applyMention: replaces the token with '@name ' and moves caret after", () 
   const out = applyMention("hey @Nov rest", 4, "Nov", "Nova");
   assert.equal(out.text, "hey @Nova  rest");
   assert.equal(out.caret, "hey @Nova ".length);
+  assert.deepEqual(out.completion, { start: 4, end: 9, name: "Nova" });
 });
 
 const COVEN: RosterParticipant[] = [
@@ -558,6 +698,7 @@ test("renderCovenRoster: marks only the receiving familiar (you)", () => {
 test("renderCovenRoster: instructs the model to count everyone present", () => {
   const out = renderCovenRoster(COVEN, "nova");
   assert.match(out, /count everyone/i);
+  assert.match(out, /tag them with @ followed by their exact display name/i);
   assert.match(out, /<coven_roster>[\s\S]*<\/coven_roster>/);
 });
 

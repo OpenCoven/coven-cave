@@ -67,8 +67,18 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const forwardModel =\s*\n?\s*modelForwardingEnabled && cleanModelId\(desiredModel\) \? desiredModel : null;/,
-  "forwardModel must require both an enabled probe and a clean model id",
+  /const selectedModel = cleanModelId\(desiredModel\);[\s\S]*?const forwardModel =[\s\S]*?modelForwardingEnabled && selectedModel[\s\S]*?\? modelForRuntimeLaunch\(binding\.harness, selectedModel\)[\s\S]*?: null;/,
+  "forwardModel must gate a clean id and translate only at the native runtime boundary",
+);
+assert.match(
+  chatRoute,
+  /forwardModel && forwardModel !== desiredModel[\s\S]*?\? desiredModel[\s\S]*?: forwardModel/,
+  "retry metadata preserves the canonical Cave id when launch argv uses a runtime alias",
+);
+assert.match(
+  chatRoute,
+  /modelForCaveFromRuntimeEcho\(\s*binding\.harness,\s*selectedModel,\s*echoed,\s*\)/,
+  "runtime echoes must be converted back to Cave's canonical model id",
 );
 
 assert.match(

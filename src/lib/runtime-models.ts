@@ -15,6 +15,10 @@
 
 export type RuntimeProvider = "openai" | "anthropic" | "github" | "nous" | "xai" | null;
 
+import {
+  CLAUDE_OPUS_5_CAVE_ID,
+  CLAUDE_OPUS_5_NATIVE_MODEL,
+} from "./claude-models.ts";
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
 
 export type RuntimeModelOption = { id: string; label: string };
@@ -186,4 +190,44 @@ export function isModelInCatalog(runtime: string, modelId: string): boolean {
   const catalog = catalogForRuntime(runtime);
   if (!catalog) return false;
   return catalog.models.some((model) => model.id === modelId);
+}
+
+/** Translate a stable Cave model id only at the native runtime boundary. */
+export function modelForRuntimeLaunch(runtime: string, modelId: string): string {
+  if (
+    (runtime === "claude" || runtime === "claude-code") &&
+    modelId === CLAUDE_OPUS_5_CAVE_ID
+  ) {
+    return CLAUDE_OPUS_5_NATIVE_MODEL;
+  }
+  return modelId;
+}
+
+function bareModelId(modelId: string): string {
+  return modelId.includes("/")
+    ? modelId.slice(modelId.indexOf("/") + 1)
+    : modelId;
+}
+
+/**
+ * Convert a transport/native echo back to the stable id Cave selected.
+ * Runtimes may echo either the namespaced transport value or the bare value
+ * they received after Coven/native argv normalization. An unexpected resolved
+ * model remains authoritative.
+ */
+export function modelForCaveFromRuntimeEcho(
+  runtime: string,
+  requestedModelId: string,
+  echoedModelId: string,
+): string {
+  const transportModelId = modelForRuntimeLaunch(runtime, requestedModelId);
+  const expectedEchoes = new Set([
+    requestedModelId,
+    bareModelId(requestedModelId),
+    transportModelId,
+    bareModelId(transportModelId),
+  ]);
+  return expectedEchoes.has(echoedModelId)
+    ? requestedModelId
+    : echoedModelId;
 }

@@ -9,6 +9,7 @@ const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), 
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const transcript = readFileSync(new URL("../lib/group-chat-transcript.ts", import.meta.url), "utf8");
+const covenStyles = readFileSync(new URL("../styles/coven-tab.css", import.meta.url), "utf8");
 
 test("GroupChatView schedules Broadcast and Round robin replies through /api/chat/send", () => {
   assert.match(view, /export function GroupChatView/, "exports GroupChatView");
@@ -118,9 +119,99 @@ test("@mentions target a subset of the coven", () => {
   assert.match(view, /targetFamiliarIds: targeted \? targetIds : undefined/, "records targeted ids on the user turn");
   assert.match(view, /replies: GroupReply\[\] = orderedTargetIds\.map/, "only the targets reply, in the selected mode's order");
   // Composer autocomplete reuses the tested pure helpers.
-  assert.match(view, /findActiveMention\(el\.value/, "detects the active mention token");
+  assert.match(view, /findActiveMention\(\s*el\.value/, "detects the active mention token");
   assert.match(view, /matchMentions\(mention\.query, mentionable\)/, "filters the roster by the query");
-  assert.match(view, /applyMention\(draft, mention\.start, mention\.query/, "inserts the chosen familiar");
+  assert.match(
+    view,
+    /applyMention\(\s*draft,\s*mention\.start,\s*mention\.query/,
+    "inserts the chosen familiar",
+  );
+});
+
+test("completed @mentions close autocomplete and render as standout targets", () => {
+  assert.match(
+    view,
+    /const completedMentionsRef = useRef<MentionCompletion\[]>\(\[\]\)/,
+    "tracks every picker-confirmed token separately from routing state",
+  );
+  assert.match(
+    view,
+    /const completedMentionsByGroupRef = useRef\(\s*new Map<string, MentionCompletion\[]>\(\),?\s*\)/,
+    "keeps picker-confirmed completion state with each coven draft",
+  );
+  assert.match(
+    view,
+    /completedMentionsByGroupRef\.current\.set\(outgoingGroupId, completions\)/,
+    "stashes the outgoing coven's completion state",
+  );
+  assert.match(
+    view,
+    /completedMentionsRef\.current = activeId[\s\S]{0,180}completedMentionsByGroupRef\.current\.get\(activeId\)/,
+    "restores the incoming coven's completion state",
+  );
+  assert.match(
+    view,
+    /findActiveMention\([\s\S]{0,180}completedMentionsRef\.current/,
+    "suppresses autocomplete for every picker-confirmed token",
+  );
+  assert.match(
+    view,
+    /reconcileMentionCompletions\(\s*draftRef\.current,\s*nextDraft,\s*completedMentionsRef\.current,\s*\)/,
+    "carries unaffected completions across textarea edits",
+  );
+  assert.match(
+    view,
+    /completedMentionsRef\.current = \[[\s\S]{0,260}\.\.\.reconcileMentionCompletions\([\s\S]{0,260}completion/,
+    "adds each selected token without discarding prior completions",
+  );
+  assert.match(view, /announce\(`Tagged \$\{f\.name\}\.`\)/, "announces the selected familiar");
+
+  assert.match(view, /function CovenMentionPills/, "owns one group-specific mention-pill primitive");
+  assert.match(
+    view,
+    /function CovenMentionPills[\s\S]{0,700}<div[\s\S]{0,200}role="note"[\s\S]{0,200}aria-label=/,
+    "exposes the pill summary through a valid named ARIA role",
+  );
+  assert.match(view, /Use @ to tag a familiar/, "keeps the @ instruction visible outside the placeholder");
+  assert.match(view, /const mentionGuidanceId = useId\(\)/, "gives the persistent guidance a stable local id");
+  assert.match(
+    view,
+    /aria-describedby=\{participants\.length > 0 \? mentionGuidanceId : undefined\}/,
+    "connects the textarea only when persistent @ guidance is rendered",
+  );
+  assert.match(
+    view,
+    /<CovenMentionPills[\s\S]*familiars=\{composerTargets\}/,
+    "shows parsed targets in the composer",
+  );
+  assert.match(
+    view,
+    /<CovenMentionPills familiars=\{targets \?\? \[\]\} align="end" \/>/,
+    "shows target pills on sent user turns",
+  );
+  assert.match(
+    view,
+    /<CovenMentionPills familiars=\{replyTargets\} \/>/,
+    "shows familiar tags on assistant turns",
+  );
+  assert.match(
+    view,
+    /`Message \$\{participants\.length\} familiar\$\{participants\.length === 1 \? "" : "s"\}…`/,
+    "keeps the populated placeholder focused on composition",
+  );
+  assert.doesNotMatch(view, /\(@ to tag one\)/, "does not hide required mention guidance in the placeholder");
+
+  assert.match(covenStyles, /\.coven-tab__composer-field/, "composer field makes room for persistent target guidance");
+  assert.match(
+    covenStyles,
+    /\.coven-tab__mention-chip[\s\S]*var\(--accent-presence\)/,
+    "mention pills derive their standout state from the presence accent",
+  );
+  assert.match(
+    covenStyles,
+    /\.coven-tab__mention-chip[\s\S]*color-mix\(in oklch,[\s\S]*14%/,
+    "mention pills use the design-system tint recipe",
+  );
 });
 
 test("completed familiar delegation trailers route bounded, attributable follow-up work", () => {
@@ -399,7 +490,7 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   }
   assert.match(
     view,
-    /if \(draftOwnerRef\.current\) draftsByGroupRef\.current\.set\(draftOwnerRef\.current, draftRef\.current\);[\s\S]{0,220}?setDraft\(activeId \? draftsByGroupRef\.current\.get\(activeId\) \?\? "" : ""\);/,
+    /const outgoingGroupId = draftOwnerRef\.current;[\s\S]{0,180}?draftsByGroupRef\.current\.set\(outgoingGroupId, draftRef\.current\);[\s\S]{0,700}?const incomingDraft = activeId[\s\S]{0,160}?draftsByGroupRef\.current\.get\(activeId\)[\s\S]{0,160}?setDraft\(incomingDraft\);/,
     "switching covens stashes the outgoing draft and restores the incoming one (no cross-coven bleed)",
   );
   assert.match(
