@@ -121,7 +121,7 @@ test.describe("mobile code-rail slide-over sheet", () => {
     await toggle.click();
     const sheet = page.getByRole("dialog", { name: "Code rail" });
     await expect(sheet).toBeVisible();
-    await expect(sheet.locator(".workspace-rail")).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "Changes" })).toBeVisible();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     // The pin control is meaningless in a transient sheet → hidden.
     await expect(sheet.getByRole("button", { name: /Pin code rail/ })).toHaveCount(0);
