@@ -8,10 +8,20 @@ const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 const installOutput = await readFile(new URL("./install-job-output.ts", import.meta.url), "utf8");
 
 assert.match(source, /"managed-node": \{[\s\S]*kind: "managed-node"/);
-for (const id of ["coven-cli", "runtime-codex", "runtime-claude", "runtime-copilot", "runtime-openclaw"]) {
+assert.match(
+  source,
+  /"coven-cli": \{[\s\S]*packageName: "@opencoven\/cli@latest"/,
+  "the Coven CLI update action installs the latest published package",
+);
+for (const id of ["runtime-codex", "runtime-claude", "runtime-copilot", "runtime-openclaw"]) {
   assert.match(source, new RegExp(`reviewedPackage\\("${id}"\\)`));
 }
-assert.doesNotMatch(source, /@latest|curl -fsSL|\birm https?:\/\//i, "one-click installs never use mutable package or script targets");
+assert.equal(
+  source.match(/@latest/g)?.length,
+  1,
+  "only the Coven CLI self-update action may use a mutable package target",
+);
+assert.doesNotMatch(source, /curl -fsSL|\birm https?:\/\//i, "one-click installs never use mutable script targets");
 assert.doesNotMatch(source, /installHermesShim|targetName === "hermes"/, "Hermes remains manual-only");
 assert.match(source, /await probeManagedNodeToolchain\(\)/, "npm plans require the Cave-managed toolchain");
 assert.match(source, /managedNpmLaunch\(managed\.paths\)/, "npm runs through owned node and npm-cli.js");
