@@ -121,6 +121,9 @@ test.describe("mobile code-rail slide-over sheet", () => {
     await toggle.click();
     const sheet = page.getByRole("dialog", { name: "Code rail" });
     await expect(sheet).toBeVisible();
+    // WorkspaceRail is lazy-loaded; wait for its container before asserting on
+    // children so CI timing variance doesn't race the dynamic import.
+    await expect(sheet.locator(".workspace-rail")).toBeVisible({ timeout: 15_000 });
     await expect(sheet.getByRole("button", { name: "Changes" })).toBeVisible();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     // The pin control is meaningless in a transient sheet → hidden.
