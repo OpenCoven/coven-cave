@@ -16,6 +16,26 @@ test("the Citation UI uses the shared Popover and Cave's accent hue", () => {
     "source previews coordinate hover and focus across the row and portaled card",
   );
   assert.match(citation, /var\(--accent-presence\)/, "citations use the accent-presence hue");
+  assert.match(
+    citation,
+    /max-w-\[var\(--citation-card-w,272px\)\][^"]*gap-1[^"]*p-0/,
+    "preview cards use the compact desktop density contract",
+  );
+  assert.match(
+    citation,
+    /line-clamp-2[^"]*leading-snug/,
+    "long source titles stay compact",
+  );
+  assert.match(
+    citation,
+    /line-clamp-3[^"]*leading-normal/,
+    "source excerpts preserve context without dominating the preview",
+  );
+  assert.match(
+    citation,
+    /className="bg-\[var\(--bg-elevated\)\]"[\s\S]*?ariaLabel=\{`Source \$\{citation\.n\} preview`\}[\s\S]*?minWidth=\{272\}/,
+    "chat previews use the dense opaque evidence-card treatment",
+  );
   assert.match(citation, /showHoverPreview = false/, "sources can opt into hover preview cards");
   assert.match(
     citation,

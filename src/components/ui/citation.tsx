@@ -18,8 +18,8 @@ import type { Citation } from "@/lib/citations";
 
 function CitationCard({ citation }: { citation: Citation }) {
   return (
-    <div className="flex max-w-[var(--citation-card-w,320px)] flex-col gap-1.5 p-1">
-      <div className="flex items-center gap-1.5">
+    <div className="flex max-w-[var(--citation-card-w,272px)] flex-col gap-1 p-0">
+      <div className="flex items-center gap-1">
         <span className="flex h-4 min-w-4 items-center justify-center rounded-[var(--radius-control)] bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] px-1 text-[length:var(--text-2xs)] font-semibold text-[var(--accent-presence)]">
           {citation.n}
         </span>
@@ -34,16 +34,18 @@ function CitationCard({ citation }: { citation: Citation }) {
           href={citation.url}
           target="_blank"
           rel="noreferrer"
-          className="focus-ring inline-flex items-start gap-1 text-[length:var(--text-sm)] font-medium text-[var(--text-primary)] hover:text-[var(--accent-presence)]"
+          className="focus-ring inline-flex w-full items-start gap-1 text-[length:var(--text-sm)] font-medium leading-snug text-[var(--text-primary)] hover:text-[var(--accent-presence)]"
         >
-          <span className="min-w-0">{citation.title}</span>
+          <span className="min-w-0 line-clamp-2 break-words">{citation.title}</span>
           <Icon name="ph:arrow-square-out" width={12} height={12} className="mt-0.5 shrink-0" aria-hidden />
         </a>
       ) : (
-        <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">{citation.title}</span>
+        <span className="line-clamp-2 break-words text-[length:var(--text-sm)] font-medium leading-snug text-[var(--text-primary)]">
+          {citation.title}
+        </span>
       )}
       {citation.snippet ? (
-        <p className="line-clamp-4 text-[length:var(--text-xs)] leading-relaxed text-[var(--text-secondary)]">
+        <p className="line-clamp-3 text-[length:var(--text-xs)] leading-normal text-[var(--text-secondary)]">
           {citation.snippet}
         </p>
       ) : null}
@@ -175,8 +177,9 @@ function CitationSourceRow({
           }}
           anchorRef={anchorRef}
           placement="top-start"
+          className="bg-[var(--bg-elevated)]"
           ariaLabel={`Source ${citation.n} preview`}
-          minWidth={260}
+          minWidth={272}
         >
           <PopoverBody>
             <div
