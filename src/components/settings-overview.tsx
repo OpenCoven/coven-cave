@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 import {
   SECTION_HIGHLIGHTS,
   getSectionMeta,
@@ -7,60 +8,79 @@ import {
 } from "@/components/settings-sections";
 import { settingsGroupId } from "@/components/ui/settings-group";
 import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
+import {
+  resolveGeneralSummaryState,
+  type GeneralSummaryResponse,
+  type GeneralSummaryState,
+} from "@/lib/settings-general-summary";
 
-type GeneralSummary = {
-  workspacePath?: string;
-  readyVoices?: number;
-  totalVoices?: number;
-  syncEnabled?: boolean;
-};
+function useGeneralSummary(active: boolean) {
+  const [state, setState] = useState<GeneralSummaryState>({
+    status: "loading",
+    summary: {},
+  });
+  const latestRequest = useRef(0);
 
-function useGeneralSummary(active: boolean): GeneralSummary | null {
-  const [summary, setSummary] = useState<GeneralSummary | null>(null);
-
-  useEffect(() => {
+  const loadSummary = useCallback(async (showLoading = false) => {
     if (!active) return;
-    const controller = new AbortController();
-    const read = async (request: Promise<Response>): Promise<Record<string, unknown> | null> => {
+    const requestId = ++latestRequest.current;
+    if (showLoading) {
+      setState((current) => ({ ...current, status: "loading" }));
+    }
+    const read = async (request: Promise<Response>): Promise<GeneralSummaryResponse> => {
       try {
         const response = await request;
-        if (!response.ok) return null;
-        return await response.json() as Record<string, unknown>;
+        if (!response.ok) return { ok: false, value: null };
+        const value = await response.json() as unknown;
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          return { ok: false, value: null };
+        }
+        const record = value as Record<string, unknown>;
+        if (record.ok === false) return { ok: false, value: null };
+        return { ok: true, value: record };
       } catch {
-        return null;
+        return { ok: false, value: null };
       }
     };
 
-    void Promise.all([
-      read(fetch("/api/daemon/status", { cache: "no-store", signal: controller.signal })),
-      read(fetch("/api/voice/engines", { cache: "no-store", signal: controller.signal })),
-      read(fetch("/api/backup/sync", { cache: "no-store", signal: controller.signal })),
-    ]).then(([daemon, voice, sync]) => {
-      if (controller.signal.aborted) return;
-      const models = Array.isArray(voice?.tts) ? voice.tts : null;
-      const syncConfig = sync?.config && typeof sync.config === "object"
-        ? sync.config as Record<string, unknown>
-        : null;
-      setSummary({
-        workspacePath:
-          typeof daemon?.workspacePath === "string" ? daemon.workspacePath : undefined,
-        readyVoices: models
-          ? models.filter((model) => {
-              if (!model || typeof model !== "object") return false;
-              const item = model as Record<string, unknown>;
-              return item.ready === true && item.verified === true;
-            }).length
-          : undefined,
-        totalVoices: models?.length,
-        syncEnabled:
-          typeof syncConfig?.enabled === "boolean" ? syncConfig.enabled : undefined,
-      });
-    });
-
-    return () => controller.abort();
+    const [daemon, voice, sync] = await Promise.all([
+      read(fetch("/api/daemon/status", { cache: "no-store" })),
+      read(fetch("/api/voice/engines", { cache: "no-store" })),
+      read(fetch("/api/backup/sync", { cache: "no-store" })),
+    ]);
+    if (requestId !== latestRequest.current) return;
+    setState((current) => resolveGeneralSummaryState(current, {
+      daemon,
+      voice,
+      sync,
+    }));
   }, [active]);
 
-  return summary;
+  useEffect(() => {
+    if (!active) return;
+    void loadSummary(true);
+    const refreshSummary = () => { void loadSummary(); };
+    window.addEventListener("cave:voice-engines-refresh", refreshSummary);
+    window.addEventListener("cave:backup-sync-refresh", refreshSummary);
+    return () => {
+      latestRequest.current += 1;
+      window.removeEventListener("cave:voice-engines-refresh", refreshSummary);
+      window.removeEventListener("cave:backup-sync-refresh", refreshSummary);
+    };
+  }, [active, loadSummary]);
+
+  usePausablePoll(() => {
+    void loadSummary();
+  }, 30_000, {
+    enabled: active,
+    pauseWhileInputActive: true,
+  });
+
+  return {
+    ...state,
+    retry: () => { void loadSummary(true); },
+  };
 }
 
 /**
@@ -78,7 +98,11 @@ export function SettingsOverview({
   variant?: "default" | "control-sheet";
 }) {
   const meta = getSectionMeta(section);
-  const summary = useGeneralSummary(variant === "control-sheet");
+  const {
+    summary,
+    status: summaryStatus,
+    retry: retrySummary,
+  } = useGeneralSummary(variant === "control-sheet");
 
   if (variant === "control-sheet") {
     const anchors = [
@@ -97,11 +121,27 @@ export function SettingsOverview({
         : null,
     ].filter((part): part is string => Boolean(part));
 
+    const summaryHasProblem =
+      summaryStatus === "partial" || summaryStatus === "error";
+    const summaryMessage =
+      summaryStatus === "partial"
+        ? `${summaryParts.join(" · ")} · Some General settings details couldn't refresh.`
+        : summaryStatus === "error"
+        ? summaryParts.length > 0
+          ? `${summaryParts.join(" · ")} · Couldn't refresh General settings summary.`
+          : "Couldn't load General settings summary."
+        : summaryParts.length > 0
+          ? summaryParts.join(" · ")
+          : "Loading General settings summary…";
+
     const jumpTo = (id: string) => {
-      document.getElementById(id)?.scrollIntoView({
+      const target = document.getElementById(id);
+      if (!target) return;
+      target.scrollIntoView({
         block: "start",
         behavior: prefersReducedMotion() ? "auto" : "smooth",
       });
+      target.focus({ preventScroll: true });
     };
 
     return (
@@ -116,11 +156,23 @@ export function SettingsOverview({
           <div className="min-w-0">
             <p className="settings-overview__kicker">Settings · {meta.label}</p>
             <h1 className="settings-overview__title">{meta.label}</h1>
-            <p className="settings-overview__description" role="status">
-              {summaryParts.length > 0
-                ? summaryParts.join(" · ")
-                : "Loading General settings summary…"}
-            </p>
+            <div
+              className="settings-overview__summary"
+              role={summaryHasProblem ? "alert" : "status"}
+            >
+              <span>{summaryMessage}</span>
+              {summaryHasProblem ? (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="settings-overview__summary-retry"
+                  onClick={retrySummary}
+                  leadingIcon="ph:arrows-clockwise"
+                >
+                  Retry
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
         <nav className="settings-overview-anchors" aria-label="General settings sections">

@@ -62,7 +62,7 @@ import {
 } from "@/lib/appearance-corner-radius";
 import { readableTextColor } from "@/lib/readable-text-color";
 import { openExternalUrl } from "@/lib/open-external";
-import { getBackupPassphraseStrength } from "@/lib/backup-passphrase-strength";
+import { getBackupPassphraseGuidance } from "@/lib/backup-passphrase-strength";
 import { BackdropSettings } from "@/components/backdrop-settings";
 import { VoiceEngineSettings } from "@/components/voice-engine-settings";
 import {
@@ -535,7 +535,7 @@ function BackupSettingsGroup() {
   const [status, setStatus] = useState<string>("");
 
   const canSubmit = passphrase.length >= 8;
-  const backupPassphraseStrength = getBackupPassphraseStrength(passphrase);
+  const backupPassphraseGuidance = getBackupPassphraseGuidance(passphrase);
 
   const exportBackup = async () => {
     setBusy("export");
@@ -622,14 +622,18 @@ function BackupSettingsGroup() {
             aria-label="Backup passphrase"
             className="settings-backup-input focus-ring"
           />
-          <div className="settings-backup-strength" aria-live="polite">
-            <span className="settings-backup-strength__track" aria-hidden="true">
+          <div
+            className="settings-backup-guidance"
+            aria-label="Passphrase length guidance"
+            aria-live="polite"
+          >
+            <span className="settings-backup-guidance__track" aria-hidden="true">
               <span
-                className={`settings-backup-strength__fill is-${backupPassphraseStrength.score}`}
+                className={`settings-backup-guidance__fill is-${backupPassphraseGuidance.score}`}
               />
             </span>
-            <span className={`settings-backup-strength__label is-${backupPassphraseStrength.score}`}>
-              {backupPassphraseStrength.label}
+            <span className={`settings-backup-guidance__label is-${backupPassphraseGuidance.score}`}>
+              {backupPassphraseGuidance.label}
             </span>
           </div>
           <div className="settings-backup-actions">
@@ -750,6 +754,7 @@ function ScheduledSyncSettings() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.ok === false) throw new Error(json?.error || `sync update failed (${res.status})`);
       setOverview(json as BackupSyncOverview);
+      window.dispatchEvent(new Event("cave:backup-sync-refresh"));
       announce(announcement);
     } catch (err) {
       const text = err instanceof Error ? err.message : "sync update failed";
@@ -782,7 +787,13 @@ function ScheduledSyncSettings() {
 
   if (syncLoadState === "loading") {
     return (
-      <section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">
+      <section
+        className="settings-backup-card settings-backup-sync"
+        aria-label="Scheduled sync"
+        role="status"
+        aria-busy="true"
+      >
+        <span className="sr-only">Loading scheduled sync…</span>
         <SkeletonRows count={3} />
       </section>
     );

@@ -70,13 +70,47 @@ test("the General control-sheet overview uses real summary sources and stable an
   assert.match(overview, /fetch\("\/api\/daemon\/status"/);
   assert.match(overview, /fetch\("\/api\/voice\/engines"/);
   assert.match(overview, /fetch\("\/api\/backup\/sync"/);
+  assert.match(
+    overview,
+    /usePausablePoll\([\s\S]*loadSummary[\s\S]*30_000[\s\S]*enabled:\s*active/,
+    "the live summary refreshes while General remains open",
+  );
+  assert.match(
+    overview,
+    /addEventListener\("cave:voice-engines-refresh", refreshSummary\)[\s\S]*addEventListener\("cave:backup-sync-refresh", refreshSummary\)/,
+    "voice and backup mutations refresh the live summary immediately",
+  );
+  assert.match(
+    overview,
+    /summaryStatus === "partial"[\s\S]*Some General settings details couldn't refresh/,
+    "partial summary loads are explicit",
+  );
+  assert.match(
+    overview,
+    /summaryHasProblem[\s\S]*role=\{summaryHasProblem \? "alert" : "status"\}[\s\S]*Retry/,
+    "partial and failed summary loads expose a retry action",
+  );
   assert.match(overview, /settingsGroupId\("Workspace"\)/);
   assert.match(overview, /settingsGroupId\("Backup"\)/);
   assert.match(overview, /settingsGroupId\("Startup"\)/);
   assert.match(overview, /scrollIntoView\(\{[\s\S]*prefersReducedMotion/);
+  assert.match(
+    overview,
+    /target\.focus\(\{\s*preventScroll:\s*true\s*\}\)/,
+    "jump controls transfer focus to the destination group",
+  );
   assert.match(overview, /settings-overview-anchor focus-ring/);
   assert.match(overview, /voices ready/);
   assert.match(overview, /sync \$\{summary\.syncEnabled \? "on" : "off"\}/);
+  const settingsGroup = readFileSync(
+    new URL("./ui/settings-group.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    settingsGroup,
+    /tabIndex=\{-1\}[\s\S]*role="group"[\s\S]*aria-label=\{label\}[\s\S]*focus-ring/,
+    "settings groups are programmatically focusable and named",
+  );
 });
 
 // ── shell wiring (source-text) ───────────────────────────────────────────────

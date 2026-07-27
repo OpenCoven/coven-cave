@@ -97,6 +97,7 @@ export const SUITES = {
     "src/lib/daemon-desktop-auto-start.test.ts",
     "src/lib/about-diagnostics.test.ts",
     "src/lib/backup-passphrase-strength.test.ts",
+    "src/lib/settings-general-summary.test.ts",
     "src/lib/browser-navigation-queue.test.ts",
     "src/components/browser-tab-state.test.ts",
     "src/lib/browser-native-overlay.test.ts",

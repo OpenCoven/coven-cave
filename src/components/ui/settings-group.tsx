@@ -34,8 +34,12 @@ export function SettingsGroup({
   const ruled = variant === "ruled";
   return (
     <div
-      id={settingsGroupId(label)} data-settings-group
-      className={`scroll-mt-4 settings-group${ruled ? " settings-group--ruled" : ""}`}
+      id={settingsGroupId(label)}
+      data-settings-group
+      tabIndex={-1}
+      role="group"
+      aria-label={label}
+      className={`scroll-mt-4 settings-group focus-ring${ruled ? " settings-group--ruled" : ""}`}
     >
       {ruled ? (
         <>

@@ -511,8 +511,13 @@ assert.match(
 );
 assert.match(
   source,
-  /settings-backup-strength[\s\S]*backupPassphraseStrength\.label/,
-  "manual backup shows the source's passphrase-strength feedback",
+  /settings-backup-guidance[\s\S]*backupPassphraseGuidance\.label/,
+  "manual backup shows objective passphrase-length guidance",
+);
+assert.doesNotMatch(
+  source,
+  /Strong passphrase|Good passphrase|Weak passphrase/,
+  "length-only backup guidance makes no security-strength claim",
 );
 assert.match(
   source,
@@ -538,6 +543,16 @@ assert.match(
   source,
   /syncLoadState === "error"[\s\S]{0,240}<section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">/,
   "scheduled sync retains an accessible section name when loading fails",
+);
+assert.match(
+  source,
+  /syncLoadState === "loading"[\s\S]{0,360}role="status"[\s\S]*aria-busy="true"[\s\S]*Loading scheduled sync…/,
+  "scheduled sync announces its loading state instead of exposing an empty region",
+);
+assert.match(
+  source,
+  /setOverview\(json as BackupSyncOverview\)[\s\S]{0,160}dispatchEvent\(new Event\("cave:backup-sync-refresh"\)\)/,
+  "successful scheduled-sync mutations refresh the General summary",
 );
 assert.match(
   source,
@@ -577,10 +592,20 @@ assert.doesNotMatch(
   /#[0-9a-f]{3,8}\b/i,
   "General control-sheet CSS introduces no literal colors",
 );
-assert.match(
-  dashboardCss,
-  /@media \(pointer: coarse\)[\s\S]*settings-(?:overview-anchor|stop-phrase|voice-catalog__toggle)/,
-  "new compact controls preserve touch targets",
-);
+const coarsePointerRules =
+  dashboardCss.match(/@media \(hover: none\) and \(pointer: coarse\)\s*\{[\s\S]*?\n\}/g)?.join("\n") ?? "";
+for (const selector of [
+  ".settings-overview-anchor",
+  ".settings-overview__summary-retry",
+  ".settings-stop-phrase__remove",
+  ".settings-stop-phrases__clear",
+  ".settings-voice-catalog__toggle",
+]) {
+  assert.match(
+    coarsePointerRules,
+    new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s\\S]{0,240}(?:min-width|min-height):\\s*var\\(--touch-target\\)`),
+    `${selector} preserves the coarse-pointer touch floor`,
+  );
+}
 
 console.log("settings-shell-polish.test.ts OK");

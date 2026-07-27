@@ -1,27 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getBackupPassphraseStrength } from "./backup-passphrase-strength.ts";
+import { getBackupPassphraseGuidance } from "./backup-passphrase-strength.ts";
 
-test("backup passphrase strength follows the four-step General design scale", () => {
-  assert.deepEqual(getBackupPassphraseStrength(""), {
+test("backup passphrase guidance uses objective length milestones", () => {
+  assert.deepEqual(getBackupPassphraseGuidance(""), {
     score: 0,
     label: "Passphrase required",
   });
-  assert.deepEqual(getBackupPassphraseStrength("password"), {
+  assert.deepEqual(getBackupPassphraseGuidance("short"), {
     score: 1,
-    label: "Weak passphrase",
+    label: "Use at least 8 characters",
   });
-  assert.deepEqual(getBackupPassphraseStrength("longpasswordvalue"), {
+  assert.deepEqual(getBackupPassphraseGuidance("password"), {
     score: 2,
-    label: "Fair passphrase",
+    label: "Minimum length met",
   });
-  assert.deepEqual(getBackupPassphraseStrength("password123456"), {
+  assert.deepEqual(getBackupPassphraseGuidance("password12345!"), {
     score: 3,
-    label: "Good passphrase",
+    label: "14+ characters",
   });
-  assert.deepEqual(getBackupPassphraseStrength("password12345!"), {
+  assert.deepEqual(getBackupPassphraseGuidance("correct horse battery staple"), {
     score: 4,
-    label: "Strong passphrase",
+    label: "20+ characters",
   });
+  assert.doesNotMatch(
+    getBackupPassphraseGuidance("password12345!").label,
+    /strong|good|secure/i,
+    "length-only guidance must not make a security-strength claim",
+  );
 });
