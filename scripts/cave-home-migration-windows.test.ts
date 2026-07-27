@@ -108,9 +108,9 @@ try {
 
   // Persistent Windows EPERM while publishing candidate directories must stop
   // at the documented deadline and remove every contender-owned candidate.
-  // GitHub's Windows filesystem can consume most of a 150ms deadline in the
-  // first directory operation, before the retry loop gets a second turn.
   const retryTimeoutMs = 500;
+  const retryStepMs = 100;
+  const expectedRetryAttempts = retryTimeoutMs / retryStepMs;
   const candidateFailureHome = path.join(root, "candidate-eperm", ".coven");
   process.env.COVEN_HOME = candidateFailureHome;
   const candidateFailureCave = path.join(candidateFailureHome, "cave");
@@ -120,7 +120,7 @@ try {
   const candidates = new Set<string>();
   const persistentEperm = async (candidate: string) => {
     candidateAttempts += 1;
-    candidateClock += 100;
+    candidateClock += retryStepMs;
     candidates.add(candidate);
     const error = new Error("injected persistent Windows EPERM") as NodeJS.ErrnoException;
     error.code = "EPERM";
@@ -134,7 +134,7 @@ try {
     }),
     (error) => error?.code === "ETIMEDOUT",
   );
-  assert.ok(candidateAttempts >= 2, "the injected monotonic clock permits the intended retry sequence independent of CI scheduling");
+  assert.equal(candidateAttempts, expectedRetryAttempts, "candidate publication retries exactly until the injected deadline");
   assert.equal(candidates.size, 1, "candidate retries reuse one directory on Windows");
   assert.equal(
     (await readdir(candidateFailureCave)).some((name) => name.startsWith(".migration.lock.candidate-")),
@@ -154,11 +154,14 @@ try {
     releasedAt: new Date().toISOString(),
   }));
   let reclaimAttempts = 0;
+  let reclaimClock = 0;
   await assert.rejects(
     migrateCaveHome({
-      lockTimeoutMs: 150,
+      lockTimeoutMs: retryTimeoutMs,
+      lockNow: () => reclaimClock,
       lockFenceRename: async () => {
         reclaimAttempts += 1;
+        reclaimClock += retryStepMs;
         const error = new Error("injected persistent Windows reclaim EPERM") as NodeJS.ErrnoException;
         error.code = "EPERM";
         throw error;
@@ -166,7 +169,7 @@ try {
     }),
     (error) => error?.code === "ETIMEDOUT",
   );
-  assert.ok(reclaimAttempts >= 2);
+  assert.equal(reclaimAttempts, expectedRetryAttempts, "released-lock fencing retries exactly until the injected deadline");
   assert.equal((await lstat(reclaimFailureLock)).isDirectory(), true);
   console.log("cave-home-migration-windows.test.ts: ok");
 } finally {
