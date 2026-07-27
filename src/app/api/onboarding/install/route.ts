@@ -52,7 +52,7 @@ export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
 
-function reviewedPackage(id: Extract<PrerequisiteId, "coven-cli" | "runtime-codex" | "runtime-claude" | "runtime-copilot" | "runtime-openclaw">): string {
+function reviewedPackage(id: Extract<PrerequisiteId, "runtime-codex" | "runtime-claude" | "runtime-copilot" | "runtime-openclaw">): string {
   const install = prerequisiteById(id).install;
   if (install.kind !== "managed-npm") throw new Error(`${id} must use the managed npm manifest lane`);
   return `${install.package.packageName}@${install.package.version}`;
@@ -66,7 +66,7 @@ function reviewedPackage(id: Extract<PrerequisiteId, "coven-cli" | "runtime-code
  * a shell:
  *
  *   - kind "managed-node": Cave-owned, exact Node/npm archive installation
- *   - kind "npm":            `node npm-cli.js install -g <pinned package>`
+ *   - kind "npm":            `node npm-cli.js install -g <allowlisted package>`
  *                              from that managed toolchain, never host PATH.
  */
 const INSTALL_TARGETS = {
@@ -79,7 +79,7 @@ const INSTALL_TARGETS = {
   "coven-cli": {
     kind: "npm",
     label: "Coven CLI",
-    packageName: reviewedPackage("coven-cli"),
+    packageName: "@opencoven/cli@latest",
     binary: "coven",
     timeoutMs: 240_000,
   },

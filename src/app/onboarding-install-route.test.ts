@@ -61,8 +61,8 @@ assert.match(
 
 assert.match(
   route,
-  /"coven-cli": \{[\s\S]*?packageName: reviewedPackage\("coven-cli"\)/,
-  "Coven install resolves its pinned package from the reviewed prerequisite manifest",
+  /"coven-cli": \{[\s\S]*?packageName: "@opencoven\/cli@latest"/,
+  "the Coven CLI button installs the latest published package",
 );
 assert.doesNotMatch(
   route,
