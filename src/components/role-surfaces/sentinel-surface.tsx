@@ -138,6 +138,15 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
     [alerts, state.selectedId],
   );
   const [detailsExpanded, setDetailsExpanded] = useActiveSelectionRail(state.selectedId);
+  const [watchExpanded, setWatchExpanded] = useState(false);
+  const setWatchRailExpanded = (next: boolean) => {
+    setWatchExpanded(next);
+    if (next) setDetailsExpanded(false);
+  };
+  const setDetailsRailExpanded = (next: boolean) => {
+    setDetailsExpanded(next);
+    if (next) setWatchExpanded(false);
+  };
   const watch = useMemo(() => watchSessions(context.runtimeState.sessions), [context.runtimeState.sessions]);
   const recentlyClosed = useMemo(
     () =>
@@ -264,7 +273,12 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
         </div>
       }
     >
-      <SurfaceRail side="left" label="Watch status">
+      <SurfaceRail
+        side="left"
+        label="Watch status"
+        expanded={watchExpanded}
+        onExpandedChange={setWatchRailExpanded}
+      >
         <RailSection title="Watch status" iconName="ph:heartbeat">
           <ul className="role-surface-list">
             <li className="role-surface-list-row">
@@ -414,7 +428,7 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
                     aria-current={item.id === state.selectedId ? "true" : undefined}
                     onClick={() => {
                       patch({ selectedId: item.id });
-                      setDetailsExpanded(true);
+                      setDetailsRailExpanded(true);
                     }}
                   >
                     <span className="role-surface-card-tags">
@@ -441,7 +455,7 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
         side="right"
         label="Alert details"
         expanded={detailsExpanded}
-        onExpandedChange={setDetailsExpanded}
+        onExpandedChange={setDetailsRailExpanded}
       >
         {alertsError && alerts == null ? (
           <RailSection title="Details" iconName="ph:note">
