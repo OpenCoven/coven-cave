@@ -15,7 +15,7 @@
  * is the real durable write. Panels with nothing to show say so.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PopoverItem } from "@/components/ui/popover";
@@ -89,22 +89,29 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   // ── Source material: the familiar's real memory inventory ─────────────────
   const [sources, setSources] = useState<SurfaceMemoryEntry[] | null>(null);
   const [sourcesError, setSourcesError] = useState<string | null>(null);
+  const sourcesLoadSeq = useRef(0);
   const loadSources = useCallback(async () => {
+    const seq = ++sourcesLoadSeq.current;
     setSourcesError(null);
     try {
       const entries = await context.memory.listEntries();
+      if (seq !== sourcesLoadSeq.current) return;
       setSources(
         [...entries]
           .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
           .slice(0, 8),
       );
     } catch {
+      if (seq !== sourcesLoadSeq.current) return;
       setSourcesError("Couldn't load source material.");
     }
-  }, [context.memory]);
+  }, [context.memory, familiarId]);
   useEffect(() => {
     setSources(null);
     void loadSources();
+    return () => {
+      sourcesLoadSeq.current += 1;
+    };
   }, [loadSources]);
 
   // ── Source material: recent journal days ──────────────────────────────────
@@ -145,6 +152,8 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   }, [loadWorks]);
 
   // ── Draft editing (local until published) ─────────────────────────────────
+  const newDraftButtonRef = useRef<HTMLButtonElement | null>(null);
+  const restoreDraftFocusRef = useRef(false);
   const newDraft = () => {
     const now = new Date().toISOString();
     const draft: ScribeDraft = {
@@ -170,8 +179,18 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
 
   const discardSelected = () => {
     if (!selected) return;
+    const title = selected.title.trim() || "Untitled";
+    restoreDraftFocusRef.current = true;
     patch({ drafts: state.drafts.filter((d) => d.id !== selected.id), selectedId: null });
+    announce(`Discarded draft "${title}".`);
   };
+
+  useEffect(() => {
+    if (!restoreDraftFocusRef.current) return;
+    restoreDraftFocusRef.current = false;
+    const focusFrame = requestAnimationFrame(() => newDraftButtonRef.current?.focus());
+    return () => cancelAnimationFrame(focusFrame);
+  }, [state.drafts]);
 
   // ── Publishing: the real durable write ────────────────────────────────────
   const [publishing, setPublishing] = useState(false);
@@ -261,7 +280,12 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
           title="Drafts"
           iconName="ph:pencil-line-bold"
           actions={
-            <button type="button" className="role-surface-chip focus-ring" onClick={newDraft}>
+            <button
+              ref={newDraftButtonRef}
+              type="button"
+              className="role-surface-chip focus-ring"
+              onClick={newDraft}
+            >
               <Icon name="ph:plus" width={11} height={11} aria-hidden /> New
             </button>
           }

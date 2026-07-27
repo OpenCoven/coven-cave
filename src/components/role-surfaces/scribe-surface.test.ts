@@ -98,6 +98,25 @@ test("source and vault failures stay retryable and distinct from empty data", ()
   assert.match(surface, /works\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
 });
 
+test("source retries ignore stale success and failure after a memory-context change", () => {
+  assert.match(surface, /import \{[^}]*\buseRef\b[^}]*\} from "react"/);
+  assert.match(surface, /const sourcesLoadSeq = useRef\(0\)/);
+  assert.match(surface, /const seq = \+\+sourcesLoadSeq\.current/);
+  assert.match(
+    surface,
+    /const entries = await context\.memory\.listEntries\(\);\s*if \(seq !== sourcesLoadSeq\.current\) return;\s*setSources\(/,
+  );
+  assert.match(
+    surface,
+    /\} catch \{\s*if \(seq !== sourcesLoadSeq\.current\) return;\s*setSourcesError\("Couldn't load source material\."\)/,
+  );
+  assert.match(surface, /\}, \[context\.memory, familiarId\]\)/);
+  assert.match(
+    surface,
+    /useEffect\(\(\) => \{\s*setSources\(null\);\s*void loadSources\(\);\s*return \(\) => \{\s*sourcesLoadSeq\.current \+= 1;\s*\};\s*\}, \[loadSources\]\)/,
+  );
+});
+
 test("publishing announces outcomes and discard stays behind secondary disclosure", () => {
   assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
   assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
@@ -106,6 +125,23 @@ test("publishing announces outcomes and discard stays behind secondary disclosur
   assert.match(surface, /<OverflowMenu ariaLabel="Draft actions">/);
   assert.match(surface, /<PopoverItem[\s\S]*?danger[\s\S]*?onSelect=\{discardSelected\}[\s\S]*?>[\s\S]*?Discard draft/);
   assert.doesNotMatch(surface, /<button[^>]*onClick=\{discardSelected\}[^>]*>[\s\S]*?Discard draft/);
+});
+
+test("discard announces the named draft and restores focus after commit to the persistent New control", () => {
+  assert.match(surface, /const newDraftButtonRef = useRef<HTMLButtonElement \| null>\(null\)/);
+  assert.match(surface, /const restoreDraftFocusRef = useRef\(false\)/);
+  assert.match(
+    surface,
+    /const discardSelected = \(\) => \{[\s\S]*?const title = selected\.title\.trim\(\) \|\| "Untitled";[\s\S]*?restoreDraftFocusRef\.current = true;[\s\S]*?patch\([\s\S]*?announce\(`Discarded draft "\$\{title\}"\.`\)/,
+  );
+  assert.match(
+    surface,
+    /useEffect\(\(\) => \{\s*if \(!restoreDraftFocusRef\.current\) return;\s*restoreDraftFocusRef\.current = false;\s*const focusFrame = requestAnimationFrame\(\(\) => newDraftButtonRef\.current\?\.focus\(\)\);\s*return \(\) => cancelAnimationFrame\(focusFrame\);\s*\}, \[state\.drafts\]\)/,
+  );
+  assert.match(
+    surface,
+    /<button\s+ref=\{newDraftButtonRef\}\s+type="button"\s+className="role-surface-chip focus-ring"\s+onClick=\{newDraft\}\s*>/,
+  );
 });
 
 test("registration names the Writing Desk with its own accent and drawer chrome", () => {
