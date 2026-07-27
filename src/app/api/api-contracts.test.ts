@@ -468,7 +468,7 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /const localLaunchError = localRuntimeLaunchError\([\s\S]{0,200}?err\.code,[\s\S]{0,800}?const launchError = sshRuntime[\s\S]{0,600}?: localLaunchError\.message/,
+    /(?:let|const) localLaunchError(?:\: \{ code: string; message: string \})? = localRuntimeLaunchError\([\s\S]{0,200}?err\.code,[\s\S]{0,800}?const launchError = sshRuntime[\s\S]{0,600}?: localLaunchError\.message/,
     "/chat/send: every local post-spawn failure uses the shared runner-specific normalizer while SSH retains transport diagnostics",
   );
   assert.match(

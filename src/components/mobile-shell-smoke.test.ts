@@ -53,6 +53,31 @@ assert.match(
   /Those tabs live in normal shell flow[\s\S]{0,220}\.shell-detail\s*\{[\s\S]{0,80}padding-bottom:\s*0;/,
   "Mobile shell detail should not reserve extra space above bottom tabs",
 );
+assert.match(
+  shell,
+  /const navToggle = \(/,
+  "desktop nav toggle should stay in hydration-stable markup and defer viewport visibility to CSS",
+);
+assert.match(
+  shell,
+  /const historyNav = historyNavigation \? \(/,
+  "desktop history controls should stay in hydration-stable markup and defer viewport visibility to CSS",
+);
+assert.match(
+  shell,
+  /\{mobileTabs \?\? null\}/,
+  "mobile bottom tabs should stay in hydration-stable markup on the first render",
+);
+assert.match(
+  globals,
+  /\.mobile-bottom-tabs\s*\{[\s\S]{0,220}?display:\s*none;/,
+  "mobile bottom tabs should be hidden by default on desktop",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 1023px\)\s*\{[\s\S]{0,420}?\.shell-top > \.shell-top-toggle--nav,[\s\S]{0,120}?\.shell-top > \.shell-top-history\s*\{[\s\S]{0,80}?display:\s*none;[\s\S]{0,420}?\.mobile-bottom-tabs\s*\{[\s\S]{0,80}?display:\s*flex;/,
+  "mobile media queries should swap desktop title-bar controls for bottom tabs before hydration",
+);
 
 assert.match(
   mobileTabs,

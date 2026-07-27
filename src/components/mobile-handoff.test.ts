@@ -5,12 +5,22 @@ const topBar = await readFile(new URL("./top-bar.tsx", import.meta.url), "utf8")
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modal = await readFile(new URL("./mobile-handoff-modal.tsx", import.meta.url), "utf8");
-const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const settingsShell = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const settingsPhone = await readFile(new URL("./settings-phone.tsx", import.meta.url), "utf8");
+const settings = `${settingsShell}\n${settingsPhone}`;
 const stepsList = await readFile(new URL("./pairing-steps-list.tsx", import.meta.url), "utf8");
 const mobileModePref = await readFile(new URL("../lib/mobile-mode-pref.ts", import.meta.url), "utf8");
 const mobileModeReconcile = await readFile(new URL("../lib/mobile-mode-reconcile.ts", import.meta.url), "utf8");
+const tailscaleFailure = await readFile(new URL("../lib/tailscale-failure.ts", import.meta.url), "utf8");
 const handoffRoute = await readFile(new URL("../app/api/mobile-handoff/route.ts", import.meta.url), "utf8");
-const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const desktopChromeCss = await readFile(
+  new URL("../styles/globals/desktop-chrome.css", import.meta.url),
+  "utf8",
+);
+const shellResponsiveCss = await readFile(
+  new URL("../styles/globals/shell-responsive.css", import.meta.url),
+  "utf8",
+);
 const mobileStub = await readFile(new URL("../../src-tauri/frontend-stub/index.html", import.meta.url), "utf8");
 const tauriConfig = await readFile(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8");
 const tauriLib = await readFile(new URL("../../src-tauri/src/tauri_setup.rs", import.meta.url), "utf8");
@@ -80,7 +90,7 @@ assert.match(modal, /Copy host/, "Modal should make the stable native app host c
 assert.match(modal, /action: "app-start"/, "Modal should refresh native app mode without requiring an invite");
 assert.match(modal, /handoff\?\.inviteUrl \|\| handoff\?\.url/, "Modal should prefer inviteUrl while supporting url fallback");
 assert.match(modal, /mobile-handoff__link[\s\S]*href=\{handoff\.inviteUrl \|\| handoff\.url\}/, "Modal should display the invite link as a clickable link");
-assert.match(css, /\.mobile-handoff__link/, "Invite link should have stable styling");
+assert.match(desktopChromeCss, /\.mobile-handoff__link/, "Invite link should have stable styling");
 assert.match(modal, /action: "reset"/, "Modal should expose explicit Tailscale Serve reset");
 
 // ── Handoff modal renders the ladder too (pairing overhaul W6) ───────────────
@@ -175,7 +185,7 @@ assert.match(
   /async function ensureNativeAppServe[\s\S]*?const access = resolveMobileAccessSecret\(\);[\s\S]*?if \(!access\) \{[\s\S]*?return mobileAccessUnavailableResponse\(\)/,
   "native app mobile-mode start must resolve (or self-provision) the mobile access secret before starting Tailscale Serve",
 );
-assert.match(settings, /MobileModeToggle/, "Settings should render a mobile mode toggle component");
+assert.match(settingsShell, /<PhoneSection onUseAsHub=/, "Settings should render the focused Phone section");
 assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mobile mode enabled state");
 assert.match(settings, /onMobileModeChange/, "Settings should expose a toggle callback for mobile mode");
 // The poll must keep ticking through prerequisite failures — the reconciler's
@@ -242,7 +252,11 @@ assert.match(
   /PAIRING_STEP_GLYPH: Record<PairingStep\["state"\], \{ icon: IconName; className: string; announce: string \}>/,
   "each checklist state pairs an icon with screen-reader text — never color alone",
 );
-assert.match(settings, /<PairingStepsList steps=\{steps\}>/, "the Phone card renders the ladder through the shared component");
+assert.match(
+  settings,
+  /<PairingStepsList[\s\S]*steps=\{displaySteps\}[\s\S]*showAllDetails/,
+  "the Phone card renders the full ladder through the shared component",
+);
 assert.doesNotMatch(settings, /PAIRING_STEP_GLYPH/, "settings no longer owns a private glyph map — the shared component does");
 assert.match(
   settings,
@@ -250,9 +264,9 @@ assert.match(
   "the one-string friendly fallback only renders when the route couldn't report its ladder",
 );
 assert.match(
-  settings,
+  tailscaleFailure,
   /text\.includes\("signed out"\)/,
-  "the fallback vocabulary understands the signed-out failure the classifier can now surface",
+  "the shared fallback vocabulary understands signed-out failures",
 );
 assert.match(
   settings,
@@ -266,8 +280,12 @@ assert.doesNotMatch(
   /Enter the address in the app/,
   "the four-step type-the-host walkthrough is retired from the section body",
 );
-assert.match(css, /\.mobile-handoff-qr/, "QR block should have stable layout CSS");
-assert.match(css, /@media \(max-width: 1023px\)[\s\S]*\.top-bar__mobile-handoff[\s\S]*display: none/, "Phone handoff button should hide on mobile/tablet chrome");
+assert.match(desktopChromeCss, /\.mobile-handoff-qr/, "QR block should have stable layout CSS");
+assert.match(
+  shellResponsiveCss,
+  /@media \(max-width: 1023px\)[\s\S]*\.top-bar__mobile-handoff[\s\S]*display: none/,
+  "Phone handoff button should hide on mobile/tablet chrome",
+);
 assert.match(mobileStub, /Invite link or Tailscale URL/, "Mobile connection screen should label the real accepted input");
 assert.doesNotMatch(mobileStub, /opencoven:\/\/connect/, "Mobile connection screen should not accept custom-scheme app links");
 assert.doesNotMatch(mobileStub, /plugin:deep-link/, "Mobile connection screen should not consume native custom-scheme deep links");
@@ -357,7 +375,7 @@ assert.match(
   /handoff\.warning \?\s*\(\s*<p className="mobile-handoff__warning">\{handoff\.warning\}/,
   "modal shows the non-fatal warning while still rendering the link and QR",
 );
-assert.match(css, /\.mobile-handoff__warning/, "the non-fatal warning has stable styling");
+assert.match(desktopChromeCss, /\.mobile-handoff__warning/, "the non-fatal warning has stable styling");
 
 console.log("mobile-handoff.test.ts OK");
 
@@ -384,30 +402,26 @@ assert.match(
 );
 assert.match(
   settings,
-  /if \(!install\) return null;/,
-  "without a configured link the install card renders nothing",
+  /\{install \? \(\s*<div[\s\S]*aria-label="Install code for your iPhone camera"/,
+  "without a configured link the optional install QR stays hidden",
 );
 assert.match(
   settings,
-  /<SettingsGroup label="Get the app">\s*<IosInstallQrCard \/>/,
-  "the install QR leads the Get-the-app group",
-);
-// Tempered scans: the window between the named groups may contain anything
-// EXCEPT another group opening, so an interposed group fails the pin (a
-// plain `[\s\S]{0,N}` window matched any group's closing tag and let
-// backtracking absorb an injected group — review follow-up, cave-jc3l).
-assert.match(
-  settings,
-  /<SettingsGroup label="Pair">(?:(?!<SettingsGroup )[\s\S])*<\/SettingsGroup>\s*<SettingsGroup label="Get the app">/,
-  "Get the app sits directly after Pair — no group can slip between them",
+  /id=\{settingsGroupId\("Get the app"\)\}[\s\S]*Build it with Xcode[\s\S]*Setup guide/,
+  "the Get-the-app card keeps the source-build path when no install link is configured",
 );
 assert.match(
   settings,
-  /<SettingsGroup label="Get the app">(?:(?!<SettingsGroup )[\s\S])*<\/SettingsGroup>\s*<SettingsGroup label="Keep this Mac reachable">/,
-  "desktop reachability follows installation as the first supporting group",
+  /className="settings-phone-control-grid"[\s\S]*id=\{settingsGroupId\("Pair"\)\}[\s\S]*className="settings-phone-side-stack"/,
+  "the control sheet keeps Pair beside its supporting card stack",
 );
 assert.match(
   settings,
-  /<SettingsGroup label="Keep this Mac reachable">(?:(?!<SettingsGroup )[\s\S])*<\/SettingsGroup>\s*<SettingsGroup label="Phone write access">/,
-  "Phone write access directly follows desktop reachability",
+  /className="settings-phone-side-stack">\s*<IosInstallCard \/>\s*<DesktopReachabilityCard \/>/,
+  "desktop reachability follows installation in the supporting stack",
+);
+assert.match(
+  settings,
+  /<\/div>\s*<\/div>\s*<MobileWriteAccessCard \/>/,
+  "Phone write access follows the two-column control sheet",
 );

@@ -15,6 +15,8 @@ import {
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
   missingRunnerMessage,
+  resolveHermesLaunch,
+  runtimeProcessFailure,
   runtimeLaunchFailedMessage,
   summarizeRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
@@ -48,7 +50,6 @@ try {
   const executable = path.join(binDir, nativeGrok);
   writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   chmodSync(executable, 0o755);
-
   // Verification matrix: binary resolves in the spawn env → ready.
   const ready = evaluateRuntimeAvailability({
     runner: "grok",
@@ -379,6 +380,35 @@ try {
     winExplicitExeAbsent.state,
     "missing",
     "an explicit .exe with no install at all remains missing",
+  );
+
+  const hermesPlan = resolveHermesLaunch({
+    env: { ...process.env, Path: "C:\\bin" },
+    platform: "win32",
+    statFile: winStats(["C:\\bin\\hermes.exe"]),
+  });
+  assert.equal(hermesPlan.state, "ready", "Hermes resolves a native Windows executable into one launch plan");
+  if (hermesPlan.state === "ready") {
+    assert.equal(hermesPlan.command, "C:\\bin\\hermes.exe");
+    assert.equal(hermesPlan.env.Path, "C:\\bin");
+  }
+  const hermesCmdOnly = resolveHermesLaunch({
+    env: { ...process.env, Path: "C:\\bin" },
+    platform: "win32",
+    statFile: winStats(["C:\\bin\\hermes.cmd"]),
+  });
+  assert.equal(hermesCmdOnly.state, "unlaunchable", "a Windows Hermes .cmd shim is not a direct launch target");
+  const relativeHermes = resolveHermesLaunch({
+    env: { ...process.env, PATH: "bin" },
+    cwd: "/virtual/workspace",
+    platform: "linux",
+    statFile: (candidate) => candidate === "/virtual/workspace/bin/hermes",
+  });
+  assert.equal(relativeHermes.state, "ready", "relative PATH entries resolve from the direct spawn cwd");
+  assert.equal(
+    runtimeProcessFailure("hermes").code,
+    RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
+    "a started Hermes process has a structured error distinct from availability",
   );
 
   // A resolved npm shim may produce a direct Node + script launch. Both the

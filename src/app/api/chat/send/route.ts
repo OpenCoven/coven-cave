@@ -85,6 +85,8 @@ import {
   localRuntimeLaunchError,
   missingRunnerMessage,
   RUNTIME_AVAILABILITY_ERROR_CODES,
+  resolveHermesLaunch,
+  runtimeProcessFailure,
   type DirectRunnerId,
   type RuntimeAvailability,
 } from "@/lib/runtime-availability";
@@ -265,6 +267,7 @@ type LocalRuntimePlan = LocalRuntimeCapabilityPlan & {
   fixedArgs: string[];
   requiredFiles?: string[];
   env: NodeJS.ProcessEnv;
+  cwd?: string;
   unresolvedWindowsShim?: boolean;
 };
 
@@ -275,6 +278,7 @@ function createLocalRuntimePlan(input: {
   };
   env: NodeJS.ProcessEnv;
   availability?: RuntimeAvailability;
+  cwd?: string;
 }): LocalRuntimePlan {
   const availability = input.availability ?? evaluateRuntimeAvailability({
     runner: input.runner,
@@ -282,6 +286,7 @@ function createLocalRuntimePlan(input: {
     env: input.env,
     requiredFiles: input.launch.requiredFiles,
     unresolvedWindowsShim: input.launch.unresolvedWindowsShim === true,
+    cwd: input.cwd,
   });
   return {
     runner: input.runner,
@@ -289,10 +294,27 @@ function createLocalRuntimePlan(input: {
     fixedArgs: input.launch.fixedArgs,
     ...(input.launch.requiredFiles ? { requiredFiles: input.launch.requiredFiles } : {}),
     env: input.env,
+    ...(input.cwd ? { cwd: input.cwd } : {}),
     availability,
     ...(input.launch.unresolvedWindowsShim
       ? { unresolvedWindowsShim: true as const }
       : {}),
+  };
+}
+
+function hermesLaunchFailure(plan?: LocalRuntimePlan): { code: string; message: string } {
+  const availability = plan && evaluateRuntimeAvailability({
+    runner: "hermes",
+    command: plan.command,
+    env: plan.env,
+    cwd: plan.cwd,
+  });
+  if (availability && availability.state !== "ready") {
+    return { code: availability.code, message: availability.message };
+  }
+  return {
+    code: "runtime_unlaunchable",
+    message: "Hermes failed to start. Check its installation and try again.",
   };
 }
 
@@ -1346,16 +1368,7 @@ export async function POST(req: Request) {
         launch: grokLaunchCommand(),
         env,
       });
-    } else if (hermesDirect) {
-      localRuntimePlan = createLocalRuntimePlan({
-        runner: "hermes",
-        launch: {
-          command: process.platform === "win32" ? "hermes.exe" : "hermes",
-          fixedArgs: [],
-        },
-        env: hermesSpawnEnvironment!,
-      });
-    } else {
+    } else if (!hermesDirect) {
       const env = harnessSpawnEnv(body.familiarId);
       const launch = covenLaunchCommand();
       localRuntimePlan = createLocalRuntimePlan({
@@ -1385,87 +1398,6 @@ export async function POST(req: Request) {
   const openCodeCompatibility = openCodeCapabilities
     ? await resolveOpenCodeCompatibility(openCodeCapabilities)
     : null;
-  // Probe the same ready local launcher/environment that the direct run will
-  // use. A missing or changed CLI remains a truthful preflight failure; it
-  // never turns undocumented output into tool activity.
-  const grokCapabilities = grokDirect
-    ? await probeReadyLocalRuntimeCapability({
-        plan: localRuntimePlan,
-        runner: "grok",
-        probe: () => probeGrokRunCapabilities(
-          { command: localRuntimePlan!.command, fixedArgs: localRuntimePlan!.fixedArgs },
-          localRuntimePlan!.env,
-        ),
-      })
-    : null;
-  const grokCompatibility = grokCapabilities
-    ? await resolveGrokCompatibility(grokCapabilities)
-    : null;
-  const hermesModelCapability =
-    hermesDirect && hermesApi === null
-      ? await probeReadyLocalRuntimeCapability({
-          plan: localRuntimePlan,
-          runner: "hermes",
-          probe: hermesChatSupportsModel,
-        })
-      : null;
-  // SSH retains its existing remote routing semantics through the only
-  // no-local-plan bypass. Every local Coven probe requires the exact ready
-  // Coven plan.
-  const probeCovenCapability = <T,>(probe: () => Promise<T>) =>
-    probeReadyLocalRuntimeCapability({
-      plan: localRuntimePlan,
-      runner: "coven",
-      probe,
-      allowWithoutLocalPlan: Boolean(sshRuntime),
-    });
-  const modelForwardingEnabled =
-    hermesDirect
-      ? hermesApi !== null ||
-        (hermesModelCapability ?? false)
-      : openCodeDirect
-        ? openCodeCompatibility?.capabilities.model ?? false
-        : copilotStream
-          ? true
-          : binding.harness === "grok" ||
-            (
-              binding.harness !== "openclaw" &&
-              ((await probeCovenCapability(covenRunSupportsModel)) ?? false)
-            );
-  // Direct integrations never wait on Coven probes for flags they do not
-  // execute. A plain Copilot compatibility fallback reaches these probes only
-  // when its separately planned Coven transport is ready.
-  const permissionForwardingEnabled =
-    !openCodeDirect &&
-    binding.harness !== "openclaw" &&
-    binding.harness !== "grok" &&
-    ((await probeCovenCapability(covenRunSupportsPermission)) ?? false);
-  // Same gating for directory grants (`--add-dir`). Without forwarding, the
-  // granted roots listed in the runtime-scope preamble are prompt-text-only
-  // and the harness denies every access to them.
-  const addDirForwardingEnabled =
-    !openCodeDirect &&
-    binding.harness !== "openclaw" &&
-    binding.harness !== "grok" &&
-    ((await probeCovenCapability(covenRunSupportsAddDir)) ?? false);
-  const { desiredModel, modelState } = resolveSendModelMetadata({
-    body,
-    config,
-    binding,
-    existingConversation,
-    modelForwardingEnabled,
-  });
-  // Do not turn Cave's provider-level fallback into a pinned Grok model. The
-  // live `grok models` catalog is account-specific and may not contain the
-  // compile-time fallback, while omitting --model reliably selects the CLI's
-  // current authenticated default on every supported host.
-  const grokForwardModel = grokShouldUseCliDefault({
-    modelSource: modelState.source,
-    globalDefaultModel: config.defaults.model,
-  })
-    ? null
-    : cleanModelId(desiredModel);
-
   // Native Cave chat can drive Coven harnesses that resolve through
   // `coven run <harness> --stream-json`, including external adapter manifests.
   // Bundled adapters may opt out when they require a bridge instead of the
@@ -1637,6 +1569,93 @@ export async function POST(req: Request) {
     }
     throw error;
   }
+  // Hermes's direct plan cannot be constructed until the spawn cwd is known:
+  // a scoped PATH may deliberately contain workspace-relative entries. Keep
+  // the resolver's command, env, and cwd intact for help probing and spawn.
+  if (hermesDirect && hermesApi === null) {
+    const launch = resolveHermesLaunch({
+      familiarId: body.familiarId,
+      env: hermesSpawnEnvironment!,
+      cwd,
+    });
+    localRuntimePlan = createLocalRuntimePlan({
+      runner: "hermes",
+      launch: {
+        command: launch.state === "ready" ? launch.command : process.platform === "win32" ? "hermes.exe" : "hermes",
+        fixedArgs: [],
+      },
+      env: launch.state === "ready" ? launch.env : hermesSpawnEnvironment!,
+      cwd: launch.state === "ready" ? launch.cwd : cwd,
+      availability: launch,
+    });
+  }
+  const grokCapabilities = grokDirect
+    ? await probeReadyLocalRuntimeCapability({
+        plan: localRuntimePlan,
+        runner: "grok",
+        probe: () => probeGrokRunCapabilities(
+          { command: localRuntimePlan!.command, fixedArgs: localRuntimePlan!.fixedArgs },
+          localRuntimePlan!.env,
+        ),
+      })
+    : null;
+  const grokCompatibility = grokCapabilities
+    ? await resolveGrokCompatibility(grokCapabilities)
+    : null;
+  const hermesModelCapability =
+    hermesDirect && hermesApi === null && localRuntimePlan?.runner === "hermes"
+      ? await probeReadyLocalRuntimeCapability({
+          plan: localRuntimePlan,
+          runner: "hermes",
+          probe: () => hermesChatSupportsModel({
+            command: localRuntimePlan!.command,
+            env: localRuntimePlan!.env,
+            cwd: localRuntimePlan!.cwd ?? cwd,
+          }),
+        })
+      : null;
+  // SSH retains its existing remote routing semantics through the only
+  // no-local-plan bypass. Every local Coven probe requires the exact ready
+  // Coven plan.
+  const probeCovenCapability = <T,>(probe: () => Promise<T>) =>
+    probeReadyLocalRuntimeCapability({
+      plan: localRuntimePlan,
+      runner: "coven",
+      probe,
+      allowWithoutLocalPlan: Boolean(sshRuntime),
+    });
+  const modelForwardingEnabled =
+    hermesDirect
+      ? hermesApi !== null || (hermesModelCapability ?? false)
+      : openCodeDirect
+        ? openCodeCompatibility?.capabilities.model ?? false
+        : copilotStream
+          ? true
+          : binding.harness === "grok" ||
+            (binding.harness !== "openclaw" && ((await probeCovenCapability(covenRunSupportsModel)) ?? false));
+  const permissionForwardingEnabled =
+    !openCodeDirect &&
+    binding.harness !== "openclaw" &&
+    binding.harness !== "grok" &&
+    binding.harness !== "hermes" &&
+    ((await probeCovenCapability(covenRunSupportsPermission)) ?? false);
+  const addDirForwardingEnabled =
+    !openCodeDirect &&
+    binding.harness !== "openclaw" &&
+    binding.harness !== "grok" &&
+    binding.harness !== "hermes" &&
+    ((await probeCovenCapability(covenRunSupportsAddDir)) ?? false);
+  const { desiredModel, modelState } = resolveSendModelMetadata({
+    body,
+    config,
+    binding,
+    existingConversation,
+    modelForwardingEnabled,
+  });
+  const grokForwardModel = grokShouldUseCliDefault({
+    modelSource: modelState.source,
+    globalDefaultModel: config.defaults.model,
+  }) ? null : cleanModelId(desiredModel);
   const grantedProjectRoots = sshRuntime
     ? []
     : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
@@ -2455,9 +2474,11 @@ export async function POST(req: Request) {
       }
 
       // Hermes's `-Q` mode reserves stdout for the reply and writes the
-      // resumable id to stderr as `session_id: <id>`. Buffer stderr because
-      // Node can split that short line across data events.
+      // resumable id to stderr as `session_id: <id>`. Do not announce it
+      // until a zero exit confirms the reply: a failed CLI can print an id
+      // before its authentication/configuration error.
       let hermesStderrBuffer = "";
+      let pendingHermesSessionId: string | null = null;
       const captureHermesSessionFromStderr = (text: string, flush = false) => {
         if (!hermesDirect || sessionId) return;
         hermesStderrBuffer += text;
@@ -2466,7 +2487,7 @@ export async function POST(req: Request) {
         for (const line of lines) {
           const hermesSession = line.trim().match(/^session_id:\s*(\S+)\s*$/i);
           if (hermesSession) {
-            announceSession(hermesSession[1]);
+            pendingHermesSessionId = hermesSession[1];
             return;
           }
         }
@@ -3469,19 +3490,32 @@ export async function POST(req: Request) {
               : openCodeDirect ? undefined : cwd,
           );
           const reportLaunchFailure = (err: NodeJS.ErrnoException) => {
-            const localLaunchError = localRuntimeLaunchError(
+            let localLaunchError: { code: string; message: string } = localRuntimeLaunchError(
               localRuntimePlan?.runner ?? "coven",
               err.code,
             );
+            if (hermesDirect) localLaunchError = hermesLaunchFailure(localRuntimePlan ?? undefined);
+            const openCodeWindowsOuterLaunchFailure =
+              openCodeDirect && process.platform === "win32" && err.code === "ENOENT";
+            const openCodeCommandMissing =
+              openCodeDirect && !openCodeWindowsOuterLaunchFailure && err.code === "ENOENT";
             const launchError = sshRuntime
               ? err.code === "ENOENT"
                 ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
                 : err.message
-              : localLaunchError.message;
+              : openCodeWindowsOuterLaunchFailure
+                ? "OpenCode failed to start. Check its installation and try again."
+                : openCodeCommandMissing
+                  ? missingRunnerMessage("opencode")
+                  : localLaunchError.message;
             const launchCode =
               !sshRuntime && err.code === "ENOENT" && binding.harness === "claude"
                 ? RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing
-                : localLaunchError.code;
+                : openCodeCommandMissing
+                  ? "runtime_missing"
+                  : openCodeWindowsOuterLaunchFailure
+                    ? "runtime_launch_failed"
+                    : localLaunchError.code;
             result.is_error = true;
             launchFailure ??= {
               code: sshRuntime ? err.code ?? "runtime_launch_failed" : launchCode,
@@ -3563,6 +3597,7 @@ export async function POST(req: Request) {
                                 requiredFiles: localPlan.requiredFiles,
                                 unresolvedWindowsShim:
                                   localPlan.unresolvedWindowsShim === true,
+                                cwd: localPlan.cwd,
                               },
                         )
                     : localPlan.availability;
@@ -3591,7 +3626,7 @@ export async function POST(req: Request) {
                     // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
                     // from the familiar's home. When a project root IS supplied,
                     // honor that instead.
-                    cwd,
+                    cwd: localPlan.cwd ?? cwd,
                     env: localPlan.env,
                     shell: false,
                   } as const;
@@ -3616,25 +3651,7 @@ export async function POST(req: Request) {
                     stdio: ["ignore", "pipe", "pipe"],
                   });
                 } catch (error) {
-                  const launchError = localRuntimeLaunchError(
-                    localPlan.runner,
-                    (error as NodeJS.ErrnoException).code,
-                  );
-                  const code =
-                    (error as NodeJS.ErrnoException).code === "ENOENT"
-                    && binding.harness === "claude"
-                      ? RUNTIME_AVAILABILITY_ERROR_CODES.coven_missing
-                      : launchError.code;
-                  result.is_error = true;
-                  launchFailure = { code, message: launchError.message };
-                  pushProgress(
-                    "harness-start",
-                    `${binding.harness} failed to start`,
-                    "error",
-                    launchError.message,
-                    Date.now() - attemptStartedAt,
-                  );
-                  push({ kind: "error", code, message: launchError.message });
+                  reportLaunchFailure(error as NodeJS.ErrnoException);
                   return null;
                 }
               })();
@@ -3664,6 +3681,7 @@ export async function POST(req: Request) {
           // boundaries. Preserve a split code point until its remaining bytes
           // arrive so JSONL text/tool payloads cannot silently gain U+FFFD.
           const openCodeStdoutDecoder = openCodeDirect ? new StringDecoder("utf8") : null;
+          const hermesStdout = hermesDirect ? [] as Buffer[] : null;
           const handleStdoutChunk = (decodedChunk: string) => {
             let chunk = decodedChunk;
             // Once an unterminated frame crosses the cap, discard through its
@@ -3720,6 +3738,10 @@ export async function POST(req: Request) {
           };
 
           child.stdout.on("data", (data: Buffer) => {
+            if (hermesStdout) {
+              hermesStdout.push(data);
+              return;
+            }
             const chunk = openCodeStdoutDecoder ? openCodeStdoutDecoder.write(data) : stdoutDecoder.write(data);
             if (chunk) handleStdoutChunk(chunk);
           });
@@ -3759,11 +3781,35 @@ export async function POST(req: Request) {
               resolve();
               return;
             }
-            const trailingOpenCodeText = openCodeStdoutDecoder?.end();
-            if (trailingOpenCodeText) handleStdoutChunk(trailingOpenCodeText);
-            const trailingStdoutText = openCodeStdoutDecoder ? "" : stdoutDecoder.end();
-            if (trailingStdoutText) handleStdoutChunk(trailingStdoutText);
+            if (!hermesDirect) {
+              const trailingOpenCodeText = openCodeStdoutDecoder?.end();
+              if (trailingOpenCodeText) handleStdoutChunk(trailingOpenCodeText);
+              const trailingStdoutText = openCodeStdoutDecoder ? "" : stdoutDecoder.end();
+              if (trailingStdoutText) handleStdoutChunk(trailingStdoutText);
+            }
             captureHermesSessionFromStderr("", true);
+            const hermesAttemptFailed = hermesDirect && code !== 0 && !runHandle.stopRequested;
+            // A stale native session is retried below without `--resume`. It is
+            // still a failed attempt, so never release its buffered stdout or
+            // session id, but it is not a terminal runtime-process failure.
+            const hermesProcessFailed = hermesAttemptFailed && !resumeFailed;
+            if (!hermesAttemptFailed && hermesDirect && !sessionId && pendingHermesSessionId) {
+              announceSession(pendingHermesSessionId);
+            }
+            if (hermesProcessFailed) {
+              const failure = runtimeProcessFailure("hermes");
+              result.is_error = true;
+              launchFailure ??= failure;
+              pushProgress("harness-start", "Hermes exited with an error", "error", failure.message, Date.now() - attemptStartedAt);
+              push({ kind: "error", code: failure.code, message: failure.message });
+            } else if (hermesStdout && !hermesAttemptFailed) {
+              for (const chunk of hermesStdout) {
+                const decoded = stdoutDecoder.write(chunk);
+                if (decoded) handleStdoutChunk(decoded);
+              }
+              const trailingHermesText = stdoutDecoder.end();
+              if (trailingHermesText) handleStdoutChunk(trailingHermesText);
+            }
             // OpenCode normally emits a JSON error envelope, but older CLI
             // builds can exit non-zero with only stderr. Do not mistake that
             // failed invocation for a successful model application below.
@@ -3804,8 +3850,8 @@ export async function POST(req: Request) {
             pushProgress(
               "harness-start",
               `${binding.harness} exited`,
-              "done",
-              undefined,
+              hermesAttemptFailed ? "error" : "done",
+              hermesProcessFailed ? launchFailure?.message : undefined,
               Date.now() - attemptStartedAt,
             );
             if (jsonBuf) handleLine(jsonBuf);
@@ -3974,6 +4020,10 @@ export async function POST(req: Request) {
           "running",
         );
         sessionId = null;
+        // A failed Hermes resume may have printed a stale session id before
+        // exiting. The fresh retry must not announce or persist that token.
+        pendingHermesSessionId = null;
+        hermesStderrBuffer = "";
         // The failed resumed stream can echo the stale native token before its
         // error frame. This retry deliberately omits --session, so retaining
         // that token would persist it again if the fresh process exits before

@@ -17,7 +17,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const hermesModelCapability =[\s\S]*?hermesDirect && hermesApi === null[\s\S]*?probeReadyLocalRuntimeCapability\(\{[\s\S]*?plan: localRuntimePlan,[\s\S]*?runner: "hermes",[\s\S]*?probe: hermesChatSupportsModel/,
+  /const hermesModelCapability =[\s\S]*?hermesDirect && hermesApi === null[\s\S]*?probeReadyLocalRuntimeCapability\(\{[\s\S]*?plan: localRuntimePlan,[\s\S]*?runner: "hermes",[\s\S]*?probe: \(\) => hermesChatSupportsModel/,
   "Hermes CLI capability discovery goes through the same exact-plan behavior gate while the API path bypasses it",
 );
 assert.match(
@@ -82,7 +82,7 @@ assert.match(
 );
 assert.match(
   route,
-  /const reportLaunchFailure = \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?const localLaunchError = localRuntimeLaunchError\([\s\S]*?localRuntimePlan\?\.runner \?\? "coven",[\s\S]*?err\.code,[\s\S]*?\);[\s\S]*?const launchCode =[\s\S]*?binding\.harness === "claude"[\s\S]*?RUNTIME_AVAILABILITY_ERROR_CODES\.coven_missing[\s\S]*?: localLaunchError\.code;[\s\S]*?launchFailure \?\?= \{[\s\S]*?code: sshRuntime \?[\s\S]*?: launchCode,[\s\S]*?message: launchError/,
+  /const reportLaunchFailure = \(err: NodeJS\.ErrnoException\) => \{[\s\S]*?let localLaunchError: \{ code: string; message: string \} = localRuntimeLaunchError\([\s\S]*?localRuntimePlan\?\.runner \?\? "coven",[\s\S]*?err\.code,[\s\S]*?\);[\s\S]*?if \(hermesDirect\) localLaunchError = hermesLaunchFailure\([\s\S]*?const openCodeCommandMissing =[\s\S]*?const launchCode =[\s\S]*?binding\.harness === "claude"[\s\S]*?RUNTIME_AVAILABILITY_ERROR_CODES\.coven_missing[\s\S]*?openCodeCommandMissing[\s\S]*?"runtime_missing"[\s\S]*?openCodeWindowsOuterLaunchFailure[\s\S]*?"runtime_launch_failed"[\s\S]*?: localLaunchError\.code;[\s\S]*?launchFailure \?\?= \{[\s\S]*?code: sshRuntime \?[\s\S]*?: launchCode,[\s\S]*?message: launchError/,
   "a post-gate OpenCode spawn failure keeps the shared value-free runner classification instead of leaking host paths or blaming authentication",
 );
 assert.match(
@@ -92,20 +92,20 @@ assert.match(
 );
 assert.match(
   route,
-  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*\(\(await probeCovenCapability\(covenRunSupportsPermission\)\) \?\? false\)/,
-  "OpenCode and Grok do not require the Coven CLI to probe unrelated permission support",
+  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*binding\.harness !== "hermes"\s*&&\s*\(\(await probeCovenCapability\(covenRunSupportsPermission\)\) \?\? false\)/,
+  "OpenCode, Grok, and Hermes do not require the Coven CLI to probe unrelated permission support",
 );
 assert.match(
   route,
-  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*\(\(await probeCovenCapability\(covenRunSupportsAddDir\)\) \?\? false\)/,
-  "OpenCode and Grok do not require the Coven CLI to probe unrelated directory support",
+  /!openCodeDirect\s*&&\s*binding\.harness !== "openclaw"\s*&&\s*binding\.harness !== "grok"\s*&&\s*binding\.harness !== "hermes"\s*&&\s*\(\(await probeCovenCapability\(covenRunSupportsAddDir\)\) \?\? false\)/,
+  "OpenCode, Grok, and Hermes do not require the Coven CLI to probe unrelated directory support",
 );
 {
   const earlyGate = route.indexOf("const openCodeCapabilities");
   assert.ok(earlyGate >= 0, "capability routing begins only after local plans are established");
   for (const capabilityCall of [
     "openCodeRunCapabilities(body.familiarId, undefined, localRuntimePlan?.env)",
-    "probe: hermesChatSupportsModel",
+    "probe: () => hermesChatSupportsModel",
     "probeCovenCapability(covenRunSupportsModel)",
     "probeCovenCapability(covenRunSupportsPermission)",
     "probeCovenCapability(covenRunSupportsAddDir)",

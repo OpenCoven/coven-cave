@@ -47,6 +47,7 @@ const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "ut
 const daemon = readFileSync(new URL("./settings-daemon.tsx", import.meta.url), "utf8");
 const profile = readFileSync(new URL("./settings-profile.tsx", import.meta.url), "utf8");
 const about = readFileSync(new URL("./settings-about.tsx", import.meta.url), "utf8");
+const phone = readFileSync(new URL("./settings-phone.tsx", import.meta.url), "utf8");
 
 test("the shell sources sections from settings-sections and renders the overview", () => {
   assert.match(shell, /import \{ SettingsOverview \} from "\.\/settings-overview"/);
@@ -59,14 +60,19 @@ test("the shell sources sections from settings-sections and renders the overview
   // The shared search index is sourced from settings-sections.
   assert.doesNotMatch(shell, /const SETTINGS_INDEX: SettingsIndexEntry\[\]/);
   // Each SettingsPage-based section opts into its overview header. Profile,
-  // Daemon, and About use their approved richer heroes instead.
+  // Phone, Daemon, and About use their approved richer heroes instead.
   assert.match(profile, /<header className="settings-profile__hero">/, "profile renders its control-sheet hero");
   assert.match(profile, />SETTINGS · PROFILE</, "profile hero preserves settings wayfinding");
   assert.doesNotMatch(profile, /<SettingsOverview/, "profile does not duplicate the generic overview");
-  for (const id of ["general", "mobile", "appearance"]) {
+  for (const id of ["general", "appearance"]) {
     assert.match(shell, new RegExp(`section="${id}"`), `${id} page passes its section`);
   }
   assert.match(daemon, /className="settings-daemon-hero"/, "daemon uses its approved control-sheet hero");
+  assert.match(
+    phone,
+    /aria-labelledby="settings-phone-title"[\s\S]*<h1 id="settings-phone-title">Phone<\/h1>/,
+    "Phone replaces the generic overview with its accessible handoff hero",
+  );
   assert.match(
     about,
     /aria-labelledby="settings-about-title"[\s\S]*<h1 id="settings-about-title">About<\/h1>/,

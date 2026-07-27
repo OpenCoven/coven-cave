@@ -26,7 +26,9 @@ import {
 import {
   evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
+  resolveHermesLaunch,
   summarizeRuntimeAvailability,
+  type HermesLaunchResolution,
   type RuntimeAvailabilitySummary,
 } from "@/lib/runtime-availability";
 
@@ -61,6 +63,8 @@ type AdapterAvailability = {
   availability: RuntimeAvailabilitySummary;
   /** Internal-only exact Copilot plan; never serialized inside availability. */
   copilotLaunch?: CopilotRuntimeLaunch;
+  /** Internal-only Hermes plan shared by availability, path, and version. */
+  hermesLaunch?: HermesLaunchResolution;
   /** Internal-only environment used for a direct runner's availability check. */
   spawnEnv?: NodeJS.ProcessEnv;
 };
@@ -113,12 +117,10 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
     };
   }
   if (id === "hermes") {
+    const hermesLaunch = resolveHermesLaunch({ env });
     return {
-      availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
-        runner: "hermes",
-        command: process.platform === "win32" ? "hermes.exe" : "hermes",
-        env,
-      })),
+      availability: summarizeRuntimeAvailability(hermesLaunch),
+      hermesLaunch,
     };
   }
   const launch = covenLaunchCommand();
@@ -310,6 +312,7 @@ export async function GET() {
       // from the summoning circle even though the chat launcher can execute it.
       const runtime = await adapterAvailability(h.id);
       const copilotLaunch = runtime.copilotLaunch;
+      const hermesLaunch = runtime.hermesLaunch;
       const resolvedBinary = h.id === "grok" ? grokBin() : h.binary;
       const path =
         copilotLaunch
@@ -318,7 +321,9 @@ export async function GET() {
             : null
           : h.id === "grok" && resolvedBinary !== h.binary
             ? resolvedBinary
-            : await which(h.binary);
+            : h.id === "hermes"
+              ? hermesLaunch?.state === "ready" ? hermesLaunch.command : null
+              : await which(h.binary);
       const availability = runtime.availability;
       if (!path || (h.id === "codex" && availability.state !== "ready")) {
         return { ...h, installed: false, path: null, version: null, availability };
@@ -330,12 +335,15 @@ export async function GET() {
       const version = h.id === "grok" && !grokReady
         ? null
         : await probeVersion(
-            copilotLaunch?.command ?? readyGrokLaunch?.command ?? h.binary,
+            copilotLaunch?.command
+              ?? readyGrokLaunch?.command
+              ?? (hermesLaunch?.state === "ready" ? hermesLaunch.command : h.binary),
             copilotLaunch
               ? [COPILOT_NO_AUTO_UPDATE_ARG, ...(h.versionArgs ?? ["--version"])]
               : h.versionArgs ?? ["--version"],
             copilotLaunch?.fixedArgs ?? readyGrokLaunch?.fixedArgs,
-            copilotLaunch?.env ?? grokProbeEnv,
+            (copilotLaunch?.env ?? grokProbeEnv)
+              ?? (hermesLaunch?.state === "ready" ? hermesLaunch.env : undefined),
           );
       const grokCatalog = readyGrokLaunch ? await probeGrokModels(readyGrokLaunch, grokProbeEnv) : null;
       return {

@@ -22,6 +22,21 @@ assert.match(
 );
 assert.match(
   source,
+  /if \(id === "hermes"\) \{[\s\S]*?const hermesLaunch = resolveHermesLaunch\(\{ env \}\);[\s\S]*?hermesLaunch,[\s\S]*?const hermesLaunch = runtime\.hermesLaunch;[\s\S]*?h\.id === "hermes"\s*\?\s*hermesLaunch\?\.state === "ready" \? hermesLaunch\.command : null/,
+  "Hermes status must use the same resolved native launch plan as chat instead of a generic which/where shim result",
+);
+assert.match(
+  source,
+  /h\.id === "hermes"\s*\?\s*hermesLaunch\?\.state === "ready" \? hermesLaunch\.command : null\s*:\s*await which\(h\.binary\)/,
+  "an unready Hermes plan must not fall back to which/where and turn a Windows shim into a status path",
+);
+assert.match(
+  source,
+  /if \(id === "hermes"\) \{[\s\S]*?resolveHermesLaunch\(\{ env \}\)/,
+  "the wire-safe runtime availability summary is derived from the Hermes resolver",
+);
+assert.match(
+  source,
   /const env =\s*id === "opencode" \? openCodeSpawnEnv\(null\) : harnessSpawnEnv\(null\);[\s\S]*?const launch = openCodeLaunch\(\[\], process\.platform, env\);/,
   "OpenCode availability derives its Windows PowerShell host from the same scoped environment it probes",
 );
@@ -37,7 +52,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const grokProbeEnv = h\.id === "grok" \? runtime\.spawnEnv : undefined;[\s\S]*?const grokReady = h\.id === "grok" && availability\.state === "ready";[\s\S]*?const readyGrokLaunch = grokReady \? grokLaunch : null;[\s\S]*?const version = h\.id === "grok" && !grokReady[\s\S]*?copilotLaunch\?\.env \?\? grokProbeEnv,[\s\S]*?const grokCatalog = readyGrokLaunch \? await probeGrokModels\(readyGrokLaunch, grokProbeEnv\) : null;/,
+  /const grokProbeEnv = h\.id === "grok" \? runtime\.spawnEnv : undefined;[\s\S]*?const grokReady = h\.id === "grok" && availability\.state === "ready";[\s\S]*?const readyGrokLaunch = grokReady \? grokLaunch : null;[\s\S]*?const version = h\.id === "grok" && !grokReady[\s\S]*?copilotLaunch\?\.env \?\? grokProbeEnv[\s\S]*?const grokCatalog = readyGrokLaunch \? await probeGrokModels\(readyGrokLaunch, grokProbeEnv\) : null;/,
   "Grok's version and authenticated catalog probes must only run after the shared launchability contract reports ready in the same scoped environment",
 );
 assert.match(

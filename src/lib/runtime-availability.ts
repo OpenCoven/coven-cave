@@ -1,5 +1,6 @@
 import { accessSync, constants, statSync } from "node:fs";
 import path from "node:path";
+import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 
 /**
  * Shared native-chat runtime availability contract (#3856).
@@ -35,6 +36,7 @@ export const RUNTIME_AVAILABILITY_ERROR_CODES = {
   unlaunchable: "runtime_unlaunchable",
   probe_failed: "runtime_probe_failed",
   unsupported_runtime: "runtime_unsupported",
+  process_failed: "runtime_process_failed",
   /** Coven-backed launches distinguish an absent outer launcher from an
    * absent harness resolved by that launcher. */
   coven_missing: "runtime_coven_missing",
@@ -103,6 +105,8 @@ export type RuntimeAvailabilityProbe = {
   command: string;
   /** The exact environment object the spawn will receive. */
   env: Record<string, string | undefined>;
+  /** Spawn cwd. Relative PATH entries resolve from this directory. */
+  cwd?: string;
   /** Coven/Grok launch resolution found a Windows shim it could not safely
    * convert into a runnable command (`CovenLaunchCommand.unresolvedWindowsShim`). */
   unresolvedWindowsShim?: boolean;
@@ -115,6 +119,24 @@ export type RuntimeAvailabilityProbe = {
   platform?: NodeJS.Platform;
   statFile?: StatFileFn;
   readableFile?: ReadableFileFn;
+};
+
+/** A direct Hermes plan keeps the exact command, scoped environment, and
+ * working directory together for preflight, capability probing, and spawn. */
+export type HermesLaunchPlan = Extract<RuntimeAvailability, { state: "ready" }> & {
+  command: string;
+  env: NodeJS.ProcessEnv;
+  cwd: string;
+};
+
+export type HermesLaunchResolution = HermesLaunchPlan | Exclude<RuntimeAvailability, { state: "ready" }>;
+
+export type ResolveHermesLaunchOptions = {
+  familiarId?: string | null;
+  env?: NodeJS.ProcessEnv;
+  cwd?: string;
+  platform?: NodeJS.Platform;
+  statFile?: StatFileFn;
 };
 
 /** The exact two executable boundaries of `coven run claude`. */
@@ -189,6 +211,20 @@ export function localRuntimeLaunchError(
       };
 }
 
+/** A process that did start but exited unsuccessfully is distinct from a
+ * missing or unlaunchable CLI. Its copy is safe to surface without provider
+ * output, executable paths, or scoped environment values. */
+export function runtimeProcessFailure(runner: DirectRunnerId): {
+  code: typeof RUNTIME_AVAILABILITY_ERROR_CODES.process_failed;
+  message: string;
+} {
+  const label = runner === "hermes" ? "Hermes" : RUNNER_LABELS[runner];
+  return {
+    code: RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
+    message: `${label} exited with an error before returning a response. Check ${label} sign-in and configuration, then try again.`,
+  };
+}
+
 type CandidateInspection = "launchable" | "missing" | "unlaunchable";
 
 type CommandResolution =
@@ -244,7 +280,12 @@ function defaultReadableFile(candidate: string): boolean {
 }
 
 function pathEntries(env: Record<string, string | undefined>, platform: NodeJS.Platform): string[] {
-  const raw = env.PATH ?? env.Path ?? env.path ?? "";
+  // Windows conventionally exposes its environment entry as `Path`. Prefer it
+  // there so a copied Windows spawn environment is not accidentally shadowed
+  // by a host-provided POSIX `PATH` during cross-platform resolution.
+  const raw = platform === "win32"
+    ? env.Path ?? env.PATH ?? env.path ?? ""
+    : env.PATH ?? env.Path ?? env.path ?? "";
   const delimiter = platform === "win32" ? ";" : ":";
   // Cap the walk so a pathological PATH cannot turn the per-turn gate into
   // unbounded filesystem work.
@@ -303,6 +344,7 @@ function resolveCommand(
   platform: NodeJS.Platform,
   inspectCandidate: InspectCandidateFn,
   candidatesFor: (name: string) => string[],
+  cwd: string,
 ): CommandResolution {
   let sawUnlaunchable = false;
   const inspect = (candidate: string): CommandResolution | null => {
@@ -325,7 +367,11 @@ function resolveCommand(
   const joiner = platform === "win32" ? path.win32 : path.posix;
   for (const dir of pathEntries(env, platform)) {
     for (const candidate of candidatesFor(command)) {
-      const full = joiner.join(dir, candidate);
+      // Node resolves relative PATH entries from the child's cwd, not the
+      // server cwd that happened to build this availability report.
+      const full = joiner.isAbsolute(dir)
+        ? joiner.join(dir, candidate)
+        : joiner.resolve(cwd, dir, candidate);
       const resolved = inspect(full);
       if (resolved) return resolved;
     }
@@ -361,6 +407,7 @@ export function evaluateRuntimeAvailability(
 ): RuntimeAvailability {
   const { runner, command, env } = probe;
   const platform = probe.platform ?? process.platform;
+  const cwd = probe.cwd ?? process.cwd();
   const inspectCandidate: InspectCandidateFn = probe.statFile
     ? (candidate) => inspectWithStatFile(candidate, probe.statFile!)
     : (candidate) => defaultInspectCandidate(candidate, platform);
@@ -384,6 +431,7 @@ export function evaluateRuntimeAvailability(
     }
     const resolved = resolveCommand(command, env, platform, inspectCandidate, (name) =>
       spawnCandidates(name, platform),
+      cwd,
     );
     if (resolved.state !== "launchable") {
       if (resolved.state === "unlaunchable") {
@@ -392,6 +440,7 @@ export function evaluateRuntimeAvailability(
       if (platform === "win32") {
         const shimOnly = resolveCommand(command, env, platform, inspectCandidate, (name) =>
           shimOnlyCandidates(name, env),
+          cwd,
         );
         if (shimOnly.state === "launchable") {
           return notReady(
@@ -422,6 +471,28 @@ export function evaluateRuntimeAvailability(
       `Could not verify the ${label} launch command before starting it, so this turn was not run. Check file permissions on its install location, then try again.`,
     );
   }
+}
+
+/** Resolve Hermes's native direct launch once. Windows deliberately uses
+ * `hermes.exe`; `.cmd`/`.bat` npm shims remain an unlaunchable state rather
+ * than being delegated to a shell wrapper. */
+export function resolveHermesLaunch(
+  options: ResolveHermesLaunchOptions = {},
+): HermesLaunchResolution {
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? harnessSpawnEnv(options.familiarId);
+  const cwd = options.cwd ?? process.cwd();
+  const availability = evaluateRuntimeAvailability({
+    runner: "hermes",
+    command: platform === "win32" ? "hermes.exe" : "hermes",
+    env,
+    cwd,
+    platform,
+    statFile: options.statFile,
+  });
+  return availability.state === "ready"
+    ? { ...availability, command: availability.resolvedPath, env, cwd }
+    : availability;
 }
 
 function remapCovenBackedFailure(

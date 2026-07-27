@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,9 +15,36 @@ import {
   openCodeProbeSpawnOptions,
   openCodeProbeTreeKillCommand,
   openCodeRunCapabilities,
+  hermesChatSupportsModel,
+  hermesHelpSupportsModel,
   parseOpenCodeRunCapabilitiesHelp,
 } from "./chat-send-capabilities.ts";
 
+assert.equal(hermesHelpSupportsModel("  --query <prompt>\n"), false, "a launchable Hermes without --model remains a capability-only limitation");
+assert.equal(hermesHelpSupportsModel("  --model <id>\n"), true, "Hermes model forwarding requires the documented flag");
+
+// A broken `chat --help` invocation can still print a usage block containing
+// --model. It is not capability evidence: the direct launch remains usable,
+// but Cave must omit the optional flag rather than repeating the failure.
+{
+  const probeDir = await mkdtemp(path.join(tmpdir(), "cave-hermes-help-failure-"));
+  const previousCwd = process.cwd();
+  try {
+    await writeFile(
+      path.join(probeDir, "chat"),
+      'process.stdout.write("  --model <id>\\n"); process.exit(1);\\n',
+    );
+    process.chdir(probeDir);
+    assert.equal(
+      await hermesChatSupportsModel({ command: process.execPath, env: process.env, cwd: probeDir }),
+      false,
+      "a failed Hermes help probe does not forward --model from its error usage",
+    );
+  } finally {
+    process.chdir(previousCwd);
+    await rm(probeDir, { recursive: true, force: true });
+  }
+}
 const capabilitiesSource = readFileSync(new URL("./chat-send-capabilities.ts", import.meta.url), "utf8");
 
 assert.match(
