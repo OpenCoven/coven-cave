@@ -63,6 +63,9 @@ import {
 import { readableTextColor } from "@/lib/readable-text-color";
 import { openExternalUrl } from "@/lib/open-external";
 import { getBackupPassphraseGuidance } from "@/lib/backup-passphrase-strength";
+import { canonicalMemoryLocalAccessEligible } from "@/lib/canonical-memory-local-access";
+import { useTauriPlatform } from "@/lib/tauri-platform";
+import { useLocalDaemonReadiness } from "@/lib/use-local-daemon-readiness";
 import { BackdropSettings } from "@/components/backdrop-settings";
 import { VoiceEngineSettings } from "@/components/voice-engine-settings";
 import {
@@ -1296,6 +1299,16 @@ function FamiliarsSection({
   const [createOpen, setCreateOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const {
+    acceptedLocalDaemonHealthy,
+    refreshLocalDaemonReadiness,
+  } = useLocalDaemonReadiness();
+  const tauriPlatform = useTauriPlatform();
+  const localDaemonReady = acceptedLocalDaemonHealthy &&
+    canonicalMemoryLocalAccessEligible({
+      platform: tauriPlatform,
+      hostname: typeof window === "undefined" ? null : window.location.hostname,
+    });
   const familiars = useResolvedFamiliars(rawFamiliars, { includeArchived: true });
   // This renders below FamiliarStudioProvider (the shell mounts it), so the
   // studio tab state is reachable here even though the shell body can't.
@@ -1352,13 +1365,13 @@ function FamiliarsSection({
       if (!res.ok || json?.ok === false) {
         throw new Error(json?.error || json?.stderr || "daemon did not start");
       }
-      await load();
+      await Promise.all([load(), refreshLocalDaemonReadiness()]);
     } catch (err) {
       setStartError(err instanceof Error ? err.message : "daemon did not start");
     } finally {
       setStarting(false);
     }
-  }, [load]);
+  }, [load, refreshLocalDaemonReadiness]);
 
   // Hold the panel until the first fetch settles so the "No familiars
   // configured" empty state never flashes before the roster loads.
@@ -1443,6 +1456,7 @@ function FamiliarsSection({
       <FamiliarStudioInlinePanel
         familiars={rawFamiliars}
         resolved={familiars}
+        localDaemonReady={localDaemonReady}
         onSummon={() => setCreateOpen(true)}
         onRosterChanged={() => void load()}
       />

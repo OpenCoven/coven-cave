@@ -120,4 +120,50 @@ assert.match(source, /BRAIN_STUDIO_FAMILIAR_KEY/, "Reads the one-shot handoff ke
 assert.match(source, /Changes save automatically/, "Shows the autosave footer");
 assert.match(source, /Saved locally, daemon offline/, "Shows daemon-offline state");
 
+assert.match(
+  source,
+  /loadCanonicalMemoryList\(\)/,
+  "Studio memory counts use the shared non-forced canonical list loader",
+);
+assert.match(
+  source,
+  /canonical\.entries\.filter/,
+  "Studio only counts canonical entries from a ready list",
+);
+assert.match(
+  source,
+  /entry\.familiarId === familiarId/,
+  "Studio scopes canonical summaries with the shared camelCase familiar id",
+);
+assert.match(
+  source,
+  /type FamiliarMemoryCountState\s*=[\s\S]*state: "loading"[\s\S]*state: "ready"; count: number[\s\S]*state: "unavailable"/,
+  "Studio memory counts distinguish loading, ready, and terminal unavailability",
+);
+assert.match(
+  source,
+  /setCount\(\{ state: "unavailable" \}\)/,
+  "a failed canonical or file source settles to unavailable",
+);
+assert.match(
+  source,
+  /setCount\(\{\s*state: "ready",\s*count: canonicalCount \+ fileCount,\s*\}\)/,
+  "a complete count settles to ready, including a confirmed zero",
+);
+assert.match(
+  source,
+  /memoryCount\.state === "loading"[\s\S]*"Memories…"[\s\S]*memoryCount\.state === "unavailable"[\s\S]*"Memories unavailable"[\s\S]*memoryCount\.count/,
+  "Studio renders loading and unavailable distinctly before ready counts",
+);
+assert.doesNotMatch(
+  source,
+  /memoryCount === null\s*\?\s*"Memories…"/,
+  "terminal failures cannot remain on the loading label",
+);
+assert.doesNotMatch(
+  source,
+  /fetch\(\s*["'`]\/api\/coven-memory/,
+  "Studio does not bypass the canonical memory cache",
+);
+
 console.log("familiar-studio-inline.test.ts: ok");

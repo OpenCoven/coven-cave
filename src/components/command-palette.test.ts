@@ -6,8 +6,8 @@ const source = readFileSync(
   new URL("./command-palette.tsx", import.meta.url),
   "utf8",
 );
-const globals = readFileSync(
-  new URL("../app/globals.css", import.meta.url),
+const globalPrimitives = readFileSync(
+  new URL("../styles/globals/primitives.css", import.meta.url),
   "utf8",
 );
 const workspace = readFileSync(
@@ -33,7 +33,7 @@ assert.match(source, /role="listbox"/, "results container has role=listbox");
 assert.match(source, /role="option"/, "each result item has role=option");
 assert.match(source, /command-palette-row/, "command palette rows expose a mobile hit-area hook");
 assert.match(
-  globals,
+  globalPrimitives,
   /@media \(max-width: 767px\) \{[\s\S]*\.command-palette-row,[\s\S]*min-height:\s*var\(--touch-target\)/,
   "command palette mobile rows should meet the shared touch target",
 );
@@ -226,6 +226,53 @@ assert.match(
   source,
   /q \? 0 : new Date\(b\.updatedAt \?\? 0\)\.getTime\(\) - new Date\(a\.updatedAt \?\? 0\)\.getTime\(\)/,
   "task rows sort by recency when the query is empty",
+);
+
+// Canonical memory is an opaque-ID destination. It must never be downgraded
+// into the path-bearing file-memory/Grimoire intent.
+assert.match(
+  source,
+  /kind:\s*"open-coven-memory";\s*id:\s*string;\s*familiarId:\s*string/,
+  "PaletteIntent exposes the typed opaque-ID canonical-memory destination",
+);
+assert.match(
+  source,
+  /loadCanonicalMemoryList\(\)/,
+  "the palette consumes the shared canonical-memory corpus",
+);
+assert.doesNotMatch(
+  source,
+  /fetch\(\s*["'`]\/api\/coven-memory["'`]/,
+  "the palette does not bypass the shared canonical-memory resource",
+);
+const canonicalFire = source.match(
+  /else if \(row\.kind === "coven-memory"\) \{([\s\S]*?)\} else if \(row\.kind === "fs-memory"\)/,
+);
+assert.ok(canonicalFire, "the palette handles canonical and file-memory rows separately");
+assert.match(
+  canonicalFire[1],
+  /kind:\s*"open-coven-memory"[\s\S]*id:\s*row\.entry\.id[\s\S]*familiarId:\s*row\.entry\.familiarId/,
+  "canonical rows dispatch an opaque ID plus familiar ID",
+);
+assert.doesNotMatch(
+  canonicalFire[1],
+  /open-memory-file|\.path|fullPath|CustomEvent/,
+  "canonical result navigation carries neither a file intent nor a path/event race",
+);
+assert.match(
+  source,
+  /row\.kind === "fs-memory"[\s\S]{0,180}kind:\s*"open-memory-file"[\s\S]{0,100}row\.entry\.fullPath/,
+  "file-memory rows retain the Grimoire file intent",
+);
+assert.match(
+  source,
+  /entry\.title[\s\S]*entry\.excerpt[\s\S]*entry\.familiarId[\s\S]*entry\.source\.label[\s\S]*entry\.verification\.state[\s\S]*entry\.relativeUpdatedAt/,
+  "canonical result search/rendering is limited to the approved safe summary fields",
+);
+assert.match(
+  source,
+  /canonicalMemoryState\.state === "error"[\s\S]*Familiar memories unavailable/,
+  "a failed canonical corpus is visibly unavailable instead of masquerading as an empty index",
 );
 
 console.log("command-palette.test.ts OK");

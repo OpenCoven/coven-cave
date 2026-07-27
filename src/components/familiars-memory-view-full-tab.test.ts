@@ -1,4 +1,3 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -26,10 +25,10 @@ for (const label of ["Familiar memories", "Coven origin", "External runtimes", "
 }
 
 // The file-source chips count the selected familiar's scoped file pool.
-assert.ok(source.includes(">Sources<"), "File-source chips are grouped under a scoped 'Sources' label");
+assert.match(source, />\s*Sources\s*</, "File-source chips are grouped under a scoped 'Sources' label");
 assert.match(
   source,
-  /familiarScopedFiles\.filter\(\(entry\) => entry\.sourceKind === "coven-origin"\)/,
+  /familiarScopedFiles\.filter\(\s*\(entry\) => entry\.sourceKind === "coven-origin",?\s*\)/,
   "Source counts must derive from the selected familiar's scoped file pool",
 );
 
@@ -37,7 +36,7 @@ assert.match(
 
 assert.doesNotMatch(
   source,
-  /memory-graph-3d|MemoryGraph3D|buildMemoryGraphModel|Loading 3D memory graph|viewMode.*graph/s,
+  /memory-graph-3d|MemoryGraph3D|buildMemoryGraphModel|Loading 3D memory graph|viewMode[\s\S]*graph/,
   "FamiliarsMemoryView must not mount or import the removed 3D memory graph",
 );
 

@@ -90,7 +90,7 @@ assert.match(inline, /Test run/, "Hero exposes the smoke-test action");
 assert.match(inline, /breadcrumb=\{\["Familiars", familiar\.display_name, "Test run"\]\}/, "Smoke test opens in the shared modal");
 assert.match(
   inline,
-  /if \(!response\.ok\) throw new Error\("Memory count unavailable"\)/,
+  /if \(canonical\.state !== "ready" \|\| !files\.ok\) \{\s*setCount\(\{ state: "unavailable" \}\)/,
   "Failed memory APIs stay unknown instead of being reported as zero entries",
 );
 assert.match(inline, /<VaultPanel familiarId=\{familiar\.id\}/, "Vault receives the selected familiar scope");

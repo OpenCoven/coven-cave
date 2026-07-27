@@ -1,5 +1,6 @@
 // src/lib/memory-management.test.ts
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { parseRelativeTime } from "./memory-management.ts";
 
 // Anchor "now" so the test is deterministic.
@@ -11,17 +12,7 @@ assert.equal(parseRelativeTime("3d ago", NOW), NOW - 3 * 86_400_000, "3d ago");
 assert.equal(parseRelativeTime("just now", NOW), NOW, "just now");
 assert.equal(parseRelativeTime("garbage", NOW), 0, "unparseable -> 0");
 
-import { normalizeCovenEntry, normalizeFileEntry } from "./memory-management.ts";
-
-const coven = normalizeCovenEntry(
-  { id: "kitty-2026-06-09", familiar_id: "kitty", title: "2026-06-09", path: "/home/u/.coven/memory/kitty/2026-06-09.md", updated_at: "5m ago", excerpt: "hello" },
-  NOW,
-);
-assert.equal(coven.source, "coven");
-assert.equal(coven.familiarId, "kitty");
-assert.equal(coven.path, "/home/u/.coven/memory/kitty/2026-06-09.md");
-assert.equal(coven.updatedAt, NOW - 5 * 60_000);
-assert.equal(coven.bodyHint, "hello");
+import { normalizeFileEntry } from "./memory-management.ts";
 
 const file = normalizeFileEntry({
   fullPath: "/home/u/.coven/memory/x.md", relPath: "x.md", title: "x",
@@ -45,8 +36,8 @@ assert.equal(isStructuralMemoryPath("/h/x/MEMORY.md"), true);
 assert.equal(isStructuralMemoryPath("/h/x/note.md"), false);
 
 const mk = (over: Partial<ManagedMemoryEntry>): ManagedMemoryEntry => ({
-  key: "k", path: "/p", source: "coven", familiarId: null, title: "t",
-  kind: "coven", updatedAt: 0, updatedAtLabel: "", size: null, bodyHint: "",
+  key: "k", path: "/p", source: "file", familiarId: null, title: "t",
+  kind: "runtime", updatedAt: 0, updatedAtLabel: "", size: null, bodyHint: "",
   protection: "normal", ...over,
 });
 
@@ -59,7 +50,7 @@ assert.equal(detectStale(mk({}), always).stale, true, "scorer is pluggable");
 
 import { groupMemories, sortMemories, filterMemories } from "./memory-management.ts";
 
-const a = mk({ key: "a", title: "alpha", familiarId: "kitty", kind: "coven", updatedAt: 100, source: "coven", bodyHint: "No notable updates" });
+const a = mk({ key: "a", title: "alpha", familiarId: "kitty", kind: "runtime", updatedAt: 100, source: "file", bodyHint: "No notable updates" });
 const b = mk({ key: "b", title: "beta", familiarId: "sage", kind: "coven-origin", updatedAt: 300, source: "file", size: 50 });
 const c = mk({ key: "c", title: "gamma", familiarId: "kitty", kind: "runtime", updatedAt: 200, source: "file", size: 10 });
 const all = [a, b, c];
@@ -76,12 +67,12 @@ const g = groupMemories(all, "familiar");
 assert.deepEqual(g.map((x) => x.key), ["kitty", "sage"], "groups by familiar");
 assert.deepEqual(g[0].entries.map((e) => e.key), ["a", "c"], "kitty group members");
 assert.equal(groupMemories(all, "none").length, 1, "none = single group");
-assert.deepEqual(groupMemories(all, "source").map((x) => x.key).sort(), ["coven", "file"]);
+assert.deepEqual(groupMemories(all, "source").map((x) => x.key).sort(), ["file"]);
 
 // filter
 assert.deepEqual(filterMemories(all, "alpha", {}).map((e) => e.key), ["a"], "text filter");
 assert.deepEqual(filterMemories(all, "", { familiarId: "kitty" }).map((e) => e.key), ["a", "c"], "facet familiar");
-assert.deepEqual(filterMemories(all, "", { source: "file" }).map((e) => e.key), ["b", "c"], "facet source");
+assert.deepEqual(filterMemories(all, "", { source: "file" }).map((e) => e.key), ["a", "b", "c"], "facet source");
 assert.deepEqual(filterMemories(all, "", { staleOnly: true }).map((e) => e.key), ["a"], "stale only");
 
 const dreamFile = normalizeFileEntry({
@@ -94,5 +85,9 @@ const dreamFile = normalizeFileEntry({
 assert.equal(dreamFile.bodyHint, "# Light Sleep\n- No notable updates.", "excerpt maps to bodyHint");
 assert.equal(dreamFile.protection, "bulk-protected", "dream file is bulk-protected");
 assert.equal(detectStale(dreamFile).stale, true, "dream placeholder flagged stale even as a file entry");
+
+const source = readFileSync(new URL("./memory-management.ts", import.meta.url), "utf8");
+assert.doesNotMatch(source, /\bRawCovenEntry\b/, "path-bearing canonical input type is retired");
+assert.doesNotMatch(source, /\bnormalizeCovenEntry\b/, "canonical entries never enter file management");
 
 console.log("memory-management.test: ok");

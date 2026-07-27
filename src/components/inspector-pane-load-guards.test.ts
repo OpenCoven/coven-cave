@@ -4,40 +4,124 @@ import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./inspector-pane.tsx", import.meta.url), "utf8");
 
-// The inspector's three memory loaders (coven-memory, the per-familiar file
-// list, and the open-file contents) all set state from an async fetch. Each
-// must guard against stale / post-unmount responses with a cancelled flag, or:
-//   - a response could call setState after the pane unmounts, and
-//   - switching familiars / files could let an older request's response
-//     overwrite the newer selection (a cross-familiar list leak for /api/memory).
-
-// Every effect that awaits a fetch declares a cancelled flag and a cleanup.
-const cancelledDecls = src.match(/let cancelled = false;/g) ?? [];
-assert.ok(cancelledDecls.length >= 3, "all three memory loaders declare a cancelled guard");
-const cleanups = src.match(/return \(\) => \{ cancelled = true; \};/g) ?? [];
-assert.ok(cleanups.length >= 3, "each guarded loader cleans up by cancelling in-flight work");
-
-// coven-memory: guards the setState and the loaded flag.
+// Canonical list loading goes through the shared cache and the same
+// force/background/unmount request-ownership primitive as the full memory
+// surface. No direct canonical fetch or weaker local boolean guard is allowed.
 assert.match(
   src,
-  /fetch\("\/api\/coven-memory"[\s\S]*?if \(cancelled\) return;[\s\S]*?setCovenEntries/,
-  "the coven-memory loader drops stale/post-unmount responses",
+  /loadCanonicalMemoryList\(force\)/,
+  "Inspector canonical list uses the shared resource loader",
 );
-assert.match(src, /if \(!cancelled\) setCovenLoaded\(true\);/, "the coven-memory loaded flag is only set while mounted");
-
-// per-familiar file list: guards before applying entries so a previous
-// familiar's response can't overwrite the current one.
+assert.doesNotMatch(
+  src,
+  /fetch\(\s*["'`]\/api\/coven-memory/,
+  "Inspector must not fetch the canonical list directly",
+);
 assert.match(
   src,
-  /\/api\/memory\?familiarId[\s\S]*?if \(cancelled\) return;[\s\S]*?setEntries/,
-  "the per-familiar memory list drops a superseded response (no cross-familiar leak)",
+  /createMemoryFeedRequestGate\(\)/,
+  "canonical list publication reuses the shared request-ownership gate",
+);
+assert.match(
+  src,
+  /force\s*\?\s*requestGate\.beginForce\(\)\s*:\s*requestGate\.beginBackground\("canonical"\)/,
+  "forced refresh supersedes background canonical publication",
+);
+assert.match(
+  src,
+  /requestGate\.isCurrent\(request\)/,
+  "canonical results publish only for the current mounted request",
+);
+assert.match(
+  src,
+  /canonicalRequestGate\.unmount\(\)/,
+  "unmount invalidates outstanding canonical publications",
 );
 
-// open-file contents: guards before setOpenFile.
+// Readiness is a privacy boundary, but speculative/concurrent renders must
+// stay pure. The committed effect owns request invalidation and state reset;
+// render only masks canonical state directly from the readiness prop.
+const memoryTabRenderSetup = src.slice(
+  src.indexOf("function MemoryTab"),
+  src.indexOf("const applyCanonicalList"),
+);
+assert.doesNotMatch(
+  memoryTabRenderSetup,
+  /\.current\s*=|set[A-Z]\w*\(/,
+  "MemoryTab must not mutate refs or state while rendering",
+);
+assert.doesNotMatch(
+  src,
+  /canonicalReadinessRef/,
+  "readiness publication ownership must not depend on a render-mutated ref",
+);
 assert.match(
   src,
-  /\/api\/memory\/file\?path[\s\S]*?if \(cancelled\) return;[\s\S]*?setOpenFile\(json\)/,
-  "the open-file loader drops a stale response when the selection changes",
+  /const canonicalState = localDaemonReady\s*\?\s*storedCanonicalState\s*:\s*EMPTY_CANONICAL_LIST_STATE/,
+  "localDaemonReady synchronously masks every prior canonical publication",
+);
+assert.match(
+  src,
+  /useEffect\(\(\) => \{\s*setStoredCanonicalState\(EMPTY_CANONICAL_LIST_STATE\);[\s\S]{0,500}if \(!localDaemonReady\) \{\s*return;\s*\}[\s\S]{0,200}canonicalRequestGate\.mount\(\);[\s\S]{0,120}void loadCanonical\(\);[\s\S]{0,200}return \(\) => \{\s*canonicalRequestGate\.unmount\(\);\s*\};\s*\}, \[canonicalRequestGate, loadCanonical, localDaemonReady\]\);/,
+  "a committed readiness effect resets state, mounts/loads only when ready, and invalidates through cleanup",
+);
+assert.equal(
+  (src.match(/canonicalRequestGate\.unmount\(\)/g) ?? []).length,
+  1,
+  "the canonical gate is invalidated only by committed effect cleanup",
+);
+
+// The per-familiar file list and open-file contents are real fetches and must
+// abort on supersession/unmount.
+const abortControllers = src.match(/new AbortController\(\)/g) ?? [];
+assert.ok(abortControllers.length >= 2, "both Files loaders own AbortControllers");
+
+assert.match(
+  src,
+  /fetch\(\s*url,\s*\{\s*cache:\s*"no-store",\s*signal:\s*controller\.signal,?\s*\}/,
+  "the per-familiar memory list fetch is abortable",
+);
+assert.match(
+  src,
+  /\/api\/memory\/file\?path[\s\S]*?signal:\s*controller\.signal[\s\S]*?setOpenFile\(json\)/,
+  "the open-file loader is abortable and publishes only the selected file",
+);
+assert.ok(
+  (src.match(/controller\.abort\(\)/g) ?? []).length >= 2,
+  "both Files effects abort during cleanup",
+);
+
+// Detail cancellation is inherited from the exact shared reader. Pin both the
+// integration and its already-behavioral cancellation contract.
+assert.match(
+  src,
+  /<CanonicalMemoryReader[\s\S]*memoryId=\{selectedCanonicalId\}/,
+  "Inspector delegates canonical detail to the shared reader",
+);
+const reader = readFileSync(new URL("./canonical-memory-reader.tsx", import.meta.url), "utf8");
+assert.match(
+  reader,
+  /return \(\) => \{\s*current = false;\s*controller\.abort\(\);\s*\};/,
+  "shared detail reader aborts on ID change and unmount",
+);
+
+// Readiness is computed once by Workspace and threaded into the rail. It must
+// never be inferred from a successful list response inside Inspector.
+const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+assert.match(
+  workspace,
+  /<RailInspector[\s\S]*localDaemonReady=\{localDaemonReady\}/,
+  "Workspace threads strict local readiness into RailInspector",
+);
+assert.match(
+  src,
+  /<InspectorPane[\s\S]*localDaemonReady=\{localDaemonReady\}/,
+  "RailInspector threads strict local readiness into InspectorPane",
+);
+assert.doesNotMatch(
+  src,
+  /setLocalDaemonReady|canonicalEntries\.length\s*[>!?]/,
+  "Inspector never infers canonical readiness locally",
 );
 
 // The Familiar tab's capability panel (extracted to chat-familiar-capabilities.tsx)

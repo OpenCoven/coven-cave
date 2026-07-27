@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { containsRedactionMarker, writeAllowedMemoryFile } from "./memory-file-write.ts";
 
 const home = await mkdtemp(path.join(tmpdir(), "memwrite-"));
-const memDir = path.join(home, ".coven", "memory");
+const memDir = path.join(home, ".coven", "workspaces", "familiars", "sage", "memory");
+const canonicalDir = path.join(home, ".coven", "memory", "sage");
 await mkdir(memDir, { recursive: true });
+await mkdir(canonicalDir, { recursive: true });
 const file = path.join(memDir, "note.md");
+const canonicalFile = path.join(canonicalDir, "canonical.md");
 await writeFile(file, "original", "utf8");
+await writeFile(canonicalFile, "canonical original", "utf8");
 
 // Happy path: no mtime guard.
 {
@@ -41,6 +45,17 @@ await writeFile(file, "original", "utf8");
 
 // Allowlist: outside memory roots rejected; missing files rejected (edit-in-place only).
 {
+  const canonical = await writeAllowedMemoryFile(canonicalFile, "canonical mutation", null, home);
+  assert.deepEqual(
+    canonical,
+    { ok: false, error: "path not allowed", status: 403 },
+    "canonical Coven memory is outside mutable filesystem authority",
+  );
+  assert.equal(
+    await readFile(canonicalFile, "utf8"),
+    "canonical original",
+    "canonical memory remains untouched",
+  );
   const outside = path.join(home, "free.md");
   await writeFile(outside, "x", "utf8");
   const res = await writeAllowedMemoryFile(outside, "y", null, home);
@@ -59,5 +74,7 @@ await writeFile(file, "original", "utf8");
   assert.equal(res.ok, false, "oversized rejected");
   assert.equal((res as { status: number }).status, 413);
 }
+
+await rm(home, { recursive: true, force: true });
 
 console.log("memory-file-write.test: ok");

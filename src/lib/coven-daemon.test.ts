@@ -359,6 +359,90 @@ const {
   }
 }
 
+// Opt-in response caps accept a body exactly at the boundary, reject the next
+// byte, and retain the HTTP status so the oversized response is not retried.
+{
+  const atLimitBody = JSON.stringify({ ok: true });
+  const maxResponseBytes = Buffer.byteLength(atLimitBody);
+  let requestCount = 0;
+  let resolveOverLimitClose;
+  let resolveLaterWriteAttempt;
+  let closureDeadline;
+  const overLimitClosed = new Promise((resolve) => {
+    resolveOverLimitClose = resolve;
+  });
+  const laterWriteAttempt = new Promise((resolve) => {
+    resolveLaterWriteAttempt = resolve;
+  });
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    if (req.url === "/at-limit") {
+      res.end(atLimitBody);
+      return;
+    }
+    requestCount += 1;
+    res.once("close", resolveOverLimitClose);
+    // A write after the client destroys the response may surface an expected
+    // stream error. The close event above is the behavior this fixture checks.
+    res.on("error", () => {});
+    res.write(atLimitBody);
+    setImmediate(() => {
+      res.write("\n");
+      setImmediate(() => {
+        try {
+          res.write(" ");
+        } catch {
+          // The client may already have destroyed the response.
+        }
+        resolveLaterWriteAttempt();
+      });
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const target = {
+      mode: "hub",
+      label: "Server hub",
+      url: `http://127.0.0.1:${port}`,
+    };
+    const atLimit = await callDaemonTarget(target, {
+      path: "/at-limit",
+      timeoutMs: 500,
+      maxResponseBytes,
+    });
+    const overLimit = await callDaemonTarget(target, {
+      path: "/over-limit",
+      timeoutMs: 5000,
+      maxResponseBytes,
+    });
+
+    assert.equal(atLimit.ok, true);
+    assert.deepEqual(atLimit.data, { ok: true });
+    assert.equal(overLimit.ok, false);
+    assert.equal(overLimit.status, 200);
+    assert.equal(overLimit.data, null);
+    assert.equal(overLimit.error, "daemon response exceeded size limit");
+    assert.equal(requestCount, 1, "an HTTP response-size failure is not a transport retry");
+    await Promise.race([
+      Promise.all([overLimitClosed, laterWriteAttempt]),
+      new Promise((_, reject) => {
+        closureDeadline = setTimeout(() => {
+          reject(
+            new Error("server did not observe capped client response closure after a later write"),
+          );
+        }, 1000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(closureDeadline);
+    await new Promise((resolve) => {
+      server.close(resolve);
+      server.closeAllConnections();
+    });
+  }
+}
+
 // Mutating methods are never retried — a timed-out POST may have applied.
 {
   let attempts = 0;

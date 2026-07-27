@@ -25,6 +25,11 @@ const E2E_RUN_ID = randomUUID();
 const E2E_PROJECTS_PATH = join(tmpdir(), `cave-e2e-projects-${E2E_RUN_ID}.json`);
 const E2E_QUEUE_PROJECT_PATH = join(tmpdir(), `cave-e2e-queue-project-${E2E_RUN_ID}.json`);
 const E2E_PROJECT_PERMISSIONS_PATH = join(tmpdir(), `cave-e2e-project-permissions-${E2E_RUN_ID}.json`);
+const E2E_COVEN_HOME = join(tmpdir(), `cave-e2e-coven-${E2E_RUN_ID}`);
+const E2E_CAVE_HOME = join(tmpdir(), `cave-e2e-cave-${E2E_RUN_ID}`);
+const E2E_COVEN_SOCKET = join(tmpdir(), `cave-e2e-socket-${E2E_RUN_ID}.sock`);
+const E2E_LOCAL_PEER_FIXTURE = "cave-e2e-local-peer-fixture";
+const E2E_MOBILE_ACCESS_FIXTURE = "test-fixture";
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
 const SETUP_FOCUS_VISIBILITY_TEST = /keeps setup-header focus indicators visible inside the horizontal scroller$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
@@ -84,6 +89,13 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
     trace: "on-first-retry",
+    // next dev has no outer server.ts TCP peer stamper. Give ordinary E2E
+    // pages the equivalent deterministic local-peer proof; the paired-mobile
+    // boundary spec deliberately overrides it with an invalid value and a
+    // synthetic mobile credential so proxy.ts owns the ingress marker.
+    extraHTTPHeaders: {
+      "x-coven-cave-local-peer": E2E_LOCAL_PEER_FIXTURE,
+    },
   },
   projects: [
     // Canonical preferences are process-wide rather than browser-origin state.
@@ -157,6 +169,15 @@ export default defineConfig({
       // later PID reuse from sharing stale state while remaining stable for
       // every request in this run.
       COVEN_PREFERENCES_PATH: join(tmpdir(), `cave-e2e-preferences-${E2E_RUN_ID}.json`),
+      // Route every remaining server-side home/socket lookup into this run's
+      // synthetic state. Targeted browser routes mock memory payloads, but
+      // project dependencies and shell boot probes must also never inspect a
+      // maintainer's genuine Coven/Cave homes.
+      COVEN_HOME: E2E_COVEN_HOME,
+      COVEN_CAVE_HOME: E2E_CAVE_HOME,
+      COVEN_SOCKET: E2E_COVEN_SOCKET,
+      COVEN_CAVE_LOCAL_PEER_SECRET: E2E_LOCAL_PEER_FIXTURE,
+      COVEN_CAVE_ACCESS_TOKEN: E2E_MOBILE_ACCESS_FIXTURE,
       CAVE_PROJECTS_PATH_OVERRIDE: E2E_PROJECTS_PATH,
       CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: E2E_PROJECT_PERMISSIONS_PATH,
       CAVE_QUEUE_PROJECT_PATH_OVERRIDE: E2E_QUEUE_PROJECT_PATH,
