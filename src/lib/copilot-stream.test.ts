@@ -333,6 +333,21 @@ assert.deepEqual(
   "fresh full-permission turns preserve the manifest approval argv with their session, model, trust grants, and trailing prompt",
 );
 
+const opus5Args = buildCopilotStreamArgs({
+  spec,
+  prompt: "use the selected model",
+  resumeSessionId: null,
+  newSessionId: null,
+  model: "github/claude-opus-5",
+  permissionMode: "read",
+  addDirs: [],
+});
+assert.deepEqual(
+  opus5Args.slice(0, 3),
+  ["--no-auto-update", "--model", "claude-opus-5"],
+  "Copilot's authenticated Opus 5 option reaches the native CLI as its exact bare id",
+);
+
 const resumeArgs = buildCopilotStreamArgs({
   spec,
   prompt: "continue",

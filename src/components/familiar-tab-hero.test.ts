@@ -64,11 +64,15 @@ test("hero selects edit the live binding through the canonical /api/config write
     /window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\)/,
     "successful saves catch the roster up immediately",
   );
-  // The three live selects, sourced from canonical catalogs — no second mapping.
+  // The three live selects, sourced from canonical live inventories — no second mapping.
   assert.match(src, /label="Runtime"[\s\S]{0,150}?options=\{runtimeOptions\}/, "Runtime select");
   assert.match(src, /label="Model"[\s\S]{0,150}?options=\{modelOptions\}/, "Model select");
   assert.match(src, /label="Voice"[\s\S]{0,150}?options=\{voiceOptions\}/, "Voice select");
-  assert.match(src, /catalogForRuntime\(effectiveHarness\)/, "models come from the shared runtime→model catalog");
+  assert.match(
+    src,
+    /useRuntimeModelOptions\(effectiveHarness, familiar\.id\)/,
+    "models come from the shared familiar-scoped runtime inventory",
+  );
   assert.match(src, /listVoiceProviders\(\)/, "voice providers come from the canonical voice registry");
   // Save failures surface honestly instead of silently reverting.
   assert.match(src, /\{saveError \? \(\s*<p role="status"/, "failed saves report inline");

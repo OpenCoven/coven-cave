@@ -10,7 +10,7 @@ import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
-import { listOpenCodeModels } from "@/lib/server/opencode-models";
+import { listRuntimeModelOptions } from "@/lib/server/runtime-model-options";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -81,18 +81,19 @@ export async function GET(req: Request) {
 
   const state = await currentState(familiarId, sessionId);
   // Also hand back the pickable model menu for this chat's runtime so non-web
-  // clients (the iOS app) don't have to mirror the catalog. Web ignores it and
-  // reads the catalog directly. `allowCustom` means a free-typed id is valid.
+  // clients (the iOS app) don't have to mirror runtime capability rules.
+  // `allowCustom` means a free-typed id is valid.
   const catalog = catalogForRuntime(state.harness);
   // OpenCode's inventory is derived from local authenticated providers. Keep
   // that CLI call local-only without denying this aggregate state endpoint to
   // iOS, which still needs the selected model and may free-type a model id.
-  const canReadOpenCodeInventory = state.harness === "opencode"
-    ? !rejectNonLocalRequest(req)
-    : false;
-  const options = canReadOpenCodeInventory
-    ? await listOpenCodeModels(familiarId)
-    : catalog?.models ?? [];
+  const canReadOpenCodeInventory =
+    state.harness === "opencode" && !rejectNonLocalRequest(req);
+  const options = await listRuntimeModelOptions(
+    state.harness,
+    familiarId,
+    { allowOpenCodeInventory: canReadOpenCodeInventory },
+  );
   return NextResponse.json({
     ok: true,
     state,

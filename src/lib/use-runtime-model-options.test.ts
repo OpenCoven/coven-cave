@@ -6,18 +6,23 @@ const source = readFileSync(new URL("./use-runtime-model-options.ts", import.met
 
 assert.match(
   source,
-  /openCodeInventory\.familiarId === inventoryFamiliarId[\s\S]*?\? openCodeInventory\.models[\s\S]*?: staticModels/,
-  "OpenCode model menus must not expose a previous familiar's scoped inventory while a new scope loads",
+  /runtimeInventory\.key === inventoryKey[\s\S]*?runtimeInventory\.models !== null[\s\S]*?return runtimeInventory\.models/,
+  "dynamic model menus never expose a previous runtime or familiar's scoped inventory",
 );
 assert.match(
   source,
-  /const canonicalRuntime = canonicalHarnessId\(runtime\);[\s\S]*?canonicalRuntime !== "opencode"/,
-  "package aliases such as opencode-ai use OpenCode's authenticated inventory",
+  /DYNAMIC_INVENTORY_RUNTIMES\.has\(canonicalRuntime\)/,
+  "Claude, Copilot, and OpenCode all use capability-driven inventories",
 );
 assert.match(
   source,
-  /setOpenCodeInventory\(\{ familiarId: inventoryFamiliarId, models: json\.models \}\)/,
-  "a completed inventory request remains associated with the familiar scope that issued it",
+  /`\/api\/runtime-models\/\$\{encodeURIComponent\(canonicalRuntime\)\}`/,
+  "the hook calls the canonical shared runtime inventory endpoint",
+);
+assert.match(
+  source,
+  /setRuntimeInventory\(\{ key: inventoryKey, models: staticModels \}\)/,
+  "a failed dynamic request falls back to the safe static seed",
 );
 assert.match(
   source,
