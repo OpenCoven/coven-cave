@@ -2,7 +2,7 @@
 // Re-generate with: pnpm sync:runtimes
 //
 // Source: OpenCoven/coven-runtimes canonical registry index
-//   ref:      7c093e5f51f0a2a1e2f76cf6b8eef6465b86c8ff
+//   ref:      v0.2.0
 //   blob sha: ced69d5b532f7c1478a1f45d00c0701ab948e221
 //
 // Every entry passed coven-runtimes acceptance (conformance + review), so
@@ -38,7 +38,7 @@ export type RegistryRuntime = {
 
 export const REGISTRY_SOURCE = {
   repo: "OpenCoven/coven-runtimes",
-  ref: "7c093e5f51f0a2a1e2f76cf6b8eef6465b86c8ff",
+  ref: "v0.2.0",
   blobSha: "ced69d5b532f7c1478a1f45d00c0701ab948e221",
 } as const;
 
