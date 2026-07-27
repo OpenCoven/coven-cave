@@ -101,7 +101,11 @@ test("source and vault failures stay retryable and distinct from empty data", ()
 test("source retries ignore stale success and failure after a memory-context change", () => {
   assert.match(surface, /import \{[^}]*\buseRef\b[^}]*\} from "react"/);
   assert.match(surface, /const sourcesLoadSeq = useRef\(0\)/);
-  assert.match(surface, /const seq = \+\+sourcesLoadSeq\.current/);
+  assert.match(
+    surface,
+    /const seq = \+\+sourcesLoadSeq\.current;\s*setSources\(null\)/,
+    "every source retry clears stale inventory while the fresh request is pending",
+  );
   assert.match(
     surface,
     /const entries = await context\.memory\.listEntries\(\);\s*if \(seq !== sourcesLoadSeq\.current\) return;\s*setSources\(/,

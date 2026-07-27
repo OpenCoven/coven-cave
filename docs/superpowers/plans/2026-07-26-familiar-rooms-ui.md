@@ -175,14 +175,17 @@ export function SurfaceError({
   title,
   hint,
   onRetry,
+  live,
 }: {
   title: string;
   hint?: string;
   onRetry?: () => void;
+  live?: boolean;
 }) {
   return (
     <ErrorState
       compact
+      live={live}
       className="role-surface-state"
       headline={title}
       subtitle={hint}
@@ -194,6 +197,10 @@ export function SurfaceError({
 
 Extend `SurfaceEmpty` with `action?: ReactNode` and render the shared
 `EmptyState` in compact mode.
+
+When one request source appears in multiple panels, its canonical visible
+`SurfaceError` is the single live `role="alert"`. Repeated dependent-panel
+copies pass `live={false}` so the same failure is not announced more than once.
 
 - [ ] **Step 2: Make rails label-addressable and collapsible**
 
@@ -288,8 +295,9 @@ announce(`Moved "${selected.title}" to ${LANE_LABELS[status]}.`);
 announce(`Resolved "${selected.title}".`);
 ```
 
-Use assertive announcements in existing failure catches without replacing the
-visible error.
+Use assertive announcements in existing mutation failure catches without
+replacing the visible error; keep that simultaneously visible inline copy
+passive because the mutation announcer owns the live update.
 
 - [ ] **Step 5: Run room tests**
 

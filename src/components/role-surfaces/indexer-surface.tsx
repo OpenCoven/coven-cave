@@ -14,11 +14,12 @@
  * have no backing services yet — those panels say so instead of pretending.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { SearchInput } from "@/components/ui/search-input";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
+import { useLatestAsyncData } from "@/lib/use-role-surfaces";
 import {
   RailSection,
   SurfaceCanvas,
@@ -67,20 +68,15 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
   const familiarId = context.activeFamiliar.id;
   const [state, patch] = useRoleSurfaceState<IndexerState>(familiarId, INDEXER_SURFACE_ID, INDEXER_INITIAL_STATE);
 
-  const [entries, setEntries] = useState<SurfaceMemoryEntry[] | null>(null);
-  const [entriesError, setEntriesError] = useState<string | null>(null);
-  const loadEntries = useCallback(async () => {
-    setEntriesError(null);
-    try {
-      setEntries(await context.memory.listEntries());
-    } catch {
-      setEntriesError("Couldn't load memory inventory.");
-    }
-  }, [context.memory]);
-  useEffect(() => {
-    setEntries(null);
-    void loadEntries();
-  }, [loadEntries]);
+  const {
+    data: entries,
+    error: entriesError,
+    reload: loadEntries,
+  } = useLatestAsyncData<SurfaceMemoryEntry[]>({
+    scopeKey: familiarId,
+    load: context.memory.listEntries,
+    errorMessage: "Couldn't load memory inventory.",
+  });
 
   const collections = useMemo(() => groupMemoryCollections(entries ?? []), [entries]);
 
@@ -99,23 +95,22 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
   );
 
   // Selected memory content, read through the shared adapter (redacted).
-  const [content, setContent] = useState<string | null>(null);
-  const [contentError, setContentError] = useState<string | null>(null);
-  const loadContent = useCallback(async () => {
-    setContentError(null);
-    setContent(null);
-    if (!selected) return;
-    try {
-      const file = await context.memory.readFile(selected.fullPath);
-      if (!file) throw new Error("missing file");
-      setContent(file.content);
-    } catch {
-      setContentError(`Couldn't read ${selected.relPath}.`);
-    }
+  const fetchContent = useCallback(async () => {
+    if (!selected) throw new Error("no selected memory");
+    const file = await context.memory.readFile(selected.fullPath);
+    if (!file) throw new Error("missing file");
+    return file.content;
   }, [context.memory, selected]);
-  useEffect(() => {
-    void loadContent();
-  }, [loadContent]);
+  const {
+    data: content,
+    error: contentError,
+    reload: loadContent,
+  } = useLatestAsyncData<string>({
+    scopeKey: `${familiarId}:${selected?.fullPath ?? ""}`,
+    load: fetchContent,
+    errorMessage: selected ? `Couldn't read ${selected.relPath}.` : "Couldn't read memory content.",
+    enabled: selected != null,
+  });
 
   const [tagDraft, setTagDraft] = useState("");
   const selectedTags = selected ? (state.tags[selected.fullPath] ?? []) : [];
@@ -165,7 +160,12 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
           </RailSection>
           <RailSection title="Recent changes" iconName="ph:clock">
             {entriesError ? (
-              <SurfaceError title={entriesError} hint="Check the memory source, then retry." onRetry={loadEntries} />
+              <SurfaceError
+                title={entriesError}
+                hint="Check the memory source, then retry."
+                onRetry={loadEntries}
+                live={false}
+              />
             ) : entries == null ? (
               <SurfaceLoading label="Loading recent memory changes…" />
             ) : recentChanges.length === 0 ? (
@@ -187,7 +187,12 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
       <SurfaceRail side="left" label="Collections">
         <RailSection title="Knowledge collections" iconName="ph:folder">
           {entriesError ? (
-            <SurfaceError title={entriesError} hint="Check the memory source, then retry." onRetry={loadEntries} />
+            <SurfaceError
+              title={entriesError}
+              hint="Check the memory source, then retry."
+              onRetry={loadEntries}
+              live={false}
+            />
           ) : entries == null ? (
             <SurfaceLoading label="Loading memory inventory…" />
           ) : collections.length === 0 ? (
@@ -283,7 +288,20 @@ export function IndexerSurface({ context }: { context: RoleSurfaceContext }) {
       </SurfaceCanvas>
 
       <SurfaceRail side="right" label="Memory details">
-        {!selected ? (
+        {entriesError ? (
+          <RailSection title="Details" iconName="ph:note">
+            <SurfaceError
+              title={entriesError}
+              hint="Check the memory source, then retry."
+              onRetry={loadEntries}
+              live={false}
+            />
+          </RailSection>
+        ) : entries == null ? (
+          <RailSection title="Details" iconName="ph:note">
+            <SurfaceLoading label="Loading memory details…" />
+          </RailSection>
+        ) : !selected ? (
           <RailSection title="Details" iconName="ph:note">
             <SurfaceEmpty title="Select a memory to inspect it." />
           </RailSection>

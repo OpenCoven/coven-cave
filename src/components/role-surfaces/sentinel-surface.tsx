@@ -21,6 +21,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
+import { useLatestAsyncData } from "@/lib/use-role-surfaces";
 import { SEVERITIES, SNOOZE_PRESETS, type Escalation } from "@/lib/escalations-types";
 import { relativeTime } from "@/lib/relative-time";
 import {
@@ -87,46 +88,43 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
   const { announce } = useAnnouncer();
 
   // ── Alerts: the Cave's real escalations ────────────────────────────────────
-  const [alerts, setAlerts] = useState<Escalation[] | null>(null);
-  const [alertsError, setAlertsError] = useState<string | null>(null);
-  const loadAlerts = useCallback(async () => {
-    setAlertsError(null);
-    try {
-      const res = await fetch("/api/escalations", { cache: "no-store" });
-      const json = res.ok ? ((await res.json()) as { ok?: boolean; items?: Escalation[] }) : null;
-      if (!json?.ok || !Array.isArray(json.items)) throw new Error("bad response");
-      setAlerts(json.items);
-      const summary = summarizeAlerts(json.items);
-      patch({ lastSummary: { open: summary.open, critical: summary.critical } });
-    } catch {
-      const message = "Couldn't load escalations.";
-      setAlertsError(message);
-      announce(message, "assertive");
-    }
-  }, [announce, patch]);
+  const fetchAlerts = useCallback(async () => {
+    const res = await fetch("/api/escalations", { cache: "no-store" });
+    const json = res.ok ? ((await res.json()) as { ok?: boolean; items?: Escalation[] }) : null;
+    if (!json?.ok || !Array.isArray(json.items)) throw new Error("bad response");
+    return json.items;
+  }, []);
+  const {
+    data: alerts,
+    error: alertsError,
+    reload: loadAlerts,
+  } = useLatestAsyncData<Escalation[]>({
+    scopeKey: "escalations",
+    load: fetchAlerts,
+    errorMessage: "Couldn't load escalations.",
+  });
   useEffect(() => {
-    void loadAlerts();
-  }, [loadAlerts]);
+    if (alerts == null) return;
+    const nextSummary = summarizeAlerts(alerts);
+    patch({ lastSummary: { open: nextSummary.open, critical: nextSummary.critical } });
+  }, [alerts, patch]);
 
   // ── Perimeter: registered hosts with live reachability probes ─────────────
-  const [hosts, setHosts] = useState<HostWire[] | null>(null);
-  const [hostsError, setHostsError] = useState<string | null>(null);
-  const loadHosts = useCallback(async () => {
-    setHostsError(null);
-    try {
-      const res = await fetch("/api/hosts", { cache: "no-store" });
-      const json = res.ok ? ((await res.json()) as { ok?: boolean; hosts?: HostWire[] }) : null;
-      if (!Array.isArray(json?.hosts)) throw new Error("bad response");
-      setHosts(json.hosts);
-    } catch {
-      const message = "Couldn't probe registered hosts.";
-      setHostsError(message);
-      announce(message, "assertive");
-    }
-  }, [announce]);
-  useEffect(() => {
-    void loadHosts();
-  }, [loadHosts]);
+  const fetchHosts = useCallback(async () => {
+    const res = await fetch("/api/hosts", { cache: "no-store" });
+    const json = res.ok ? ((await res.json()) as { ok?: boolean; hosts?: HostWire[] }) : null;
+    if (!Array.isArray(json?.hosts)) throw new Error("bad response");
+    return json.hosts;
+  }, []);
+  const {
+    data: hosts,
+    error: hostsError,
+    reload: loadHosts,
+  } = useLatestAsyncData<HostWire[]>({
+    scopeKey: "registered-hosts",
+    load: fetchHosts,
+    errorMessage: "Couldn't probe registered hosts.",
+  });
 
   const summary = useMemo(() => summarizeAlerts(alerts ?? []), [alerts]);
   const filtered = useMemo(
@@ -241,6 +239,7 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
                 title={alertsError}
                 hint="Check the Cave connection, then retry the sweep."
                 onRetry={loadAlerts}
+                live={false}
               />
             ) : alerts == null ? (
               <SurfaceLoading label="Loading recently closed alerts…" />
@@ -296,6 +295,7 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
               title={alertsError}
               hint="Check the Cave connection, then retry the sweep."
               onRetry={loadAlerts}
+              live={false}
             />
           ) : alerts == null ? (
             <SurfaceLoading label="Loading alert queues…" />
@@ -423,7 +423,20 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
       </SurfaceCanvas>
 
       <SurfaceRail side="right" label="Alert details">
-        {!selected ? (
+        {alertsError ? (
+          <RailSection title="Details" iconName="ph:note">
+            <SurfaceError
+              title={alertsError}
+              hint="Check the Cave connection, then retry the sweep."
+              onRetry={loadAlerts}
+              live={false}
+            />
+          </RailSection>
+        ) : alerts == null ? (
+          <RailSection title="Details" iconName="ph:note">
+            <SurfaceLoading label="Loading alert details…" />
+          </RailSection>
+        ) : !selected ? (
           <RailSection title="Details" iconName="ph:note">
             <SurfaceEmpty title="Select an alert to triage it." />
           </RailSection>
@@ -467,7 +480,7 @@ export function SentinelSurface({ context }: { context: RoleSurfaceContext }) {
             </RailSection>
             <RailSection title="Triage" iconName="ph:shield-warning">
               {actionError ? (
-                <p role="alert" className="role-surface-hint">
+                <p className="role-surface-hint">
                   {actionError}
                 </p>
               ) : null}

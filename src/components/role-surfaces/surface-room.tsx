@@ -234,10 +234,21 @@ export function SurfaceLoading({ label }: { label: string }) {
   );
 }
 
-export function SurfaceError({ title, hint, onRetry }: { title: string; hint?: string; onRetry?: () => void }) {
+export function SurfaceError({
+  title,
+  hint,
+  onRetry,
+  live,
+}: {
+  title: string;
+  hint?: string;
+  onRetry?: () => void;
+  live?: boolean;
+}) {
   return (
     <ErrorState
       compact
+      live={live}
       className="role-surface-state"
       headline={title}
       subtitle={hint}

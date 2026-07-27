@@ -56,12 +56,14 @@ assert.match(loadingState, /role="status"/, "shared loading state uses role=stat
 assert.match(loadingState, /aria-label=\{label\}/, "shared loading state is named for the object being loaded");
 assert.match(loadingState, />\{label\}<\/span>/, "shared loading state keeps its object label visible");
 assert.match(roomErrorState, /<ErrorState[\s\S]*?\bcompact\b/, "SurfaceError renders compact shared ErrorState");
+assert.match(roomErrorState, /live\?: boolean/, "SurfaceError exposes the shared live-region opt-out");
+assert.match(roomErrorState, /live=\{live\}/, "SurfaceError forwards its live-region behavior");
 assert.match(
   roomErrorState,
   /<Button[\s\S]*?\bsize="sm"[\s\S]*?>\s*Retry\s*<\/Button>/,
   "SurfaceError uses the shared small Retry button",
 );
-assert.match(errorState, /role="alert"/, "shared error state uses role=alert");
+assert.match(errorState, /role=\{live \? "alert" : undefined\}/, "shared error state can suppress duplicate alerts");
 assert.match(emptyState, /<EmptyState[\s\S]*?\bcompact\b/, "SurfaceEmpty renders compact shared EmptyState");
 assert.match(emptyState, /actions=\{action\}/, "SurfaceEmpty forwards its optional action");
 

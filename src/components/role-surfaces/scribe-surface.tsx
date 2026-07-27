@@ -92,6 +92,7 @@ export function ScribeSurface({ context }: { context: RoleSurfaceContext }) {
   const sourcesLoadSeq = useRef(0);
   const loadSources = useCallback(async () => {
     const seq = ++sourcesLoadSeq.current;
+    setSources(null);
     setSourcesError(null);
     try {
       const entries = await context.memory.listEntries();

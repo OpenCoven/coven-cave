@@ -20,6 +20,7 @@ import { Icon } from "@/lib/icon";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
+import { useLatestAsyncData } from "@/lib/use-role-surfaces";
 import { relativeTime } from "@/lib/relative-time";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
@@ -74,32 +75,31 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
   const { announce } = useAnnouncer();
 
   // ── The real board ─────────────────────────────────────────────────────────
-  const [cards, setCards] = useState<Card[] | null>(null);
-  const [boardError, setBoardError] = useState<string | null>(null);
-  const loadBoard = useCallback(async () => {
-    setBoardError(null);
-    try {
-      const res = await fetch("/api/board", { cache: "no-store" });
-      const json = res.ok ? ((await res.json()) as { ok?: boolean; cards?: Card[] }) : null;
-      if (!json?.ok || !Array.isArray(json.cards)) throw new Error("bad response");
-      const scoped = scopeCards(json.cards, familiarId);
-      setCards(scoped);
-      const lanes = groupByLane(scoped);
-      patch({
-        lastCounts: {
-          running: lanes.find((l) => l.status === "running")?.cards.length ?? 0,
-          blocked: lanes.find((l) => l.status === "blocked")?.cards.length ?? 0,
-        },
-      });
-    } catch {
-      const message = "Couldn't load the board.";
-      setBoardError(message);
-      announce(message, "assertive");
-    }
-  }, [announce, familiarId, patch]);
+  const fetchBoard = useCallback(async () => {
+    const res = await fetch("/api/board", { cache: "no-store" });
+    const json = res.ok ? ((await res.json()) as { ok?: boolean; cards?: Card[] }) : null;
+    if (!json?.ok || !Array.isArray(json.cards)) throw new Error("bad response");
+    return scopeCards(json.cards, familiarId);
+  }, [familiarId]);
+  const {
+    data: cards,
+    error: boardError,
+    reload: loadBoard,
+  } = useLatestAsyncData<Card[]>({
+    scopeKey: familiarId,
+    load: fetchBoard,
+    errorMessage: "Couldn't load the board.",
+  });
   useEffect(() => {
-    void loadBoard();
-  }, [loadBoard]);
+    if (cards == null) return;
+    const nextLanes = groupByLane(cards);
+    patch({
+      lastCounts: {
+        running: nextLanes.find((lane) => lane.status === "running")?.cards.length ?? 0,
+        blocked: nextLanes.find((lane) => lane.status === "blocked")?.cards.length ?? 0,
+      },
+    });
+  }, [cards, patch]);
 
   const lanes = useMemo(() => groupByLane(cards ?? []), [cards]);
   const visible = useMemo(
@@ -188,7 +188,12 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         <div className="role-surface-drawer-grid">
           <RailSection title="Recently completed" iconName="ph:flag-checkered">
             {boardError ? (
-              <SurfaceError title={boardError} hint="Check the Cave connection, then retry." onRetry={loadBoard} />
+              <SurfaceError
+                title={boardError}
+                hint="Check the Cave connection, then retry."
+                onRetry={loadBoard}
+                live={false}
+              />
             ) : cards == null ? (
               <SurfaceLoading label="Loading recently completed tasks…" />
             ) : recentlyDone.length === 0 ? (
@@ -206,7 +211,12 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
           </RailSection>
           <RailSection title="Blocked" iconName="ph:warning">
             {boardError ? (
-              <SurfaceError title={boardError} hint="Check the Cave connection, then retry." onRetry={loadBoard} />
+              <SurfaceError
+                title={boardError}
+                hint="Check the Cave connection, then retry."
+                onRetry={loadBoard}
+                live={false}
+              />
             ) : cards == null ? (
               <SurfaceLoading label="Loading blocked tasks…" />
             ) : blocked.length === 0 ? (
@@ -251,7 +261,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
             </button>
           </form>
           {chartError ? (
-            <p role="alert" className="role-surface-hint">
+            <p className="role-surface-hint">
               {chartError}
             </p>
           ) : null}
@@ -259,7 +269,12 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         </RailSection>
         <RailSection title="Course lanes" iconName="ph:kanban">
           {boardError ? (
-            <SurfaceError title={boardError} hint="Check the Cave connection, then retry." onRetry={loadBoard} />
+            <SurfaceError
+              title={boardError}
+              hint="Check the Cave connection, then retry."
+              onRetry={loadBoard}
+              live={false}
+            />
           ) : cards == null ? (
             <SurfaceLoading label="Loading course lanes…" />
           ) : (
@@ -291,7 +306,12 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         </RailSection>
         <RailSection title="Upcoming legs" iconName="ph:calendar-blank">
           {boardError ? (
-            <SurfaceError title={boardError} hint="Check the Cave connection, then retry." onRetry={loadBoard} />
+            <SurfaceError
+              title={boardError}
+              hint="Check the Cave connection, then retry."
+              onRetry={loadBoard}
+              live={false}
+            />
           ) : cards == null ? (
             <SurfaceLoading label="Loading charts…" />
           ) : legs.length === 0 ? (
@@ -372,7 +392,20 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       </SurfaceCanvas>
 
       <SurfaceRail side="right" label="Card details">
-        {!selected ? (
+        {boardError ? (
+          <RailSection title="Details" iconName="ph:note">
+            <SurfaceError
+              title={boardError}
+              hint="Check the Cave connection, then retry."
+              onRetry={loadBoard}
+              live={false}
+            />
+          </RailSection>
+        ) : cards == null ? (
+          <RailSection title="Details" iconName="ph:note">
+            <SurfaceLoading label="Loading card details…" />
+          </RailSection>
+        ) : !selected ? (
           <RailSection title="Details" iconName="ph:note">
             <SurfaceEmpty title="Select a card to plot its course." />
           </RailSection>
@@ -430,7 +463,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
             )}
             <RailSection title="Move to" iconName="ph:kanban">
               {moveError ? (
-                <p role="alert" className="role-surface-hint">
+                <p className="role-surface-hint">
                   {moveError}
                 </p>
               ) : null}

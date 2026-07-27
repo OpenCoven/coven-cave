@@ -15,12 +15,14 @@ test("inbox loading, failure, and successful empty states stay distinct", () => 
   const inbox = section('<RailSection title="Inbox"', '<RailSection title="Awaiting approval"');
   assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
-  assert.match(surface, /const \[inbox, setInbox\] = useState<InboxItemWire\[\] \| null>\(null\)/);
-  assert.match(surface, /const \[inboxError, setInboxError\] = useState<string \| null>\(null\)/);
-  assert.match(surface, /const loadInbox = useCallback\(async \(\) =>/);
+  assert.match(surface, /const fetchInbox = useCallback\(async \(\) =>/);
+  assert.match(
+    surface,
+    /useLatestAsyncData<InboxItemWire\[\]>\(\{[\s\S]*?scopeKey: familiarId[\s\S]*?load: fetchInbox[\s\S]*?errorMessage: "Couldn't load the inbox\."/,
+  );
   assert.doesNotMatch(
     surface,
-    /catch\s*\{[\s\S]*?setInbox\(\[\]\)[\s\S]*?\}/,
+    /catch\s*\{[\s\S]*?return \[\][\s\S]*?\}/,
     "an inbox failure must not masquerade as a successful empty inbox",
   );
   assert.match(
@@ -37,4 +39,5 @@ test("scheduled deliveries do not turn inbox loading or failure into an empty sc
     /inboxError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadInbox\}[\s\S]*?\)\s*:\s*inbox == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
   );
   assert.match(scheduled, /scheduled\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+  assert.match(scheduled, /<SurfaceError[\s\S]*?live=\{false\}/, "the scheduled duplicate is non-live");
 });

@@ -14,10 +14,11 @@
  * and the delivery panel says so honestly.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { Icon } from "@/lib/icon";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
+import { useLatestAsyncData } from "@/lib/use-role-surfaces";
 import {
   RailSection,
   SurfaceCanvas,
@@ -89,23 +90,21 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
   );
 
   // Real inbound items from the Cave inbox, scoped to this familiar.
-  const [inbox, setInbox] = useState<InboxItemWire[] | null>(null);
-  const [inboxError, setInboxError] = useState<string | null>(null);
-  const loadInbox = useCallback(async () => {
-    setInboxError(null);
-    try {
-      const res = await fetch("/api/inbox", { cache: "no-store" });
-      const json = res.ok ? ((await res.json()) as { items?: InboxItemWire[] }) : null;
-      if (!Array.isArray(json?.items)) throw new Error("bad response");
-      setInbox(json.items.filter((item) => !item.familiarId || item.familiarId === familiarId));
-    } catch {
-      setInboxError("Couldn't load the inbox.");
-    }
+  const fetchInbox = useCallback(async () => {
+    const res = await fetch("/api/inbox", { cache: "no-store" });
+    const json = res.ok ? ((await res.json()) as { items?: InboxItemWire[] }) : null;
+    if (!Array.isArray(json?.items)) throw new Error("bad response");
+    return json.items.filter((item) => !item.familiarId || item.familiarId === familiarId);
   }, [familiarId]);
-  useEffect(() => {
-    setInbox(null);
-    void loadInbox();
-  }, [loadInbox]);
+  const {
+    data: inbox,
+    error: inboxError,
+    reload: loadInbox,
+  } = useLatestAsyncData<InboxItemWire[]>({
+    scopeKey: familiarId,
+    load: fetchInbox,
+    errorMessage: "Couldn't load the inbox.",
+  });
 
   const selected = state.drafts.find((d) => d.id === state.selectedDraftId) ?? null;
 
@@ -174,6 +173,7 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
                 title={inboxError}
                 hint="Check the Cave connection, then retry."
                 onRetry={loadInbox}
+                live={false}
               />
             ) : inbox == null ? (
               <SurfaceLoading label="Loading scheduled messages…" />

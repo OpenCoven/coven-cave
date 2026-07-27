@@ -66,6 +66,11 @@ assert.doesNotMatch(
   /role-surface-header-role/,
   "role-surface-host no longer renders the role chip",
 );
+assert.match(
+  roleSurfaceHost,
+  /<SurfaceErrorBoundary\s+key=\{`\$\{surface\.id\}:\$\{context\.activeFamiliar\.id\}`\}/,
+  "the generic room subtree resets synchronously when the active familiar changes",
+);
 const roleSurfaceCss = stripComments(read("src/styles/globals/surface-role-workspaces.css"));
 assert.ok(
   /\.role-surface-host\s*\{[\s\S]*?container:\s*role-surface-host\s*\/\s*inline-size/.test(roleSurfaceCss) &&

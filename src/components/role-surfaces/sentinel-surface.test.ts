@@ -152,7 +152,7 @@ test("surface watches real perimeter and session state", () => {
 });
 
 test("surface exposes errors and selection state accessibly", () => {
-  assert.match(surface, /role="alert"/);
+  assert.match(surface, /SurfaceError/);
   assert.match(surface, /aria-current=\{item\.id === state\.selectedId/);
   assert.match(surface, /aria-pressed=\{state\.severity === severity\}/);
 });
@@ -161,17 +161,22 @@ test("surface keeps alert and host failures retryable and distinct from empty da
   const alertBoard = section('<SurfaceCanvas label="Alert board"', '<SurfaceRail side="right"');
   assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
-  assert.match(surface, /const \[alertsError, setAlertsError\] = useState<string \| null>\(null\)/);
-  assert.match(surface, /const loadAlerts = useCallback\(async \(\) =>/);
-  assert.doesNotMatch(surface, /setAlerts\(\(prev\) => prev \?\? \[\]\)/);
+  assert.match(surface, /const fetchAlerts = useCallback\(async \(\) =>/);
+  assert.match(
+    surface,
+    /useLatestAsyncData<Escalation\[\]>\(\{[\s\S]*?scopeKey: "escalations"[\s\S]*?load: fetchAlerts[\s\S]*?errorMessage: "Couldn't load escalations\."/,
+  );
   assert.match(
     alertBoard,
     /alertsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadAlerts\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
   );
   assert.match(alertBoard, /filtered\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
 
-  assert.match(surface, /const \[hostsError, setHostsError\] = useState<string \| null>\(null\)/);
-  assert.match(surface, /const loadHosts = useCallback\(async \(\) =>/);
+  assert.match(surface, /const fetchHosts = useCallback\(async \(\) =>/);
+  assert.match(
+    surface,
+    /useLatestAsyncData<HostWire\[\]>\(\{[\s\S]*?scopeKey: "registered-hosts"[\s\S]*?load: fetchHosts[\s\S]*?errorMessage: "Couldn't probe registered hosts\."/,
+  );
   assert.doesNotMatch(
     surface,
     /catch\s*\{[\s\S]*?setHosts\(\[\]\)[\s\S]*?\}/,
@@ -216,15 +221,24 @@ test("alert-derived secondary panels stay truthful while alerts load or fail", (
   );
 });
 
-test("surface announces successful triage and assertively announces failures", () => {
+test("surface announces mutations without duplicating source-load announcements", () => {
   assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
   assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
   assert.match(surface, /announce\(`Resolved "\$\{title\}"\.`\)/);
   assert.match(surface, /announce\(`Moved "\$\{title\}" to \$\{STATE_LABELS\[nextState\]\}\.`\)/);
   assert.equal(
     surface.match(/announce\(message, "assertive"\)/g)?.length,
-    4,
-    "alert loads, host loads, triage writes, and alert RPCs announce their visible failures",
+    2,
+    "only triage writes and alert RPCs use the mutation announcer",
+  );
+  assert.doesNotMatch(surface, /<p role="alert" className="role-surface-hint">/);
+});
+
+test("alert details wait for the source before exposing triage controls", () => {
+  const details = section('<SurfaceRail side="right" label="Alert details"', "</SurfaceRail>");
+  assert.match(
+    details,
+    /alertsError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*alerts == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?\)\s*:\s*!selected/,
   );
 });
 

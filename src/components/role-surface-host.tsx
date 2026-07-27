@@ -220,7 +220,11 @@ export function RoleSurfaceHost({
         </div>
       )}
       <div className="role-surface-body">
-        <SurfaceErrorBoundary surfaceTitle={surface.title} onLeave={onLeave}>
+        <SurfaceErrorBoundary
+          key={`${surface.id}:${context.activeFamiliar.id}`}
+          surfaceTitle={surface.title}
+          onLeave={onLeave}
+        >
           {surface.render(context)}
         </SurfaceErrorBoundary>
       </div>

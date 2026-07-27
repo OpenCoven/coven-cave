@@ -18,9 +18,10 @@ test("memory inventory keeps retryable failure separate from loading and empty d
   );
   assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
   assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
-  assert.match(surface, /const \[entries, setEntries\] = useState<SurfaceMemoryEntry\[\] \| null>\(null\)/);
-  assert.match(surface, /const \[entriesError, setEntriesError\] = useState<string \| null>\(null\)/);
-  assert.match(surface, /const loadEntries = useCallback\(async \(\) =>/);
+  assert.match(
+    surface,
+    /useLatestAsyncData<SurfaceMemoryEntry\[\]>\(\{[\s\S]*?scopeKey: familiarId[\s\S]*?load: context\.memory\.listEntries[\s\S]*?errorMessage: "Couldn't load memory inventory\."/,
+  );
   assert.match(
     collections,
     /entriesError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadEntries\}[\s\S]*?\)\s*:\s*entries == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
@@ -29,9 +30,11 @@ test("memory inventory keeps retryable failure separate from loading and empty d
 });
 
 test("memory reads keep retryable failure separate from loading and successful content", () => {
-  assert.match(surface, /const \[content, setContent\] = useState<string \| null>\(null\)/);
-  assert.match(surface, /const \[contentError, setContentError\] = useState<string \| null>\(null\)/);
-  assert.match(surface, /const loadContent = useCallback\(async \(\) =>/);
+  assert.match(surface, /const fetchContent = useCallback\(async \(\) =>/);
+  assert.match(
+    surface,
+    /useLatestAsyncData<string>\(\{[\s\S]*?scopeKey: `\$\{familiarId\}:\$\{selected\?\.fullPath \?\? ""\}`[\s\S]*?load: fetchContent[\s\S]*?enabled: selected != null/,
+  );
   assert.match(
     surface,
     /contentError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadContent\}[\s\S]*?\)\s*:\s*content == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
@@ -62,4 +65,13 @@ test("recent changes do not turn inventory loading or failure into an empty hist
     /entriesError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadEntries\}[\s\S]*?\)\s*:\s*entries == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
   );
   assert.match(recentChanges, /recentChanges\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+  assert.match(recentChanges, /<SurfaceError[\s\S]*?live=\{false\}/, "the recent-changes duplicate is non-live");
+});
+
+test("memory details wait for the inventory source before exposing selection controls", () => {
+  const details = section('<SurfaceRail side="right" label="Memory details"', "</SurfaceRail>");
+  assert.match(
+    details,
+    /entriesError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?live=\{false\}[\s\S]*?\)\s*:\s*entries == null\s*\?\s*\([\s\S]*?<SurfaceLoading[\s\S]*?\)\s*:\s*!selected/,
+  );
 });
