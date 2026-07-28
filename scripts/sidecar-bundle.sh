@@ -333,7 +333,6 @@ cp "$NODE_BIN" "$BUNDLED_NODE_DIR/bin/$NODE_NAME"
 chmod +x "$BUNDLED_NODE_DIR/bin/$NODE_NAME" 2>/dev/null || true
 copy_node_shared_runtime "$NODE_BIN" "$BUNDLED_NODE_DIR"
 "$BUNDLED_NODE_DIR/bin/$NODE_NAME" -e "process.exit(0)" >/dev/null
-printf "generated at release build time\n" > "$BUNDLED_NODE_DIR/placeholder.txt"
 
 echo "==> staging bundled Whisper runtime"
 bash "$ROOT/scripts/whisper-runtime-bundle.sh"
