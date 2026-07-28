@@ -674,13 +674,17 @@ jobs:
         if: >-
           matrix.family == 'macos' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: |
-            release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.dmg
-            release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.app.tar.gz
-            release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.app.tar.gz.sig
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          UPLOAD_FILES=("release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.dmg")
+          if [ -f "release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.app.tar.gz" ]; then
+            UPLOAD_FILES+=("release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.app.tar.gz")
+            UPLOAD_FILES+=("release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.app.tar.gz.sig")
+          fi
+          gh release upload "$RELEASE_TAG" "${UPLOAD_FILES[@]}" --clobber
 
   checksums:
     name: Publish SHA256SUMS
@@ -746,10 +750,12 @@ jobs:
           cat SHA256SUMS
 
       - name: Upload SHA256SUMS to GitHub Release
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: _release/SHA256SUMS
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" _release/SHA256SUMS --clobber
 
       # Render the standardized release body — CHANGELOG.md section for
       # the version, plus arch-aware install instructions, checksum verify
@@ -831,10 +837,12 @@ jobs:
           fi
 
       - name: Upload latest.json to GitHub Release
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: latest.json
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" latest.json --clobber
 
       # cave-ef6f: an honest release body — when the manifest ships partial,
       # say so on the release itself (and remove the note when a rerun heals

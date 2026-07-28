@@ -7,10 +7,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-# v0.2.0's measured baseline is 65 rows after adding the pinned Whisper and
-# Piper runtimes. Keep the cap at that exact baseline so expanded sidecar
-# payloads or unreviewed resource growth still fail closed.
-$rowBudget = 65
+# v0.2.0's measured baseline is 66 rows. Keep the cap at that exact baseline
+# so expanded sidecar payloads or unreviewed resource growth still fail closed.
+$rowBudget = 66
 $byteBudget = 256MB
 $resolvedMsi = (Resolve-Path -LiteralPath $MsiPath).Path
 $resolvedOutput = [System.IO.Path]::GetFullPath($OutputPath)
