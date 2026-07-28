@@ -7,9 +7,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-# v0.2.0's measured baseline is 66 rows. Keep the cap at that exact baseline
-# so expanded sidecar payloads or unreviewed resource growth still fail closed.
-$rowBudget = 66
+# Keep the last independently reviewed cap until diagnostics establish a real
+# replacement. Row inspection is bounded separately so an overflow reports the
+# actual table size instead of always returning rowBudget + 1.
+$rowBudget = 65
+$rowInspectionLimit = 4096
 $byteBudget = 256MB
 $resolvedMsi = (Resolve-Path -LiteralPath $MsiPath).Path
 $resolvedOutput = [System.IO.Path]::GetFullPath($OutputPath)
@@ -45,7 +47,7 @@ function Read-MsiRows {
     $view = Open-MsiView -Query $Query
     $count = 0
     try {
-        while ($count -le $rowBudget) {
+        while ($true) {
             $record = $view.GetType().InvokeMember(
                 "Fetch",
                 [System.Reflection.BindingFlags]::InvokeMethod,
@@ -57,10 +59,15 @@ function Read-MsiRows {
                 break
             }
             $count += 1
-            if ($count -le $rowBudget) {
+            try {
+                if ($count -gt $rowInspectionLimit) {
+                    throw "MSI table row inspection exceeded the independent limit of $rowInspectionLimit"
+                }
                 & $OnRow $record
             }
-            [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($record)
+            finally {
+                [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($record)
+            }
         }
     }
     finally {
@@ -88,31 +95,102 @@ try {
 
     [long]$installedFileBytes = 0
     [int]$serverArchiveRows = 0
-    $fileRows = Read-MsiRows -Query 'SELECT `FileSize`, `FileName` FROM `File`' -OnRow {
+    $fileEntries = [System.Collections.Generic.List[object]]::new()
+    $fileRows = Read-MsiRows -Query 'SELECT `File`, `Component_`, `FileName`, `FileSize` FROM `File`' -OnRow {
         param($record)
-        $size = $record.GetType().InvokeMember(
-            "IntegerData",
+        $identifier = $record.GetType().InvokeMember(
+            "StringData",
             [System.Reflection.BindingFlags]::GetProperty,
             $null,
             $record,
             @(1)
         )
-        $name = $record.GetType().InvokeMember(
+        $component = $record.GetType().InvokeMember(
             "StringData",
             [System.Reflection.BindingFlags]::GetProperty,
             $null,
             $record,
             @(2)
         )
+        $name = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(3)
+        )
+        $size = $record.GetType().InvokeMember(
+            "IntegerData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(4)
+        )
         $script:installedFileBytes += [long]$size
         $longName = ($name -split '\|')[-1]
+        [void]$script:fileEntries.Add([ordered]@{
+            id = $identifier
+            component = $component
+            name = $longName
+            size = [long]$size
+        })
         if ($longName -eq "server.tar.zst") {
             $script:serverArchiveRows += 1
         }
     }
-    $componentRows = Read-MsiRows -Query 'SELECT `Component` FROM `Component`' -OnRow { param($record) }
+    $componentEntries = [System.Collections.Generic.List[object]]::new()
+    $componentRows = Read-MsiRows -Query 'SELECT `Component`, `Directory_` FROM `Component`' -OnRow {
+        param($record)
+        $identifier = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(1)
+        )
+        $directory = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(2)
+        )
+        [void]$script:componentEntries.Add([ordered]@{
+            id = $identifier
+            directory = $directory
+        })
+    }
     $createFolderRows = Read-MsiRows -Query 'SELECT `Directory_` FROM `CreateFolder`' -OnRow { param($record) }
-    $directoryRows = Read-MsiRows -Query 'SELECT `Directory` FROM `Directory`' -OnRow { param($record) }
+    $directoryEntries = [System.Collections.Generic.List[object]]::new()
+    $directoryRows = Read-MsiRows -Query 'SELECT `Directory`, `Directory_Parent`, `DefaultDir` FROM `Directory`' -OnRow {
+        param($record)
+        $identifier = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(1)
+        )
+        $parent = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(2)
+        )
+        $name = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(3)
+        )
+        [void]$script:directoryEntries.Add([ordered]@{
+            id = $identifier
+            parent = $parent
+            name = $name
+        })
+    }
 
     $metrics = [ordered]@{
         schemaVersion = 1
@@ -120,14 +198,17 @@ try {
         msiBytes = (Get-Item -LiteralPath $resolvedMsi).Length
         installedFileBytes = $installedFileBytes
         fileRows = $fileRows
+        fileEntries = @($fileEntries)
         componentRows = $componentRows
+        componentEntries = @($componentEntries)
         createFolderRows = $createFolderRows
         directoryRows = $directoryRows
+        directoryEntries = @($directoryEntries)
         serverArchiveRows = $serverArchiveRows
         rowBudget = $rowBudget
         byteBudget = $byteBudget
     }
-    $json = $metrics | ConvertTo-Json
+    $json = $metrics | ConvertTo-Json -Depth 4
     [System.IO.File]::WriteAllText($resolvedOutput, "$json`n")
     $metrics | Format-List | Out-String | Write-Host
     Write-Host "MSI metrics JSON: $resolvedOutput"

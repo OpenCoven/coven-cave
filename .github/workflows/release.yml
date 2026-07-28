@@ -681,18 +681,24 @@ jobs:
           set -euo pipefail
 
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" \
+            # Either macOS matrix leg may win this race. Keep checking the
+            # exact tag when create reports that the other leg got there first.
+            if ! gh release create "$RELEASE_TAG" \
               --verify-tag \
               --title "CovenCave $RELEASE_TAG" \
-              --notes "Release artifacts are still being assembled by the release workflow."
-            # Another matrix leg may have created the release concurrently.
-            if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-              sleep 5
-              gh release view "$RELEASE_TAG" >/dev/null 2>&1 || {
+              --notes "Release artifacts are still being assembled by the release workflow."; then
+              echo "::notice::Release creation did not succeed; checking for a concurrent creator"
+            fi
+            for attempt in 1 2 3; do
+              if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
                 echo "::error::Could not create or find release $RELEASE_TAG"
                 exit 1
-              }
-            fi
+              fi
+              sleep 5
+            done
           fi
 
           UPLOAD_FILES=("release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.dmg")
