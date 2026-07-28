@@ -536,8 +536,39 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
     assert.match(budget, new RegExp("FROM `" + table + "`"), `budget must inspect MSI ${table} rows`);
   }
   assert.match(budget, /\$rowBudget = 65/);
+  assert.match(
+    budget,
+    /\$rowInspectionLimit = 4096/,
+    "diagnostics must inspect beyond the release budget without becoming unbounded",
+  );
+  assert.doesNotMatch(
+    budget,
+    /while \(\$count -le \$rowBudget\)/,
+    "the measured row count must not be the budget-plus-one overflow sentinel",
+  );
+  assert.match(budget, /\$count -gt \$rowInspectionLimit/);
+  assert.match(budget, /fileEntries = @\(\$fileEntries\)/);
+  assert.match(budget, /componentEntries = @\(\$componentEntries\)/);
+  assert.match(budget, /directoryEntries = @\(\$directoryEntries\)/);
   assert.match(budget, /\$byteBudget = 256MB/);
   assert.match(budget, /expected exactly one server\.tar\.zst File row/);
+  assert.doesNotMatch(
+    workflow,
+    /softprops\/action-gh-release/,
+    "manual recovery must upload exact-tag assets without a branch-ref release mutation",
+  );
+  for (const asset of [
+    /gh release upload "\$RELEASE_TAG" "\$\{UPLOAD_FILES\[@\]\}" --clobber/,
+    /gh release upload "\$RELEASE_TAG" _release\/SHA256SUMS --clobber/,
+    /gh release upload "\$RELEASE_TAG" latest\.json --clobber/,
+  ]) {
+    assert.match(workflow, asset);
+  }
+  assert.match(
+    workflow,
+    /if ! gh release create "\$RELEASE_TAG"[\s\S]*for attempt in 1 2 3; do[\s\S]*if gh release view "\$RELEASE_TAG"/,
+    "macOS release creation must tolerate the other matrix leg winning the race",
+  );
   assert.match(
     workflow,
     /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish validated Windows MSI/,
