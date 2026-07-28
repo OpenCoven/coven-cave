@@ -217,8 +217,8 @@ test("manual release retries build from the release tag before publishing", () =
   );
   assert.match(
     releaseWorkflow,
-    /scripts\/release\.sh[\s\S]*scripts\/sidecar-bundle\.sh/,
-    "the allowlist must cover only the two packaging scripts needed by v0.2.0 recovery",
+    /scripts\/release\.sh[\s\S]*scripts\/sidecar-bundle\.sh[\s\S]*scripts\/windows-msi-budget\.ps1/,
+    "the allowlist must cover only the three packaging scripts needed by v0.2.0 recovery",
   );
 });
 

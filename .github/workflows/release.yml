@@ -186,7 +186,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "$RECOVERY_TOOLING_SHA"
-          for tooling_path in scripts/release.sh scripts/sidecar-bundle.sh; do
+          for tooling_path in scripts/release.sh scripts/sidecar-bundle.sh scripts/windows-msi-budget.ps1; do
             git show "${RECOVERY_TOOLING_SHA}:${tooling_path}" > "${tooling_path}.recovery"
             mv "${tooling_path}.recovery" "$tooling_path"
             chmod +x "$tooling_path"
