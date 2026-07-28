@@ -1108,7 +1108,9 @@
         "mcp"
       ],
       "sourceRefs": [
-        "https://github.com/apify/actors-mcp-server"
+        "https://github.com/apify/actors-mcp-server",
+        "https://apify.com/xquik/x-tweet-scraper",
+        "https://apify.com/xquik/x-follower-scraper"
       ],
       "trust": "official-remote",
       "mcpServers": {
@@ -1118,14 +1120,19 @@
         }
       },
       "skill": {
+        "managed": "manual",
         "description": "Use Apify Actors for prebuilt scraping and automation tasks instead of hand-rolling crawlers.",
         "useCases": [
           "Run a Store actor to extract data",
           "Automate a repetitive web task",
-          "Collect structured datasets"
+          "Collect structured datasets",
+          "Collect X posts and relationship data with Xquik Actors"
         ],
         "guardrails": [
           "Confirm actor cost and scope before running",
+          "Inspect the current Store input schema before running",
+          "Start with an explicit, small result limit",
+          "Do not treat a dataset retrieval limit as a run cost limit",
           "Respect target site terms",
           "Do not run actors that mutate external state without approval"
         ]

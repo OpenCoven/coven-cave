@@ -25,7 +25,9 @@
     "category": "Browser & Web",
     "trust": "official-remote",
     "sourceRefs": [
-      "https://github.com/apify/actors-mcp-server"
+      "https://github.com/apify/actors-mcp-server",
+      "https://apify.com/xquik/x-tweet-scraper",
+      "https://apify.com/xquik/x-follower-scraper"
     ],
     "roleAffinity": [],
     "compatibility": {
