@@ -8,8 +8,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 # Keep exact, independently reviewed baselines per table. Sharing the largest
-# value would leave silent slack in smaller tables and hide package growth.
-$rowBudgets = [ordered]@{
+# value would leave silent slack in smaller tables; upper bounds would also hide
+# missing or incorrectly staged resources when a table unexpectedly shrinks.
+$rowBaselines = [ordered]@{
     fileRows = 382
     componentRows = 387
     createFolderRows = 382
@@ -231,7 +232,7 @@ try {
         directoryRows = $directoryRows
         directoryEntries = @($directoryEntries)
         serverArchiveRows = $serverArchiveRows
-        rowBudgets = $rowBudgets
+        rowBaselines = $rowBaselines
         byteBudget = $byteBudget
     }
     $json = $metrics | ConvertTo-Json -Depth 4
@@ -241,9 +242,10 @@ try {
 
     $violations = @()
     foreach ($metric in @("fileRows", "componentRows", "createFolderRows", "directoryRows")) {
-        $limit = [int]$rowBudgets[$metric]
-        if ($metrics[$metric] -gt $limit) {
-            $violations += "$metric exceeds $limit"
+        $expected = [int]$rowBaselines[$metric]
+        $actual = [int]$metrics[$metric]
+        if ($actual -ne $expected) {
+            $violations += "$metric expected $expected; found $actual"
         }
     }
     foreach ($metric in @("msiBytes", "installedFileBytes")) {

@@ -552,8 +552,19 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
     /\$rowBudget\s*=/,
     "unlike table sizes must not share one cap that leaves hidden slack",
   );
-  assert.match(budget, /rowBudgets = \$rowBudgets/);
-  assert.match(budget, /\$limit = \[int\]\$rowBudgets\[\$metric\]/);
+  assert.match(budget, /rowBaselines = \$rowBaselines/);
+  assert.match(budget, /\$expected = \[int\]\$rowBaselines\[\$metric\]/);
+  assert.match(budget, /\$actual = \[int\]\$metrics\[\$metric\]/);
+  assert.match(
+    budget,
+    /if \(\$actual -ne \$expected\)/,
+    "every MSI table must equal its independently measured baseline",
+  );
+  assert.match(
+    budget,
+    /\$violations \+= "\$metric expected \$expected; found \$actual"/,
+    "baseline drift must report both the expected and actual row count",
+  );
   assert.match(
     budget,
     /\$rowInspectionLimit = 4096/,

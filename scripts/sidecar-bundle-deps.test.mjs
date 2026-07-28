@@ -24,6 +24,15 @@ const [
 const baseConfig = JSON.parse(baseConfigSource);
 const windowsConfig = JSON.parse(windowsConfigSource);
 
+function sourceSection(source, startMarker, endMarker, label) {
+  const startIndex = source.indexOf(startMarker);
+  const endIndex = source.indexOf(endMarker);
+  assert.notEqual(startIndex, -1, `${label} start marker must exist`);
+  assert.notEqual(endIndex, -1, `${label} end marker must exist`);
+  assert.ok(startIndex < endIndex, `${label} markers must stay in source order`);
+  return source.slice(startIndex, endIndex);
+}
+
 // Must use locked pnpm install (frozen lockfile prevents supply chain attacks)
 assert.match(src, /pnpm install --prod --frozen-lockfile/, "sidecar must install from locked pnpm lockfile");
 
@@ -154,12 +163,17 @@ assert.match(
   "Piper's mode-0644 macOS espeak-ng helper must be normalized as executable",
 );
 assert.doesNotMatch(
-  src.slice(src.indexOf("bundle_piper_runtime()"), src.indexOf("fix_node_pty_spawn_helpers()")),
+  sourceSection(src, "bundle_piper_runtime()", "fix_node_pty_spawn_helpers()", "Piper staging section"),
   /placeholder\.txt/,
   "the generated Piper payload must not spend an MSI row on the source-tree placeholder",
 );
 assert.doesNotMatch(
-  src.slice(src.indexOf('echo "==> staging Node runtime'), src.indexOf('echo "==> staging bundled Whisper runtime"')),
+  sourceSection(
+    src,
+    'echo "==> staging Node runtime',
+    'echo "==> staging bundled Whisper runtime"',
+    "Node staging section",
+  ),
   /placeholder\.txt/,
   "the generated Node payload must not spend an MSI row on the source-tree placeholder",
 );
