@@ -295,6 +295,7 @@ write_windows_sidecar_archive() {
     "$DEST" "$WINDOWS_ARCHIVE_TEMP" \
     "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE_MANIFEST" \
     "$WINDOWS_ARCHIVE_MANIFEST_TEMP"
+  rm -f "$WINDOWS_ARCHIVE_DIR/placeholder.txt"
 
   # Keep the expanded tree out of the Windows build workspace as a second
   # guard against accidentally reintroducing thousands of WiX components.
