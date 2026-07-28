@@ -7,10 +7,15 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-# Keep the last independently reviewed cap until diagnostics establish a real
-# replacement. Row inspection is bounded separately so an overflow reports the
-# actual table size instead of always returning rowBudget + 1.
-$rowBudget = 65
+# Keep exact, independently reviewed baselines per table. Sharing the largest
+# value would leave silent slack in smaller tables; upper bounds would also hide
+# missing or incorrectly staged resources when a table unexpectedly shrinks.
+$rowBaselines = [ordered]@{
+    fileRows = 382
+    componentRows = 387
+    createFolderRows = 382
+    directoryRows = 50
+}
 $rowInspectionLimit = 4096
 $byteBudget = 256MB
 $resolvedMsi = (Resolve-Path -LiteralPath $MsiPath).Path
@@ -160,7 +165,28 @@ try {
             directory = $directory
         })
     }
-    $createFolderRows = Read-MsiRows -Query 'SELECT `Directory_` FROM `CreateFolder`' -OnRow { param($record) }
+    $createFolderEntries = [System.Collections.Generic.List[object]]::new()
+    $createFolderRows = Read-MsiRows -Query 'SELECT `Directory_`, `Component_` FROM `CreateFolder`' -OnRow {
+        param($record)
+        $directory = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(1)
+        )
+        $component = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(2)
+        )
+        [void]$script:createFolderEntries.Add([ordered]@{
+            directory = $directory
+            component = $component
+        })
+    }
     $directoryEntries = [System.Collections.Generic.List[object]]::new()
     $directoryRows = Read-MsiRows -Query 'SELECT `Directory`, `Directory_Parent`, `DefaultDir` FROM `Directory`' -OnRow {
         param($record)
@@ -193,7 +219,7 @@ try {
     }
 
     $metrics = [ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
         msiPath = $resolvedMsi
         msiBytes = (Get-Item -LiteralPath $resolvedMsi).Length
         installedFileBytes = $installedFileBytes
@@ -202,10 +228,11 @@ try {
         componentRows = $componentRows
         componentEntries = @($componentEntries)
         createFolderRows = $createFolderRows
+        createFolderEntries = @($createFolderEntries)
         directoryRows = $directoryRows
         directoryEntries = @($directoryEntries)
         serverArchiveRows = $serverArchiveRows
-        rowBudget = $rowBudget
+        rowBaselines = $rowBaselines
         byteBudget = $byteBudget
     }
     $json = $metrics | ConvertTo-Json -Depth 4
@@ -215,8 +242,10 @@ try {
 
     $violations = @()
     foreach ($metric in @("fileRows", "componentRows", "createFolderRows", "directoryRows")) {
-        if ($metrics[$metric] -gt $rowBudget) {
-            $violations += "$metric exceeds $rowBudget"
+        $expected = [int]$rowBaselines[$metric]
+        $actual = [int]$metrics[$metric]
+        if ($actual -ne $expected) {
+            $violations += "$metric expected $expected; found $actual"
         }
     }
     foreach ($metric in @("msiBytes", "installedFileBytes")) {

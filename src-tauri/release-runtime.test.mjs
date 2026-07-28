@@ -535,7 +535,36 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   for (const table of ["File", "Component", "CreateFolder", "Directory"]) {
     assert.match(budget, new RegExp("FROM `" + table + "`"), `budget must inspect MSI ${table} rows`);
   }
-  assert.match(budget, /\$rowBudget = 65/);
+  for (const [metric, limit] of Object.entries({
+    fileRows: 382,
+    componentRows: 387,
+    createFolderRows: 382,
+    directoryRows: 50,
+  })) {
+    assert.match(
+      budget,
+      new RegExp(`${metric} = ${limit}`),
+      `${metric} must stay pinned to the independently measured post-placeholder baseline`,
+    );
+  }
+  assert.doesNotMatch(
+    budget,
+    /\$rowBudget\s*=/,
+    "unlike table sizes must not share one cap that leaves hidden slack",
+  );
+  assert.match(budget, /rowBaselines = \$rowBaselines/);
+  assert.match(budget, /\$expected = \[int\]\$rowBaselines\[\$metric\]/);
+  assert.match(budget, /\$actual = \[int\]\$metrics\[\$metric\]/);
+  assert.match(
+    budget,
+    /if \(\$actual -ne \$expected\)/,
+    "every MSI table must equal its independently measured baseline",
+  );
+  assert.match(
+    budget,
+    /\$violations \+= "\$metric expected \$expected; found \$actual"/,
+    "baseline drift must report both the expected and actual row count",
+  );
   assert.match(
     budget,
     /\$rowInspectionLimit = 4096/,
@@ -549,7 +578,9 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   assert.match(budget, /\$count -gt \$rowInspectionLimit/);
   assert.match(budget, /fileEntries = @\(\$fileEntries\)/);
   assert.match(budget, /componentEntries = @\(\$componentEntries\)/);
+  assert.match(budget, /createFolderEntries = @\(\$createFolderEntries\)/);
   assert.match(budget, /directoryEntries = @\(\$directoryEntries\)/);
+  assert.match(budget, /schemaVersion = 2/);
   assert.match(budget, /\$byteBudget = 256MB/);
   assert.match(budget, /expected exactly one server\.tar\.zst File row/);
   assert.doesNotMatch(
@@ -569,6 +600,32 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
     /if ! gh release create "\$RELEASE_TAG"[\s\S]*for attempt in 1 2 3; do[\s\S]*if gh release view "\$RELEASE_TAG"/,
     "macOS release creation must tolerate the other matrix leg winning the race",
   );
+  assert.match(workflow, /windows_diagnostics_only:/);
+  assert.match(workflow, /Validate Windows diagnostics mode/);
+  const publishStart = workflow.indexOf("- name: Publish validated Windows MSI");
+  const signStart = workflow.indexOf("- name: Sign Linux/Windows updater artifact");
+  const publishBlock = workflow.slice(publishStart, signStart);
+  assert.match(
+    publishBlock,
+    /!inputs\.windows_diagnostics_only/,
+    "a Windows diagnostics run must not publish the measured MSI",
+  );
+  const signEnd = workflow.indexOf("- name: Strip bundled GLib/libmount from AppImage");
+  const signBlock = workflow.slice(signStart, signEnd);
+  assert.match(
+    signBlock,
+    /!inputs\.windows_diagnostics_only/,
+    "a Windows diagnostics run must not upload an updater signature",
+  );
+  const checksumsStart = workflow.indexOf("\n  checksums:");
+  const updaterManifestStart = workflow.indexOf("\n  updater-manifest:");
+  const checksumsHeader = workflow.slice(checksumsStart, workflow.indexOf("\n    steps:", checksumsStart));
+  const updaterManifestHeader = workflow.slice(
+    updaterManifestStart,
+    workflow.indexOf("\n    steps:", updaterManifestStart),
+  );
+  assert.match(checksumsHeader, /!inputs\.windows_diagnostics_only/);
+  assert.match(updaterManifestHeader, /!inputs\.windows_diagnostics_only/);
   assert.match(
     workflow,
     /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish validated Windows MSI/,
