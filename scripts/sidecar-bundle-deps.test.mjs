@@ -166,6 +166,11 @@ assert.match(src, /piper_linux_x86_64\.tar\.gz/, "Linux sidecar CI builds must p
 assert.match(src, /sidecar-archive-manifest\.mjs/, "archive generation must emit its integrity and size manifest");
 assert.match(src, /\.server\.tar\.zst\.\$\$\.tmp/, "archive generation must use a same-directory staging path");
 assert.match(src, /sidecar-archive-manifest\.mjs" --publish/, "verified archive publication must use the atomic publisher");
+assert.match(
+  src,
+  /sidecar-archive-manifest\.mjs" --publish[\s\S]*rm -f "\$WINDOWS_ARCHIVE_DIR\/placeholder\.txt"/,
+  "a published Windows archive must remove the source-only glob placeholder before WiX counts resources",
+);
 assert.doesNotMatch(
   src,
   /tar -czf "\$WINDOWS_ARCHIVE/,
