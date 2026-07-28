@@ -679,6 +679,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --verify-tag \
+              --title "CovenCave $RELEASE_TAG" \
+              --notes "Release artifacts are still being assembled by the release workflow."
+            # Another matrix leg may have created the release concurrently.
+            if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              sleep 5
+              gh release view "$RELEASE_TAG" >/dev/null 2>&1 || {
+                echo "::error::Could not create or find release $RELEASE_TAG"
+                exit 1
+              }
+            fi
+          fi
+
           UPLOAD_FILES=("release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.dmg")
           if [ -f "release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.app.tar.gz" ]; then
             UPLOAD_FILES+=("release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.app.tar.gz")
