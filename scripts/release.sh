@@ -376,26 +376,29 @@ echo "==> Signing every native binary inside the bundle"
 # Apple deprecated --deep; sign inner native binaries explicitly so each one
 # gets a hardened runtime + secure timestamp before we seal the envelope.
 # Find: shared libs (.dylib), Node native modules (.node), node-pty's
-# spawn-helper Mach-O files, and any nested executable files that aren't
-# already symlinks, including the bundled Node runtime staged for the sidecar.
+# spawn-helper Mach-O files, Piper's mode-0644 espeak-ng Mach-O helper, and any
+# nested executable files that aren't already symlinks, including the bundled
+# Node runtime staged for the sidecar.
 NATIVE_FILES_TMP=$(mktemp)
 find "$APP_PATH" \
-  \( -name "*.dylib" -o -name "*.so" -o -name "*.node" -o -name "spawn-helper" -o -perm +111 \) \
+  \( -name "*.dylib" -o -name "*.so" -o -name "*.node" -o -name "spawn-helper" -o -name "espeak-ng" -o -perm +111 \) \
   -type f -print > "$NATIVE_FILES_TMP"
 NATIVE_COUNT=$(wc -l < "$NATIVE_FILES_TMP" | tr -d ' ')
 echo "    found $NATIVE_COUNT native files"
 while IFS= read -r f; do
   if [ "$f" = "$APP_PATH/Contents/Resources/resources/node/bin/node" ]; then
-    retry 3 10 codesign --force --options runtime --timestamp \
+    if ! retry 3 10 codesign --force --options runtime --timestamp \
       --entitlements "$NODE_ENTITLEMENTS" \
-      --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1 || {
-        echo "    ! failed to sign bundled Node with entitlements: $f" >&2
-      }
+      --sign "$SIGNING_IDENTITY" "$f"; then
+      echo "    ! failed to sign bundled Node with entitlements: $f" >&2
+      exit 1
+    fi
   else
-    retry 3 10 codesign --force --options runtime --timestamp \
-      --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1 || {
-        echo "    ! failed to sign: $f" >&2
-      }
+    if ! retry 3 10 codesign --force --options runtime --timestamp \
+      --sign "$SIGNING_IDENTITY" "$f"; then
+      echo "    ! failed to sign: $f" >&2
+      exit 1
+    fi
   fi
 done < "$NATIVE_FILES_TMP"
 rm "$NATIVE_FILES_TMP"

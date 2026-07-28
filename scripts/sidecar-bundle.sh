@@ -88,7 +88,9 @@ bundle_piper_runtime() {
   fi
   cp -a "$runtime_root/." "$PIPER_RUNTIME_DIR/"
   chmod +x "$PIPER_RUNTIME_DIR/$executable" 2>/dev/null || true
-  printf "generated at release build time\n" > "$PIPER_RUNTIME_DIR/placeholder.txt"
+  if [ -f "$PIPER_RUNTIME_DIR/espeak-ng" ]; then
+    chmod +x "$PIPER_RUNTIME_DIR/espeak-ng"
+  fi
 }
 
 fix_node_pty_spawn_helpers() {

@@ -148,6 +148,16 @@ assert.ok(
 );
 assert.match(src, /bundle_piper_runtime\(\)/, "release bundling must provision the pinned Piper runtime");
 assert.match(src, /Piper runtime checksum mismatch/, "Piper runtime downloads must be integrity-checked");
+assert.match(
+  src,
+  /if \[ -f "\$PIPER_RUNTIME_DIR\/espeak-ng" \]; then[\s\S]*chmod \+x "\$PIPER_RUNTIME_DIR\/espeak-ng"/,
+  "Piper's mode-0644 macOS espeak-ng helper must be normalized as executable",
+);
+assert.doesNotMatch(
+  src.slice(src.indexOf("bundle_piper_runtime()"), src.indexOf("fix_node_pty_spawn_helpers()")),
+  /placeholder\.txt/,
+  "the generated Piper payload must not spend an MSI row on the source-tree placeholder",
+);
 assert.match(src, /WINDOWS_ARCHIVE/, "Windows sidecar must be emitted as a tar.zst archive");
 assert.match(src, /BUILD_PLATFORM="\$\(node -p 'process\.platform'\)"/, "Windows packaging must derive the host platform from Node, not shell environment");
 assert.match(src, /\[ "\$BUILD_PLATFORM" = "win32" \]/, "Windows archive and node naming must work from Git Bash as well as CI");

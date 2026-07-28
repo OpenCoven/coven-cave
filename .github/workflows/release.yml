@@ -67,6 +67,11 @@ on:
         required: false
         default: false
         type: boolean
+      use_current_release_tooling:
+        description: "RECOVERY ONLY: build tag source with the audited release.sh and sidecar-bundle.sh from this workflow commit. Tag pushes always use tag tooling."
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: release-${{ github.ref }}
@@ -172,6 +177,29 @@ jobs:
           # checkout provenance tied to RELEASE_TAG prevents manual retries from
           # signing and publishing assets from an unrelated ref.
           ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Overlay audited recovery release tooling
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_current_release_tooling }}
+        shell: bash
+        env:
+          RECOVERY_TOOLING_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$RECOVERY_TOOLING_SHA"
+          for tooling_path in scripts/release.sh scripts/sidecar-bundle.sh; do
+            git show "${RECOVERY_TOOLING_SHA}:${tooling_path}" > "${tooling_path}.recovery"
+            mv "${tooling_path}.recovery" "$tooling_path"
+            chmod +x "$tooling_path"
+            expected_blob="$(git rev-parse "${RECOVERY_TOOLING_SHA}:${tooling_path}")"
+            actual_blob="$(git hash-object "$tooling_path")"
+            if [ "$actual_blob" != "$expected_blob" ]; then
+              echo "::error::Recovery tooling blob mismatch for $tooling_path"
+              exit 1
+            fi
+            echo "$actual_blob  $tooling_path"
+          done
+          git diff --check
+          echo "Using release tooling from reviewed workflow commit $RECOVERY_TOOLING_SHA against tag source."
 
       - name: Set release metadata
         shell: bash
