@@ -214,7 +214,7 @@ export function localRuntimeLaunchError(
 /** A process that did start but exited unsuccessfully is distinct from a
  * missing or unlaunchable CLI. Its copy is safe to surface without provider
  * output, executable paths, or scoped environment values. */
-export function runtimeProcessFailure(runner: DirectRunnerId): {
+export function runtimeProcessFailure(runner: DirectRunnerId | CovenBackedRunnerId): {
   code: typeof RUNTIME_AVAILABILITY_ERROR_CODES.process_failed;
   message: string;
 } {

@@ -2202,6 +2202,10 @@ export async function POST(req: Request) {
       // (a never-launched CLI must not be diagnosed as "installed but not
       // authenticated") and skips persisting a fabricated assistant turn.
       let launchFailure: { code: string; message: string } | null = null;
+      // A Coven-backed child can exit non-zero before it writes even one
+      // stream frame. Defer classifying that condition until all buffered
+      // stdout has passed through the more-specific adapter failure parser.
+      let covenBackedProcessFailed = false;
       // Coven can send adapter startup failures through stdout, where Codex's
       // transcript filter intentionally suppresses pre-assistant noise. Keep
       // only the classified, fixed remediation so those failures cannot fall
@@ -3892,6 +3896,19 @@ export async function POST(req: Request) {
               assistantText += tail;
               push({ kind: "assistant_chunk", text: tail });
             }
+            // `coven run` is the outer launch vehicle for Codex, Claude, and
+            // compatible Coven-backed adapters. Process every final stdout
+            // fragment first: an adapter failure can arrive without a
+            // trailing newline and has more specific remediation. If the
+            // child was truly silent, a non-zero exit is a real runtime
+            // failure, not a successful-but-empty assistant response.
+            covenBackedProcessFailed ||=
+              !sshRuntime &&
+              localRuntimePlan?.runner === "coven" &&
+              code !== 0;
+            if (covenBackedProcessFailed) {
+              result = { ...result, is_error: true };
+            }
             req.signal.removeEventListener("abort", onAbort);
             resolve();
           });
@@ -4106,6 +4123,19 @@ export async function POST(req: Request) {
           pushProgress("harness-start", "codex failed to start", "error", adapterFailure.message);
           push({ kind: "error", code: adapterFailure.code, message: adapterFailure.message });
       }
+      }
+
+      if (!launchFailure && covenBackedProcessFailed && !assistantText.trim()) {
+        const failedRunner = binding.harness === "codex"
+          ? "codex"
+          : binding.harness === "claude"
+            ? "claude"
+            : "coven";
+        const failure = runtimeProcessFailure(failedRunner);
+        launchFailure = failure;
+        result.is_error = true;
+        pushProgress("harness-start", `${binding.harness} exited with an error`, "error", failure.message);
+        push({ kind: "error", code: failure.code, message: failure.message });
       }
 
       // User cancel (CHAT-D5-02): when the client stops the response

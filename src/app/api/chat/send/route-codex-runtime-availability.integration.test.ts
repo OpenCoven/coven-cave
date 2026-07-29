@@ -28,10 +28,11 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: process.env.COVEN_TEST_MODE === 'post-start' }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === 'codex') {",
+  "  if (process.env.COVEN_TEST_MODE === 'silent-exit') process.exit(1);",
   "  process.stdout.write('unsupported harness `codex`');",
   "  process.exit(1);",
   "}",
@@ -131,6 +132,26 @@ try {
     callsAfterStart.some((args) => args[0] === "run" && args[1] === "codex" && args.includes("--stream-json")),
     "the post-start fixture exercises a real Coven run after the availability probe passed",
   );
+
+  // A process can start successfully and still exit before Coven emits any
+  // JSONL. That is neither an adapter-discovery failure nor evidence that
+  // Codex is signed out. It must remain a structured runtime-process error
+  // instead of fabricating the completed-but-empty authentication hint.
+  process.env.COVEN_TEST_MODE = "silent-exit";
+  const silentExitResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ familiarId: "opal", prompt: "silent child", projectRoot: familiarWorkspace }),
+  }));
+  const { body: silentExitBody, events: silentExitEvents } = await readSse(silentExitResponse);
+  const silentExitError = silentExitEvents.find((event) => event.kind === "error");
+  assert.ok(silentExitError, "a silent non-zero Codex exit produces a structured error event");
+  assert.equal(silentExitError.code, "runtime_process_failed");
+  assert.match(silentExitError.message, /Codex CLI exited with an error/);
+  assert.doesNotMatch(silentExitBody, /installed but not authenticated|produced no output/i);
+  assert.ok(!silentExitEvents.some((event) => event.kind === "assistant_chunk"));
+  const silentDone = silentExitEvents.findLast((event) => event.kind === "done");
+  assert.equal(silentDone?.isError, true);
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;
