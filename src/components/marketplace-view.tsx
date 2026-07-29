@@ -483,7 +483,10 @@ export function MarketplaceViewSurface({
         announce("Added to your setup", "polite");
       }
       invalidateSurfaceResources("marketplace:catalog");
-      void load(true);
+      // Craft state is already updated above. Avoid replacing the visible
+      // card while its detail dialog owns focus; the next surface load reads
+      // the invalidated owned inventory.
+      if (!isCraft) void load(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "install failed";
       if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
@@ -552,7 +555,7 @@ export function MarketplaceViewSurface({
         announce("Removed from your setup", "polite");
       }
       invalidateSurfaceResources("marketplace:catalog");
-      void load(true);
+      if (!isCraft) void load(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "uninstall failed";
       if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
