@@ -689,6 +689,16 @@
   flex-wrap: wrap;
   gap: var(--space-1);
 }
+/* Uniform rows, never a ragged last one. Free-wrapping three starter pills in
+   the hero's 560px column lands 2 + 1, which reads as a mistake; one per row
+   keeps the rhythm and lets each suggestion stay on a single line. */
+.chat-canvas-add--hero .chat-canvas-add__suggestions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.chat-canvas-add--hero .chat-canvas-add__suggestion {
+  text-align: left;
+}
 .chat-canvas-add__suggestion {
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-pill);

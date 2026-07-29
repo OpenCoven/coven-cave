@@ -503,9 +503,9 @@ export function CanvasAddTile({
             <h2 className="chat-canvas-add__heading">
               {state.phase === "result" && !generationVisible ? "Your preview" : "What would you like to create?"}
             </h2>
-            {state.phase === "composing" && state.mode === "describe" ? (
-              <p className="chat-canvas-add__subheading">Describe a screen, component, or interaction.</p>
-            ) : null}
+            {/* No subheading here: it read verbatim the same as the textarea's
+                own placeholder directly beneath it. The heading asks; the
+                placeholder answers what to type. */}
           </div>
           <span className="chat-canvas-add__spacer" />
           <button type="button" className="chat-canvas-add__close focus-ring" aria-label="Close composer" onClick={collapse}>
@@ -786,17 +786,23 @@ export function CanvasAddTile({
                 <Icon name="ph:sparkle" aria-hidden /> Create preview
               </button>
             </div>
-            {/* Once there's a description, restate what Create will do rather
-                than leaving a generic tip on screen. Without a familiar picked
-                there is no "who", so the line names the missing step instead. */}
-            <p className="chat-canvas-add__tip">
-              {!state.prompt.trim()
-                ? "Tip: name the surface and the interaction — “a settings pane with grouped toggles that reveal advanced fields”."
-                : activeFamiliarRecord || activeFamiliar
-                  ? `${activeFamiliarLabel} will sketch this · ⌘↵ to run`
-                  : "Pick a familiar to sketch this · ⌘↵ to run"}
-            </p>
-            {!activeFamiliar ? <p className="chat-canvas-add__no-familiar" role="status">Choose a familiar to create a preview.</p> : null}
+            {/* Exactly one line under the controls. The missing-familiar case
+                owns it outright — otherwise the tip, this warning and the
+                disabled Create button all said "pick a familiar" at once. With
+                a familiar chosen the line restates what Create will do; the
+                starting suggestions already carry the "what to write" examples,
+                so the generic tip only appears when they aren't shown. */}
+            {!activeFamiliar ? (
+              <p className="chat-canvas-add__no-familiar" role="status">
+                Choose a familiar to create a preview.
+              </p>
+            ) : state.prompt.trim() ? (
+              <p className="chat-canvas-add__tip">{activeFamiliarLabel} will sketch this · ⌘↵ to run</p>
+            ) : !hero ? (
+              <p className="chat-canvas-add__tip">
+                Tip: name the surface and the interaction — “a settings pane with grouped toggles”.
+              </p>
+            ) : null}
           </>
         ) : (
           <>
