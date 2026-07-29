@@ -140,6 +140,15 @@
   color: var(--fg-base);
 }
 
+/* The current week is the end of the road: forward paging is dead rather than
+   hidden, so the strip keeps its shape and the reason lives in the tooltip. */
+.drd-week__step[data-disabled],
+.drd-week__day[data-future] {
+  opacity: var(--opacity-disabled);
+  cursor: default;
+  pointer-events: none;
+}
+
 .drd-week__day {
   display: flex;
   align-items: center;
@@ -1062,4 +1071,81 @@
   color: var(--fg-muted);
   font-style: italic;
   white-space: normal;
+}
+
+/* ── the day fills the viewport at md and up ──────────────────────────────
+   From 768px the report is a single screen: the page itself never scrolls,
+   and the three columns each take their own scrollbar instead. Below md the
+   columns stack and the page scrolls normally, which is the right behaviour
+   for a phone.
+
+   `.dr-page` is its own scroll container (surface-reporting.css) nested inside
+   `.aps-main`, which is another one — so the lock has to clamp the day
+   variant, not just the card, or the outer pane picks the scroll back up. */
+@media (min-width: 768px) {
+  .dr-page--day {
+    overflow: hidden;
+  }
+
+  .dr-page--day .dr-shell--wide {
+    box-sizing: border-box;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .dr-page--day .drd {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* The body row absorbs whatever the chrome, band and panel strips leave. */
+  .dr-page--day .drd-body {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* Between md and lg the cast folds into a second row, so the body scrolls
+     as one region — per-column scrollbars there would each be a few pixels
+     tall and useless. */
+  .dr-page--day .drd-body {
+    overflow-y: auto;
+  }
+
+  /* On a short viewport the overlay panels must not outgrow the card they are
+     clipped to — they scroll internally instead of being cut off. */
+  .dr-page--day .drd-panelhost [data-panel] {
+    max-height: min(560px, 68vh);
+    overflow-y: auto;
+  }
+}
+
+/* From lg the three columns are side by side again and each takes its own
+   scrollbar, so picking a chapter never scrolls the rail or the cast out of
+   reach. */
+@media (min-width: 1025px) {
+  .dr-page--day .drd-body {
+    overflow: hidden;
+  }
+
+  .dr-page--day .drd-rail,
+  .dr-page--day .drd-page,
+  .dr-page--day .drd-cast {
+    min-height: 0;
+  }
+
+  .dr-page--day .drd-rail,
+  .dr-page--day .drd-page,
+  .dr-page--day .drd-cast__body {
+    overflow-y: auto;
+  }
+}
+
+/* Both overlay panels open across the same band — the carousel downward, the
+   shipped table upward — so whichever is open has to out-rank the other host's
+   strip. Without this the shipped rows render underneath the carousel trigger
+   on a short viewport. */
+.drd-panelhost:has([data-panel]) {
+  z-index: 30;
 }

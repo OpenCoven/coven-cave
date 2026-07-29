@@ -27,6 +27,8 @@ export type WeekCell = {
   level: number;
   selected: boolean;
   hasReport: boolean;
+  /** After today — there is nothing to report yet, so it is not navigable. */
+  isFuture: boolean;
   title: string;
 };
 
@@ -43,6 +45,9 @@ type Props = {
   weekLabel: string;
   prevWeekSlug: string;
   nextWeekSlug: string;
+  /** False once the strip has reached the current week — the cave cannot
+   *  report on a day that has not happened, so forward paging stops here. */
+  canGoForward: boolean;
   isToday: boolean;
   /** The familiar-written narrative, next-paths already stripped. */
   narrative: string | null;
@@ -84,6 +89,7 @@ export function DailyReportDay({
   weekLabel,
   prevWeekSlug,
   nextWeekSlug,
+  canGoForward,
   isToday,
   narrative,
   narrativeByline,
@@ -187,25 +193,52 @@ export function DailyReportDay({
             <a className="drd-week__step" href={`/daily-report/${prevWeekSlug}`} aria-label="Previous week">
               <Icon name="ph:caret-left" aria-hidden />
             </a>
-            {week.map((day) => (
-              <a
-                key={day.slug}
-                className="drd-week__day"
-                href={`/daily-report/${day.slug}`}
-                title={day.title}
-                aria-current={day.selected ? "date" : undefined}
-                data-selected={day.selected || undefined}
-                data-empty={!day.hasReport || undefined}
-                style={{ ["--drd-level" as string]: `${Math.round(day.level * 100)}%` }}
-              >
-                <span className="drd-week__letter">{day.letter}</span>
-                <span className="drd-week__num">{day.num}</span>
-                <span className="drd-week__bar" aria-hidden />
+            {week.map((day) => {
+              const cell = (
+                <>
+                  <span className="drd-week__letter">{day.letter}</span>
+                  <span className="drd-week__num">{day.num}</span>
+                  <span className="drd-week__bar" aria-hidden />
+                </>
+              );
+              const shared = {
+                className: "drd-week__day",
+                title: day.title,
+                "data-selected": day.selected || undefined,
+                "data-empty": !day.hasReport || undefined,
+                style: { ["--drd-level" as string]: `${Math.round(day.level * 100)}%` },
+              };
+              // A future day has nothing to report — render it as a dead cell
+              // rather than a link into an empty "not found" page.
+              return day.isFuture ? (
+                <span key={day.slug} {...shared} data-future aria-disabled="true">
+                  {cell}
+                </span>
+              ) : (
+                <a
+                  key={day.slug}
+                  {...shared}
+                  href={`/daily-report/${day.slug}`}
+                  aria-current={day.selected ? "date" : undefined}
+                >
+                  {cell}
+                </a>
+              );
+            })}
+            {canGoForward ? (
+              <a className="drd-week__step" href={`/daily-report/${nextWeekSlug}`} aria-label="Next week">
+                <Icon name="ph:caret-right" aria-hidden />
               </a>
-            ))}
-            <a className="drd-week__step" href={`/daily-report/${nextWeekSlug}`} aria-label="Next week">
-              <Icon name="ph:caret-right" aria-hidden />
-            </a>
+            ) : (
+              <span
+                className="drd-week__step"
+                data-disabled
+                aria-disabled="true"
+                title="This is the current week"
+              >
+                <Icon name="ph:caret-right" aria-hidden />
+              </span>
+            )}
           </div>
 
           <span className="drd-week__label">{weekLabel}</span>
@@ -302,7 +335,16 @@ export function DailyReportDay({
 
       {/* ── the day, three ways ──────────────────────────────────────── */}
       <div className="drd-panelhost">
-        <DayCarousel model={model} open={carouselOpen} onToggle={() => setCarouselOpen((v) => !v)} />
+        <DayCarousel
+          model={model}
+          open={carouselOpen}
+          onToggle={() =>
+            setCarouselOpen((v) => {
+              if (!v) setShipOpen(false);
+              return !v;
+            })
+          }
+        />
       </div>
 
       {/* ── chapters | page | cast ───────────────────────────────────── */}
@@ -556,7 +598,16 @@ export function DailyReportDay({
 
       {/* ── shipped ──────────────────────────────────────────────────── */}
       <div className="drd-panelhost drd-panelhost--shipped">
-        <ShippedPanel model={model} open={shipOpen} onToggle={() => setShipOpen((v) => !v)} />
+        <ShippedPanel
+          model={model}
+          open={shipOpen}
+          onToggle={() =>
+            setShipOpen((v) => {
+              if (!v) setCarouselOpen(false);
+              return !v;
+            })
+          }
+        />
       </div>
 
       <DayModals
