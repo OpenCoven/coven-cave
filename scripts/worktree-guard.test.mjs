@@ -82,6 +82,32 @@ function repoWithWorktree({ push = false, dirty = false } = {}) {
   assert.equal(res.stdout.trim(), "", "and silent");
 }
 
+// ── 3b. Clean + pushed, but a process is still working IN it → blocked ────────
+// The husk case named in the guard's own header: a session driving a worktree by
+// absolute path (or running its test suite there) leaves `git status` clean and
+// the branch pushed, so every earlier check waves the removal through while the
+// work is still live.
+if (!isWin) {
+  const { dir, wt } = repoWithWorktree({ push: true });
+  const child = execFileSync("node", ["-e", `
+    const { spawn } = require("node:child_process");
+    const p = spawn(process.execPath, ["-e", "setTimeout(()=>{},60000)"], { cwd: ${JSON.stringify(wt)}, detached: true, stdio: "ignore" });
+    p.unref(); console.log(p.pid);
+  `], { encoding: "utf8" }).trim();
+  try {
+    // Give the child a moment to land its cwd.
+    execFileSync("node", ["-e", "setTimeout(()=>{}, 400)"]);
+    const res = runHook(`git worktree remove ${wt}`, dir);
+    assert.equal(res.status, 2, "blocks removal while a process is working inside the worktree");
+    assert.match(res.stderr, /still working in it/, "names the live processes");
+    // The bypass still wins — the guard advises, it does not imprison.
+    const forced = runHook(`${BYPASS} git worktree remove ${wt}`, dir);
+    assert.equal(forced.status, 0, "explicit bypass overrides the live-process block");
+  } finally {
+    try { process.kill(Number(child)); } catch { /* already gone */ }
+  }
+}
+
 // ── 4. Husk dirs (no .git link) and paths INSIDE a worktree pass ───────────────
 {
   const { dir } = repoWithWorktree({ push: true });
