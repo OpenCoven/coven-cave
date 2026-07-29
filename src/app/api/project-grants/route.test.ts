@@ -127,13 +127,26 @@ assert.match(
 );
 assert.match(
   grantsRoute,
-  /grantProjectToFamiliar\(\{ familiarId: target\.familiarId, projectId: target\.projectId, source: "human", access \}\)/,
+  /grantProjectToFamiliar\(\{[\s\S]*?familiarId: target\.familiarId,[\s\S]*?projectId: target\.projectId,[\s\S]*?source: "human",[\s\S]*?access,/,
   "direct grants should always be recorded with source=human against the validated target ids",
 );
 assert.match(
   grantsRoute,
   /revokeProjectFromFamiliar/,
   "direct grants route should call the revocation primitive",
+);
+// The grant-change log distinguishes a desktop change from a phone one
+// (grants are mobile-mutable behind allowMobileGrantMutations), so the actor
+// must come from the verified request, never from the payload.
+assert.match(
+  grantsRoute,
+  /actor: isVerifiedMobileRequest\(req\) \? "mobile" : "loopback"/,
+  "grant mutations should record the actor from the verified request",
+);
+assert.equal(
+  (grantsRoute.match(/actor: isVerifiedMobileRequest\(req\)/g) ?? []).length,
+  2,
+  "both the grant and the revoke path should record their actor",
 );
 assert.match(
   grantsRoute,
