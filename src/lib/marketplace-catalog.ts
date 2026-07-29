@@ -340,6 +340,14 @@ export function filterPlugins(
   });
 }
 
+/** The Browse catalog excludes Crafts when their feature flag is disabled. */
+export function visibleMarketplacePlugins(
+  plugins: MarketplacePlugin[],
+  craftsEnabled: boolean,
+): MarketplacePlugin[] {
+  return craftsEnabled ? plugins : plugins.filter((plugin) => plugin.kind !== "craft");
+}
+
 export type SortKey = "recommended" | "name" | "installed";
 
 const TRUST_RANK: Record<string, number> = {

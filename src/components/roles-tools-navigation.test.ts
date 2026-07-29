@@ -11,7 +11,10 @@ const marketplaceView = await readFile(new URL("./marketplace-view.tsx", import.
 const marketplaceCard = await readFile(new URL("./marketplace/marketplace-card.tsx", import.meta.url), "utf8");
 const marketplaceDetail = await readFile(new URL("./marketplace/marketplace-detail.tsx", import.meta.url), "utf8");
 const marketplaceConfigure = await readFile(new URL("./marketplace/marketplace-configure.tsx", import.meta.url), "utf8");
-const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = [
+  await readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  await readFile(new URL("../styles/globals/surface-marketplace.css", import.meta.url), "utf8"),
+].join("\n");
 const rolesRoute = [
   await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8"),
   await readFile(new URL("../lib/server/role-entries.ts", import.meta.url), "utf8"),
@@ -132,7 +135,7 @@ assert.doesNotMatch(marketplaceView, /\{ id: "roles", label: "Roles"/, "no Roles
 assert.doesNotMatch(marketplaceView, /\{ id: "capabilities", label: "Capabilities"/, "no Capabilities tab — the section is retired from the hub");
 assert.match(
   marketplaceView,
-  /initialSection === "roles" \|\| initialSection === "capabilities" \? "browse" : initialSection/,
+  /initialSection === "roles" \|\| initialSection === "capabilities"\s*\n\s*\? "browse"/,
   "'roles' and 'capabilities' deep links land on Browse",
 );
 assert.match(marketplaceView, /import \{ type SkillBrowserEntry \} from "@\/lib\/skill-directory"/, "hub consumes the registry skill entry type for Explore");

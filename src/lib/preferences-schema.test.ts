@@ -177,6 +177,13 @@ assert.equal(recovered.appearance.backdrop.intensity, 100);
 assert.equal(recovered.appearance.backdrop.image.mime, null);
 assert.equal(Object.hasOwn(recovered, "authToken"), false);
 
+for (const removed of ["grove", "bloom", "dusk", "mist", "hex", "bane", "beacon", "trucker", "meatseeks"]) {
+  const normalized = normalizeCavePreferences({ appearance: { theme: { id: removed } } });
+  assert.equal(normalized.appearance.theme.id, "coven", `${removed} falls back to Coven after removal`);
+  const patch = validatePreferencesPatch({ appearance: { theme: { id: removed } } });
+  assert.equal(patch.appearance?.theme?.id, "coven", `${removed} API updates migrate to Coven before validation`);
+}
+
 const legacyPatch = legacyStorageToPreferencesPatch({
   "coven-theme": "orchid",
   "coven-mode": "light",
@@ -190,7 +197,7 @@ const legacyPatch = legacyStorageToPreferencesPatch({
   authToken: "ignored",
   "coven-access-token": "ignored",
 });
-assert.equal(legacyPatch.appearance?.theme?.id, "dusk");
+assert.equal(legacyPatch.appearance?.theme?.id, "coven");
 assert.equal(legacyPatch.appearance?.fonts?.sans, "source-sans-3");
 assert.equal(legacyPatch.appearance?.screenScale, 150);
 assert.equal(legacyPatch.appearance?.reading?.width, "medium");
