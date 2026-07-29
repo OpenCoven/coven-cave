@@ -163,6 +163,13 @@ assert.match(
   "Open in editor closes the preview and enters the editor",
 );
 assert.match(view, /chat-canvas-card--selected/, "the previewed card gets the selected treatment");
+// The thumbnail renders the sketch's own chrome, so it can't advertise itself —
+// the hover pill is what says a click opens it.
+assert.match(
+  view,
+  /chat-canvas-card__reveal-pill"[\s\S]{0,200}?Preview/,
+  "the card thumbnail carries a hover affordance naming what a click does",
+);
 // The editor is a full-surface takeover with the agreed prop contract.
 assert.match(
   view,
@@ -525,8 +532,15 @@ assert.match(
 );
 assert.match(
   view,
-  /No sketches match &ldquo;\{trimmedQuery\}&rdquo;/,
+  /Nothing matches &ldquo;\{trimmedQuery\}&rdquo;/,
   "a filtered-empty gallery names the query instead of looking empty",
+);
+// A dead end has to be escapable, not just labelled: the reason the set is
+// empty AND the control that undoes it both live in the empty state.
+assert.match(
+  view,
+  /className="chat-canvas-empty__reset focus-ring"[\s\S]{0,200}?setQ\(""\);\s*setKindFilter\("all"\);/,
+  "the filtered-empty state offers a one-click reset of both the query and the kind filter",
 );
 
 assert.match(addTile, /aria-expanded=\{false\}/, "the ghost tile reports its expansion state");
@@ -561,12 +575,12 @@ assert.match(
 );
 assert.match(
   addTile,
-  /if \(event\.key === "Escape" && !codeMenuOpen\) \{[\s\S]{0,120}?collapse\(\);/,
-  "Escape collapses the tile even while generation is active",
+  /if \(event\.key === "Escape" && !codeMenuOpen && !familiarMenuOpen\) \{[\s\S]{0,120}?collapse\(\);/,
+  "Escape collapses the tile even while generation is active — but an open menu owns it first",
 );
 assert.doesNotMatch(
   addTile,
-  /if \(event\.key === "Escape" && !codeMenuOpen\) \{[\s\S]{0,160}?(?:stopCanvasGeneration|stop\(\)|cancel\(\))/,
+  /if \(event\.key === "Escape" && !codeMenuOpen && !familiarMenuOpen\) \{[\s\S]{0,160}?(?:stopCanvasGeneration|stop\(\)|cancel\(\))/,
   "Escape never reaches the registry cancellation path",
 );
 assert.match(
