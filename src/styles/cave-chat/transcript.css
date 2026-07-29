@@ -382,7 +382,10 @@
 
 .cave-followup-cards__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  /* Chat.dc.html 2a ⑤ — suggestions take equal shares of ONE row (next-paths
+     caps the strip at 4), so the strip never renders a ragged 2+1 (#2672). */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: var(--space-2);
 }
 
@@ -413,9 +416,12 @@
   color: var(--text-secondary);
 }
 
-@media (min-width: 40rem) {
+@media (max-width: 40rem) {
+  /* Narrow panes stack the cards instead of squeezing four abreast. */
   .cave-followup-cards__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: row;
+    grid-auto-columns: unset;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

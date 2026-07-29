@@ -86,7 +86,7 @@ const requiredCommands = [
   "desktop_reachability_configure",
 ];
 
-// Node 22 (CI's runtime) has no global URLPattern, so match capability
+// Node 24 (CI's runtime) has no global URLPattern, so match capability
 // remote URL patterns component-wise the way Tauri's urlpattern crate does
 // for the simple `scheme://host:port/path` + `*` shapes this repo uses.
 // Backslash escapes in patterns (e.g. the IPv6 colons in

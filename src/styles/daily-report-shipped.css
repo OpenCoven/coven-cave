@@ -3,7 +3,7 @@
  * Owned by src/components/daily-report-shipped.tsx. The design mock's literal
  * palette is mapped to foundations tokens here (accent → --accent-presence,
  * green/red line counts → --color-success/--color-danger, grounds → the --bg-*
- * ladder, hairlines → --border) so all 21 themes × 2 modes stay honest. No hex
+ * ladder, hairlines → --border) so all 12 themes × 2 modes stay honest. No hex
  * and no raw color-space literal lives in this file.
  *
  * Sizes ride the type/space/radius scales; the mock's half-step values are

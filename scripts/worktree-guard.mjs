@@ -26,13 +26,23 @@
  *   • `git push <remote> --delete <branch>` (or `push <remote> :<branch>`) is
  *     blocked when an OPEN PR still has that head (deleting the branch closes
  *     the PR — the #2286 failure). Needs `gh` + network; fails OPEN.
+ *   • `mv .worktrees/<name> <elsewhere>` is blocked on the same risk test:
+ *     git's admin file keeps pointing at the old path, so moving a live
+ *     worktree strands its work exactly like deleting it would.
+ *
+ * Paths are resolved against the SEGMENT's effective cwd, which both a leading
+ * `cd <dir> &&` and git's `-C <dir>` move. Resolving against the hook's cwd
+ * instead made those forms silently unguarded (cave-6d2dp).
  *
  * Deliberate destruction is allowed by prefixing the command with
  * `WT_GUARD_BYPASS=1 ` — the guard only ensures it can't happen by accident.
+ * Honoured bypasses are appended to `.claude/worktree-guard-bypass.log`
+ * (gitignored) so a later post-mortem can tell a deliberate override from a
+ * gap in the guard — the question cave-boor8 could not answer.
  * On any internal error the guard exits 0: a hook bug must never brick Bash.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
@@ -62,6 +72,32 @@ function block(reason) {
   process.exit(2);
 }
 
+/**
+ * Record every honoured bypass.
+ *
+ * On 2026-07-29 a worktree holding 3 uncommitted files was destroyed and the
+ * post-mortem (cave-boor8) could not establish whether the guard had been
+ * bypassed or circumvented — the bypass path left no trace at all. An append
+ * here makes that question answerable. Best-effort by construction: any failure
+ * is swallowed, because refusing a command over a logging problem would be a
+ * worse bug than the missing record.
+ */
+function recordBypass(command, cwd, sessionId) {
+  try {
+    const root = process.env.CLAUDE_PROJECT_DIR || cwd;
+    const line = `${JSON.stringify({
+      at: new Date().toISOString(),
+      session: sessionId ?? null,
+      cwd,
+      command: command.length > 500 ? `${command.slice(0, 500)}…` : command,
+    })}\n`;
+    // .claude/* is gitignored (except settings.json), so this never enters the repo.
+    appendFileSync(path.join(root, ".claude", "worktree-guard-bypass.log"), line);
+  } catch {
+    /* logging must never block a command */
+  }
+}
+
 function git(args, cwd) {
   return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] });
 }
@@ -80,6 +116,29 @@ function segments(command) {
 function resolveTarget(raw, cwd) {
   const clean = raw.replace(/\/+$/, "");
   return path.isAbsolute(clean) ? clean : path.resolve(cwd, clean);
+}
+
+/**
+ * The directory a segment's relative paths actually resolve against.
+ *
+ * Two things move it, and missing either let a real removal through: a leading
+ * `cd <dir> &&` in the same compound command, and git's own `-C <dir>`. Before
+ * this, `cd .worktrees && git worktree remove x` (or `git -C <repo> worktree
+ * remove x`) resolved `x` against the HOOK's cwd, so destructionRisk() stat'd a
+ * path that didn't exist, returned "safe", and the removal sailed through.
+ */
+function cdTargetOf(seg) {
+  const m = seg.match(/^cd\s+(?!-)(\S+|"[^"]*"|'[^']*')\s*$/);
+  return m ? m[1].replace(/^['"]|['"]$/g, "") : null;
+}
+
+/** `-C <dir>` (repeatable in git, applied left to right) for one segment. */
+function gitDashCDir(toks, cwd) {
+  let dir = cwd;
+  for (let i = 0; i < toks.length - 1; i++) {
+    if (toks[i] === "-C") dir = resolveTarget(toks[i + 1], dir);
+  }
+  return dir;
 }
 
 /**
@@ -117,10 +176,42 @@ function destructionRisk(wtPath) {
 function checkWorktreeRemove(seg, cwd) {
   const m = seg.match(/\bgit\b.*\bworktree\s+remove\s+(.*)$/);
   if (!m) return;
+  const base = gitDashCDir(tokens(seg), cwd);
   for (const tok of tokens(m[1])) {
     if (tok.startsWith("-")) continue;
-    const risk = destructionRisk(resolveTarget(tok, cwd));
+    const risk = destructionRisk(resolveTarget(tok, base));
     if (risk) block(`\`git worktree remove\` targets live work:\n${risk}`);
+  }
+}
+
+/**
+ * Moving a worktree root is as destructive as deleting it: git's admin file
+ * still points at the old path, so the worktree is broken and any uncommitted
+ * work is stranded somewhere the owning session will not look. `git worktree
+ * move` is the supported operation and is left alone.
+ */
+function checkMove(seg, cwd) {
+  const toks = tokens(seg);
+  if (toks[0] !== "mv") return;
+  const operands = toks.slice(1).filter((t) => !t.startsWith("-"));
+  if (operands.length < 2) return;
+  for (const tok of operands.slice(0, -1)) {
+    const hit = worktreeRoot(resolveTarget(tok, cwd));
+    if (!hit) continue; // a path inside a worktree is the owner's business
+    if (hit.root) {
+      const risk = destructionRisk(hit.root);
+      if (risk) block(`\`mv\` would strand a live worktree (git still points at the old path):\n${risk}`);
+    } else if (hit.container && existsSync(hit.container)) {
+      // Moving the container strands every child just like removing it does.
+      try {
+        for (const child of readdirSync(hit.container)) {
+          const risk = destructionRisk(path.join(hit.container, child));
+          if (risk) block(`\`mv ${tok}\` wipes every worktree, including live work:\n${risk}`);
+        }
+      } catch {
+        /* unreadable container — allow */
+      }
+    }
   }
 }
 
@@ -131,7 +222,9 @@ function checkRmRf(seg, cwd) {
   if (!(flags.includes("r") && flags.includes("f")) && !flags.includes("R")) return;
   for (const tok of toks.slice(1)) {
     if (tok.startsWith("-")) continue;
-    if (!tok.includes(".worktrees")) continue;
+    // Classify the RESOLVED path, never the raw token: after `cd .worktrees`
+    // the token is a bare name like `feature-x` and a substring test on it
+    // silently skips a real worktree root.
     const hit = worktreeRoot(resolveTarget(tok, cwd));
     if (!hit) continue; // a path INSIDE a worktree — its owner's business
     if (hit.root) {
@@ -218,15 +311,27 @@ function main() {
   }
   const command = input?.tool_input?.command;
   if (typeof command !== "string" || !INTEREST.test(command)) return allow();
-  if (command.includes(BYPASS)) return allow();
   const cwd =
     (typeof input.cwd === "string" && input.cwd) || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  if (/^\s*WT_GUARD_BYPASS=1(?:\s|$)/.test(command)) {
+    recordBypass(command, cwd, input?.session_id);
+    return allow();
+  }
 
+  // Relative paths resolve against the segment's effective cwd, which a leading
+  // `cd` in the same compound command moves for everything after it.
+  let segCwd = cwd;
   for (const seg of segments(command)) {
-    checkWorktreeRemove(seg, cwd);
-    checkRmRf(seg, cwd);
-    checkBranchDelete(seg, cwd);
-    checkRemoteBranchDelete(seg, cwd);
+    const cdTo = cdTargetOf(seg);
+    if (cdTo) {
+      segCwd = resolveTarget(cdTo, segCwd);
+      continue;
+    }
+    checkWorktreeRemove(seg, segCwd);
+    checkRmRf(seg, segCwd);
+    checkMove(seg, segCwd);
+    checkBranchDelete(seg, segCwd);
+    checkRemoteBranchDelete(seg, segCwd);
   }
   return allow();
 }

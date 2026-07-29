@@ -46,7 +46,11 @@ import { THEME_IDS } from "./theme-palettes.ts";
 // strong borders) needs 3:1 per §1.4.11. If this fails after a palette edit,
 // the palette is what has to change — not the thresholds.
 
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = [
+  "../app/globals.css",
+  "../styles/globals/foundations.css",
+  "../styles/globals/themes.css",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
 
 const OPAQUE_BLACK: Rgba = { r: 0, g: 0, b: 0, alpha: 1 };
 
@@ -112,7 +116,11 @@ for (const id of THEME_IDS) {
   }
 }
 
-assert.ok(checked > 600, `expected to audit >600 pairs, only checked ${checked}`);
+const minimumPairs = THEME_IDS.length * 2 * 20;
+assert.ok(
+  checked > minimumPairs,
+  `expected to audit >${minimumPairs} pairs, only checked ${checked}`,
+);
 assert.deepEqual(
   failures,
   [],
@@ -172,9 +180,21 @@ console.log(`theme-contrast-audit: ${checked} pairs across ${THEME_IDS.length} t
 // cave-md.css, the shared markdown sheet; chat-scoped system-turn chrome
 // stayed in cave-chat.css — read both.)
 
-const mdCss = readFileSync(new URL("../styles/cave-md.css", import.meta.url), "utf8");
-const chatCss =
-  readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8") + "\n" + mdCss;
+const mdCss = [
+  "../styles/cave-md.css",
+  "../styles/cave-md/prose.css",
+  "../styles/cave-md/tables-mermaid.css",
+  "../styles/cave-md/code.css",
+  "../styles/cave-md/interactions.css",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
+const chatCss = [
+  "../styles/cave-chat.css",
+  "../styles/cave-chat/bubbles.css",
+  "../styles/cave-chat/activity.css",
+  "../styles/cave-chat/transcript.css",
+  "../styles/cave-chat/auxiliary-surfaces.css",
+  "../styles/cave-chat/session-chrome.css",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n") + "\n" + mdCss;
 
 const chromeRootBlock = mdCss.match(/:root\s*\{([\s\S]*?)\}/)?.[1] ?? "";
 const chrome: TokenMap = new Map();

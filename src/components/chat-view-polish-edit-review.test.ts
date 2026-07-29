@@ -27,8 +27,13 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.cave-followup-cards__grid \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/,
-  "cards use the responsive two-column card grid",
+  /\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\)/,
+  "cards use equal shares in one row",
+);
+assert.match(
+  styles,
+  /@media \(max-width: 40rem\) \{[\s\S]*?\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: row;[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/,
+  "cards stack in a single column in narrow panes",
 );
 assert.match(
   styles,

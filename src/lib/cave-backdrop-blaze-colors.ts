@@ -2,7 +2,7 @@
  * Blaze backdrop colors — derived from ONE theme token (cave-99s9).
  *
  * The smoke takes `--accent-presence` directly; the sparks sit 70% toward a
- * neutral grey so they read as pale embers over any of the 21 palettes × 2
+ * neutral grey so they read as pale embers over any of the 12 palettes × 2
  * modes (the same single-token philosophy as the app's state tints). When the
  * accent can't be parsed, the exact Canvas UI playground values apply.
  */

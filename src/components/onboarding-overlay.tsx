@@ -1816,7 +1816,7 @@ function StepCovenCli({
           <div>
             <p className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">Cave-managed Node.js and npm</p>
             <p className="mt-1 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
-              Source: nodejs.org · Node 22.18.0 · SHA-256 verified · user-scoped · no elevation · no restart.
+              Source: nodejs.org · Node 24.18.0 LTS · SHA-256 verified · user-scoped · no elevation · no restart.
             </p>
           </div>
           <Button
