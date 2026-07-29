@@ -109,10 +109,51 @@ assert.match(
   /\{navigatorCollapsedForDisplay \? \(/,
   "the compact navigator branch is suppressed while searching",
 );
+// Span widened from 240 to 800: the toggle row now carries a Navigator title
+// before the button, so onClick sits further from the opening <div>.
 assert.match(
   view,
-  /\{!q \? \(\s*<div[\s\S]{0,240}onClick=\{toggleNavigator\}/,
+  /\{!q \? \(\s*<div[\s\S]{0,800}onClick=\{toggleNavigator\}/,
   "the collapse toggle is hidden while search forces the navigator open",
+);
+
+// The expanded rail's toggle row is titled — a bare right-aligned button gave
+// the sidebar no visible name of its own.
+assert.match(
+  view,
+  /navigatorCollapsed \? null : \(\s*<h2[\s\S]{0,240}>\s*Navigator\s*<\/h2>\s*\)\}\s*<button[\s\S]{0,200}onClick=\{toggleNavigator\}/,
+  "the expanded navigator's toggle row shows a Navigator title to the left of the collapse toggle",
+);
+assert.match(
+  view,
+  /navigatorCollapsed \? "justify-center p-1" : "justify-between gap-2 p-1\.5"/,
+  "the toggle row splits title-left / toggle-right when expanded and centers the toggle when collapsed",
+);
+
+// ── Memory is scoped to the shell's familiar multiselect ────────────────────
+// The Memories surface used to list every familiar's memory files regardless
+// of the sidebar selection. Empty selection is still "All" (familiarInScope).
+assert.match(view, /scopeFamiliarIds\?: ReadonlySet<string>/, "GrimoireView accepts the familiar scope");
+assert.match(
+  view,
+  /const memoryScope = scopeFamiliarIds \?\? EMPTY_FAMILIAR_SCOPE/,
+  "an absent scope falls back to the canonical empty (All) selection",
+);
+assert.match(
+  view,
+  /const scopedMemory = useMemo\(\s*\(\) => \(memory \?\? \[\]\)\.filter\(\(e\) => familiarInScope\(memoryScope, e\.familiarId\)\)/,
+  "memory files are filtered by the selected familiars before search",
+);
+assert.match(view, /memory=\{scopedMemory\}/, "the launcher's memory stats/jumps use the same scoped list as the rail");
+assert.match(
+  view,
+  /No memory for \$\{memoryScopeLabel\} yet/,
+  "a scoped-but-empty Memory section says which familiars it is narrowed to",
+);
+assert.match(
+  workspace,
+  /<GrimoireView[\s\S]{0,240}scopeFamiliarIds=\{scopeIds\}/,
+  "the Workspace hands Memories the same familiar scope as Tasks and Schedules",
 );
 
 // ── Detail: the right transport per source ───────────────────────────────────

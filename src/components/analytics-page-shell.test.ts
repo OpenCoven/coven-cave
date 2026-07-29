@@ -67,7 +67,11 @@ assert.match(shell, /const NAV_OPEN_PREF_KEY = "cave:shell:nav-open"/, "standalo
 assert.match(shell, /const \[navOpen, setNavOpen\] = useState\(false\)/, "SSR starts from the compact navigation rail");
 assert.match(shell, /useLayoutEffect\(\(\) => \{[\s\S]*?const pref = readNavOpenPref\(\)/, "desktop restores its preference before paint");
 assert.match(shell, /const pref = readNavOpenPref\(\)/, "standalone routes restore the shared navigation preference after hydration");
-assert.match(shell, /writeNavOpenPref\(next\)/, "standalone route toggles persist the shared navigation preference");
+assert.match(
+  shell,
+  /setNavOpen\(\(current\) => \{\s*const next = !current;\s*writeNavOpenPref\(next\);\s*return next;\s*}\)/,
+  "standalone route toggles derive and persist the preference from the latest state",
+);
 assert.match(shell, /const isExpanded = !isMobile && navOpen/, "mobile always keeps the compact icon rail");
 assert.match(shell, /className="aps-top shell-top"/, "standalone shell mounts the shared desktop title bar");
 assert.match(shell, /aria-label=\{navOpen \? "Collapse navigation" : "Expand navigation"\}/, "standalone title bar exposes the navigation toggle state");
