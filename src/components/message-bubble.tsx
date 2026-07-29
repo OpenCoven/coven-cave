@@ -43,6 +43,7 @@ import { renderCitedBody } from "@/lib/citations";
 import { CitationSources } from "@/components/ui/citation";
 import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
+import { SpeakBubble } from "@/components/speak-bubble";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -1081,6 +1082,9 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
           ) : null}
           <ExpandBubble text={content} label={label ?? "Familiar response"} />
           <CopyBubble text={content} />
+          {role === "assistant" ? (
+            <SpeakBubble text={content} familiarId={feedbackContext?.familiarId} />
+          ) : null}
           {messageId ? (
             <>
               <button

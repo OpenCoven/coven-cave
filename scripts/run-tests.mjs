@@ -1191,6 +1191,7 @@ export const SUITES = {
     "src/lib/voice/local-loop.test.ts",
     "src/lib/voice/local-tts-server.test.ts",
     "src/lib/voice/local-tts.test.ts",
+    "src/lib/voice/speak-message.test.ts",
     "src/lib/voice/speech-loop.test.ts",
     "src/lib/voice/native-stt.test.ts",
     "src/lib/voice/familiar-brain.test.ts",
