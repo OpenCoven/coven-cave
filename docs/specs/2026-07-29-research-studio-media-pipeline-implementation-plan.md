@@ -469,14 +469,17 @@ git commit -S -m "feat(research): persist media render configuration"
 Cover these exact sequences:
 
 ```ts
-// FIFO: both rows persist as queued; only the first runs.
+// FIFO: both rows persist; only the first may enter rendering.
 await queueResearchMediaGeneration(familiarId, firstId, fakeFactory);
 await queueResearchMediaGeneration(familiarId, secondId, fakeFactory);
-assert.deepEqual(
-  (await listResearchGenerations(familiarId))
-    .filter((row) => row.status === "queued" || row.status === "rendering")
-    .map((row) => row.id),
-  [secondId, firstId],
+const queueRows = await listResearchGenerations(familiarId);
+assert.equal(
+  queueRows.find((row) => row.id === firstId)?.status,
+  "rendering",
+);
+assert.equal(
+  queueRows.find((row) => row.id === secondId)?.status,
+  "queued",
 );
 
 // A second render request for the same draft loses the CAS.
