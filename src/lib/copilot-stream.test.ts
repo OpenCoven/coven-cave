@@ -139,6 +139,20 @@ const flagShapedModelArgs = buildCopilotStreamArgs({
 });
 assert.ok(!flagShapedModelArgs.includes("--model"), "a provider prefix cannot turn a model value into a Copilot flag");
 assert.ok(!flagShapedModelArgs.includes("--allow-all-tools"), "stripped flag-shaped model values never reach spawn argv");
+const nestedModelArgs = buildCopilotStreamArgs({
+  spec,
+  prompt: "safe prompt",
+  resumeSessionId: null,
+  newSessionId: null,
+  model: "provider/team/model",
+  permissionMode: "read",
+  addDirs: [],
+});
+assert.deepEqual(
+  nestedModelArgs.slice(nestedModelArgs.indexOf("--model"), nestedModelArgs.indexOf("--model") + 2),
+  ["--model", "team/model"],
+  "Copilot strips only the first provider segment and preserves a nested model id",
+);
 assert.deepEqual(
   runtimeEventProtocolSchemas([{ ...V2_SCHEMA, fields: { data: ["payload"] } }]),
   [],
@@ -331,6 +345,21 @@ assert.deepEqual(
     "do the thing",
   ],
   "fresh full-permission turns preserve the manifest approval argv with their session, model, trust grants, and trailing prompt",
+);
+
+const opus5Args = buildCopilotStreamArgs({
+  spec,
+  prompt: "use the selected model",
+  resumeSessionId: null,
+  newSessionId: null,
+  model: "github/claude-opus-5",
+  permissionMode: "read",
+  addDirs: [],
+});
+assert.deepEqual(
+  opus5Args.slice(0, 3),
+  ["--no-auto-update", "--model", "claude-opus-5"],
+  "Copilot's authenticated Opus 5 option reaches the native CLI as its exact bare id",
 );
 
 const resumeArgs = buildCopilotStreamArgs({

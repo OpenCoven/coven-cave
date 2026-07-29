@@ -100,15 +100,6 @@ export function memoryFileSourcesForHome(home = homedir()): MemoryFileSource[] {
   const openclawWorkspace = path.join(home, ".openclaw", "workspace");
   return [
     {
-      id: "coven-origin",
-      kind: "coven-origin",
-      label: "Coven native memory",
-      rootPath: path.join(home, ".coven", "memory"),
-      root: "coven-origin",
-      rootLabel: "Coven native memory",
-      origin: "coven",
-    },
-    {
       id: "openclaw-workspace",
       kind: "external-harness",
       label: "OpenClaw runtime memory",
@@ -194,10 +185,10 @@ export function classifyMemoryFilePath(fullPath: string, home = homedir()): Memo
       return {
         sourceId: "coven-familiar",
         sourceKind: "coven-origin",
-        sourceKindLabel: "Coven origin",
+        sourceKindLabel: "Coven workspace files",
         kind: "coven-origin",
         root: `coven-familiar:${familiarId}`,
-        rootLabel: `${displayId(familiarId)} memory`,
+        rootLabel: "Coven workspace files",
         rootPath: path.join(covenFamiliars, familiarId),
         origin: "coven",
         familiarId,

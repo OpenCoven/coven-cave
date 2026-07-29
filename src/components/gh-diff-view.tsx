@@ -47,7 +47,7 @@ export function DiffHunk({
     let cancelled = false;
     (async () => {
       try {
-        const hl = await getShikiHighlighter();
+        const hl = await getShikiHighlighter(lang);
         // Highlight the hunk as one document (meta rows blanked) so tokens
         // stay line-aligned with the parsed rows.
         const code = lines

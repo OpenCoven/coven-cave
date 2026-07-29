@@ -83,8 +83,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /if \(hermesDirect\) \{[\s\S]*?if \(forwardModel\) a\.push\("--model", forwardModel\);[\s\S]*?a\.push\("--query", prompt\)/,
-  "An advertised Hermes --model flag must receive Cave's provider-qualified model id before the query",
+  /if \(hermesDirect\) \{[\s\S]*?if \(hermesLaunchModel\) a\.push\("--model", hermesLaunchModel\);[\s\S]*?a\.push\("--query", prompt\)/,
+  "An advertised Hermes --model flag must receive the registry-transformed launch id before the query",
 );
 
 assert.match(

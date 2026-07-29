@@ -54,7 +54,9 @@ const contracts: RouteContract[] = [
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/coven-memory", methods: ["GET"], kind: "json" },
+  { route: "/coven-memory", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/coven-memory/[id]", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/coven-memory/overview", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/coven/exec", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/daemon/capabilities", methods: ["GET"], kind: "json" },
   { route: "/daemon/probe", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -187,6 +189,7 @@ const contracts: RouteContract[] = [
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/roles/crafts", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/runtime-models/[runtime]", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/runtime-models/opencode", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/document", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/stream", methods: ["GET"], kind: "stream", localOriginGuard: true },
@@ -282,7 +285,7 @@ function exportedMethods(source: string): string[] {
 }
 
 function usesJsonResponse(source: string): boolean {
-  return /NextResponse\.json|Response\.json|new Response\(/.test(source);
+  return /NextResponse\.json|Response\.json|new Response\(|canonicalMemoryJson/.test(source);
 }
 
 function effectiveRouteSource(file: string, source: string): string {

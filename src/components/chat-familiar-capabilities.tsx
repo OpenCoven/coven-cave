@@ -33,7 +33,7 @@ import type { LocalSkillEntry } from "@/app/api/skills/local/route";
 import { isBindableRuntimeChoice, type AdapterReport } from "@/lib/harness-adapters";
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { listVoiceProviders } from "@/lib/voice/registry";
-import { catalogForRuntime } from "@/lib/runtime-models";
+import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
 import { relativeTime } from "@/lib/relative-time";
 import { FamiliarSkillsSection } from "@/components/familiar-tab-skills";
 import { FamiliarIdentitySection } from "@/components/familiar-tab-identity";
@@ -123,11 +123,11 @@ function FamiliarIdentityHero({
   // Model select: sourced from the same runtime → provider catalog the chat
   // picker uses; a saved id outside the curated seed stays selectable.
   const effectiveHarness = familiar.harness ?? defaultHarnessId;
-  const modelCatalog = catalogForRuntime(effectiveHarness);
+  const runtimeModelOptions = useRuntimeModelOptions(effectiveHarness, familiar.id);
   const modelValue = familiar.model ?? "";
   const modelOptions: StandardSelectOption<string>[] = [
     { value: "", label: "Provider default", detail: "Runtime picks the model" },
-    ...(modelCatalog?.models ?? []).map((m) => ({ value: m.id, label: m.label ?? m.id, detail: m.id })),
+    ...runtimeModelOptions.map((m) => ({ value: m.id, label: m.label ?? m.id, detail: m.id })),
   ];
   if (modelValue && !modelOptions.some((o) => o.value === modelValue)) {
     modelOptions.push({ value: modelValue, label: modelValue, detail: "Saved model id" });

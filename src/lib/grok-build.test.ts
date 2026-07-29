@@ -47,6 +47,32 @@ assert.deepEqual(
   "resumed read runs use native Grok JSONL, grants, system identity, and --resume (not --session-id)",
 );
 
+{
+  const nestedModelArgs = buildGrokBuildArgs({
+    prompt: "inspect this",
+    resumeSessionId: null,
+    model: "provider/team/model",
+    permissionMode: "read",
+    grantDirs: [],
+    identityRules: "",
+  });
+  assert.deepEqual(
+    nestedModelArgs.slice(nestedModelArgs.indexOf("--model"), nestedModelArgs.indexOf("--model") + 2),
+    ["--model", "team/model"],
+    "Grok strips only the first provider segment and preserves a nested model id",
+  );
+
+  const flagShapedModelArgs = buildGrokBuildArgs({
+    prompt: "inspect this",
+    resumeSessionId: null,
+    model: "provider/--sandbox",
+    permissionMode: "read",
+    grantDirs: [],
+    identityRules: "",
+  });
+  assert.ok(!flagShapedModelArgs.includes("--model"), "a stripped flag-shaped Grok model never reaches argv");
+}
+
 assert.ok(
   !buildGrokBuildArgs({
     prompt: "continue",

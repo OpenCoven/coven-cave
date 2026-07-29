@@ -120,22 +120,14 @@ assert.doesNotMatch(salemBlock, /#(?:d1c4e9|e8e0f0|c9a7ff|d26bff|a855f7|a89ac0)\
 
 console.log("globals.css.test.ts (salem tokens) OK");
 
-// The mode-transition wrapper must never RETAIN a transform after its
-// entrance animation: fill-mode `both` kept the final keyframe's transform
-// (even identity), turning every .cave-mode-fade into the containing block
-// for position:fixed descendants — fixed overlays inside surfaces resolved
-// against the mode area instead of the viewport and forced portal-to-body
-// workarounds (#537, #1984, github-view card, cave-nv3). Bead cave-cco.
-const modeFadeRule = css.match(/\.cave-mode-fade\s*\{([\s\S]*?)\}/)?.[1] ?? "";
-assert.match(
-  modeFadeRule,
-  /animation:\s*cave-mode-in\s+120ms\s+ease-out\s+backwards/,
-  ".cave-mode-fade must use fill-mode backwards (nothing retained after the entrance)",
-);
+// The mode wrapper stays continuously visible. Animating the full pane from
+// opacity 0 caused every mode change to flash blank, while an animated
+// transform also turned the wrapper into a containing block for fixed
+// descendants (#537, #1984, github-view card, cave-nv3). Bead cave-cco.
 assert.doesNotMatch(
-  modeFadeRule,
-  /\bboth\b|\bforwards\b/,
-  ".cave-mode-fade must not retain end-state animation styles (containing-block trap, cave-cco)",
+  css,
+  /@keyframes\s+cave-mode-in|\.cave-mode-fade\s*\{[\s\S]*?(?:animation|opacity|transform)\s*:/,
+  ".cave-mode-fade must stay continuously visible and must not become a containing block",
 );
 
 // The chat/code sidebar responds to its own panel width, not the viewport —

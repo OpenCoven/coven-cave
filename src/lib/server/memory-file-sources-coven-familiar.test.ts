@@ -6,6 +6,9 @@ const c = classifyMemoryFilePath(dream, home);
 assert.ok(c, "coven familiar dream path must classify");
 assert.equal(c?.familiarId, "kitty");
 assert.equal(c?.sourceKind, "coven-origin");
+assert.equal(c?.origin, "coven");
+assert.equal(c?.sourceKindLabel, "Coven workspace files");
+assert.equal(c?.rootLabel, "Coven workspace files");
 // OpenClaw still works:
 const ocl = classifyMemoryFilePath("/home/u/.openclaw/workspace/sage/memory/note.md", home);
 assert.equal(ocl?.familiarId, "sage");

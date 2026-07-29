@@ -1,8 +1,26 @@
+import type {
+  CanonicalMemorySummary,
+  CanonicalMemoryVerificationState,
+} from "@/lib/canonical-memory";
+
 export type SalemContextRow =
   | { kind: "familiar"; familiar: { display_name: string; role?: string } }
   | { kind: "session"; session: { title?: string; familiarId?: string | null; harness?: string | null }; familiar: { display_name: string } | null }
   | { kind: "card"; card: { title: string; status: string; priority: string; labels: string[] }; familiar: { display_name: string } | null }
-  | { kind: "coven-memory"; entry: { title: string; familiar_id: string; path: string }; familiar: { display_name: string } | null }
+  | {
+      kind: "coven-memory";
+      entry: Pick<
+        CanonicalMemorySummary,
+        | "id"
+        | "title"
+        | "familiarId"
+        | "excerpt"
+        | "source"
+        | "verification"
+        | "relativeUpdatedAt"
+      >;
+      familiar: { display_name: string } | null;
+    }
   | { kind: "fs-memory"; entry: { relPath: string; rootLabel: string } };
 
 export type SalemSearchContext = {
@@ -12,10 +30,44 @@ export type SalemSearchContext = {
 };
 
 const SALEM_CONTEXT_LIMIT = 8;
+const CANONICAL_VERIFICATION_STATES =
+  new Set<CanonicalMemoryVerificationState>([
+    "verified",
+    "needs-review",
+    "degraded",
+    "unknown",
+    "unavailable",
+  ]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 
 /** Exclude command and UI-only rows before sending local context to Salem. */
 export function isSalemContextRow<T extends { kind: string }>(row: T): row is T & SalemContextRow {
-  return row.kind === "familiar" || row.kind === "session" || row.kind === "card" || row.kind === "coven-memory" || row.kind === "fs-memory";
+  if (row.kind === "coven-memory") {
+    const candidate = row as T & { entry?: unknown };
+    if (!isRecord(candidate.entry)) return false;
+    return (
+      typeof candidate.entry.title === "string" &&
+      typeof candidate.entry.id === "string" &&
+      typeof candidate.entry.familiarId === "string" &&
+      typeof candidate.entry.excerpt === "string" &&
+      isRecord(candidate.entry.source) &&
+      typeof candidate.entry.source.label === "string" &&
+      isRecord(candidate.entry.verification) &&
+      typeof candidate.entry.verification.state === "string" &&
+      typeof candidate.entry.relativeUpdatedAt === "string" &&
+      CANONICAL_VERIFICATION_STATES.has(
+        candidate.entry.verification
+          .state as CanonicalMemoryVerificationState,
+      )
+    );
+  }
+  return row.kind === "familiar" ||
+    row.kind === "session" ||
+    row.kind === "card" ||
+    row.kind === "fs-memory";
 }
 
 /** Keep the AI fallback grounded in the same local rows that the palette shows. */
@@ -32,7 +84,11 @@ export function buildSalemSearchContext(rows: readonly SalemContextRow[], query:
     };
     if (row.kind === "coven-memory") return {
       type: "memory", title: row.entry.title,
-      detail: [row.familiar?.display_name ?? row.entry.familiar_id, row.entry.path].filter(Boolean).join(" · "),
+      detail: [
+        row.familiar?.display_name ?? row.entry.familiarId,
+        row.entry.source.label,
+        row.entry.verification.state,
+      ].join(" · "),
     };
     return { type: "memory-file", title: row.entry.relPath, detail: row.entry.rootLabel };
   });

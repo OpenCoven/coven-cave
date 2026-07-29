@@ -1,20 +1,12 @@
 import { ritualStreak } from "@/lib/familiar-renown";
+import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import type { Familiar, SessionRow } from "@/lib/types";
 
-export type CovenMemoryEntry = {
-  id: string;
-  familiar_id: string;
-  title: string;
-  path: string;
-  updated_at: string;
-  excerpt?: string;
-  source_context?: string;
-  /** Absolute, allow-listed path from /api/coven-memory; present when full content is loadable. */
-  fullPath?: string;
-};
+export type CanonicalMemoryAvailability = "ready" | "unavailable";
 
 export type FamiliarCardStats = {
   memoryCount: number;
+  memoryAvailability: CanonicalMemoryAvailability;
   latestMemory: { title: string; updatedAt: string } | null;
   lastSessionAt: string | null;
   /** Every non-archived session attributed to the familiar. */
@@ -48,7 +40,8 @@ function sessionStartAt(session: SessionRow): string | null {
 export function buildFamiliarCardStats(args: {
   familiars: Familiar[];
   sessions: SessionRow[];
-  covenEntries: CovenMemoryEntry[];
+  covenEntries: CanonicalMemorySummary[];
+  memoryAvailability: CanonicalMemoryAvailability;
   now?: number;
 }): Map<string, FamiliarCardStats> {
   const now = args.now ?? Date.now();
@@ -66,11 +59,11 @@ export function buildFamiliarCardStats(args: {
     sessionsByFamiliar.set(fid, bucket);
   }
 
-  const memoriesByFamiliar = new Map<string, CovenMemoryEntry[]>();
+  const memoriesByFamiliar = new Map<string, CanonicalMemorySummary[]>();
   for (const entry of args.covenEntries) {
-    const bucket = memoriesByFamiliar.get(entry.familiar_id) ?? [];
+    const bucket = memoriesByFamiliar.get(entry.familiarId) ?? [];
     bucket.push(entry);
-    memoriesByFamiliar.set(entry.familiar_id, bucket);
+    memoriesByFamiliar.set(entry.familiarId, bucket);
   }
 
   const result = new Map<string, FamiliarCardStats>();
@@ -106,16 +99,17 @@ export function buildFamiliarCardStats(args: {
     let latestMemory: FamiliarCardStats["latestMemory"] = null;
     let latestMs = -Infinity;
     for (const entry of memories) {
-      const ms = Date.parse(entry.updated_at);
+      const ms = Date.parse(entry.updatedAt);
       if (!Number.isFinite(ms)) continue;
       if (ms > latestMs) {
         latestMs = ms;
-        latestMemory = { title: entry.title, updatedAt: entry.updated_at };
+        latestMemory = { title: entry.title, updatedAt: entry.updatedAt };
       }
     }
 
     result.set(familiar.id, {
       memoryCount: memories.length,
+      memoryAvailability: args.memoryAvailability,
       latestMemory,
       lastSessionAt,
       sessionsTotal: sessions.length,

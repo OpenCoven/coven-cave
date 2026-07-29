@@ -18,8 +18,9 @@ assert.match(
   "suppresses IconButton's aria-pressed on the menu trigger",
 );
 
-// The body is a real menu (menu > menuitem/menuitemradio hierarchy), reusing the
-// shared Popover scaffold so Escape / outside-click / focus-return come for free.
+// The body is a real menu (menu > menuitem/menuitemradio/menuitemcheckbox
+// hierarchy), reusing the shared Popover scaffold so Escape / outside-click /
+// focus-return come for free.
 assert.match(src, /role="menu"/, "popover body announces as a menu");
 assert.match(src, /from "\.\/popover"/, "reuses the shared Popover scaffold");
 assert.match(src, /from "\.\/icon-button"/, "reuses the shared IconButton trigger");
@@ -44,7 +45,7 @@ assert.match(
 );
 assert.match(
   src,
-  /ENABLED_MENU_ITEM_SELECTOR[\s\S]*menuitem[\s\S]*:disabled[\s\S]*menuitemradio[\s\S]*:disabled/,
+  /ENABLED_MENU_ITEM_SELECTOR[\s\S]*menuitem[\s\S]*:disabled[\s\S]*menuitemradio[\s\S]*:disabled[\s\S]*menuitemcheckbox[\s\S]*:disabled/,
   "focus and navigation target only enabled menuitems",
 );
 
@@ -59,7 +60,7 @@ assert.match(src, /items\[nextIndex\]\?\.focus\(\)/, "menu navigation moves DOM 
 // a close() through onSelect. Disabled items must NOT close it.
 assert.match(
   src,
-  /closest\?\.\(\s*'\[role="menuitem"\], \[role="menuitemradio"\]',?\s*\)/,
+  /closest\?\.\(\s*'\[role="menuitem"\], \[role="menuitemradio"\], \[role="menuitemcheckbox"\]',?\s*\)/,
   "auto-closes on menuitem activation",
 );
 assert.match(src, /!\(item as HTMLButtonElement\)\.disabled/, "disabled items don't close the menu");

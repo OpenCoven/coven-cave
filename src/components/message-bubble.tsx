@@ -27,6 +27,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -40,18 +41,21 @@ import { getShikiHighlighter } from "@/lib/shiki-highlighter";
 import { Icon } from "@/lib/icon";
 import { renderCitedBody } from "@/lib/citations";
 import { CitationSources } from "@/components/ui/citation";
-import { classifyDiffLines, parseFenceInfo } from "@/lib/message-code-fences";
+import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { resolveShikiLang, diffContentLang } from "@/lib/code-lang";
 import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
+import { loadMarkdownPreview } from "@/lib/markdown-preview";
 import {
   cacheRenderedMarkdown as renderCacheSet,
   closeTrailingFence,
+  createMarkdownRenderGate,
   getRenderedMarkdown as renderCacheGet,
   scanFenceFilenames,
+  type MarkdownRenderGate,
 } from "@/lib/message-markdown-stream";
 import { FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
 export { FileLinkResolverContext } from "./message-dom-wiring";
@@ -72,12 +76,6 @@ export function fmtBubbleTime(iso?: string): string {
     return Date.now() - d.getTime() > ONE_DAY ? dateFmt.format(d) : timeFmt.format(d);
   } catch { return ""; }
 }
-
-// ---------------------------------------------------------------------------
-// Shiki singleton — lazy, client-only (shared app-wide via lib/shiki-highlighter)
-// ---------------------------------------------------------------------------
-
-const getHighlighter = getShikiHighlighter;
 
 // ---------------------------------------------------------------------------
 // Parse fence info → { lang, filename }
@@ -110,52 +108,40 @@ function plainTextFromHtmlLine(line: string): string {
 // uniformly "inserted"-colored lines. Diffs whose target has no resolvable
 // grammar keep the bundled `diff` grammar (whole-line coloring) below.
 
-async function renderCodeBlock(
-  code: string,
-  info: string,
-): Promise<string> {
-  const { lang, filename } = parseFenceInfo(info);
-  const isDiff = lang === "diff";
-  const diffLang = isDiff ? diffContentLang(code) : "text";
-  let diffLines = isDiff && diffLang !== "text" ? classifyDiffLines(code) : null;
+function plainCodeHtml(code: string): string {
+  return `<pre class="shiki mood-c-dark cave-code-plain" tabindex="0"><code>${escHtml(code)}</code></pre>`;
+}
 
-  let highlighted: string;
-  try {
-    const hl = await getHighlighter();
-    // Language-aware diffs feed the grammar the diff's content with markers
-    // stripped and meta rows blanked — one line per original line, so the
-    // highlighted output stays index-aligned with the classification.
-    const doc = diffLines ? diffLines.map((l) => l.content).join("\n") : code;
-    highlighted = hl.codeToHtml(doc, {
-      // resolveShikiLang maps both fence names (`typescript`) AND bare file
-      // extensions (`ts`, `tsx`, `rs`) to a loadable grammar — without it the
-      // Projects file preview, which passes raw extensions, fell back to the
-      // unhighlighted "text" grammar for every file.
-      lang: diffLines ? diffLang : resolveShikiLang(lang),
-      theme: "mood-c-dark",
-    });
-  } catch (err) {
-    console.error("[renderCodeBlock] Shiki highlight failed", err);
-    // Fallback renders the ORIGINAL code (markers intact) — drop the
-    // language-aware line map so markers aren't re-attached twice.
-    highlighted = `<pre><code>${escHtml(code)}</code></pre>`;
-    diffLines = null;
-  }
-
+function renderCodeBlockFrame({
+  code,
+  lang,
+  filename,
+  highlighted,
+  isDiff,
+  diffLines,
+}: {
+  code: string;
+  lang: string;
+  filename?: string;
+  highlighted: string;
+  isDiff: boolean;
+  diffLines: DiffLine[] | null;
+}): string {
   const lines = code.split("\n");
   const showLineNums = lines.length > 5;
 
-  // Build line-numbered version by splitting Shiki's output into lines.
-  // Shiki wraps each token in <span>; the outer <pre><code> contains one
-  // line per logical source line (separated by \n in the token stream).
-  // We post-process to wrap each line in a <span class="cave-line"> for
-  // gutter rendering.
+  // Both the plain and Shiki passes flow through this exact frame. Syntax
+  // highlighting can therefore change token color without changing the code
+  // card's header, gutters, line metrics, controls, or scroll geometry.
   const lineWrapped = highlighted.replace(
     /(<pre[^>]*>)([\s\S]*)(<\/pre>)/,
     (_match, open, inner, close) => {
+      const focusableOpen = open.includes("tabindex=")
+        ? open
+        : open.replace("<pre", '<pre tabindex="0"');
       const codeInner = inner.replace(/(<code[^>]*>)([\s\S]*)(<\/code>)/, (_m2: string, co: string, codeContent: string, cc: string) => {
         const rawLines = codeContent.split("\n");
-        // Remove trailing empty line Shiki adds
+        // Remove trailing empty line Shiki adds.
         if (rawLines[rawLines.length - 1] === "") rawLines.pop();
         const wrappedLines = rawLines.map((line: string, i: number) => {
           let content = line;
@@ -198,7 +184,7 @@ async function renderCodeBlock(
         });
         return `${co}${wrappedLines.join("")}${cc}`;
       });
-      return `${open}${codeInner}${close}`;
+      return `${focusableOpen}${codeInner}${close}`;
     },
   );
 
@@ -223,6 +209,52 @@ async function renderCodeBlock(
   return `<div class="cave-code-wrap">${headerHtml}${lineWrapped}${expandHtml}</div>`;
 }
 
+async function renderCodeBlock(
+  code: string,
+  info: string,
+  { highlightCode = true }: { highlightCode?: boolean } = {},
+): Promise<string> {
+  const { lang, filename } = parseFenceInfo(info);
+  const isDiff = lang === "diff";
+  const diffLang = isDiff ? diffContentLang(code) : "text";
+  let diffLines = isDiff && diffLang !== "text" ? classifyDiffLines(code) : null;
+  const doc = diffLines ? diffLines.map((line) => line.content).join("\n") : code;
+
+  let highlighted: string;
+  if (!highlightCode) {
+    highlighted = plainCodeHtml(doc);
+  } else {
+    try {
+      // Language-aware diffs feed the grammar the diff's content with markers
+      // stripped and meta rows blanked — one line per original line, so the
+      // highlighted output stays index-aligned with the classification.
+      const resolvedLang = diffLines ? diffLang : resolveShikiLang(lang);
+      const hl = await getShikiHighlighter(resolvedLang);
+      highlighted = hl.codeToHtml(doc, {
+        // resolveShikiLang maps both fence names (`typescript`) AND bare file
+        // extensions (`ts`, `tsx`, `rs`) to a loadable grammar.
+        lang: resolvedLang,
+        theme: "mood-c-dark",
+      });
+    } catch (err) {
+      console.error("[renderCodeBlock] Shiki highlight failed", err);
+      // Fallback renders the ORIGINAL code (markers intact) — drop the
+      // language-aware line map so markers aren't re-attached twice.
+      highlighted = plainCodeHtml(code);
+      diffLines = null;
+    }
+  }
+
+  return renderCodeBlockFrame({
+    code,
+    lang,
+    filename,
+    highlighted,
+    isDiff,
+    diffLines,
+  });
+}
+
 /**
  * Highlight a snippet to a *bare* Shiki `<pre class="shiki">…</pre>` — no
  * cave-code-wrap header, copy button, or line gutters. For surfaces that
@@ -231,8 +263,9 @@ async function renderCodeBlock(
  * same lazy singleton as the chat code blocks, so no extra Shiki/WASM load.
  */
 export async function highlightToHtml(code: string, lang: string): Promise<string> {
-  const hl = await getHighlighter();
-  return hl.codeToHtml(code, { lang: resolveShikiLang(lang), theme: "mood-c-dark" });
+  const resolvedLang = resolveShikiLang(lang);
+  const hl = await getShikiHighlighter(resolvedLang);
+  return hl.codeToHtml(code, { lang: resolvedLang, theme: "mood-c-dark" });
 }
 
 // ---------------------------------------------------------------------------
@@ -556,11 +589,17 @@ function isMermaidCodeBlock(block: Block): boolean {
   return lang === "mermaid";
 }
 
-async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promise<string> {
-  const cached = renderCacheGet(markdown);
-  if (cached !== undefined) return cached;
+async function mdToHtml(
+  markdown: string,
+  opts?: { transient?: boolean; highlightCode?: boolean },
+): Promise<string> {
+  const canUseCache = !opts?.transient && opts?.highlightCode !== false;
+  if (canUseCache) {
+    const cached = renderCacheGet(markdown);
+    if (cached !== undefined) return cached;
+  }
 
-  const { renderAsync } = await import("@create-markdown/preview");
+  const { renderAsync } = await loadMarkdownPreview();
 
   // @create-markdown/core's fenced-code parser rejects any info string that
   // contains a colon (e.g. ```ts:example.ts), treating the opener as a
@@ -581,7 +620,7 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
   // fence is usually incomplete, so the mermaid source shows as a code block
   // until the message finishes, then swaps to the rendered diagram.
   const mermaidPlugin =
-    !opts?.transient && codeBlocks.some(isMermaidCodeBlock) ? await getMermaidPlugin() : null;
+    canUseCache && codeBlocks.some(isMermaidCodeBlock) ? await getMermaidPlugin() : null;
   const codeReplacements: string[] = new Array(codeBlocks.length);
   await Promise.all(
     codeBlocks.map(async (block, i) => {
@@ -602,7 +641,9 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
       const rawInfo = cb.props.info ?? cb.props.language ?? "";
       const filename = fenceFilenames[i] ?? null;
       const info = filename ? `${rawInfo}:${filename}` : rawInfo;
-      codeReplacements[i] = await renderCodeBlock(code, info);
+      codeReplacements[i] = await renderCodeBlock(code, info, {
+        highlightCode: opts?.highlightCode !== false,
+      });
     }),
   );
 
@@ -640,7 +681,7 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
   // Transient (mid-stream) snapshots are never requested again once the
   // stream advances past them — caching one per throttle tick would churn
   // settled entries out of the LRU for no hit-rate gain.
-  if (!opts?.transient) renderCacheSet(markdown, sanitizedHtml);
+  if (canUseCache) renderCacheSet(markdown, sanitizedHtml);
   return sanitizedHtml;
 }
 
@@ -650,19 +691,27 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
 // ---------------------------------------------------------------------------
 
 function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?: boolean; onOpenUrl?: (url: string) => void }) {
-  const [html, setHtml] = useState<string | null>(null);
+  const [html, setHtml] = useState<string | null>(
+    () => pending ? null : renderCacheGet(text) ?? null,
+  );
   // Chat prose file references (`src/foo.ts:42`) open in Code — but only when
   // the surface's resolver (FileLinkResolverContext) confirms the file exists
   // under the session's project root. No resolver ⇒ refs stay plain text.
   const fileLinkResolver = useContext(FileLinkResolverContext);
   const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver);
-  // Out-of-order guard: mdToHtml is async and during streaming several
-  // renders can be in flight at once. Every render takes a monotonically
-  // increasing stamp, and a result only commits if it is newer than the
-  // last committed one — a slower earlier render never overwrites a newer
-  // one (including the final settled render).
-  const renderStampRef = useRef(0);
-  const appliedStampRef = useRef(0);
+  // mdToHtml is async and several streaming renders can be in flight at once.
+  // The gate orders their commits and invalidates pre-settle work synchronously
+  // during render, before React runs passive-effect cleanup or the final pass.
+  const renderGateRef = useRef<MarkdownRenderGate | null>(null);
+  if (!renderGateRef.current) renderGateRef.current = createMarkdownRenderGate();
+  const renderGate = renderGateRef.current;
+  const wasPendingRef = useRef(Boolean(pending));
+  if (wasPendingRef.current && !pending) {
+    renderGate.settle();
+  }
+  useLayoutEffect(() => {
+    wasPendingRef.current = Boolean(pending);
+  }, [pending]);
   // Throttle bookkeeping for streaming renders. Lives in a ref because the
   // effect re-fires on every streamed chunk: a per-effect trailing debounce
   // would be reset by each chunk and never fire under a steady stream.
@@ -690,13 +739,12 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
       // commits and nothing would paint until the turn settles (starvation).
       // The stamp guard above provides ordering safety instead; a commit
       // after unmount is a no-op state update that React drops.
+      const stamp = renderGate.issue();
       const run = () => {
         lastStreamRenderRef.current = Date.now();
-        const stamp = ++renderStampRef.current;
-        mdToHtml(closeTrailingFence(text), { transient: true })
+        mdToHtml(closeTrailingFence(text), { transient: true, highlightCode: false })
           .then((h) => {
-            if (stamp <= appliedStampRef.current) return; // stale out-of-order render
-            appliedStampRef.current = stamp;
+            if (!renderGate.apply(stamp)) return;
             setHtml(h);
           })
           .catch((err) => { console.error("[MarkdownContent] mdToHtml failed", err); });
@@ -710,18 +758,30 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
       return () => { clearTimeout(timer); };
     }
 
-    // Settled (`pending` → false): final immediate render on the verbatim
-    // text, keeping the original async-cancellation discipline — once the
-    // turn is done there is no starvation risk, and cancellation keeps a
-    // stale effect run from committing.
+    // Settled (`pending` → false): paint document + code-card geometry first,
+    // then enhance that stable frame with Shiki token colors. A cached final
+    // render resolves immediately and never regresses to the plain stage.
     let cancelled = false;
-    const stamp = ++renderStampRef.current;
-    mdToHtml(text)
-      .then((h) => {
+    const cached = renderCacheGet(text);
+    if (cached !== undefined) {
+      const stamp = renderGate.issue();
+      if (renderGate.apply(stamp)) setHtml(cached);
+      return () => { cancelled = true; };
+    }
+
+    const plainStamp = renderGate.issue();
+    mdToHtml(text, { highlightCode: false })
+      .then((plainHtml) => {
         if (cancelled) return;
-        if (stamp <= appliedStampRef.current) return; // stale out-of-order render
-        appliedStampRef.current = stamp;
-        setHtml(h);
+        if (!renderGate.apply(plainStamp)) return;
+        setHtml(plainHtml);
+
+        const highlightedStamp = renderGate.issue();
+        return mdToHtml(text).then((highlightedHtml) => {
+          if (cancelled) return;
+          if (!renderGate.apply(highlightedStamp)) return;
+          setHtml(highlightedHtml);
+        });
       })
       .catch((err) => { console.error("[MarkdownContent] mdToHtml failed", err); });
     return () => { cancelled = true; };
@@ -1102,13 +1162,10 @@ function MarkdownExpandModal({
     copyTimer.current = setTimeout(() => setCopied(false), 2000);
   }, [text]);
 
-  // Portal to <body>: the chat transcript lives under `.cave-mode-fade` (which
-  // sets `transform`) and `.cave-linear-turn` (`content-visibility: auto`), and
-  // both establish a containing block for `position: fixed`. Rendered inline the
-  // overlay is clamped to the message's turn box instead of the viewport, so the
-  // "Expand" reading view never actually goes full-screen (it sits in a small
-  // box with a huge empty area beside/below it). Portaling escapes those
-  // ancestors so `inset-0` resolves to the real viewport. See ui/modal.tsx.
+  // Portal to <body>: transcript rows use `content-visibility: auto`, which
+  // establishes layout containment around the message. Rendered inline, the
+  // overlay can be clamped to that turn instead of the viewport. Portaling
+  // keeps `inset-0` anchored to the real viewport. See ui/modal.tsx.
   return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"

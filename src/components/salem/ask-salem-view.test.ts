@@ -35,9 +35,24 @@ test("ask flow posts familiarId + model + local context + history to /api/salem"
 });
 
 test("local index corpora mirror the palette sources", () => {
-  for (const endpoint of ["/api/chat/search?q=", "/api/board", "/api/coven-memory", "/api/memory"]) {
+  for (const endpoint of ["/api/chat/search?q=", "/api/board", "/api/memory"]) {
     assert.ok(source.includes(endpoint), `gathers ${endpoint}`);
   }
+  assert.match(
+    source,
+    /loadCanonicalMemoryList\(\)/,
+    "canonical summaries use the shared non-forced list loader",
+  );
+  assert.match(
+    source,
+    /canonical\.state === "ready" \? canonical\.entries\.map/,
+    "only ready canonical summaries enter Salem context",
+  );
+  assert.doesNotMatch(
+    source,
+    /fetchJson\(\s*["'`]\/api\/coven-memory/,
+    "Ask Salem never bypasses the canonical cache",
+  );
 });
 
 test("thread persists across visits and can be cleared", () => {

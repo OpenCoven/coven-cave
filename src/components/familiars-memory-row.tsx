@@ -1,6 +1,9 @@
 "use client";
 import { Icon } from "@/lib/icon";
-import type { MemoryRow } from "@/lib/memory-rows";
+import type {
+  CanonicalMemoryRow,
+  FileMemoryRow,
+} from "@/lib/memory-rows";
 
 function formatBytes(n: number | undefined): string {
   if (!n || n < 0 || !Number.isFinite(n)) return "";
@@ -9,6 +12,16 @@ function formatBytes(n: number | undefined): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+type MemoryRowItemProps = {
+  age: string;
+  selected: boolean;
+  onSelect: () => void;
+  onExpand: () => void;
+} & (
+  | { row: CanonicalMemoryRow; onDelete?: never }
+  | { row: FileMemoryRow; onDelete?: () => void }
+);
+
 export function MemoryRowItem({
   row,
   age,
@@ -16,15 +29,8 @@ export function MemoryRowItem({
   onSelect,
   onExpand,
   onDelete,
-}: {
-  row: MemoryRow;
-  age: string;
-  selected: boolean;
-  onSelect: () => void;
-  onExpand: () => void;
-  onDelete?: () => void;
-}) {
-  const size = formatBytes(row.size);
+}: MemoryRowItemProps) {
+  const size = row.kind === "file" ? formatBytes(row.size) : "";
   return (
     <li
       className={`group/row relative flex min-w-0 items-stretch gap-1 border-l-2 px-1 transition-colors ${
@@ -40,7 +46,7 @@ export function MemoryRowItem({
         className="focus-ring-inset flex min-w-0 flex-1 items-start gap-2 px-2 py-2 text-left"
       >
         <Icon
-          name={row.kind === "agent" ? "ph:brain" : "ph:file-text"}
+          name={row.kind === "canonical" ? "ph:brain" : "ph:file-text"}
           width={13}
           className="mt-0.5 shrink-0 text-[var(--text-muted)]"
           aria-hidden
@@ -54,6 +60,14 @@ export function MemoryRowItem({
           </span>
           <span className="mt-0.5 flex items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             <span className="truncate">{row.sourceLabel}</span>
+            {row.kind === "canonical" ? (
+              <>
+                <span aria-hidden>·</span>
+                <span>{row.verification.state}</span>
+                <span aria-hidden>·</span>
+                <span>{row.privacy.classification ?? "unclassified"}</span>
+              </>
+            ) : null}
             {size ? <><span aria-hidden>·</span><span>{size}</span></> : null}
             {row.stale ? (
               <span className="inline-flex items-center gap-1" title="Stale — suggested for cleanup">
@@ -74,7 +88,7 @@ export function MemoryRowItem({
         >
           <Icon name="ph:arrows-out-simple" width={12} aria-hidden />
         </button>
-        {onDelete && row.protection !== "structural" ? (
+        {row.kind === "file" && onDelete && row.protection !== "structural" ? (
           <button
             type="button"
             onClick={onDelete}

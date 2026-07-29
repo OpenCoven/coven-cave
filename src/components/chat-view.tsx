@@ -18,7 +18,7 @@ import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
-import { segmentTurn } from "@/lib/turn-segments";
+import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
@@ -203,6 +203,12 @@ import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { AttachmentList, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
+import { preloadMarkdownPreview } from "@/lib/markdown-preview";
+
+// Chat history commonly arrives before syntax highlighting is needed. Warm the
+// lightweight browser-only serializer while that request is in flight so
+// settled messages do not first paint as raw Markdown.
+preloadMarkdownPreview();
 
 // CHAT-D3-07 perf: `replyFor` runs for every row on every render and parses the
 // turn text (strip reasoning + Next paths) to decide whether the Reply action
@@ -2933,7 +2939,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     text: input,
     setText: setInput,
     modelHarness,
-    modelOptionsOverride: modelHarness === "opencode" ? composerModelOptions : undefined,
+    modelOptionsOverride: composerModelOptions,
     onPickModel: (id) => {
       handleSelectModel(id);
       appendSystem(`Model set to ${id}.`);
@@ -3871,7 +3877,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           formatModelList(
             modelHarness,
             current,
-            modelHarness === "opencode" ? composerModelOptions : undefined,
+            composerModelOptions,
           ),
         );
         setInput("");
@@ -3880,7 +3886,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       const id = resolveModelArg(
         args,
         modelHarness,
-        modelHarness === "opencode" ? composerModelOptions : undefined,
+        composerModelOptions,
       );
       if (!id) {
         appendSystem(`Unknown model "${args.trim()}". Type /model to list the options.`);
@@ -7093,7 +7099,7 @@ function TurnRowImpl({
   // duplicates it — suppress the chip until text flows or the turn settles.
   // Settled chips never hit this (pending is false by then), so the Failed
   // chip that anchors the Retry pill (#416/#420) always renders.
-  const indicatorVisible = Boolean(turn.pending) && !visible;
+  const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
 
   // CHAT-D4-01: when every tool event carries a textOffset (live turns from
   // this session), render the turn as ordered segments — prose spans with
@@ -7112,13 +7118,9 @@ function TurnRowImpl({
       : {
           kind: "block" as const,
           key: `tools-${seg.tools[0]?.id ?? i}`,
-          // Reuse the EXISTING collapsed ToolBlock (arg summary + diff
-          // inputs); same-offset tools render consecutively in one group.
-          node: (
-            <div className="space-y-2">
-              {seg.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
-            </div>
-          ),
+          // Each chronology-preserving segment only rolls consecutive calls
+          // with the same name; prose and a new offset stay hard boundaries.
+          node: <ToolRuns tools={seg.tools} />,
         },
   );
 
@@ -7247,6 +7249,7 @@ function TurnRowImpl({
           </div>
 
           <div className="cave-linear-turn-body">
+            {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} /> : null}
             {/* Chat-revamp 1b: the collapsed agent-work line sits ABOVE the
                 answer, so the reader sees "Worked for … · N steps" first and
                 the prose below reads uninterrupted. */}
@@ -7283,10 +7286,10 @@ function TurnRowImpl({
                 they don't teleport out of a rollup once text arrives. */}
             {indicatorVisible && segments?.length ? (
               <div className="mt-3 space-y-2">
-                {segments.flatMap((seg) =>
+                {segments.map((seg, index) =>
                   seg.kind === "tools"
-                    ? seg.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
-                    : [],
+                    ? <ToolRuns key={`tools-${seg.tools[0]?.id ?? index}`} tools={seg.tools} />
+                    : null,
                 )}
               </div>
             ) : null}
@@ -7312,7 +7315,6 @@ function TurnRowImpl({
               </div>
             ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
-            {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} /> : null}
             {/* Edit cards on settled turns (the work line above the answer
                 already collapsed everything else). */}
             {!turn.pending && turn.tools?.length && editCards.length
@@ -7401,7 +7403,7 @@ function TurnRowImpl({
   );
 }
 
-function ReasoningBlock({ reasoning, durationMs }: { reasoning: string; durationMs?: number }) {
+function ReasoningBlock({ reasoning, durationMs, pending }: { reasoning: string; durationMs?: number; pending: boolean }) {
   // The global "Show thinking" toggle (header) opens every reasoning block at
   // once; an individual block can still be collapsed/expanded locally. The
   // disclosure stays default-collapsed in markup — `open` is driven by the
@@ -7415,9 +7417,10 @@ function ReasoningBlock({ reasoning, durationMs }: { reasoning: string; duration
     <details
       className="cave-reasoning-block mt-3"
       data-default-collapsed="true"
-      open={showThinking || undefined}
+      data-streaming={pending || undefined}
+      open={pending || showThinking || undefined}
     >
-      <summary className="cave-tool-summary">
+      <summary className="cave-tool-summary focus-ring">
         <span className="inline-flex items-center gap-1.5">
           <Icon name="ph:brain" width={12} aria-hidden />
           Thinking
@@ -7566,6 +7569,56 @@ function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: num
         </span>
       </summary>
       <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
+        <ToolRuns tools={tools} />
+      </div>
+    </details>
+  );
+}
+
+function ToolRuns({ tools }: { tools: ToolEvent[] }) {
+  return groupConsecutiveTools(tools).map((run) => {
+    // File-mutation cards carry review/undo affordances. Keeping each one
+    // standalone means a repeated edit never hides an actionable change.
+    const containsEdit = run.tools.some((tool) => toolInputAsDiff(tool.name, tool.input) != null);
+    if (run.tools.length > 1 && !containsEdit) {
+      return <ToolRunGroup key={run.tools.map((tool) => tool.id).join(":")} name={run.name} tools={run.tools} />;
+    }
+    return (
+      <Fragment key={run.tools.map((tool) => tool.id).join(":")}>
+        {run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+      </Fragment>
+    );
+  });
+}
+
+function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
+  const [open, setOpen] = useState(false);
+  const visual = toolVisual(name);
+  const displayName = name.trim() || "Tool";
+  const running = tools.filter((tool) => tool.status === "running").length;
+  const errors = tools.filter((tool) => tool.status === "error").length;
+
+  return (
+    <details
+      className="cave-tool-run"
+      data-default-collapsed="true"
+      data-tool-category={visual.category}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary
+        className="cave-tool-summary focus-ring"
+        aria-expanded={open}
+        aria-label={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}`}
+      >
+        <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
+        <span className="cave-tool-run__name">{displayName}</span>
+        <span className="cave-tool-count">{tools.length} {tools.length === 1 ? "call" : "calls"}</span>
+        <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
+          {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+        </span>
+      </summary>
+      <div className="cave-tool-run__list">
         {tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
       </div>
     </details>

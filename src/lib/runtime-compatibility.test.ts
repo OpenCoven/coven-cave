@@ -16,6 +16,11 @@ const current = { runtime: "claude" as const, version: "2.1.179 (Claude Code)", 
 const resolved = resolveRuntimeCompatibility(current, CLAUDE_COMPATIBILITY_PROFILES, NOW);
 assert.equal(resolved.kind, "compatible");
 assert.equal(resolved.kind === "compatible" && resolved.profile.id, "claude-stream-json-v2");
+assert.equal(
+  CLAUDE_COMPATIBILITY_PROFILES[1].source.blobSha,
+  "b1c23ce0d8577f2e808472c39795c6a726b75a7b",
+  "signed Claude profile provenance stays pinned when the independent runtime registry refreshes",
+);
 
 const older = resolveRuntimeCompatibility({ ...current, version: "1.8.4" }, CLAUDE_COMPATIBILITY_PROFILES, NOW);
 assert.equal(older.kind, "compatible");

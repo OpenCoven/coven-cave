@@ -1,4 +1,3 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -6,7 +5,12 @@ const source = await readFile(new URL("./familiars-memory-row.tsx", import.meta.
 
 assert.match(source, /export function MemoryRowItem\(/, "MemoryRowItem must be exported");
 // type glyph differs by kind
-assert.match(source, /row\.kind === "agent" \? "ph:brain" : "ph:file-text"/, "row uses a per-kind type glyph");
+assert.match(source, /row\.kind === "canonical" \? "ph:brain" : "ph:file-text"/, "row uses a per-kind type glyph");
+assert.match(
+  source,
+  /\{ row: CanonicalMemoryRow; onDelete\?: never \}\s*\|\s*\{ row: FileMemoryRow; onDelete\?: \(\) => void \}/,
+  "the prop union makes delete unrepresentable for canonical rows",
+);
 // two-line: title + age on line 1, source/size/stale on line 2
 assert.match(source, /\{row\.title\}/, "row renders the title");
 assert.match(source, /\{age\}/, "row renders the age label passed in");
@@ -18,7 +22,7 @@ assert.match(source, /var\(--accent-presence\)/, "selected row uses the accent b
 assert.match(source, /opacity-0/, "actions hidden by default");
 assert.match(source, /group-hover\/row:opacity-100/, "actions revealed on row hover");
 // structural entries hide delete
-assert.match(source, /row\.protection !== "structural"/, "delete is hidden for structural entries");
+assert.match(source, /row\.kind === "file" && onDelete && row\.protection !== "structural"/, "delete is file-only and hidden for structural entries");
 assert.match(source, /onDelete/, "row supports a delete callback");
 assert.match(source, /onExpand/, "row supports an expand callback");
 assert.match(source, /onSelect/, "row supports a select callback");

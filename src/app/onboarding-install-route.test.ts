@@ -55,14 +55,14 @@ assert.doesNotMatch(
 
 assert.match(
   route,
-  /kind "npm":[\s\S]*?from that managed toolchain, never host PATH/,
-  "npm installs must run from Cave's managed toolchain instead of the host PATH",
+  /Coven CLI self-update:[\s\S]*?npm beside the detected CLI/,
+  "the CLI update must use the npm installation that owns the detected CLI",
 );
 
 assert.match(
   route,
-  /"coven-cli": \{[\s\S]*?packageName: reviewedPackage\("coven-cli"\)/,
-  "Coven install resolves its pinned package from the reviewed prerequisite manifest",
+  /"coven-cli": \{[\s\S]*?packageName: "@opencoven\/cli@latest"/,
+  "the Coven CLI button installs the latest published package",
 );
 assert.doesNotMatch(
   route,
@@ -97,7 +97,7 @@ assert.match(
 assert.match(
   route,
   /const launch = managedNpmLaunch\(managed\.paths\);[\s\S]*?args: \[\.\.\.launch\.args, "install", "--global", target\.packageName\]/,
-  "npm installs use the managed Node.js/npm launch plan",
+  "pinned prerequisite installs use the managed Node.js/npm launch plan",
 );
 
 assert.doesNotMatch(

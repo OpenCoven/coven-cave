@@ -1,9 +1,11 @@
 import {
   ACTIVITY_DAYS,
   buildFamiliarCardStats,
-  type CovenMemoryEntry,
+  type CanonicalMemoryAvailability,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
+import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
+import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { deriveRenown, type FamiliarRenown } from "@/lib/familiar-renown";
 import { deriveThreadConfidence, type ThreadConfidence } from "@/lib/thread-confidence";
 import { deriveSignalTrends, type SignalTrends, type ThreadMetricSnapshot } from "@/lib/signal-trends";
@@ -33,10 +35,6 @@ type SessionsResponse =
   | { ok: true; sessions: SessionRow[] }
   | { ok: false; sessions?: SessionRow[]; error?: string };
 
-type CovenMemoryResponse =
-  | { ok: true; entries: CovenMemoryEntry[] }
-  | { ok: false; entries?: CovenMemoryEntry[]; error?: string };
-
 type RetroApiResponse =
   | { ok: true; snapshot: RetroRunsSnapshot }
   | { ok: false; snapshot?: RetroRunsSnapshot; error?: string };
@@ -58,7 +56,8 @@ export type FamiliarAnalyticsData = {
   familiars: Familiar[];
   contractReport: ContractReport | null;
   sessions: SessionRow[];
-  covenEntries: CovenMemoryEntry[];
+  covenEntries: CanonicalMemorySummary[];
+  memoryAvailability: CanonicalMemoryAvailability;
   retroSnapshot: RetroRunsSnapshot;
   threadReports: ThreadSelfReport[];
   /** Compact per-thread metric snapshots, oldest → newest (signal trends). */
@@ -86,7 +85,11 @@ export type FamiliarAnalyticsModel = {
    * (same derivation as the roster cards, so the surfaces always agree).
    * Null when the familiar itself couldn't be resolved.
    */
-  progression: { renown: FamiliarRenown; streakDays: number } | null;
+  progression: {
+    renown: FamiliarRenown;
+    streakDays: number;
+    memoryAvailability: CanonicalMemoryAvailability;
+  } | null;
   /** Per-day session counts for the trailing 14 days (oldest first). */
   sessionPulse: PulseDay[];
   /** This familiar's sessions, newest first, capped for the drill-through list. */
@@ -113,9 +116,12 @@ const EMPTY_SNAPSHOT: RetroRunsSnapshot = {
   runs: [],
 };
 
-function emptyStats(): FamiliarCardStats {
+function emptyStats(
+  memoryAvailability: CanonicalMemoryAvailability = "unavailable",
+): FamiliarCardStats {
   return {
     memoryCount: 0,
+    memoryAvailability,
     latestMemory: null,
     lastSessionAt: null,
     sessionsTotal: 0,
@@ -170,7 +176,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
     fetchResource<ContractResponse>(`/api/familiars/${encodedId}/contract`, { ok: false }),
     fetchResource<SessionsResponse>("/api/sessions/list", { ok: false, sessions: [] }),
-    fetchResource<CovenMemoryResponse>("/api/coven-memory", { ok: false, entries: [] }),
+    loadCanonicalMemoryList(),
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
     fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=30`, { ok: false, reports: [], total: 0 }),
     fetchResource<MetricSnapshotsResponse>(`/api/familiars/${encodedId}/self-reports/snapshots`, { ok: false, snapshots: [], total: 0 }),
@@ -181,7 +187,9 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     responseError(familiarsJson, "familiars unavailable"),
     responseError(contractJson, "contract unavailable"),
     responseError(sessionsJson, "sessions unavailable"),
-    responseError(memoryJson, "memory unavailable"),
+    memoryJson.state === "error"
+      ? `memory unavailable (${memoryJson.error.code})`
+      : null,
     responseError(retroJson, "retro runs unavailable"),
     responseError(metricSnapshotsJson, "metric snapshots unavailable"),
     responseError(feedbackJson, "message feedback unavailable"),
@@ -192,7 +200,9 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     familiars: familiarsJson.familiars ?? [],
     contractReport: contractJson.report ?? null,
     sessions: sessionsJson.sessions ?? [],
-    covenEntries: memoryJson.entries ?? [],
+    covenEntries: memoryJson.state === "ready" ? memoryJson.entries : [],
+    memoryAvailability:
+      memoryJson.state === "ready" ? "ready" : "unavailable",
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
     threadReports: selfReportsJson.ok ? selfReportsJson.reports : [],
     metricSnapshots: metricSnapshotsJson.ok ? metricSnapshotsJson.snapshots : [],
@@ -213,10 +223,11 @@ export function buildFamiliarAnalyticsModel(
     ? buildFamiliarCardStats({
         familiars: [familiar],
         sessions: familiarSessions,
-        covenEntries: data.covenEntries.filter((entry) => entry.familiar_id === familiar.id),
+        covenEntries: data.covenEntries.filter((entry) => entry.familiarId === familiar.id),
+        memoryAvailability: data.memoryAvailability,
         now,
-      }).get(familiar.id) ?? emptyStats()
-    : emptyStats();
+      }).get(familiar.id) ?? emptyStats(data.memoryAvailability)
+    : emptyStats(data.memoryAvailability);
   const growthReport = familiar
     ? deriveGrowthReport({
         familiar,
@@ -247,6 +258,7 @@ export function buildFamiliarAnalyticsModel(
       ? {
           renown: deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount }),
           streakDays: stats.streakDays,
+          memoryAvailability: stats.memoryAvailability,
         }
       : null,
     sessionPulse: buildSessionPulse(familiarSessions, data.familiarId, now),

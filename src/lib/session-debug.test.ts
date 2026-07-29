@@ -322,7 +322,7 @@ console.log("session-debug core assertions passed");
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { readFileSync } from "node:fs";
-import { segmentTurn } from "./turn-segments.ts";
+import { groupConsecutiveTools, segmentTurn } from "./turn-segments.ts";
 
 // ── Legacy passthrough: turns without offsets render exactly as today ──────
 assert.equal(segmentTurn("some text", undefined), null, "no tools → null (legacy)");
@@ -419,6 +419,36 @@ assert.equal(
   assert.deepEqual(segs.map((s) => s.kind), ["tools"]);
 }
 
+// ── Consecutive repeated tool runs stay bounded by a different tool ───────
+{
+  const runs = groupConsecutiveTools([
+    { id: "read-1", name: "Read" },
+    { id: "read-2", name: " read " },
+    { id: "grep-1", name: "Grep" },
+    { id: "read-3", name: "Read" },
+  ]);
+  assert.deepEqual(
+    runs.map((run) => run.tools.map((tool) => tool.id)),
+    [["read-1", "read-2"], ["grep-1"], ["read-3"]],
+    "only adjacent calls with the same normalized name roll up",
+  );
+  assert.deepEqual(
+    runs.map((run) => run.name),
+    ["Read", "Grep", "Read"],
+    "each run retains the first call's display name",
+  );
+
+  const separatedByProse = groupConsecutiveTools([
+    { id: "read-before", name: "Read", textOffset: 0 },
+    { id: "read-after", name: "Read", textOffset: 24 },
+  ]);
+  assert.deepEqual(
+    separatedByProse.map((run) => run.tools.map((tool) => tool.id)),
+    [["read-before"], ["read-after"]],
+    "same-name calls captured on opposite sides of prose never roll up",
+  );
+}
+
 // ── Source pins ─────────────────────────────────────────────────────────────
 const chatViewSource = readFileSync(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 const bubbleSource = readFileSync(new URL("../components/message-bubble.tsx", import.meta.url), "utf8");
@@ -465,8 +495,8 @@ assert.match(
 );
 assert.match(
   chatViewSource,
-  /seg\.tools\.map\(\(tool\) => <ToolBlock key=\{tool\.id\} tool=\{tool\} \/>\)/,
-  "CHAT-D4-01: interleaved tools reuse the existing collapsed ToolBlock",
+  /node: <ToolRuns tools=\{seg\.tools\} \/>/,
+  "CHAT-D4-01: interleaved tools retain their chronology while the shared run renderer preserves each ToolBlock",
 );
 
 // MessageBubble: only the LAST text span streams (progressive markdown +

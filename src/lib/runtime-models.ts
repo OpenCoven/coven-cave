@@ -10,13 +10,54 @@
 // never blocks an id that isn't listed yet. Runtime-managed adapters get
 // `provider: null` and render a free-text field only — the literal "else the
 // runtime's CLI" branch. Hermes is the exception: its adapter forwards the
-// authenticated Codex model ids below through its supported `--model` flag.
+// authenticated Codex model ids below through its supported `--model` flag,
+// preserving their provider namespace per registry metadata.
 
 export type RuntimeProvider = "openai" | "anthropic" | "github" | "nous" | "xai" | null;
 
+import {
+  CLAUDE_OPUS_5_CAVE_ID,
+  CLAUDE_OPUS_5_NATIVE_MODEL,
+} from "./claude-models.ts";
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
 
 export type RuntimeModelOption = { id: string; label: string };
+
+type RuntimeModelTransformMetadata = {
+  id: string;
+  modelIdTransform?: unknown;
+};
+
+/**
+ * Apply the adapter registry's model-id transform using the same semantics as
+ * Coven's Rust authority layer. Unknown or missing metadata defaults to
+ * stripping one non-empty provider segment for compatibility with older
+ * registries.
+ */
+export function transformModelIdForRuntime(
+  runtimeId: string,
+  modelId: string,
+  runtimes: readonly RuntimeModelTransformMetadata[] = REGISTRY_RUNTIMES,
+): string {
+  const transform = runtimes.find((runtime) => runtime.id === runtimeId)?.modelIdTransform;
+  if (transform === "preserve") return modelId;
+
+  const slash = modelId.indexOf("/");
+  const remainder = slash > 0 ? modelId.slice(slash + 1) : "";
+  return remainder && !remainder.startsWith("/") ? remainder : modelId;
+}
+
+/**
+ * Return a model id safe to place in a direct runtime launch. Validation runs
+ * after transformation because stripping can expose a flag-shaped value.
+ */
+export function runtimeModelIdForLaunch(runtimeId: string, modelId: string | null): string | null {
+  if (!modelId) return null;
+  const transformed = transformModelIdForRuntime(runtimeId, modelId);
+  return !transformed.includes("..") && /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/.test(transformed)
+    ? transformed
+    : null;
+}
 
 export type RuntimeModelCatalog = {
   /** Harness id: codex | claude | copilot | hermes | openclaw. */
@@ -30,8 +71,8 @@ export type RuntimeModelCatalog = {
   allowCustom: boolean;
 };
 
-// Models exposed by the authenticated Codex account. Hermes forwards the bare
-// id through `--model`; the stored id stays namespaced for Cave consistency.
+// Models exposed by the authenticated Codex account. Hermes accepts the full
+// provider-qualified id through `--model`.
 const HERMES_AUTHENTICATED_MODELS: RuntimeModelOption[] = [
   { id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol" },
   { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra" },
@@ -72,7 +113,8 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
     allowCustom: true,
   },
   // Copilot serves multiple providers' models through one GitHub subscription;
-  // ids are namespaced under `github/` and forwarded bare to `copilot --model`.
+  // ids are namespaced under `github/`; its registry transform removes that
+  // first provider segment for direct `copilot --model` launches.
   // `github/auto` stays first: Copilot's own default is letting it pick.
   copilot: {
     runtime: "copilot",
@@ -147,4 +189,44 @@ export function isModelInCatalog(runtime: string, modelId: string): boolean {
   const catalog = catalogForRuntime(runtime);
   if (!catalog) return false;
   return catalog.models.some((model) => model.id === modelId);
+}
+
+/** Translate a stable Cave model id only at the native runtime boundary. */
+export function modelForRuntimeLaunch(runtime: string, modelId: string): string {
+  if (
+    (runtime === "claude" || runtime === "claude-code") &&
+    modelId === CLAUDE_OPUS_5_CAVE_ID
+  ) {
+    return CLAUDE_OPUS_5_NATIVE_MODEL;
+  }
+  return modelId;
+}
+
+function bareModelId(modelId: string): string {
+  return modelId.includes("/")
+    ? modelId.slice(modelId.indexOf("/") + 1)
+    : modelId;
+}
+
+/**
+ * Convert a transport/native echo back to the stable id Cave selected.
+ * Runtimes may echo either the namespaced transport value or the bare value
+ * they received after Coven/native argv normalization. An unexpected resolved
+ * model remains authoritative.
+ */
+export function modelForCaveFromRuntimeEcho(
+  runtime: string,
+  requestedModelId: string,
+  echoedModelId: string,
+): string {
+  const transportModelId = modelForRuntimeLaunch(runtime, requestedModelId);
+  const expectedEchoes = new Set([
+    requestedModelId,
+    bareModelId(requestedModelId),
+    transportModelId,
+    bareModelId(transportModelId),
+  ]);
+  return expectedEchoes.has(echoedModelId)
+    ? requestedModelId
+    : echoedModelId;
 }

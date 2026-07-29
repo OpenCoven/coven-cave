@@ -1,4 +1,4 @@
-import type { CovenMemoryEntry } from "@/components/familiars-view-stats";
+import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 
 export type FileMemoryEntry = {
   root: string;
@@ -46,15 +46,20 @@ export function formatBytes(n: number | undefined): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string): boolean {
+export function memoryMatches(
+  entry: CanonicalMemorySummary | FileMemoryEntry,
+  query: string,
+): boolean {
   if (!query) return true;
-  const values = "familiar_id" in entry
+  const values = "verification" in entry
     ? [
         entry.title,
-        entry.excerpt ?? "",
-        entry.familiar_id,
-        entry.path,
-        entry.source_context ?? "",
+        entry.excerpt,
+        entry.familiarId,
+        entry.source.kind,
+        entry.source.label,
+        entry.privacy.classification ?? "",
+        entry.verification.state,
       ]
     : [
         entry.rootLabel,

@@ -11,10 +11,12 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import {
   ACTIVITY_DAYS,
   buildFamiliarCardStats,
-  type CovenMemoryEntry,
+  type CanonicalMemoryAvailability,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
 import { FamiliarGrowthReport } from "@/components/familiar-growth-report";
+import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
+import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { deriveGrowthReport, type FamiliarGrowthReport as GrowthReportModel } from "@/lib/familiar-growth-signals";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
@@ -29,10 +31,6 @@ type SessionsResponse =
   | { ok: true; sessions: SessionRow[] }
   | { ok: false; sessions?: SessionRow[]; error?: string };
 
-type CovenMemoryResponse =
-  | { ok: true; entries: CovenMemoryEntry[] }
-  | { ok: false; entries?: CovenMemoryEntry[]; error?: string };
-
 type RetroApiResponse =
   | { ok: true; snapshot: RetroRunsSnapshot }
   | { ok: false; snapshot?: RetroRunsSnapshot; error?: string };
@@ -40,7 +38,8 @@ type RetroApiResponse =
 export type FamiliarGrowthInitialData = {
   familiars: Familiar[];
   sessions: SessionRow[];
-  covenEntries: CovenMemoryEntry[];
+  covenEntries: CanonicalMemorySummary[];
+  memoryAvailability: CanonicalMemoryAvailability;
   retroSnapshot: RetroRunsSnapshot;
 };
 
@@ -63,6 +62,7 @@ const EMPTY_DATA: FamiliarGrowthInitialData = {
   familiars: [],
   sessions: [],
   covenEntries: [],
+  memoryAvailability: "unavailable",
   retroSnapshot: EMPTY_SNAPSHOT,
 };
 
@@ -91,9 +91,12 @@ type RosterRow = {
   report: GrowthReportModel;
 };
 
-function emptyStats(): FamiliarCardStats {
+function emptyStats(
+  memoryAvailability: CanonicalMemoryAvailability = "unavailable",
+): FamiliarCardStats {
   return {
     memoryCount: 0,
+    memoryAvailability,
     latestMemory: null,
     lastSessionAt: null,
     sessionsTotal: 0,
@@ -104,9 +107,20 @@ function emptyStats(): FamiliarCardStats {
   };
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: "no-store" });
-  return (await res.json()) as T;
+async function getJson<T extends { ok: boolean; error?: string }>(
+  url: string,
+  fallback: T,
+): Promise<T> {
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return { ...fallback, error: `HTTP ${res.status}` };
+    return ((await res.json()) ?? fallback) as T;
+  } catch (error) {
+    return {
+      ...fallback,
+      error: error instanceof Error ? error.message : "request failed",
+    };
+  }
 }
 
 function stateByFamiliar(snapshot: RetroRunsSnapshot): Map<string, RetroFamiliarState> {
@@ -115,7 +129,11 @@ function stateByFamiliar(snapshot: RetroRunsSnapshot): Map<string, RetroFamiliar
 
 function reportSummary(stats: FamiliarCardStats, retro: RetroFamiliarState | null): string {
   const totalRuns = retro?.runs.length ?? 0;
-  const memory = stats.memoryCount === 1 ? "1 memory" : `${stats.memoryCount} memories`;
+  const memory = stats.memoryAvailability === "ready"
+    ? stats.memoryCount === 1
+      ? "1 memory"
+      : `${stats.memoryCount} memories`
+    : "memory unavailable";
   return `${stats.sessionsLast7d} sessions · ${memory} · ${totalRuns} retro runs`;
 }
 
@@ -149,23 +167,27 @@ export function FamiliarGrowthView({
     else setLoading(true);
     try {
       const [familiarsJson, sessionsJson, memoryJson, retroJson] = await Promise.all([
-        getJson<FamiliarsResponse>("/api/familiars"),
-        getJson<SessionsResponse>("/api/sessions/list"),
-        getJson<CovenMemoryResponse>("/api/coven-memory"),
-        getJson<RetroApiResponse>("/api/retro-runs"),
+        getJson<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
+        getJson<SessionsResponse>("/api/sessions/list", { ok: false, sessions: [] }),
+        loadCanonicalMemoryList(),
+        getJson<RetroApiResponse>("/api/retro-runs", { ok: false }),
       ]);
       if (generation.current !== gen) return;
 
       const nextData: FamiliarGrowthInitialData = {
         familiars: familiarsJson.familiars ?? [],
         sessions: sessionsJson.sessions ?? [],
-        covenEntries: memoryJson.entries ?? [],
+        covenEntries: memoryJson.state === "ready" ? memoryJson.entries : [],
+        memoryAvailability:
+          memoryJson.state === "ready" ? "ready" : "unavailable",
         retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
       };
       const errors = [
         familiarsJson.ok ? null : familiarsJson.error ?? "familiars unavailable",
         sessionsJson.ok ? null : sessionsJson.error ?? "sessions unavailable",
-        memoryJson.ok ? null : memoryJson.error ?? "memory unavailable",
+        memoryJson.state === "error"
+          ? `memory unavailable (${memoryJson.error.code})`
+          : null,
         retroJson.ok ? null : retroJson.error ?? "retro runs unavailable",
       ].filter(Boolean);
 
@@ -201,9 +223,10 @@ export function FamiliarGrowthView({
       familiars: data.familiars,
       sessions: data.sessions,
       covenEntries: data.covenEntries,
+      memoryAvailability: data.memoryAvailability,
       now,
     }),
-    [data.covenEntries, data.familiars, data.sessions, now],
+    [data.covenEntries, data.familiars, data.memoryAvailability, data.sessions, now],
   );
   const retroStates = useMemo(() => stateByFamiliar(data.retroSnapshot), [data.retroSnapshot]);
 
@@ -212,7 +235,8 @@ export function FamiliarGrowthView({
     () =>
       data.familiars
         .map((familiar) => {
-          const familiarStats = stats.get(familiar.id) ?? emptyStats();
+          const familiarStats =
+            stats.get(familiar.id) ?? emptyStats(data.memoryAvailability);
           const retro = retroStates.get(familiar.id) ?? null;
           return {
             familiar,
@@ -226,7 +250,7 @@ export function FamiliarGrowthView({
             HEALTH_ORDER[a.report.healthLabel] - HEALTH_ORDER[b.report.healthLabel] ||
             a.familiar.display_name.localeCompare(b.familiar.display_name),
         ),
-    [data.familiars, now, retroStates, stats],
+    [data.familiars, data.memoryAvailability, now, retroStates, stats],
   );
 
   const triage = useMemo(() => {

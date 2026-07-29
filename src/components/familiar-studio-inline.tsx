@@ -37,6 +37,7 @@ import { streamFamiliarText } from "@/lib/familiar-stream";
 import { runtimeDisplayLabel } from "@/lib/harness-adapters";
 import { Icon, type IconName } from "@/lib/icon";
 import { requestAgentsNewChat } from "@/lib/agents-new-chat";
+import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import type { Familiar } from "@/lib/types";
 import { useProjects } from "@/lib/use-projects";
 
@@ -45,11 +46,18 @@ type Props = {
   familiars: Familiar[];
   /** Resolved roster (Cave overrides applied) — drives the roster and Studio. */
   resolved: ResolvedFamiliar[];
+  /** Accepted healthy local daemon plus local host/platform eligibility. */
+  localDaemonReady: boolean;
   /** Opens the production summoning circle. */
   onSummon?: () => void;
   /** Re-fetch after lifecycle controls remove or restore a familiar. */
   onRosterChanged?: () => void;
 };
+
+type FamiliarMemoryCountState =
+  | { state: "loading" }
+  | { state: "ready"; count: number }
+  | { state: "unavailable" };
 
 const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
   { id: "identity", label: "Identity", icon: "ph:user" },
@@ -71,6 +79,7 @@ const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
 export function FamiliarStudioInlinePanel({
   familiars,
   resolved,
+  localDaemonReady,
   onSummon,
   onRosterChanged,
 }: Props) {
@@ -220,6 +229,7 @@ export function FamiliarStudioInlinePanel({
                 <FamiliarStudioMemoryTab
                   familiar={familiar}
                   allFamiliars={familiars}
+                  localDaemonReady={localDaemonReady}
                 />
               ) : null}
               {activeTab === "projects" ? (
@@ -278,7 +288,7 @@ function FamiliarStudioHero({
   familiar: ResolvedFamiliar;
   projectCount: number;
   projectsLoading: boolean;
-  memoryCount: number | null;
+  memoryCount: FamiliarMemoryCountState;
   onTestRun: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -307,10 +317,15 @@ function FamiliarStudioHero({
       tone: projectCount > 0 ? "accent" : "muted",
     },
     {
-      label: memoryCount === null
+      label: memoryCount.state === "loading"
         ? "Memories…"
-        : `${memoryCount} ${memoryCount === 1 ? "memory" : "memories"}`,
-      tone: (memoryCount ?? 0) > 0 ? "accent" : "muted",
+        : memoryCount.state === "unavailable"
+          ? "Memories unavailable"
+          : `${memoryCount.count} ${memoryCount.count === 1 ? "memory" : "memories"}`,
+      tone:
+        memoryCount.state === "ready" && memoryCount.count > 0
+          ? "accent"
+          : "muted",
     },
   ];
 
@@ -424,7 +439,7 @@ function FamiliarTestRunModal({
   familiar: ResolvedFamiliar;
   open: boolean;
   onClose: () => void;
-  memoryCount: number | null;
+  memoryCount: FamiliarMemoryCountState;
 }) {
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [response, setResponse] = useState("");
@@ -493,10 +508,13 @@ function FamiliarTestRunModal({
     },
     {
       label: "Memory",
-      detail: memoryCount === null
-        ? "Count unavailable"
-        : `${memoryCount} ${memoryCount === 1 ? "entry" : "entries"} visible`,
-      status: memoryCount === null ? "unknown" : "ready",
+      detail:
+        memoryCount.state === "loading"
+          ? "Count loading"
+          : memoryCount.state === "unavailable"
+            ? "Count unavailable"
+            : `${memoryCount.count} ${memoryCount.count === 1 ? "entry" : "entries"} visible`,
+      status: memoryCount.state === "ready" ? "ready" : "unknown",
     },
     {
       label: "Live response",
@@ -571,42 +589,62 @@ function FamiliarTestRunModal({
   );
 }
 
-function useFamiliarMemoryCount(familiarId: string | null): number | null {
-  const [count, setCount] = useState<number | null>(null);
+function useFamiliarMemoryCount(
+  familiarId: string | null,
+): FamiliarMemoryCountState {
+  const [count, setCount] = useState<FamiliarMemoryCountState>({
+    state: "loading",
+  });
 
   useEffect(() => {
     if (!familiarId) {
-      setCount(null);
+      setCount({ state: "loading" });
       return;
     }
     const controller = new AbortController();
-    setCount(null);
-    const loadEntries = async (url: string) => {
-      const response = await fetch(url, {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error("Memory count unavailable");
-      return response.json();
+    let cancelled = false;
+    setCount({ state: "loading" });
+    const loadFileEntries = async () => {
+      try {
+        const response = await fetch("/api/memory", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) return { ok: false, entries: [] };
+        const payload = await response.json();
+        return {
+          ok: true,
+          entries: Array.isArray(payload?.entries) ? payload.entries : [],
+        };
+      } catch {
+        return { ok: false, entries: [] };
+      }
     };
     void Promise.all([
-      loadEntries("/api/coven-memory"),
-      loadEntries("/api/memory"),
+      loadCanonicalMemoryList(),
+      loadFileEntries(),
     ])
-      .then(([coven, files]) => {
-        if (controller.signal.aborted) return;
-        const covenCount = Array.isArray(coven?.entries)
-          ? coven.entries.filter((entry: { familiar_id?: string }) => entry.familiar_id === familiarId).length
-          : 0;
-        const fileCount = Array.isArray(files?.entries)
-          ? files.entries.filter((entry: { familiarId?: string }) => entry.familiarId === familiarId).length
-          : 0;
-        setCount(covenCount + fileCount);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setCount(null);
+      .then(([canonical, files]) => {
+        if (cancelled) return;
+        if (canonical.state !== "ready" || !files.ok) {
+          setCount({ state: "unavailable" });
+          return;
+        }
+        const canonicalCount = canonical.entries.filter(
+          (entry) => entry.familiarId === familiarId,
+        ).length;
+        const fileCount = files.entries.filter(
+          (entry: { familiarId?: string }) => entry.familiarId === familiarId,
+        ).length;
+        setCount({
+          state: "ready",
+          count: canonicalCount + fileCount,
+        });
       });
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [familiarId]);
 
   return count;

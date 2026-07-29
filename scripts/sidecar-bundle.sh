@@ -88,7 +88,9 @@ bundle_piper_runtime() {
   fi
   cp -a "$runtime_root/." "$PIPER_RUNTIME_DIR/"
   chmod +x "$PIPER_RUNTIME_DIR/$executable" 2>/dev/null || true
-  printf "generated at release build time\n" > "$PIPER_RUNTIME_DIR/placeholder.txt"
+  if [ -f "$PIPER_RUNTIME_DIR/espeak-ng" ]; then
+    chmod +x "$PIPER_RUNTIME_DIR/espeak-ng"
+  fi
 }
 
 fix_node_pty_spawn_helpers() {
@@ -293,6 +295,7 @@ write_windows_sidecar_archive() {
     "$DEST" "$WINDOWS_ARCHIVE_TEMP" \
     "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE_MANIFEST" \
     "$WINDOWS_ARCHIVE_MANIFEST_TEMP"
+  rm -f "$WINDOWS_ARCHIVE_DIR/placeholder.txt"
 
   # Keep the expanded tree out of the Windows build workspace as a second
   # guard against accidentally reintroducing thousands of WiX components.
@@ -330,7 +333,6 @@ cp "$NODE_BIN" "$BUNDLED_NODE_DIR/bin/$NODE_NAME"
 chmod +x "$BUNDLED_NODE_DIR/bin/$NODE_NAME" 2>/dev/null || true
 copy_node_shared_runtime "$NODE_BIN" "$BUNDLED_NODE_DIR"
 "$BUNDLED_NODE_DIR/bin/$NODE_NAME" -e "process.exit(0)" >/dev/null
-printf "generated at release build time\n" > "$BUNDLED_NODE_DIR/placeholder.txt"
 
 echo "==> staging bundled Whisper runtime"
 bash "$ROOT/scripts/whisper-runtime-bundle.sh"

@@ -1279,26 +1279,41 @@ const ProgressionBand = memo(function ProgressionBand({
   progression: FamiliarAnalyticsModel["progression"];
 }) {
   if (!progression) return null;
-  const { renown, streakDays } = progression;
+  const { memoryAvailability, renown, streakDays } = progression;
+  const memoryReady = memoryAvailability === "ready";
   const pct = Math.round(renown.progress * 100);
   return (
     <section className="fa-progression" aria-label="Progression">
-      <span className="fa-progression__tier">{renown.tier.label}</span>
-      <span className="fa-progression__score">{renown.score} renown</span>
+      <span className="fa-progression__tier">{memoryReady ? renown.tier.label : "—"}</span>
+      <span className="fa-progression__score">
+        {memoryReady ? `${renown.score} renown` : "Renown unavailable"}
+      </span>
       <div
         className="fa-progression__meter"
         role="img"
         aria-label={
-          renown.next
+          !memoryReady
+            ? "Renown unavailable while canonical memory is unavailable"
+            : renown.next
             ? `${renown.next.remaining} renown to ${renown.next.tier.label}`
             : "Top of the ladder"
         }
-        title={renown.next ? `${renown.next.remaining} to ${renown.next.tier.label}` : "Top of the ladder"}
+        title={
+          !memoryReady
+            ? "Canonical memory unavailable"
+            : renown.next
+              ? `${renown.next.remaining} to ${renown.next.tier.label}`
+              : "Top of the ladder"
+        }
       >
-        <i style={{ width: `${pct}%` }} />
+        <i style={{ width: memoryReady ? `${pct}%` : "0%" }} />
       </div>
       <span className="fa-progression__next">
-        {renown.next ? `${renown.next.remaining} to ${renown.next.tier.label}` : "top of the ladder"}
+        {!memoryReady
+          ? "memory unavailable"
+          : renown.next
+            ? `${renown.next.remaining} to ${renown.next.tier.label}`
+            : "top of the ladder"}
       </span>
       <span className="fa-progression__streak">
         <Icon name="ph:flame" aria-hidden />

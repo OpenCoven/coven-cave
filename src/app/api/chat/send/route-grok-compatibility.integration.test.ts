@@ -138,6 +138,28 @@ try {
   const conversation = await loadConversation(structuredDone.sessionId);
   assert.equal(conversation?.harnessSessionId, "native_grok_session", "the route persists Grok's native resume id separately from Cave's id");
 
+  const guardedModel = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      prompt: "guard an unsafe transformed model",
+      projectRoot: familiarWorkspace,
+      modelOverride: "provider/--sandbox",
+      modelOverrideScope: "next-message",
+    }),
+  })));
+  const guardedModelDone = guardedModel.events.findLast((event) => event.kind === "done");
+  assert.equal(
+    guardedModelDone?.responseMetadata?.confirmedModel,
+    undefined,
+    "a model omitted by the post-transform argv guard is never reported as confirmed",
+  );
+  assert.notEqual(
+    guardedModelDone?.responseMetadata?.modelApplicationState,
+    "applied",
+    "a successful default-model run cannot make an omitted model appear applied",
+  );
+
   process.env.GROK_TEST_MODE = "tool-activity";
   const toolActivity = await readSse(await POST(new Request("http://localhost/api/chat/send", {
     method: "POST", headers: { "content-type": "application/json" },

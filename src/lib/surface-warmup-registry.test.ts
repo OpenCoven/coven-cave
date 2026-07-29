@@ -24,6 +24,16 @@ test("warmup registry covers canonical sidebar landings with bounded serial reso
   assert.match(registry, /await preloadSidebarSurface\(surface\);[\s\S]{0,180}if \(!canContinue\(\)\) return/);
   assert.match(registry, /if \(!result\.cache\.stale\) return result;[\s\S]{0,600}return read<T>\(key, \{ force: true \}\);/, "surface reads join a stale revalidation before returning landing data");
   assert.doesNotMatch(registry, /catch\s*\{\s*return result;\s*\}/, "a failed revalidation must not present stale landing data as current");
+  assert.match(
+    registry,
+    /agents: \["memory:list"\]/,
+    "the ordinary sidebar warmup keeps only the existing file-memory landing",
+  );
+  assert.doesNotMatch(
+    registry,
+    /agents:coven-memory/,
+    "canonical local memory is gated by accepted local-daemon readiness instead",
+  );
 });
 
 test("sidebar preloads call the dynamic import loaders rather than an unavailable dynamic preload hook", async () => {
@@ -111,7 +121,7 @@ test("external journal and memory writers invalidate warmed Grimoire resources",
   const memoryList = await readFile(new URL("../components/familiars-memory-view.tsx", here), "utf8");
   assert.match(
     memoryList,
-    /const response = await fetch\("\/api\/memory\/delete"[\s\S]{0,400}if \(response\.ok\) invalidateIfDefined\("agents:coven-memory", "memory:list"\)/,
-    "memory deletes invalidate both warmed memory landings",
+    /const response = await fetch\("\/api\/memory\/delete"[\s\S]{0,400}if \(response\.ok\) invalidateIfDefined\([^)]*"memory:list"\)/,
+    "memory deletes still invalidate the existing warmed file-memory landing",
   );
 });

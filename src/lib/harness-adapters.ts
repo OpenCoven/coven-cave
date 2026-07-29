@@ -61,6 +61,33 @@ type AdapterManifestDocument = {
   [key: string]: unknown;
 };
 
+// Exact Cave scaffold emitted from the accepted Hermes 1.0.2 registry entry.
+// Keep this immutable so Windows can migrate only that known POSIX-shim file
+// after the registry's native prompt-flag recipe superseded it in 1.0.3.
+const LEGACY_WINDOWS_HERMES_SHIM_MANIFEST = {
+  adapters: [
+    {
+      id: "hermes",
+      label: "Hermes Agent",
+      executable: "hermes-coven",
+      interactive_prompt_prefix_args: ["chat", "--source", "coven"],
+      non_interactive_prompt_prefix_args: ["chat", "--source", "coven", "-Q"],
+      install_hint:
+        "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
+      model_flag: "--model",
+      capabilities: {
+        stream: false,
+        preassigned_session_id: false,
+        think: false,
+        speed: false,
+      },
+      version: "1.0.2",
+      description:
+        "Hermes adapter with native model forwarding. Uses the hermes-coven shim so the harness trailing positional prompt is remapped to hermes chat -q/--query without changing model arguments.",
+    },
+  ],
+} satisfies AdapterManifestDocument;
+
 // The hand-curated seed: Cave-specific labels, install copy, and probe args.
 // Curated entries win over registry entries with the same id.
 const CURATED_ADAPTERS: CompatibilityAdapter[] = [
@@ -111,8 +138,8 @@ const CURATED_ADAPTERS: CompatibilityAdapter[] = [
     versionArgs: ["--version"],
     installHint:
       "Install Grok Build from xAI, run `grok` to sign in, then verify with `grok models`. Cave uses Grok's native streaming headless mode directly.",
-    // This is a Cave-owned direct integration, not an assertion that the
-    // unmerged coven-runtimes proposal has been registry accepted.
+    // Cave owns the native streaming integration; the accepted registry entry
+    // supplies shared launch metadata and adapter scaffolding.
     source: "bundled",
   },
   {
@@ -396,42 +423,17 @@ export function runtimeSourceSetupState(
 // Cave copies were retired in favor of the registry versions, cave-laxg).
 export function adapterManifestScaffoldForHarness(
   harnessId: string,
-  platform = process.platform,
+  _platform = process.platform,
 ): AdapterManifestScaffold | null {
   const registry = REGISTRY_RUNTIMES.find(
     (runtime) => runtime.id === canonicalHarnessId(harnessId),
   );
   if (!registry) return null;
 
-  // The registry's Hermes recipe uses a POSIX bash shim because the original
-  // generic adapter contract appended prompts positionally. Current Coven
-  // supports `prompt_flag`, which binds a prompt as one argv value instead.
-  // Use that native contract on Windows: a .cmd shim would route untrusted
-  // prompt text back through cmd.exe parsing.
   const manifest = registry.adapterManifest as AdapterManifestDocument;
-  const windowsHermes = platform === "win32" && registry.id === "hermes";
-  const adapterManifest = windowsHermes
-    ? {
-        ...manifest,
-        adapters: manifest.adapters?.map((adapter) =>
-          adapter.id === "hermes"
-            ? {
-                ...adapter,
-                executable: "hermes",
-                prompt_flag: "-q",
-                interactive_prompt_flag: "-q",
-                install_hint:
-                  "Install Hermes Agent, add it to PATH, and complete Hermes setup before using this adapter.",
-                description:
-                  "Hermes adapter with native model forwarding and prompt-flag routing for Windows.",
-              }
-            : adapter,
-        ),
-      }
-    : manifest;
   return {
     filename: `${registry.id}.json`,
-    contents: `${JSON.stringify(adapterManifest, null, 2)}\n`,
+    contents: `${JSON.stringify(manifest, null, 2)}\n`,
   };
 }
 
@@ -449,7 +451,5 @@ export function isLegacyWindowsHermesManifest(
   // Parsing and comparing JSON values would also replace a user's equivalent
   // hand-authored document just because they chose another key order or
   // formatting style.
-  const legacyManifest = REGISTRY_RUNTIMES.find((runtime) => runtime.id === "hermes")
-    ?.adapterManifest;
-  return !!legacyManifest && contents === `${JSON.stringify(legacyManifest, null, 2)}\n`;
+  return contents === `${JSON.stringify(LEGACY_WINDOWS_HERMES_SHIM_MANIFEST, null, 2)}\n`;
 }

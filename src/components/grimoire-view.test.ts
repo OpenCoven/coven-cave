@@ -67,6 +67,26 @@ assert.match(view, /ariaLabel="Stitches"\s+icon="ph:book-open"/, "stitches carry
 assert.match(view, /ariaLabel="Memory files"\s+icon="ph:brain"/, "memory carries its kind icon");
 assert.match(view, /ariaLabel="Journal"\s+icon="ph:calendar-blank"/, "journal carries its kind icon");
 
+// ── Whole navigator collapse (persisted compact rail) ───────────────────────
+assert.match(
+  view,
+  /NAVIGATOR_COLLAPSED_STORAGE_KEY = "cave:grimoire:navigator-collapsed:v1"/,
+  "whole navigator collapse persists locally",
+);
+assert.match(
+  view,
+  /aria-label=\{navigatorCollapsed \? "Expand Memories sidebar" : "Collapse Memories sidebar"\}/,
+  "navigator toggle exposes its resulting action",
+);
+assert.match(
+  view,
+  /navigatorCollapsed \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
+  "collapsed navigator becomes a compact rail instead of disappearing",
+);
+assert.match(view, /aria-label="Open Stitches navigator"/, "compact rail keeps Stitches reachable");
+assert.match(view, /aria-label="Open Memory files navigator"/, "compact rail keeps memory files reachable");
+assert.match(view, /aria-label="Open Journal navigator"/, "compact rail keeps Journal reachable");
+
 // ── Detail: the right transport per source ───────────────────────────────────
 
 assert.match(view, /<MemoryMdEditor/, "memory docs edit through the mtime-guarded memory editor");

@@ -232,45 +232,10 @@ assert.equal(nextShippedSort({ key: "repo", dir: "desc" }, "repo"), null);
 assert.deepEqual(nextShippedSort({ key: "pr", dir: "asc" }, "repo"), { key: "repo", dir: "asc" }, "switch col jumps to new key first state");
 assert.deepEqual(nextShippedSort({ key: "merged", dir: "desc" }, "pr"), { key: "pr", dir: "asc" }, "switch to pr gives pr asc");
 
-// ── Source pins (Task 2 — component, page, CSS) ───────────────────────────────
-
-import { readFileSync } from "node:fs";
-
-const component = readFileSync(new URL("./shipped-table.tsx", import.meta.url), "utf8");
-const page = readFileSync(
-  new URL("../app/daily-report/[date]/page.tsx", import.meta.url),
-  "utf8",
-);
-const css = readFileSync(
-  new URL("../styles/globals/surface-reporting.css", import.meta.url),
-  "utf8",
-);
-
-// Component pins
-assert.match(component, /"use client"/, 'component has "use client"');
-assert.match(component, /role="status"/, "component has role=status on count");
-assert.match(component, /aria-sort=/, "component has aria-sort on th");
-assert.match(component, /scope="col"/, "component has scope=col on th");
-assert.match(component, /nextShippedSort/, "component calls nextShippedSort");
-assert.match(component, /rel="noreferrer"/, "component has rel=noreferrer on links");
-assert.match(component, /tabIndex=\{0\}/, "component has tabIndex={0} on viewport");
-assert.match(component, /No shipped work matches this filter\./, "component has empty state text");
-assert.match(component, /relativeTime\(pr\.mergedAt, nowMs, "compact"\)/, "component calls relativeTime with compact density");
-
-// Page pins
-assert.match(page, /<ShippedTable/, "page contains <ShippedTable");
-assert.match(page, /rows=\{report\.prsMerged\}/, "page passes rows={report.prsMerged}");
-assert.doesNotMatch(
-  page,
-  /report\.prsMerged\.map/,
-  "page no longer maps report.prsMerged into dr-row links",
-);
-
-// CSS pins
-assert.match(css, /\.dr-shipped__viewport\s*\{[^}]*max-height:\s*300px/, "CSS viewport has max-height: 300px");
-assert.match(css, /\.dr-shipped__viewport\s*\{[^}]*overflow:\s*auto/, "CSS viewport has overflow: auto");
-assert.match(css, /\.dr-shipped__table\s+thead\s+th\s*\{[^}]*position:\s*sticky/, "CSS thead th has position: sticky");
-assert.match(css, /\.dr-shipped__table\s+thead\s+th\s*\{[^}]*box-shadow:\s*0 1px 0 var\(--border-hairline\)/, "CSS thead th has box-shadow hairline");
+// The Task-2 source pins for <ShippedTable>, the old page markup and the
+// .dr-shipped__* CSS were removed with the daily-report redesign: the report
+// now renders <ShippedPanel> (src/components/daily-report-shipped.tsx) and the
+// component those pins described no longer exists. filterShippedRows is still
+// live — the new panel's search reuses it — so its behaviour stays pinned above.
 
 console.log("shipped-table.test.ts: ok");
-

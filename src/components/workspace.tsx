@@ -59,6 +59,15 @@ import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
+import { useCanonicalMemoryWarmup } from "@/lib/use-canonical-memory-warmup";
+import { canonicalMemoryLocalAccessEligible } from "@/lib/canonical-memory-local-access";
+import {
+  acknowledgePendingCanonicalMemorySelection,
+  isLatestFamiliarRosterRequest,
+  reconcilePendingCanonicalRosterSettlement,
+  rejectPendingCanonicalMemorySelection,
+  type PendingCanonicalMemorySelection,
+} from "@/lib/canonical-memory";
 import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
 import {
   createDaemonDesktopAutoStartCoordinator,
@@ -246,9 +255,16 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
 export function Workspace() {
-  useSurfaceWarmup();
+  const [acceptedLocalDaemonHealthy, setAcceptedLocalDaemonHealthy] = useState(false);
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
+  const localDaemonReady = acceptedLocalDaemonHealthy &&
+    canonicalMemoryLocalAccessEligible({
+      platform: tauriPlatform,
+      hostname: typeof window === "undefined" ? null : window.location.hostname,
+    });
+  useCanonicalMemoryWarmup(localDaemonReady);
+  useSurfaceWarmup();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
   // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
@@ -306,6 +322,7 @@ export function Workspace() {
   // change, so a stale in-flight load must not paint the previous familiar's
   // sessions.
   const loadSessionsReqRef = useRef(0);
+  const loadFamiliarsReqRef = useRef(0);
   const loadGitHubTasksReqRef = useRef(0);
   const loadGitHubTasksForceEpochRef = useRef(0);
   const loadGitHubTasksForceInFlightRef = useRef(0);
@@ -317,6 +334,16 @@ export function Workspace() {
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
+  const [
+    pendingCanonicalMemorySelection,
+    setPendingCanonicalMemorySelection,
+  ] = useState<PendingCanonicalMemorySelection | null>(null);
+  const pendingCanonicalMemorySelectionRef =
+    useRef<PendingCanonicalMemorySelection | null>(null);
+  const [
+    rosterSettledPendingCanonicalMemorySelection,
+    setRosterSettledPendingCanonicalMemorySelection,
+  ] = useState<PendingCanonicalMemorySelection | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Home-first boot: every fresh launch (desktop app window or web tab)
   // opens on the Home surface — the daily overview with the universal
@@ -542,34 +569,6 @@ export function Workspace() {
     }
   }, []);
 
-  // ── Mode-transition crossfade ──────────────────────────────────────────
-  // The `.cave-mode-fade` CSS animation only plays on the wrapper's *initial*
-  // mount. Re-firing it on a mode switch would need `key={mode}` on the
-  // wrapper, which is deliberately forbidden — the key remounts keepalive
-  // surfaces (it once killed the terminal's PTYs on every switch; pinned in
-  // comux-view-terminal.test.ts). Instead, replay a short opacity fade on the
-  // (persistent) wrapper via WAAPI whenever `mode` changes. Opacity-only, so it
-  // never applies a transform and therefore never becomes the containing block
-  // for position:fixed descendants (the cave-cco trap that forced 4 portal
-  // workarounds). Skips the first run (initial entrance is the CSS animation)
-  // and honors prefers-reduced-motion.
-  const detailFadeRef = useRef<HTMLDivElement>(null);
-  const modeFadeAnimRef = useRef<Animation | null>(null);
-  const modeFadeReadyRef = useRef(false);
-  useLayoutEffect(() => {
-    if (!modeFadeReadyRef.current) {
-      modeFadeReadyRef.current = true;
-      return;
-    }
-    const el = detailFadeRef.current;
-    if (!el || typeof el.animate !== "function") return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    modeFadeAnimRef.current?.cancel();
-    modeFadeAnimRef.current = el.animate(
-      [{ opacity: 0 }, { opacity: 1 }],
-      { duration: 120, easing: "ease-out" },
-    );
-  }, [mode]);
   // Drag-to-split: up to three secondary surfaces opened beside the primary
   // one (four visible pages total). Targets are draggable pages or companion
   // surfaces (Salem / Memory / Browser) re-homed from the removed right rail.
@@ -767,6 +766,11 @@ export function Workspace() {
     // The coordinator pins this first accepted decision. Later polls may update
     // live UI state, but can never turn into a delayed automatic restart.
     daemonAutoStartCoordinatorRef.current!.observeStatus(result);
+    if (result.kind === "running") {
+      setAcceptedLocalDaemonHealthy(result.targetMode === "local");
+    } else {
+      setAcceptedLocalDaemonHealthy(false);
+    }
     if (credentialAccepted) setAuthExpired(false);
 
     setDaemonStatusResolved(true);
@@ -1027,25 +1031,59 @@ export function Workspace() {
   }, [authExpired, pushBanner, dismissBanner]);
 
   const loadFamiliars = useCallback(async () => {
+    const requestGeneration = ++loadFamiliarsReqRef.current;
+    const isCurrent = () =>
+      isLatestFamiliarRosterRequest(
+        requestGeneration,
+        loadFamiliarsReqRef.current,
+      );
+    const pendingSelectionAtStart =
+      pendingCanonicalMemorySelectionRef.current;
     try {
       const res = await fetch("/api/familiars", { cache: "no-store" });
       const json = await res.json();
+      if (!isCurrent()) return;
       if (!json.ok) {
         // Keep the last-known-good roster: a failed load means "can't see the
         // familiars right now", not "there are none". Clearing here made three
         // surfaces show first-run copy over an intact roster (cave-atzv).
         setFamiliarsError(json.error ?? "daemon offline");
         setFamiliarRosterLoadedSuccessfully(false);
+        setRosterSettledPendingCanonicalMemorySelection((settled) =>
+          reconcilePendingCanonicalRosterSettlement({
+            settled,
+            current: pendingCanonicalMemorySelectionRef.current,
+            startedFor: pendingSelectionAtStart,
+            succeeded: false,
+          })
+        );
         return;
       }
       setFamiliarsError(null);
       setFamiliars((json.familiars ?? []) as Familiar[]);
       setFamiliarRosterLoadedSuccessfully(true);
+      setRosterSettledPendingCanonicalMemorySelection((settled) =>
+        reconcilePendingCanonicalRosterSettlement({
+          settled,
+          current: pendingCanonicalMemorySelectionRef.current,
+          startedFor: pendingSelectionAtStart,
+          succeeded: true,
+        })
+      );
     } catch (err) {
+      if (!isCurrent()) return;
       setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
       setFamiliarRosterLoadedSuccessfully(false);
+      setRosterSettledPendingCanonicalMemorySelection((settled) =>
+        reconcilePendingCanonicalRosterSettlement({
+          settled,
+          current: pendingCanonicalMemorySelectionRef.current,
+          startedFor: pendingSelectionAtStart,
+          succeeded: false,
+        })
+      );
     } finally {
-      setFamiliarsLoaded(true);
+      if (isCurrent()) setFamiliarsLoaded(true);
     }
   }, []);
 
@@ -2404,6 +2442,19 @@ export function Workspace() {
       })();
       return;
     }
+    if (intent.kind === "open-coven-memory") {
+      const selection = {
+        id: intent.id,
+        familiarId: intent.familiarId,
+      };
+      setRosterSettledPendingCanonicalMemorySelection(null);
+      pendingCanonicalMemorySelectionRef.current = selection;
+      setPendingCanonicalMemorySelection(selection);
+      void loadFamiliars();
+      setMode("agents");
+      shellRef.current?.dismissNavMobile();
+      return;
+    }
     if (intent.kind === "open-memory-file") {
       // Land on the Grimoire editor with the file selected. (The old
       // `#memory:` hash had no consumer anywhere — picking a memory result
@@ -2424,6 +2475,53 @@ export function Workspace() {
       return;
     }
   };
+
+  const acknowledgeCanonicalMemorySelection = useCallback(
+    (appliedId: string) => {
+      const expected = pendingCanonicalMemorySelection;
+      const current = pendingCanonicalMemorySelectionRef.current;
+      const next = acknowledgePendingCanonicalMemorySelection(
+        current,
+        expected,
+        appliedId,
+      );
+      if (next === current) return;
+      pendingCanonicalMemorySelectionRef.current = next;
+      setRosterSettledPendingCanonicalMemorySelection((settled) =>
+        settled === expected ? null : settled
+      );
+      setPendingCanonicalMemorySelection((selection) =>
+        acknowledgePendingCanonicalMemorySelection(
+          selection,
+          expected,
+          appliedId,
+        )
+      );
+    },
+    [pendingCanonicalMemorySelection],
+  );
+
+  const rejectUnavailableCanonicalMemorySelection = useCallback(
+    (expected: PendingCanonicalMemorySelection) => {
+      const current = pendingCanonicalMemorySelectionRef.current;
+      const next = rejectPendingCanonicalMemorySelection(
+        current,
+        expected,
+      );
+      if (next === current) return;
+      pendingCanonicalMemorySelectionRef.current = next;
+      setRosterSettledPendingCanonicalMemorySelection((settled) =>
+        settled === expected ? null : settled
+      );
+      setPendingCanonicalMemorySelection((selection) =>
+        rejectPendingCanonicalMemorySelection(selection, expected)
+      );
+      pushToast(
+        "Couldn't open memory — that familiar isn't available. Refresh Familiars and try again.",
+      );
+    },
+    [pushToast],
+  );
 
   // Map slash commands directly to local actions. Returns false for commands
   // this surface doesn't know so the chat composer can show its
@@ -2849,6 +2947,16 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliar={active}
         daemonRunning={daemonRunning}
+        localDaemonReady={localDaemonReady}
+        pendingRosterSettledSuccessfully={
+          rosterSettledPendingCanonicalMemorySelection ===
+          pendingCanonicalMemorySelection
+        }
+        pendingCanonicalMemorySelection={pendingCanonicalMemorySelection}
+        onCanonicalMemorySelectionApplied={acknowledgeCanonicalMemorySelection}
+        onCanonicalMemorySelectionUnavailable={
+          rejectUnavailableCanonicalMemorySelection
+        }
         responseNeeded={responseNeeded}
         onStartChat={(familiarId) => startFamiliarChat(familiarId)}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
@@ -3056,10 +3164,7 @@ export function Workspace() {
 
   const detailContent = renderSurface(mode);
   const detail = (
-    <div
-      ref={detailFadeRef}
-      className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden"
-    >
+    <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
       <h1 className="sr-only">
         {(isRoleSurfaceMode(mode)
           ? getRoleSurface(parseRoleSurfaceMode(mode) ?? "")?.title
@@ -3106,7 +3211,11 @@ export function Workspace() {
         model={active?.model ?? familiars.find((f) => f.id === "salem")?.model ?? null}
       />
     ) : target.kind === "memory" ? (
-      <RailInspector familiar={active} onOpenFullView={() => setMode("agents")} />
+      <RailInspector
+        familiar={active}
+        localDaemonReady={localDaemonReady}
+        onOpenFullView={() => setMode("agents")}
+      />
     ) : (
       <BrowserPane label="companion" active={browserVisible} />
     );

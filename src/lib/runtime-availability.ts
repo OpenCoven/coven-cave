@@ -472,22 +472,34 @@ export function evaluateRuntimeAvailability(
   }
 }
 
-/** Resolve Hermes's native direct launch once. Windows deliberately uses
- * `hermes.exe`; `.cmd`/`.bat` npm shims remain an unlaunchable state rather
- * than being delegated to a shell wrapper. */
+/** Resolve Hermes's native direct launch once. An env-scoped `HERMES_BIN`
+ * override is authoritative so the verified command and spawned command
+ * cannot drift. Windows deliberately uses `hermes.exe`; non-native launchers
+ * remain unlaunchable rather than being delegated to a shell wrapper. */
 export function resolveHermesLaunch(
   options: ResolveHermesLaunchOptions = {},
 ): HermesLaunchResolution {
   const platform = options.platform ?? process.platform;
   const env = options.env ?? harnessSpawnEnv(options.familiarId);
   const cwd = options.cwd ?? process.cwd();
+  const command =
+    env.HERMES_BIN?.trim() ||
+    (platform === "win32" ? "hermes.exe" : "hermes");
+  const windowsExtension = platform === "win32"
+    ? path.win32.extname(command).toLowerCase()
+    : "";
   const availability = evaluateRuntimeAvailability({
     runner: "hermes",
-    command: platform === "win32" ? "hermes.exe" : "hermes",
+    command,
     env,
     cwd,
     platform,
     statFile: options.statFile,
+    unresolvedWindowsShim:
+      platform === "win32" &&
+      windowsExtension !== "" &&
+      windowsExtension !== ".exe" &&
+      windowsExtension !== ".com",
   });
   return availability.state === "ready"
     ? { ...availability, command: availability.resolvedPath, env, cwd }

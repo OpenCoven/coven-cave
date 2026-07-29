@@ -8,8 +8,13 @@ assert.match(route, /export async function GET/);
 assert.match(route, /export async function PATCH/);
 assert.match(
   route,
-  /state\.harness === "opencode"[\s\S]*?!rejectNonLocalRequest\(req\)[\s\S]*?await listOpenCodeModels\(familiarId\)/,
-  "OpenCode's authenticated inventory is local-only while iOS keeps the aggregate model-state endpoint",
+  /state\.harness === "opencode"[\s\S]*?!rejectNonLocalRequest\(req\)[\s\S]*?listRuntimeModelOptions\([\s\S]*?allowOpenCodeInventory: canReadOpenCodeInventory/,
+  "the aggregate endpoint uses the shared inventory while keeping OpenCode discovery local-only",
+);
+assert.match(
+  route,
+  /listRuntimeModelOptions\(\s*state\.harness,\s*familiarId,/,
+  "Claude, Copilot, OpenCode, and static clients receive one server-owned model contract",
 );
 assert.match(route, /bindingFor\(config, familiarId\)/);
 assert.match(route, /resolveChatModelState/);

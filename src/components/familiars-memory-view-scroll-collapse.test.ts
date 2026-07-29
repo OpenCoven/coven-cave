@@ -1,4 +1,3 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -33,11 +32,23 @@ assert.match(
   "onListScroll must be attached to the scrollable memories list container",
 );
 
-// The masthead is the collapsible region and animates via max-height/opacity.
+// The masthead is the collapsible region. It must not cap overview content,
+// and collapsed descendants must leave both the focus and accessibility trees.
 assert.match(
   source,
-  /data-testid="memory-masthead"[^]*headerCollapsed \? "max-h-0 opacity-0" : "max-h-48 opacity-100"/,
-  "masthead must collapse to zero height / faded when headerCollapsed",
+  /data-testid="memory-masthead"[^]*headerCollapsed \? "grid-rows-\[0fr\] opacity-0" : "grid-rows-\[1fr\] opacity-100"/,
+  "masthead must use an uncapped grid-track collapse",
+);
+assert.doesNotMatch(source, /max-h-48/, "masthead must not clip a tall overview");
+assert.match(
+  source,
+  /inert=\{headerCollapsed \? true : undefined\}/,
+  "collapsed controls must be removed from sequential focus",
+);
+assert.match(
+  source,
+  /mastheadRef\.current\?\.contains\(document\.activeElement\)[^]*searchInputRef\.current\?\.focus/,
+  "collapsing while focus is inside moves focus to the persistent search control",
 );
 
 // The stats row lives inside the collapsible masthead (so it hides too).

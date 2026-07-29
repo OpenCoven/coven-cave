@@ -1,0 +1,544 @@
+/* Daily report — overlay dialogs (sessions / reminder / share card / chapters).
+ *
+ * Ported from the Claude Design handoff "Daily Report - Redesign.dc.html".
+ * Imported by daily-report-modals.tsx (component-scoped, not a global sheet).
+ *
+ * Token contract:
+ *  - the mock's literal palette maps to foundations semantics — lavender
+ *    presence -> --accent-presence, its greens/reds/ambers -> --color-success /
+ *    --color-danger / --color-warning, grounds -> --bg-raised / --bg-elevated,
+ *    hairlines -> --border, scrim -> --backdrop-scrim. No hex and no raw
+ *    color-space literal: 21 themes x 2 modes have to survive this sheet.
+ *  - spacing, radii and font sizes ride the scales. Compact mono labels keep
+ *    the design's exact px through the `font:` shorthand (the type-scale gate
+ *    governs the standalone `font-size` property); the serif/display sizes the
+ *    scale does not reach are expressed in rem so they scale with the root.
+ */
+
+/* ── backdrop + shell ─────────────────────────────────────────────────────── */
+
+.drd-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  background: var(--backdrop-scrim);
+  backdrop-filter: blur(6px);
+}
+
+.drd-modal-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-raised);
+  color: var(--fg-base);
+  box-shadow: 0 32px 80px -28px rgba(0, 0, 0, 0.72);
+}
+
+.drd-modal-dialog--sessions { max-width: 660px; }
+.drd-modal-dialog--reminder { max-width: 520px; }
+.drd-modal-dialog--share { max-width: 700px; }
+.drd-modal-dialog--chapters { max-width: 940px; }
+
+.drd-modal-dialog:focus { outline: none; }
+
+/* One rule covers every control in the overlay. */
+.drd-modal-backdrop :focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 2px;
+}
+
+/* ── header ──────────────────────────────────────────────────────────────── */
+
+.drd-modal-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.drd-modal-kicker {
+  font: 400 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.drd-modal-sep {
+  color: var(--fg-muted);
+  opacity: 0.4;
+}
+
+.drd-modal-heading {
+  min-width: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drd-modal-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.drd-modal-close:hover {
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+}
+
+/* ── body ────────────────────────────────────────────────────────────────── */
+
+.drd-modal-body {
+  min-height: 0;
+  padding: var(--space-5);
+  overflow: auto;
+}
+
+.drd-modal-body--read {
+  padding: var(--space-6) var(--space-8) var(--space-8);
+}
+
+.drd-modal-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
+
+.drd-modal-note--inline {
+  margin: 0;
+  margin-right: auto;
+}
+
+/* ── empty states ────────────────────────────────────────────────────────── */
+
+.drd-modal-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.drd-modal-empty__icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-lg);
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+.drd-modal-empty__title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--fg-base);
+}
+
+.drd-modal-empty__body {
+  max-width: 46ch;
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
+
+/* ── sessions: carries into tomorrow ─────────────────────────────────────── */
+
+.drd-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.drd-modal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.drd-modal-row:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 6%, transparent);
+}
+
+.drd-modal-row__glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+}
+
+.drd-modal-row__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.drd-modal-row__title {
+  display: block;
+  font-size: var(--text-base);
+  font-weight: 560;
+  overflow-wrap: anywhere;
+}
+
+.drd-modal-row__meta {
+  display: block;
+  margin-top: var(--space-1);
+  font: 400 10.5px var(--font-mono);
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.drd-modal-row__action {
+  flex: none;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--accent-presence);
+  border-radius: var(--radius-control);
+  font-size: var(--text-xs);
+  color: var(--accent-presence);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.drd-modal-row__action:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+/* ── reminder ────────────────────────────────────────────────────────────── */
+
+.drd-modal-reminder {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.drd-modal-reminder__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-lg);
+  color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+}
+
+.drd-modal-reminder__main {
+  min-width: 0;
+}
+
+.drd-modal-reminder__title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.drd-modal-reminder__body {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.drd-modal-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+.drd-modal-pill {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  font: 400 10px var(--font-mono);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  background: color-mix(in oklch, var(--fg-base) 8%, transparent);
+}
+
+.drd-modal-pill--accent {
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+/* ── footers / controls ──────────────────────────────────────────────────── */
+
+.drd-modal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.drd-modal-foot--read {
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+}
+
+.drd-modal-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  text-decoration: none;
+}
+
+.drd-modal-link:hover {
+  color: var(--accent-presence);
+}
+
+.drd-modal-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.drd-modal-button:hover {
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+}
+
+/* Primary = outlined accent, never a solid accent flood. */
+.drd-modal-button--primary {
+  margin-left: auto;
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+  font-weight: 560;
+}
+
+.drd-modal-button--primary:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+/* ── share card ──────────────────────────────────────────────────────────── */
+
+.drd-modal-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: 1200 / 630;
+  padding: var(--space-8);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in oklch, var(--accent-presence) 38%, var(--bg-elevated)),
+      var(--bg-elevated) 58%,
+      color-mix(in oklch, var(--accent-presence) 16%, var(--bg-elevated))
+    );
+}
+
+.drd-modal-card--image {
+  padding: 0;
+  background: var(--bg-elevated);
+}
+
+.drd-modal-card--image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.drd-modal-card__kicker {
+  margin: 0 0 var(--space-3);
+  font: 600 11px var(--font-mono);
+  letter-spacing: 0.22em;
+  color: color-mix(in oklch, var(--accent-presence) 55%, var(--fg-base));
+}
+
+.drd-modal-card__date {
+  margin: 0;
+  font-size: 2.75rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.025em;
+  color: var(--fg-base);
+}
+
+.drd-modal-card__line {
+  margin: var(--space-2) 0 var(--space-6);
+  font-size: 0.9375rem;
+  color: color-mix(in oklch, var(--fg-base) 82%, transparent);
+}
+
+.drd-modal-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.drd-modal-card__value {
+  font: 500 30px/1 var(--font-mono);
+  color: var(--fg-base);
+}
+
+.drd-modal-card__value--success {
+  color: var(--color-success);
+}
+
+.drd-modal-card__label {
+  margin-top: var(--space-1);
+  font: 400 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  color: color-mix(in oklch, var(--fg-base) 70%, transparent);
+}
+
+/* ── chapters: the whole day ─────────────────────────────────────────────── */
+
+.drd-modal-lede {
+  margin: 0 0 var(--space-1);
+  font-family: var(--font-serif);
+  font-size: 0.9375rem;
+  font-style: italic;
+  color: var(--accent-presence);
+}
+
+.drd-modal-day {
+  margin: 0 0 var(--space-5);
+  font-family: var(--font-serif);
+  font-size: 2.125rem;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.drd-modal-chapter {
+  margin-bottom: var(--space-5);
+}
+
+.drd-modal-chapter__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.drd-modal-chapter__ordinal {
+  font: 400 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--accent-presence);
+}
+
+.drd-modal-chapter__title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.3125rem;
+  font-weight: 400;
+}
+
+.drd-modal-chapter__body {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.0625rem;
+  line-height: 1.72;
+  color: color-mix(in oklch, var(--fg-base) 90%, transparent);
+}
+
+.drd-modal-merges {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+  padding-left: var(--space-3);
+  border-left: 2px solid color-mix(in oklch, var(--accent-presence) 45%, transparent);
+}
+
+.drd-modal-merge {
+  font: 400 11px var(--font-mono);
+  line-height: 1.5;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.drd-modal-merge__ref {
+  margin-right: var(--space-1);
+  color: var(--accent-presence);
+}
+
+.drd-modal-byline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+.drd-modal-byline svg {
+  color: var(--accent-presence);
+}
+
+/* ── narrow viewports ────────────────────────────────────────────────────── */
+
+@media (max-width: 720px) {
+  .drd-modal-backdrop {
+    padding: var(--space-4);
+  }
+
+  .drd-modal-body--read {
+    padding: var(--space-5) var(--space-4) var(--space-6);
+  }
+
+  .drd-modal-card {
+    aspect-ratio: auto;
+    padding: var(--space-5);
+  }
+
+  .drd-modal-card__stats {
+    gap: var(--space-5);
+  }
+}

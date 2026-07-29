@@ -16,3 +16,15 @@ test("local speech settings manages the verified model registry through supporte
   assert.match(source, /setTimeout\(\(\) => \{ void refresh\(true\); \}, 1_000\)/);
   assert.match(source, /if \(hadActiveDownload\.current\)[\s\S]{0,120}notifyCatalogChanged\(\)/);
 });
+
+test("local speech presents the reference count, metadata, and bounded catalog", () => {
+  assert.match(source, /const COLLAPSED_MODEL_COUNT = 3/);
+  assert.match(source, /readyCount/);
+  assert.match(source, /formatVoiceModelMetadata/);
+  assert.match(source, /visibleVoiceModels/);
+  assert.match(source, /job\?\.status === "running"/);
+  assert.match(source, /expanded \? "Show fewer voices" : `Show all \$\{models\.length\} voices`/);
+  assert.match(source, /aria-expanded=\{expanded\}/);
+  assert.match(source, /variant="ruled"/);
+  assert.match(source, /meta=\{`\$\{readyCount\}\/\$\{models\.length\}`\}/);
+});

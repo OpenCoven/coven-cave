@@ -72,14 +72,40 @@ assert.equal(findOpenStampPr([{ title: "feat: x" }, { title: "chore(release): st
 
 // ── release.yml resilience pins ───────────────────────────────────────────────
 const yml = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+
+function workflowJob(source, jobName) {
+  const marker = `\n  ${jobName}:\n`;
+  const markerIndex = source.indexOf(marker);
+  assert.notEqual(markerIndex, -1, `${jobName} job must exist`);
+  const startIndex = markerIndex + 1;
+  const nextJob = /\n  [A-Za-z0-9_-]+:\n/g;
+  nextJob.lastIndex = markerIndex + marker.length;
+  const nextMatch = nextJob.exec(source);
+  return source.slice(startIndex, nextMatch?.index ?? source.length);
+}
+
 assert.match(yml, /daemon-package:\s*\n\s+name: Verify matching Coven daemon package/, "release has a daemon package gate");
-assert.match(yml, /npm view "@opencoven\/cli@\$\{VERSION\}" version/, "daemon gate requires the matching CLI version");
 assert.match(yml, /npm view "@opencoven\/cli@latest" version/, "daemon gate verifies the package installed by the client");
+assert.match(yml, /process\.argv\[2\], process\.argv\[3\]\) >= 0/, "daemon gate requires latest CLI to satisfy the Cave version");
 assert.match(yml, /build:[\s\S]{0,100}needs: daemon-package/, "desktop builds wait for the daemon package gate");
+const updaterManifestJob = workflowJob(yml, "updater-manifest");
+const updaterManifestCondition = /^    if: (.+)$/m.exec(updaterManifestJob)?.[1];
+assert.ok(updaterManifestCondition, "updater-manifest must have a job-level condition");
+assert.match(updaterManifestCondition, /!cancelled\(\)/, "updater-manifest does not run after cancellation");
 assert.match(
-  yml,
-  /updater-manifest:[\s\S]{0,900}if: \$\{\{ !cancelled\(\) && needs\.build\.result != 'cancelled' \}\}/,
-  "updater-manifest runs even when a build leg failed (a flake must not 404 the updater)",
+  updaterManifestCondition,
+  /needs\.build\.result != 'cancelled'/,
+  "updater-manifest rejects a cancelled build",
+);
+assert.match(
+  updaterManifestCondition,
+  /needs\.build\.result != 'skipped'/,
+  "updater-manifest rejects a build that was skipped entirely",
+);
+assert.doesNotMatch(
+  updaterManifestCondition,
+  /success\(\)/,
+  "updater-manifest still runs after a partial build failure",
 );
 assert.match(yml, /PLATFORM_COUNT=\$count.*GITHUB_ENV/, "platform count exported for the body note");
 assert.match(yml, /Flag partial updater coverage in the release body/, "partial coverage is flagged on the release itself");

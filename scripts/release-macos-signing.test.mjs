@@ -20,10 +20,20 @@ const sidecarTargetModule = readFileSync(
   "utf8",
 );
 
-test("macOS release signing includes node-pty spawn-helper Mach-O files", () => {
+test("macOS release signing includes native files without executable mode", () => {
   assert.match(
     releaseScript,
-    /-name "\*\.node" -o -name "spawn-helper" -o -perm \+111/,
+    /-name "\*\.node" -o -name "spawn-helper" -o -name "espeak-ng" -o -perm \+111/,
+  );
+  const nativeSigning = releaseScript.slice(
+    releaseScript.indexOf('echo "==> Signing every native binary inside the bundle"'),
+    releaseScript.indexOf('echo "==> Sealing the .app envelope"'),
+  );
+  assert.match(nativeSigning, /! retry 3 10 codesign[\s\S]*exit 1/);
+  assert.doesNotMatch(
+    nativeSigning,
+    /failed to sign[\s\S]*\n\s*\}/,
+    "a nested signing failure must not be downgraded to a warning",
   );
 });
 
@@ -189,6 +199,26 @@ test("manual release retries build from the release tag before publishing", () =
     releaseWorkflow,
     /RAW_RELEASE_TAG: \$\{\{ github\.event\.inputs\.tag \|\| github\.ref_name \}\}/,
     "release attachment metadata must continue to come from the tag input",
+  );
+  assert.match(
+    releaseWorkflow,
+    /use_current_release_tooling:[\s\S]*default: false[\s\S]*type: boolean/,
+    "recovery tooling overlay must require an explicit manual-dispatch input",
+  );
+  assert.match(
+    releaseWorkflow,
+    /name: Overlay audited recovery release tooling[\s\S]*github\.event_name == 'workflow_dispatch' && inputs\.use_current_release_tooling/,
+    "tag pushes must never overlay release tooling",
+  );
+  assert.match(
+    releaseWorkflow,
+    /RECOVERY_TOOLING_SHA: \$\{\{ github\.sha \}\}[\s\S]*git fetch --no-tags --depth=1 origin "\$RECOVERY_TOOLING_SHA"/,
+    "manual recovery tooling must be pinned to the reviewed workflow commit",
+  );
+  assert.match(
+    releaseWorkflow,
+    /scripts\/release\.sh[\s\S]*scripts\/sidecar-bundle\.sh[\s\S]*scripts\/windows-msi-budget\.ps1/,
+    "the allowlist must cover only the three packaging scripts needed by v0.2.0 recovery",
   );
 });
 

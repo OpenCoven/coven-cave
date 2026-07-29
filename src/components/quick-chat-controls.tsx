@@ -361,7 +361,7 @@ export function QuickChatComposer({
     text: draft,
     setText: onDraftChange,
     modelHarness,
-    modelOptionsOverride: modelHarness === "opencode" ? runtimeModelOptions : undefined,
+    modelOptionsOverride: runtimeModelOptions,
     onPickModel: (id) => {
       onModelOverrideChange?.(id);
       onLocalNote?.(`Model set to \`${id}\` for this thread.`);
@@ -440,7 +440,7 @@ export function QuickChatComposer({
               formatModelList(
                 modelHarness,
                 modelOverride ?? null,
-                modelHarness === "opencode" ? runtimeModelOptions : undefined,
+                runtimeModelOptions,
               ),
             );
             return;
@@ -448,7 +448,7 @@ export function QuickChatComposer({
           const id = resolveModelArg(
             args,
             modelHarness,
-            modelHarness === "opencode" ? runtimeModelOptions : undefined,
+            runtimeModelOptions,
           );
           if (!id) {
             onLocalNote?.(`Unknown model "${args}".`);

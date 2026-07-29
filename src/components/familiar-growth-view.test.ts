@@ -87,6 +87,29 @@ describe("Familiar growth view", () => {
     assert.match(view, /if \(quiet && !silent\) announce\("Growth data refreshed\."\)/, "polls refresh without announcing; manual refresh still announces");
   });
 
+  it("keeps canonical memory failures unavailable instead of reporting zero", () => {
+    assert.match(
+      view,
+      /loadCanonicalMemoryList\(\)/,
+      "background growth loads use the shared non-forced list cache",
+    );
+    assert.match(
+      view,
+      /memoryAvailability:\s*memoryJson\.state === "ready" \? "ready" : "unavailable"/,
+    );
+    assert.match(
+      view,
+      /covenEntries:\s*memoryJson\.state === "ready" \? memoryJson\.entries : \[\]/,
+      "only a ready canonical response contributes entries",
+    );
+    assert.match(
+      report,
+      /stats\?\.memoryAvailability === "ready"/,
+      "the visible memory summary checks availability before presenting a count",
+    );
+    assert.match(report, /Memory unavailable/);
+  });
+
   it("gives every non-healthy growth signal a next-step action link", () => {
     assert.match(report, /function signalAction/, "signal kinds map to the surface where the fix happens");
     assert.match(report, /case "session-gap":/);
