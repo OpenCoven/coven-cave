@@ -85,7 +85,7 @@ test("spine segment heights stay within one stack even with a dominant category"
     { count: 1 },
   ]);
   assert.equal(heights.length, 2);
-  assert.ok(heights.every((height) => height > 0));
+  assert.ok(heights.every((height) => height >= Math.min(8, 100 / heights.length)));
   assert.ok(heights.reduce((sum, height) => sum + height, 0) <= 100.0001);
 });
 

@@ -137,17 +137,16 @@ export function spineStackHeight(total: number): number {
 }
 
 /** Convert category counts into bounded percentages for the vertical stack.
- * Small categories stay legible, then the complete stack is renormalized so
- * those minimums can never push the segments past 100%. */
+ * Reserve a readable minimum for every category, then distribute only the
+ * remaining height by count so the minimum can never be renormalized away. */
 export function spineSegmentHeights(cats: readonly { count: number }[]): number[] {
   if (cats.length === 0) return [];
   const counts = cats.map(({ count }) => Math.max(0, count));
   const total = counts.reduce((sum, count) => sum + count, 0);
   if (total <= 0) return counts.map(() => 0);
   const minimum = Math.min(8, 100 / counts.length);
-  const heights = counts.map((count) => Math.max(minimum, (count / total) * 100));
-  const sum = heights.reduce((totalHeight, height) => totalHeight + height, 0);
-  return sum > 100 ? heights.map((height) => (height / sum) * 100) : heights;
+  const remaining = 100 - minimum * counts.length;
+  return counts.map((count) => minimum + (count / total) * remaining);
 }
 
 export type ThreadMapEvent = {
