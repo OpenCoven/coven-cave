@@ -85,6 +85,30 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
+function retryAfterMs(headers: Headers): number {
+  const value = headers.get("retry-after");
+  if (!value) return 0;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? 0 : Math.max(0, date - Date.now());
+}
+
+async function getGithubActivityJson(): Promise<{
+  data: { ok: boolean; items?: GitHubItem[]; collections?: ActivityCollections } | null;
+  retryAfterMs: number;
+}> {
+  try {
+    const res = await fetch("/api/github/activity", { cache: "no-store" });
+    const retryMs = retryAfterMs(res.headers);
+    if (!res.ok) return { data: null, retryAfterMs: retryMs };
+    const data = (await res.json()) as { ok: boolean; items?: GitHubItem[]; collections?: ActivityCollections };
+    return { data, retryAfterMs: retryMs };
+  } catch {
+    return { data: null, retryAfterMs: 0 };
+  }
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export function BentoDashboard({ model: initialModel }: { model: DashboardModel }) {
@@ -131,7 +155,7 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
       put("projects", Array.isArray(r?.projects) ? r.projects.length : null),
     );
     if (Date.now() < githubRetryUntilRef.current) return;
-    void getJson<{ ok: boolean; items?: GitHubItem[]; collections?: ActivityCollections }>("/api/github/activity").then((act) => {
+    void getGithubActivityJson().then(({ data: act, retryAfterMs }) => {
       if (!aliveRef.current) return;
       const activityItems = act?.ok && Array.isArray(act.items) ? act.items : null;
       const requestFailed = activityItems === null;
@@ -139,8 +163,10 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
         && act?.collections !== undefined
         && activityCollectionsComplete(act.collections);
       if (act?.ok && act.collections) {
-        const retryAfterMs = activityRetryAfterSeconds(act.collections) * 1000;
-        githubRetryUntilRef.current = retryAfterMs > 0 ? Date.now() + retryAfterMs : 0;
+        const retryAfterCollectionsMs = activityRetryAfterSeconds(act.collections) * 1000;
+        githubRetryUntilRef.current = retryAfterCollectionsMs > 0 ? Date.now() + retryAfterCollectionsMs : 0;
+      } else if (retryAfterMs > 0) {
+        githubRetryUntilRef.current = Date.now() + retryAfterMs;
       }
       const map = new Map<string, GitHubItem>();
       for (const it of activityItems ?? []) map.set(it.url || it.id, it);

@@ -89,6 +89,7 @@ function repoSourceError(res: Response, source: string): string {
     status: res.status,
     remaining,
     retryAfter: res.headers.get("retry-after"),
+    rateLimitReset: res.headers.get("x-ratelimit-reset"),
   });
   if (failure.rateLimited || res.status === 401) return failure.message;
   return `Couldn't load ${source} (${res.status}).`;

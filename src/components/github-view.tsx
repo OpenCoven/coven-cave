@@ -2400,6 +2400,11 @@ export function GitHubView({
     }
   }
 
+  function retryDelayFromMessage(message: string | null | undefined): number {
+    const seconds = Number(message?.match(/try again in (\d+) seconds?/i)?.[1] ?? 0);
+    return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
+  }
+
   async function fetchActivity(silent = false, force = false) {
     // Skeleton only on the first load — a manual refresh with data already on
     // screen must not unmount the list (and any open composer draft with it).
@@ -2409,13 +2414,14 @@ export function GitHubView({
       const { data } = await readSurfaceResource<ActivityPayload>("github:activity", force);
       if (!mountedRef.current) return;
       if (!data.ok) {
-        applyRetryCooldown(0);
+        const retryDelayMs = retryDelayFromMessage(data.error);
+        applyRetryCooldown(retryDelayMs);
         if (data.error === "no_user") {
           setError("no_user");
           return;
         }
         setError(data.error ?? "GitHub activity unavailable");
-        schedulePoll(60_000);
+        schedulePoll(Math.max(60_000, retryDelayMs));
         return;
       }
       const nextActivity = data;
@@ -2433,9 +2439,11 @@ export function GitHubView({
       schedulePoll(Math.max(basePollMs, retryDelayMs));
     } catch (e) {
       if (!mountedRef.current) return;
-      applyRetryCooldown(0);
-      setError(e instanceof Error ? e.message : "Failed to load GitHub activity");
-      schedulePoll(60_000);
+      const message = e instanceof Error ? e.message : "Failed to load GitHub activity";
+      const retryDelayMs = retryDelayFromMessage(message);
+      applyRetryCooldown(retryDelayMs);
+      setError(message);
+      schedulePoll(Math.max(60_000, retryDelayMs));
     } finally {
       if (mountedRef.current) setLoading(false);
     }
