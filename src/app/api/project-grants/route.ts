@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { resolveProjectGrantTarget } from "@/lib/server/project-grant-targets";
-import { requireTrustedHumanGrantMutation } from "@/lib/server/trusted-grant-mutation";
+import {
+  isVerifiedMobileRequest,
+  requireTrustedHumanGrantMutation,
+} from "@/lib/server/trusted-grant-mutation";
 
 import {
   grantProjectToFamiliar,
@@ -103,7 +106,13 @@ export async function POST(req: Request) {
       { status: target.status },
     );
   }
-  await grantProjectToFamiliar({ familiarId: target.familiarId, projectId: target.projectId, source: "human", access });
+  await grantProjectToFamiliar({
+    familiarId: target.familiarId,
+    projectId: target.projectId,
+    source: "human",
+    access,
+    actor: isVerifiedMobileRequest(req) ? "mobile" : "loopback",
+  });
   return NextResponse.json({ ok: true });
 }
 
@@ -121,6 +130,9 @@ export async function DELETE(req: Request) {
       { status: 400 },
     );
   }
-  const revoked = await revokeProjectFromFamiliar(input);
+  const revoked = await revokeProjectFromFamiliar({
+    ...input,
+    actor: isVerifiedMobileRequest(req) ? "mobile" : "loopback",
+  });
   return NextResponse.json({ ok: true, revoked });
 }
