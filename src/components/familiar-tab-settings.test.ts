@@ -43,5 +43,13 @@ assert.match(
   /\.familiar-tab__settings-body\s*\{[^}]*flex:\s*1;[^}]*min-width:\s*0;[^}]*min-height:\s*0;/,
   "the nested settings body owns the remaining scrollable height",
 );
+assert.match(settings, /ChatSettingsView/);
+assert.match(settings, /type FamiliarSettingsTab = "chat" \|/);
+assert.match(settings, /\{ id: "chat", label: "Chat" \}/);
+assert.match(settings, /tab === "chat" \? <ChatSettingsView \/>/);
+assert.match(settings, /<VaultPanel[\s\S]{0,100}familiarId=\{familiar\.id\}/);
+assert.match(settings, /familiar\.id/);
+assert.match(settings, /localDaemonReady/);
+assert.match(settings, /allFamiliars/);
 
 console.log("familiar-tab-settings.test.ts: ok");
