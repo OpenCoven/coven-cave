@@ -108,7 +108,8 @@ async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> 
 /**
  * The updater that installs a release belongs to the previous Cave version.
  * Reconcile once after the new shell starts so the first release containing
- * this behavior also aligns the separately installed CLI/daemon.
+ * this behavior also aligns the separately installed Coven CLI. The CLI owns
+ * the daemon lifecycle; it is not itself the daemon process.
  */
 export function DaemonReleaseAlignmentTrigger() {
   const isDesktop = useIsTauriDesktop();
@@ -131,7 +132,7 @@ export function DaemonReleaseAlignmentTrigger() {
             pushBanner({
               id: DAEMON_ALIGNMENT_BANNER_ID,
               severity: "info",
-              title: `Updating Coven daemon to match Cave v${APP_VERSION}…`,
+              title: `Updating Coven CLI for Cave v${APP_VERSION}…`,
             });
           }
         },
@@ -142,9 +143,9 @@ export function DaemonReleaseAlignmentTrigger() {
           pushBanner({
             id: DAEMON_ALIGNMENT_BANNER_ID,
             severity: "info",
-            title: `Coven daemon v${APP_VERSION} is ready to install`,
+            title: `Coven CLI v${APP_VERSION} is ready to install`,
             cta: {
-              label: "Update Coven daemon",
+              label: "Update Coven CLI",
               onClick: () => {
                 attempted.current = false;
                 start(true);
@@ -160,9 +161,9 @@ export function DaemonReleaseAlignmentTrigger() {
         pushBanner({
           id: DAEMON_ALIGNMENT_BANNER_ID,
           severity: "warning",
-          title: `Coven daemon update failed (${errorMessage(error, "update failed")})`,
+          title: `Coven CLI update failed (${errorMessage(error, "update failed")})`,
           cta: {
-            label: "Retry daemon update",
+            label: "Retry CLI update",
             onClick: () => {
               attempted.current = false;
               start(true);
@@ -401,7 +402,7 @@ export function UpdateBannerTrigger() {
                         pushBanner({
                           id: BANNER_ID,
                           severity: "info",
-                          title: `Updating Coven daemon and installing Cave v${r.version}…`,
+                          title: `Installing CovenCave v${r.version}…`,
                         });
                         void installPreparedUpdate(r.update).catch(async (error) => {
                           await nativeUpdateCoordinator.finishAction(owner);

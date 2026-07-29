@@ -284,6 +284,19 @@ async function main() {
     assert.equal(meta.width, 256, "avatar should be downscaled to the packaged route max dimension");
     assert.equal(meta.height, 128, "avatar should preserve aspect ratio during sidecar transcode");
 
+    const buildInfoResponse = await fetch(`${baseUrl}/api/app/build-info`, {
+      headers: authenticatedHeaders(baseUrl),
+    });
+    assert.equal(buildInfoResponse.status, 200, "packaged sidecar must expose its artifact identity");
+    const buildInfo = await buildInfoResponse.json();
+    assert.match(buildInfo.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+    assert.match(buildInfo.revision, /^(?:development|[a-f0-9]{7,64})$/);
+    assert.equal(
+      buildInfo.identity,
+      `v${buildInfo.version}+${buildInfo.revision}`,
+      "packaged sidecar build identity must be internally consistent",
+    );
+
     const enginesResponse = await fetch(`${baseUrl}/api/voice/engines`, {
       headers: authenticatedHeaders(baseUrl),
     });

@@ -22,7 +22,7 @@ import {
   classifyAboutDaemonStatus,
   type AboutDaemonState,
 } from "@/lib/about-status";
-import { APP_VERSION } from "@/lib/app-version";
+import { APP_BUILD_IDENTITY, APP_BUILD_REVISION, APP_VERSION } from "@/lib/app-version";
 import { copyText } from "@/lib/clipboard";
 import { exactSemver } from "@/lib/exact-semver";
 import { Icon, type IconName } from "@/lib/icon";
@@ -288,6 +288,8 @@ export function AboutSection() {
         application: {
           name: "CovenCave",
           version: APP_VERSION,
+          revision: APP_BUILD_REVISION,
+          identity: APP_BUILD_IDENTITY,
           builtWith: STACK,
         },
         daemon: safeDaemonDiagnostics(daemonState),
@@ -432,6 +434,10 @@ export function AboutSection() {
               <span className="settings-about-row__label">App version</span>
               <code className="settings-about-row__code">v{APP_VERSION}</code>
             </div>
+            <div className="settings-about-row">
+              <span className="settings-about-row__label">Build revision</span>
+              <code className="settings-about-row__code">{APP_BUILD_REVISION}</code>
+            </div>
             <UpdateSettingsRow
               actionRef={updateActionRef}
               onCheckAvailabilityChange={setUpdateCheckAvailable}
@@ -456,7 +462,7 @@ export function AboutSection() {
               >
                 <strong>Build sigil</strong>
                 <span>
-                  CovenCave v{APP_VERSION} · {STACK.join(" + ")}
+                  CovenCave {APP_BUILD_IDENTITY} · {STACK.join(" + ")}
                 </span>
               </div>
             ) : null}
