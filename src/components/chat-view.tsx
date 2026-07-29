@@ -5852,7 +5852,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       {/* Chat.dc.html 2a ③: the slim mono context band under the title —
           project · branch · model · cwd on the left, what the last run cost on
           the right. Everything here is machine-decided, so it reads in mono
-          and never invents a fact: a chip with no value doesn't render. */}
+          and never invents a fact: a chip with no value doesn't render. A
+          brand-new chat (no session yet) renders no band at all (2b): the
+          new-session dashboard already states the harness and model, so a lone
+          model chip here would say it twice. */}
+      {sessionId !== null || turns.length > 0 ? (
       <ChatSessionContextRow
         projectName={contextRowProject?.name ?? null}
         projectRoot={session?.project_root ?? projectRoot ?? null}
@@ -5867,6 +5871,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onProjectChange={setProjectIdDraft}
         onAddProject={overflowAddProject.beginAddProject}
       />
+      ) : null}
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>

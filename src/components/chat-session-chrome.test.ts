@@ -41,6 +41,13 @@ test("2a ③ — the context row renders under the header, from the same facts a
     /const \{ branch: sessionGitBranch \} = useChangesSummary\(/,
     "the branch rides the shared changes-summary gate rather than its own fetch",
   );
+  // 2b: a brand-new chat renders NO context band — the new-session dashboard
+  // already states the harness and model, so a lone model chip would repeat it.
+  assert.match(
+    chatView,
+    /\{sessionId !== null \|\| turns\.length > 0 \? \(\s*\n\s*<ChatSessionContextRow/,
+    "the band waits for a session or a first turn before it renders",
+  );
 });
 
 test("2a ③ — the row is presentation over a pure model and never renders empty chrome", () => {
@@ -84,14 +91,24 @@ test("2a — the title row and turn names wear the display serif", () => {
   );
 });
 
-test("2a ⑤ — follow-up pills spread the composer's width; in-turn chips don't", () => {
+test("2a ⑤ — follow-up suggestions spread the composer's width in ONE row", () => {
+  // The typed follow-up cards carry the design's geometry: equal shares of a
+  // single row (auto-flow column), never a count-blind grid that leaves a
+  // ragged 2+1 tail (#2672). next-paths caps the strip at 4.
   assert.match(
     styles,
-    /\.cave-chat-followups \.cave-next-path \{[\s\S]*?flex: 1 1 0;[\s\S]*?height: 40px;/,
-    "follow-ups take equal shares of one 40px row",
+    /\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\);/,
+    "follow-up cards take equal shares of one row",
   );
-  // The shared in-turn chip grammar (intrinsic width, scrollable row) is
-  // untouched — the override only ever applies under .cave-chat-followups.
+  // The pill-era override is gone: nothing renders .cave-next-path inside the
+  // follow-up strip, so the orphaned selector must not linger in the cascade.
+  assert.doesNotMatch(
+    styles,
+    /\.cave-chat-followups \.cave-next-path\b/,
+    "the orphaned pill override does not survive the typed-card grammar",
+  );
+  // The shared in-turn chip grammar (intrinsic width, count-keyed row) is
+  // untouched.
   assert.doesNotMatch(
     styles.match(/^\.cave-next-path \{[\s\S]*?\n\}/m)?.[0] ?? "",
     /flex: 1 1 0/,
