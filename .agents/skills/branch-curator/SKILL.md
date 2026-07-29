@@ -22,8 +22,8 @@ Preserve a branch or worktree when any of these signals apply:
 - Any non-closed Bead names the branch, worktree, surface, or owner.
 - It heads an open or draft pull request, or its CI is still running.
 - It is a same-day backup, rescue, archive, or WIP snapshot without a disposition.
-- Its tip or reflog changed in the last 24 hours without owner-authorized
-  disposition. Recency is unconditional; known ownership does not override it.
+- Its tip or reflog changed in the last 24 hours. Recency is unconditional;
+  known ownership does not override it.
 - It contains local or remote commits whose disposition is not proven.
 - Its local branch ref is symbolic rather than a direct commit ref.
 
@@ -33,10 +33,26 @@ Treat `main`, the default branch, Beads/Dolt sync refs such as
 ## Start with durable coordination
 In a Beads repository:
 ```bash
-bd prime
-bd ready --json
-bd list --limit 0 --include-gates --include-infra --include-templates --json |
-  jq '[.[] | select(.status != "closed")]'
+bd prime || { printf '%s\n' 'PRESERVE - Beads unavailable'; exit 1; }
+if ! ready_tasks_json=$(bd ready --json); then
+  printf '%s\n' 'PRESERVE - ready-task inventory failed'; exit 1
+fi
+printf '%s' "$ready_tasks_json" |
+  jq -e 'type == "array" and
+    all(.[]; (.id | type) == "string" and (.status | type) == "string")' \
+    >/dev/null ||
+  { printf '%s\n' 'PRESERVE - malformed ready-task inventory'; exit 1; }
+if ! all_tasks_json=$(
+  bd list --limit 0 --include-gates --include-infra --include-templates --json
+); then
+  printf '%s\n' 'PRESERVE - task inventory failed'; exit 1
+fi
+non_closed_tasks=$(printf '%s' "$all_tasks_json" | jq -e '
+  if type == "array" and
+     all(.[]; (.id | type) == "string" and (.status | type) == "string")
+  then [.[] | select(.status != "closed")]
+  else error("malformed task inventory") end
+') || { printf '%s\n' 'PRESERVE - malformed task inventory'; exit 1; }
 ```
 Claim one curation task before editing; never claim or close candidate-owning
 tasks to ease cleanup. Record the curator branch, worktree, owner, and evidence.
@@ -45,60 +61,151 @@ Inspect all non-closed tasks because default `bd list` limits can hide ownership
 ## Build the read-only inventory
 Refresh remote-tracking refs, then collect all signals before deciding:
 ```bash
-git fetch --no-prune origin
-git status --short --branch
-git worktree list --porcelain
-git branch --merged origin/main --format='%(refname:short)'
-git branch --no-merged origin/main --format='%(refname:short)'
+git fetch --no-prune origin ||
+  { printf '%s\n' 'PRESERVE - fetch failed'; exit 1; }
+git status --short --branch ||
+  { printf '%s\n' 'PRESERVE - repository status failed'; exit 1; }
+git worktree list --porcelain ||
+  { printf '%s\n' 'PRESERVE - worktree inventory failed'; exit 1; }
+git branch --merged origin/main --format='%(refname:short)' ||
+  { printf '%s\n' 'PRESERVE - merged inventory failed'; exit 1; }
+git branch --no-merged origin/main --format='%(refname:short)' ||
+  { printf '%s\n' 'PRESERVE - unmerged inventory failed'; exit 1; }
 ```
 Acquire branch names as data, not shell source. Refname rules make this an
 unambiguous NUL stream after removing record newlines:
 ```bash
 while IFS= read -r -d '' branch; do
+  test "$branch" != 'branch curator inventory failed' ||
+    { printf '%s\n' 'PRESERVE - branch inventory failed'; exit 1; }
   local_ref="refs/heads/$branch"
   printf 'branch=%q\n' "$branch"
   if symbolic_target=$(git symbolic-ref -q "$local_ref"); then
     printf 'PRESERVE - symbolic ref -> %s\n' "$symbolic_target"
     continue
   fi
-  git show-ref --verify "$local_ref"
-  git log -1 --format='committed=%cI%nsubject=%s' "$local_ref" --
-  git reflog show --date=iso-strict --format='oid=%H selector=%gd' "$local_ref"
+  git show-ref --verify "$local_ref" ||
+    { printf '%s\n' 'PRESERVE - branch ref unreadable'; continue; }
+  git log -1 --format='committed=%cI%nsubject=%s' "$local_ref" -- ||
+    { printf '%s\n' 'PRESERVE - branch log unreadable'; continue; }
+  git reflog show --date=iso-strict --format='oid=%H selector=%gd' "$local_ref" ||
+    { printf '%s\n' 'PRESERVE - branch reflog unreadable'; continue; }
   git for-each-ref \
     --format='upstream=%(upstream:short)%ntrack=%(upstream:track)' \
-    "$local_ref"
+    "$local_ref" ||
+    { printf '%s\n' 'PRESERVE - upstream unreadable'; continue; }
 done < <(
-  git for-each-ref --sort=-committerdate \
-    --format='%(refname:lstrip=2)%00' refs/heads | tr -d '\n'
+  { git for-each-ref --sort=-committerdate \
+      --format='%(refname:lstrip=2)%00' refs/heads ||
+      printf 'branch curator inventory failed\0'; } | tr -d '\n'
 )
 ```
 Do not parse displays back into commands; the loop variable is authoritative.
 For every listed worktree, run:
 ```bash
-git -C <worktree-path> \
+worktree_status=$(git -C <worktree-path> \
   -c status.showUntrackedFiles=all \
   -c core.fileMode=true \
   -c core.fsmonitor=false \
   status --porcelain=v2 --branch --untracked-files=all \
-  --ignored=matching --ignore-submodules=none
-git -C <worktree-path> ls-files -v |
-  awk '$1 ~ /^[a-z]/ || $1 == "S"'
+  --ignored=matching --ignore-submodules=none) ||
+  { printf '%s\n' 'PRESERVE - worktree status failed'; continue; }
+index_state=$(git -C <worktree-path> ls-files -v) ||
+  { printf '%s\n' 'PRESERVE - index state failed'; continue; }
+index_flags=$(printf '%s\n' "$index_state" |
+  awk '$1 ~ /^[a-z]/ || $1 == "S"') ||
+  { printf '%s\n' 'PRESERVE - index parse failed'; continue; }
+clean_preview=$(git -C <worktree-path> clean -ndx -d -- .) ||
+  { printf '%s\n' 'PRESERVE - ignored-state preview failed'; continue; }
 ```
-This includes ignored paths. Also inspect `git -C <worktree-path> clean -ndx -d
--- .`. Preserve any staged, unstaged, untracked, ignored, dirty submodule,
+Inspect every captured output. Preserve any staged, unstaged, untracked,
+ignored, dirty submodule,
 assume-unchanged, or skip-worktree state unless policy explicitly declares an
 ignored path disposable. Never let status, file-mode, or fsmonitor configuration
 suppress this check.
 
 Check runtime and task ownership:
 ```bash
-coven claim status
-coven sessions --json
-primary_checkout=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+if ! coven_claims_json=$(coven claim status --json); then
+  printf '%s\n' 'PRESERVE - Coven claims unavailable'; continue
+fi
+printf '%s' "$coven_claims_json" | jq -e '
+  type == "object" and (.claims | type) == "array" and
+  all(.claims[]; (.branch | type) == "string" and
+    (.agent_id | type) == "string" and
+    (.state == "active" or .state == "expired") and
+    (.acquired_at | type) == "number" and
+    (.expires_at | type) == "number" and
+    (.head == null or (.head | type) == "string"))
+' >/dev/null ||
+  { printf '%s\n' 'PRESERVE - malformed Coven claims'; continue; }
+claim_presence=$(printf '%s' "$coven_claims_json" | jq -er --arg branch "$branch" '
+  if any(.claims[]; .branch == $branch and .state == "active")
+  then "active" else "none" end
+') || { printf '%s\n' 'PRESERVE - Coven claim parse failed'; continue; }
+test "$claim_presence" = none ||
+  { printf '%s\n' 'PRESERVE - active Coven claim'; continue; }
+if ! coven_sessions_json=$(coven sessions --json); then
+  printf '%s\n' 'PRESERVE - Coven sessions unavailable'; continue
+fi
+printf '%s' "$coven_sessions_json" |
+  jq -e 'type == "object" and (.sessions | type) == "array" and
+    all(.sessions[]; type == "object" and
+      (.id | type) == "string" and
+      (.project_root | type) == "string" and
+      (.status | type) == "string")' >/dev/null ||
+  { printf '%s\n' 'PRESERVE - malformed Coven sessions'; continue; }
+      if test -n "${worktree_path:-}"; then
+        session_presence=$(printf '%s' "$coven_sessions_json" |
+          jq -er --arg root "$worktree_path" '
+            if any(.sessions[]; .project_root == $root and
+              (.status != "completed" and .status != "failed" and .status != "killed"))
+            then "active" else "none" end
+          ') || { printf '%s\n' 'PRESERVE - session parse failed'; continue; }
+        test "$session_presence" = none ||
+          { printf '%s\n' 'PRESERVE - active Coven session'; continue; }
+      fi
+common_git_dir=$(git rev-parse --path-format=absolute --git-common-dir) ||
+  { printf '%s\n' 'PRESERVE - common Git dir unavailable'; continue; }
+primary_checkout=$(dirname "$common_git_dir") ||
+  { printf '%s\n' 'PRESERVE - primary checkout unavailable'; continue; }
 claims_file="$primary_checkout/.claude/claims.json"
-test ! -f "$claims_file" || jq . "$claims_file"
-bd list --limit 0 --include-gates --include-infra --include-templates --json |
-  jq '[.[] | select(.status != "closed")]'
+if test -L "$claims_file"; then
+  printf '%s\n' 'PRESERVE - claims file is symbolic'; continue
+elif test -e "$claims_file" && ! test -f "$claims_file"; then
+  printf '%s\n' 'PRESERVE - claims path is not regular'; continue
+elif test -f "$claims_file"; then
+  claims_json=$(jq -e '.' "$claims_file") ||
+    { printf '%s\n' 'PRESERVE - unreadable claims inventory'; continue; }
+  printf '%s' "$claims_json" | jq -e '
+    type == "object" and all(to_entries[];
+      if (.key | startswith("_")) then (.value | type) == "string"
+      else (.value | type) == "object" and
+        (.value.surfaces | type) == "array" and
+        all(.value.surfaces[]; type == "string") and
+        ((.value.updated | type) == "string" or
+         (.value.started | type) == "string")
+      end)
+  ' >/dev/null ||
+    { printf '%s\n' 'PRESERVE - malformed claims inventory'; continue; }
+  surface_claims=$(printf '%s' "$claims_json" |
+    jq -er 'if any(to_entries[]; (.key | startswith("_") | not))
+      then "active" else "none" end') ||
+    { printf '%s\n' 'PRESERVE - claims parse failed'; continue; }
+  test "$surface_claims" = none ||
+    { printf '%s\n' 'PRESERVE - active surface claim'; continue; }
+fi
+if ! all_tasks_json=$(
+  bd list --limit 0 --include-gates --include-infra --include-templates --json
+); then
+  printf '%s\n' 'PRESERVE - task inventory failed'; continue
+fi
+non_closed_tasks=$(printf '%s' "$all_tasks_json" | jq -e '
+  if type == "array" and
+     all(.[]; (.id | type) == "string" and (.status | type) == "string")
+  then [.[] | select(.status != "closed")]
+  else error("malformed task inventory") end
+') || { printf '%s\n' 'PRESERVE - malformed task inventory'; continue; }
 ```
 Run the documented live harness process/CWD check and map roots to worktrees.
 Coven output supplements rather than replaces claims or process ownership.
@@ -107,12 +214,34 @@ Absence of a claim means "no claim found", not "no owner exists."
 Fetch every PR once. Filter the exhaustive result by audited head OID to find
 origin and fork PRs even when branch names differ:
 ```bash
+audited_origin_url=$(git remote get-url origin) ||
+  { printf '%s\n' 'PRESERVE - origin URL unavailable'; exit 1; }
+case "$audited_origin_url" in
+  https://github.com/*) audited_gh_repo=${audited_origin_url#https://github.com/} ;;
+  *) printf '%s\n' 'PRESERVE - unsupported GitHub origin'; exit 1 ;;
+esac
+audited_gh_repo=${audited_gh_repo%.git}
+case "$audited_gh_repo" in
+  ''|/*|*/|*/*/*|*[!A-Za-z0-9._/-]*)
+    printf '%s\n' 'PRESERVE - invalid GitHub repository'; exit 1 ;;
+esac
 pr_inventory_ok=1
 if ! all_prs_json=$(
-  gh api --paginate --slurp -X GET 'repos/{owner}/{repo}/pulls' \
+  gh api --hostname github.com --paginate --slurp -X GET \
+    "repos/$audited_gh_repo/pulls" \
     -f state=all -f per_page=100
 ); then
   printf '%s\n' 'PRESERVE - PR inventory failed'
+  pr_inventory_ok=0
+elif ! printf '%s' "$all_prs_json" | jq -e '
+  type == "array" and length > 0 and all(.[]; type == "array") and
+  all(.[][];
+    (.head.sha | type) == "string" and
+    (try (.head.sha | test("^([0-9a-f]{40}|[0-9a-f]{64})$")) catch false) and
+    (.state == "open" or .state == "closed") and
+    (.draft | type) == "boolean")
+' >/dev/null; then
+  printf '%s\n' 'PRESERVE - malformed PR inventory'
   pr_inventory_ok=0
 fi
 ```
@@ -124,7 +253,8 @@ if test "$pr_inventory_ok" -ne 1; then
   continue
 fi
 
-local_oid=$(git rev-parse --verify "$local_ref^{commit}")
+local_oid=$(git rev-parse --verify "$local_ref^{commit}") ||
+  { printf '%s\n' 'PRESERVE - local tip missing'; continue; }
 remote_ref="refs/heads/$branch"
 remote_oid=''
 if remote_line=$(git ls-remote --exit-code --heads origin "$remote_ref"); then
@@ -141,40 +271,80 @@ else
   esac
 fi
 
-matching_prs=$(
+if ! matching_prs=$(
   printf '%s' "$all_prs_json" |
-    jq --arg local_oid "$local_oid" \
+    jq -e --arg local_oid "$local_oid" \
        --arg remote_oid "$remote_oid" \
        '[.[][] | select(
           .head.sha == $local_oid or
           ($remote_oid != "" and .head.sha == $remote_oid)
         )]'
-)
+); then
+  printf '%s\n' 'PRESERVE - PR parse failed'; continue
+fi
+if ! live_pr_count=$(printf '%s' "$matching_prs" |
+  jq -er '[.[] | select(.state == "open" or .draft == true)] | length'); then
+  printf '%s\n' 'PRESERVE - matching PR parse failed'; continue
+fi
+test "$live_pr_count" -eq 0 ||
+  { printf '%s\n' 'PRESERVE - live PR'; continue; }
 ```
 The workflow-runs API caps history at 1,000. Query each active status server-side
-for every distinct audited OID; only existence matters, and OIDs survive aliases:
+by exact branch name to catch earlier-tip runs and by every distinct audited OID
+to catch aliases:
 ```bash
 active_run_found=0
 candidate_oids=("$local_oid")
 if test -n "$remote_oid" && test "$remote_oid" != "$local_oid"; then
   candidate_oids+=("$remote_oid")
 fi
+run_filter_names=(branch)
+run_filter_values=("$branch")
 for candidate_oid in "${candidate_oids[@]}"; do
+  run_filter_names[${#run_filter_names[@]}]=head_sha
+  run_filter_values[${#run_filter_values[@]}]="$candidate_oid"
+done
+filter_index=0
+while test "$filter_index" -lt "${#run_filter_names[@]}"; do
+  run_filter_name=${run_filter_names[$filter_index]}
+  run_filter_value=${run_filter_values[$filter_index]}
   for run_status in queued in_progress requested waiting pending; do
     if ! run_json=$(
-      gh api -X GET 'repos/{owner}/{repo}/actions/runs' \
-        -f per_page=1 -f "head_sha=$candidate_oid" -f "status=$run_status"
+      gh api --hostname github.com -X GET \
+        "repos/$audited_gh_repo/actions/runs" \
+        -f per_page=1 -f "$run_filter_name=$run_filter_value" \
+        -f "status=$run_status"
     ); then
-      printf 'PRESERVE - Actions lookup failed for %s at %s\n' \
-        "$run_status" "$candidate_oid"
+      printf 'PRESERVE - Actions lookup failed for %s=%s at %s\n' \
+        "$run_filter_name" "$run_filter_value" "$run_status"
       active_run_found=2
       break 2
     fi
-    if test "$(printf '%s' "$run_json" | jq '.total_count')" -gt 0; then
-      active_run_found=1
+    if ! run_presence=$(printf '%s' "$run_json" | jq -er '
+      if type == "object" and (.total_count | type) == "number" and
+         .total_count >= 0
+      then if .total_count == 0 then "none" else "active" end
+      else error("invalid total_count") end
+    '); then
+      printf 'PRESERVE - malformed Actions response for %s=%s at %s\n' \
+        "$run_filter_name" "$run_filter_value" "$run_status"
+      active_run_found=2
+      break 2
     fi
+    case "$run_presence" in
+      none) ;;
+      active) active_run_found=1; break 2 ;;
+      *) active_run_found=2; break 2 ;;
+    esac
   done
+  filter_index=$((filter_index + 1))
 done
+case "$active_run_found" in
+  0) ;;
+  1) printf '%s\n' 'PRESERVE - active workflow'; continue ;;
+  2) printf '%s\n' 'PRESERVE - workflow inventory uncertain'; continue ;;
+  *) printf '%s\n' 'PRESERVE - invalid workflow state'; continue ;;
+esac
 ```
 An open matching PR or active workflow makes the branch live. Query failure
 makes it uncertain.
@@ -251,8 +421,9 @@ Bead and include verification evidence in the PR body.
 Bind the PR to the commit that passed verification. While holding the branch
 gate, capture `verified_oid` from the fully qualified local ref, query the exact
 remote ref with the same failure handling used by the inventory, and require
-the remote to be absent or already equal to `verified_oid`. Push a missing
-remote only with an empty expected-value lease:
+the remote to be absent or already equal to `verified_oid`. Resolve fetch and
+all push URLs and require one exact destination before pushing a missing remote
+with an empty expected-value lease:
 
 ```bash
 verified_oid=$(git rev-parse --verify "$local_ref^{commit}")
@@ -266,184 +437,11 @@ Keep the gate held while creating the PR, then query the created PR and require
 lookup fails, or the gate cannot exclude concurrent writers, preserve the branch
 and do not open or describe a PR as verified.
 ## Delete only after proof
-Local deletion requires all of the following:
-1. The branch is not protected or tool-owned.
-2. No worktree is using it, or the known owner explicitly declared the clean
-   worktree inactive.
-3. Configuration-independent porcelain inspection shows no staged, unstaged,
-   untracked, ignored, or dirty submodule state, except ignored paths that
-   repository policy explicitly declares disposable.
-4. `git symbolic-ref -q "$local_ref"` confirms it is not symbolic.
-5. No live claim, active session, non-closed task, open PR, draft PR, or running
-   CI owns it.
-6. It is not an unresolved recovery snapshot.
-7. Its tip and reflog are older than 24 hours, or the known owner explicitly
-   authorized disposition after reviewing the current audited OIDs.
-8. Cleanup is authorized and the repository-wide exclusive deletion gate is
-   held.
-9. Redundancy is proven by one of these routes:
-   - every local and remote tip being deleted is an ancestor of `main_ref`; or
-   - its PR is `MERGED`, every tip being deleted equals that PR's recorded head
-     OID, and neither ref has advanced since merge.
-10. Every branch and removable-worktree recovery OID is on refreshed main or an
-    owner-authorized retained remote archive recorded in the owning Bead.
-Capture local and remote tips before proving redundancy:
-```bash
-remote_ref="refs/heads/$branch"
-audited_main_oid=$(git rev-parse --verify "$main_ref^{commit}")
-audited_local_oid=$(git rev-parse --verify "$local_ref^{commit}")
-audited_remote_oid=''
-if remote_line=$(git ls-remote --exit-code --heads origin "$remote_ref"); then
-  read -r audited_remote_oid observed_remote_ref <<EOF
-$remote_line
-EOF
-  test "$observed_remote_ref" = "$remote_ref" ||
-    { printf 'PRESERVE - wrong remote ref\n'; continue; }
-else
-  remote_status=$?
-  case "$remote_status" in
-    2) audited_remote_oid='' ;;
-    *) printf 'PRESERVE - remote lookup failed (%s)\n' "$remote_status"; continue ;;
-  esac
-fi
-```
-For a merged PR, compare both captured OIDs to the API's `.head.sha`. For an
-ancestry-based deletion, fetch the remote ref without moving the local branch,
-then prove each captured OID is an ancestor:
-```bash
-git merge-base --is-ancestor "$audited_local_oid" "$audited_main_oid" ||
-  { printf 'PRESERVE - local ancestry\n'; continue; }
-if test -n "$audited_remote_oid"; then
-  git fetch --no-prune --no-tags origin "$remote_ref" ||
-    { printf 'PRESERVE - remote fetch\n'; continue; }
-  fetched_remote_oid=$(git rev-parse --verify 'FETCH_HEAD^{commit}') ||
-    { printf 'PRESERVE - remote object\n'; continue; }
-  test "$fetched_remote_oid" = "$audited_remote_oid" ||
-    { printf 'PRESERVE - remote moved\n'; continue; }
-  git merge-base --is-ancestor "$audited_remote_oid" "$audited_main_oid" ||
-    { printf 'PRESERVE - remote ancestry\n'; continue; }
-fi
-```
-If any OID differs, is unavailable locally, or fails the chosen proof, preserve
-the branch and inspect the divergence.
-With the exclusive gate held, populate `authorized_archive_refs` only with full
-owner-approved remote refs whose retention is recorded. Refresh the base and
-resolve every archive to its exact current remote OID before proving every raw
-record's old and new nonzero OIDs:
-```bash
-remote_main_ref='refs/heads/main'
-main_line=$(git ls-remote --exit-code origin "$remote_main_ref") ||
-  { printf 'PRESERVE - base lookup failed\n'; continue; }
-read -r remote_main_oid observed_main_ref <<EOF
-$main_line
-EOF
-test "$observed_main_ref" = "$remote_main_ref" ||
-  { printf 'PRESERVE - wrong base ref\n'; continue; }
-git fetch --no-prune --no-tags origin "$remote_main_ref" ||
-  { printf 'PRESERVE - base fetch failed\n'; continue; }
-fetched_main_oid=$(git rev-parse --verify 'FETCH_HEAD^{commit}') ||
-  { printf 'PRESERVE - fetched base missing\n'; continue; }
-test "$fetched_main_oid" = "$remote_main_oid" ||
-  { printf 'PRESERVE - fetched base mismatch\n'; continue; }
-audited_main_oid=$fetched_main_oid
-archives_safe=1; authorized_archive_oids=()
-for archive_ref in "${authorized_archive_refs[@]}"; do
-  case "$archive_ref" in refs/heads/*) ;; *) archives_safe=0; break ;; esac
-  if ! remote_line=$(git ls-remote --exit-code origin "$archive_ref"); then archives_safe=0; break; fi
-  read -r remote_archive_oid observed_archive_ref <<EOF
-$remote_line
-EOF
-  test "$observed_archive_ref" = "$archive_ref" || { archives_safe=0; break; }
-  git fetch --no-prune --no-tags origin "$archive_ref" || { archives_safe=0; break; }
-  fetched_archive_oid=$(git rev-parse --verify "FETCH_HEAD^{commit}") ||
-    { archives_safe=0; break; }
-  test "$fetched_archive_oid" = "$remote_archive_oid" || { archives_safe=0; break; }
-  authorized_archive_oids[${#authorized_archive_oids[@]}]="$fetched_archive_oid"
-done
-test "$archives_safe" -eq 1 || { printf 'PRESERVE - archive refresh failed\n'; continue; }
-now_epoch=$(date +%s) || { printf 'PRESERVE - clock failed\n'; continue; }
-case "$now_epoch" in ''|*[!0-9]*) printf 'PRESERVE - clock invalid\n'; continue ;; esac
-recency_cutoff_epoch=$((now_epoch - 86400))
-tip_epoch=$(git log -1 --format='%ct' "$local_ref") ||
-  { printf 'PRESERVE - tip timestamp failed\n'; continue; }
-test "$tip_epoch" -lt "$recency_cutoff_epoch" ||
-  { printf 'PRESERVE - recent tip\n'; continue; }
-object_format=$(git rev-parse --show-object-format) ||
-  { printf 'PRESERVE - object format failed\n'; continue; }
-case "$object_format" in sha1) oid_width=40 ;; sha256) oid_width=64 ;;
-  *) printf 'PRESERVE - unknown object format\n'; continue ;; esac
-reflog_path=$(git rev-parse --path-format=absolute --git-path "logs/$local_ref") ||
-  { printf 'PRESERVE - reflog path failed\n'; continue; }
-if ! reflog_records=$(awk -v width="$oid_width" '
-  function valid(o) { return length(o) == width && o ~ /^[0-9a-f]+$/ }
-  function zero(o) { return o ~ /^0+$/ }
-  {
-    tab=index($0, "\t"); if (!tab) { bad=1; next }
-    n=split(substr($0, 1, tab-1), parts, " ")
-    if (n < 6 || !valid(parts[1]) || !valid(parts[2]) || parts[n-2] !~ /^<[^<>[:space:]]+>$/ ||
-        parts[n-1] !~ /^-?[0-9]+$/ || parts[n] !~ /^[+-][0-9][0-9][0-9][0-9]$/) { bad=1; next }
-    if (!zero(parts[1])) print parts[n-1], parts[1]
-    if (!zero(parts[2])) print parts[n-1], parts[2]
-  }
-  END { if (bad || NR == 0) exit 1 }
-' "$reflog_path"); then
-  printf 'PRESERVE - reflog read failed\n'; continue
-fi
-test -n "$reflog_records" || { printf 'PRESERVE - reflog is empty\n'; continue; }
-reflog_safe=1
-while IFS=' ' read -r epoch oid; do
-  test "$epoch" -lt "$recency_cutoff_epoch" ||
-    { printf 'PRESERVE - recent reflog\n'; reflog_safe=0; break; }
-  git merge-base --is-ancestor "$oid" "$audited_main_oid" && continue
-  covered=0
-  for archive_oid in "${authorized_archive_oids[@]}"; do
-    git merge-base --is-ancestor "$oid" "$archive_oid" && { covered=1; break; }
-  done
-  test "$covered" -eq 1 || { printf 'PRESERVE - reflog %s\n' "$oid"; reflog_safe=0; break; }
-done <<EOF
-$reflog_records
-EOF
-test "$reflog_safe" -eq 1 || continue
-```
-Still under the gate, query `remote_ref` again into `refreshed_remote_oid` with
-the exact `ls-remote` failure handling above, fetch it, and require `FETCH_HEAD`
-to equal it. Recapture the local OID; require both tips to equal their audited
-OIDs, then rerun the exact guarded ancestry checks above or guarded equality
-checks against the merged PR head using `audited_main_oid`. Any nonzero check
-must immediately preserve. An unchanged lease cannot authorize divergence.
-Before worktree removal, resolve `worktree_head_reflog` with `git -C
-"$worktree_path" rev-parse --path-format=absolute --git-path logs/HEAD` and run
-the same raw old/new OID, numeric recency, and disposition proof against it.
-Enumerate current per-worktree refs with:
-```bash
-git -C "$worktree_path" for-each-ref --format='%(objectname) %(refname)' \
-  refs/bisect refs/rewritten refs/worktree
-```
-Prove every emitted OID and any reflog behind those refs the same way. Preserve
-on unknown worktree-admin refs, malformed or missing HEAD reflog, or any failed
-proof. Then repeat every ownership/state check and hold the gate through
-mutation and final verification.
-Remove only a clean, known-inactive worktree:
-```bash
-git worktree remove -- "$worktree_path"
-```
-Delete the local ref with Git's atomic compare-and-delete operation. It fails
-instead of deleting if the branch advanced after the audit:
-```bash
-git update-ref --no-deref -d "$local_ref" "$audited_local_oid"
-```
-If a remote ref exists, delete it with an explicit lease bound to the captured
-remote OID:
-```bash
-git push \
-  --force-with-lease="$remote_ref:$audited_remote_oid" \
-  origin ":$remote_ref"
-```
-Do not bypass `worktree-guard` merely to finish a sweep. A blocked deletion is
-new evidence; return to classification unless the operator explicitly
-authorizes the bypass after reviewing the recorded risk. Likewise, never use
-`git update-ref -d` or a deletion refspec until every proof and immediate
-recheck above has passed.
+Before any worktree or ref deletion, read and follow
+[Deletion proof](references/deletion-proof.md) in full. It is normative and
+must run under the exclusive gate. If the file, a proof, a parse, or a
+postcondition is unavailable or uncertain, preserve. Never bypass
+`worktree-guard` merely to finish a sweep.
 ## Preserve at-risk work without touching its source
 When unowned work needs a safety copy, leave the source worktree unchanged.
 Create the snapshot from the source HEAD in a separate worktree, reproduce only
