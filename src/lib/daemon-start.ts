@@ -1,8 +1,8 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import { callDaemonTarget, localDaemonTarget } from "@/lib/coven-daemon";
-import { covenBin } from "@/lib/coven-bin";
-import { covenCliMissingError, isMissingExecutableError } from "@/lib/coven-spawn-error";
+import { callDaemonTarget, localDaemonTarget } from "./coven-daemon.ts";
+import { covenBin } from "./coven-bin.ts";
+import { covenCliMissingError, isMissingExecutableError } from "./coven-spawn-error.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 import { waitForDaemonReadiness } from "./daemon-readiness.ts";
 import { sanitizeAboutDiagnosticText } from "./about-diagnostics.ts";
