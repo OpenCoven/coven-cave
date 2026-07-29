@@ -18,6 +18,9 @@ import {
   accessLevelMeta,
   auditDecisionMeta,
   auditReasonLabel,
+  grantChangeMeta,
+  grantChangeOriginLabel,
+  grantLevelLabel,
   effectiveAccessRows,
   grantKey,
   grantSourceMeta,
@@ -29,6 +32,7 @@ import {
   surfaceLabel,
   type ConsoleAccessGroup,
   type ConsoleAuditEntry,
+  type ConsoleGrantChange,
   type ConsoleGrant,
   type ConsoleProject,
   type ConsoleProposal,
@@ -99,6 +103,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   const [supremeFamiliarId, setSupremeFamiliarId] = useState<string | null>(null);
   const [proposals, setProposals] = useState<ConsoleProposal[]>([]);
   const [audit, setAudit] = useState<ConsoleAuditEntry[]>([]);
+  const [grantChanges, setGrantChanges] = useState<ConsoleGrantChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Keys mid-flight, so a row can't be double-toggled while its request runs.
@@ -124,6 +129,9 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
         typeof grantRes?.supremeFamiliarId === "string" ? grantRes.supremeFamiliarId : null,
       );
       setAudit(Array.isArray(grantRes?.audit) ? (grantRes.audit as ConsoleAuditEntry[]) : []);
+      setGrantChanges(
+        Array.isArray(grantRes?.grantChanges) ? (grantRes.grantChanges as ConsoleGrantChange[]) : [],
+      );
       setProposals(Array.isArray(proposalRes?.proposals) ? proposalRes.proposals : []);
       setError(null);
     } catch {
@@ -309,6 +317,14 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
     () => audit.filter((e) => e.familiarId === familiar.id).sort((a, b) => b.at.localeCompare(a.at)),
     [audit, familiar.id],
   );
+  // Access CHANGES for this familiar. The server already returns them newest
+  // first (ties broken on append order, so a bulk edit reads in the order it
+  // happened); filtering preserves that, so no re-sort here.
+  const famChanges = useMemo(
+    () => grantChanges.filter((e) => e.familiarId === familiar.id),
+    [grantChanges, familiar.id],
+  );
+  const [showAllChanges, setShowAllChanges] = useState(false);
 
   if (loading) {
     return (
@@ -607,6 +623,52 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
               </div>
             );
           })}
+        </SettingsGroup>
+      )}
+
+      {/* ── Access CHANGES for this familiar ──
+          Distinct from the decision log below: this records who widened or
+          narrowed a grant and from what, which the check log cannot answer. */}
+      {famChanges.length > 0 && (
+        <SettingsGroup label={`Recent access changes (${famChanges.length})`}>
+          {(showAllChanges ? famChanges : famChanges.slice(0, AUDIT_PREVIEW)).map((e) => {
+            const meta = grantChangeMeta(e);
+            return (
+              <div key={e.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <ToneIcon tone={meta.tone} icon={meta.icon} size={15} />
+                  <div className="min-w-0">
+                    <p className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)]">
+                      {projectName(e.projectId)}
+                    </p>
+                    <p className="mt-0.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                      {meta.label} · {grantLevelLabel(e.from)} → {grantLevelLabel(e.to)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <MetaChip title="Where this change came from">
+                    {grantChangeOriginLabel(e)}
+                  </MetaChip>
+                  <RelativeTime iso={e.at} className="text-[length:var(--text-xs)] text-[var(--text-muted)]" />
+                </div>
+              </div>
+            );
+          })}
+          {famChanges.length > AUDIT_PREVIEW ? (
+            <div className="border-t border-[var(--border-hairline)] px-2 py-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                fullWidth
+                className="justify-start"
+                onClick={() => setShowAllChanges((v) => !v)}
+                aria-expanded={showAllChanges}
+              >
+                {showAllChanges ? "Show recent only" : `Show all ${famChanges.length} changes`}
+              </Button>
+            </div>
+          ) : null}
         </SettingsGroup>
       )}
 
