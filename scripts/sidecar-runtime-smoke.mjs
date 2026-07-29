@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -107,7 +107,7 @@ function attachOutput(child) {
   };
 }
 
-function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port }) {
+function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port, environment = {} }) {
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(bundledNode, [sidecarServer], {
     cwd: sidecarRoot,
@@ -123,6 +123,7 @@ function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port }) {
       COVEN_CAVE_AUTH_TOKEN: token,
       COVEN_HOME: covenHome,
       NEXT_TELEMETRY_DISABLED: "1",
+      ...environment,
     },
   });
   return { baseUrl, child, output: attachOutput(child) };
@@ -153,8 +154,8 @@ function authenticatedHeaders(baseUrl, contentType) {
 }
 
 /** Verify that a staged or extracted runtime actually retained a behavioral
- * guard. This complements the live HTTP assertion below: the archive must not
- * silently omit the compiled project gate or daemon readiness implementation. */
+ * guard. This complements the live HTTP assertions below: the archive must not
+ * silently omit the compiled project gate. */
 async function runtimeContainsText(rootDir, expectedText) {
   const pending = [rootDir];
   while (pending.length) {
@@ -174,6 +175,65 @@ async function runtimeContainsText(rootDir, expectedText) {
   return false;
 }
 
+async function waitForText(file, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await readFile(file, "utf8").catch(() => "");
+    if (value.trim()) return value.trim();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`timed out waiting for fixture output: ${path.basename(file)}`);
+}
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== "ESRCH";
+  }
+}
+
+async function waitForProcessExit(pid, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processAlive(pid)) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.fail(`daemon timeout fixture child ${pid} survived owned-tree cleanup`);
+}
+
+async function writeHangingDaemonFixture(rootDir, marker) {
+  const fixture = path.join(rootDir, process.platform === "win32" ? "hanging-coven.cmd" : "hanging-coven.sh");
+  const nodeExpression = "const fs=require('node:fs');fs.writeFileSync(process.env.COVEN_DAEMON_SMOKE_CHILD_PID,String(process.pid));setInterval(()=>{},1000)";
+  if (process.platform === "win32") {
+    await writeFile(
+      fixture,
+      `@echo off\r\n"%COVEN_DAEMON_SMOKE_NODE%" -e "${nodeExpression}"\r\n`,
+      "utf8",
+    );
+  } else {
+    const shellSafeExpression = nodeExpression.replaceAll("'", "'\\''");
+    await writeFile(
+      fixture,
+      `#!/bin/sh\n"$COVEN_DAEMON_SMOKE_NODE" -e '${shellSafeExpression}'\n`,
+      "utf8",
+    );
+    await chmod(fixture, 0o755);
+  }
+  return {
+    fixture,
+    environment: {
+      COVEN_BIN: fixture,
+      COVEN_SOCKET: process.platform === "win32"
+        ? `coven-cave-smoke-unready-${process.pid}-${Date.now()}`
+        : path.join(rootDir, "unready.sock"),
+      COVEN_DAEMON_SMOKE_CHILD_PID: marker,
+      COVEN_DAEMON_SMOKE_NODE: bundledNode,
+    },
+  };
+}
+
 async function main() {
   let extractedSidecarRoot = null;
   let sidecarRoot = stagedSidecarRoot;
@@ -186,7 +246,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_794);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_799);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
@@ -269,6 +329,8 @@ async function main() {
   );
 
   const covenHome = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-smoke-"));
+  const daemonMarker = path.join(covenHome, "daemon-timeout-child.pid");
+  const hangingDaemon = await writeHangingDaemonFixture(covenHome, daemonMarker);
   const avatarDir = path.join(covenHome, "workspaces", "familiars", "smoke", "avatars");
   await mkdir(avatarDir, { recursive: true });
   await mkdir(path.join(covenHome, "cave"), { recursive: true });
@@ -301,6 +363,7 @@ async function main() {
     sidecarRoot,
     covenHome,
     port: firstPort,
+    environment: hangingDaemon.environment,
   });
 
   try {
@@ -350,15 +413,31 @@ async function main() {
       "projectless packaged launches must not persist a conversation",
     );
     assert.equal(
-      await runtimeContainsText(sidecarRoot, "daemon readiness timed out"),
-      true,
-      "packaged runtime must retain daemon readiness timeout handling",
-    );
-    assert.equal(
       await runtimeContainsText(sidecarRoot, "project_root_required"),
       true,
       "packaged runtime must retain the project-root refusal gate",
     );
+
+    const daemonStartResponse = await fetch(`${baseUrl}/api/daemon/start`, {
+      method: "POST",
+      headers: authenticatedHeaders(baseUrl, "application/json"),
+      body: JSON.stringify({ restart: true }),
+    });
+    assert.equal(daemonStartResponse.status, 504, "an unready packaged daemon launch must return a structured timeout");
+    const daemonStart = await daemonStartResponse.json();
+    assert.equal(daemonStart.code, "readiness_timeout");
+    assert.deepEqual(
+      daemonStart.cleanup,
+      {
+        attempted: true,
+        completed: true,
+        mode: process.platform === "win32" ? "windows-tree" : "process-group",
+      },
+      "the packaged timeout must report completed cleanup of Cave's owned launch tree",
+    );
+    const daemonChildPid = Number(await waitForText(daemonMarker));
+    assert.ok(Number.isSafeInteger(daemonChildPid) && daemonChildPid > 0, "fixture must report its actual daemon descendant PID");
+    await waitForProcessExit(daemonChildPid);
 
     const enginesResponse = await fetch(`${baseUrl}/api/voice/engines`, {
       headers: authenticatedHeaders(baseUrl),

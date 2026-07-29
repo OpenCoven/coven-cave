@@ -139,7 +139,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-29 (typed chat follow-ups): the reusable Reply/Task/Action
   // components trace two additional Windows runtime files (5,784). Preserve
   // the established ten-file cross-platform headroom without relaxing bytes.
-  fileCount: 5_794,
+  // 2026-07-29 (daemon launch cleanup): Windows packaging of the owned
+  // readiness-timeout path measured 5,789 files. Retain the established ten
+  // files of cross-platform headroom without relaxing the byte ceiling.
+  fileCount: 5_799,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
