@@ -93,11 +93,40 @@ assert.match(
 
 // ── Raw error codes map to actionable messages ───────────────────────────────
 assert.match(component, /function errorMessage\(code: string \| undefined\): string/, "errorMessage maps codes to readable text");
-assert.match(component, /case "microphone_denied":[\s\S]*?Microphone access was denied/, "microphone_denied becomes a friendly, actionable message");
+assert.match(component, /case "microphone_denied":[\s\S]*?Microphone access is blocked/, "microphone_denied becomes a native-safe headline");
+assert.match(component, /case "microphone_not_found":[\s\S]*?No microphone was found/, "missing hardware is not mislabeled as denied");
+assert.match(component, /case "microphone_unavailable":[\s\S]*?microphone isn't available/, "busy or unreadable hardware is not mislabeled as denied");
 assert.doesNotMatch(
   component,
   /<div>\{state\.errorCode\}<\/div>/,
   "the raw error code is no longer rendered as the headline",
+);
+
+// ── Desktop microphone permission is requested natively before capture ──────
+assert.match(
+  component,
+  /import\s+\{[^}]*requestMicrophoneStream[^}]*\}\s+from\s+["']@\/lib\/voice\/microphone-access["']/,
+  "voice calls use the shared native-aware microphone request",
+);
+assert.match(
+  component,
+  /await requestMicrophoneStream\(\)/,
+  "the overlay asks the native-aware flow for its stream",
+);
+assert.doesNotMatch(
+  component,
+  /navigator\.mediaDevices\.getUserMedia/,
+  "the overlay must not bypass the native permission preflight",
+);
+assert.match(
+  component,
+  /type:\s*"MIC_FAILED",[\s\S]{0,180}errorCode:\s*failure\.code,[\s\S]{0,180}hint:\s*failure\.hint,[\s\S]{0,180}canOpenSettings:\s*failure\.canOpenSettings/,
+  "capture failures preserve their real reason and recovery capability",
+);
+assert.match(
+  component,
+  /\{state\.canOpenSettings && \([\s\S]{0,600}>\s*Open settings\s*<\/button>/,
+  "denied desktop access offers a direct System Settings recovery action",
 );
 
 // ── True-voice providers own persistence — no transcript double-append ───────
