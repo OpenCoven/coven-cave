@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const surface = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 const settings = readFileSync(new URL("./familiar-tab-settings.tsx", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../styles/familiar-tab.css", import.meta.url), "utf8");
 
 assert.match(surface, /import \{ FamiliarSettingsSection \} from "@\/components\/familiar-tab-settings"/);
 assert.match(surface, /type FamiliarSectionId = "identity" \| "skills" \| "mcp" \| "analytics" \| "memory" \| "settings"/);
@@ -23,5 +24,10 @@ assert.match(settings, /familiar\.id/);
 assert.match(settings, /localDaemonReady/);
 assert.match(settings, /allFamiliars/);
 assert.match(settings, /<Tabs[\s\S]{0,240}bordered=\{false\}/);
+assert.match(
+  styles,
+  /\.familiar-tab__settings-tabs\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;[^}]*z-index:\s*1;[^}]*background:\s*var\(--bg-raised\);/,
+  "the nested settings tabs stay reachable while the familiar section scrolls",
+);
 
 console.log("familiar-tab-settings.test.ts: ok");
