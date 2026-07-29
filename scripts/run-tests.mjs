@@ -737,6 +737,7 @@ export const SUITES = {
     "src/components/familiar-tab-hero.test.ts",
     "src/components/familiar-tab-sections.test.ts",
     "src/components/familiar-tab-bridges.test.ts",
+    "src/components/familiar-tab-settings.test.ts",
     "src/components/familiar-tab-scope.test.ts",
     "src/components/familiar-tab-skills.test.ts",
     "src/components/familiar-tab-identity.test.ts",
